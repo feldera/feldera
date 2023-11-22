@@ -4,7 +4,7 @@ use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
 
-use pipeline_manager::config::{CompilerConfig, DatabaseConfig, LocalRunnerConfig};
+use pipeline_manager::config::{DatabaseConfig, LocalRunnerConfig};
 use pipeline_manager::db::ProjectDB;
 use pipeline_manager::local_runner;
 use tokio::spawn;
@@ -17,7 +17,6 @@ async fn main() {
     pipeline_manager::logging::init_logging(name);
     let cli = Command::new("Feldera local runner service");
     let cli = DatabaseConfig::augment_args(cli);
-    let cli = CompilerConfig::augment_args(cli);
     let cli = LocalRunnerConfig::augment_args(cli);
     let matches = cli.get_matches();
 
@@ -28,11 +27,6 @@ async fn main() {
         .map_err(|err| err.exit())
         .unwrap();
     let local_runner_config = local_runner_config.canonicalize().unwrap();
-    let compiler_config = CompilerConfig::from_arg_matches(&matches)
-        .map_err(|err| err.exit())
-        .unwrap();
-    let compiler_config = compiler_config.canonicalize().unwrap();
-
     let db = ProjectDB::connect(
         &database_config,
         #[cfg(feature = "pg-embed")]
@@ -42,7 +36,7 @@ async fn main() {
     .unwrap();
     let db = Arc::new(Mutex::new(db));
     let _local_runner = spawn(async move {
-        local_runner::run(db, &local_runner_config, &compiler_config).await;
+        local_runner::run(db, &local_runner_config).await;
     });
     tokio::signal::ctrl_c()
         .await

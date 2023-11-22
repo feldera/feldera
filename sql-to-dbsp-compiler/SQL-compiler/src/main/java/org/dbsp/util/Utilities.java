@@ -235,19 +235,6 @@ public class Utilities {
         }
     }
 
-    public static void runJIT(String directory, String program, String config)
-            throws IOException, InterruptedException {
-        Map<String, String> env = new HashMap<>();
-        env.put("DATAFLOW_JIT_LOG", "trace,cranelift_codegen=off,dataflow_jit::codegen=off," +
-                "cranelift_jit=off,dataflow_jit::ir::function::passes=off");
-        env.put("RUST_BACKTRACE", "1");
-        Utilities.runProcess(directory, env,
-                new String[] {
-                        "cargo", "run", "--release",
-                        "-p", "dataflow-jit", "--bin", "dataflow-jit",
-                        "--features", "binary", "--", "run", program, config });
-    }
-
     public static <T> T last(List<T> data) {
         if (data.isEmpty())
             throw new RuntimeException("Data is empty");

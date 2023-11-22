@@ -8,16 +8,13 @@ def execute(
     actions,
     name,
     code_file,
-    jit_mode,
     make_pipeline_fn,
     prepare_fn=None,
     verify_fn=None,
 ):
     dbsp = DBSPConnection(dbsp_url + "/v0")
     sql_code = open(code_file, "r").read()
-    program = dbsp.create_or_replace_program(
-        name=name, sql_code=sql_code, jit_mode=jit_mode
-    )
+    program = dbsp.create_or_replace_program(name=name, sql_code=sql_code)
     pipeline = make_pipeline_fn(program)
 
     if "compile" in actions:
@@ -40,9 +37,7 @@ def execute(
         verify_fn(dbsp_url, pipeline)
 
 
-def run_demo(
-    name, code_file, jit_mode, make_pipeline_fn, prepare_fn=None, verify_fn=None
-):
+def run_demo(name, code_file, make_pipeline_fn, prepare_fn=None, verify_fn=None):
     parser = argparse.ArgumentParser(
         description="What do you want to do with the demo."
     )
@@ -68,13 +63,4 @@ def run_demo(
         if args.prepare_args == None
         else lambda: prepare_fn(args.prepare_args)
     )
-    execute(
-        dbsp_url,
-        actions,
-        name,
-        code_file,
-        jit_mode,
-        make_pipeline_fn,
-        prepare,
-        verify_fn,
-    )
+    execute(dbsp_url, actions, name, code_file, make_pipeline_fn, prepare, verify_fn)

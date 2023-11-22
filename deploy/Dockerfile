@@ -53,7 +53,6 @@ RUN apt update --fix-missing && apt install nodejs -y
 # - yarn
 RUN npm install --global yarn openapi-typescript-codegen
 RUN /root/.cargo/bin/cargo build --release --package=pipeline-manager --no-default-features
-RUN /root/.cargo/bin/cargo build --release --package=dbsp_adapters --bin pipeline --features="with-jit"
 
 # Java build can be performed in parallel
 FROM base as javabuild
@@ -67,8 +66,6 @@ FROM base as release
 ENV PATH="$PATH:/root/.cargo/bin"
 # Pipeline manager binary
 COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
-# JIT pipeline runner
-COPY --from=builder /app/target/release/pipeline pipeline
 # SQL compiler uber jar
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
@@ -76,7 +73,6 @@ COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar
 COPY crates/dbsp database-stream-processor/crates/dbsp
 COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
 COPY crates/adapters database-stream-processor/crates/adapters
-COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
 COPY README.md database-stream-processor/README.md
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
 
@@ -87,14 +83,7 @@ COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
 ENV BANNER_ADDR localhost
-ENTRYPOINT ["./pipeline-manager", \
-  "--bind-address=0.0.0.0", \
-  "--api-server-working-directory=/working-dir", \
-  "--compiler-working-directory=/working-dir", \
-  "--runner-working-directory=/working-dir", \
-  "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", \
-  "--dbsp-override-path=/database-stream-processor", \
-  "--jit-pipeline-runner-path=/pipeline"]
+ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 # Standalone api-server
 FROM gcr.io/distroless/cc-debian12 AS api-server
@@ -113,7 +102,6 @@ COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar
 COPY crates/dbsp database-stream-processor/crates/dbsp
 COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
 COPY crates/adapters database-stream-processor/crates/adapters
-COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
 COPY README.md database-stream-processor/README.md
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
 # Copy over the rust code and sql-to-dbsp script

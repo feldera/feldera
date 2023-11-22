@@ -185,7 +185,6 @@ async fn program_creation() {
             "test1",
             "program desc",
             "ignored",
-            false,
         )
         .await
         .unwrap();
@@ -195,7 +194,6 @@ async fn program_creation() {
         name: "test1".to_string(),
         description: "program desc".to_string(),
         version: res.1,
-        jit_mode: false,
         status: ProgramStatus::None,
         schema: None,
         code: None,
@@ -210,7 +208,6 @@ async fn program_creation() {
         name: "test1".to_string(),
         description: "program desc".to_string(),
         version: res.1,
-        jit_mode: false,
         status: ProgramStatus::None,
         schema: None,
         code: Some("ignored".to_string()),
@@ -232,7 +229,6 @@ async fn duplicate_program() {
             "test1",
             "program desc",
             "ignored",
-            true,
         )
         .await;
     let res = handle
@@ -243,7 +239,6 @@ async fn duplicate_program() {
             "test1",
             "program desc",
             "ignored",
-            false,
         )
         .await
         .expect_err("Expecting unique violation");
@@ -263,7 +258,6 @@ async fn program_code() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
-            false,
         )
         .await
         .unwrap();
@@ -274,7 +268,6 @@ async fn program_code() {
         .unwrap();
     assert_eq!("test1", result.name);
     assert_eq!("program desc", result.description);
-    assert_eq!(false, result.jit_mode);
     assert_eq!(
         "create table t1(c1 integer);".to_owned(),
         result.code.unwrap()
@@ -293,7 +286,6 @@ async fn update_program() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
-            false,
         )
         .await
         .unwrap();
@@ -305,7 +297,6 @@ async fn update_program() {
             "test2",
             "different desc",
             &Some("create table t2(c2 integer);".to_string()),
-            true,
         )
         .await;
     let descr = handle
@@ -316,7 +307,6 @@ async fn update_program() {
     assert_eq!("test2", descr.name);
     assert_eq!("different desc", descr.description);
     assert_eq!("create table t2(c2 integer);", descr.code.unwrap());
-    assert_eq!(true, descr.jit_mode);
 
     let _ = handle
         .db
@@ -326,14 +316,12 @@ async fn update_program() {
             "updated_test1",
             "some new description",
             &None,
-            false,
         )
         .await;
     let results = handle.db.list_programs(tenant_id, false).await.unwrap();
     assert_eq!(1, results.len());
     let row = results.get(0).unwrap();
     assert_eq!("updated_test1", row.name);
-    assert_eq!(false, row.jit_mode);
     assert_eq!("some new description", row.description);
 }
 
@@ -349,7 +337,6 @@ async fn program_queries() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
-            false,
         )
         .await
         .unwrap();
@@ -435,7 +422,6 @@ async fn project_pending() {
             "test1",
             "project desc",
             "ignored",
-            false,
         )
         .await
         .unwrap();
@@ -447,7 +433,6 @@ async fn project_pending() {
             "test2",
             "project desc",
             "ignored",
-            true,
         )
         .await
         .unwrap();
@@ -462,12 +447,10 @@ async fn project_pending() {
         .set_program_for_compilation(tenant_id, uid1, v1, ProgramStatus::Pending)
         .await
         .unwrap();
-    let (_, id, _version, jit_mode) = handle.db.next_job().await.unwrap().unwrap();
+    let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
     assert_eq!(id, uid2);
-    assert_eq!(jit_mode, true);
-    let (_, id, _version, jit_mode) = handle.db.next_job().await.unwrap().unwrap();
+    let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
     assert_eq!(id, uid2);
-    assert_eq!(jit_mode, true);
     // Maybe next job should set the status to something else
     // so it won't get picked up twice?
 }
@@ -484,7 +467,6 @@ async fn update_status() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
-            false,
         )
         .await
         .unwrap();
@@ -649,7 +631,7 @@ async fn versioning_no_change_no_connectors() {
 
     let (program_id, _) = handle
         .db
-        .new_program(tenant_id, Uuid::now_v7(), "", "", "", false)
+        .new_program(tenant_id, Uuid::now_v7(), "", "", "")
         .await
         .unwrap();
     handle
@@ -706,7 +688,6 @@ async fn versioning() {
             "test1",
             "program desc",
             "only schema matters--this isn't compiled",
-            false,
         )
         .await
         .unwrap();
@@ -786,7 +767,6 @@ async fn versioning() {
             "test1",
             "program desc",
             &Some("only schema matters--this isn't compiled2".to_string()),
-            false,
         )
         .await
         .unwrap();
@@ -1106,9 +1086,8 @@ enum StorageAction {
         String,
         String,
         String,
-        bool,
     ),
-    UpdateProgram(TenantId, ProgramId, String, String, Option<String>, bool),
+    UpdateProgram(TenantId, ProgramId, String, String, Option<String>),
     GetProgramIfExists(TenantId, ProgramId, bool),
     LookupProgram(TenantId, String, bool),
     SetProgramForCompilation(TenantId, ProgramId, Version, ProgramStatus),
@@ -1363,22 +1342,22 @@ fn db_impl_behaves_like_model() {
                                     check_responses(i, model_response, impl_response);
                                 }
                             }
-                            StorageAction::NewProgram(tenant_id, id, name, description, code, jit_mode) => {
+                            StorageAction::NewProgram(tenant_id, id, name, description, code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_program(tenant_id, id, &name, &description, &code, jit_mode).await;
+                                    model.new_program(tenant_id, id, &name, &description, &code).await;
                                 let impl_response =
-                                    handle.db.new_program(tenant_id, id, &name, &description, &code, jit_mode).await;
+                                    handle.db.new_program(tenant_id, id, &name, &description, &code).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdateProgram(tenant_id, program_id, name, description, code, jit_mode) => {
+                            StorageAction::UpdateProgram(tenant_id, program_id, name, description, code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_program(tenant_id, program_id, &name, &description, &code, jit_mode)
+                                    .update_program(tenant_id, program_id, &name, &description, &code)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_program(tenant_id, program_id, &name, &description, &code, jit_mode)
+                                    .update_program(tenant_id, program_id, &name, &description, &code)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -1634,7 +1613,6 @@ impl Storage for Mutex<DbModel> {
         program_name: &str,
         program_description: &str,
         program_code: &str,
-        jit_mode: bool,
     ) -> DBResult<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
         if s.programs.keys().any(|k| k.1 == ProgramId(id)) {
@@ -1659,7 +1637,6 @@ impl Storage for Mutex<DbModel> {
                     program_id,
                     name: program_name.to_owned(),
                     description: program_description.to_owned(),
-                    jit_mode,
                     status: ProgramStatus::None,
                     schema: None,
                     version,
@@ -1679,7 +1656,6 @@ impl Storage for Mutex<DbModel> {
         program_name: &str,
         program_description: &str,
         program_code: &Option<String>,
-        jit_mode: bool,
     ) -> DBResult<super::Version> {
         let mut s = self.lock().await;
         if !s.programs.contains_key(&(tenant_id, program_id)) {
@@ -1701,10 +1677,6 @@ impl Storage for Mutex<DbModel> {
                 let cur_code = p.code.clone().unwrap();
                 p.name = program_name.to_owned();
                 p.description = program_description.to_owned();
-                if p.jit_mode != jit_mode {
-                    p.jit_mode = jit_mode;
-                    p.status = ProgramStatus::None;
-                }
                 if let Some(code) = program_code {
                     if *code != cur_code {
                         p.code = program_code.to_owned();
@@ -1852,7 +1824,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn next_job(
         &self,
-    ) -> DBResult<Option<(super::TenantId, super::ProgramId, super::Version, bool)>> {
+    ) -> DBResult<Option<(super::TenantId, super::ProgramId, super::Version)>> {
         let s = self.lock().await;
         let mut values: Vec<(&(TenantId, ProgramId), &ProgramData)> =
             Vec::from_iter(s.programs.iter());
@@ -1861,7 +1833,7 @@ impl Storage for Mutex<DbModel> {
         values
             .iter()
             .find(|(_, v)| v.0.status == ProgramStatus::Pending)
-            .map(|(k, v)| Ok(Some((k.0, v.0.program_id, v.0.version, v.0.jit_mode))))
+            .map(|(k, v)| Ok(Some((k.0, v.0.program_id, v.0.version))))
             .unwrap_or(Ok(None))
     }
 

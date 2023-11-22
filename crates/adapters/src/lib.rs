@@ -158,8 +158,6 @@ mod catalog;
 mod circuit_handle;
 mod controller;
 pub mod format;
-#[cfg(feature = "with-jit")]
-pub mod jit;
 pub mod server;
 pub mod static_compile;
 pub mod transport;

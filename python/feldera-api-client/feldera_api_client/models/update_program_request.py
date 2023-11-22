@@ -16,20 +16,17 @@ class UpdateProgramRequest:
         code (Union[Unset, None, str]): New SQL code for the program or `None` to keep existing program
             code unmodified.
         description (Union[Unset, str]): New description for the program.
-        jit_mode (Union[Unset, bool]): Compile the program in JIT mode.
     """
 
     name: str
     code: Union[Unset, None, str] = UNSET
     description: Union[Unset, str] = UNSET
-    jit_mode: Union[Unset, bool] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         name = self.name
         code = self.code
         description = self.description
-        jit_mode = self.jit_mode
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -42,8 +39,6 @@ class UpdateProgramRequest:
             field_dict["code"] = code
         if description is not UNSET:
             field_dict["description"] = description
-        if jit_mode is not UNSET:
-            field_dict["jit_mode"] = jit_mode
 
         return field_dict
 
@@ -56,13 +51,10 @@ class UpdateProgramRequest:
 
         description = d.pop("description", UNSET)
 
-        jit_mode = d.pop("jit_mode", UNSET)
-
         update_program_request = cls(
             name=name,
             code=code,
             description=description,
-            jit_mode=jit_mode,
         )
 
         update_program_request.additional_properties = d

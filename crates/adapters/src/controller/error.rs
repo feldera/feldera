@@ -375,10 +375,6 @@ pub enum ControllerError {
     /// Error evaluating the DBSP circuit.
     DbspError { error: DBSPError },
 
-    /// JIT compiler errors.
-    // TODO: use actual JIT error type.
-    JitError { error: String },
-
     /// Error inside the Prometheus module.
     PrometheusError { error: String },
 
@@ -474,7 +470,6 @@ impl DetailedError for ControllerError {
             Self::OutputTransportError { .. } => Cow::from("OutputTransportError"),
             Self::PrometheusError { .. } => Cow::from("PrometheusError"),
             Self::DbspError { error } => error.error_code(),
-            Self::JitError { .. } => Cow::from("JitCompilerError"),
             Self::DbspPanic => Cow::from("DbspPanic"),
             Self::ControllerPanic => Cow::from("ControllerPanic"),
         }
@@ -551,9 +546,6 @@ impl Display for ControllerError {
             }
             Self::DbspError { error } => {
                 write!(f, "DBSP error: {error}")
-            }
-            Self::JitError { error } => {
-                write!(f, "JIT compiler error: {error}")
             }
             Self::DbspPanic => {
                 write!(f, "Panic inside the DBSP runtime")
@@ -723,12 +715,6 @@ impl ControllerError {
         E: ToString,
     {
         Self::PrometheusError {
-            error: error.to_string(),
-        }
-    }
-
-    pub fn jit_error(error: &str) -> Self {
-        Self::JitError {
             error: error.to_string(),
         }
     }

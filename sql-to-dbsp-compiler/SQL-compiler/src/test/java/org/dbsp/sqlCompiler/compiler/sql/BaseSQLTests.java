@@ -72,7 +72,6 @@ public class BaseSQLTests {
     public static final String testFilePath = rustDirectory + "/lib.rs";
 
     public static int testsExecuted = 0;
-    public static int jitTestsExecuted = 0;
 
     /**
      * Collect here all the tests to run and execute them using a single Rust compilation.
@@ -125,19 +124,9 @@ public class BaseSQLTests {
                 throw new RuntimeException("Tests are not compiled with the same options: "
                         + test.compiler.options + " and " + firstCompiler.options);
             ProgramAndTester pt;
-            if (test.compiler.options.ioOptions.jit) {
-                pt = new ProgramAndTester(null, test.createJITTesterCode(testNumber));
-                if (extraArgs.length == 0) {
-                    extraArgs = new String[2];
-                    extraArgs[0] = "--features";
-                    extraArgs[1] = "jit";
-                }
-                jitTestsExecuted++;
-            } else {
-                // Standard test
-                pt = new ProgramAndTester(test.circuit, test.createTesterCode(testNumber, rustDirectory));
-                testsExecuted++;
-            }
+            // Standard test
+            pt = new ProgramAndTester(test.circuit, test.createTesterCode(testNumber, rustDirectory));
+            testsExecuted++;
             writer.add(pt);
             testNumber++;
         }
@@ -149,12 +138,6 @@ public class BaseSQLTests {
     protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
         compiler.messages.show(System.err);
         compiler.messages.clear();
-        if (this.currentTestInformation.startsWith("Jit") &&
-            !compiler.options.ioOptions.jit) {
-            // Got confused on setting options a few times, this will help catch such mistakes
-            throw new RuntimeException("JIT test " + this.currentTestInformation +
-                    " without JIT compiler option?" + compiler.options);
-        }
         TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, streams);
         testsToRun.add(test);
     }
@@ -163,13 +146,11 @@ public class BaseSQLTests {
      * Create CompilerOptions according to the specified properties.
      * @param incremental  Generate an incremental program if true.
      * @param optimize     Optimize program if true.
-     * @param jit          Generate code for the JIT if true.
      */
-    public CompilerOptions testOptions(boolean incremental, boolean optimize, boolean jit) {
+    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;
-        options.ioOptions.jit = jit;
         options.ioOptions.quiet = true;
         options.languageOptions.incrementalize = incremental;
         options.languageOptions.optimizationLevel = optimize ? 2 : 1;
@@ -180,7 +161,7 @@ public class BaseSQLTests {
      * Return the default compiler used for testing.
      */
     public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(false, true, false);
+        CompilerOptions options = this.testOptions(false, true);
         return new DBSPCompiler(options);
     }
 

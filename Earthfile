@@ -116,7 +116,6 @@ prepare-cache:
     # https://github.com/earthly/earthly/issues/786 is fixed this can go away
     # and crates can be copied instead:
     RUN mkdir -p .cargo
-    RUN mkdir -p crates/dataflow-jit
     RUN mkdir -p crates/nexmark
     RUN mkdir -p crates/dbsp
     RUN mkdir -p crates/adapters
@@ -131,7 +130,6 @@ prepare-cache:
 
     COPY --keep-ts Cargo.toml .
     COPY --keep-ts Cargo.lock .
-    COPY --keep-ts crates/dataflow-jit/Cargo.toml crates/dataflow-jit/
     COPY --keep-ts crates/nexmark/Cargo.toml crates/nexmark/
     COPY --keep-ts crates/dbsp/Cargo.toml crates/dbsp/
     COPY --keep-ts crates/pipeline-types/Cargo.toml crates/pipeline-types/
@@ -145,14 +143,12 @@ prepare-cache:
     COPY --keep-ts sql-to-dbsp-compiler/lib/tuple/Cargo.toml sql-to-dbsp-compiler/lib/tuple/
     COPY --keep-ts sql-to-dbsp-compiler/temp/Cargo.toml sql-to-dbsp-compiler/temp/
 
-    RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/lib.rs
     RUN mkdir -p crates/nexmark/src && touch crates/nexmark/src/lib.rs
     RUN mkdir -p crates/dbsp/src && touch crates/dbsp/src/lib.rs
     RUN mkdir -p crates/dbsp/examples && touch crates/dbsp/examples/degrees.rs && touch crates/dbsp/examples/orgchart.rs
     RUN mkdir -p crates/pipeline-types/src && touch crates/pipeline-types/src/lib.rs
     RUN mkdir -p crates/adapters/src && touch crates/adapters/src/lib.rs
     RUN mkdir -p crates/adapters/examples && touch crates/adapters/examples/server.rs
-    RUN mkdir -p crates/dataflow-jit/src && touch crates/dataflow-jit/src/main.rs
     RUN mkdir -p crates/nexmark/benches/nexmark-gen && touch crates/nexmark/benches/nexmark-gen/main.rs
     RUN mkdir -p crates/nexmark/benches/nexmark && touch crates/nexmark/benches/nexmark/main.rs
     RUN mkdir -p crates/dbsp/benches/gdelt && touch crates/dbsp/benches/gdelt/main.rs
@@ -213,9 +209,6 @@ build-cache:
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-manager
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dataflow-jit
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit
     RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_nexmark
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_nexmark --no-run
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_nexmark
@@ -262,26 +255,11 @@ build-dbsp:
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types -- -D warnings
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
 
-
-build-dataflow-jit:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-
-    RUN rm -rf crates/dataflow-jit
-    COPY --keep-ts --dir crates/dataflow-jit crates/dataflow-jit
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dataflow-jit
-    RUN cd crates/dataflow-jit && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dataflow-jit -- -D warnings
-
 build-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
-    FROM +build-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
@@ -307,7 +285,7 @@ build-adapters:
     RUN rm -rf crates/adapters
     COPY --keep-ts --dir crates/adapters crates/adapters
 
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters --features="with-jit"
+    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
     RUN cd crates/adapters && cargo +$RUST_TOOLCHAIN machete
     RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters -- -D warnings
     ENV RUST_BACKTRACE=1
@@ -331,11 +309,9 @@ build-manager:
 
     IF [ -f ./target/debug/pipeline-manager ]
         SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
-        SAVE ARTIFACT --keep-ts ./target/debug/pipeline pipeline
     END
     IF [ -f ./target/release/pipeline-manager ]
         SAVE ARTIFACT --keep-ts ./target/release/pipeline-manager pipeline-manager
-        SAVE ARTIFACT --keep-ts ./target/release/pipeline pipeline
     END
 
 test-sql:
@@ -395,15 +371,6 @@ test-nexmark:
     FROM +build-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_nexmark
 
-test-dataflow-jit:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    # Tests use this demo directory
-    COPY --keep-ts demo/project_demo01-TimeSeriesEnrich demo/project_demo01-TimeSeriesEnrich
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dataflow-jit
-
 test-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
@@ -413,7 +380,7 @@ test-adapters:
         RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
-            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --features="with-jit" --package sqllib
+            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --package sqllib
     END
 
 test-manager:
@@ -468,13 +435,13 @@ test-python:
 
     FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     COPY +build-manager/pipeline-manager .
-    COPY +build-manager/pipeline .
     RUN mkdir -p /root/.local/lib/python3.10
     RUN mkdir -p /root/.local/bin
 
     COPY +install-python/python3.10 /root/.local/lib/python3.10
     COPY +install-python/bin /root/.local/bin
 
+    COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/demo_notebooks demo/demo_notebooks
@@ -490,7 +457,7 @@ test-python:
     WITH DOCKER --pull postgres
         RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 10 && \
-            (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --jit-pipeline-runner-path=/dbsp/pipeline --db-connection-string=postgresql://postgres:postgres@localhost:5432 &) && \
+            (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 &) && \
             sleep 5 && \
             python3 python/test.py && \
             cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
@@ -503,7 +470,6 @@ test-rust:
     BUILD +test-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     BUILD +test-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     BUILD +test-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    BUILD +test-dataflow-jit --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
     BUILD +test-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
 
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
@@ -515,14 +481,12 @@ build-pipeline-manager-container:
     # First, copy over the artifacts built from previous stages
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
     COPY +build-manager/pipeline-manager .
-    COPY +build-manager/pipeline .
     COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
     COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
     COPY crates/adapters database-stream-processor/crates/adapters
-    COPY crates/dataflow-jit database-stream-processor/crates/dataflow-jit
     COPY README.md database-stream-processor/README.md
 
     # Then copy over the required SQL compiler files
@@ -530,14 +494,7 @@ build-pipeline-manager-container:
     COPY sql-to-dbsp-compiler/lib /database-stream-processor/sql-to-dbsp-compiler/lib
     COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
     RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
-    ENTRYPOINT ["./pipeline-manager", \
-        "--bind-address=0.0.0.0", \
-        "--api-server-working-directory=/working-dir", \
-        "--compiler-working-directory=/working-dir", \
-        "--runner-working-directory=/working-dir", \
-        "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", \
-        "--dbsp-override-path=/database-stream-processor", \
-        "--jit-pipeline-runner-path=/pipeline"]
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
 # TODO: mirrors the Dockerfile. See note above.
 build-demo-container:
@@ -626,13 +583,15 @@ integration-test-container:
 integration-tests:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    COPY deploy/docker-compose-test.yml .
     COPY deploy/.env .
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull postgres \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --load test:latest=+integration-test-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml -f docker-compose-test.yml up --force-recreate --exit-code-from test db pipeline-manager test
+                --compose docker-compose.yml \
+                --service db \
+                --service pipeline-manager \
+                --load itest:latest=+integration-test-container
+        RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
     END
 
 benchmark:

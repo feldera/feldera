@@ -24,7 +24,7 @@ class DBSPConnection:
         )
 
     def create_program(
-        self, *, name: str, sql_code: str, jit_mode: bool = False, description: str = ""
+        self, *, name: str, sql_code: str, description: str = ""
     ) -> DBSPProgram:
         """Create a new program.
 
@@ -42,15 +42,11 @@ class DBSPConnection:
         """
 
         return self.create_program_inner(
-            name=name,
-            sql_code=sql_code,
-            jit_mode=jit_mode,
-            description=description,
-            replace=False,
+            name=name, sql_code=sql_code, description=description, replace=False
         )
 
     def create_or_replace_program(
-        self, *, name: str, sql_code: str, jit_mode: bool = False, description: str = ""
+        self, *, name: str, sql_code: str, description: str = ""
     ) -> DBSPProgram:
         """Create a new program overwriting existing program with the same name, if any.
 
@@ -71,12 +67,10 @@ class DBSPConnection:
         """
 
         return self.create_program_inner(
-            name=name, sql_code=sql_code, jit_mode=jit_mode, description=description
+            name=name, sql_code=sql_code, description=description
         )
 
-    def create_program_inner(
-        self, *, name: str, sql_code: str, jit_mode: bool, description: str
-    ):
+    def create_program_inner(self, *, name: str, sql_code: str, description: str):
         # Check if a program with `name` exists
         resp = get_programs.sync_detailed(client=self.api_client, name=name)
         if resp.status_code == HTTPStatus.OK:
@@ -85,7 +79,7 @@ class DBSPConnection:
             ].program_id
             # Update existing program
             request = UpdateProgramRequest(
-                name=name, code=sql_code, description=description, jit_mode=jit_mode
+                name=name, code=sql_code, description=description
             )
             program_response = update_program.sync_detailed(
                 client=self.api_client, program_id=program_id, json_body=request
@@ -93,7 +87,7 @@ class DBSPConnection:
         else:
             # Create a new one instead
             request = NewProgramRequest(
-                name=name, code=sql_code, description=description, jit_mode=jit_mode
+                name=name, code=sql_code, description=description
             )
             program_response = new_program.sync_detailed(
                 client=self.api_client, json_body=request

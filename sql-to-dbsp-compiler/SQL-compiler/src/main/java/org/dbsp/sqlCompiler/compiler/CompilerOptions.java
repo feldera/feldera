@@ -101,8 +101,6 @@ public class CompilerOptions {
         @Parameter(names="-o", description = "Output file; stdout if null")
         @Nullable
         public String outputFile = null;
-        @Parameter(names = "-j", description = "Emit the JIT JSON representation instead of Rust")
-        public boolean jit = false;
         @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")
         public boolean emitJpeg = false;
         @Parameter(names = "-png", description = "Emit a png image of the circuit instead of Rust")
@@ -128,14 +126,13 @@ public class CompilerOptions {
          * Only compare fields that matter.
          */
         public boolean same(IO io) {
-            return jit == io.jit;
+            return true;
         }
 
         @Override
         public String toString() {
             return "IO{" +
                     "outputFile=" + Utilities.singleQuote(this.outputFile) +
-                    ", jit=" + this.jit +
                     ", emitJpeg=" + this.emitJpeg +
                     ", emitPng=" + this.emitPng +
                     ", emitJsonErrors=" + this.emitJsonErrors +

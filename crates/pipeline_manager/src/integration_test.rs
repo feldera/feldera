@@ -8,7 +8,6 @@
 //! involves pre-compiling all dependencies from scratch:
 //!
 //! ```text
-//! cargo build --package dbsp_adapters --features="with-jit"
 //! cargo test --features integration-test --features=pg-embed integration_test::
 //! ```
 //!
@@ -18,20 +17,18 @@
 //! the following command line:
 //!
 //! ```text
-//! RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- \
-//!    --db-connection-string=postgres-embed \
+//! RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --db-connection-string=postgres-embed \
 //!    --bind-address=0.0.0.0 \
 //!    --compiler-working-directory=$HOME/.dbsp \
 //!    --runner-working-directory=$HOME/.dbsp \
 //!    --sql-compiler-home=sql-to-dbsp-compiler \
-//!    --dbsp-override-path=. \
-//!    --jit-pipeline-runner-path=./target/debug/pipeline
+//!    --dbsp-override-path=.
 //! ```
 //!
 //! or as a container
 //!
 //! ```text
-//! docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml --profile demo up db pipeline-manager --build --renew-anon-volumes --force-recreate
+//! docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml --profile demo up --build --renew-anon-volumes --force-recreate
 //! ```
 //!
 //! Run the tests in a different terminal:
@@ -66,9 +63,6 @@ use crate::{
 use anyhow::{bail, Result as AnyResult};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-// TODO: run more tests in JIT mode once we have support for neighborhoods and
-// quantiles in JIT.
 
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
 const TEST_DBSP_DEFAULT_PORT: u16 = 8089;
@@ -127,10 +121,6 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     let local_runner_config = LocalRunnerConfig {
         runner_working_directory: workdir.to_owned(),
         pipeline_host: "127.0.0.1".to_owned(),
-        jit_pipeline_runner_path: Some(
-            std::env::var("JIT_PIPELINE_RUNNER_PATH")
-                .unwrap_or_else(|_| "../../target/debug/pipeline".to_owned()),
-        ),
     }
     .canonicalize()
     .unwrap();
@@ -164,16 +154,14 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                 db.run_migrations().await.unwrap();
                 let db = Arc::new(Mutex::new(db));
                 let db_clone = db.clone();
-                let compiler_config_clone = compiler_config.clone();
                 let _compiler = tokio::spawn(async move {
-                    crate::compiler::Compiler::run(&compiler_config_clone, db_clone)
+                    crate::compiler::Compiler::run(&compiler_config.clone(), db_clone)
                         .await
                         .unwrap();
                 });
                 let db_clone = db.clone();
                 let _local_runner = tokio::spawn(async move {
-                    crate::local_runner::run(db_clone, &local_runner_config, &compiler_config)
-                        .await;
+                    crate::local_runner::run(db_clone, &local_runner_config.clone()).await;
                 });
                 // The api-server blocks forever
                 crate::api::run(db, api_config).await.unwrap();
@@ -552,16 +540,11 @@ async fn setup() -> TestConfig {
     config
 }
 
-async fn deploy_pipeline_without_connectors(
-    config: &TestConfig,
-    sql: &str,
-    jit_mode: bool,
-) -> String {
+async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> String {
     let program_request = json!({
         "name":  "test",
         "description": "desc",
         "code": sql,
-        "jit_mode": jit_mode,
     });
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
@@ -654,7 +637,6 @@ async fn deploy_pipeline() {
     let id = deploy_pipeline_without_connectors(
         &config,
         "create table t1(c1 integer); create view v1 as select * from t1;",
-        false,
     )
     .await;
 
@@ -732,7 +714,6 @@ async fn pipeline_panic() {
     let id = deploy_pipeline_without_connectors(
         &config,
         "create table t1(c1 integer); create view v1 as select element(array [2, 3]) from t1;",
-        false,
     )
     .await;
 
@@ -823,7 +804,6 @@ async fn json_ingress() {
     let id = deploy_pipeline_without_connectors(
         &config,
         "create table t1(c1 integer, c2 bool, c3 varchar); create view v1 as select * from t1;",
-        false,
     )
     .await;
 
@@ -1005,7 +985,6 @@ async fn parse_datetime() {
     let id = deploy_pipeline_without_connectors(
         &config,
         "create table t1(t TIME, ts TIMESTAMP, d DATE);",
-        false,
     )
     .await;
 
@@ -1054,7 +1033,6 @@ async fn quoted_columns() {
     let id = deploy_pipeline_without_connectors(
         &config,
         r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null)"#,
-        false
     )
     .await;
 
@@ -1104,7 +1082,6 @@ async fn primary_keys() {
     let id = deploy_pipeline_without_connectors(
         &config,
         r#"create table t1(id bigint not null, s varchar not null, primary key (id))"#,
-        false,
     )
     .await;
 
@@ -1209,22 +1186,11 @@ async fn primary_keys() {
 
 #[actix_web::test]
 #[serial]
-async fn distinct_outputs_rust() {
-    distinct_outputs(false).await
-}
-
-#[actix_web::test]
-#[serial]
-async fn distinct_outputs_jit() {
-    distinct_outputs(true).await
-}
-
-async fn distinct_outputs(jit_mode: bool) {
+async fn distinct_outputs() {
     let config = setup().await;
     let id = deploy_pipeline_without_connectors(
         &config,
         r#"create table t1(id bigint not null, s varchar not null); create view v1 as select s from t1;"#,
-        jit_mode
     )
     .await;
 
@@ -1327,7 +1293,6 @@ async fn pipeline_restart() {
     let id = deploy_pipeline_without_connectors(
         &config,
         "create table t1(c1 integer); create view v1 as select * from t1;",
-        false,
     )
     .await;
 

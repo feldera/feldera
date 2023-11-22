@@ -176,7 +176,7 @@ impl Controller {
                 )
             });
             // If `recv` fails, it indicates that the circuit thread panicked
-            // during initialization, mostly likely in JIT compilation.
+            // during initialization.
             init_status_receiver
                 .recv()
                 .map_err(|_| ControllerError::dbsp_panic())??;
