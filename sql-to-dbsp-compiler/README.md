@@ -133,15 +133,6 @@ $ cd ../temp
 $ cargo test
 ```
 
-For JIT tests (ones whose names start with `Jit`, add `--features
-jit`, e.g.:
-
-```
-$ mvn test -Dtest=JitPostgresDateTest
-$ cd ../temp
-$ cargo test --features jit
-```
-
 ### SQL logic tests
 
 One of the means of testing the compiler is using sqllogictests:
@@ -178,7 +169,6 @@ Options:
 -e executor   Executor to use
 -b filename   Load a list of buggy commands to skip from this file
 -v            Increase verbosity (can be repeated)
--j            Emit JIT code
 -inc          Incremental validation
 -u username   Postgres user name
 -p password   Postgres password

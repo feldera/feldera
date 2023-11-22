@@ -158,42 +158,6 @@ public class RustFileWriter implements ICompilerComponent {
             "#[cfg(test)]\n" +
             "use sqlx::{AnyConnection, any::AnyRow, Row};\n";
 
-    /**
-     * Preamble used when generating jit code.
-     */
-    static final String jitPreamble = "#[cfg(feature = \"jit\")]\n" +
-            "use dataflow_jit::{\n" +
-            "    sql_graph::SqlGraph,\n" +
-            "    ir::{\n" +
-            "        GraphExt,\n" +
-            "        NodeId,\n" +
-            "        Constant,\n" +
-            "        literal::{\n" +
-            "            StreamCollection::Set,\n" +
-            "            NullableConstant,\n" +
-            "            RowLiteral,\n" +
-            "            NullableConstant::{Nullable, NonNull},\n" +
-            "        },\n" +
-            "    },\n" +
-            "    facade::{DbspCircuit,Demands},\n" +
-            "    codegen::CodegenConfig,\n" +
-            "};\n" +
-            "#[cfg(test)]\n" +
-            "use sqllib::{\n" +
-            "    *,\n" +
-            "    casts::*,\n" +
-            "    geopoint::*,\n" +
-            "    timestamp::*,\n" +
-            "    interval::*,\n" +
-            "};\n" +
-            "#[cfg(test)]\n" +
-            "use chrono::{NaiveTime, NaiveDate, NaiveDateTime};\n" +
-            "#[cfg(test)]\n" +
-            "use rust_decimal::Decimal;\n" +
-            "#[cfg(test)]\n" +
-            "use std::str::FromStr;\n"
-            ;
-
     final DBSPCompiler compiler;
 
     public RustFileWriter(DBSPCompiler compiler, PrintStream outputStream) {

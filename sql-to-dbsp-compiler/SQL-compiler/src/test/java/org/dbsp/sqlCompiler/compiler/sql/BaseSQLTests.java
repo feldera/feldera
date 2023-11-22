@@ -72,7 +72,6 @@ public class BaseSQLTests {
     public static final String testFilePath = rustDirectory + "/lib.rs";
 
     public static int testsExecuted = 0;
-    public static int jitTestsExecuted = 0;
 
     /**
      * Collect here all the tests to run and execute them using a single Rust compilation.

@@ -1,8 +1,4 @@
 use core::{cmp::Ordering, fmt::Debug};
-use dataflow_jit::ir::literal::{
-    RowLiteral, StreamCollection,
-    StreamCollection::{Map, Set},
-};
 use dbsp::{
     algebra::{AddByRef, HasZero, MulByRef, NegByRef, ZRingValue, ZSet},
     trace::{cursor::Cursor, ord::OrdZSet, BatchReader},
@@ -275,67 +271,4 @@ where
         cursor.step_key();
     }
     false
-}
-
-#[allow(clippy::ptr_arg)]
-fn jitset_to_map(data: &Vec<(RowLiteral, i32)>) -> BTreeMap<RowLiteral, i32> {
-    let mut result = BTreeMap::new();
-    for (r, w) in data.iter() {
-        result.insert(r.clone(), *w);
-    }
-    result
-}
-
-fn subtract(
-    left: &BTreeMap<RowLiteral, i32>,
-    right: &BTreeMap<RowLiteral, i32>,
-) -> BTreeMap<RowLiteral, i32> {
-    let mut result = left.clone();
-    for (r, v) in right.iter() {
-        match result.get(r) {
-            None => {
-                result.insert(r.clone(), -*v);
-            }
-            Some(lv) => {
-                let diff = lv - v;
-                if diff == 0 {
-                    result.remove(r);
-                } else {
-                    result.entry(r.clone()).and_modify(|lv| *lv = diff);
-                }
-            }
-        }
-    }
-    result
-}
-
-// Check that two StreamCollections are equal.  If yes, returns true.
-// If not, print a diff and returns false.
-// Assumes that the literals are canonical and positive (all weights are
-// positive).
-pub fn must_equal_sc(left: &StreamCollection, right: &StreamCollection) -> bool {
-    // println!("L: {:?}", left);
-    // println!("R: {:?}", right);
-    match (left, right) {
-        (Set(left_rows), Set(right_rows)) => {
-            let left = jitset_to_map(left_rows);
-            let right = jitset_to_map(right_rows);
-            let diff = subtract(&left, &right);
-            for (r, v) in diff.iter() {
-                if *v < 0 {
-                    println!("R: {:?}x{:?}", r, -v);
-                } else {
-                    println!("L: {:?}x{:?}", r, v);
-                }
-            }
-            diff.is_empty()
-        }
-        (Map(_left_rows), Map(_right_rows)) => {
-            todo!()
-        }
-        _ => {
-            println!("Collections of different types");
-            false
-        }
-    }
 }
