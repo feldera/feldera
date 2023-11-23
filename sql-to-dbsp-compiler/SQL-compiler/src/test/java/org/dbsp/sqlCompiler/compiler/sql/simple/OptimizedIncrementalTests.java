@@ -32,8 +32,4 @@ public class OptimizedIncrementalTests extends NaiveIncrementalTests {
         CompilerOptions options = this.testOptions(true, true, false);
         return new DBSPCompiler(options);
     }
-
-    public void invokeTestQueryBase(String query, InputOutputPair... streams) {
-        super.testQueryBase(query, streams);
-    }
 }
