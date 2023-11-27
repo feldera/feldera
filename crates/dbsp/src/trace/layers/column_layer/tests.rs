@@ -9,39 +9,62 @@ use crate::{
         },
         Consumer, ValueConsumer,
     },
+    DBWeight,
 };
-use std::{cell::Cell, cmp::Ordering, ops::AddAssign, rc::Rc};
+use rkyv::{with::Skip, Archive, Deserialize, Serialize};
+use size_of::SizeOf;
+use std::ops::Add;
+use std::sync::{Arc, Mutex};
+use std::{cmp::Ordering, hash::Hash, ops::AddAssign};
 
 const TOTAL_TUPLES: usize = 100;
 const EXPECTED_DROPS: usize = TOTAL_TUPLES * 2;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 struct Canary {
     /// The total number of drops done within the entire system
-    total: Rc<Cell<usize>>,
+    total: Arc<Mutex<usize>>,
 }
 
 impl Canary {
     fn new() -> Self {
         Self {
-            total: Rc::new(Cell::new(0)),
+            total: Arc::new(Mutex::new(0)),
         }
     }
 }
 
 impl Drop for Canary {
     fn drop(&mut self) {
-        self.total.set(self.total.get() + 1);
+        let mut ttl = self.total.lock().unwrap();
+        *ttl += 1;
     }
 }
 
-#[derive(Clone)]
-struct Item<T> {
+#[derive(Clone, Debug, Archive, Serialize, Deserialize, SizeOf)]
+struct Item<T>
+where
+    T: DBWeight,
+{
     value: T,
+    #[size_of(skip)]
+    #[with(Skip)]
     _canary: Canary,
 }
 
-impl<T> Item<T> {
+impl<T> Hash for Item<T>
+where
+    T: DBWeight,
+{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
+impl<T> Item<T>
+where
+    T: DBWeight,
+{
     fn new(value: T, canary: Canary) -> Self {
         Self {
             _canary: canary,
@@ -52,27 +75,27 @@ impl<T> Item<T> {
 
 impl<T> PartialEq for Item<T>
 where
-    T: PartialEq,
+    T: DBWeight + PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
     }
 }
 
-impl<T> Eq for Item<T> where T: Eq {}
+impl<T> Eq for Item<T> where T: DBWeight + Eq {}
 
 impl<T> PartialOrd for Item<T>
 where
-    T: PartialOrd,
+    T: DBWeight + PartialOrd,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.value.partial_cmp(&other.value)
+        Some(self.value.cmp(&other.value))
     }
 }
 
 impl<T> Ord for Item<T>
 where
-    T: Ord,
+    T: DBWeight + Ord,
 {
     fn cmp(&self, other: &Self) -> Ordering {
         self.value.cmp(&other.value)
@@ -81,16 +104,40 @@ where
 
 impl<T> AddAssign for Item<T>
 where
-    T: AddAssign,
+    T: DBWeight + AddAssign,
 {
     fn add_assign(&mut self, other: Self) {
         self.value.add_assign(other.value);
     }
 }
 
+impl<T> Add for Item<T>
+where
+    T: DBWeight + AddAssign,
+{
+    type Output = Self;
+
+    fn add(mut self, other: Self) -> Self::Output {
+        self += other;
+        self
+    }
+}
+
+impl<'a, T> Add for &'a Item<T>
+where
+    T: DBWeight + AddAssign,
+{
+    type Output = Item<T> where
+        T: DBWeight + AddAssign;
+
+    fn add(self, _other: &'a Item<T>) -> Item<T> {
+        unimplemented!()
+    }
+}
+
 impl<T> AddAssignByRef for Item<T>
 where
-    T: AddAssignByRef,
+    T: DBWeight + AddAssignByRef,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         self.value.add_assign_by_ref(&other.value);
@@ -99,17 +146,17 @@ where
 
 impl<T> HasZero for Item<T>
 where
-    T: HasZero,
+    T: DBWeight + HasZero,
 {
+    fn is_zero(&self) -> bool {
+        self.value.is_zero()
+    }
+
     fn zero() -> Self {
         Self {
             value: T::zero(),
             _canary: Canary::new(),
         }
-    }
-
-    fn is_zero(&self) -> bool {
-        self.value.is_zero()
     }
 }
 
@@ -135,7 +182,7 @@ fn no_double_drops_during_consumption() {
         }
     }
 
-    assert_eq!(canary.total.get(), EXPECTED_DROPS);
+    assert_eq!(*canary.total.lock().unwrap(), EXPECTED_DROPS);
 }
 
 #[test]
@@ -145,7 +192,7 @@ fn no_double_drops_during_abandonment() {
         let _consumer = standard_consumer(&canary);
     }
 
-    assert_eq!(canary.total.get(), EXPECTED_DROPS);
+    assert_eq!(*canary.total.lock().unwrap(), EXPECTED_DROPS);
 }
 
 #[test]
@@ -158,7 +205,7 @@ fn no_double_drops_during_value_abandonment() {
         }
     }
 
-    assert_eq!(canary.total.get(), EXPECTED_DROPS);
+    assert_eq!(*canary.total.lock().unwrap(), EXPECTED_DROPS);
 }
 
 #[test]
@@ -173,7 +220,7 @@ fn no_double_drops_during_partial_abandonment() {
         }
     }
 
-    assert_eq!(canary.total.get(), EXPECTED_DROPS);
+    assert_eq!(*canary.total.lock().unwrap(), EXPECTED_DROPS);
 }
 
 #[cfg_attr(miri, ignore)]
@@ -189,7 +236,7 @@ mod proptests {
         utils::tests::{orderings, ArtificialPanic, LimitedDrops, RandomlyOrdered},
     };
     use proptest::prelude::*;
-    use std::{cell::Cell, rc::Rc};
+    use std::sync::{Arc, Mutex};
 
     proptest! {
         #[test]
@@ -216,7 +263,7 @@ mod proptests {
 
         #[test]
         fn seek_panic_safety(needle in 0..101usize, leaf_length in 0..100usize, allowed_drops in 0..100usize) {
-            let allowed_drops = Rc::new(Cell::new(allowed_drops));
+            let allowed_drops = Arc::new(Mutex::new(allowed_drops));
 
             // Build the source column leaf
             let mut consumer = {

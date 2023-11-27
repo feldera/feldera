@@ -1,6 +1,7 @@
 use crate::trace::layers::{
     column_layer::ColumnLayer, Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
 };
+use crate::{DBData, DBWeight};
 use size_of::SizeOf;
 
 /// A layer of unordered values
@@ -52,8 +53,8 @@ impl<K, R> UnorderedLeaf<K, R> {
 
 impl<K, R> Trie for UnorderedLeaf<K, R>
 where
-    K: Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Item = (K, R);
 
@@ -113,7 +114,7 @@ impl<'a, K, R> UnorderedCursor<'a, K, R> {
     }
 }
 
-impl<'s, K, R> Cursor<'s> for UnorderedCursor<'s, K, R> {
+impl<'s, K: DBData, R: DBWeight> Cursor<'s> for UnorderedCursor<'s, K, R> {
     type Key = K;
 
     type Item<'k> = &'k K
@@ -192,8 +193,8 @@ impl<K, R> UnorderedMergeBuilder<K, R> {
 
 impl<K, R> Builder for UnorderedMergeBuilder<K, R>
 where
-    K: Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Trie = UnorderedLeaf<K, R>;
 
@@ -208,8 +209,8 @@ where
 
 impl<K, R> MergeBuilder for UnorderedMergeBuilder<K, R>
 where
-    K: Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn with_capacity(left: &Self::Trie, right: &Self::Trie) -> Self {
         Self {
@@ -320,8 +321,8 @@ impl<K, R> UnorderedLeafBuilder<K, R> {
 
 impl<K, R> Builder for UnorderedLeafBuilder<K, R>
 where
-    K: Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Trie = UnorderedLeaf<K, R>;
 
@@ -336,8 +337,8 @@ where
 
 impl<K, R> TupleBuilder for UnorderedLeafBuilder<K, R>
 where
-    K: Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Item = (K, R);
 

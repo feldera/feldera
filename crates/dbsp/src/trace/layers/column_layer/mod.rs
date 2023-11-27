@@ -9,7 +9,6 @@ mod tests;
 pub use builders::ColumnLayerBuilder;
 pub use consumer::{ColumnLayerConsumer, ColumnLayerValues};
 pub use cursor::ColumnLayerCursor;
-use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
@@ -17,7 +16,10 @@ use crate::{
     utils::{assume, cast_uninit_vec, sample_slice},
     DBData, DBWeight, NumEntries,
 };
+#[cfg(test)]
+use proptest::prelude::{any, Arbitrary, BoxedStrategy, Strategy};
 use rand::Rng;
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     cmp::min,
@@ -36,9 +38,47 @@ where
     R: 'static,
 {
     // Invariant: keys.len == diffs.len
-    pub(super) keys: Vec<K>,
-    pub(super) diffs: Vec<R>,
-    pub(super) lower_bound: usize,
+    pub keys: Vec<K>,
+    pub diffs: Vec<R>,
+    pub lower_bound: usize,
+}
+
+#[cfg(test)]
+impl<K: Arbitrary + 'static, R: Arbitrary + 'static> Arbitrary for ColumnLayer<K, R> {
+    type Parameters = usize;
+
+    /// An arbitrary implementation that upholds the ColumnLayer constraints.
+    fn arbitrary_with(limit: Self::Parameters) -> Self::Strategy {
+        (0..std::cmp::max(1, limit))
+            .prop_flat_map(|size| {
+                let keys = proptest::collection::vec(any::<K>(), size);
+                let diffs = proptest::collection::vec(any::<R>(), size);
+                let lower_bound = 0..=size;
+                (keys, diffs, lower_bound)
+            })
+            .prop_map(|(keys, diffs, lower_bound)| ColumnLayer {
+                keys,
+                diffs,
+                lower_bound,
+            })
+            .boxed()
+    }
+    type Strategy = BoxedStrategy<Self>;
+}
+
+impl<K, R> ArchivedColumnLayer<K, R>
+where
+    K: Archive + 'static,
+    R: Archive + 'static,
+{
+    /// Get the length of the current leaf
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<K, R> ColumnLayer<K, R> {
@@ -327,8 +367,8 @@ impl<K, R> ColumnLayer<K, R> {
 
 impl<K, R> ColumnLayer<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     /// Remove keys smaller than `lower_bound` from the batch.
     pub fn truncate_keys_below(&mut self, lower_bound: &K) {
@@ -369,8 +409,8 @@ impl<K, R> ColumnLayer<MaybeUninit<K>, MaybeUninit<R>> {
 
 impl<K, R> Trie for ColumnLayer<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Item = (K, R);
     type Cursor<'s> = ColumnLayerCursor<'s, K, R> where K: 's, R: 's;
@@ -414,8 +454,8 @@ where
 // TODO: by-value merge
 impl<K, R> Add<Self> for ColumnLayer<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Output = Self;
 
@@ -433,8 +473,8 @@ where
 
 impl<K, R> AddAssign<Self> for ColumnLayer<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -446,8 +486,8 @@ where
 
 impl<K, R> AddAssignByRef for ColumnLayer<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -459,8 +499,8 @@ where
 
 impl<K, R> AddByRef for ColumnLayer<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)

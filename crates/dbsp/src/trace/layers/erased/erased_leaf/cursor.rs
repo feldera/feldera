@@ -16,8 +16,8 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct TypedLayerCursor<'a, K, R>
 where
-    K: Ord + Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     pos: isize,
     storage: &'a ErasedLeaf,
@@ -27,8 +27,8 @@ where
 
 impl<'a, K, R> TypedLayerCursor<'a, K, R>
 where
-    K: Ord + Clone + 'static,
-    R: Clone + 'static,
+    K: DBData,
+    R: DBWeight,
 {
     pub const fn new(
         pos: usize,
@@ -83,8 +83,8 @@ where
 
 impl<'s, K, R> Cursor<'s> for TypedLayerCursor<'s, K, R>
 where
-    K: Ord + Clone + 'static,
-    R: Clone + 'static,
+    K: DBData,
+    R: DBWeight,
 {
     type Item<'k> = (&'k K, &'k R)
     where

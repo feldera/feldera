@@ -1,7 +1,7 @@
 //! Implementation using ordered keys and exponential search.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, NegByRef},
     trace::layers::{advance, retreat, Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     DBData, DBWeight, NumEntries,
 };
@@ -30,8 +30,8 @@ impl<K, R> OrderedLeaf<K, R> {
 
 impl<K, R> OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     /// Truncate layer at the first key greater than or equal to `lower_bound`.
     pub fn truncate_keys_below(&mut self, lower_bound: &K) {
@@ -42,8 +42,8 @@ where
 
 impl<K, R> Trie for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Item = (K, R);
     type Cursor<'s> = OrderedLeafCursor<'s, K, R> where K: 's, R: 's;
@@ -109,8 +109,8 @@ where
 
 impl<K, R> AddAssign<Self> for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -121,8 +121,8 @@ where
 
 impl<K, R> AddAssignByRef for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -133,8 +133,8 @@ where
 
 impl<K, R> AddByRef for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)
@@ -143,7 +143,7 @@ where
 
 impl<K, R> NegByRef for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
+    K: DBData,
     R: NegByRef,
 {
     fn neg_by_ref(&self) -> Self {
@@ -160,7 +160,7 @@ where
 
 impl<K, R> Neg for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
+    K: DBData,
     R: Neg<Output = R>,
 {
     type Output = Self;
@@ -175,8 +175,8 @@ where
 
 impl<K, R> NumEntries for OrderedLeaf<K, R>
 where
-    K: Ord + Clone,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone,
+    K: DBData,
+    R: DBWeight,
 {
     fn num_entries_shallow(&self) -> usize {
         self.vals.len()
@@ -196,9 +196,7 @@ pub struct OrderedLeafBuilder<K, R> {
     pub vals: Vec<(K, R)>,
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Builder
-    for OrderedLeafBuilder<K, R>
-{
+impl<K: DBData, R: DBWeight> Builder for OrderedLeafBuilder<K, R> {
     type Trie = OrderedLeaf<K, R>;
     fn boundary(&mut self) -> usize {
         self.vals.len()
@@ -211,9 +209,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Build
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> MergeBuilder
-    for OrderedLeafBuilder<K, R>
-{
+impl<K: DBData, R: DBWeight> MergeBuilder for OrderedLeafBuilder<K, R> {
     fn with_capacity(other1: &Self::Trie, other2: &Self::Trie) -> Self {
         OrderedLeafBuilder {
             vals: Vec::with_capacity(
@@ -401,9 +397,7 @@ impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> Merge
     }
 }
 
-impl<K: Ord + Clone, R: Eq + HasZero + AddAssign + AddAssignByRef + Clone> TupleBuilder
-    for OrderedLeafBuilder<K, R>
-{
+impl<K: DBData, R: DBWeight> TupleBuilder for OrderedLeafBuilder<K, R> {
     type Item = (K, R);
 
     fn new() -> Self {
@@ -471,7 +465,7 @@ where
 
 impl<'s, K, R> Cursor<'s> for OrderedLeafCursor<'s, K, R>
 where
-    K: Eq + Ord + Clone,
+    K: DBData,
     R: Clone,
 {
     type Key = K;

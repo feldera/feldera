@@ -9,7 +9,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     trace::layers::{advance_erased, Trie},
     utils::{uninit_vec, DynVec, DynVecVTable},
-    NumEntries,
+    DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -341,8 +341,8 @@ impl<K, R> TypedErasedKeyLeaf<K, R> {
 
 impl<K, R> Trie for TypedErasedKeyLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + AddAssign + AddByRef + HasZero + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     type Item = (K, R);
     type Cursor<'s> = TypedKeyLeafCursor<'s, K, R>
@@ -378,8 +378,8 @@ where
 // TODO: by-value merge
 impl<K, R> Add<Self> for TypedErasedKeyLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     type Output = Self;
 
@@ -397,8 +397,8 @@ where
 
 impl<K, R> AddAssign<Self> for TypedErasedKeyLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -410,8 +410,8 @@ where
 
 impl<K, R> AddAssignByRef for TypedErasedKeyLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -423,8 +423,8 @@ where
 
 impl<K, R> AddByRef for TypedErasedKeyLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)

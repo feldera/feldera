@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero, MonoidValue, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, HasZero, NegByRef},
     time::AntichainRef,
     trace::{
         consolidation::consolidate_payload_from,
@@ -125,7 +125,7 @@ impl<K, R> Default for OrdZSet<K, R> {
 impl<K, R> NegByRef for OrdZSet<K, R>
 where
     K: DBData,
-    R: MonoidValue + NegByRef,
+    R: DBWeight + NegByRef,
 {
     fn neg_by_ref(&self) -> Self {
         Self {
@@ -137,7 +137,7 @@ where
 impl<K, R> Neg for OrdZSet<K, R>
 where
     K: DBData,
-    R: MonoidValue + Neg<Output = R>,
+    R: DBWeight + Neg<Output = R>,
 {
     type Output = Self;
 
@@ -152,7 +152,7 @@ where
 impl<K, R> Add<Self> for OrdZSet<K, R>
 where
     K: DBData,
-    R: MonoidValue,
+    R: DBWeight,
 {
     type Output = Self;
 
@@ -166,7 +166,7 @@ where
 impl<K, R> AddAssign<Self> for OrdZSet<K, R>
 where
     K: DBData,
-    R: MonoidValue,
+    R: DBWeight,
 {
     fn add_assign(&mut self, rhs: Self) {
         self.layer.add_assign(rhs.layer);
@@ -176,7 +176,7 @@ where
 impl<K, R> AddAssignByRef for OrdZSet<K, R>
 where
     K: DBData,
-    R: MonoidValue,
+    R: DBWeight,
 {
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         self.layer.add_assign_by_ref(&rhs.layer);
@@ -186,7 +186,7 @@ where
 impl<K, R> AddByRef for OrdZSet<K, R>
 where
     K: DBData,
-    R: MonoidValue,
+    R: DBWeight,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         Self {

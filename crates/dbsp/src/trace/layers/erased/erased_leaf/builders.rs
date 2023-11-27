@@ -5,6 +5,7 @@ use crate::trace::{
         Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
     },
 };
+use crate::{DBData, DBWeight};
 use size_of::SizeOf;
 use std::marker::PhantomData;
 
@@ -17,8 +18,8 @@ pub struct TypedErasedLeafBuilder<K, R> {
 
 impl<K, R> Builder for TypedErasedLeafBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     type Trie = TypedErasedLeaf<K, R>;
 
@@ -36,8 +37,8 @@ where
 
 impl<K, R> MergeBuilder for TypedErasedLeafBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     fn with_capacity(left: &Self::Trie, right: &Self::Trie) -> Self {
         let capacity = Trie::keys(left) + Trie::keys(right);
@@ -105,8 +106,8 @@ where
 
 impl<K, R> TupleBuilder for TypedErasedLeafBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     type Item = (K, R);
 
@@ -168,8 +169,8 @@ impl<K, R> UnorderedTypedLayerBuilder<K, R> {
 
 impl<K, R> Builder for UnorderedTypedLayerBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     type Trie = TypedErasedLeaf<K, R>;
 
@@ -196,8 +197,8 @@ where
 
 impl<K, R> TupleBuilder for UnorderedTypedLayerBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     type Item = (K, R);
 

@@ -21,8 +21,8 @@ where
 
 impl<'s, K, R> ColumnLayerCursor<'s, K, R>
 where
-    K: Ord + Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     pub const fn new(pos: usize, storage: &'s ColumnLayer<K, R>, bounds: (usize, usize)) -> Self {
         Self {
@@ -79,8 +79,8 @@ where
 
 impl<'s, K, R> Cursor<'s> for ColumnLayerCursor<'s, K, R>
 where
-    K: Ord + Clone,
-    R: Clone,
+    K: DBData,
+    R: DBWeight,
 {
     type Key = K;
 
