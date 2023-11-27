@@ -46,7 +46,7 @@ export default () => {
 const AwsLoginButton = (props: { loginUrl: string; logoutUrl: string; children: ReactNode }) => {
   const theme = useTheme()
   const url = (props.loginUrl + '&redirect_uri={redirectUri}&state={state}')
-    .replace('{redirectUri}', encodeURIComponent(window.location.origin + '/auth/aws'))
+    .replace('{redirectUri}', encodeURIComponent(window.location.origin + '/auth/aws/'))
     .replace(
       '{state}',
       Buffer.from(props.logoutUrl + '&redirect_uri={redirectUri}&state={state}', 'utf8').toString('base64')
