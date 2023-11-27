@@ -547,6 +547,19 @@ public class PostgresNumericTests extends SqlIoTest {
         this.testTwoViews(intermediate, last);
     }
 
+
+    @Test
+    public void testSafeAdd() {
+        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id as ID2, "  +
+                "CAST(SAFE_ADD(t1.val, t2.val) AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
+                "    FROM num_data t1, num_data t2";
+        String last = "CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, t2.expected\n" +
+                "    FROM num_result t1, num_exp_add t2\n" +
+                "    WHERE t1.id1 = t2.id1 AND t1.id2 = t2.id2\n" +
+                "    AND t1.results != t2.expected";
+        this.testTwoViews(intermediate, last);
+    }
+
     @Test
     public void testRoundAdd() {
         String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +

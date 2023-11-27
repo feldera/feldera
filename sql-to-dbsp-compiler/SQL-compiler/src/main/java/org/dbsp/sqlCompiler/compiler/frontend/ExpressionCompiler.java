@@ -682,6 +682,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "array":
                         return this.compileFunction(call, node, type, ops, 0);
+                    case "safe_add":
+                        return makeBinaryExpressions(node, type, DBSPOpcode.SAFE_ADD, ops);
                 }
                 throw new UnimplementedException(node);
             }

@@ -313,3 +313,12 @@ pub fn div_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
 pub fn plus_u_u(left: usize, right: usize) -> usize {
     left + right
 }
+
+#[inline(always)]
+pub fn safe_plus_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
+    match (left, right) {
+        (None, _) => None,
+        (_, None) => None,
+        (Some(left), Some(right)) => left.checked_add(right),
+    }
+}
