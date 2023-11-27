@@ -13,7 +13,7 @@ export default () => {
     const logoutUrlBase64 = params['state']
     const logoutUrl = Buffer.from(params['state'], 'base64')
       .toString('utf8')
-      .replace('{redirectUri}', encodeURIComponent(window.location.origin + '/auth/aws'))
+      .replace('{redirectUri}', encodeURIComponent(window.location.origin + '/auth/aws/'))
       .replace('{state}', logoutUrlBase64)
 
     setAuth({
