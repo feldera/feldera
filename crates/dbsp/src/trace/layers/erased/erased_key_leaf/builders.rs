@@ -1,5 +1,4 @@
 use crate::{
-    algebra::{AddByRef, HasZero},
     trace::{
         consolidation::consolidate_from,
         layers::{
@@ -7,9 +6,10 @@ use crate::{
             Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
         },
     },
+    DBData, DBWeight,
 };
 use size_of::SizeOf;
-use std::{marker::PhantomData, ops::AddAssign};
+use std::marker::PhantomData;
 
 /// A builder for ordered values
 #[derive(SizeOf)]
@@ -20,8 +20,8 @@ pub struct TypedErasedKeyLeafBuilder<K, R> {
 
 impl<K, R> Builder for TypedErasedKeyLeafBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + HasZero + Eq + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     type Trie = TypedErasedKeyLeaf<K, R>;
 
@@ -39,8 +39,8 @@ where
 
 impl<K, R> MergeBuilder for TypedErasedKeyLeafBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + HasZero + AddByRef + AddAssign + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     fn with_capacity(left: &Self::Trie, right: &Self::Trie) -> Self {
         let capacity = Trie::keys(left) + Trie::keys(right);
@@ -104,8 +104,8 @@ where
 
 impl<K, R> TupleBuilder for TypedErasedKeyLeafBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + HasZero + Eq + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     type Item = (K, R);
 
@@ -160,8 +160,8 @@ impl<K, R> UnorderedTypedLayerBuilder<K, R> {
 
 impl<K, R> Builder for UnorderedTypedLayerBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     type Trie = TypedErasedKeyLeaf<K, R>;
 
@@ -187,8 +187,8 @@ where
 
 impl<K, R> TupleBuilder for UnorderedTypedLayerBuilder<K, R>
 where
-    K: IntoErasedData,
-    R: Clone + Eq + HasZero + AddAssign + AddByRef + 'static,
+    K: DBData + IntoErasedData,
+    R: DBWeight,
 {
     type Item = (K, R);
 

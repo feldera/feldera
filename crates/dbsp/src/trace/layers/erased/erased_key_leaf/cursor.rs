@@ -28,8 +28,8 @@ where
 
 impl<'a, K, R> TypedKeyLeafCursor<'a, K, R>
 where
-    K: Ord + Clone + 'static,
-    R: Clone + 'static,
+    K: DBData,
+    R: DBWeight,
 {
     pub const fn new(
         pos: usize,
@@ -84,8 +84,8 @@ where
 
 impl<'s, K, R> Cursor<'s> for TypedKeyLeafCursor<'s, K, R>
 where
-    K: Ord + Clone + 'static,
-    R: Clone + 'static,
+    K: DBData,
+    R: DBWeight,
 {
     type Item<'k> = (&'k K, &'k R)
     where

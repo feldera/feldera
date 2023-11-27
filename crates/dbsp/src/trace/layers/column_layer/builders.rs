@@ -1,15 +1,12 @@
 use crate::{
-    algebra::{AddAssignByRef, HasZero},
     trace::layers::{
         advance, column_layer::ColumnLayer, Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
     },
     utils::assume,
+    DBData, DBWeight,
 };
 use size_of::SizeOf;
-use std::{
-    cmp::{min, Ordering},
-    ops::AddAssign,
-};
+use std::cmp::{min, Ordering};
 
 /// A builder for ordered values
 #[derive(SizeOf, Debug, Clone)]
@@ -32,8 +29,8 @@ impl<K, R> ColumnLayerBuilder<K, R> {
 
 impl<K, R> Builder for ColumnLayerBuilder<K, R>
 where
-    K: Ord + Clone + 'static,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + 'static,
+    K: DBData,
+    R: DBWeight,
 {
     type Trie = ColumnLayer<K, R>;
 
@@ -56,8 +53,8 @@ where
 
 impl<K, R> MergeBuilder for ColumnLayerBuilder<K, R>
 where
-    K: Ord + Clone + 'static,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + 'static,
+    K: DBData,
+    R: DBWeight,
 {
     fn with_capacity(left: &Self::Trie, right: &Self::Trie) -> Self {
         let capacity = Trie::keys(left) + Trie::keys(right);
@@ -274,8 +271,8 @@ where
 
 impl<K, R> TupleBuilder for ColumnLayerBuilder<K, R>
 where
-    K: Ord + Clone + 'static,
-    R: Eq + HasZero + AddAssign + AddAssignByRef + Clone + 'static,
+    K: DBData,
+    R: DBWeight,
 {
     type Item = (K, R);
 

@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, MonoidValue, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, NegByRef},
     time::AntichainRef,
     trace::{
         layers::{
@@ -120,9 +120,9 @@ where
 
 impl<K, V, R, O> NegByRef for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone,
-    V: Ord + Clone,
-    R: MonoidValue + NegByRef,
+    K: DBData,
+    V: DBData,
+    R: DBWeight + NegByRef,
     O: OrdOffset,
 {
     #[inline]
@@ -135,9 +135,9 @@ where
 
 impl<K, V, R, O> Neg for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone,
-    V: Ord + Clone,
-    R: MonoidValue + Neg<Output = R>,
+    K: DBData,
+    V: DBData,
+    R: DBWeight + Neg<Output = R>,
     O: OrdOffset,
 {
     type Output = Self;
@@ -153,9 +153,9 @@ where
 // TODO: by-value merge
 impl<K, V, R, O> Add<Self> for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset,
 {
     type Output = Self;
@@ -170,9 +170,9 @@ where
 
 impl<K, V, R, O> AddAssign<Self> for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]
@@ -183,9 +183,9 @@ where
 
 impl<K, V, R, O> AddAssignByRef for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]
@@ -196,9 +196,9 @@ where
 
 impl<K, V, R, O> AddByRef for OrdIndexedZSet<K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset,
 {
     #[inline]
@@ -417,9 +417,9 @@ where
 #[derive(Debug, SizeOf)]
 pub struct OrdIndexedZSetCursor<'s, K, V, R, O>
 where
-    K: Ord + Clone + 'static,
-    V: Ord + Clone + 'static,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset + PartialEq,
 {
     cursor: OrderedCursor<'s, K, O, ColumnLayer<V, R>>,
@@ -427,9 +427,9 @@ where
 
 impl<'s, K, V, R, O> Cursor<K, V, (), R> for OrdIndexedZSetCursor<'s, K, V, R, O>
 where
-    K: Ord + Clone,
-    V: Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
     O: OrdOffset,
 {
     fn key(&self) -> &K {
@@ -556,7 +556,7 @@ pub struct OrdIndexedZSetBuilder<K, V, R, O>
 where
     K: Ord,
     V: Ord,
-    R: MonoidValue,
+    R: DBWeight,
     O: OrdOffset,
 {
     builder: IndexBuilder<K, V, R, O>,

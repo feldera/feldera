@@ -30,6 +30,7 @@ use textwrap::indent;
 /// .. offs[i+1]]`.
 // False positive from clippy
 #[derive(Debug, SizeOf, PartialEq, Eq, Clone, Archive, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct OrderedLayer<K, L, O = usize>
 where
     K: 'static,
@@ -106,7 +107,7 @@ impl<K, L, O> OrderedLayer<K, L, O> {
 
 impl<K, L, O> OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {
@@ -139,7 +140,7 @@ impl<K, V, R, O> OrderedLayer<K, ColumnLayer<V, R>, O> {
 
 impl<K, L, O> NumEntries for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie + NumEntries,
     O: OrdOffset,
 {
@@ -156,7 +157,7 @@ where
 
 impl<K, L, O> NegByRef for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie + NegByRef,
     O: OrdOffset,
 {
@@ -176,7 +177,7 @@ where
 
 impl<K, L, O> Neg for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie + Neg<Output = L>,
     O: OrdOffset,
 {
@@ -199,7 +200,7 @@ where
 // TODO: by-value merge
 impl<K, L, O> Add<Self> for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {
@@ -219,7 +220,7 @@ where
 
 impl<K, L, O> AddAssign<Self> for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {
@@ -235,7 +236,7 @@ where
 
 impl<K, L, O> AddAssignByRef for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {
@@ -248,7 +249,7 @@ where
 
 impl<K, L, O> AddByRef for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {
@@ -259,7 +260,7 @@ where
 
 impl<K, L, O> Trie for OrderedLayer<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {
@@ -363,7 +364,7 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
         (trie1, lower1, upper1): (&<Self as Builder>::Trie, &mut usize, usize),
         (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
     ) where
-        K: Ord + Clone,
+        K: DBData,
         L: MergeBuilder,
         O: OrdOffset,
     {
@@ -418,7 +419,7 @@ impl<K, L, O> OrderedBuilder<K, L, O> {
         (trie2, lower2, upper2): (&<Self as Builder>::Trie, &mut usize, usize),
         filter: &F,
     ) where
-        K: Ord + Clone,
+        K: DBData,
         L: MergeBuilder,
         O: OrdOffset,
         F: Fn(&K) -> bool,
@@ -526,7 +527,7 @@ where
 
 impl<K, L, O> Builder for OrderedBuilder<K, L, O>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     L: Builder,
     O: OrdOffset,
 {
@@ -553,7 +554,7 @@ where
 
 impl<K, L, O> OrderedBuilder<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     L: MergeBuilder,
     O: OrdOffset,
 {
@@ -735,7 +736,7 @@ where
 
 impl<K, V, L, O> OrderedBuilder<K, L, O>
 where
-    K: Ord + Clone,
+    K: DBData,
     O: OrdOffset,
     L: MergeBuilder,
     <L as Builder>::Trie: 'static,
@@ -933,7 +934,7 @@ where
 
 impl<K, L, O> MergeBuilder for OrderedBuilder<K, L, O>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     L: MergeBuilder,
     O: OrdOffset,
 {
@@ -1077,7 +1078,7 @@ where
 
 impl<K, L, O> TupleBuilder for OrderedBuilder<K, L, O>
 where
-    K: Ord + Clone + 'static,
+    K: DBData,
     L: TupleBuilder,
     O: OrdOffset,
 {
@@ -1146,7 +1147,7 @@ where
 
 impl<'s, K, O, L> Clone for OrderedCursor<'s, K, O, L>
 where
-    K: Ord,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
     L::Cursor<'s>: Clone,
@@ -1170,7 +1171,7 @@ where
 
 impl<'s, K, L, O> OrderedCursor<'s, K, O, L>
 where
-    K: Ord,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {
@@ -1215,7 +1216,7 @@ where
 
 impl<'s, K, L, O> Cursor<'s> for OrderedCursor<'s, K, O, L>
 where
-    K: Ord,
+    K: DBData,
     L: Trie,
     O: OrdOffset,
 {

@@ -20,6 +20,7 @@ mod test;
 pub use advance::{advance, advance_erased, advance_raw, retreat};
 
 use crate::algebra::HasZero;
+use crate::DBData;
 use size_of::SizeOf;
 use std::{
     fmt::Debug,
@@ -214,7 +215,7 @@ pub trait Cursor<'s> {
         Self: 'k;
 
     /// Key used to search the contents of the cursor.
-    type Key;
+    type Key: DBData;
 
     type ValueStorage: Trie;
 

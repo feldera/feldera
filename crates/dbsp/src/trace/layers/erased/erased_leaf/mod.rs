@@ -11,7 +11,7 @@ use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     trace::layers::{advance_erased, Trie},
     utils::{uninit_vec, DynVec, DynVecVTable},
-    NumEntries,
+    DBData, DBWeight, NumEntries,
 };
 use size_of::SizeOf;
 use std::{
@@ -373,8 +373,8 @@ impl<K, R> TypedErasedLeaf<K, R> {
 
 impl<K, R> Trie for TypedErasedLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     type Item = (K, R);
     type Cursor<'s> = TypedLayerCursor<'s, K, R>
@@ -410,8 +410,8 @@ where
 // TODO: by-value merge
 impl<K, R> Add<Self> for TypedErasedLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     type Output = Self;
 
@@ -429,8 +429,8 @@ where
 
 impl<K, R> AddAssign<Self> for TypedErasedLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -442,8 +442,8 @@ where
 
 impl<K, R> AddAssignByRef for TypedErasedLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -455,8 +455,8 @@ where
 
 impl<K, R> AddByRef for TypedErasedLeaf<K, R>
 where
-    K: IntoErasedData,
-    R: IntoErasedDiff,
+    K: DBData + IntoErasedData,
+    R: DBWeight + IntoErasedDiff,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)

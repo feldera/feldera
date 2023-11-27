@@ -237,9 +237,9 @@ where
 #[derive(SizeOf)]
 pub struct OrdKeyMerger<K, T, R, O = usize>
 where
-    K: Ord + Clone + 'static,
-    T: Lattice + Ord + Clone + 'static,
-    R: MonoidValue,
+    K: DBData,
+    T: DBData + Lattice,
+    R: DBData + MonoidValue,
     O: OrdOffset,
 {
     // first batch, and position therein.
@@ -318,9 +318,9 @@ where
 pub struct OrdKeyCursor<'s, K, T, R, O = usize>
 where
     O: OrdOffset,
-    K: Ord + Clone + 'static,
-    T: Lattice + Ord + Clone + 'static,
-    R: MonoidValue,
+    K: DBData,
+    T: DBData + Lattice,
+    R: DBWeight + MonoidValue,
 {
     valid: bool,
     cursor: OrderedCursor<'s, K, O, ColumnLayer<T, R>>,
@@ -328,9 +328,9 @@ where
 
 impl<'s, K, T, R, O> Cursor<K, (), T, R> for OrdKeyCursor<'s, K, T, R, O>
 where
-    K: Ord + Clone,
-    T: Lattice + Ord + Clone,
-    R: MonoidValue,
+    K: DBData,
+    T: DBData + Lattice + Ord + Clone,
+    R: DBWeight,
     O: OrdOffset,
 {
     fn key(&self) -> &K {
