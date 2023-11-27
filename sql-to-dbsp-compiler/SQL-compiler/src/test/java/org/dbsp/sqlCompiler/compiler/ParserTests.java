@@ -33,9 +33,9 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * Test the calcite compiler infrastructure.
+ * Test our parser extensions.
  */
-public class CalciteCompilerTests {
+public class ParserTests {
     static final CompilerOptions options = new CompilerOptions();
     static final IErrorReporter errorReporter = new StderrErrorReporter();
 
@@ -215,6 +215,17 @@ public class CalciteCompilerTests {
     }
 
     @Test
+    public void defaultColumnValueTest() throws SqlParseException {
+        String query = "CREATE TABLE productvariant_t (\n" +
+                "    id BIGINT DEFAULT NULL,\n" +
+                "    str VARCHAR DEFAULT ''\n" +
+                ");";
+        CalciteCompiler calcite = this.getCompiler();
+        SqlNode node = calcite.parseStatements(query);
+        Assert.assertNotNull(node);
+    }
+
+   @Test
     public void keyAndForeignKeyTest() throws SqlParseException {
         String query = "CREATE TABLE productvariant_t (\n" +
                 "    id BIGINT NOT NULL PRIMARY KEY FOREIGN KEY REFERENCES inventoryitem_t (id)\n" +

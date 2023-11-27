@@ -23,16 +23,13 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
@@ -41,6 +38,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -136,9 +135,10 @@ public class ToRustHandleVisitor extends ToRustVisitor {
      *
      * @param tableName Table or view whose type is being described.
      * @param type      Type of record in the table.
-     * @param output    True if this is a view (output).
+     * @param metadata  Metadata for the input columns (null for an output view).
      */
-    private void generateRenameMacro(String tableName, DBSPTypeStruct type, boolean output) {
+    private void generateRenameMacro(String tableName, DBSPTypeStruct type,
+                                     @Nullable List<InputColumnMetadata> metadata) {
         this.builder.append("deserialize_table_record!(");
         this.builder.append(type.sanitizedName)
                 .append("[")
@@ -148,15 +148,20 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 .append("] {")
                 .increase();
         boolean first = true;
+        int index = 0;
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             if (!first)
                 this.builder.append(",").newline();
             first = false;
             String name = field.name;
             boolean quoted = field.nameIsQuoted;
-            if (output) {
+            InputColumnMetadata meta = null;
+            if (metadata == null) {
+                // output
                 name = name.toUpperCase();
                 quoted = false;
+            } else {
+                meta = metadata.get(index);
             }
             this.builder.append("(")
                     .append(field.sanitizedName)
@@ -166,9 +171,16 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                     .append(Boolean.toString(quoted))
                     .append(", ");
             field.type.accept(this.innerVisitor);
-            this.builder.append(", ")
-                    .append(field.type.mayBeNull ? "Some(None)" : "None")
-                    .append(")");
+            this.builder.append(", ");
+            if (meta == null || meta.defaultValue == null) {
+                this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
+            } else {
+                this.builder.append("Some(");
+                meta.defaultValue.accept(this.innerVisitor);
+                this.builder.append(")");
+            }
+            this.builder.append(")");
+            index++;
         }
         this.builder.newline()
                 .decrease()
@@ -187,10 +199,9 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 this.builder.append(",").newline();
             first = false;
             String name = field.name;
-            boolean quoted = field.nameIsQuoted;
-            if (output) {
+            if (metadata == null) {
+                // output
                 name = name.toUpperCase(Locale.ENGLISH);
-                quoted = false;
             }
             this.builder
                     .append(field.sanitizedName)
@@ -212,7 +223,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         DBSPStructItem item = new DBSPStructItem(type);
         item.accept(this.innerVisitor);
         this.generateFromTrait(type);
-        this.generateRenameMacro(operator.outputName, type, false);
+        this.generateRenameMacro(operator.outputName, type, operator.metadata);
 
         this.writeComments(operator)
                 .append("let (")
@@ -238,13 +249,13 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         // Traits for serialization
         this.generateFromTrait(type);
         // Macro for serialization
-        this.generateRenameMacro(operator.outputName, type, false);
+        this.generateRenameMacro(operator.outputName, type, operator.metadata);
         // Generate key type definition
         item = new DBSPStructItem(operator.getKeyStructType());
         item.accept(this.innerVisitor);
         // Trait for serialization
         this.generateFromTrait(operator.getKeyStructType());
-        this.generateRenameMacro(item.type.name, item.type, false);
+        this.generateRenameMacro(item.type.name, item.type, operator.metadata);
 
         this.writeComments(operator)
                 .append("let (")
@@ -269,7 +280,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         DBSPStructItem item = new DBSPStructItem(type);
         item.accept(this.innerVisitor);
         this.generateFromTrait(type);
-        this.generateRenameMacro(operator.outputName, type, true);
+        this.generateRenameMacro(operator.outputName, type, null);
         return VisitDecision.STOP;
     }
 

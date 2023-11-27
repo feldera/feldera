@@ -393,7 +393,26 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = createInputScript(statements);
-        CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        System.err.println(messages);
+        Assert.assertEquals(0, messages.exitCode);
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+    }
+
+    @Test
+    public void testDefaultColumnValueCompiler() throws IOException, InterruptedException {
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                        "COL1 INT NOT NULL DEFAULT 0\n" +
+                        ", COL2 DOUBLE DEFAULT 0.0\n" +
+                        ", COL3 VARCHAR DEFAULT NULL\n" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM T"
+        };
+        File file = createInputScript(statements);
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        System.err.println(messages);
+        Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
     

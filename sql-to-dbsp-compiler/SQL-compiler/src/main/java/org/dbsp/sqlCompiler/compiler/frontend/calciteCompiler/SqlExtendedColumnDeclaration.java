@@ -31,6 +31,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     // These can be mutated
     public boolean primaryKey;
     public @Nullable SqlNode lateness;
+    public @Nullable SqlNode defaultValue;
 
     public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType,
@@ -42,6 +43,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.dataType = dataType;
         this.expression = expression;
         this.strategy = strategy;
+        this.defaultValue = null;
         this.foreignKeyTables = new ArrayList<>();
         this.foreignKeyColumns = new ArrayList<>();
         if (foreignKeyTable != null)
@@ -58,6 +60,15 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                     " already declared a primary key", CalciteObject.create(pos));
         }
         this.primaryKey = true;
+        return this;
+    }
+
+    public SqlExtendedColumnDeclaration setDefault(SqlNode expression) {
+        if (this.defaultValue != null){
+            throw new CompilationError("Column " + this.name +
+                    " already has a default value", CalciteObject.create(expression));
+        }
+        this.defaultValue = expression;
         return this;
     }
 
@@ -125,6 +136,10 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         if (this.lateness != null) {
             writer.keyword("LATENESS");
             this.lateness.unparse(writer, 0, 0);
+        }
+        if (this.defaultValue != null) {
+            writer.keyword("DEFAULT");
+            this.defaultValue.unparse(writer, 0, 0);
         }
     }
 

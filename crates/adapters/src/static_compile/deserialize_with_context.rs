@@ -383,7 +383,7 @@ macro_rules! deserialize_struct {
 
                     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
                     where A: serde::de::MapAccess<'de> {
-                        $(let mut $field_name: Option<$type> = $default;
+                        $(let mut $field_name: Option<$type> = None;
                         )*
 
                         while let Some(field_name) = map.next_key::<std::borrow::Cow<'de, str>>()? {
@@ -395,7 +395,7 @@ macro_rules! deserialize_struct {
                             {let _ = map.next_value::<serde::de::IgnoredAny>()?;}
                         }
                         Ok($struct {
-                            $($field_name: $field_name.ok_or_else(|| serde::de::Error::missing_field(stringify!($field_name)))?,
+                            $($field_name: $field_name.or_else(|| $default).ok_or_else(|| serde::de::Error::missing_field(stringify!($field_name)))?,
                             )*
                         })
                     }
@@ -475,7 +475,7 @@ macro_rules! deserialize_table_record {
 
                     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
                     where A: serde::de::MapAccess<'de> {
-                        $(let mut $field_name: Option<$type> = $init;
+                        $(let mut $field_name: Option<$type> = None;
                         )*
 
                         while let Some(column_name) = map.next_key::<std::borrow::Cow<'de, str>>()? {
@@ -493,7 +493,7 @@ macro_rules! deserialize_table_record {
                             {let _ = map.next_value::<serde::de::IgnoredAny>()?;}
                         }
                         Ok($table {
-                            $($field_name: $field_name.ok_or_else(|| serde::de::Error::missing_field($column_name))?,
+                            $($field_name: $field_name.or_else(|| $init).ok_or_else(|| serde::de::Error::missing_field($column_name))?,
                             )*
                         })
                     }
