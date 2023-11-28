@@ -41,19 +41,35 @@ The Web Console in dev mode is available at http://localhost:3000/
 Now you can proceed with the [demo](#manually-starting-the-demos).
 
 #### Authenticated mode
-In Authenticated mode, you need to login in the Web Console via one of the supported OAuth providers (e.g. AWS Cognito). The Pipeline Manager will require Bearer authorization header for protected requests.
+In Authenticated mode, you need to login via the Web Console using one of the supported OAuth providers (e.g. AWS Cognito). The Pipeline Manager will require Bearer authorization header for protected requests.
 
-Start the Pipeline Manager in authenticated mode, substituting `...` with values from your environment:
+Start the Pipeline Manager in authenticated mode, substituting values from your environment:
 ```bash
-RUST_LOG=info RUST_BACKTRACE=1 AUTH_CLIENT_ID=... AUTH_ISSUER=... AWS_COGNITO_LOGIN_URL=... AWS_COGNITO_LOGOUT_URL=... cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp --auth-provider=aws-cognito
+AUTH_CLIENT_ID=<client-id> AUTH_ISSUER=<issuer> <see below for additional environment variables> \ 
+ cargo run --bin pipeline-manager --features pg-embed -- --auth-provider=aws-cognito
 ```
-Variables for any provider: AUTH_CLIENT_ID, AUTH_ISSUER
 
-Variables for AWS Cognito: AWS_COGNITO_LOGIN_URL, AWS_COGNITO_LOGOUT_URL
+##### AWS Cognito
+
+First, setup an AWS Cognito user pool, configure an app client and enable the
+[Amplify-based hosted
+UI](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-app-integration.html#cognito-user-pools-app-integration-amplify).
+When setting up the hosted UI, setup a redirect URI as
+`<feldera-api-url>/auth/aws/` (note the trailing slash). For example, when
+running Feldera on localhost:8080, the redirect URI should be
+`http://localhost:8080/auth/aws/`. In this process, you will also set up a
+`Cognito domain`, which will be something like
+`https://<domain-name>.auth.us-east-1.amazoncognito.com`. This domain forms the
+base of the [login and logout
+URL](https://docs.aws.amazon.com/cognito/latest/developerguide/login-endpoint.html)
+which you will need below.
+
+Additional variables for AWS Cognito:
 - AWS_COGNITO_LOGIN_URL: URL to Cognito Hosted UI login, omitting query parameters `redirect_uri` and `state`
 - AWS_COGNITO_LOGOUT_URL: URL to Cognito Hosted UI logout, omitting query parameters `redirect_uri` and `state`
 
-Variables for Google Identity Platform: none
+##### Google Identity Platform
+Additional variables for Google Identity Platform: none
 
 ## Develop on your machine
 
