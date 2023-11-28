@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use actix_web::{HttpResponse, ResponseError};
 use chrono::{DateTime, Local};
-use log::{debug, error};
+use log::{debug, error, trace};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -27,7 +27,7 @@ async fn check_if_db_reachable(
         let mut probe = probe.lock().await;
         probe.last_checked = now;
         probe.last_error = res.err().map(|e| e.into());
-        debug!("DB reachability probe: {:?}", probe);
+        trace!("DB reachability probe: {:?}", probe);
         drop(probe);
         tokio::time::sleep(interval).await;
     }
