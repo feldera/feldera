@@ -24,8 +24,10 @@ import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
+import IconPencil from '~icons/bx/pencil'
+import IconTrashAlt from '~icons/bx/trash-alt'
 
-import { Button } from '@mui/material'
+import { Button, IconButton, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
@@ -102,6 +104,16 @@ const DataSourceTable = () => {
     [queryClient, deleteMutation, rows, pushMessage]
   )
 
+  const [showDialog, setShowDialog] = useState<boolean>(false)
+  const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
+  const editConnector = useCallback((cur_row: ConnectorDescr) => {
+    setConnector(cur_row)
+    setShowDialog(true)
+  }, [])
+
+  const { showDeleteDialog } = useDeleteDialog()
+  const deleteConnector = showDeleteDialog('Delete', row => `${row.name || 'unnamed'} connector`, deleteSource)
+
   // Definition of the table columns
   const columns: GridColDef[] = [
     {
@@ -152,23 +164,37 @@ const DataSourceTable = () => {
         const status = getStatusObj(connectorDescrToType(params.row))
         return <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
       }
+    },
+    {
+      flex: 0.1,
+      minWidth: 90,
+      sortable: false,
+      field: 'actions',
+      headerName: 'Actions',
+      renderCell: (params: GridRenderCellParams) => {
+        return (
+          <>
+            <Tooltip title='Edit'>
+              <IconButton size='small' onClick={() => editConnector(params.row)}>
+                <IconPencil fontSize={20} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title='Delete'>
+              <IconButton size='small' onClick={() => deleteConnector(params.row)}>
+                <IconTrashAlt fontSize={20} />
+              </IconButton>
+            </Tooltip>
+          </>
+        )
+      }
     }
   ]
-
-  const [showDialog, setShowDialog] = useState<boolean>(false)
-  const [connector, setConnector] = useState<ConnectorDescr | undefined>(undefined)
-  const editConnector = useCallback((cur_row: ConnectorDescr) => {
-    setConnector(cur_row)
-    setShowDialog(true)
-  }, [])
 
   const btnAdd = (
     <Button variant='contained' size='small' href='/connectors/create/' key='0'>
       Add connector
     </Button>
   )
-
-  const { showDeleteDialog } = useDeleteDialog()
 
   const defaultColumnVisibility = { connector_id: false }
   const gridPersistence = useDataGridPresentationLocalStorage({
@@ -189,11 +215,8 @@ const DataSourceTable = () => {
           setRows={setRows}
           fetchRows={fetchQuery}
           onUpdateRow={processRowUpdate}
-          onDeleteRow={showDeleteDialog('Delete', row => `${row.name || 'unnamed'} connector`, deleteSource)}
-          editRowBtnProps={{ onClick: editConnector }}
           hasSearch
           hasFilter
-          addActions
           toolbarChildren={[
             btnAdd,
             <GridToolbarFilterButton key='1' />,

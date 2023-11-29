@@ -24,8 +24,10 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
+import IconPencil from '~icons/bx/pencil'
+import IconTrashAlt from '~icons/bx/trash-alt'
 
-import { Button, Tooltip } from '@mui/material'
+import { Button, IconButton, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
@@ -67,6 +69,31 @@ const TableSqlPrograms = () => {
 
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
+
+  const { showDeleteDialog } = useDeleteDialog()
+  // Deleting a row
+  const deleteMutation = useMutation<void, ApiError, string>({ mutationFn: ProgramsService.deleteProgram })
+  const deleteProject = useCallback(
+    (curRow: ProgramDescr) => {
+      setTimeout(() => {
+        const oldRow = rows.find(row => row.program_id === curRow.program_id)
+        if (oldRow !== undefined) {
+          deleteMutation.mutate(curRow.program_id, {
+            onSuccess: () => {
+              setRows(prevRows => prevRows.filter(row => row.program_id !== curRow.program_id))
+            },
+            onError: error => {
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
+              invalidateQuery(queryClient, PipelineManagerQuery.programs())
+            }
+          })
+        }
+      })
+    },
+    [queryClient, deleteMutation, rows, pushMessage]
+  )
+
+  const deleteProgram = showDeleteDialog('Delete', row => `${row.name || 'unnamed'} program`, deleteProject)
 
   // Table columns
   const columns: GridColDef[] = [
@@ -121,6 +148,29 @@ const TableSqlPrograms = () => {
           </Tooltip>
         )
       }
+    },
+    {
+      flex: 0.1,
+      minWidth: 90,
+      sortable: false,
+      field: 'actions',
+      headerName: 'Actions',
+      renderCell: (params: GridRenderCellParams<ProgramDescr>) => {
+        return (
+          <>
+            <Tooltip title='Edit'>
+              <IconButton size='small' href={`/analytics/editor/?program_id=${params.row.program_id}`}>
+                <IconPencil fontSize={20} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title='Delete'>
+              <IconButton size='small' onClick={() => deleteProgram(params.row)}>
+                <IconTrashAlt fontSize={20} />
+              </IconButton>
+            </Tooltip>
+          </>
+        )
+      }
     }
   ]
 
@@ -151,29 +201,6 @@ const TableSqlPrograms = () => {
     return newRow
   }
 
-  const { showDeleteDialog } = useDeleteDialog()
-  // Deleting a row
-  const deleteMutation = useMutation<void, ApiError, string>({ mutationFn: ProgramsService.deleteProgram })
-  const deleteProject = useCallback(
-    (curRow: ProgramDescr) => {
-      setTimeout(() => {
-        const oldRow = rows.find(row => row.program_id === curRow.program_id)
-        if (oldRow !== undefined) {
-          deleteMutation.mutate(curRow.program_id, {
-            onSuccess: () => {
-              setRows(prevRows => prevRows.filter(row => row.program_id !== curRow.program_id))
-            },
-            onError: error => {
-              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-              invalidateQuery(queryClient, PipelineManagerQuery.programs())
-            }
-          })
-        }
-      })
-    },
-    [queryClient, deleteMutation, rows, pushMessage]
-  )
-
   const defaultColumnVisibility = { program_id: false }
   const gridPersistence = useDataGridPresentationLocalStorage({
     key: LS_PREFIX + 'settings/analytics/programs/grid',
@@ -191,7 +218,6 @@ const TableSqlPrograms = () => {
       <EntityTable
         hasSearch
         hasFilter
-        addActions
         // Table properties, passed to the underlying grid-table
         tableProps={{
           getRowId: (row: ProgramDescr) => row.program_id,
@@ -202,8 +228,6 @@ const TableSqlPrograms = () => {
         setRows={setRows}
         fetchRows={fetchQuery}
         onUpdateRow={processRowUpdate}
-        onDeleteRow={showDeleteDialog('Delete', row => `${row.name || 'unnamed'} program`, deleteProject)}
-        editRowBtnProps={{ href: row => `/analytics/editor/?program_id=${row.program_id}` }}
         apiRef={apiRef}
         toolbarChildren={[
           btnAdd,

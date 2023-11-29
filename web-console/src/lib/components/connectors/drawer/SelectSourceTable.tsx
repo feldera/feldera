@@ -68,13 +68,7 @@ const SelectSourceTable = (props: {
         m: 5
       }}
     >
-      <EntityTable
-        tableProps={tableProps}
-        setRows={setRows}
-        fetchRows={fetchQuery}
-        hasFilter={false}
-        addActions={false}
-      />
+      <EntityTable tableProps={tableProps} setRows={setRows} fetchRows={fetchQuery} hasFilter={false} />
     </Card>
   )
 }
