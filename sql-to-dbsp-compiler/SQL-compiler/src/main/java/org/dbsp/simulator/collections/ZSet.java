@@ -143,7 +143,7 @@ public class ZSet<Data, Weight> extends BaseCollection<Weight> implements ToInde
         for (Map.Entry<Data, Weight> entry: this.data.entrySet()) {
             Weight weight = entry.getValue();
             OData out = tupleTransform.apply(entry.getKey());
-            result.put(out, weight);
+            result.merge(out, weight, this::merger);
         }
         return new ZSet<>(result, this.weightType);
     }

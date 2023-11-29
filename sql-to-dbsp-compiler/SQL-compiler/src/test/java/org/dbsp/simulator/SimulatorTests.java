@@ -170,6 +170,10 @@ public class SimulatorTests {
         ZSet<Age, Integer> ages = input.map(p -> new Age(p.age));
         ZSet<Age, Integer> expected = fromCSV("age\n28\n36\n12\n", Age.class);
         Assert.assertTrue(expected.equals(ages));
+
+        ages = input.map(p -> new Age(p.age / 20));
+        expected = fromCSV("age\n1\n1\n0\n", Age.class);
+        Assert.assertTrue(expected.equals(ages));
     }
 
     @Test
