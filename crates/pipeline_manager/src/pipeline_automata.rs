@@ -135,10 +135,20 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             // the desired state of the pipelime has changed.
             let _ = timeout(poll_timeout, self.notifier.notified()).await;
             poll_timeout = self.do_run().await.map_err(|e| {
-                error!(
-                    "Pipeline automaton '{}' terminated with error: '{e}'",
-                    pipeline_id
-                );
+                match e {
+                    ManagerError::DBError { ref db_error } => {
+                        // Pipeline deletions should not lead to errors in the logs.
+                        if let DBError::UnknownPipeline { pipeline_id } = db_error {
+                            info!("Pipeline {pipeline_id} no longer exists. Shutting down pipeline automaton.");
+                        }
+                    }
+                    _ => {
+                        error!(
+                            "Pipeline automaton '{}' terminated with error: '{e}'",
+                            pipeline_id
+                        );
+                    }
+                }
                 e
             })?;
         }
@@ -147,23 +157,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     async fn do_run(&mut self) -> Result<Duration, ManagerError> {
         let mut poll_timeout = Self::DEFAULT_PIPELINE_POLL_PERIOD;
         let db = self.db.lock().await;
-        let result = db
+        let mut pipeline = db
             .get_pipeline_runtime_state(self.tenant_id, self.pipeline_id)
-            .await;
+            .await?;
         drop(db);
-        if let Err(e) = result {
-            match e {
-                DBError::UnknownPipeline { pipeline_id } => {
-                    // Pipeline deletions should not lead to errors in the logs.
-                    info!(
-                        "Pipeline {pipeline_id} does not exist. Shutting down pipeline automaton."
-                    );
-                    return Ok(poll_timeout);
-                }
-                _ => return Err(e.into()),
-            }
-        }
-        let mut pipeline = result.unwrap();
         let transition: State = match (pipeline.current_status, pipeline.desired_status) {
             (PipelineStatus::Shutdown, PipelineStatus::Running)
             | (PipelineStatus::Shutdown, PipelineStatus::Paused) => {
