@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - WebConsole: Add "Queued" status for pipelines whose programs are enqueued to be compiled (#1032)
 - WebConsole: Random input generator doesn't work for a decimal column (#1006)
+- pipeline-manager: do not allow pipelines to be started mid-compilation (#1081)
 
 ### Added
 

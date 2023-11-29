@@ -579,7 +579,7 @@ impl PipelineRevision {
         program: &ProgramDescr,
     ) -> Result<(), DBError> {
         // The program was successfully compiled and has a schema
-        if program.status.is_not_yet_compiled() || program.schema.is_none() {
+        if !program.status.is_compiled() || program.schema.is_none() {
             return Err(DBError::ProgramNotCompiled);
         }
         if program.status.has_failed_to_compile() {

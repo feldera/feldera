@@ -1394,3 +1394,69 @@ async fn pipeline_runtime_configuration() {
         *resources
     );
 }
+
+#[actix_web::test]
+#[serial]
+// https://github.com/feldera/feldera/issues/1057
+async fn pipeline_start_without_compiling() {
+    let config = setup().await;
+    let program_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "code": "create table foo(bar integer);",
+    });
+    let mut req = config.post("/v0/programs", &program_request).await;
+    assert_eq!(StatusCode::CREATED, req.status());
+    let resp: Value = req.json().await.unwrap();
+    let program_id = resp["program_id"].as_str().unwrap();
+    let version = resp["version"].as_i64().unwrap();
+
+    let pipeline_request = json!({
+        "name":  "test",
+        "description": "desc",
+        "program_id": Some(program_id.to_string()),
+        "config": {},
+        "connectors": null
+    });
+    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
+    assert_eq!(req.status(), StatusCode::OK);
+    let resp: Value = req.json().await.unwrap();
+    let id = resp["pipeline_id"].as_str().unwrap();
+
+    // Start compiling the new program but don't wait till completion
+    let compilation_request = json!({ "version": version });
+    let resp = config
+        .post(
+            format!("/v0/programs/{program_id}/compile"),
+            &compilation_request,
+        )
+        .await;
+    assert_eq!(StatusCode::ACCEPTED, resp.status());
+
+    // Try starting the program when it is in the CompilingRust state.
+    // There is a possibility that rust compilation is so fast that we don't poll
+    // at that moment but that's unlikely.
+    let now = Instant::now();
+    loop {
+        println!("Waiting till program compilation state is in past the CompilingSql state");
+        std::thread::sleep(time::Duration::from_millis(30));
+        if now.elapsed().as_secs() > 200 {
+            panic!("Compilation timeout");
+        }
+        let mut resp = config.get(format!("/v0/programs/{program_id}")).await;
+        let val: Value = resp.json().await.unwrap();
+
+        let status = val["status"].clone();
+        if status == json!("None") || status == json!("Pending") || status == json!("CompilingSql")
+        {
+            continue;
+        }
+        println!("Program status is: {status:?}");
+        break;
+    }
+    // Start the program
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .await;
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+}

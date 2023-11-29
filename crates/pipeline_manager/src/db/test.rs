@@ -636,12 +636,7 @@ async fn versioning_no_change_no_connectors() {
         .unwrap();
     handle
         .db
-        .set_program_status_guarded(
-            tenant_id,
-            program_id,
-            Version(1),
-            ProgramStatus::CompilingSql,
-        )
+        .set_program_status_guarded(tenant_id, program_id, Version(1), ProgramStatus::Success)
         .await
         .unwrap();
     let rc = RuntimeConfig::from_yaml("");
