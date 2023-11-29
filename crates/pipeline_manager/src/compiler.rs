@@ -102,9 +102,9 @@ pub(crate) enum ProgramStatus {
 }
 
 impl ProgramStatus {
-    /// Return true if program is not yet compiled but might be in the future.
-    pub(crate) fn is_not_yet_compiled(&self) -> bool {
-        *self == ProgramStatus::None || *self == ProgramStatus::Pending
+    /// Return true if program has been successfully compiled
+    pub(crate) fn is_compiled(&self) -> bool {
+        *self == ProgramStatus::Success
     }
 
     /// Return true if the program has failed to compile (for any reason).
