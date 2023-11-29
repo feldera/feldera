@@ -1,8 +1,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 
 /**
