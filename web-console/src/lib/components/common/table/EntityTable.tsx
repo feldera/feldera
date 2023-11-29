@@ -11,13 +11,9 @@ import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { Children, Dispatch, MutableRefObject, ReactNode, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
-import IconPencil from '~icons/bx/pencil'
-import IconTrashAlt from '~icons/bx/trash-alt'
 
 import Card from '@mui/material/Card'
-import IconButton from '@mui/material/IconButton'
-import Tooltip from '@mui/material/Tooltip'
-import { GridRenderCellParams, GridValidRowModel } from '@mui/x-data-grid-pro'
+import { GridValidRowModel } from '@mui/x-data-grid-pro'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { UseQueryResult } from '@tanstack/react-query'
 
@@ -39,12 +35,9 @@ export type EntityTableProps<TData extends GridValidRowModel> = {
   setRows: (rows: TData[]) => void
   fetchRows: UseQueryResult<TData[], unknown>
   onUpdateRow?: (newRow: TData, oldRow: TData) => TData
-  onDeleteRow?: Dispatch<TData>
   onDuplicateClicked?: Dispatch<TData>
-  editRowBtnProps?: { onClick?: Dispatch<TData>; href?: (value: TData) => string }
   hasSearch?: boolean
   hasFilter?: boolean
-  addActions?: boolean
   tableProps: DataGridProProps<TData>
   apiRef?: MutableRefObject<GridApiPro>
   toolbarChildren?: ReactNode
@@ -61,45 +54,11 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
     page: 0
   })
 
-  const { setRows, fetchRows, onUpdateRow, onDeleteRow, editRowBtnProps, tableProps, addActions } = props
+  const { setRows, fetchRows, onUpdateRow, tableProps } = props
 
   const [filteredData, setFilteredData] = useState<TData[]>([])
 
   const { isPending, isError, data, error } = fetchRows
-
-  if (addActions && tableProps.columns.at(-1)?.field !== 'actions') {
-    tableProps.columns = tableProps.columns.concat({
-      flex: 0.1,
-      minWidth: 90,
-      sortable: false,
-      field: 'actions',
-      headerName: 'Actions',
-      renderCell: (params: GridRenderCellParams) => {
-        return (
-          <>
-            {editRowBtnProps && (
-              <Tooltip title='Edit'>
-                <IconButton
-                  size='small'
-                  href={(href => (href ? href(params.row) : ''))(editRowBtnProps?.href)}
-                  onClick={(onClick => (onClick ? () => onClick(params.row) : undefined))(editRowBtnProps?.onClick)}
-                >
-                  <IconPencil fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-            {onDeleteRow && (
-              <Tooltip title='Delete'>
-                <IconButton size='small' onClick={() => onDeleteRow(params.row)}>
-                  <IconTrashAlt fontSize={20} />
-                </IconButton>
-              </Tooltip>
-            )}
-          </>
-        )
-      }
-    })
-  }
 
   useEffect(() => {
     if (!isPending && !isError) {
