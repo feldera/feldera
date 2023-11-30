@@ -242,7 +242,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               <Tooltip title='Import Data'>
                 <IconButton
                   size='small'
-                  href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}&tab=insert`}
+                  href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}#insert`}
                 >
                   <IconUpload fontSize={20} />
                 </IconButton>

@@ -5,12 +5,12 @@ import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
-import { PipelineId } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
-import { SyntheticEvent, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
+import { useHashPart } from 'src/lib/compositions/useHashPart'
 
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
@@ -22,6 +22,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import type { Row } from '$lib/components/streaming/import/InsertionTable'
 const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
+  const [tab] = useHashPart()
   return (
     <Box sx={{ mb: '-1rem' }}>
       <FormControl sx={{ mt: '-1rem' }}>
@@ -41,7 +42,7 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
               value={item.name}
               {...{
                 component: Link,
-                href: `?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item.name}`
+                href: `?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item.name}#${tab}`
               }}
             >
               {item.name}
@@ -53,9 +54,16 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
   )
 }
 
-const TableWithInsertTab = (props: {
+type Tab = 'browse' | 'insert'
+
+const TableInspector = ({
+  pipeline,
+  setTab,
+  tab,
+  relation
+}: {
   pipeline: Pipeline
-  handleChange: ((event: SyntheticEvent<Element, Event>, value: any) => void) | undefined
+  setTab: (tab: Tab) => void
   tab: string
   relation: string
 }) => {
@@ -64,15 +72,19 @@ const TableWithInsertTab = (props: {
   }
   const [rows, setRows] = useState<Row[]>([])
 
-  const { pipeline, handleChange, tab, relation } = props
   return (
     <TabContext value={tab}>
-      <TabList centered variant='fullWidth' onChange={handleChange} aria-label='tabs to insert and browse relations'>
+      <TabList
+        centered
+        variant='fullWidth'
+        onChange={(_e, tab) => setTab(tab)}
+        aria-label='tabs to insert and browse relations'
+      >
         <Tab value='browse' label={`Browse ${relation}`} />
         <Tab value='insert' label='Insert New Rows' />
       </TabList>
       <TabPanel value='browse'>
-        <ViewDataTable pipeline={pipeline} relation={relation} />
+        <ViewInspector pipeline={pipeline} relation={relation} />
       </TabPanel>
       <TabPanel value='insert'>
         {pipeline.state.current_status === PipelineStatus.RUNNING ? (
@@ -90,7 +102,7 @@ const TableWithInsertTab = (props: {
   )
 }
 
-const ViewDataTable = (props: { pipeline: Pipeline; relation: string }) => {
+const ViewInspector = (props: { pipeline: Pipeline; relation: string }) => {
   const { pipeline, relation } = props
   const logError = (error: Error) => {
     console.error('InspectionTable error: ', error)
@@ -106,75 +118,63 @@ const ViewDataTable = (props: { pipeline: Pipeline; relation: string }) => {
   )
 }
 
-const IntrospectInputOutput = () => {
-  const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
-  const [relation, setRelation] = useState<string | undefined>(undefined)
-  const [tab, setTab] = useState<'browse' | 'insert'>('browse')
-  const [tables, setTables] = useState<string[] | undefined>(undefined)
-  const [views, setViews] = useState<string[] | undefined>(undefined)
-
-  const handleChange = (event: SyntheticEvent, newValue: 'browse' | 'insert') => {
-    setTab(newValue)
-  }
+export default () => {
+  const [tab, setTab] = (([tab, setTab]) => [tab || 'browse', setTab])(useHashPart<Tab>())
 
   // Parse config, view, tab arguments from router query
-  const query = Object.fromEntries(useSearchParams().entries())
-  useEffect(() => {
-    const { pipeline_id, relation, tab } = query
-    if (typeof tab === 'string' && (tab === 'browse' || tab === 'insert')) {
-      setTab(tab)
-    }
-    if (typeof pipeline_id === 'string') {
-      setPipelineId(pipeline_id)
-    }
-    if (typeof relation === 'string') {
-      setRelation(relation)
-    }
-  }, [query, pipelineId, setPipelineId, setRelation])
+  const query = useSearchParams()
+
+  const pipelineId = query.get('pipeline_id')
+  const relation = query.get('relation')
 
   // Load the pipeline
-  const [pipeline, setPipeline] = useState<Pipeline | undefined>(undefined)
-  const configQuery = useQuery({
+  const { data: pipeline } = useQuery({
     ...PipelineManagerQuery.pipelineStatus(pipelineId!),
     enabled: pipelineId !== undefined
   })
-  useEffect(() => {
-    if (!configQuery.isPending && !configQuery.isError) {
-      setPipeline(configQuery.data)
-    }
-  }, [configQuery.isPending, configQuery.isError, configQuery.data, setPipeline])
 
   // Load the last revision of the pipeline
-  const pipelineRevisionQuery = useQuery({
+  const { data: pipelineRevision } = useQuery({
     ...PipelineManagerQuery.pipelineLastRevision(pipelineId!),
-    enabled: pipelineId !== undefined
-  })
-  useEffect(() => {
-    if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError) {
-      const pipelineRevision = pipelineRevisionQuery.data
+    enabled: pipelineId !== undefined,
+    select(pipelineRevision) {
       const program = pipelineRevision?.program
-      setTables(program?.schema?.inputs.map(v => v.name) || [])
-      setViews(program?.schema?.outputs.map(v => v.name) || [])
+      const tables = program?.schema?.inputs.map(v => v.name) || []
+      const views = program?.schema?.outputs.map(v => v.name) || []
+      return {
+        ...pipelineRevision,
+        tables,
+        views
+      }
     }
-  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
+  })
 
   // If we request to be on the insert tab for a view, we force-switch to the
   // browse tab.
-  useEffect(() => {
-    if (relation && views && views.includes(relation) && tab == 'insert') {
-      setTab('browse')
-    }
-  }, [setTab, relation, views, tab])
+  {
+    const views = pipelineRevision?.views
+    useEffect(() => {
+      if (relation && views && views.includes(relation) && tab == 'insert') {
+        setTab('browse')
+      }
+    }, [setTab, relation, views, tab])
+  }
 
-  const relationValid =
-    pipeline && relation && tables && views && (tables.includes(relation) || views.includes(relation))
+  if (!relation || !pipeline || !pipelineRevision) {
+    return <></>
+  }
+  const { tables, views } = pipelineRevision
+  const relationType = tables.includes(relation) ? 'table' : views.includes(relation) ? 'view' : undefined
 
-  return pipelineId !== undefined &&
-    !configQuery.isPending &&
-    !configQuery.isError &&
-    !pipelineRevisionQuery.isPending &&
-    !pipelineRevisionQuery.isError &&
-    relationValid ? (
+  if (!relationType) {
+    return (
+      <Alert severity='error'>
+        <AlertTitle>Relation not found</AlertTitle>
+        Unknown table or view: {relation}
+      </Alert>
+    )
+  }
+  return (
     <>
       <BreadcrumbsHeader>
         <Link href={`/streaming/management`}>Pipelines</Link>
@@ -182,20 +182,11 @@ const IntrospectInputOutput = () => {
         <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
       </BreadcrumbsHeader>
       <Grid item xs={12}>
-        {tables.includes(relation) && (
-          <TableWithInsertTab pipeline={pipeline} handleChange={handleChange} tab={tab} relation={relation} />
+        {relationType === 'table' && (
+          <TableInspector pipeline={pipeline} setTab={setTab} tab={tab} relation={relation} />
         )}
-        {views.includes(relation) && <ViewDataTable pipeline={pipeline} relation={relation} />}
+        {relationType === 'view' && <ViewInspector pipeline={pipeline} relation={relation} />}
       </Grid>
     </>
-  ) : (
-    relation && tables && views && !(tables.includes(relation) || views.includes(relation)) && (
-      <Alert severity='error'>
-        <AlertTitle>Relation not found</AlertTitle>
-        Unknown table or view: {relation}
-      </Alert>
-    )
   )
 }
-
-export default IntrospectInputOutput
