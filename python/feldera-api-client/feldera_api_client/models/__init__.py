@@ -24,6 +24,8 @@ from .json_encoder_config import JsonEncoderConfig
 from .json_flavor import JsonFlavor
 from .json_parser_config import JsonParserConfig
 from .json_update_format import JsonUpdateFormat
+from .kafka_config import KafkaConfig
+from .kafka_config_options import KafkaConfigOptions
 from .kafka_input_config import KafkaInputConfig
 from .kafka_input_ft_config import KafkaInputFtConfig
 from .kafka_input_ft_config_consumer_options import KafkaInputFtConfigConsumerOptions
@@ -33,6 +35,7 @@ from .kafka_output_config import KafkaOutputConfig
 from .kafka_output_ft_config import KafkaOutputFtConfig
 from .kafka_output_ft_config_consumer_options import KafkaOutputFtConfigConsumerOptions
 from .kafka_output_ft_config_producer_options import KafkaOutputFtConfigProducerOptions
+from .mysql_config import MysqlConfig
 from .neighborhood_query import NeighborhoodQuery
 from .neighborhood_query_anchor import NeighborhoodQueryAnchor
 from .new_connector_request import NewConnectorRequest
@@ -41,6 +44,8 @@ from .new_pipeline_request import NewPipelineRequest
 from .new_pipeline_response import NewPipelineResponse
 from .new_program_request import NewProgramRequest
 from .new_program_response import NewProgramResponse
+from .new_service_request import NewServiceRequest
+from .new_service_response import NewServiceResponse
 from .output_endpoint_config import OutputEndpointConfig
 from .output_query import OutputQuery
 from .pipeline import Pipeline
@@ -68,6 +73,9 @@ from .provider_google_identity import ProviderGoogleIdentity
 from .relation import Relation
 from .resource_config import ResourceConfig
 from .runtime_config import RuntimeConfig
+from .service_config_type_0 import ServiceConfigType0
+from .service_config_type_1 import ServiceConfigType1
+from .service_descr import ServiceDescr
 from .sql_compiler_message import SqlCompilerMessage
 from .transport_config import TransportConfig
 from .transport_config_config import TransportConfigConfig
@@ -77,6 +85,8 @@ from .update_pipeline_request import UpdatePipelineRequest
 from .update_pipeline_response import UpdatePipelineResponse
 from .update_program_request import UpdateProgramRequest
 from .update_program_response import UpdateProgramResponse
+from .update_service_request import UpdateServiceRequest
+from .update_service_response import UpdateServiceResponse
 from .url_input_config import UrlInputConfig
 
 __all__ = (
@@ -104,6 +114,8 @@ __all__ = (
     "JsonFlavor",
     "JsonParserConfig",
     "JsonUpdateFormat",
+    "KafkaConfig",
+    "KafkaConfigOptions",
     "KafkaInputConfig",
     "KafkaInputFtConfig",
     "KafkaInputFtConfigConsumerOptions",
@@ -113,6 +125,7 @@ __all__ = (
     "KafkaOutputFtConfig",
     "KafkaOutputFtConfigConsumerOptions",
     "KafkaOutputFtConfigProducerOptions",
+    "MysqlConfig",
     "NeighborhoodQuery",
     "NeighborhoodQueryAnchor",
     "NewConnectorRequest",
@@ -121,6 +134,8 @@ __all__ = (
     "NewPipelineResponse",
     "NewProgramRequest",
     "NewProgramResponse",
+    "NewServiceRequest",
+    "NewServiceResponse",
     "OutputEndpointConfig",
     "OutputQuery",
     "Pipeline",
@@ -148,6 +163,9 @@ __all__ = (
     "Relation",
     "ResourceConfig",
     "RuntimeConfig",
+    "ServiceConfigType0",
+    "ServiceConfigType1",
+    "ServiceDescr",
     "SqlCompilerMessage",
     "TransportConfig",
     "TransportConfigConfig",
@@ -157,5 +175,7 @@ __all__ = (
     "UpdatePipelineResponse",
     "UpdateProgramRequest",
     "UpdateProgramResponse",
+    "UpdateServiceRequest",
+    "UpdateServiceResponse",
     "UrlInputConfig",
 )

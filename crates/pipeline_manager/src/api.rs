@@ -42,7 +42,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use log::{debug, info};
-use pipeline_types::config::{ConnectorConfig, PipelineConfig, RuntimeConfig};
+use pipeline_types::config::{ConnectorConfig, PipelineConfig, RuntimeConfig, ServiceConfig};
 use pipeline_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use std::{env, net::TcpListener, sync::Arc, time::Duration};
@@ -55,7 +55,7 @@ pub(crate) use crate::compiler::ProgramStatus;
 pub(crate) use crate::config::ApiServerConfig;
 use crate::db::{
     storage::Storage, AttachedConnector, AttachedConnectorId, ConnectorId, DBError, PipelineId,
-    PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProjectDB, Version,
+    PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProjectDB, ServiceId, Version,
 };
 pub use crate::error::ManagerError;
 use crate::runner::{RunnerApi, RunnerError};
@@ -101,6 +101,13 @@ We also support directly ingesting and consuming data via HTTP;
 see the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`
 endpoints.
 
+* *Service*. A service with a unique name and ID.
+  It represents a service (such as MySQL, Kafka, etc.) that a connector can refer to in
+  its config. A connector can refer to zero, one or multiple services.
+  Services are declared separately to reduce duplication and to make it
+  easier to create connectors. A service has its own configuration, which
+  generally includes hostname, port, access credentials, and any service parameters.
+
 * *Pipeline*.  A pipeline is a running instance of a program and
 some attached connectors. A client can create multiple pipelines that make use of
 the same program and connectors. Every pipeline has a unique name and identifier.
@@ -145,6 +152,11 @@ request is rejected."
         new_connector,
         update_connector,
         delete_connector,
+        list_services,
+        get_service,
+        new_service,
+        update_service,
+        delete_service,
         http_input,
         http_output,
         get_authentication_config,
@@ -161,6 +173,7 @@ request is rejected."
         crate::db::Field,
         crate::db::ColumnType,
         crate::db::ConnectorDescr,
+        crate::db::ServiceDescr,
         crate::db::Pipeline,
         crate::db::PipelineRuntimeState,
         crate::db::PipelineDescr,
@@ -179,6 +192,9 @@ request is rejected."
         pipeline_types::config::TransportConfig,
         pipeline_types::config::FormatConfig,
         pipeline_types::config::ResourceConfig,
+        pipeline_types::config::ServiceConfig,
+        pipeline_types::config::MysqlConfig,
+        pipeline_types::config::KafkaConfig,
         pipeline_types::transport::file::FileInputConfig,
         pipeline_types::transport::file::FileOutputConfig,
         pipeline_types::transport::url::UrlInputConfig,
@@ -201,6 +217,7 @@ request is rejected."
         PipelineId,
         ConnectorId,
         AttachedConnectorId,
+        ServiceId,
         Version,
         ProgramStatus,
         ErrorResponse,
@@ -218,12 +235,17 @@ request is rejected."
         NewConnectorResponse,
         UpdateConnectorRequest,
         UpdateConnectorResponse,
+        NewServiceRequest,
+        NewServiceResponse,
+        UpdateServiceRequest,
+        UpdateServiceResponse,
     ),),
     tags(
         (name = "Manager", description = "Configure system behavior"),
         (name = "Programs", description = "Manage programs"),
         (name = "Pipelines", description = "Manage pipelines"),
         (name = "Connectors", description = "Manage data connectors"),
+        (name = "Services", description = "Manage services"),
     ),
 )]
 pub struct ApiDoc;
@@ -378,6 +400,11 @@ fn api_scope() -> Scope {
         .service(new_connector)
         .service(update_connector)
         .service(delete_connector)
+        .service(list_services)
+        .service(get_service)
+        .service(new_service)
+        .service(update_service)
+        .service(delete_service)
         .service(http_input)
         .service(http_output)
 }
@@ -474,6 +501,12 @@ fn example_unknown_pipeline() -> ErrorResponse {
 fn example_unknown_connector() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::UnknownConnector {
         connector_id: ConnectorId(uuid!("d764b9e2-19f2-4572-ba20-8b42641b07c4")),
+    })
+}
+
+fn example_unknown_service() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::UnknownService {
+        service_id: ServiceId(uuid!("12345678-9123-4567-8912-345678912345")),
     })
 }
 
@@ -1714,6 +1747,232 @@ async fn get_connector(
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&descr))
+}
+
+/// Fetch services, optionally filtered by name or ID
+#[utoipa::path(
+    responses(
+        (status = OK, description = "List of services retrieved successfully", body = [ServiceDescr]),
+        (status = NOT_FOUND
+            , description = "Specified service name or ID does not exist"
+            , body = ErrorResponse
+            , examples(
+                ("Unknown service name" = (value = json!(example_unknown_name()))),
+                ("Unknown service ID" = (value = json!(example_unknown_service())))
+            ),
+        )
+    ),
+    params(ServiceIdOrNameQuery),
+    tag = "Services"
+)]
+#[get("/services")]
+async fn list_services(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: web::Query<ServiceIdOrNameQuery>,
+) -> Result<HttpResponse, DBError> {
+    let descr = if let Some(id) = req.id {
+        vec![
+            state
+                .db
+                .lock()
+                .await
+                .get_service_by_id(*tenant_id, ServiceId(id))
+                .await?,
+        ]
+    } else if let Some(name) = req.name.clone() {
+        vec![
+            state
+                .db
+                .lock()
+                .await
+                .get_service_by_name(*tenant_id, name)
+                .await?,
+        ]
+    } else {
+        state.db.lock().await.list_services(*tenant_id).await?
+    };
+
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&descr))
+}
+
+/// Request to create a new service.
+#[derive(Deserialize, ToSchema)]
+struct NewServiceRequest {
+    /// Service name.
+    name: String,
+    /// Service description.
+    description: String,
+    /// Service configuration.
+    config: ServiceConfig,
+}
+
+/// Response to a service creation request.
+#[derive(Serialize, ToSchema)]
+struct NewServiceResponse {
+    /// Unique id assigned to the new service.
+    service_id: ServiceId,
+}
+
+/// Create a new service.
+#[utoipa::path(
+    request_body = NewServiceRequest,
+    responses(
+        (status = OK, description = "Service successfully created.", body = NewServiceResponse),
+    ),
+    tag = "Services"
+)]
+#[post("/services")]
+async fn new_service(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: web::Json<NewServiceRequest>,
+) -> Result<HttpResponse, DBError> {
+    let service_id = state
+        .db
+        .lock()
+        .await
+        .new_service(
+            *tenant_id,
+            Uuid::now_v7(),
+            &request.name,
+            &request.description,
+            &request.config,
+        )
+        .await?;
+
+    info!("Created service {service_id} (tenant:{})", *tenant_id);
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&NewServiceResponse { service_id }))
+}
+
+/// Request to update an existing service.
+#[derive(Deserialize, ToSchema)]
+struct UpdateServiceRequest {
+    /// New service description.
+    description: String,
+    /// New config YAML. If absent, existing YAML will be kept unmodified.
+    config: Option<ServiceConfig>,
+}
+
+/// Response to a config update request.
+#[derive(Serialize, ToSchema)]
+struct UpdateServiceResponse {}
+
+/// Change a service's description or configuration.
+#[utoipa::path(
+    request_body = UpdateServiceRequest,
+    responses(
+        (status = OK, description = "Service successfully updated.", body = UpdateServiceResponse),
+        (status = NOT_FOUND
+            , description = "Specified service id does not exist."
+            , body = ErrorResponse
+            , example = json!(example_unknown_service())),
+    ),
+    params(
+        ("service_id" = Uuid, Path, description = "Unique service identifier")
+    ),
+    tag = "Services"
+)]
+#[patch("/services/{service_id}")]
+async fn update_service(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+    body: web::Json<UpdateServiceRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let service_id = ServiceId(parse_uuid_param(&req, "service_id")?);
+    state
+        .db
+        .lock()
+        .await
+        .update_service(*tenant_id, service_id, &body.description, &body.config)
+        .await?;
+
+    info!("Updated service {service_id} (tenant:{})", *tenant_id);
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&UpdateServiceResponse {}))
+}
+
+/// Delete an existing service.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Service successfully deleted."),
+        (status = BAD_REQUEST
+            , description = "Specified service id is not a valid uuid."
+            , body = ErrorResponse
+            , example = json!(example_invalid_uuid_param())),
+        (status = NOT_FOUND
+            , description = "Specified service id does not exist."
+            , body = ErrorResponse
+            , example = json!(example_unknown_service())),
+    ),
+    params(
+        ("service_id" = Uuid, Path, description = "Unique service identifier")
+    ),
+    tag = "Services"
+)]
+#[delete("/services/{service_id}")]
+async fn delete_service(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let service_id = ServiceId(parse_uuid_param(&req, "service_id")?);
+
+    state
+        .db
+        .lock()
+        .await
+        .delete_service(*tenant_id, service_id)
+        .await?;
+
+    info!("Deleted service {service_id} (tenant:{})", *tenant_id);
+    Ok(HttpResponse::Ok().finish())
+}
+
+/// Fetch a service by ID.
+#[utoipa::path(
+    responses(
+        (status = OK, description = "Service retrieved successfully.", body = ServiceDescr),
+        (status = BAD_REQUEST
+            , description = "Specified service id is not a valid uuid."
+            , body = ErrorResponse
+            , example = json!(example_invalid_uuid_param())),
+    ),
+    params(
+        ("service_id" = Uuid, Path, description = "Unique service identifier"),
+    ),
+    tag = "Services"
+)]
+#[get("/services/{service_id}")]
+async fn get_service(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let service_id = ServiceId(parse_uuid_param(&req, "service_id")?);
+    let descr = state
+        .db
+        .lock()
+        .await
+        .get_service_by_id(*tenant_id, service_id)
+        .await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&descr))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ServiceIdOrNameQuery {
+    /// Unique service identifier.
+    id: Option<Uuid>,
+    /// Unique service name.
+    name: Option<String>,
 }
 
 // Duplicate the same structure twice, since

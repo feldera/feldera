@@ -5,8 +5,9 @@ use super::{
 };
 use crate::api::ProgramStatus;
 use crate::auth::TenantId;
+use crate::db::{ServiceDescr, ServiceId};
 use async_trait::async_trait;
-use pipeline_types::config::{ConnectorConfig, RuntimeConfig};
+use pipeline_types::config::{ConnectorConfig, RuntimeConfig, ServiceConfig};
 use uuid::Uuid;
 
 /// The storage trait contains the methods to interact with the pipeline manager
@@ -429,6 +430,56 @@ pub(crate) trait Storage {
         &self,
         program_id: ProgramId,
         version: Version,
+    ) -> Result<(), DBError>;
+
+    /// Creates a new service.
+    async fn new_service(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        name: &str,
+        description: &str,
+        config: &ServiceConfig,
+    ) -> Result<ServiceId, DBError>;
+
+    /// Retrieves a list of all services of a tenant.
+    async fn list_services(&self, tenant_id: TenantId) -> Result<Vec<ServiceDescr>, DBError>;
+
+    /// Retrieves service descriptor for the given
+    /// `service_id`.
+    async fn get_service_by_id(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+    ) -> Result<ServiceDescr, DBError>;
+
+    /// Retrieves service descriptor for the given unique `name`.
+    async fn get_service_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> Result<ServiceDescr, DBError>;
+
+    /// Updates existing service.
+    /// Only the description and config can be updated, as the name is
+    /// immutable. The description must be provided and will always be updated.
+    /// The config is optional and not updated if not provided.
+    async fn update_service(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        description: &str,
+        config: &Option<ServiceConfig>,
+    ) -> Result<(), DBError>;
+
+    /// Deletes by id the service from the database.
+    /// TODO: what are pre-conditions for successful deletion?
+    /// TODO: what are post-conditions after successful deletion
+    ///       (e.g., cascading)?
+    async fn delete_service(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
     ) -> Result<(), DBError>;
 
     /// Check connectivity to the DB
