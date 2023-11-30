@@ -1,5 +1,6 @@
 use super::{ConnectorId, PipelineId, ProgramId, Version};
 use crate::auth::TenantId;
+use crate::db::ServiceId;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
@@ -62,6 +63,9 @@ pub enum DBError {
     },
     UnknownConnector {
         connector_id: ConnectorId,
+    },
+    UnknownService {
+        service_id: ServiceId,
     },
     UnknownTenant {
         tenant_id: TenantId,
@@ -345,6 +349,9 @@ impl Display for DBError {
             DBError::UnknownConnector { connector_id } => {
                 write!(f, "Unknown connector id '{connector_id}'")
             }
+            DBError::UnknownService { service_id } => {
+                write!(f, "Unknown service id '{service_id}'")
+            }
             DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")
             }
@@ -427,6 +434,7 @@ impl DetailedError for DBError {
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
+            Self::UnknownService { .. } => Cow::from("UnknownService"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownAttachedConnector { .. } => Cow::from("UnknownAttachedConnector"),
             Self::UnknownName { .. } => Cow::from("UnknownName"),
@@ -475,6 +483,7 @@ impl ResponseError for DBError {
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnector { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownService { .. } => StatusCode::NOT_FOUND,
             // TODO: should we report not found instead?
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED,
             Self::UnknownAttachedConnector { .. } => StatusCode::NOT_FOUND,

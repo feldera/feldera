@@ -5,11 +5,13 @@ use super::{
 };
 use super::{ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState, ProgramSchema};
 use crate::auth::{self, TenantId, TenantRecord};
-use crate::db::Relation;
+use crate::db::{Relation, ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use openssl::sha::{self};
-use pipeline_types::config::{ConnectorConfig, ResourceConfig, RuntimeConfig};
+use pipeline_types::config::{
+    ConnectorConfig, MysqlConfig, ResourceConfig, RuntimeConfig, ServiceConfig,
+};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
 use proptest::{bool, prelude::*};
@@ -1011,6 +1013,32 @@ pub(crate) fn limited_option_connector() -> impl Strategy<Value = Option<Connect
     })
 }
 
+/// Generate different service types
+pub(crate) fn limited_service_config() -> impl Strategy<Value = ServiceConfig> {
+    any::<u8>().prop_map(|byte| {
+        ServiceConfig::Mysql(MysqlConfig {
+            hostname: format!("example{byte}"),
+            port: "1234".to_string(),
+            user: "example".to_string(),
+            password: "something".to_string(),
+        })
+    })
+}
+
+/// Generate different service types
+pub(crate) fn limited_option_service_config() -> impl Strategy<Value = Option<ServiceConfig>> {
+    any::<Option<u8>>().prop_map(|byte| {
+        byte.map(|b| {
+            ServiceConfig::Mysql(MysqlConfig {
+                hostname: format!("example{b}"),
+                port: "1234".to_string(),
+                user: "example".to_string(),
+                password: "something".to_string(),
+            })
+        })
+    })
+}
+
 /// Generate different resource configurations
 pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
     any::<(
@@ -1140,6 +1168,23 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_connector()")] Option<ConnectorConfig>,
     ),
     DeleteConnector(TenantId, ConnectorId),
+    NewService(
+        TenantId,
+        #[proptest(strategy = "limited_uuid()")] Uuid,
+        String,
+        String,
+        #[proptest(strategy = "limited_service_config()")] ServiceConfig,
+    ),
+    ListServices(TenantId),
+    GetServiceById(TenantId, ServiceId),
+    GetServiceByName(TenantId, String),
+    UpdateService(
+        TenantId,
+        ServiceId,
+        String,
+        #[proptest(strategy = "limited_option_service_config()")] Option<ServiceConfig>,
+    ),
+    DeleteService(TenantId, ServiceId),
     StoreApiKeyHash(TenantId, String, Vec<ApiPermission>),
     ValidateApiKey(TenantId, String),
     CreatePipelineRevision(
@@ -1555,6 +1600,48 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.get_last_committed_pipeline_revision(tenant_id, pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::NewService(tenant_id, id, name, description, config) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response =
+                                    model.new_service(tenant_id, id, &name, &description, &config).await;
+                                let impl_response =
+                                    handle.db.new_service(tenant_id, id, &name, &description, &config).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::ListServices(tenant_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.list_services(tenant_id).await.unwrap();
+                                let mut impl_response = handle.db.list_services(tenant_id).await.unwrap();
+                                // Impl does not guarantee order of rows returned by SELECT
+                                impl_response.sort_by(|a, b| a.service_id.cmp(&b.service_id));
+                                assert_eq!(model_response, impl_response);
+                            }
+                            StorageAction::GetServiceById(tenant_id, service_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_service_by_id(tenant_id, service_id).await;
+                                let impl_response = handle.db.get_service_by_id(tenant_id, service_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetServiceByName(tenant_id, name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_service_by_name(tenant_id, name.clone()).await;
+                                let impl_response = handle.db.get_service_by_name(tenant_id, name).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::UpdateService(tenant_id, service_id, description, config) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response =
+                                    model.update_service(tenant_id, service_id, &description, &config).await;
+                                let impl_response =
+                                    handle.db.update_service(tenant_id, service_id, &description, &config).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::DeleteService(tenant_id, service_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.delete_service(tenant_id, service_id).await;
+                                let impl_response = handle.db.delete_service(tenant_id, service_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                         }
                     }
                 });
@@ -1579,6 +1666,7 @@ struct DbModel {
     pub history: BTreeMap<(TenantId, PipelineId), PipelineRevision>,
     pub api_keys: BTreeMap<String, (TenantId, Vec<ApiPermission>)>,
     pub connectors: BTreeMap<(TenantId, ConnectorId), ConnectorDescr>,
+    pub services: BTreeMap<(TenantId, ServiceId), ServiceDescr>,
     pub tenants: BTreeMap<TenantId, TenantRecord>,
 }
 
@@ -2457,5 +2545,111 @@ impl Storage for Mutex<DbModel> {
 
     async fn check_connection(&self) -> Result<(), DBError> {
         todo!("Unimplemented");
+    }
+
+    async fn new_service(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        name: &str,
+        description: &str,
+        config: &ServiceConfig,
+    ) -> Result<ServiceId, DBError> {
+        let mut s = self.lock().await;
+        if s.services.keys().any(|k| k.1 == ServiceId(id)) {
+            return Err(DBError::unique_key_violation("service_pkey"));
+        }
+        if s.services
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .any(|c| c.name == name)
+        {
+            return Err(DBError::DuplicateName.into());
+        }
+
+        let service_id = super::ServiceId(id);
+        s.services.insert(
+            (tenant_id, service_id),
+            ServiceDescr {
+                service_id,
+                name: name.to_owned(),
+                description: description.to_owned(),
+                config: config.to_owned(),
+            },
+        );
+        Ok(service_id)
+    }
+
+    async fn list_services(&self, tenant_id: TenantId) -> Result<Vec<ServiceDescr>, DBError> {
+        let s = self.lock().await;
+        Ok(s.services
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .collect())
+    }
+
+    async fn get_service_by_id(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+    ) -> Result<ServiceDescr, DBError> {
+        let s = self.lock().await;
+        s.services
+            .get(&(tenant_id, service_id))
+            .cloned()
+            .ok_or(DBError::UnknownService { service_id })
+    }
+
+    async fn get_service_by_name(
+        &self,
+        tenant_id: TenantId,
+        name: String,
+    ) -> Result<ServiceDescr, DBError> {
+        let s = self.lock().await;
+        s.services
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .find(|c| c.name == name)
+            .ok_or(DBError::UnknownName { name })
+    }
+
+    async fn update_service(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        description: &str,
+        config: &Option<ServiceConfig>,
+    ) -> Result<(), DBError> {
+        let mut s = self.lock().await;
+        // `service_id` needs to exist
+        if s.services.get(&(tenant_id, service_id)).is_none() {
+            return Err(DBError::UnknownService { service_id }.into());
+        }
+
+        let c = s
+            .services
+            .get_mut(&(tenant_id, service_id))
+            .ok_or(DBError::UnknownService { service_id })?;
+        c.description = description.to_owned();
+        if let Some(config) = config {
+            c.config = config.clone();
+        }
+        Ok(())
+    }
+
+    async fn delete_service(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+    ) -> Result<(), DBError> {
+        let mut s = self.lock().await;
+        s.services
+            .remove(&(tenant_id, service_id))
+            .ok_or(DBError::UnknownService { service_id })?;
+        // TODO: deletion cascading / not allowing because foreign keys still exist
+        Ok(())
     }
 }

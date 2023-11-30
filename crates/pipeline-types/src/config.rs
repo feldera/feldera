@@ -204,3 +204,40 @@ pub struct ResourceConfig {
     #[serde(default)]
     pub storage_mb_max: Option<u64>,
 }
+
+/// Configuration for accessing a MySQL database service.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct MysqlConfig {
+    pub hostname: String,
+    pub port: String,
+    pub user: String,
+    pub password: String,
+}
+
+/// Configuration for accessing a Kafka service.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct KafkaConfig {
+    /// List of bootstrap servers
+    pub bootstrap_servers: Vec<String>,
+    /// Additional Kafka options
+    pub options: BTreeMap<String, String>,
+}
+
+/// A service's configuration.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+// snake_case such that the enumeration variants are not capitalized in (de-)serialization
+#[serde(rename_all = "snake_case")]
+pub enum ServiceConfig {
+    Mysql(MysqlConfig),
+    Kafka(KafkaConfig),
+}
+
+impl ServiceConfig {
+    pub fn from_yaml_str(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(&self).unwrap()
+    }
+}
