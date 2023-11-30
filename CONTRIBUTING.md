@@ -20,7 +20,7 @@ Our known dependencies are:
     - cmake
     - libdev-ssl
 - SQL Compiler
-  - a Java Virtual Machine (at least Java 8)
+  - a Java Virtual Machine (at least Java 19)
     - maven
   - graphviz
 - Cloud and UI
