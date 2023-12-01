@@ -16,7 +16,7 @@ use crate::{
     utils::{assume, cast_uninit_vec, sample_slice},
     DBData, DBWeight, NumEntries,
 };
-#[cfg(test)]
+#[cfg(feature = "proptest-derive")]
 use proptest::prelude::{any, Arbitrary, BoxedStrategy, Strategy};
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -43,7 +43,7 @@ where
     pub lower_bound: usize,
 }
 
-#[cfg(test)]
+#[cfg(feature = "proptest-derive")]
 impl<K: Arbitrary + 'static, R: Arbitrary + 'static> Arbitrary for ColumnLayer<K, R> {
     type Parameters = usize;
 
