@@ -188,7 +188,12 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
             position: 'relative'
           }}
         >
-          <IconButton size='small' onClick={handleClose} sx={{ position: 'absolute', right: '1rem', top: '1rem' }}>
+          <IconButton
+            size='small'
+            onClick={handleClose}
+            sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
+            data-testid='button-close-modal'
+          >
             <IconX />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
@@ -241,6 +246,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                           active={activeTab === 'detailsTab'}
                           icon={<IconFile />}
                         />
+                        data-testid='button-tab-name'
                       }
                     />
                     <Tab
@@ -254,6 +260,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                           icon={<IconData />}
                         />
                       }
+                      data-testid='button-tab-server'
                     />
                     <Tab
                       disableRipple
@@ -266,6 +273,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                           icon={<IconLockOpen />}
                         />
                       }
+                      data-testid='button-tab-auth'
                     />
                     <Tab
                       disableRipple
@@ -278,6 +286,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                           icon={<IconCategoryAlt />}
                         />
                       }
+                      data-testid='button-tab-format'
                     />
                   </TabList>
                 </Box>

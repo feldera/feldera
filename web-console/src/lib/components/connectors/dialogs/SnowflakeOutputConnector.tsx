@@ -227,6 +227,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           icon={<IconFile />}
                         />
                       }
+                      data-testid='button-tab-name'
                     />
                     <Tab
                       disableRipple
@@ -239,6 +240,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           icon={<IconData />}
                         />
                       }
+                      data-testid='button-tab-server'
                     />
                     <Tab
                       disableRipple
@@ -251,6 +253,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           icon={<IconLockOpen />}
                         />
                       }
+                      data-testid='button-tab-auth'
                     />
                     <Tab
                       disableRipple
@@ -263,6 +266,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           icon={<IconCategoryAlt />}
                         />
                       }
+                      data-testid='button-tab-format'
                     />
                   </TabList>
                 </Box>

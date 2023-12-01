@@ -8,7 +8,8 @@ module.exports = {
   distDir: process.env.BUILD_DIR || 'out',
   trailingSlash: true,
   reactStrictMode: true,
-  compiler: {},
+  compiler: {
+  },
   images: { unoptimized: true },
   experimental: {
     esmExternals: false,

@@ -27,6 +27,7 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
     <Box sx={{ mb: '-1rem' }}>
       <FormControl sx={{ mt: '-1rem' }}>
         <Autocomplete
+          key={props.relation} // Changing the key forces autocomplete to close when relation is changed
           size='small'
           options={props.tables
             .map(name => ({ type: 'Tables', name }))
@@ -34,6 +35,8 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
           groupBy={option => option.type}
           getOptionLabel={o => o.name}
           sx={{ width: 400 }}
+          slotProps={{ popupIndicator: { 'data-testid': 'button-expand-relations' } as any }}
+          ListboxProps={{ 'data-testid': 'box-relation-options' } as any}
           renderInput={params => <TextField {...params} value={props.relation} label='Tables and Views' />}
           value={{ name: props.relation, type: '' }}
           renderOption={(_props, item) => (
@@ -44,6 +47,7 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
                 component: Link,
                 href: `?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item.name}#${tab}`
               }}
+              data-testid={`button-option-relation-${item.name}`}
             >
               {item.name}
             </MenuItem>
@@ -80,8 +84,8 @@ const TableInspector = ({
         onChange={(_e, tab) => setTab(tab)}
         aria-label='tabs to insert and browse relations'
       >
-        <Tab value='browse' label={`Browse ${relation}`} />
-        <Tab value='insert' label='Insert New Rows' />
+        <Tab value='browse' label={`Browse ${relation}`} data-testid='button-tab-browse' />
+        <Tab value='insert' label='Insert New Rows' data-testid='button-tab-insert' />
       </TabList>
       <TabPanel value='browse'>
         <ViewInspector pipeline={pipeline} relation={relation} />
@@ -177,10 +181,13 @@ export default () => {
   return (
     <>
       <BreadcrumbsHeader>
-        <Link href={`/streaming/management`}>Pipelines</Link>
-        <Link href={`/streaming/management/#${pipeline.descriptor.pipeline_id}`}>{pipeline.descriptor.name}</Link>
+        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>Pipelines</Link>
+        <Link href={`/streaming/management/#${pipeline.descriptor.pipeline_id}`} data-testid='button-current-pipeline'>
+          {pipeline.descriptor.name}
+        </Link>
         <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
       </BreadcrumbsHeader>
+      <Box data-testid='box-inspection-background' sx={{ width: 2, height: 2 }}></Box>
       <Grid item xs={12}>
         {relationType === 'table' && (
           <TableInspector pipeline={pipeline} setTab={setTab} tab={tab} relation={relation} />

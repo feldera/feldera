@@ -11,7 +11,10 @@ import { PlaceholderNode } from './'
 const IOPlaceholderNode = ({ id, data }: NodeProps) => {
   return (
     <PlaceholderNode>
-      <Link href={`#${id === 'inputPlaceholder' ? 'add_input' : 'add_output'}`}>
+      <Link
+        href={`#${id === 'inputPlaceholder' ? 'add_input' : 'add_output'}`}
+        data-testid={id === 'inputPlaceholder' ? 'button-builder-add-input' : 'button-builder-add-output'}
+      >
         <CardContent sx={{ textAlign: 'center' }}>
           {(Icon => (
             <Icon fontSize='2rem'></Icon>

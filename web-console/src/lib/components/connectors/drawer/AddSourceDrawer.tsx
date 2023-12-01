@@ -55,7 +55,7 @@ const IoSelectBox = (props: {
   const theme = useTheme()
   return (
     <>
-      <Grid item xs={6}>
+      <Grid item xs={6} data-testid={props['data-testid']}>
         <Card
           sx={{
             color: 'secondary.main',
@@ -108,6 +108,7 @@ const IoSelectBox = (props: {
               disabled={props.howMany === 0}
               LinkComponent={Link}
               {...props.selectButtonProps}
+              data-testid='button-select-connector'
             >
               Select&nbsp;
               <Chip sx={{ p: 0, m: 0 }} label={props.howMany} size='small' color={countColor} variant='outlined' />
@@ -204,6 +205,7 @@ const SideBarAddIo = () => {
               shouldDisplayConnector(drawer.direction, type) && (
                 <IoSelectBox
                   key={type}
+                  data-testid={'box-connector-' + type}
                   icon={connectorTypeToLogo(type)}
                   howMany={sourceCounts[type] ?? 0}
                   newButtonProps={{ href: `#new/connector/${drawer.direction}/${type}` }}

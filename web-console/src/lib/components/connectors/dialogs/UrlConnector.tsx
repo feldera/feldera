@@ -140,7 +140,12 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
             position: 'relative'
           }}
         >
-          <IconButton size='small' onClick={handleClose} sx={{ position: 'absolute', right: '1rem', top: '1rem' }}>
+          <IconButton
+            size='small'
+            onClick={handleClose}
+            sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
+            data-testid='button-close-modal'
+          >
             <IconX />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
@@ -178,6 +183,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       icon={<IconFile />}
                     />
                   }
+                  data-testid='button-tab-name'
                 />
                 <Tab
                   disableRipple
@@ -190,6 +196,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       icon={<IconCategoryAlt />}
                     />
                   }
+                  data-testid='button-tab-format'
                 />
               </TabList>
               <TabPanel
@@ -206,6 +213,9 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       placeholder={PLACEHOLDER_VALUES['connector_name']}
                       aria-describedby='validation-name'
                       disabled={props.disabled}
+                      inputProps={{
+                        'data-testid': 'input-datasource-name'
+                      }}
                     />
                   </Grid>
                   <Grid item sm={8} xs={12}>
@@ -217,6 +227,9 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       placeholder={PLACEHOLDER_VALUES['connector_description']}
                       aria-describedby='validation-description'
                       disabled={props.disabled}
+                      inputProps={{
+                        'data-testid': 'input-datasource-description'
+                      }}
                     />
                   </Grid>
                   <Grid item sm={12} xs={12}>
@@ -228,6 +241,9 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       placeholder='https://gist.githubusercontent.com/...'
                       aria-describedby='validation-description'
                       disabled={props.disabled}
+                      inputProps={{
+                        'data-testid': 'input-datasource-url'
+                      }}
                     />
                   </Grid>
                 </Grid>

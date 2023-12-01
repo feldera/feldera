@@ -16,6 +16,7 @@ export type NavLink = {
   openInNewTab?: boolean
   icon?: (props: SVGProps<SVGSVGElement>) => ReactElement
   badgeColor?: 'default' | 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info'
+  testid?: string
 }
 
 export type NavSectionTitle = {

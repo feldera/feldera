@@ -27,7 +27,6 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
       setPrograms(data)
     }
   }, [isPending, isError, data])
-
   return (
     <PlaceholderNode>
       <CardContent sx={{ textAlign: 'center', '& svg': { mb: 2 } }}>
@@ -45,7 +44,20 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
           disableCloseOnSelect
           options={programs.map(p => p.name)}
           getOptionLabel={option => option}
-          renderInput={params => <TextField {...params} className='nodrag' label='Program' placeholder='Select SQL…' />}
+          ListboxProps={
+            {
+              'data-testid': 'box-builder-program-options'
+            } as any
+          }
+          renderInput={params => (
+            <TextField
+              {...params}
+              className='nodrag'
+              label='Program'
+              placeholder='Select SQL…'
+              data-testid='input-builder-select-program'
+            />
+          )}
         />
       </CardContent>
     </PlaceholderNode>

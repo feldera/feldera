@@ -49,7 +49,13 @@ const StatusSnackBar = () => {
       TransitionProps={{ onExited: handleExited }}
       key={messageInfo ? messageInfo.key : undefined}
     >
-      <Alert elevation={3} variant='filled' onClose={handleClose} severity={messageInfo?.color || 'success'}>
+      <Alert
+        elevation={3}
+        variant='filled'
+        onClose={handleClose}
+        severity={messageInfo?.color || 'success'}
+        data-testid='box-snackbar-popup'
+      >
         {messageInfo?.message}
       </Alert>
     </Snackbar>

@@ -72,6 +72,9 @@ const MetadataForm = (props: { errors: FormError; project: ProgramDescr; setProj
             value={props.project.name}
             error={Boolean(props.errors.name)}
             onChange={updateName}
+            inputProps={{
+              'data-testid': 'input-program-name'
+            }}
           />
           {props.errors.name && (
             <FormHelperText sx={{ color: 'error.main' }} id='validation-schema-first-name'>
@@ -89,6 +92,9 @@ const MetadataForm = (props: { errors: FormError; project: ProgramDescr; setProj
           placeholder={PLACEHOLDER_VALUES['program_description']}
           value={props.project.description}
           onChange={updateDescription}
+          inputProps={{
+            'data-testid': 'input-program-description'
+          }}
         />
       </Grid>
     </Grid>
@@ -516,7 +522,7 @@ const Editors = (props: { programName: string | null }) => {
         <CardContent>
           <Grid item xs={12}>
             {/* ids referenced by webui-tester */}
-            <SaveIndicator id='save-indicator' stateToLabel={stateToEditorLabel} state={state} />
+            <SaveIndicator id='save-indicator' getLabel={stateToEditorLabel} state={state} />
             <CompileIndicator id='compile-indicator' state={project.status} />
           </Grid>
         </CardContent>
@@ -529,6 +535,9 @@ const Editors = (props: { programName: string | null }) => {
             value={project.code || ''}
             onChange={updateCode}
             onMount={editor => handleEditorDidMount(editor)}
+            wrapperProps={{
+              'data-testid': 'box-program-code-wrapper'
+            }}
           />
         </CardContent>
         <Divider sx={{ m: '0 !important' }} />

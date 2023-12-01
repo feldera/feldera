@@ -6,3 +6,8 @@ declare module 'next' {
     getLayout?: (page: ReactElement) => ReactNode
   }
 }
+
+declare module '*.sql' {
+  const content: string;
+  export default content;
+}

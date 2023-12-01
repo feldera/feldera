@@ -24,6 +24,9 @@ export const SnowflakeOutputFormatDetails = (props: { disabled?: boolean }) => {
             }
           ]}
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-data-format'
+          }}
         ></SelectElement>
       </GridItems>
     </Grid>

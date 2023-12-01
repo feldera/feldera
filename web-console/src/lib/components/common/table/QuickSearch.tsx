@@ -21,6 +21,9 @@ const QuickSearch = (props: Props) => {
       value={props.value}
       onChange={props.onChange}
       placeholder='Search…'
+      inputProps={{
+        'data-testid': 'input-quick-search'
+      }}
       InputProps={{
         startAdornment: (
           <Box sx={{ mr: 2, display: 'flex' }}>

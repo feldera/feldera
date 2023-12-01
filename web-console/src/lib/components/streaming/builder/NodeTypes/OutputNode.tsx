@@ -89,6 +89,7 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
         position={Position.Left}
         isConnectable={true}
         isValidConnection={isValidConnection}
+        data-testid={'box-handle-output-' + data.connector.name}
       />
     </Node>
   )

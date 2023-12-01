@@ -64,7 +64,12 @@ const UserDropdown = () => {
         badgeContent={<BadgeContentSpan />}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Avatar alt='John Doe' onClick={handleDropdownOpen} sx={{ width: 40, height: 40 }} />
+        <Avatar
+          alt='John Doe'
+          onClick={handleDropdownOpen}
+          sx={{ width: 40, height: 40 }}
+          data-testid='button-avatar-menu'
+        />
       </Badge>
       <Menu
         anchorEl={anchorEl}
@@ -97,13 +102,13 @@ const UserDropdown = () => {
           </Box>
         </Box>
         <Divider sx={{ mt: 0, mb: 1 }} />
-        <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled>
+        <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled data-testid='button-profile'>
           <Box sx={styles}>
             <AccountOutline />
             Profile
           </Box>
         </MenuItem>
-        <Link href='/settings/'>
+        <Link href='/settings/' data-testid='button-settings'>
           <MenuItem sx={{ p: 0 }}>
             <Box sx={styles}>
               <CogOutline />
@@ -112,7 +117,7 @@ const UserDropdown = () => {
           </MenuItem>
         </Link>
         <Divider />
-        <Link href={auth.signOutUrl}>
+        <Link href={auth.signOutUrl} data-testid='button-signout'>
           <MenuItem sx={{ py: 2 }} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
             <LogoutVariant />
             Logout

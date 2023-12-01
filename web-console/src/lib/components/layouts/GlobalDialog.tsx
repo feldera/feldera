@@ -15,7 +15,7 @@ export const GlobalDialog = () => {
             </DialogContent>
           )}
           <DialogActions>
-            <Button onClick={closeDialog} autoFocus>
+            <Button onClick={closeDialog} autoFocus data-testid='button-global-dialog-cancel'>
               Cancel
             </Button>
             <Button
@@ -23,6 +23,7 @@ export const GlobalDialog = () => {
                 content.onSuccess.callback()
                 closeDialog()
               }}
+              data-testid={content.onSuccess['data-testid']}
             >
               {content.onSuccess.name}
             </Button>

@@ -157,18 +157,22 @@ const TableSqlPrograms = () => {
       headerName: 'Actions',
       renderCell: (params: GridRenderCellParams<ProgramDescr>) => {
         return (
-          <>
+          <Box data-testid={'box-program-actions-' + params.row.name}>
             <Tooltip title='Edit'>
-              <IconButton size='small' href={`/analytics/editor/?program_name=${params.row.name}`}>
+              <IconButton
+                size='small'
+                href={`/analytics/editor/?program_name=${params.row.name}`}
+                data-testid='button-edit'
+              >
                 <IconPencil fontSize={20} />
               </IconButton>
             </Tooltip>
             <Tooltip title='Delete'>
-              <IconButton size='small' onClick={() => deleteProgram(params.row)}>
+              <IconButton size='small' onClick={() => deleteProgram(params.row)} data-testid='button-delete'>
                 <IconTrashAlt fontSize={20} />
               </IconButton>
             </Tooltip>
-          </>
+          </Box>
         )
       }
     }
@@ -212,7 +216,14 @@ const TableSqlPrograms = () => {
   })
 
   const btnAdd = (
-    <Button variant='contained' size='small' href='/analytics/editor/' id='btn-add-sql-program' key='0'>
+    <Button
+      variant='contained'
+      size='small'
+      href='/analytics/editor/'
+      id='btn-add-sql-program'
+      data-testid='button-add-sql-program'
+      key='0'
+    >
       Add SQL program
     </Button>
   )
@@ -235,7 +246,7 @@ const TableSqlPrograms = () => {
         apiRef={apiRef}
         toolbarChildren={[
           btnAdd,
-          <GridToolbarFilterButton key='1' />,
+          <GridToolbarFilterButton key='1' data-testid='button-filter' />,
           <ResetColumnViewButton
             key='2'
             setColumnViewModel={gridPersistence.setColumnViewModel}

@@ -24,6 +24,9 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         aria-describedby='validation-host'
         fullWidth
         disabled={props.disabled}
+        inputProps={{
+          'data-testid': 'input-sasl-oauthbearer-client-id'
+        }}
       />
       <TextFieldElement
         name='config.sasl_oauthbearer_client_secret'
@@ -33,6 +36,9 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         aria-describedby='validation-host'
         fullWidth
         disabled={props.disabled}
+        inputProps={{
+          'data-testid': 'input-sasl-oauthbearer-client-secret'
+        }}
       />
       <TextFieldElement
         name='config.sasl_oauthbearer_token_endpoint_url'
@@ -42,6 +48,9 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         aria-describedby='validation-host'
         fullWidth
         disabled={props.disabled}
+        inputProps={{
+          'data-testid': 'input-sasl-oauthbearer-token-endpoint-url'
+        }}
       />
       <TextFieldElement
         name='config.sasl_oauthbearer_scope'
@@ -51,6 +60,9 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         aria-describedby='validation-host'
         fullWidth
         disabled={props.disabled}
+        inputProps={{
+          'data-testid': 'input-sasl-oauthbearer-scope'
+        }}
       />
       <TextFieldElement
         name='config.sasl_oauthbearer_extensions'
@@ -60,6 +72,9 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         aria-describedby='validation-host'
         fullWidth
         disabled={props.disabled}
+        inputProps={{
+          'data-testid': 'input-sasl-oauthbearer-extensions'
+        }}
       />
     </GridItems>
   </Grid>
@@ -82,6 +97,9 @@ const SaslOauthForm = (props: { disabled?: boolean }) => {
           aria-describedby='validation-host'
           fullWidth
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-sasl-oauthbearer-config'
+          }}
         />
         <SwitchElement
           name='config.enable_sasl_oauthbearer_unsecure_jwt'
@@ -103,6 +121,9 @@ const SaslOauthForm = (props: { disabled?: boolean }) => {
             }
           ]}
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-sasl-oauthbearer-method'
+          }}
         ></SelectElement>
         {match(auth['sasl_oauthbearer_method'])
           .with('oidc', () => <SaslOauthOidcForm disabled={props.disabled} />)
@@ -125,6 +146,9 @@ const SaslPassForm = (props: { disabled?: boolean }) => (
         aria-describedby='validation-host'
         fullWidth
         disabled={props.disabled}
+        inputProps={{
+          'data-testid': 'input-sasl-username'
+        }}
       />
       <PasswordElement
         name='config.sasl_password'
@@ -175,6 +199,9 @@ const SaslForm = (props: { disabled?: boolean }) => {
                 }
               ]}
               disabled={props.disabled}
+              inputProps={{
+                'data-testid': 'input-sasl-mechanism'
+              }}
             ></SelectElement>
           </div>
         </Tooltip>
@@ -203,6 +230,9 @@ const SslForm = (props: { disabled?: boolean }) => (
             fullWidth
             resizeStyle='vertical'
             disabled={props.disabled}
+            inputProps={{
+              'data-testid': 'input-ssl-key-pem'
+            }}
           />
         </div>
       </Tooltip>
@@ -217,6 +247,9 @@ const SslForm = (props: { disabled?: boolean }) => (
             fullWidth
             resizeStyle='vertical'
             disabled={props.disabled}
+            inputProps={{
+              'data-testid': 'input-ssl-certificate-pem'
+            }}
           />
         </div>
       </Tooltip>
@@ -226,6 +259,8 @@ const SslForm = (props: { disabled?: boolean }) => (
             name='config.enable_ssl_certificate_verification'
             label='enable.ssl.certificate.verification'
             disabled={props.disabled}
+
+            data-testid='input-enable-ssl-certificate-verification'
           />
         </div>
       </Tooltip>
@@ -240,6 +275,9 @@ const SslForm = (props: { disabled?: boolean }) => (
             fullWidth
             resizeStyle='vertical'
             disabled={props.disabled}
+            inputProps={{
+              'data-testid': 'input-ssl-ca-pem'
+            }}
           />
         </div>
       </Tooltip>
@@ -285,6 +323,9 @@ export const TabKafkaAuth = (props: { disabled?: boolean }) => {
             }
           ]}
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-security-protocol'
+          }}
         ></SelectElement>
         {match(auth['security_protocol'])
           .with('PLAINTEXT', undefined, () => <></>)

@@ -44,6 +44,9 @@ export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
                 }
               ]}
               disabled={props.disabled}
+              inputProps={{
+                'data-testid': 'input-json-flavor'
+              }}
             ></SelectElement>
           </>
         )}
@@ -64,6 +67,9 @@ export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
             }
           ]}
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-data-format'
+          }}
         ></SelectElement>
       </GridItems>
     </Grid>

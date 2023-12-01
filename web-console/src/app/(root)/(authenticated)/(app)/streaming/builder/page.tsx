@@ -345,8 +345,12 @@ const PipelineBuilderPage = (props: {
   return (
     <>
       <BreadcrumbsHeader>
-        <Link href={`/streaming/management`}>Pipelines</Link>
-        <Link href={`/streaming/builder/?pipeline_id=${pipelineId}`}>{name}</Link>
+        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
+          Pipelines
+        </Link>
+        <Link href={`/streaming/builder/?pipeline_id=${pipelineId}`} data-testid='button-breadcrumb-pipeline-name'>
+          {name}
+        </Link>
       </BreadcrumbsHeader>
       <Grid container spacing={6} className='match-height' id='pipeline-builder-content' sx={{ pl: 6, pt: 6 }}>
         <Grid item xs={12}>
@@ -358,7 +362,7 @@ const PipelineBuilderPage = (props: {
             <CardContent>
               <Grid item xs={12}>
                 {/* id referenced by webui-tester */}
-                <SaveIndicator id='save-indicator' stateToLabel={stateToSaveLabel} state={saveState} />
+                <SaveIndicator id='save-indicator' getLabel={stateToSaveLabel} state={saveState} />
               </Grid>
             </CardContent>
           </Card>
