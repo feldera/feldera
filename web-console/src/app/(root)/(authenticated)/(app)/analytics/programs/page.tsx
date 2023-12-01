@@ -9,7 +9,9 @@ const SqlPrograms = () => {
   return (
     <>
       <BreadcrumbsHeader>
-        <Link href={`/analytics/programs`}>SQL Programs</Link>
+        <Link href={`/analytics/programs`} data-testid='button-breadcrumb-sql-programs'>
+          SQL Programs
+        </Link>
       </BreadcrumbsHeader>
       <TableSqlPrograms />
     </>

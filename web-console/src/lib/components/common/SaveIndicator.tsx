@@ -9,37 +9,53 @@ import { Tooltip } from '@mui/material'
 
 export type SaveIndicatorState = 'isNew' | 'isDebouncing' | 'isModified' | 'isSaving' | 'isUpToDate'
 
-// Options passed to the SaveIndicator component.
-export interface SaveIndicatorProps {
-  id?: string
-  state: SaveIndicatorState
-  stateToLabel: (state: SaveIndicatorState) => string
-}
-
 // Given a save state return the icon displayed in the Chip.
 const stateToIcon = (state: SaveIndicatorState) => {
-  const doneIcon = <CloudDoneIcon />
-  const saveIcon = <SyncIcon />
-
   switch (state) {
     case 'isDebouncing':
     case 'isSaving':
     case 'isModified':
-      return saveIcon
+      return <SyncIcon />
     case 'isNew':
     case 'isUpToDate':
-      return doneIcon
+      return <CloudDoneIcon />
+  }
+}
+
+const stateToTestId = (state: SaveIndicatorState) => {
+  switch (state) {
+    case 'isDebouncing':
+      return 'box-save-debouncing'
+    case 'isSaving':
+      return 'box-save-in-progress'
+    case 'isModified':
+      return 'box-save-modified'
+    case 'isNew':
+      return 'box-save-is-new'
+    case 'isUpToDate':
+      return 'box-save-saved'
   }
 }
 
 // The SaveIndicator displaying status of the form save state.
-const SaveIndicator = (props: SaveIndicatorProps) => {
-  const label = props.stateToLabel(props.state)
+const SaveIndicator = (props: {
+  id?: string
+  state: SaveIndicatorState
+  getLabel: (state: SaveIndicatorState) => string
+}) => {
+  const label = props.getLabel(props.state)
   const tooltip = props.state === ('isUpToDate' as const) ? 'Everything saved to cloud' : ''
 
   return (
     <Tooltip title={tooltip}>
-      <ColoredChip label={label} skin='light' sx={{ mr: 2 }} icon={stateToIcon(props.state)} id={props.id} />
+      <ColoredChip
+        label={label}
+        skin='light'
+        sx={{ mr: 2 }}
+        icon={stateToIcon(props.state)}
+        data-testid={stateToTestId(props.state)}
+        id={props.id}
+      />
     </Tooltip>
   )
 }

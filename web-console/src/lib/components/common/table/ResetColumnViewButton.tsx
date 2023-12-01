@@ -17,7 +17,7 @@ export const ResetColumnViewButton = (props: {
   }
   return (
     <Tooltip title='Reset column headers'>
-      <IconButton onClick={resetColumnView}>
+      <IconButton onClick={resetColumnView} data-testid='button-reset-columns'>
         <IconMoveHorizontal />
       </IconButton>
     </Tooltip>

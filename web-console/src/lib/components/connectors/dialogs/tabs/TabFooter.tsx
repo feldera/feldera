@@ -25,6 +25,7 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
       onClick={() => {
         setActiveTab(nextTab)
       }}
+      data-testid='button-next'
     >
       Next
     </Button>
@@ -38,6 +39,7 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
         disabled={onFirstTab}
         onClick={() => setActiveTab(prevTab)}
         startIcon={<IconLeftArrowAlt />}
+        data-testid='button-previous'
       >
         Previous
       </Button>

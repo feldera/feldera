@@ -18,10 +18,11 @@ export const AddConnectorCard = (props: {
   title: string
   addInput?: { onClick: () => void } | { href: string }
   addOutput?: { onClick: () => void } | { href: string }
+  'data-testid'?: string
 }) => {
   const theme = useTheme()
   return (
-    <Card id={props.id}>
+    <Card id={props.id} data-testid={props['data-testid']}>
       <CardContent sx={{ textAlign: 'center' }}>
         {typeof props.icon === 'string' ? (
           <Image
@@ -50,12 +51,18 @@ export const AddConnectorCard = (props: {
         <Typography sx={{ mb: 3 }}>{props.title}</Typography>
         <Box sx={{ display: 'flex', width: '100%' }}>
           {!!props.addInput && (
-            <Button variant='contained' size='small' {...props.addInput}>
+            <Button variant='contained' size='small' {...props.addInput} data-testid='button-add-input'>
               Add input
             </Button>
           )}
           {!!props.addOutput && (
-            <Button variant='contained' size='small' {...props.addOutput} sx={{ ml: 'auto' }}>
+            <Button
+              variant='contained'
+              size='small'
+              {...props.addOutput}
+              sx={{ ml: 'auto' }}
+              data-testid='button-add-output'
+            >
               Add output
             </Button>
           )}

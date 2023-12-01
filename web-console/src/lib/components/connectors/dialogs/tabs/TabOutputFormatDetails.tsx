@@ -25,6 +25,9 @@ const TabOutputFormatDetails = (props: { disabled?: boolean }) => {
             }
           ]}
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-data-format'
+          }}
         ></SelectElement>
 
         {selectedFormat === 'json' && (
@@ -33,6 +36,7 @@ const TabOutputFormatDetails = (props: { disabled?: boolean }) => {
             label='Wrap records in an array'
             defaultValue='false'
             disabled={props.disabled}
+            data-testid='input-is-wrapped'
           />
         )}
       </GridItems>

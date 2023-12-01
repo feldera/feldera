@@ -26,6 +26,9 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
             }
           ]}
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-data-format'
+          }}
         ></SelectElement>
 
         {selectedFormat === 'json' && (
@@ -45,12 +48,26 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
                 }
               ]}
               disabled={props.disabled}
+              inputProps={{
+                'data-testid': 'input-update-format'
+              }}
+              SelectProps={{
+                MenuProps: {
+                  MenuListProps: {
+                    'data-testid': 'box-update-format-options'
+                  } as any
+                },
+                SelectDisplayProps: {
+                  'data-testid': 'input-update-format-display'
+                } as any
+              }}
             ></SelectElement>
             <SwitchElement
               label='Records wrapped in an array'
               name='config.json_array'
               defaultValue={'false'}
               disabled={props.disabled}
+              data-testid='input-is-wrapped'
             />
           </>
         )}

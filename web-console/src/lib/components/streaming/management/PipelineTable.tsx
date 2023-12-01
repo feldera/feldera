@@ -44,7 +44,7 @@ import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
 import Link from 'next/link'
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { Fragment, useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
@@ -229,11 +229,12 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         headerName: 'Action',
         flex: 0.15,
         renderCell: params => (
-          <>
+          <Box data-testid={`box-relation-actions-${params.row.relation.name}`}>
             <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
               <IconButton
                 size='small'
                 href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}`}
+                data-testid='button-inspect'
               >
                 <IconShow fontSize={20} />
               </IconButton>
@@ -243,12 +244,13 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 <IconButton
                   size='small'
                   href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}#insert`}
+                  data-testid='button-import'
                 >
                   <IconUpload fontSize={20} />
                 </IconButton>
               </Tooltip>
             )}
-          </>
+          </Box>
         )
       }
     ]
@@ -259,7 +261,12 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   })
 
   return !pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError ? (
-    <Box display='flex' sx={{ m: 2 }} justifyContent='center'>
+    <Box
+      display='flex'
+      sx={{ m: 2 }}
+      justifyContent='center'
+      data-testid={`box-details-${pipelineRevisionQuery.data!.pipeline.name}`}
+    >
       <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
         <Grid item xs={4}>
           <Card>
@@ -360,7 +367,12 @@ function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value
     row.state.current_status === PipelineStatus.RUNNING ||
     row.state.current_status === PipelineStatus.PAUSED) &&
     hasRevision ? (
-    <IconButton size='small' tabIndex={-1} aria-label={isExpanded ? 'Close' : 'Open'}>
+    <IconButton
+      size='small'
+      tabIndex={-1}
+      aria-label={isExpanded ? 'Close' : 'Open'}
+      data-testid={`button-expand-pipeline-${pipelineRevisionQuery.data!.pipeline.name}`}
+    >
       <ExpandMoreIcon
         sx={{
           transform: `rotateZ(${isExpanded ? 180 : 0}deg)`,
@@ -486,7 +498,14 @@ export default function PipelineTable() {
   }
 
   const btnAdd = (
-    <Button variant='contained' size='small' href='/streaming/builder/' id='btn-add-pipeline' key='0'>
+    <Button
+      variant='contained'
+      size='small'
+      href='/streaming/builder/'
+      id='btn-add-pipeline'
+      data-testid='button-add-pipeline'
+      key='0'
+    >
       Add pipeline
     </Button>
   )
@@ -555,7 +574,7 @@ export default function PipelineTable() {
           toolbar: {
             children: [
               btnAdd,
-              <GridToolbarFilterButton key='1' />,
+              <GridToolbarFilterButton key='1' data-testid='button-filter' />,
               <ResetColumnViewButton key='2' {...gridPersistence} />,
               <div style={{ marginLeft: 'auto' }} key='3' />,
               <DataGridSearch fetchRows={pipelineQuery} setFilteredData={setFilteredData} key='99' />
@@ -563,6 +582,9 @@ export default function PipelineTable() {
           },
           footer: {
             children: btnAdd
+          },
+          row: {
+            'data-testid': 'box-pipeline-row'
           }
         }}
         detailPanelExpandedRowIds={expandedRows}
@@ -613,61 +635,133 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
   return tuple(currentStatus, programStatus)
 }
 
-const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) => {
+const PipelineStatusCell = (params: GridRenderCellParams<Pipeline>) => {
   const [status, programStatus] = usePipelineStatus(params)
 
   const shutdownPipelineClick = usePipelineMutation(mutationShutdownPipeline)
-
+  const testIdPrefix = `box-pipeline-${params.row.descriptor.name}-status-`
   const chip = match([status, programStatus])
     .with([PipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
     .with([PipelineStatus.SHUTDOWN, 'NotReady'], () => (
-      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling' />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='primary'
+        label='Compiling'
+        data-testid={testIdPrefix + 'Compiling'}
+      />
     ))
     .with([PipelineStatus.SHUTDOWN, 'Pending'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Queued' />
+      <CustomChip rounded size='small' skin='light' color='info' label='Queued' data-testid={testIdPrefix + 'Queued'} />
     ))
     .with([PipelineStatus.SHUTDOWN, 'CompilingRust'], () => (
-      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling binary' />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='primary'
+        label='Compiling binary'
+        data-testid={testIdPrefix + 'Compiling binary'}
+      />
     ))
     .with([PipelineStatus.SHUTDOWN, 'Error'], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label='Program error' />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='error'
+        label='Program error'
+        data-testid={testIdPrefix + 'Program error'}
+      />
     ))
-    .with([PipelineStatus.SHUTDOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
+    .with([PipelineStatus.SHUTDOWN, P._], () => (
+      <CustomChip rounded size='small' skin='light' label={status} data-testid={testIdPrefix + status} />
+    ))
     .with([PipelineStatus.INITIALIZING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='secondary'
+        label={status}
+        data-testid={testIdPrefix + status}
+      />
     ))
     .with([PipelineStatus.PROVISIONING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='secondary'
+        label={status}
+        data-testid={testIdPrefix + status}
+      />
     ))
     .with([PipelineStatus.CREATE_FAILURE, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} />
+      <CustomChip rounded size='small' skin='light' color='error' label={status} data-testid={testIdPrefix + status} />
     ))
     .with([PipelineStatus.STARTING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='secondary'
+        label={status}
+        data-testid={testIdPrefix + status}
+      />
     ))
     .with([PipelineStatus.STARTUP_FAILURE, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} />
+      <CustomChip rounded size='small' skin='light' color='error' label={status} data-testid={testIdPrefix + status} />
     ))
     .with([PipelineStatus.RUNNING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='success' label={status} />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='success'
+        label={status}
+        data-testid={testIdPrefix + status}
+      />
     ))
     .with([PipelineStatus.PAUSING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={status} />
+      <CustomChip rounded size='small' skin='light' color='info' label={status} data-testid={testIdPrefix + status} />
     ))
     .with([PipelineStatus.PAUSED, 'NotReady'], () => (
-      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling' />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='primary'
+        label='Compiling'
+        data-testid={testIdPrefix + 'Compiling'}
+      />
     ))
     .with([PipelineStatus.PAUSED, 'Pending'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Queued' />
+      <CustomChip rounded size='small' skin='light' color='info' label='Queued' data-testid={testIdPrefix + 'Queued'} />
     ))
     .with([PipelineStatus.PAUSED, 'CompilingRust'], () => (
-      <CustomChip rounded size='small' skin='light' color='primary' label='Compiling binary' />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='primary'
+        label='Compiling binary'
+        data-testid={testIdPrefix + 'Compiling binary'}
+      />
     ))
     .with([PipelineStatus.PAUSED, 'Error'], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label='Program error' />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='error'
+        label='Program error'
+        data-testid={testIdPrefix + 'Program error'}
+      />
     ))
     .with([PipelineStatus.PAUSED, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={status} />
+      <CustomChip rounded size='small' skin='light' color='info' label={status} data-testid={testIdPrefix + status} />
     ))
     .with([PipelineStatus.FAILED, P._], () => (
       <Tooltip title={params.row.state.error?.message || 'Unknown Error'} disableInteractive>
@@ -678,17 +772,25 @@ const PipelineStatusCell = (params: { row: Pipeline } & GridRenderCellParams) =>
           color='error'
           label={status}
           onDelete={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
+          data-testid={testIdPrefix + status}
         />
       </Tooltip>
     ))
     .with([PipelineStatus.SHUTTING_DOWN, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='secondary' label={status} />
+      <CustomChip
+        rounded
+        size='small'
+        skin='light'
+        color='secondary'
+        label={status}
+        data-testid={testIdPrefix + status}
+      />
     ))
     .exhaustive()
 
   return (
-    <Badge badgeContent={params.row.warn_cnt} color='warning'>
-      <Badge badgeContent={params.row.error_cnt} color='error'>
+    <Badge badgeContent={(params.row as any).warn_cnt} color='warning'>
+      <Badge badgeContent={(params.row as any).error_cnt} color='error'>
         {chip}
       </Badge>
     </Badge>
@@ -710,14 +812,19 @@ const PipelineActions = (params: { row: Pipeline }) => {
   const actions = {
     pause: () => (
       <Tooltip title='Pause Pipeline' key='pause'>
-        <IconButton className='pauseButton' size='small' onClick={() => pausePipelineClick(pipeline.pipeline_id)}>
+        <IconButton
+          className='pauseButton'
+          size='small'
+          onClick={() => pausePipelineClick(pipeline.pipeline_id)}
+          data-testid='button-pause'
+        >
           <IconPauseCircle fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     start: () => (
       <Tooltip title='Start Pipeline' key='start'>
-        <IconButton className='startButton' size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)}>
+        <IconButton size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)} data-testid='button-start'>
           <IconPlayCircle fontSize={20} />
         </IconButton>
       </Tooltip>
@@ -731,14 +838,19 @@ const PipelineActions = (params: { row: Pipeline }) => {
     ),
     shutdown: () => (
       <Tooltip title='Shutdown Pipeline' key='shutdown'>
-        <IconButton className='shutdownButton' size='small' onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}>
+        <IconButton
+          className='shutdownButton'
+          size='small'
+          onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}
+          data-testid='button-shutdown'
+        >
           <IconStopCircle fontSize={20} />
         </IconButton>
       </Tooltip>
     ),
     inspect: () => (
       <Tooltip title='Inspect' key='inspect'>
-        <IconButton size='small' component={Link} href='#'>
+        <IconButton size='small' component={Link} href='#' data-testid='button-inspect'>
           <IconShow fontSize={20} />
         </IconButton>
       </Tooltip>
@@ -749,6 +861,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
           className='editButton'
           size='small'
           href={`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`}
+          data-testid='button-edit'
         >
           <IconPencil fontSize={20} />
         </IconButton>
@@ -764,6 +877,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
             `${pipeline.name.replace(/^[Pp]ipeline\s+|\s+[Pp]ipeline$/, '') || 'unnamed'} pipeline`,
             () => deletePipelineClick(pipeline.pipeline_id)
           )}
+          data-testid='button-delete'
         >
           <IconTrashAlt fontSize={20} />
         </IconButton>
@@ -790,10 +904,5 @@ const PipelineActions = (params: { row: Pipeline }) => {
     .with([PipelineStatus.FAILED, P._], () => ['spacer', 'edit', 'shutdown'])
     .otherwise(() => ['spacer', 'edit'])
 
-  return (
-    <>
-      {/* the className attributes are used by webui-tester */}
-      {enabled.map(e => actions[e]())}
-    </>
-  )
+  return <Box data-testid={`box-pipeline-actions-${pipeline.name}`}>{enabled.map(e => actions[e]())}</Box>
 }

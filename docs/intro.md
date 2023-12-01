@@ -142,3 +142,8 @@ number.
 
 If you would like to build and run Feldera from source check out the
 [Development workflow](contributors/dev-flow) guide.
+
+## Testing
+You can contribute by reading the guides and expanding test coverage
+for the following Feldera components:
+- [WebConsole](contributors/ui-testing)

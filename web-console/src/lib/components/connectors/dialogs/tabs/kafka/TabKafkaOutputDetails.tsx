@@ -16,6 +16,9 @@ const TabkafkaOutputDetails = (props: { disabled?: boolean }) => {
           placeholder='kafka.example.com'
           aria-describedby='validation-host'
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-server-hostname'
+          }}
         />
 
         <TextFieldElement
@@ -26,6 +29,9 @@ const TabkafkaOutputDetails = (props: { disabled?: boolean }) => {
           placeholder='my-topic'
           aria-describedby='validation-topic'
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-topic'
+          }}
         />
       </GridItems>
     </Grid>

@@ -20,7 +20,7 @@
     "build": "next build",
     "start": "npx serve@latest out",
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
-    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\"",
+    "format": "prettier --write \"{src,tests}/**/*.{js,jsx,ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
     "generate-openapi": "cargo run --bin pipeline-manager -- --dump-openapi && openapi --input ./openapi.json --output ./src/lib/services/manager && rm ./openapi.json",
     "test": "DISPLAY= yarn playwright test",
@@ -119,6 +119,5 @@
     "yaml": "^2.3.1",
     "yup": "^1.2.0",
     "zustand": "^4.4.1"
-  },
-  "dependencies": {}
+  }
 }

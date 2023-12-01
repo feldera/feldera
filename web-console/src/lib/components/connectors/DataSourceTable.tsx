@@ -172,27 +172,27 @@ const DataSourceTable = () => {
       sortable: false,
       field: 'actions',
       headerName: 'Actions',
-      renderCell: (params: GridRenderCellParams) => {
+      renderCell: (params: GridRenderCellParams<ConnectorDescr>) => {
         return (
-          <>
+          <Box data-testid={'box-connector-actions-' + params.row.name}>
             <Tooltip title='Edit'>
-              <IconButton size='small' onClick={() => editConnector(params.row)}>
+              <IconButton size='small' onClick={() => editConnector(params.row)} data-testid='button-edit'>
                 <IconPencil fontSize={20} />
               </IconButton>
             </Tooltip>
             <Tooltip title='Delete'>
-              <IconButton size='small' onClick={() => deleteConnector(params.row)}>
+              <IconButton size='small' onClick={() => deleteConnector(params.row)} data-testid='button-delete'>
                 <IconTrashAlt fontSize={20} />
               </IconButton>
             </Tooltip>
-          </>
+          </Box>
         )
       }
     }
   ]
 
   const btnAdd = (
-    <Button variant='contained' size='small' href='/connectors/create/' key='0'>
+    <Button variant='contained' size='small' href='/connectors/create/' key='0' data-testid='button-add-connector'>
       Add connector
     </Button>
   )
@@ -220,7 +220,7 @@ const DataSourceTable = () => {
           hasFilter
           toolbarChildren={[
             btnAdd,
-            <GridToolbarFilterButton key='1' />,
+            <GridToolbarFilterButton key='1' data-testid='button-filter' />,
             <ResetColumnViewButton
               key='2'
               setColumnViewModel={gridPersistence.setColumnViewModel}

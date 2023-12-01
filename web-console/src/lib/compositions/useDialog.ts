@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-type DialogAction = { name: string; callback: () => void }
+type DialogAction = { name: string; callback: () => void; 'data-testid'?: string }
 
 type GlobalDialogContent = { title: string; description: string; onSuccess: DialogAction }
 
@@ -33,7 +33,8 @@ export const useDeleteDialog = () => {
           description,
           onSuccess: {
             name: actionName,
-            callback: () => onAction(...args)
+            callback: () => onAction(...args),
+            'data-testid': 'button-confirm-delete'
           }
         }),
     closeDialog

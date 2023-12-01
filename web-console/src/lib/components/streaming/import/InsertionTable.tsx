@@ -223,6 +223,9 @@ const InsertionTableImpl = ({
               />
             ),
             ...insert
+          },
+          row: {
+            'data-testid': 'box-data-row'
           }
         }}
         {...gridPersistence}

@@ -22,6 +22,9 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
           aria-describedby='validation-host'
           fullWidth
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-server-hostname'
+          }}
         />
 
         <Grid item xs={12}>
@@ -42,6 +45,9 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
             ]}
             helperText='From when to consume the topics.'
             disabled={props.disabled}
+            inputProps={{
+              'data-testid': 'input-auto-offset-reset'
+            }}
           ></SelectElement>
         </Grid>
 
@@ -54,6 +60,9 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
             placeholder='my-group-id'
             aria-describedby='validation-group-id'
             disabled={props.disabled}
+            inputProps={{
+              'data-testid': 'input-group-id'
+            }}
           />
         </Grid>
 
@@ -80,7 +89,17 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
                   }
                 }}
                 renderInput={params => (
-                  <TextField {...params} inputRef={ref} label='topics' placeholder='Add topic, press Enter to add…' />
+                  <TextField
+                    {...params}
+                    inputRef={ref}
+                    label='topics'
+                    placeholder='Add topic, press Enter to add…'
+                    InputProps={
+                      {
+                        'data-testid': 'input-wrapper-topics'
+                      } as any
+                    }
+                  />
                 )}
               />
             )}

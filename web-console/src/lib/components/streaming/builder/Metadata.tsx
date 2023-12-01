@@ -41,6 +41,7 @@ const Metadata = (props: { errors: FormError }) => {
             value={name}
             error={Boolean(props.errors.name)}
             onChange={updateName}
+            inputProps={{ 'data-testid': 'input-pipeline-name' }}
           />
           {props.errors.name && (
             <FormHelperText sx={{ color: 'error.main' }} id='validation-schema-first-name'>
@@ -58,6 +59,7 @@ const Metadata = (props: { errors: FormError }) => {
           placeholder={PLACEHOLDER_VALUES['pipeline_description']}
           value={description}
           onChange={updateDescription}
+          inputProps={{ 'data-testid': 'input-pipeline-description' }}
         />
       </Grid>
     </Grid>

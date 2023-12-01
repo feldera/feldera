@@ -55,6 +55,7 @@ function SqlTableNode(props: { name: string }) {
         position={Position.Left}
         isConnectable={true}
         isValidConnection={isValidConnection}
+        data-testid={'box-handle-table-' + props.name}
       />
     </Box>
   )
@@ -92,6 +93,7 @@ function SqlViewNode(props: { name: string }) {
         position={Position.Right}
         isConnectable={true}
         isValidConnection={isValidConnection}
+        data-testid={'box-handle-view-' + props.name}
       />
     </Box>
   )

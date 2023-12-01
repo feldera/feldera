@@ -12,7 +12,8 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'Home',
       path: '/home',
-      icon: IconHomeCircle
+      icon: IconHomeCircle,
+      testid: 'button-vertical-nav-home'
     },
     {
       sectionTitle: 'Analytics'
@@ -25,7 +26,8 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'SQL Programs',
       path: ['/analytics/programs', '/analytics/editor'],
-      icon: IconAlignLeft
+      icon: IconAlignLeft,
+      testid: 'button-vertical-nav-sql-programs'
     },
     {
       sectionTitle: 'Streaming'
@@ -38,7 +40,8 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'Pipelines', // 'Pipeline Management',
       path: ['/streaming/management', '/streaming/builder'],
-      icon: IconGitRepoForked
+      icon: IconGitRepoForked,
+      testid: 'button-vertical-nav-pipelines'
     },
     //{
     //title: 'Data Inspection',
@@ -56,7 +59,8 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'Connectors', // 'Existing Connectors',
       path: ['/connectors/list', '/connectors/create'],
-      icon: IconUnite
+      icon: IconUnite,
+      testid: 'button-vertical-nav-connectors'
     },
     //{
     //title: 'Data Browser',
@@ -75,7 +79,8 @@ const navigation = (): VerticalNavItemsType => {
       title: 'Documentation',
       path: 'https://www.feldera.com/docs/',
       icon: IconFile,
-      openInNewTab: true
+      openInNewTab: true,
+      testid: 'button-vertical-nav-documentation'
     }
   ]
 }

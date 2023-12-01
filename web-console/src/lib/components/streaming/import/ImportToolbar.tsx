@@ -34,7 +34,15 @@ export type StoreSettingsFn = (
     | ((prevState: Map<string, StoredFieldSettings>) => Map<string, StoredFieldSettings>)
 ) => void
 
-const ImportToolbar = (props: {
+const ImportToolbar = ({
+  relation,
+  setRows,
+  pipelineRevision,
+  setLoading,
+  apiRef,
+  rows,
+  children
+}: {
   relation: Relation
   setRows: Dispatch<SetStateAction<any[]>>
   pipelineRevision: PipelineRevision
@@ -43,7 +51,6 @@ const ImportToolbar = (props: {
   rows: Row[]
   children: ReactNode
 }) => {
-  const { relation, setRows, pipelineRevision, setLoading, apiRef, rows } = props
 
   const { data: pipeline } = useQuery(PipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.pipeline_id))
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
@@ -126,23 +133,44 @@ const ImportToolbar = (props: {
     <GridToolbarContainer>
       <GridToolbarColumnsButton />
       <GridToolbarDensitySelector />
-      <Button size='small' onClick={handleClearData} startIcon={<IconTrash />}>
+      <Button size='small' onClick={handleClearData} startIcon={<IconTrash />} data-testid='button-clear'>
         Clear
       </Button>
       <RngSettingsDialog relation={relation} settings={settings} setSettings={setSettings} />
-      <Button size='small' onClick={() => insertDefaultRows(1)} startIcon={<IconPlusCircle />}>
+      <Button
+        size='small'
+        onClick={() => insertDefaultRows(1)}
+        startIcon={<IconPlusCircle />}
+        data-testid='button-add-1-empty'
+      >
         Add Default Row
       </Button>
-      <Button size='small' onClick={() => insertRandomRows(1)} startIcon={<IconPlusCircle />}>
+      <Button
+        size='small'
+        onClick={() => insertRandomRows(1)}
+        startIcon={<IconPlusCircle />}
+        data-testid='button-add-1-random'
+      >
         1 Random Row
       </Button>
-      <Button size='small' onClick={() => insertRandomRows(5)} startIcon={<IconDuplicate />}>
+      <Button
+        size='small'
+        onClick={() => insertRandomRows(5)}
+        startIcon={<IconDuplicate />}
+        data-testid='button-add-5-random'
+      >
         5 Random Rows
       </Button>
-      <Button size='small' onClick={handleInsertRows} startIcon={<IconUpload />} color='info'>
+      <Button
+        size='small'
+        onClick={handleInsertRows}
+        startIcon={<IconUpload />}
+        color='info'
+        data-testid='button-insert-rows'
+      >
         Insert Rows
       </Button>
-      {props.children}
+      {children}
     </GridToolbarContainer>
   ) : (
     <></>

@@ -45,7 +45,13 @@ const SelectSourceTable = (props: {
       renderCell: (params: GridRenderCellParams<ConnectorDescr>) => {
         return (
           <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button size='small' variant='outlined' color='secondary' onClick={() => props.onAddClick(params.row)}>
+            <Button
+              size='small'
+              variant='outlined'
+              color='secondary'
+              onClick={() => props.onAddClick(params.row)}
+              data-testid={'button-add-connector-' + params.row.name}
+            >
               Add
             </Button>
             <Tooltip title='Inspect' key='inspect'>

@@ -97,6 +97,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
         position={Position.Right}
         isConnectable={true}
         isValidConnection={isValidConnection}
+        data-testid={'box-handle-input-' + data.connector.name}
       />
     </Node>
   )
