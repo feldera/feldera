@@ -73,5 +73,9 @@ parsing fails.
     <td><code>LOG10(value)</code></td>
     <td>The logarithm base 10 of value. Produces a runtime error for values less than or equal to zero.</td>
   </tr>
+  <tr>
+    <td><code>SAFE_ADD(left, right)</code></td>
+    <td>equivalent to the addition operator (<code>+</code>) but returns <code>NULL</code> if overflow occurs.</td>
+  </tr>
 </table>
 

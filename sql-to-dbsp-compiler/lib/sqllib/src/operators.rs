@@ -1,5 +1,5 @@
 use dbsp::algebra::{F32, F64};
-use num::PrimInt;
+use num::{CheckedAdd, PrimInt};
 
 use crate::{
     for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
@@ -313,3 +313,17 @@ pub fn div_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
 pub fn plus_u_u(left: usize, right: usize) -> usize {
     left + right
 }
+
+#[inline(always)]
+pub fn safe_add<T>(left: T, right: T) -> Option<T>
+where
+    T: CheckedAdd,
+{
+    left.checked_add(&right)
+}
+
+some_operator!(safe_add, i8, i8, Option<i8>);
+some_operator!(safe_add, i16, i16, Option<i16>);
+some_operator!(safe_add, i32, i32, Option<i32>);
+some_operator!(safe_add, i64, i64, Option<i64>);
+some_operator!(safe_add, decimal, Decimal, Option<Decimal>);

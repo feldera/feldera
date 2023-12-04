@@ -28,6 +28,10 @@ Division or modulus by zero return `NULL`.
     <td><code>MOD(left, right)</code></td>
     <td>integer modulus. Same as <code>left % right</code>.</td>
   </tr>
+  <tr>
+    <td><code>SAFE_ADD(left, right)</code></td>
+    <td>equivalent to the addition operator (<code>+</code>) but returns <code>NULL</code> if overflow occurs.</td>
+  </tr>
 </table>
 
 ## Operations not supported

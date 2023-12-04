@@ -19,6 +19,7 @@ public enum DBSPOpcode {
 
     // Binary operations
     ADD("+", false),
+    SAFE_ADD("safe_add", false),
     SUB("-", false),
     MUL("*", false),
     DIV("/", false),
