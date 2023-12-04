@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: parser support for 'DEFAULT' column values in DDL (#1061)
 - pipeline-manager: add Service to database and API
   ([#1074](https://github.com/feldera/feldera/pull/1074))
+- [SQL] Add safe_add() function for Integer and Decimal datatypes ([#1086](https://github.com/feldera/feldera/pull/1086))
 
 ## [0.4.0] - 2023-11-21
 
