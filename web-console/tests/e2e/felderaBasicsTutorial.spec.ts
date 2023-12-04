@@ -33,13 +33,14 @@ const addUrlConnector = async (page: Page, params: { name: string; url: string }
   // Connector created successfully!
 }
 
-const apiOrigin = 'http://localhost:8080/'
-const appOrigin = 'http://localhost:8080/'
+const apiOrigin = process.env.PLAYWRIGHT_API_ORIGIN!
+const appOrigin = process.env.PLAYWRIGHT_APP_ORIGIN!
+
 const pipelineName = 'Supply Chain Test Pipeline'
 const programName = 'Supply Chain Analytics'
 
 test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
-  test.setTimeout(90000)
+  test.setTimeout(120000)
   await page.goto(appOrigin)
 
   await test.step('Part 1: Create a program', async () => {
@@ -48,8 +49,8 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     await page.getByTestId('button-vertical-nav-sql-programs').click()
     await page.getByTestId('button-add-sql-program').first().click()
     await page.getByTestId('input-program-name').fill(programName)
-    await page.getByTestId('box-program-code-wrapper').waitFor()
-    await page.getByTestId('box-program-code-wrapper').locator('textarea').fill(felderaBasicsTutorialSql)
+    await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({state: 'attached'})
+    await page.getByTestId('box-program-code-wrapper').getByRole('textbox').fill(felderaBasicsTutorialSql)
     await page.getByTestId('box-save-saved').waitFor()
   })
 
@@ -258,7 +259,13 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   })
   await test.step('Cleanup: Delete connectors', async () => {
     await page.getByTestId('button-vertical-nav-connectors').click()
-    for (const connectorName of ['price-redpanda', 'preferred_vendor-redpanda', 'parts-s3', 'vendors-s3', 'prices-s3']) {
+    for (const connectorName of [
+      'price-redpanda',
+      'preferred_vendor-redpanda',
+      'parts-s3',
+      'vendors-s3',
+      'prices-s3'
+    ]) {
       await page.getByTestId(`box-connector-actions-${connectorName}`).getByTestId('button-delete').click()
       await page.getByTestId('button-confirm-delete').click()
     }

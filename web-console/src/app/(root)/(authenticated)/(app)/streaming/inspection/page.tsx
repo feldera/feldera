@@ -181,7 +181,9 @@ export default () => {
   return (
     <>
       <BreadcrumbsHeader>
-        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>Pipelines</Link>
+        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
+          Pipelines
+        </Link>
         <Link href={`/streaming/management/#${pipeline.descriptor.pipeline_id}`} data-testid='button-current-pipeline'>
           {pipeline.descriptor.name}
         </Link>

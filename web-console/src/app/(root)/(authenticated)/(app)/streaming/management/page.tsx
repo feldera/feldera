@@ -11,7 +11,9 @@ const PipelineManagement = () => {
   return (
     <>
       <BreadcrumbsHeader>
-        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>Pipelines</Link>
+        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
+          Pipelines
+        </Link>
       </BreadcrumbsHeader>
       {/* id referenced by webui-tester */}
       <Box id='pipeline-management-content'>

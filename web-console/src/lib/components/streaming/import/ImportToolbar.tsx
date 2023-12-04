@@ -51,7 +51,6 @@ const ImportToolbar = ({
   rows: Row[]
   children: ReactNode
 }) => {
-
   const { data: pipeline } = useQuery(PipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.pipeline_id))
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
 
