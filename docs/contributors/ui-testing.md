@@ -4,6 +4,10 @@
 Existing Playwright tests are executed during CI
 and can be run manually within provided devcontainer environment.
 
+Run `yarn test` or `PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test`
+to execute all tests on all supported platforms in background, or run `yarn test:ui` or add `--ui-port=0` to open a UI to run tests interactively.
+Add environment variable `CI=true` when executing tests in CI setting.
+
 If you want to use `Playwright codegen` to automatically create new tests from UI interactions,
 install Playwright on your host system.
 
