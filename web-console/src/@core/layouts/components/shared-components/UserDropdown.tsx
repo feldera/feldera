@@ -7,7 +7,8 @@ import LogoutVariant from 'mdi-material-ui/LogoutVariant'
 import { Fragment, SyntheticEvent, useState } from 'react'
 import invariant from 'tiny-invariant'
 
-import { Link } from '@mui/material'
+import { useClipboard } from '@mantine/hooks'
+import { Button, Link } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
@@ -25,7 +26,8 @@ const BadgeContentSpan = styled('span')(({ theme }) => ({
   boxShadow: `0 0 0 2px ${theme.palette.background.paper}`
 }))
 
-const UserDropdown = (props: { auth: AuthData }) => {
+const UserDropdown = () => {
+  const { copy } = useClipboard()
   const [anchorEl, setAnchorEl] = useState<Element | null>(null)
   const { auth, setAuth } = useAuth()
   invariant(typeof auth === 'object')
@@ -71,7 +73,7 @@ const UserDropdown = (props: { auth: AuthData }) => {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Box sx={{ pt: 2, pb: 3, px: 4 }}>
+        <Box sx={{ py: 2, px: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Badge
               overlap='circular'
@@ -86,6 +88,11 @@ const UserDropdown = (props: { auth: AuthData }) => {
                 user
               </Typography>
             </Box>
+          </Box>
+          <Box>
+            <Button variant='outlined' size='small' sx={{ display: 'flex' }} onClick={() => copy(auth.bearer)}>
+              <Typography variant='caption'>Copy bearer token</Typography>
+            </Button>
           </Box>
         </Box>
         <Divider sx={{ mt: 0, mb: 1 }} />
@@ -102,7 +109,7 @@ const UserDropdown = (props: { auth: AuthData }) => {
           </Box>
         </MenuItem>
         <Divider />
-        <Link href={props.auth.signOutUrl}>
+        <Link href={auth.signOutUrl}>
           <MenuItem sx={{ py: 2 }} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
             <LogoutVariant sx={{ marginRight: 2, fontSize: '1.375rem', color: 'text.secondary' }} />
             Logout
