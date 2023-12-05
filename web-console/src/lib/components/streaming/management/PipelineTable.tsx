@@ -44,7 +44,7 @@ import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { format } from 'd3-format'
 import dayjs from 'dayjs'
 import Link from 'next/link'
-import React, { Fragment, useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
@@ -61,7 +61,7 @@ import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
 
 import { useLocalStorage } from '@mantine/hooks'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { alpha, Button, Typography, useTheme } from '@mui/material'
+import { alpha, Button, useTheme } from '@mui/material'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -277,11 +277,14 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 </ListItemIcon>
                 <ListItemText
                   primary={pipelineRevisionQuery.data?.program.name || 'not set'}
-                  secondary={
-                    <Typography variant='caption'>
-                      {pipelineRevisionQuery.data?.pipeline.pipeline_id || 'not set'}
-                    </Typography>
+                  secondaryTypographyProps={
+                    {
+                      'data-testid': 'box-pipeline-id',
+                      sx: { width: '100%' },
+                      variant: 'caption'
+                    } as any
                   }
+                  secondary={pipelineRevisionQuery.data?.pipeline.pipeline_id || 'not set'}
                 />
               </ListItem>
               {state.current_status == PipelineStatus.RUNNING && (
@@ -294,6 +297,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                     </Tooltip>
                     <ListItemText
                       primary={state.created ? dayjs(state.created).format('MM/DD/YYYY HH:MM') : 'Not running'}
+                      data-testid='box-pipeline-date-created'
                     />
                   </ListItem>
                   <ListItem>
@@ -302,7 +306,11 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                         <IconLogInCircle fontSize={20} />
                       </ListItemIcon>
                     </Tooltip>
-                    <ListItemText className='pipelinePort' primary={state.location || '0000'} />
+                    <ListItemText
+                      className='pipelinePort'
+                      primary={state.location || '0000'}
+                      data-testid='box-pipeline-port'
+                    />
                   </ListItem>
                 </>
               )}
@@ -452,13 +460,13 @@ export default function PipelineTable() {
     {
       field: 'status',
       headerName: 'Status',
-      flex: 1,
+      width: 145,
       renderCell: PipelineStatusCell
     },
     {
       field: 'actions',
       headerName: 'Actions',
-      flex: 1.0,
+      width: 120,
       renderCell: PipelineActions
     }
   ]

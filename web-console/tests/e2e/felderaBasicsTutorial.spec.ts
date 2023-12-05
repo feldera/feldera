@@ -40,18 +40,21 @@ const pipelineName = 'Supply Chain Test Pipeline'
 const programName = 'Supply Chain Analytics'
 
 test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
-  test.setTimeout(120000)
+  test.setTimeout(150000)
   await page.goto(appOrigin)
 
   await test.step('Part 1: Create a program', async () => {
-    // Expect a title "to contain" a substring.
     await expect(page).toHaveURL(appOrigin + 'home/')
+    await expect(page).toHaveScreenshot('clean home.png')
     await page.getByTestId('button-vertical-nav-sql-programs').click()
     await page.getByTestId('button-add-sql-program').first().click()
     await page.getByTestId('input-program-name').fill(programName)
-    await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({state: 'attached'})
+    await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({ state: 'attached' })
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').fill(felderaBasicsTutorialSql)
+    await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
     await page.getByTestId('box-save-saved').waitFor()
+    await page.getByTestId('box-compile-status-success').waitFor()
+    await expect(page).toHaveScreenshot('saved sql program.png') // Account for cursor
   })
 
   await test.step('Part 1: Create a pipeline', async () => {
@@ -65,11 +68,17 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   await test.step('Part 1: Start the pipeline', async () => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
+    await expect(page).toHaveScreenshot('compiling program binary.png')
     await page.getByTestId(`box-pipeline-${pipelineName}-status-Inactive`).waitFor({ timeout: 60000 })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
   })
   const pipelineUUID = await test.step('Part 1: Populate PART table', async () => {
     await page.getByTestId(`button-expand-pipeline-${pipelineName}`).click()
+    await expect(page).toHaveScreenshot('pipeline details.png', {
+      mask: ['box-pipeline-id', 'box-pipeline-date-created', 'box-pipeline-port', 'box-pipeline-memory-graph'].map(id =>
+        page.getByTestId(id)
+      )
+    })
     await page
       .getByTestId(`box-details-${pipelineName}`)
       .getByTestId(`box-relation-actions-PART`)
@@ -87,6 +96,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
 
     await expect(page.getByTestId('box-snackbar-popup')).toHaveText('3 Row(s) inserted')
     await page.getByTestId('button-tab-browse').click()
+    await expect(page).toHaveScreenshot('part data 0.png')
     await page.getByTestId('button-tab-insert').click()
     return pipelineUUID
   })
@@ -98,6 +108,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
       [2, 'HyperDrive Innovations', '456 Warp Way'],
       [3, 'DarkMatter Devices', '333 Singularity Street']
     ])
+    await expect(page).toHaveScreenshot('vendor data 0.png')
   })
   await test.step('Part 1: Populate PRICE table', async () => {
     await page.getByTestId('button-expand-relations').click()
@@ -107,10 +118,14 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
       [2, 1, 15000],
       [3, 3, 9000]
     ])
+    await page.getByTestId('button-tab-browse').click()
+    await expect(page).toHaveScreenshot('price-data-0.png')
+    await page.getByTestId('button-tab-insert').click()
   })
   await test.step('Part 1: Check PREFERRED_VENDOR view', async () => {
     await page.getByTestId('button-expand-relations').click()
     await page.getByTestId('box-relation-options').getByTestId(`button-option-relation-PREFERRED_VENDOR`).click()
+    await expect(page).toHaveScreenshot('preferred_vendor data 0.png')
   })
   await test.step('Part 1: Update PRICE table', async () => {
     await page.getByTestId('button-expand-relations').click()
@@ -124,6 +139,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
 
     await page.getByTestId('button-expand-relations').click()
     await page.getByTestId('box-relation-options').getByTestId(`button-option-relation-PREFERRED_VENDOR`).click()
+    await expect(page).toHaveScreenshot('preferred_vendor data 1.png')
   })
   await test.step('Part 1: Stop the pipeline', async () => {
     await page.getByTestId('button-current-pipeline').click()
@@ -135,7 +151,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     await page.getByTestId(`box-pipeline-${pipelineName}-status-Running`).waitFor()
   })
   await test.step('Part 2: Repopulate PART table', async () => {
-    request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PART?format=json`, {
+    await request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PART?format=json`, {
       data: `
       {"insert": {"id": 1, "name": "Flux Capacitor"}}
       {"insert": {"id": 2, "name": "Warp Core"}}
@@ -144,7 +160,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     })
   })
   await test.step('Part 2: Repopulate VENDOR table', async () => {
-    request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PART?format=json`, {
+    await request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PART?format=json`, {
       data: `
       {"insert": {"id": 1, "name": "Gravitech Dynamics", "address": "222 Graviton Lane"}}
       {"insert": {"id": 2, "name": "HyperDrive Innovations", "address": "456 Warp Way"}}
@@ -153,7 +169,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     })
   })
   await test.step('Part 2: Repopulate PRICE table', async () => {
-    request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PART?format=json`, {
+    await request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PART?format=json`, {
       data: `
       {"insert": {"part": 1, "vendor": 2, "price": 10000}}
       {"insert": {"part": 2, "vendor": 1, "price": 15000}}
@@ -162,7 +178,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     })
   })
   await test.step('Part 2: Update PRICE table', async () => {
-    request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PRICE?format=json`, {
+    await request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PRICE?format=json`, {
       data: `
       {"delete": {"part": 1, "vendor": 2, "price": 10000}}
       {"insert": {"part": 1, "vendor": 2, "price": 30000}}
@@ -172,6 +188,18 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
       {"insert": {"part": 2, "vendor": 3, "price": 11000}}'
     `
     })
+  })
+  await test.step('Part 2: View updated data', async () => {
+    // await page.getByTestId(`button-expand-pipeline-${pipelineName}`).click()
+    await page
+      .getByTestId(`box-details-${pipelineName}`)
+      .getByTestId(`box-relation-actions-PRICE`)
+      .getByTestId(`button-inspect`)
+      .click()
+    await expect(page).toHaveScreenshot('price-data-1.png')
+    await page.getByTestId('button-expand-relations').click()
+    await page.getByTestId('box-relation-options').getByTestId(`button-option-relation-PREFERRED_VENDOR`).click()
+    await expect(page).toHaveScreenshot('preferred_vendor data 2.png')
   })
   await test.step('Part 2: Shutdown pipeline', async () => {
     await page.getByTestId('button-vertical-nav-pipelines').click()
@@ -190,6 +218,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
       name: 'prices-s3',
       url: 'https://feldera-basics-tutorial.s3.amazonaws.com/price.json'
     })
+    await expect(page).toHaveScreenshot('http connectors.png')
   })
   await test.step('Part 3: Attach GET connectors to the pipeline', async () => {
     await page.getByTestId('button-vertical-nav-pipelines').click()
@@ -206,9 +235,11 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     ]) {
       await page.getByTestId('box-handle-input-' + input).dragTo(page.getByTestId('box-handle-table-' + table))
     }
+    await expect(page).toHaveScreenshot('connected inputs.png')
   })
   await test.step('Part 3: Create Kafka input', async () => {
     await page.getByTestId('button-builder-add-input').click()
+    await expect(page).toHaveScreenshot('input connectors drawer.png')
     await page
       .getByTestId('box-connector-' + 'KafkaIn')
       .getByTestId('button-add-connector')
@@ -229,6 +260,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   })
   await test.step('Part 3: Create Redpanda output', async () => {
     await page.getByTestId('button-builder-add-output').click()
+    await expect(page).toHaveScreenshot('output connectors drawer.png')
     await page
       .getByTestId('box-connector-' + 'KafkaOut')
       .getByTestId('button-add-connector')
@@ -243,6 +275,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     await page
       .getByTestId('box-handle-output-' + 'preferred_vendor-redpanda')
       .dragTo(page.getByTestId('box-handle-view-' + 'PREFERRED_VENDOR'))
+    await expect(page).toHaveScreenshot('complete pipeline.png')
   })
   await test.step('Part 3: Start the pipleine', async () => {
     await page.getByTestId('button-breadcrumb-pipelines').click()

@@ -138,14 +138,13 @@ const DataSourceTable = () => {
     },
     {
       flex: 0.3,
-      minWidth: 290,
+      minWidth: 150,
       headerName: 'Name',
       field: 'name',
       editable: true
     },
     {
       flex: 0.5,
-      minWidth: 110,
       field: 'description',
       headerName: 'Description',
       renderCell: (params: GridRenderCellParams) => (

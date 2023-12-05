@@ -104,7 +104,14 @@ const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Memory used</Typography>
         <Typography variant='h5'>{humanSize(smoothMemUsed[smoothMemUsed.length - 1] ?? 0)}</Typography>
       </CardContent>
-      <ReactApexcharts type='area' height={110} width='100%' options={options} series={series} />
+      <ReactApexcharts
+        type='area'
+        height={110}
+        width='100%'
+        options={options}
+        series={series}
+        data-testid='box-pipeline-memory-graph'
+      />
     </Card>
   )
 }
