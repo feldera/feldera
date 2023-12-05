@@ -98,8 +98,6 @@ const TableSqlPrograms = () => {
   // Table columns
   const columns: GridColDef[] = [
     {
-      flex: 0.05,
-      minWidth: 50,
       field: 'program_id',
       headerName: 'ID',
       renderCell: (params: GridRenderCellParams) => {
@@ -118,14 +116,13 @@ const TableSqlPrograms = () => {
     },
     {
       flex: 0.3,
-      minWidth: 290,
+      minWidth: 150,
       headerName: 'Name',
       field: 'name',
       editable: true
     },
     {
       flex: 0.5,
-      minWidth: 110,
       field: 'description',
       headerName: 'Description',
       renderCell: (params: GridRenderCellParams) => (
@@ -136,8 +133,7 @@ const TableSqlPrograms = () => {
       editable: true
     },
     {
-      flex: 0.15,
-      minWidth: 140,
+      width: 140,
       field: 'status',
       headerName: 'Status',
       renderCell: (params: GridRenderCellParams) => {
@@ -150,8 +146,7 @@ const TableSqlPrograms = () => {
       }
     },
     {
-      flex: 0.1,
-      minWidth: 90,
+      width: 90,
       sortable: false,
       field: 'actions',
       headerName: 'Actions',

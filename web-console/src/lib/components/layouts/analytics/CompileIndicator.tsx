@@ -30,6 +30,7 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
     color: ThemeColor
     isCompiling: boolean
     label: string
+    status: string
     toolTip?: string
     visible: boolean
   }
@@ -40,6 +41,7 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
       color: 'error' as const,
       isCompiling: false,
       label: errs.length + ' Compiler Error',
+      status: 'compilerError',
       toolTip:
         'Compilation had ' +
         errs.length +
@@ -51,13 +53,15 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
       visible: true,
       color: 'success' as const,
       isCompiling: false,
-      label: labelSuccess
+      label: labelSuccess,
+      status: 'success'
     }))
     .with({ SystemError: P._ }, () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
-      label: labelSuccess
+      label: labelSuccess,
+      status: 'success'
     }))
     .with('None', () => ({
       visible: false,
@@ -77,13 +81,15 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
       visible: true,
       color: 'warning' as const,
       isCompiling: true,
-      label: labelCompiling
+      label: labelCompiling,
+      status: 'compiling'
     }))
     .with('CompilingRust', () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
-      label: labelSuccess
+      label: labelSuccess,
+      status: 'success'
     }))
     // If you change the 'Success' string, adjust the webui-tester too
     .with('Success', () => ({
@@ -105,6 +111,7 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
           skin='light'
           color={buttonState.color}
           icon={buttonState.isCompiling ? loadingIcon : buttonState.color == 'error' ? errIcon : doneIcon}
+          data-testid={'box-compile-status-' + buttonState.status}
         />
       </Tooltip>
     )
