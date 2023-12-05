@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2023-12-05
+
 ### Fixed
 
 - WebConsole: Add "Queued" status for pipelines whose programs are enqueued to be compiled (#1032)
