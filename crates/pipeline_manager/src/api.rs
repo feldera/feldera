@@ -2190,7 +2190,7 @@ async fn http_output(
 
 /// Get authentication provider configuration
 #[utoipa::path(
-    path="/../config/authentication",
+    path="/config/authentication",
     responses(
         (status = OK
             , description = "The response body contains Authentication Provider configuration, \
