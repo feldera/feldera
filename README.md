@@ -78,8 +78,8 @@ a Feldera Platform deployment suitable for demos, development and testing:
 curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | docker compose -f - --profile demo up
 ```
 
-It can take some time for the container images to be downloaded. About ten seconds after that, the DBSP
-web interface will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
+It can take some time for the container images to be downloaded. About ten seconds after that, the Feldera
+web console will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
 to bring it up. We suggest going through our [demo](https://www.feldera.com/docs/demo) next.
 
 Our [Getting Started](https://www.feldera.com/docs/intro) guide has more detailed instructions on running the demo.

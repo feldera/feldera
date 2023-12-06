@@ -1,6 +1,6 @@
-# Contributing to DBSP
+# Contributing to Feldera
 
-The DBSP project team welcomes contributions from the community. Before you start working with DBSP, please
+The Feldera team welcomes contributions from the community. Before you start working with Feldera, please
 read our [Developer Certificate of Origin (DCO)](https://developercertificate.org/).
 To acknowledge the DCO, sign your commits by adding `Signed-off-by: Your Name <your@email.com>` to the last
 line of each Git commit message.  Your signature certifies that you wrote the patch or have the right to pass
@@ -10,8 +10,10 @@ with `git commit -s`.
 
 ## Dependencies
 
-We develop and test under Linux.  Windows Subsystem for Linux works fine.
-The setup can be seen in this [Earthfile](Earthfile).
+Our team develops and tests using Linux and MacOS. Windows Subsystem for Linux works fine too.
+
+The Feldera container images and CI workflows use Linux. You can see our setup in
+our [Dockerfile](deploy/Dockerfile) and [Earthfile](Earthfile) .
 
 Our known dependencies are:
 - Runtime
@@ -35,10 +37,10 @@ maven, Python, and typescript build tools.
 
 ### Forking
 
-We recommend forking the dbsp repository and contributing from a fork.
+We recommend forking the Feldera repository and contributing from a fork.
 This [page](https://docs.github.com/en/get-started/quickstart/fork-a-repo)
 has instructions on how to fork a repository.  After forking do not
-forget to add dbsp as a remote repository:
+forget to add Feldera as a remote repository:
 
 ```shell
 git remote add upstream https://github.com/feldera/feldera.git
@@ -52,7 +54,7 @@ This is a rough outline of what a contributor's workflow looks like:
 - Make commits of logical units
 - Make sure your commit messages are in the proper format (see below)
 - Push your changes to a topic branch in the repository (push to your fork if
-  you don't have commit access to the dbsp repository --- pushing directly
+  you don't have commit access to the Feldera repository --- pushing directly
   to the repo is preferred because then CI will be able to add benchmark
   results to the PR in the comments).
 - Submit a pull request
@@ -145,9 +147,9 @@ When opening a new issue, try to roughly follow the commit message format conven
 
 # For developers
 
-## Building DBSP from sources
+## Building Feldera from sources
 
-DBSP is implemented in Rust and uses Rust's `cargo` build system. The SQL
+Feldera is implemented in Rust and uses Rust's `cargo` build system. The SQL
 to DBSP compiler is implemented in Java and uses `maven` as its build system.
 
 You can build the rust sources by runnning the following at the top level of this tree.
@@ -162,13 +164,14 @@ To build the SQL to DBSP compiler, run the following from `sql-to-dbsp-compiler/
 mvn package
 ```
 
-If you want to develop DBSP without installing the required toolchains
+If you want to develop Feldera without installing the required toolchains
 locally, you can use Github Codespaces; from
 https://github.com/feldera/feldera, click on the green `<> Code` button,
 then select Codespaces and click on "Create codespace on main".
 
 ## Learning the DBSP Rust code
 
+DBSP is a key crate that powers Feldera's pipelines.
 To learn how the DBSP core works, we recommend starting with the tutorial.
 
 From the project root:
