@@ -67,7 +67,7 @@ pipelines using Feldera Platform.
 * [SQL compiler](sql-to-dbsp-compiler): translates SQL programs into DBSP programs.
 * [connectors](crates/adapters/): to stream data in and out of Feldera Platform pipelines.
 
-## Quick start
+## Quick start with Docker
 
 First, make sure you have [Docker Compose](https://docs.docker.com/compose/) installed.
 
@@ -83,6 +83,29 @@ web interface will become available. Visit [http://localhost:8080](http://localh
 to bring it up. We suggest going through our [demo](https://www.feldera.com/docs/demo) next.
 
 Our [Getting Started](https://www.feldera.com/docs/intro) guide has more detailed instructions on running the demo.
+
+## Running Feldera from sources
+
+To run Feldera from sources, first install all the required
+[dependencies](CONTRIBUTING.md). This includes the Rust toolchain, Java (at
+least JDK 19), Maven and Typescript.
+
+After that, the first step is to build the SQL compiler:
+
+```
+cd sql-to-dbsp-compiler
+mvn package -DskipTests
+```
+
+Next, from the repository root, run the pipeline-manager:
+
+```
+cargo run --bin=pipeline-manager --features pg-embed
+```
+
+As with the Docker instructions above, you can now visit
+[http://localhost:8080](http://localhost:8080) on your browser to see the
+Feldera WebConsole.
 
 ## Documentation
 
