@@ -5,11 +5,6 @@ in a configuration suitable for demos, development, and testing.  For production
 use, or for developing parts of Feldera Platform itself, Feldera Platform
 supports other forms of deployment.
 
-These instructions explain how to run the Feldera Platform on a single machine
-in a configuration suitable for demos, development, and testing.  For production
-use, or for developing parts of Feldera Platform itself, Feldera Platform
-supports other forms of deployment.
-
 ## Install prerequisites
 
 To run the demo, you will first need to install Docker and the Docker
