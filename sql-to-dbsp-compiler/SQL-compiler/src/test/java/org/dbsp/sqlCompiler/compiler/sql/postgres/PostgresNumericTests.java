@@ -918,7 +918,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "FROM v;\n" +
                 "     x     |  minusx   |   abs    |   floor   |   ceil    | sign  \n" +
                 "-----------+-----------+----------+-----------+-----------+-------\n" +
-                "         0 |         0 |        0 |         0 |         0 |    0 \n" +
+                "         0 |        -0 |        0 |         0 |         0 |    0 \n" +
                 "         1 |        -1 |        1 |         1 |         1 |    1 \n" +
                 "        -1 |         1 |        1 |        -1 |        -1 |   -1 \n" +
                 "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1 \n" +
