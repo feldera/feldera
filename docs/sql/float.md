@@ -84,4 +84,12 @@ REAL '1.23'  -- string style
     <td><code>LOG10(value)</code></td>
     <td>The logarithm base 10 of value. Produces a runtime error for values less than or equal to zero.</td>
   </tr>
+  <tr>
+    <td><code>SIN(value)</code></td>
+    <td>The sine of value as radians.</td>
+  </tr>
+  <tr>
+    <td><code>COS(value)</code></td>
+    <td>The cosine of value as radians.</td>
+  </tr>
 </table>

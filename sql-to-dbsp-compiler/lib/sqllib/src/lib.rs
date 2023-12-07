@@ -889,6 +889,24 @@ some_polymorphic_function1!(sign, f, F32, F32);
 some_polymorphic_function1!(sign, d, F64, F64);
 some_polymorphic_function1!(sign, decimal, Decimal, Decimal);
 
+///////////////////// sin //////////////////////
+
+#[inline(always)]
+pub fn sin_(value: F64) -> F64 {
+    value.into_inner().sin().into()
+}
+
+////////////////////////////////////////////////
+
+///////////////////// cos //////////////////////
+
+#[inline(always)]
+pub fn cos_(value: F64) -> F64 {
+    value.into_inner().cos().into()
+}
+
+////////////////////////////////////////////////
+
 pub fn cardinality_<T>(value: Vec<T>) -> i32 {
     value.len() as i32
 }

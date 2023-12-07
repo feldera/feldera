@@ -12,6 +12,9 @@ use std::{
 #[cfg(feature = "with-serde")]
 use serde::{Deserialize, Serialize};
 
+// TODO: Use different values for f32 and f64
+const FLOAT_DISPLAY_PRECISION: usize = 15;
+
 macro_rules! float {
     ($($outer:ident($inner:ident)),* $(,)?) => {
         $(
@@ -361,7 +364,9 @@ macro_rules! float {
             impl Display for $outer {
                 #[rustfmt::skip]
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    Display::fmt(&self.0.0, f)
+                    let num = format!("{1:.0$}", FLOAT_DISPLAY_PRECISION, &self.0.0);
+                    let num = num.trim_end_matches('0');
+                    Display::fmt(num, f)
                 }
             }
 
