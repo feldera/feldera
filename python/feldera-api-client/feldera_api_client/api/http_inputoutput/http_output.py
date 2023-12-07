@@ -118,10 +118,16 @@ def sync_detailed(
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`
-    parameter. Updates are split into `Chunk`'s.
+    parameter. Updates are split into `Chunk`s.
 
-    The pipeline continuous sending updates until the client closes the
+    The pipeline continues sending updates until the client closes the
     connection or the pipeline is shut down.
+
+    This API is a POST instead of a GET, because when performing neighborhood
+    queries (query='neighborhood'), the call expects a request body which
+    contains, among other things, a full row to execute a neighborhood search
+    around. A row can be quite large and is not appropriate as a query
+    parameter.
 
     Args:
         pipeline_id (str):
@@ -183,10 +189,16 @@ def sync(
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`
-    parameter. Updates are split into `Chunk`'s.
+    parameter. Updates are split into `Chunk`s.
 
-    The pipeline continuous sending updates until the client closes the
+    The pipeline continues sending updates until the client closes the
     connection or the pipeline is shut down.
+
+    This API is a POST instead of a GET, because when performing neighborhood
+    queries (query='neighborhood'), the call expects a request body which
+    contains, among other things, a full row to execute a neighborhood search
+    around. A row can be quite large and is not appropriate as a query
+    parameter.
 
     Args:
         pipeline_id (str):
@@ -243,10 +255,16 @@ async def asyncio_detailed(
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`
-    parameter. Updates are split into `Chunk`'s.
+    parameter. Updates are split into `Chunk`s.
 
-    The pipeline continuous sending updates until the client closes the
+    The pipeline continues sending updates until the client closes the
     connection or the pipeline is shut down.
+
+    This API is a POST instead of a GET, because when performing neighborhood
+    queries (query='neighborhood'), the call expects a request body which
+    contains, among other things, a full row to execute a neighborhood search
+    around. A row can be quite large and is not appropriate as a query
+    parameter.
 
     Args:
         pipeline_id (str):
@@ -306,10 +324,16 @@ async def asyncio(
 
     The pipeline responds with a continuous stream of changes to the specified
     table or view, encoded using the format specified in the `?format=`
-    parameter. Updates are split into `Chunk`'s.
+    parameter. Updates are split into `Chunk`s.
 
-    The pipeline continuous sending updates until the client closes the
+    The pipeline continues sending updates until the client closes the
     connection or the pipeline is shut down.
+
+    This API is a POST instead of a GET, because when performing neighborhood
+    queries (query='neighborhood'), the call expects a request body which
+    contains, among other things, a full row to execute a neighborhood search
+    around. A row can be quite large and is not appropriate as a query
+    parameter.
 
     Args:
         pipeline_id (str):

@@ -366,7 +366,7 @@ fn public_scope() -> Scope {
     // Creates a dictionary of static files indexed by file name.
     let generated = generate();
 
-    // Leave this is an empty prefix to load the UI by default. When constructing an
+    // Leave this as an empty prefix to load the UI by default. When constructing an
     // app, always attach other scopes without empty prefixes before this one,
     // or route resolution does not work correctly.
     web::scope("")
@@ -2059,13 +2059,14 @@ pub struct PipelineIdOrNameQuery {
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
-        ("table_name" = String, Path, description = "SQL table name."),
+        ("table_name" = String, Path,
+            description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
         ("format" = String, Query, description = "Input data format, e.g., 'csv' or 'json'."),
         ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
         ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
     ),
-    tag = "Pipelines",
+    tag = "HTTP input/output",
     request_body(
         content = String,
         description = "Contains the new input data in CSV.",
@@ -2106,10 +2107,16 @@ async fn http_input(
 ///
 /// The pipeline responds with a continuous stream of changes to the specified
 /// table or view, encoded using the format specified in the `?format=`
-/// parameter. Updates are split into `Chunk`'s.
+/// parameter. Updates are split into `Chunk`s.
 ///
-/// The pipeline continuous sending updates until the client closes the
+/// The pipeline continues sending updates until the client closes the
 /// connection or the pipeline is shut down.
+///
+/// This API is a POST instead of a GET, because when performing neighborhood
+/// queries (query='neighborhood'), the call expects a request body which
+/// contains, among other things, a full row to execute a neighborhood search
+/// around. A row can be quite large and is not appropriate as a query
+/// parameter.
 #[utoipa::path(
     responses(
         (status = OK
@@ -2144,7 +2151,8 @@ async fn http_input(
     ),
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
-        ("table_name" = String, Path, description = "SQL table or view name."),
+        ("table_name" = String, Path,
+            description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
         ("query" = Option<OutputQuery>, Query, description = "Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'"),
         ("mode" = Option<EgressMode>, Query, description = "Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'"),
@@ -2156,7 +2164,7 @@ async fn http_input(
         description = "When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.",
         content_type = "application/json",
     ),
-    tag = "Pipelines"
+    tag = "HTTP input/output"
 )]
 #[post("/pipelines/{pipeline_id}/egress/{table_name}")]
 async fn http_output(
@@ -2201,7 +2209,7 @@ async fn http_output(
             , description = "Request failed."
             , body = ErrorResponse),
     ),
-    tag = "Manager"
+    tag = "Authentication"
 )]
 #[get("/config/authentication")]
 async fn get_authentication_config(

@@ -815,11 +815,14 @@ pub(crate) struct Pipeline {
 pub(crate) struct AttachedConnector {
     /// A unique identifier for this attachement.
     pub name: String,
-    /// Is this an input or an output?
+    /// True for input connectors, false for output connectors.
     pub is_input: bool,
     /// The id of the connector to attach.
     pub connector_id: ConnectorId,
-    /// The table or view this connector is attached to.
+    /// The table or view this connector is attached to. Unquoted
+    /// table/view names in the SQL program need to be capitalized
+    /// here. Quoted table/view names have to exactly match the
+    /// casing from the SQL program.
     #[cfg_attr(test, proptest(regex = "relation1|relation2|relation3|"))]
     pub relation_name: String,
 }
