@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -63,7 +63,6 @@ import org.junit.Test;
 
 import javax.imageio.ImageIO;
 import java.io.*;
-import java.nio.file.Paths;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -88,10 +87,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(ddl);
         return compiler;
-    }
-
-    File fileFromName(String name) {
-        return new File(Paths.get(rustDirectory, name).toUri());
     }
 
     @Test
@@ -123,7 +118,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
                 "    let T = T();\n" +
                 "    // DBSPMapOperator 74\n" +
-                "    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2))));\n" +
+                "    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2), )));\n" +
                 "    // CREATE VIEW `V` AS\n" +
                 "    // SELECT `T`.`COL3`\n" +
                 "    // FROM `T`\n" +
@@ -380,7 +375,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(1, sink.inputs.size());
         DBSPOperator op = sink.inputs.get(0);
         // There is no optimization I can imagine which will remove the distinct
-        Assert.assertTrue(op.is(DBSPDistinctOperator.class));
+        Assert.assertTrue(op.is(DBSPStreamDistinctOperator.class));
     }
 
     @Test
@@ -538,25 +533,23 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testCompilerToPng() {
-        try {
-            String[] statements = new String[]{
-                    "CREATE TABLE T (\n" +
-                            "COL1 INT NOT NULL" +
-                            ", COL2 DOUBLE NOT NULL" +
-                            ")",
-                    "CREATE VIEW V AS SELECT COL1 FROM T WHERE COL1 > 5"
-            };
-            File file = createInputScript(statements);
-            File png = File.createTempFile("out", ".png", new File("."));
-            png.deleteOnExit();
-            CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
-            Assert.assertEquals(message.exitCode, 0);
-            Assert.assertTrue(file.exists());
-            ImageIO.read(new File(png.getPath()));
-        } catch (Exception ex) {
-            // if graphviz is not installed this test fails early
-        }
+    public void testCompilerToPng() throws IOException {
+        if (!Utilities.isDotInstalled())
+            return;
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                        "COL1 INT NOT NULL" +
+                        ", COL2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM T WHERE COL1 > 5"
+        };
+        File file = createInputScript(statements);
+        File png = File.createTempFile("out", ".png", new File("."));
+        png.deleteOnExit();
+        CompilerMessages message = CompilerMain.execute("-png", "-o", png.getPath(), file.getPath());
+        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertTrue(file.exists());
+        ImageIO.read(new File(png.getPath()));
     }
 
     @Test

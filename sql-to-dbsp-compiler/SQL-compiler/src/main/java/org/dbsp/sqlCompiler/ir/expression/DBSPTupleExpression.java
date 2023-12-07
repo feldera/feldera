@@ -138,7 +138,7 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
         return builder.append("Tuple")
                 .append(this.fields.length)
                 .append("::new(")
-                .join(", ", this.fields)
+                .intercalateI(", ", this.fields)
                 .append(")");
     }
 

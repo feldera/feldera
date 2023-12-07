@@ -6,6 +6,7 @@ use hex::ToHex;
 use serde::{Deserializer, Serializer};
 use size_of::SizeOf;
 use std::fmt::Debug;
+use dbsp::num_entries_scalar;
 
 #[derive(
     Debug,
@@ -23,6 +24,11 @@ use std::fmt::Debug;
 )]
 pub struct ByteArray {
     data: Vec<u8>,
+}
+
+num_entries_scalar! {
+    // TODO: Is this right?
+    ByteArray,
 }
 
 impl SerializeWithContext<SqlSerdeConfig> for ByteArray {

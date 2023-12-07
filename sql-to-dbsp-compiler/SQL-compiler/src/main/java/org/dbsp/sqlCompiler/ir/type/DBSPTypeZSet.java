@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
@@ -44,7 +45,8 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.elementType.accept(visitor);
         this.weightType.accept(visitor);

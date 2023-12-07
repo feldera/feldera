@@ -5,6 +5,7 @@ use dbsp::algebra::F64;
 use geo::EuclideanDistance;
 use geo::Point;
 use size_of::*;
+use dbsp::num_entries_scalar;
 
 #[derive(
     Default,
@@ -23,6 +24,10 @@ use size_of::*;
     rkyv::Deserialize,
 )]
 pub struct GeoPoint(F64, F64);
+
+num_entries_scalar! {
+    GeoPoint,
+}
 
 impl GeoPoint {
     pub fn new<T, S>(left: T, right: S) -> Self

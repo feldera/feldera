@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -35,8 +37,7 @@ public class DBSPTypeBinary extends DBSPTypeBaseType {
 
     @Override
     public DBSPLiteral defaultValue() {
-        // return new DBSPByteArrayLiteral(new byte[], this.mayBeNull);
-        return null;
+        return new DBSPBinaryLiteral(new byte[] {}, this.mayBeNull);
     }
 
     @Override
@@ -56,7 +57,8 @@ public class DBSPTypeBinary extends DBSPTypeBaseType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);

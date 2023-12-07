@@ -5,6 +5,7 @@ import net.hydromatic.sqllogictest.SltSqlStatement;
 import net.hydromatic.sqllogictest.SqlTestQuery;
 import net.hydromatic.sqllogictest.TestStatistics;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
@@ -21,7 +22,8 @@ public abstract class TestBatch {
     final List<SqlTestQuery> queries;
     final int firstQueryNo;
     final String filesDirectory;
-    InputGenerator inputGenerator;
+    @Nullable
+    InputGenerator inputGenerator = null;
 
     protected TestBatch(OptionsParser.SuppliedOptions options, String filesDirectory, int firstQueryNo) {
         this.options = options;
@@ -53,5 +55,5 @@ public abstract class TestBatch {
     }
 
     /** Run the batch.  Return 'true' if we have to stop execution immediately. */
-    abstract boolean run(TestStatistics statistics) throws IOException, NoSuchAlgorithmException;
+    abstract boolean run(TestStatistics statistics) throws NoSuchAlgorithmException;
 }

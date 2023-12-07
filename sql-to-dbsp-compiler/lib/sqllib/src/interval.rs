@@ -10,6 +10,7 @@ use num::PrimInt;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::ops::Mul;
+use dbsp::num_entries_scalar;
 
 #[derive(
     Debug,
@@ -119,4 +120,9 @@ where
             days: i32::from(value),
         }
     }
+}
+
+num_entries_scalar! {
+    ShortInterval,
+    LongInterval,
 }

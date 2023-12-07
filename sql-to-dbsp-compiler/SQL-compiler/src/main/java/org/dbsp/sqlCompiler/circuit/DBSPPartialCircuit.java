@@ -105,11 +105,14 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
 
     @Override
     public void accept(CircuitVisitor visitor) {
+        visitor.push(this);
         VisitDecision decision = visitor.preorder(this);
-        if (decision.stop()) return;
-        for (DBSPOperator op: this.allOperators)
-            op.accept(visitor);
-        visitor.postorder(this);
+        if (!decision.stop()) {
+            for (DBSPOperator op : this.allOperators)
+                op.accept(visitor);
+            visitor.postorder(this);
+        }
+        visitor.pop(this);
     }
 
     /**

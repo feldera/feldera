@@ -24,9 +24,11 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -34,28 +36,32 @@ import java.util.Objects;
 
 public class DBSPFlatMapOperator extends DBSPUnaryOperator {
     public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
-                               DBSPType resultType, DBSPOperator input) {
-        super(node, "flat_map", expression, resultType, true, input);
+                               DBSPTypeZSet outputType, DBSPOperator input) {
+        super(node, "flat_map", expression, outputType, true, input);
         this.checkArgumentFunctionType(expression, 0, input);
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPFlatMapOperator(
-                this.getNode(), Objects.requireNonNull(expression), outputType, this.input());
+                this.getNode(), Objects.requireNonNull(expression),
+                outputType.to(DBSPTypeZSet.class), this.input());
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPFlatMapOperator(
-                    this.getNode(), this.getFunction(), this.outputType, newInputs.get(0));
+                    this.getNode(), this.getFunction(), this.getOutputZSetType(), newInputs.get(0));
         return this;
     }
 }

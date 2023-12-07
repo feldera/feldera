@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
@@ -26,12 +26,13 @@ public class IndexedInputs extends CircuitCloneVisitor {
     public void postorder(DBSPSourceMultisetOperator node) {
         List<DBSPType> keyFields = new ArrayList<>();
         List<Integer> keyColumnFields = new ArrayList<>();
-        for (int i = 0; i < node.metadata.size(); i++) {
-            InputColumnMetadata inputColumnMetadata = node.metadata.get(i);
+        int i = 0;
+        for (InputColumnMetadata inputColumnMetadata: node.metadata.getColumns()) {
             if (inputColumnMetadata.isPrimaryKey) {
                 keyColumnFields.add(i);
                 keyFields.add(inputColumnMetadata.type);
             }
+            i++;
         }
         if (keyColumnFields.isEmpty()) {
             super.postorder(node);

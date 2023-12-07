@@ -55,12 +55,16 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         return fields;
     }
 
+    /** The tuple obtained by projecting this tuple on the specified fields.
+     * Note that the elements are produced in the order indicated. */
+    public abstract DBSPTypeTupleBase project(List<Integer> fields);
+
     public DBSPType getFieldType(int index) {
         return this.tupFields[index];
     }
 
     public boolean hasCopy() {
-        return true;
+        return false;
     }
 
     public abstract DBSPExpression makeTuple(DBSPExpression... expressions);
@@ -68,4 +72,6 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
     public int size() {
         return this.tupFields.length;
     }
+
+    public abstract DBSPType makeType(List<DBSPType> fields);
 }

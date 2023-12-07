@@ -24,23 +24,25 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
-import javax.annotation.CheckReturnValue;
 import java.util.List;
 
 public class DBSPDistinctOperator extends DBSPUnaryOperator {
     public DBSPDistinctOperator(CalciteObject node, DBSPOperator input) {
-        super(node, "stream_distinct", null, input.outputType, false, input);
+        super(node, "distinct", null, input.outputType, false, input);
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
-    @CheckReturnValue
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))

@@ -5,6 +5,24 @@
 //! Rust tuples only go up to 12 fields, but we may need more.
 
 #[macro_export]
+macro_rules! count_items {
+    () => { 0usize };
+    ($first:ident) => { 1usize };
+    ($first:ident, $($rest:ident),*) => {
+        1usize + count_items!($($rest),*)
+    }
+}
+
+#[macro_export]
+macro_rules! measure_items {
+    () => { 0usize };
+    ($first:expr) => { $first.num_entries_deep() };
+    ($first:expr, $($rest:expr),*) => {
+        $first.num_entries_deep() + measure_items!($($rest),*)
+    }
+}
+
+#[macro_export]
 macro_rules! declare_tuples {
     (
         $(
@@ -49,6 +67,7 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0, T1, W> MulByRef<W> for Tuple2<T0, T1>
              where
                  T0: MulByRef<W, Output = T0>,
@@ -76,6 +95,7 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0, T1> HasZero for Tuple2<T0, T1>
              where
                  T0: HasZero,
@@ -110,6 +130,7 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0, T1> AddByRef for Tuple2<T0, T1>
              where
                  T0: AddByRef,
@@ -135,6 +156,41 @@ macro_rules! declare_tuples {
             }
 
             /*
+            Example generated code:
+            impl<T0, T1> NumEntries for Tuple2<T0, T1>
+            where
+                T0: NumEntries,
+                T1: NumEntries,
+            {
+                const CONST_NUM_ENTRIES: Option<usize> = None;
+                fn num_entries_shallow(&self) -> usize {
+                    1usize + 1usize
+                }
+                fn num_entries_deep(&self) -> usize {
+                    let Tuple2(T0, T1) = self;
+                    T0.num_entries_deep() + T1.num_entries_deep()
+                }
+            }
+             */
+            impl<$($element),*> NumEntries
+                for $tuple_name<$($element,)*>
+            where
+                $($element: NumEntries,)*
+            {
+                const CONST_NUM_ENTRIES: Option<usize> = None;
+
+                fn num_entries_shallow(&self) -> usize {
+                    count_items!($($element),*)
+                }
+
+                fn num_entries_deep(&self) -> usize {
+                    let $tuple_name($($element),*) = self;
+                    measure_items!($($element),*)
+                }
+            }
+
+            /*
+             Example generated code:
              impl<T0, T1> AddAssignByRef for Tuple2<T0, T1>
              where
                  T0: AddAssignByRef,
@@ -161,6 +217,7 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0, T1> NegByRef for Tuple2<T0, T1>
              where
                  T0: NegByRef,
@@ -186,6 +243,7 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0, T1> From<(T0, T1)> for Tuple2<T0, T1> {
                  fn from((T0, T1): (T0, T1)) -> Self {
                      Self(T0, T1)
@@ -199,6 +257,7 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0, T1> Into<(T0, T1)> for Tuple2<T0, T1> {
                  fn into(self) -> (T0, T1) {
                      let Tuple2(T0, T1) = self;
@@ -214,6 +273,7 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0: Debug, T1: Debug> Debug for Tuple2<T0, T1> {
                  fn fmt(&self, f: &mut Formatter) -> FmtResult {
                      let Tuple2(T0, T1) = self;
@@ -231,8 +291,8 @@ macro_rules! declare_tuples {
             }
 
             /*
+             Example generated code:
              impl<T0: Copy, T1: Copy> Copy for Tuple2<T0, T1> {}
-             pub struct Tuple3<T0, T1, T2>(pub T0, pub T1, pub T2);
             */
             impl<$($element: Copy),*> Copy for $tuple_name<$($element),*> {}
         )*

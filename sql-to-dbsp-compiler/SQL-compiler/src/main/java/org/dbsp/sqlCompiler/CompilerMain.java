@@ -119,6 +119,9 @@ public class CompilerMain {
                     "Error reading file", e.getMessage());
             return compiler.messages;
         }
+        if (this.options.ioOptions.verbosity >= 1)
+            System.out.println(this.options);
+
         compiler.compileInput();
         if (compiler.hasErrors())
             return compiler.messages;
@@ -147,7 +150,8 @@ public class CompilerMain {
                         "Must specify an output file when outputting jpeg or png");
                 return compiler.messages;
             }
-            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile, true, dotFormat, dbsp);
+            boolean verboseDot = this.options.ioOptions.verbosity > 1;
+            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile, verboseDot, dotFormat, dbsp);
             return compiler.messages;
         }
         try {

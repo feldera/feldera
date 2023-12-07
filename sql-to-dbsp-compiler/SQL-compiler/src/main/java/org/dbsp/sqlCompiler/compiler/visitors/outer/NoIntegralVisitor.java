@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegralOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -39,7 +39,7 @@ public class NoIntegralVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPIntegralOperator node) {
+    public VisitDecision preorder(DBSPIntegrateOperator node) {
         throw new InternalCompilerError("Circuit contains an integration operator", node);
     }
 }

@@ -36,7 +36,7 @@ public class PostgresStringTests extends SqlIoTest {
                 "  ('doh!'),\n" +
                 "  ('hi de ho neighbor');\n" +
                 // "CREATE TABLE byteatest (a bytea PRIMARY KEY, b int);\n"
-                "";
+                "\n";
         compiler.compileStatements(data);
     }
 

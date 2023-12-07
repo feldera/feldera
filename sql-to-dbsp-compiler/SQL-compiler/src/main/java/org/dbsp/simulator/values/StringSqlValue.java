@@ -8,7 +8,7 @@ import java.util.Objects;
 
 public class StringSqlValue extends BaseSqlValue {
     @Nullable
-    String value;
+    final String value;
 
     public StringSqlValue(@Nullable String value, StringSqlType type) {
         super(type);

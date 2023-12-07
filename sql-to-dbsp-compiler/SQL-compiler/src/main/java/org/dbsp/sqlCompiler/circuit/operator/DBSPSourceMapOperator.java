@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * This operator produces an IndexedZSet as a result, indexed on the table keys.
  */
-public class DBSPSourceMapOperator extends DBSPSourceBaseOperator {
+public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     public final List<Integer> keyFields;
 
     /**
@@ -35,26 +35,25 @@ public class DBSPSourceMapOperator extends DBSPSourceBaseOperator {
      */
     public DBSPSourceMapOperator(
             CalciteObject node, CalciteObject sourceName, List<Integer> keyFields,
-            DBSPType outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
-            List<InputColumnMetadata> metadata, String name) {
+            DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
+            InputTableMetadata metadata, String name) {
         super(node, sourceName, outputType, originalRowType, comment, metadata, name);
-        if (!outputType.is(DBSPTypeIndexedZSet.class))
-            throw new InternalCompilerError("SourceMapOperators must produce IndexedZSet types, not " +
-                    outputType);
         this.keyFields = keyFields;
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
+        visitor.push(this);
         VisitDecision decision = visitor.preorder(this);
-        if (decision.stop()) return;
-        visitor.postorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
-                this.keyFields, outputType, this.originalRowType,
+                this.keyFields, outputType.to(DBSPTypeIndexedZSet.class), this.originalRowType,
                 this.comment, this.metadata, this.outputName);
     }
 
@@ -62,7 +61,7 @@ public class DBSPSourceMapOperator extends DBSPSourceBaseOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
-                    this.keyFields, this.outputType, this.originalRowType,
+                    this.keyFields, this.getOutputIndexedZSetType(), this.originalRowType,
                     this.comment, this.metadata, this.outputName);
         return this;
     }
@@ -101,9 +100,5 @@ public class DBSPSourceMapOperator extends DBSPSourceBaseOperator {
         }
         DBSPExpression tuple = new DBSPTupleExpression(fields);
         return tuple.closure(var.asRefParameter());
-    }
-
-    public DBSPTypeIndexedZSet getOutputIndexedZSetType() {
-        return this.outputType.to(DBSPTypeIndexedZSet.class);
     }
 }

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir;
 
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -53,7 +54,7 @@ public class DBSPParameter extends DBSPNode implements
     /**
      * Return a variable that refers to the parameter.
      */
-    public DBSPVariablePath asVariableReference() {
+    public DBSPVariablePath asVariable() {
         return new DBSPVariablePath(this.name, this.type);
     }
 
@@ -64,7 +65,8 @@ public class DBSPParameter extends DBSPNode implements
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
         visitor.pop(this);
@@ -82,7 +84,7 @@ public class DBSPParameter extends DBSPNode implements
         if (o == null)
             return false;
         return this.name.equals(o.name) &&
-                this.type == o.type &&
+                this.type.sameType(o.type) &&
                 this.mutable == o.mutable;
     }
 

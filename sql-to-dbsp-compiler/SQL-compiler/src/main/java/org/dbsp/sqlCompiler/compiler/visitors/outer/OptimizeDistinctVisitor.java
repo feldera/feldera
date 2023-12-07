@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.util.Linq;
 
 import java.util.List;
@@ -36,17 +35,17 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPDistinctOperator distinct) {
+    public void postorder(DBSPStreamDistinctOperator distinct) {
         // distinct (distinct) = distinct
         DBSPOperator input = this.mapped(distinct.input());
-        if (input.is(DBSPDistinctOperator.class)) {
+        if (input.is(DBSPStreamDistinctOperator.class)) {
             this.map(distinct, input);
             return;
         }
-        if (input.is(DBSPJoinOperator.class) ||
+        if (input.is(DBSPStreamJoinOperator.class) ||
             input.is(DBSPMapOperator.class) ||
             input.is(DBSPSumOperator.class)) {
-            boolean allDistinct = Linq.all(input.inputs, i -> i.is(DBSPDistinctOperator.class));
+            boolean allDistinct = Linq.all(input.inputs, i -> i.is(DBSPStreamDistinctOperator.class));
             if (allDistinct) {
                 // distinct(map(distinct)) = distinct(map)
                 List<DBSPOperator> newInputs = Linq.map(input.inputs, i -> i.inputs.get(0));
@@ -62,7 +61,7 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
 
     public void postorder(DBSPFilterOperator filter) {
         DBSPOperator input = this.mapped(filter.input());
-        if (input.is(DBSPDistinctOperator.class)) {
+        if (input.is(DBSPStreamDistinctOperator.class)) {
             // swap distinct after filter
             DBSPOperator newFilter = filter.withInputs(input.inputs, false);
             this.addOperator(newFilter);
@@ -73,18 +72,18 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
         }
     }
 
-    public void postorder(DBSPJoinOperator join) {
+    public void postorder(DBSPStreamJoinOperator join) {
         DBSPOperator left = this.mapped(join.inputs.get(0));
         DBSPOperator right = this.mapped(join.inputs.get(1));
         // join(distinct) = distinct(join)
-        if (left.is(DBSPDistinctOperator.class) &&
-            right.is(DBSPDistinctOperator.class)) {
+        if (left.is(DBSPStreamDistinctOperator.class) &&
+            right.is(DBSPStreamDistinctOperator.class)) {
             // swap distinct after filter
             DBSPOperator newLeft = left.inputs.get(0);
             DBSPOperator newRight = right.inputs.get(0);
             DBSPOperator result = join.withInputs(Linq.list(newLeft, newRight), false);
             this.addOperator(result);
-            DBSPOperator distinct = new DBSPDistinctOperator(join.getNode(), result);
+            DBSPOperator distinct = new DBSPStreamDistinctOperator(join.getNode(), result);
             this.map(join, distinct);
             return;
         }

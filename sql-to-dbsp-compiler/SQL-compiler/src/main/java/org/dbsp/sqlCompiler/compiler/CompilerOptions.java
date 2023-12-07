@@ -117,10 +117,8 @@ public class CompilerOptions {
         public String inputFile = null;
         @Parameter(names = "-f", description = "Name of function to generate")
         public String functionName = "circuit";
-
-        IO() {
-
-        }
+        @Parameter(names = "-v", description = "Output verbosity")
+        public int verbosity = 0;
 
         /**
          * Only compare fields that matter.
@@ -139,6 +137,7 @@ public class CompilerOptions {
                     ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
                     ", inputFile=" + Utilities.singleQuote(this.inputFile) +
                     ", functionName=" + Utilities.singleQuote(this.functionName) +
+                    ", verbosity=" + this.verbosity +
                     '}';
         }
     }

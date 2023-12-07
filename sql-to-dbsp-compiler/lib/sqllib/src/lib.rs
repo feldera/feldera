@@ -11,8 +11,13 @@ pub mod timestamp;
 
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
+<<<<<<< HEAD
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{DBData, DBWeight, OrdZSet};
+=======
+use dbsp::{DBData, DBWeight, OrdZSet, OrdIndexedZSet};
+use dbsp::trace::{Batch, Builder, BatchReader, Cursor};
+>>>>>>> 6140fb18 ([SQL] Dataflow analysis and instrumentation for lateness)
 use geopoint::GeoPoint;
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -964,12 +969,71 @@ where
     F: Fn(&D) -> T,
 {
     let mut builder = <OrdZSet<T, W> as Batch>::Builder::with_capacity((), data.len());
-
     let mut cursor = data.cursor();
     while cursor.key_valid() {
         let item = cursor.key();
         let data = mapper(item);
         builder.push((data, cursor.weight()));
+        cursor.step_key();
+    }
+    builder.done()
+}
+
+pub fn zset_filter_comparator<D, T, W, F>(
+    data: &OrdZSet<D, W>,
+    value: &T,
+    comparator: F
+) -> OrdZSet<D, W>
+where
+    D: DBData + 'static,
+    W: DBWeight + 'static,
+    T: 'static,
+    F: Fn(&D, &T) -> bool,
+{
+    let mut builder = <OrdZSet<D, W> as Batch>::Builder::with_capacity(
+        (),
+        data.len(),
+    );
+
+    let mut cursor = data.cursor();
+    while cursor.key_valid() {
+        let item = cursor.key();
+        if comparator(item, value) {
+            builder.push((item.clone(), cursor.weight()));
+        }
+        cursor.step_key();
+    }
+    builder.done()
+}
+
+pub fn indexed_zset_filter_comparator<K, D, T, W, F>(
+    data: &OrdIndexedZSet<K, D, W>,
+    value: &T,
+    comparator: F
+) -> OrdIndexedZSet<K, D, W>
+where
+    K: DBData + 'static,
+    D: DBData + 'static,
+    W: DBWeight + 'static,
+    T: 'static,
+    F: Fn((&K, &D), &T) -> bool,
+{
+    let mut builder = <OrdIndexedZSet<K, D, W> as Batch>::Builder::with_capacity(
+        (),
+        data.len(),
+    );
+
+    let mut cursor = data.cursor();
+    while cursor.key_valid() {
+        let key = cursor.key().clone();
+        while cursor.val_valid() {
+            let w = cursor.weight();
+            let item = cursor.val();
+            if comparator((&key, item), value) {
+                builder.push(((key.clone(), item.clone()), w.clone()));
+            }
+            cursor.step_val();
+        }
         cursor.step_key();
     }
     builder.done()

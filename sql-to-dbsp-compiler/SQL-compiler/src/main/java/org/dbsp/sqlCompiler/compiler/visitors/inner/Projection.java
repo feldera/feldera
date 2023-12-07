@@ -143,7 +143,7 @@ public class Projection extends InnerVisitor {
             return VisitDecision.STOP;
         }
         for (DBSPParameter param: expression.parameters) {
-            this.parameters.add(param.asVariableReference().variable);
+            this.parameters.add(param.asVariable().variable);
         }
         return VisitDecision.CONTINUE;
     }

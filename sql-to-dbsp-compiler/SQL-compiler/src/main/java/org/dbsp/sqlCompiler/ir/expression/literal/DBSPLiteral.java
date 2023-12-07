@@ -23,10 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -34,7 +36,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
@@ -123,7 +124,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);

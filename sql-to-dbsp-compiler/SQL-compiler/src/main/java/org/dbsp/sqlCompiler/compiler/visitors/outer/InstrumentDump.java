@@ -52,7 +52,7 @@ public class InstrumentDump extends CircuitCloneVisitor {
         DBSPExpression dump = new DBSPApplyExpression(operator.getNode(), "dump", zset.elementType,
                 new DBSPStringLiteral(Long.toString(operator.id)), row);
         DBSPExpression function = dump.closure(row.asRefParameter());
-        DBSPOperator map = new DBSPMapOperator(operator.getNode(), function, type, input);
+        DBSPOperator map = new DBSPMapOperator(operator.getNode(), function, zset, input);
         this.map(operator, map);
     }
 
@@ -65,11 +65,11 @@ public class InstrumentDump extends CircuitCloneVisitor {
     public void postorder(DBSPSumOperator sum) { this.instrument(sum); }
 
     @Override
-    public void postorder(DBSPDistinctOperator distinct) { this.instrument(distinct); }
+    public void postorder(DBSPStreamDistinctOperator distinct) { this.instrument(distinct); }
 
     @Override
     public void postorder(DBSPSubtractOperator sub) { this.instrument(sub); }
 
     @Override
-    public void postorder(DBSPJoinOperator join) { this.instrument(join); }
+    public void postorder(DBSPStreamJoinOperator join) { this.instrument(join); }
 }

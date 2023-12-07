@@ -30,12 +30,23 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
 
 import javax.annotation.Nullable;
-import java.io.*;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 public class Utilities {
     private Utilities() {}
@@ -69,6 +80,43 @@ public class Utilities {
             offset += Character.charCount(c);
         }
         return builder.toString();
+    }
+
+    public static <K, V, W> LinkedHashMap<K, W> mapValues(Map<K, V> map, Function<V, W> transform) {
+        LinkedHashMap<K, W> result = new LinkedHashMap<>();
+        for (Map.Entry<K, V> entry: map.entrySet()) {
+            result.put(entry.getKey(), transform.apply(entry.getValue()));
+        }
+        return result;
+    }
+
+    /**
+     * Escape special characters in a string.
+     */
+    public static String escapeDoubleQuotes(String value) {
+        StringBuilder builder = new StringBuilder();
+        final int length = value.length();
+        for (int offset = 0; offset < length; ) {
+            final int c = value.codePointAt(offset);
+            if (c == '\"' )
+                builder.append("\\\"");
+            else
+                builder.append((char)c);
+            offset += Character.charCount(c);
+        }
+        return builder.toString();
+    }
+
+    /**
+     * Detects if dot is installed.
+     */
+    public static boolean isDotInstalled() {
+        try {
+            runProcess(".", "dot", "-V");
+            return true;
+        } catch (Exception unused) {
+            return false;
+        }
     }
 
     /**
@@ -176,6 +224,12 @@ public class Utilities {
         return Utilities.arraySlice(data, start, data.length);
     }
 
+    /**
+     * Run a process.
+     * @param directory    Working directory for process.
+     * @param environment  A map of values for environment variables.
+     * @param commands     Command and arguments to execute.
+     */
     public static void runProcess(String directory, Map<String, String> environment, String[] commands)
             throws IOException, InterruptedException {
         File out = File.createTempFile("out", ".tmp", new File("."));
@@ -237,7 +291,7 @@ public class Utilities {
 
     public static <T> T last(List<T> data) {
         if (data.isEmpty())
-            throw new RuntimeException("Data is empty");
+            throw new RuntimeException("Extracting last element from empty list");
         return data.get(data.size() - 1);
     }
 

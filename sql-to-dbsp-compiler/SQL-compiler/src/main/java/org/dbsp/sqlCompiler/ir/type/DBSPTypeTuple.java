@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -62,6 +63,15 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     @Override
+    public DBSPTypeTupleBase project(List<Integer> fields) {
+        DBSPType[] resultFields = new DBSPType[fields.size()];
+        int index = 0;
+        for (int i: fields)
+            resultFields[index++] = this.tupFields[i];
+        return new DBSPTypeTuple(resultFields);
+    }
+
+    @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
@@ -91,7 +101,8 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         for (DBSPType type: this.tupFields)
             type.accept(visitor);
@@ -120,11 +131,6 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     @Override
-    public boolean hasCopy() {
-        return false;
-    }
-
-    @Override
     public DBSPExpression makeTuple(DBSPExpression... expressions) {
         return new DBSPTupleExpression(expressions);
     }
@@ -135,6 +141,11 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
                 .append("<")
                 .join(", ", this.tupFields)
                 .append(">");
+    }
+
+    @Override
+    public DBSPType makeType(List<DBSPType> fields) {
+        return new DBSPTypeTuple(CalciteObject.EMPTY, fields);
     }
 
     public String getName() {

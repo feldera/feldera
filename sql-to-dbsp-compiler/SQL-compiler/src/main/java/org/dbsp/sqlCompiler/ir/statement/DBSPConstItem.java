@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -34,7 +35,8 @@ public class DBSPConstItem extends DBSPItem implements IHasType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
         if (this.expression != null)
@@ -58,7 +60,7 @@ public class DBSPConstItem extends DBSPItem implements IHasType {
         if (o == null)
             return false;
         return this.name.equals(o.name) &&
-                this.type == o.type &&
+                this.type.sameType(o.type) &&
                 this.expression == o.expression;
     }
 

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -74,7 +75,8 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.returnType.accept(visitor);
         for (DBSPParameter argument: this.parameters)
@@ -102,7 +104,7 @@ public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration
             this.returnType == o.returnType &&
             this.body == o.body &&
             Linq.sameStrings(this.annotations, o.annotations) &&
-                this.type == o.type;
+                this.type.sameType(o.type);
     }
 
     @Override

@@ -21,29 +21,16 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.circuit.operator;
+/**
+ * Package that doesn't allow null values as method parameters.
+ */
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+@ParametersAreNonnullByDefault
+@FieldsAreNonnullByDefault
+@MethodsAreNonnullByDefault
+package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
-import java.util.List;
+import org.dbsp.util.FieldsAreNonnullByDefault;
+import org.dbsp.util.MethodsAreNonnullByDefault;
 
-public class DBSPDifferentialOperator extends DBSPUnaryOperator {
-    public DBSPDifferentialOperator(CalciteObject node, DBSPOperator source) {
-        super(node, "differentiate", null, source.outputType, source.isMultiset, source);
-    }
-
-    @Override
-    public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
-    }
-
-    @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPDifferentialOperator(
-                    this.getNode(), newInputs.get(0));
-        return this;
-    }
-}
+import javax.annotation.ParametersAreNonnullByDefault;

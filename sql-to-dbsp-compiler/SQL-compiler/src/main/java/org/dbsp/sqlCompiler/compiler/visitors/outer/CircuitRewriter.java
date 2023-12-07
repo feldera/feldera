@@ -32,7 +32,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -100,7 +102,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!originalRowType.sameType(operator.originalRowType)
                 || !outputType.sameType(operator.outputType)) {
             result = new DBSPSourceMultisetOperator(operator.getNode(), operator.sourceName,
-                    outputType, originalRowType, operator.comment, operator.metadata, operator.outputName);
+                    outputType.to(DBSPTypeZSet.class), originalRowType, operator.comment,
+                    operator.metadata, operator.outputName);
         }
         this.map(operator, result);
     }
@@ -113,7 +116,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!originalRowType.sameType(operator.originalRowType)
                 || !outputType.sameType(operator.outputType)) {
             result = new DBSPSourceMapOperator(operator.getNode(), operator.sourceName,
-                    operator.keyFields, outputType, originalRowType,
+                    operator.keyFields, outputType.to(DBSPTypeIndexedZSet.class), originalRowType,
                     operator.comment, operator.metadata, operator.outputName);
         }
         this.map(operator, result);
@@ -135,10 +138,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPAggregateOperator operator) {
-        DBSPType keyType = this.transform(operator.keyType);
-        DBSPType outputElementType = this.transform(operator.outputElementType);
-        DBSPType weightType = this.transform(operator.weightType);
+    public void postorder(DBSPStreamAggregateOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
         @Nullable DBSPExpression function = this.transformN(operator.function);
         @Nullable DBSPAggregate aggregate = null;
         if (operator.aggregate != null) {
@@ -147,14 +148,12 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         }
         DBSPOperator input = this.mapped(operator.input());
         DBSPOperator result = operator;
-        if (!keyType.sameType(operator.keyType)
-                || !outputElementType.sameType(operator.outputElementType)
-                || !weightType.sameType(operator.weightType)
+        if (!outputType.sameType(operator.outputType)
                 || DBSPExpression.same(function, operator.function)
                 || aggregate != operator.aggregate
                 || input != operator.input()) {
-            result = new DBSPAggregateOperator(operator.getNode(),
-                    keyType, outputElementType, weightType,
+            result = new DBSPStreamAggregateOperator(operator.getNode(),
+                    outputType.to(DBSPTypeIndexedZSet.class),
                     function, aggregate, input, operator.isLinear);
         }
         this.map(operator, result);
@@ -169,16 +168,15 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!resultType.sameType(operator.outputType)
                 || input != operator.input()
                 || function != operator.getFunction()) {
-            result = new DBSPFlatMapOperator(operator.getNode(), function, resultType, input);
+            result = new DBSPFlatMapOperator(
+                    operator.getNode(), function, resultType.to(DBSPTypeZSet.class), input);
         }
         this.map(operator, result);
     }
 
     @Override
-    public void postorder(DBSPIncrementalAggregateOperator operator) {
-        DBSPType keyType = this.transform(operator.keyType);
-        DBSPType outputElementType = this.transform(operator.outputElementType);
-        DBSPType weightType = this.transform(operator.weightType);
+    public void postorder(DBSPAggregateOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
         @Nullable DBSPExpression function = this.transformN(operator.function);
         @Nullable DBSPAggregate aggregate = null;
         if (operator.aggregate != null)
@@ -186,14 +184,12 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         DBSPOperator input = this.mapped(operator.input());
 
         DBSPOperator result = operator;
-        if (!keyType.sameType(operator.keyType)
-                || outputElementType != operator.outputElementType
-                || weightType != operator.weightType
+        if (!outputType.sameType(operator.outputType)
                 || input != operator.input()
                 || aggregate != operator.aggregate
                 || function != operator.function) {
-            result = new DBSPIncrementalAggregateOperator(operator.getNode(),
-                    keyType, outputElementType, weightType, function, aggregate, input, operator.isLinear);
+            result = new DBSPAggregateOperator(operator.getNode(),
+                    outputType.to(DBSPTypeIndexedZSet.class), function, aggregate, input, operator.isLinear);
         }
         this.map(operator, result);
     }
@@ -209,18 +205,16 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPIncrementalJoinOperator operator) {
-        DBSPType elementResultType = this.transform(operator.elementResultType);
-        DBSPType weightType = this.transform(operator.weightType);
+    public void postorder(DBSPJoinOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
         DBSPOperator result = operator;
-        if (!elementResultType.sameType(operator.elementResultType)
-                || !weightType.sameType(operator.weightType)
+        if (!outputType.sameType(operator.outputType)
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
-            result = new DBSPIncrementalJoinOperator(operator.getNode(),
-                    elementResultType, weightType, function, operator.isMultiset,
+            result = new DBSPJoinOperator(operator.getNode(),
+                    outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
                     sources.get(0), sources.get(1));
         }
         this.map(operator, result);
@@ -228,35 +222,29 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPIndexOperator operator) {
-        DBSPType keyType = this.transform(operator.keyType);
-        DBSPType elementType = this.transform(operator.elementType);
-        DBSPType weightType = this.transform(operator.weightType);
+        DBSPType outputType = this.transform(operator.outputType);
         DBSPOperator input = this.mapped(operator.input());
         DBSPExpression function = this.transform(operator.getFunction());
         DBSPOperator result = operator;
-        if (!keyType.sameType(operator.keyType)
-                || !elementType.sameType(operator.elementType)
-                || !weightType.sameType(operator.weightType)
+        if (!outputType.sameType(operator.outputType)
                 || input != operator.input()
                 || function != operator.getFunction()) {
             result = new DBSPIndexOperator(operator.getNode(), function,
-                    keyType, elementType, weightType, operator.isMultiset, input);
+                    outputType.to(DBSPTypeIndexedZSet.class), operator.isMultiset, input);
         }
         this.map(operator, result);
     }
 
     @Override
-    public void postorder(DBSPJoinOperator operator) {
-        DBSPType elementResultType = this.transform(operator.elementResultType);
-        DBSPType weightType = this.transform(operator.weightType);
+    public void postorder(DBSPStreamJoinOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
         DBSPOperator result = operator;
-        if (!elementResultType.sameType(operator.elementResultType)
-                || !weightType.sameType(operator.weightType)
+        if (!outputType.sameType(operator.outputType)
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
-            result = new DBSPJoinOperator(operator.getNode(), elementResultType, weightType,
+            result = new DBSPStreamJoinOperator(operator.getNode(), outputType.to(DBSPTypeZSet.class),
                     function, operator.isMultiset, sources.get(0), sources.get(1));
         }
         this.map(operator, result);
@@ -264,19 +252,15 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
-        DBSPType keyType = this.transform(operator.keyType);
-        DBSPType valueType = this.transform(operator.valueType);
-        DBSPType weightType = this.transform(operator.weightType);
+        DBSPType outputType = this.transform(operator.outputType);
         DBSPOperator input = this.mapped(operator.input());
         DBSPExpression function = this.transform(operator.getFunction());
         DBSPOperator result = operator;
-        if (!keyType.sameType(operator.keyType)
-                || !valueType.sameType(operator.valueType)
-                || !weightType.sameType(operator.weightType)
+        if (!outputType.sameType(operator.outputType)
                 || input != operator.input()
                 || function != operator.getFunction()) {
             result = new DBSPMapIndexOperator(operator.getNode(), function,
-                    keyType, valueType, weightType, input);
+                    outputType.to(DBSPTypeIndexedZSet.class), input);
         }
         this.map(operator, result);
     }
@@ -290,7 +274,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!type.sameType(operator.getType())
                 || input != operator.input()
                 || function != operator.getFunction()) {
-            result = new DBSPMapOperator(operator.getNode(), function, type, input);
+            result = new DBSPMapOperator(operator.getNode(), function, type.to(DBSPTypeZSet.class), input);
         }
         this.map(operator, result);
     }

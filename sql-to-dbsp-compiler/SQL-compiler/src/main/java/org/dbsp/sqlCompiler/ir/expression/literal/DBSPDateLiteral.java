@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.apache.calcite.util.DateString;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -68,7 +69,8 @@ public class DBSPDateLiteral extends DBSPLiteral {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);

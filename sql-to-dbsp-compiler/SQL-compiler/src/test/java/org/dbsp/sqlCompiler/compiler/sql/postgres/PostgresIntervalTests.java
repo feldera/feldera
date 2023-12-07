@@ -1,15 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Test;
 
 // https://github.com/postgres/postgres/blob/master/src/test/regress/expected/interval.out
 public class PostgresIntervalTests extends SqlIoTest {
-    @Override
-    public void prepareData(DBSPCompiler compiler) {
-    }
-
     @Test
     public void testCalciteExamples() {
         this.q("SELECT INTERVAL '1-5' YEAR TO MONTH, " +

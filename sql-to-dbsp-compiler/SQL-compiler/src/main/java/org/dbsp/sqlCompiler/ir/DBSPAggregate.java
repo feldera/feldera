@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.*;
@@ -56,7 +57,8 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         for (Implementation impl: this.components) {
             impl.accept(visitor);
@@ -135,7 +137,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
                 start++;
             }
             DBSPExpression init = closure.call(
-                    accumulatorArgs, row.asVariableReference(), weight.asVariableReference());
+                    accumulatorArgs, row.asVariable(), weight.asVariable());
             DBSPLetStatement stat = new DBSPLetStatement(tmp, init);
             DBSPVariablePath tmpI = new DBSPVariablePath(tmp, init.getType());
             tmpVars.addAll(DBSPTypeTupleBase.flatten(tmpI));
@@ -328,7 +330,8 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
 
         @Override
         public void accept(InnerVisitor visitor) {
-            if (visitor.preorder(this).stop()) return;
+            VisitDecision decision = visitor.preorder(this);
+            if (decision.stop()) return;
             visitor.push(this);
             this.semigroup.accept(visitor);
             this.zero.accept(visitor);

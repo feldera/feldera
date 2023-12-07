@@ -587,7 +587,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * --------
      *  1004.3
      * (1 row)
-     *
+     * <p>
      * SELECT f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
      *       f1
      * ---------------

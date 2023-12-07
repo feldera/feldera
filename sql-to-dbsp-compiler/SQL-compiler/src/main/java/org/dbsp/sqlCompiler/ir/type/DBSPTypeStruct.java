@@ -100,7 +100,7 @@ public class DBSPTypeStruct extends DBSPType {
                 return false;
             return this.name.equals(o.name) &&
                     this.sanitizedName.equals(o.sanitizedName) &&
-                    this.type == o.type;
+                    this.type.sameType(o.type);
         }
 
         @Override
@@ -186,7 +186,8 @@ public class DBSPTypeStruct extends DBSPType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         for (Field f: this.fields.values())
             f.accept(visitor);

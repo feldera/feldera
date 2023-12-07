@@ -14,6 +14,7 @@ use std::{
     fmt::{self, Debug},
     ops::Add,
 };
+use dbsp::num_entries_scalar;
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
@@ -953,3 +954,10 @@ mod test {
         );
     }
 }
+
+num_entries_scalar! {
+    Timestamp,
+    Date,
+    Time,
+}
+

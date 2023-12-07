@@ -29,7 +29,7 @@ public class PivotTests extends SqlIoTest {
                 "    (200, 'Mary', NULL, 1, 'Street 2'),\n" +
                 "    (300, 'Mike', 80, 3, 'Street 3'),\n" +
                 "    (400, 'Dan', 50, 4, 'Street 4');\n" +
-                "" +
+                "\n" +
                 "CREATE TABLE FURNITURE(" +
                 "   type VARCHAR," +
                 "   year INTEGER," +

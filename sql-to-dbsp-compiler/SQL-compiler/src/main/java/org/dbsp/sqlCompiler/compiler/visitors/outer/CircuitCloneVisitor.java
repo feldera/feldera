@@ -43,14 +43,13 @@ import java.util.*;
  * Each operator is replaced in one of two cases:
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.
+ * We expect that this is a base class for all visitors which modify a circuit.
  */
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     @Nullable
     protected DBSPPartialCircuit result;
-    /**
-     * For each operator in the original circuit an operator in the
-     * result circuit which computes the same result.
-     */
+    /** For each operator in the original circuit an operator in the
+     * result circuit which computes the same result. */
     protected final Map<DBSPOperator, DBSPOperator> remap;
     protected final boolean force;
     protected final Set<DBSPOperator> visited = new HashSet<>();
@@ -65,14 +64,17 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         return Utilities.getExists(this.remap, original);
     }
 
+    public IDBSPOuterNode getCurrent() {
+        return Utilities.last(this.current);
+    }
+
     /**
      * The output that used to be computed by 'old' is now
      * computed by 'newOp',
      * @param old    Operator in the previous circuit.
      * @param newOp  Operator replacing it in the new circuit.
      * @param add    If true add the operator to the new circuit.
-     *               This may not be necessary if the operator has already been added.
-     */
+     *               This may not be necessary if the operator has already been added. */
     protected void map(DBSPOperator old, DBSPOperator newOp, boolean add) {
         if (old != newOp) {
             Logger.INSTANCE.belowLevel(this, 1)
@@ -90,12 +92,13 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     protected void map(DBSPOperator old, DBSPOperator newOp) {
         this.map(old, newOp, true);
+        assert old == this.getCurrent();
+        newOp.setDerivedFrom(old.id);
     }
 
     /**
      * Add an operator to the produced circuit.
-     * @param operator  Operator to add.
-     */
+     * @param operator  Operator to add. */
     protected void addOperator(DBSPOperator operator) {
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(this.toString())
@@ -103,6 +106,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(operator.toString())
                 .newline();
         this.getResult().addOperator(operator);
+        operator.setDerivedFrom(this.getCurrent().getId());
     }
 
     @Override
@@ -139,6 +143,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
                     .decrease();
         }
         DBSPOperator result = operator.withInputs(sources, this.force);
+        result.setDerivedFrom(operator.id);
         this.map(operator, result);
     }
 
@@ -147,6 +152,33 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void postorder(DBSPNoopOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPPartitionedTreeAggregateOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPWeighOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPApplyOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPDelayOperator operator) {
+        if (operator.output == null) {
+            this.replace(operator);
+            return;
+        }
+        // If the delay has an output we must replace it too.
+        this.visited.add(operator);
+        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPOperator output = this.mapped(operator.output);
+        DBSPOperator result = operator;
+        if (operator.inputsDiffer(sources) || output != operator.output) {
+            result = new DBSPDelayOperator(
+                    operator.getNode(), sources.get(0), output.to(DBSPDelayOutputOperator.class));
+        }
+        this.map(operator, result);
+    }
 
     @Override
     public void postorder(DBSPIndexedTopKOperator operator) { this.replace(operator); }
@@ -158,7 +190,17 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     public void postorder(DBSPUnaryOperator operator) { this.replace(operator); }
 
     @Override
-    public void postorder(DBSPAggregateOperator operator) {
+    public void postorder(DBSPPartitionedRadixTreeAggregateOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStreamAggregateOperator operator) {
         this.replace(operator);
     }
 
@@ -168,12 +210,12 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public void postorder(DBSPDifferentialOperator operator) {
+    public void postorder(DBSPDifferentiateOperator operator) {
         this.replace(operator);
     }
 
     @Override
-    public void postorder(DBSPDistinctOperator operator) {
+    public void postorder(DBSPStreamDistinctOperator operator) {
         this.replace(operator);
     }
 
@@ -193,7 +235,17 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public void postorder(DBSPIntegralOperator operator) {
+    public void postorder(DBSPIntegrateOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPUpsertFeedbackOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDelayedIntegralOperator operator) {
         this.replace(operator);
     }
 
@@ -211,6 +263,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     public void postorder(DBSPSinkOperator operator) {
         this.replace(operator);
     }
+
+    @Override
+    public void postorder(DBSPDelayOutputOperator operator) { this.replace(operator); }
 
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
@@ -233,27 +288,41 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
+    public void postorder(DBSPStreamJoinOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPUpsertOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
     public void postorder(DBSPJoinOperator operator) {
         this.replace(operator);
     }
 
     @Override
-    public void postorder(DBSPIncrementalJoinOperator operator) {
+    public void postorder(DBSPDistinctOperator operator) {
         this.replace(operator);
     }
 
     @Override
-    public void postorder(DBSPIncrementalDistinctOperator operator) {
-        this.replace(operator);
-    }
-
-    @Override
-    public void postorder(DBSPIncrementalAggregateOperator operator) {
+    public void postorder(DBSPAggregateOperator operator) {
         this.replace(operator);
     }
 
     @Override
     public void postorder(DBSPDeindexOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPPrimitiveAggregateOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPControlledFilterOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPWaterlineOperator operator) { this.replace(operator); }
 
     public DBSPPartialCircuit getResult() {
         return Objects.requireNonNull(this.result);

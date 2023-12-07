@@ -217,8 +217,8 @@ public class PostgresTimestampTests extends SqlIoTest {
                 " Fri Dec 31 17:32:01 1999\n" +
                 " Sat Jan 01 17:32:01 2000\n" +
                 " Sun Dec 31 17:32:01 2000\n" +
-                " Mon Jan 01 17:32:01 2001\n" +
-                "");
+                " Mon Jan 01 17:32:01 2001" +
+                "NULL\n");
     }
 
     // BC: not supported by Calcite

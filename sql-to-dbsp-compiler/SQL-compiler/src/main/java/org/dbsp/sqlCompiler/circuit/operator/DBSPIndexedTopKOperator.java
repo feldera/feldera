@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
@@ -24,6 +25,7 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      * ROW, RANK, and DENSE RANK.  See e.g.:
      * https://learn.microsoft.com/en-us/sql/t-sql/functions/ranking-functions-transact-sql
      */
+    @SuppressWarnings("JavadocLinkAsPlainText")
     public enum TopKNumbering {
         ROW_NUMBER,
         RANK,
@@ -41,11 +43,11 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     @Nullable
     public final DBSPClosureExpression outputProducer;
 
-    static DBSPType outputType(DBSPType sourceType, @Nullable DBSPClosureExpression outputProducer) {
+    static DBSPType outputType(DBSPTypeIndexedZSet sourceType, @Nullable DBSPClosureExpression outputProducer) {
         if (outputProducer == null)
             return sourceType;
-        DBSPTypeIndexedZSet ix = sourceType.to(DBSPTypeIndexedZSet.class);
-        return new DBSPTypeIndexedZSet(sourceType.getNode(), ix.keyType, outputProducer.getResultType(), ix.weightType);
+        return new DBSPTypeIndexedZSet(sourceType.getNode(), sourceType.keyType,
+                outputProducer.getResultType(), sourceType.weightType);
     }
 
     /**
@@ -62,7 +64,7 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
                                    DBSPExpression function, DBSPExpression limit,
                                    @Nullable DBSPClosureExpression outputProducer, DBSPOperator source) {
         super(node, "topK", function,
-                outputType(source.outputType, outputProducer), source.isMultiset, source);
+                outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset, source);
         this.limit = limit;
         this.numbering = numbering;
         this.outputProducer = outputProducer;
@@ -89,7 +91,10 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 }

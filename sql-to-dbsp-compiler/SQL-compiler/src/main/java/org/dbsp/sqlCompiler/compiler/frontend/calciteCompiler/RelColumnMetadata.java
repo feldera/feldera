@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexNode;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
 import javax.annotation.Nullable;
 
@@ -11,6 +12,7 @@ import javax.annotation.Nullable;
  * of Calcite Rel objects.
  */
 public class RelColumnMetadata {
+    public final CalciteObject node;
     /** Column name and type. */
     public final RelDataTypeField field;
     /** True if the column is a primary key. */
@@ -24,8 +26,10 @@ public class RelColumnMetadata {
     /** True if the column name was quoted. */
     public final boolean nameIsQuoted;
 
-    public RelColumnMetadata(RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
-                             @Nullable RexNode lateness, @Nullable RexNode defaultValue) {
+    public RelColumnMetadata(
+            CalciteObject node, RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
+            @Nullable RexNode lateness, @Nullable RexNode defaultValue) {
+        this.node = node;
         this.isPrimaryKey = isPrimaryKey;
         this.nameIsQuoted = nameIsQuoted;
         this.field = field;
@@ -40,4 +44,6 @@ public class RelColumnMetadata {
     public RelDataType getType() {
         return this.field.getType();
     }
+
+    public CalciteObject getNode() { return this.node; }
 }

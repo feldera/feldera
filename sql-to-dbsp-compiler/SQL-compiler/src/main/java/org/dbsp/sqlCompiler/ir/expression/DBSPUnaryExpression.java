@@ -23,13 +23,13 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 
 public class DBSPUnaryExpression extends DBSPExpression {
     public final DBSPExpression source;
@@ -42,6 +42,10 @@ public class DBSPUnaryExpression extends DBSPExpression {
         this.source = operand;
         if (this.source == null)
             throw new InternalCompilerError("Null operand", node);
+    }
+
+    public DBSPUnaryExpression replaceSource(DBSPExpression source) {
+        return new DBSPUnaryExpression(this.getNode(), this.type, this.operation, source);
     }
 
     @Override
