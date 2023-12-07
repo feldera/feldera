@@ -54,6 +54,10 @@ public class DBSPTypeString extends DBSPTypeBaseType {
         this.fixed = fixed;
     }
 
+    public static DBSPTypeString varchar(boolean mayBeNull) {
+        return new DBSPTypeString(CalciteObject.EMPTY, UNLIMITED_PRECISION, false, mayBeNull);
+    }
+
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)

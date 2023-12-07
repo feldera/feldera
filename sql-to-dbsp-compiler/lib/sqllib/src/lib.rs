@@ -11,6 +11,8 @@ pub mod timestamp;
 
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
+use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
+use dbsp::{DBData, DBWeight, OrdZSet};
 use geopoint::GeoPoint;
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -952,4 +954,23 @@ pub fn print_opt(str: Option<String>) {
         None => print!("NULL"),
         Some(x) => print!("{}", x),
     }
+}
+
+pub fn zset_map<D, T, W, F>(data: &OrdZSet<D, W>, mapper: F) -> OrdZSet<T, W>
+where
+    D: DBData + 'static,
+    W: DBWeight + 'static,
+    T: DBData + 'static,
+    F: Fn(&D) -> T,
+{
+    let mut builder = <OrdZSet<T, W> as Batch>::Builder::with_capacity((), data.len());
+
+    let mut cursor = data.cursor();
+    while cursor.key_valid() {
+        let item = cursor.key();
+        let data = mapper(item);
+        builder.push((data, cursor.weight()));
+        cursor.step_key();
+    }
+    builder.done()
 }

@@ -10,11 +10,21 @@ import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.statement.*;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.Linq;
 import org.dbsp.util.TableValue;
@@ -100,11 +110,47 @@ class TestCase {
                 String message = System.lineSeparator() +
                         "mvn test -Dtest=" + this.javaTestName +
                         System.lineSeparator() + this.name;
+
+                DBSPType rowType = outputs[i].data.getElementType();
+                boolean found = false;
+                DBSPExpression[] converted = null;
+                DBSPVariablePath var = null;
+                if (rowType.is(DBSPTypeTuple.class)) {
+                    // Convert FP values to strings to ensure deterministic comparisons
+                    DBSPTypeTuple tuple = rowType.to(DBSPTypeTuple.class);
+                    converted = new DBSPExpression[tuple.size()];
+                    var = new DBSPVariablePath("t", tuple);
+                    for (int index = 0; index < tuple.size(); index++) {
+                        DBSPType fieldType = tuple.getFieldType(index);
+                        if (fieldType.is(DBSPTypeFP.class)) {
+                            converted[index] = var.field(index).cast(DBSPTypeString.varchar(fieldType.mayBeNull));
+                            found = true;
+                        } else {
+                            converted[index] = var.field(index).applyCloneIfNeeded();
+                        }
+                    }
+                } else {
+                    // TODO: handle Vec<> values
+                }
+
+                DBSPExpression expected = outputs[i];
+                DBSPExpression actual = out.getVarReference().field(i);
+
+                if (found) {
+                    DBSPExpression convertedValue = new DBSPTupleExpression(converted);
+                    DBSPExpression converter = convertedValue.closure(var.asRefParameter());
+                    DBSPVariablePath converterVar = new DBSPVariablePath("converter", DBSPTypeAny.getDefault());
+                    list.add(new DBSPLetStatement(converterVar.variable, converter));
+                    expected = new DBSPApplyExpression("zset_map", convertedValue.getType(), expected.borrow(), converterVar);
+                    actual = new DBSPApplyExpression("zset_map", convertedValue.getType(), actual.borrow(), converterVar);
+                }
+
                 DBSPStatement compare = new DBSPExpressionStatement(
                         new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
-                                new DBSPApplyExpression("must_equal", new DBSPTypeBool(CalciteObject.EMPTY, false),
-                                        out.getVarReference().field(i).borrow(),
-                                        outputs[i].borrow()),
+                                new DBSPApplyExpression("must_equal",
+                                        new DBSPTypeBool(CalciteObject.EMPTY, false),
+                                        actual.borrow(),
+                                        expected.borrow()),
                                 new DBSPStrLiteral(message, false, true)));
                 list.add(compare);
             }

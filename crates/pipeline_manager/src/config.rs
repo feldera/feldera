@@ -119,13 +119,13 @@ pub struct ApiServerConfig {
     /// If the auth_provider is aws-cognito, there are two more
     /// environment variables that need to be set. This is required
     /// to make use of the AWS hosted login UI
-    /// (see https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-app-integration.html#cognito-user-pools-app-integration-amplify):
+    /// (see <https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-app-integration.html#cognito-user-pools-app-integration-amplify>):
     ///
     /// AWS_COGNITO_LOGIN_URL
     /// AWS_COGNITO_LOGOUT_URL
     ///
     /// These two URLs correspond to the login and logout endpoints.
-    /// See here: https://docs.aws.amazon.com/cognito/latest/developerguide/login-endpoint.html
+    /// See here: <https://docs.aws.amazon.com/cognito/latest/developerguide/login-endpoint.html>
     /// There is one caveat though. You need to remove the "state"
     /// and "redirect_uri" URL parameers from the login/logout URLs.
     /// We expect to remove this requirement in the future.

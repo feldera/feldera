@@ -698,7 +698,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "-----------+-----------+-----------+-----------+-----------\n" +
                 "         0 |         0 |         0 |         0 |         0\n" +
                 "         0 |         1 |         1 |        -1 |         0\n" +
-                "         0 |        -1 |        -1 |         1 |         0\n" +
+                "         0 |        -1 |        -1 |         1 |        -0\n" +
                 "         0 |       4.2 |       4.2 |      -4.2 |       0.0\n" +
                 "         0 |  Infinity |  Infinity | -Infinity |       NaN\n" +
                 "         0 | -Infinity | -Infinity |  Infinity |       NaN\n" +
@@ -710,7 +710,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "         1 |  Infinity |  Infinity | -Infinity |  Infinity\n" +
                 "         1 | -Infinity | -Infinity |  Infinity | -Infinity\n" +
                 "         1 |       NaN |       NaN |       NaN |       NaN\n" +
-                "        -1 |         0 |        -1 |        -1 |         0\n" +
+                "        -1 |         0 |        -1 |        -1 |        -0\n" +
                 "        -1 |         1 |         0 |        -2 |        -1\n" +
                 "        -1 |        -1 |        -2 |         0 |         1\n" +
                 "        -1 |       4.2 |       3.2 |      -5.2 |      -4.2\n" +
@@ -807,7 +807,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "  Infinity |         1 |                Infinity \n" +
                 " -Infinity |         1 |               -Infinity \n" +
                 "       NaN |         1 |                     NaN \n" +
-                "         0 |        -1 |  0.00000000000000000000 \n" +
+                "         0 |        -1 | -0.00000000000000000000 \n" +
                 "         1 |        -1 | -1.00000000000000000000 \n" +
                 "        -1 |        -1 |  1.00000000000000000000 \n" +
                 "       4.2 |        -1 |     -4.2000000000000000 \n" +
@@ -823,15 +823,15 @@ public class PostgresNumericTests extends SqlIoTest {
                 "       NaN |       4.2 |                     NaN \n" +
                 "         0 |  Infinity |                       0 \n" +
                 "         1 |  Infinity |                       0 \n" +
-                "        -1 |  Infinity |                       0 \n" +
+                "        -1 |  Infinity |                      -0 \n" +
                 "       4.2 |  Infinity |                       0 \n" +
                 "  Infinity |  Infinity |                     NaN \n" +
                 " -Infinity |  Infinity |                     NaN \n" +
                 "       NaN |  Infinity |                     NaN \n" +
-                "         0 | -Infinity |                       0 \n" +
-                "         1 | -Infinity |                       0 \n" +
+                "         0 | -Infinity |                      -0 \n" +
+                "         1 | -Infinity |                      -0 \n" +
                 "        -1 | -Infinity |                       0 \n" +
-                "       4.2 | -Infinity |                       0 \n" +
+                "       4.2 | -Infinity |                      -0 \n" +
                 "  Infinity | -Infinity |                     NaN \n" +
                 " -Infinity | -Infinity |                     NaN \n" +
                 "       NaN | -Infinity |                     NaN \n" +
@@ -918,7 +918,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "FROM v;\n" +
                 "     x     |  minusx   |   abs    |   floor   |   ceil    | sign  \n" +
                 "-----------+-----------+----------+-----------+-----------+-------\n" +
-                "         0 |         0 |        0 |         0 |         0 |    0 \n" +
+                "         0 |        -0 |        0 |         0 |         0 |    0 \n" +
                 "         1 |        -1 |        1 |         1 |         1 |    1 \n" +
                 "        -1 |         1 |        1 |        -1 |        -1 |   -1 \n" +
                 "       4.2 |      -4.2 |      4.2 |         4 |         5 |    1 \n" +

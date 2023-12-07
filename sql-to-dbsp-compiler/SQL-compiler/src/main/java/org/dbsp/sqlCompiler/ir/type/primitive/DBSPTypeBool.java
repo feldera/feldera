@@ -35,6 +35,10 @@ import java.util.Objects;
 public class DBSPTypeBool extends DBSPTypeBaseType {
     public DBSPTypeBool(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.BOOL, mayBeNull); }
 
+    public static DBSPTypeBool create(boolean mayBeNull) {
+        return new DBSPTypeBool(CalciteObject.EMPTY, mayBeNull);
+    }
+
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
