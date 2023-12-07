@@ -15,6 +15,7 @@ data: {
       "org.apache.calcite.sql.ddl.SqlDdlNodes"
       "org.apache.calcite.sql.ddl.SqlCreateType"
       "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration"
+      "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
@@ -918,6 +919,7 @@ data: {
       "SqlCreateView"
       "SqlCreateExtendedTable"
       "SqlCreateType"
+      "SqlFunction"
     ]
 
     truncateStatementParserMethods: [

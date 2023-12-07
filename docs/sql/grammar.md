@@ -9,6 +9,13 @@ statementList:
 statement
   :   createTableStatement
   |   createViewStatement
+  |   createFunctionStatement
+
+generalType
+  :   type [NOT NULL]
+
+createFunctionStatement
+  :   CREATE FUNCTION name '(' [ columnDecl [, columnDecl ]* ] ')' generalType
 
 createTableStatement
   :   CREATE TABLE name
@@ -20,7 +27,7 @@ createViewStatement
       AS query
 
 tableElement
-  :   columnName type [NOT [NULL]] ( columnConstraint )*
+  :   columnName generalType ( columnConstraint )*
   |   columnName
   |   tableConstraint
 
@@ -79,7 +86,7 @@ groupItem:
   |   '(' expression [, expression ]* ')'
 
 columnDecl
-  :   column type [ NOT NULL ]
+  :   column generalType
 
 selectWithoutFrom
   :   SELECT [ ALL | DISTINCT ]

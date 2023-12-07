@@ -61,6 +61,14 @@ public class ParserTests {
     }
 
     @Test
+    public void createFunctionTest() throws SqlParseException {
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = "CREATE FUNCTION json(data VARCHAR) VARBINARY";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
     public void createTypeTest() throws SqlParseException {
         CalciteCompiler calcite = this.getCompiler();
         String ddl = "CREATE TYPE address_typ AS (\n" +

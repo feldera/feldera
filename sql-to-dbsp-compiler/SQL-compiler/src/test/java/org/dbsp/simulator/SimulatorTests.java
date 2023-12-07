@@ -325,7 +325,6 @@ public class SimulatorTests {
         ZSet<Person, Integer> input = getPersons();
         ZSet<Address, Integer> address = getAddress();
         ZSet<NameAddress, Integer> product = input.multiply(address, (p, a) -> new NameAddress(p.name, a.city));
-        System.out.println(product);
         Assert.assertEquals(input.entryCount() * address.entryCount(), product.entryCount());
     }
 

@@ -44,18 +44,43 @@ import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
-import org.apache.calcite.rel.type.*;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
+import org.apache.calcite.rel.type.RelDataTypeSystem;
+import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
-import org.apache.calcite.sql.*;
-import org.apache.calcite.sql.ddl.*;
+import org.apache.calcite.sql.SqlBasicCall;
+import org.apache.calcite.sql.SqlBasicTypeNameSpec;
+import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlDataTypeSpec;
+import org.apache.calcite.sql.SqlExplainFormat;
+import org.apache.calcite.sql.SqlExplainLevel;
+import org.apache.calcite.sql.SqlFunctionCategory;
+import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlInsert;
+import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLiteral;
+import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlNodeList;
+import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlTypeNameSpec;
+import org.apache.calcite.sql.SqlUnresolvedFunction;
+import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
+import org.apache.calcite.sql.ddl.SqlCreateTable;
+import org.apache.calcite.sql.ddl.SqlCreateView;
+import org.apache.calcite.sql.ddl.SqlDropTable;
+import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.fun.SqlLibrary;
 import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
-import org.apache.calcite.sql.type.*;
+import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
@@ -70,9 +95,17 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputTableDescription;
 import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
-import org.dbsp.sqlCompiler.compiler.errors.*;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.*;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -80,10 +113,14 @@ import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.*;
-
-import static org.apache.calcite.sql.type.OperandTypes.family;
-import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
 
 /**
  * The calcite compiler compiles SQL into Calcite RelNode representations.
@@ -121,8 +158,7 @@ public class CalciteCompiler implements IWritesLogs {
      * This class rewrites instances of the division operator in the SQL AST
      * into calls to a user-defined function DIVISION.  We do this
      * because we don't like how Calcite infers result types for division,
-     * and we want to supply our own rules.
-     */
+     * and we want to supply our own rules. */
     public static class RewriteDivision extends SqlShuttle {
         @Override
         public SqlNode visit(SqlCall call) {
@@ -146,86 +182,8 @@ public class CalciteCompiler implements IWritesLogs {
         }
     }
 
-    static class SqlDivideFunction extends SqlFunction {
-        // Custom implementation of type inference DIVISION for our division operator.
-        static final SqlReturnTypeInference divResultInference = new SqlReturnTypeInference() {
-            @Override
-            public @org.checkerframework.checker.nullness.qual.Nullable
-            RelDataType inferReturnType(SqlOperatorBinding opBinding) {
-                // Default policy for division.
-                RelDataType result = ReturnTypes.QUOTIENT_NULLABLE.inferReturnType(opBinding);
-                List<RelDataType> opTypes = opBinding.collectOperandTypes();
-                // If all operands are integer or decimal, result is nullable
-                // otherwise it's not.
-                boolean nullable = true;
-                for (RelDataType type: opTypes) {
-                    if (SqlTypeName.APPROX_TYPES.contains(type.getSqlTypeName())) {
-                        nullable = false;
-                        break;
-                    }
-                }
-                if (nullable)
-                    result = opBinding.getTypeFactory().createTypeWithNullability(result, true);
-                return result;
-            }
-        };
-
-        public SqlDivideFunction() {
-            super("DIVISION",
-                    SqlKind.OTHER_FUNCTION,
-                    divResultInference,
-                    null,
-                    OperandTypes.NUMERIC_NUMERIC,
-                    SqlFunctionCategory.NUMERIC);
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            // TODO: change this when we learn how to constant-fold in the RexToLixTranslator
-            // https://issues.apache.org/jira/browse/CALCITE-3394 may give a solution
-            return false;
-        }
-    }
-
     public void generateOutputForNextView(boolean generate) {
         this.generateOutputForNextView = generate;
-    }
-
-    /**
-     * WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
-     * its value to stdout.  Used for debugging.  In the format string
-     * each occurrence of %% is replaced with the arg */
-    public static class WriteLogFunction extends SqlFunction {
-        public WriteLogFunction() {
-            super("WRITELOG",
-                    SqlKind.OTHER_FUNCTION,
-                    ARG1,
-                    null,
-                    family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
-                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            return false;
-        }
-    }
-
-    static class RlikeFunction extends SqlFunction {
-        public RlikeFunction() {
-            super("RLIKE",
-                    SqlKind.RLIKE,
-                    ReturnTypes.BOOLEAN,
-                    null,
-                    OperandTypes.STRING_STRING,
-                    SqlFunctionCategory.STRING);
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            // TODO: change this when we learn how to constant-fold in the RexToLixTranslator
-            return false;
-        }
     }
 
     public static final RelDataTypeSystem TYPE_SYSTEM = new RelDataTypeSystemImpl() {
@@ -331,16 +289,15 @@ public class CalciteCompiler implements IWritesLogs {
                 rootSchema, Collections.singletonList(catalog.schemaName), this.typeFactory, connectionConfig);
 
         SqlOperatorTable operatorTable = SqlOperatorTables.chain(
-                // Libraries of user-defined functions supported.
                 SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
-                        // Standard SQL functions
+                        // Libraries of functions supported.
                         EnumSet.of(SqlLibrary.STANDARD,
                                 SqlLibrary.MYSQL,
                                 SqlLibrary.POSTGRESQL,
                                 SqlLibrary.BIG_QUERY,
                                 SqlLibrary.SPARK,
                                 SqlLibrary.SPATIAL)),
-                SqlOperatorTables.of(new SqlDivideFunction(), new RlikeFunction(), new WriteLogFunction())
+                SqlOperatorTables.of(CustomFunctions.INSTANCE.getUDFs())
         );
 
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
@@ -523,8 +480,7 @@ public class CalciteCompiler implements IWritesLogs {
         String toParse = newlines + sql;
         SqlParser sqlParser = SqlParser.create(toParse, this.parserConfig);
         int lines = sql.split("\n").length;
-        for (int i = 0; i < lines; i++)
-            this.newlines.append("\n");
+        this.newlines.append("\n".repeat(lines));
         return sqlParser;
     }
 
@@ -729,8 +685,8 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    public List<RelColumnMetadata> createColumnsMetadata(
-            CalciteObject node, SqlIdentifier objectName, boolean view, RelRoot relRoot, @Nullable SqlNodeList columnNames) {
+    public List<RelColumnMetadata> createColumnsMetadata(CalciteObject node,
+            SqlIdentifier objectName, boolean view, RelRoot relRoot, @Nullable SqlNodeList columnNames) {
         List<RelColumnMetadata> columns = new ArrayList<>();
         RelDataType rowType = relRoot.rel.getRowType();
         if (columnNames != null && columnNames.size() != relRoot.fields.size()) {
@@ -786,13 +742,14 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     /**
-     * Compile a SQL statement.  Return a description.
+     * Compile a SQL statement.  Returns null if the statement does not require further processing.
      * @param node         Compiled version of the SQL statement.
      * @param sqlStatement SQL statement as a string to compile.
      * @param comment      Additional information about the compiled statement.
      * @param inputs       If not null, add here a JSON description of the tables defined by the statement, if any.
      * @param outputs      If not null, add here a JSON description of the views defined by the statement, if any.
      */
+    @Nullable
     public FrontEndStatement compile(
             String sqlStatement,
             SqlNode node,
@@ -829,16 +786,14 @@ public class CalciteCompiler implements IWritesLogs {
                             .newline();
                     RelRoot relRoot = this.converter.convertQuery(ct.query, true, true);
                     cols = this.createColumnsMetadata(
-                            CalciteObject.create(ct), ct.name, false, relRoot, null);
+                            ct.name, false, relRoot, null);
                      */
                 }
                 CreateTableStatement table = new CreateTableStatement(node, sqlStatement, tableName, comment, cols);
                 this.catalog.addTable(tableName, table.getEmulatedTable());
                 inputs.add(new InputTableDescription(table));
                 return table;
-            }
-
-            if (node.getKind().equals(SqlKind.CREATE_VIEW)) {
+            } else if (node.getKind().equals(SqlKind.CREATE_VIEW)) {
                 SqlCreateView cv = (SqlCreateView) node;
                 SqlNode query = cv.query;
                 if (cv.getReplace())
@@ -851,8 +806,8 @@ public class CalciteCompiler implements IWritesLogs {
                         .append(Objects.requireNonNull(query).toString())
                         .newline();
                 RelRoot relRoot = this.converter.convertQuery(query, true, true);
-                List<RelColumnMetadata> columns = this.createColumnsMetadata(
-                        CalciteObject.create(cv), cv.name, true, relRoot, cv.columnList);
+                List<RelColumnMetadata> columns = this.createColumnsMetadata(CalciteObject.create(node),
+                        cv.name, true, relRoot, cv.columnList);
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = Catalog.identifierToString(cv.name);
@@ -864,6 +819,9 @@ public class CalciteCompiler implements IWritesLogs {
                 if (this.generateOutputForNextView)
                     outputs.add(new OutputViewDescription(view));
                 return view;
+            } else if (node.getKind().equals(SqlKind.CREATE_FUNCTION)) {
+                SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node;
+                return null;
             }
         }
 
