@@ -6,11 +6,11 @@
 //! - Long intervals, representing differences between months. These are
 //!   represented as days.
 
+use dbsp::num_entries_scalar;
 use num::PrimInt;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::ops::Mul;
-use dbsp::num_entries_scalar;
 
 #[derive(
     Debug,

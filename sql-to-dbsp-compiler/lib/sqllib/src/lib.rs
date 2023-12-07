@@ -12,12 +12,17 @@ pub mod timestamp;
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 <<<<<<< HEAD
+<<<<<<< HEAD
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{DBData, DBWeight, OrdZSet};
 =======
 use dbsp::{DBData, DBWeight, OrdZSet, OrdIndexedZSet};
 use dbsp::trace::{Batch, Builder, BatchReader, Cursor};
 >>>>>>> 6140fb18 ([SQL] Dataflow analysis and instrumentation for lateness)
+=======
+use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
+use dbsp::{DBData, DBWeight, OrdIndexedZSet, OrdZSet};
+>>>>>>> 3171c927 (Rustfmt)
 use geopoint::GeoPoint;
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -982,7 +987,7 @@ where
 pub fn zset_filter_comparator<D, T, W, F>(
     data: &OrdZSet<D, W>,
     value: &T,
-    comparator: F
+    comparator: F,
 ) -> OrdZSet<D, W>
 where
     D: DBData + 'static,
@@ -990,10 +995,7 @@ where
     T: 'static,
     F: Fn(&D, &T) -> bool,
 {
-    let mut builder = <OrdZSet<D, W> as Batch>::Builder::with_capacity(
-        (),
-        data.len(),
-    );
+    let mut builder = <OrdZSet<D, W> as Batch>::Builder::with_capacity((), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
@@ -1009,7 +1011,7 @@ where
 pub fn indexed_zset_filter_comparator<K, D, T, W, F>(
     data: &OrdIndexedZSet<K, D, W>,
     value: &T,
-    comparator: F
+    comparator: F,
 ) -> OrdIndexedZSet<K, D, W>
 where
     K: DBData + 'static,
@@ -1018,10 +1020,7 @@ where
     T: 'static,
     F: Fn((&K, &D), &T) -> bool,
 {
-    let mut builder = <OrdIndexedZSet<K, D, W> as Batch>::Builder::with_capacity(
-        (),
-        data.len(),
-    );
+    let mut builder = <OrdIndexedZSet<K, D, W> as Batch>::Builder::with_capacity((), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {

@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use crate::{geopoint::*, interval::*, timestamp::*, some_polymorphic_function1};
+use crate::{geopoint::*, interval::*, some_polymorphic_function1, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};

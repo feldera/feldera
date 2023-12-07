@@ -3,6 +3,7 @@
 use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use core::fmt::Formatter;
+use dbsp::num_entries_scalar;
 use dbsp_adapters::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
@@ -14,7 +15,6 @@ use std::{
     fmt::{self, Debug},
     ops::Add,
 };
-use dbsp::num_entries_scalar;
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
@@ -960,4 +960,3 @@ num_entries_scalar! {
     Date,
     Time,
 }
-

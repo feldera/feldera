@@ -2,10 +2,10 @@
 
 use ::serde::{Deserialize, Serialize};
 use dbsp::algebra::F64;
+use dbsp::num_entries_scalar;
 use geo::EuclideanDistance;
 use geo::Point;
 use size_of::*;
-use dbsp::num_entries_scalar;
 
 #[derive(
     Default,

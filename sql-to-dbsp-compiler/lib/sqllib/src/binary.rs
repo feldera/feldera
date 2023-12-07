@@ -1,12 +1,12 @@
 //! Support for byte arrays (binary objects in SQL)
 
 use crate::some_function1;
+use dbsp::num_entries_scalar;
 use dbsp_adapters::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig};
 use hex::ToHex;
 use serde::{Deserializer, Serializer};
 use size_of::SizeOf;
 use std::fmt::Debug;
-use dbsp::num_entries_scalar;
 
 #[derive(
     Debug,
