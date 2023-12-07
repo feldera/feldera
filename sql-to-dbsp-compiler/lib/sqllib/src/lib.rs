@@ -11,18 +11,8 @@ pub mod timestamp;
 
 use crate::interval::ShortInterval;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
-<<<<<<< HEAD
-<<<<<<< HEAD
-use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
-use dbsp::{DBData, DBWeight, OrdZSet};
-=======
-use dbsp::{DBData, DBWeight, OrdZSet, OrdIndexedZSet};
-use dbsp::trace::{Batch, Builder, BatchReader, Cursor};
->>>>>>> 6140fb18 ([SQL] Dataflow analysis and instrumentation for lateness)
-=======
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{DBData, DBWeight, OrdIndexedZSet, OrdZSet};
->>>>>>> 3171c927 (Rustfmt)
 use geopoint::GeoPoint;
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
