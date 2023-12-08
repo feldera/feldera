@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
+- SQL: support for mathematical constant `PI` ([#1123](https://github.com/feldera/feldera/pull/1123))
+
 ## [0.5.0] - 2023-12-05
 
 ### Fixed
@@ -24,8 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: parser support for 'DEFAULT' column values in DDL (#1061)
 - pipeline-manager: add Service to database and API
   ([#1074](https://github.com/feldera/feldera/pull/1074))
-- SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
-- SQL: support for mathematical constant `PI` ([#1123](https://github.com/feldera/feldera/pull/1123))
 
 ## [0.4.0] - 2023-11-21
 
