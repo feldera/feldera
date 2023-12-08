@@ -1,7 +1,6 @@
-import Image from 'next/image'
 import Link from 'next/link'
-import lightLogo from 'public/images/feldera/LogoSolid.svg'
-import darkLogo from 'public/images/feldera/LogoWhite.svg'
+import LightLogo from 'public/images/feldera/LogoSolid.svg'
+import DarkLogo from 'public/images/feldera/LogoWhite.svg'
 import { ReactNode } from 'react'
 import { Settings } from 'src/@core/context/settingsTypes'
 
@@ -31,7 +30,7 @@ const VerticalNavHeader = (props: {
   verticalNavMenuBranding?: (props?: any) => ReactNode
 }) => {
   const { verticalNavMenuBranding: userVerticalNavMenuBranding } = props
-  const logo = props.settings.mode === 'dark' ? darkLogo : lightLogo
+  const Logo = props.settings.mode === 'dark' ? DarkLogo : LightLogo
 
   return (
     <MenuHeaderWrapper className='nav-header' sx={{ pl: 3 }}>
@@ -39,7 +38,7 @@ const VerticalNavHeader = (props: {
         userVerticalNavMenuBranding(props)
       ) : (
         <StyledLink href='/' passHref>
-          <Image src={logo} priority alt='Logo' width={130} height={70} />
+          <Logo alt='Logo' width={130} height={70} />
         </StyledLink>
       )}
     </MenuHeaderWrapper>

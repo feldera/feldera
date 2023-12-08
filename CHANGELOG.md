@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- WebConsole: Vendor logos now change color when in dark mode
+
 ### Added
 - SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
 - SQL: support for mathematical constant `PI` ([#1123](https://github.com/feldera/feldera/pull/1123))

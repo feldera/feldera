@@ -3,9 +3,10 @@
 // Also attached the dialog for the connector that opens when someone clicks
 // on Add.
 
+import { SVGImport } from '$lib/types/imports'
 import Image from 'next/image'
 
-import { Box } from '@mui/material'
+import { Box, useTheme } from '@mui/material'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -13,19 +14,39 @@ import Typography from '@mui/material/Typography'
 
 export const AddConnectorCard = (props: {
   id?: string
-  icon: string
+  icon: string | SVGImport
   title: string
   addInput?: { onClick: () => void } | { href: string }
   addOutput?: { onClick: () => void } | { href: string }
 }) => {
+  const theme = useTheme()
   return (
     <Card id={props.id}>
       <CardContent sx={{ textAlign: 'center' }}>
-        <Image
-          src={props.icon}
-          alt='An icon'
-          style={{ marginBottom: 8, height: 64, objectFit: 'cover', width: 'fit-content' }}
-        />
+        {typeof props.icon === 'string' ? (
+          <Image
+            src={props.icon}
+            alt='An icon'
+            style={{
+              height: 64,
+              objectFit: 'cover',
+              width: 'fit-content',
+              fill: theme.palette.text.primary
+            }}
+          />
+        ) : (
+          (Icon => (
+            <Icon
+              style={{
+                height: 64,
+                objectFit: 'cover',
+                width: '100%',
+                fill: theme.palette.text.primary
+              }}
+            ></Icon>
+          ))(props.icon)
+        )}
+
         <Typography sx={{ mb: 3 }}>{props.title}</Typography>
         <Box sx={{ display: 'flex', width: '100%' }}>
           {!!props.addInput && (

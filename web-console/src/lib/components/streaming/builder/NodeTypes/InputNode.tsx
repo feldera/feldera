@@ -8,12 +8,13 @@ import { ConnectorDescr } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 import IconX from '~icons/bx/x'
 
-import { Box, Link } from '@mui/material'
+import { Box, Link, useTheme } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
 import CardHeader from '@mui/material/CardHeader'
 import IconButton from '@mui/material/IconButton'
 
 const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
+  const theme = useTheme()
   const { getNode, getEdges, deleteElements } = useReactFlow()
   const onDelete = useDeleteNode(() => {})(id)
 
@@ -44,7 +45,6 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
   }
 
   const { showDeleteDialog } = useDeleteDialog()
-
   return (
     <Node>
       <Link href={`#edit/connector/${data.connector.connector_id}`}>
@@ -57,7 +57,16 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           avatar={
             <Avatar variant='rounded' sx={{ mt: 1.5, width: 42, height: 42 }}>
               {(Icon => {
-                return <Icon style={{ width: '90%', height: '90%' }}></Icon>
+                return (
+                  <Icon
+                    style={{
+                      width: '90%',
+                      height: '90%',
+                      fill: theme.palette.text.primary,
+                      color: theme.palette.text.primary
+                    }}
+                  ></Icon>
+                )
               })(connectorTypeToIcon(connectorDescrToType(data.connector)))}
             </Avatar>
           }
