@@ -1,5 +1,5 @@
 use super::{
-    ApiPermission, AttachedConnector, ConnectorDescr, ConnectorId, DBError, Pipeline,
+    ApiKeyDescr, ApiPermission, AttachedConnector, ConnectorDescr, ConnectorId, DBError, Pipeline,
     PipelineDescr, PipelineId, PipelineRevision, PipelineRuntimeState, PipelineStatus,
     ProgramDescr, ProgramId, ProgramSchema, Revision, Version,
 };
@@ -379,19 +379,20 @@ pub(crate) trait Storage {
         connector_id: ConnectorId,
     ) -> Result<(), DBError>;
 
+    /// Get a list of API key names
+    async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError>;
+
     /// Persist a hash of API key in the database
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
-        key: String,
+        name: &str,
+        key: &str,
         permissions: Vec<ApiPermission>,
     ) -> Result<(), DBError>;
 
     /// Validate an API key against the database
-    async fn validate_api_key(
-        &self,
-        key: String,
-    ) -> Result<(TenantId, Vec<ApiPermission>), DBError>;
+    async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Vec<ApiPermission>), DBError>;
 
     /// Get the tenant ID from the database for a given tenant name and
     /// provider, else create a new tenant ID

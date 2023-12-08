@@ -3,7 +3,9 @@ use super::{
     PipelineRevision, PipelineStatus, ProgramDescr, ProgramId, ProgramStatus, ProjectDB, Revision,
     Version,
 };
-use super::{ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState, ProgramSchema};
+use super::{
+    ApiKeyDescr, ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState, ProgramSchema,
+};
 use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::{Relation, ServiceDescr, ServiceId};
 use async_trait::async_trait;
@@ -16,7 +18,6 @@ use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
 use proptest::{bool, prelude::*};
 use proptest_derive::Arbitrary;
-use std::collections::btree_map;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::time::SystemTime;
@@ -546,24 +547,25 @@ async fn save_api_key() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
     // Attempt several key generations and validations
-    for _ in 1..10 {
+    for i in 1..10 {
         let api_key = auth::generate_api_key();
         handle
             .db
             .store_api_key_hash(
                 tenant_id,
-                api_key.clone(),
+                &format!("foo-{}", i),
+                &api_key,
                 vec![ApiPermission::Read, ApiPermission::Write],
             )
             .await
             .unwrap();
-        let scopes = handle.db.validate_api_key(api_key.clone()).await.unwrap();
+        let scopes = handle.db.validate_api_key(&api_key).await.unwrap();
         assert_eq!(tenant_id, scopes.0);
         assert_eq!(&ApiPermission::Read, scopes.1.get(0).unwrap());
         assert_eq!(&ApiPermission::Write, scopes.1.get(1).unwrap());
 
         let api_key_2 = auth::generate_api_key();
-        let err = handle.db.validate_api_key(api_key_2).await.unwrap_err();
+        let err = handle.db.validate_api_key(&api_key_2).await.unwrap_err();
         assert!(matches!(err, DBError::InvalidKey));
     }
 }
@@ -1185,7 +1187,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_service_config()")] Option<ServiceConfig>,
     ),
     DeleteService(TenantId, ServiceId),
-    StoreApiKeyHash(TenantId, String, Vec<ApiPermission>),
+    StoreApiKeyHash(TenantId, String, String, Vec<ApiPermission>),
     ValidateApiKey(TenantId, String),
     CreatePipelineRevision(
         #[proptest(strategy = "limited_uuid()")] Uuid,
@@ -1576,16 +1578,16 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_connector(tenant_id, connector_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::StoreApiKeyHash(tenant_id,key, permissions) => {
+                            StorageAction::StoreApiKeyHash(tenant_id, name, key, permissions) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.store_api_key_hash(tenant_id, key.clone(), permissions.clone()).await;
-                                let impl_response = handle.db.store_api_key_hash(tenant_id, key.clone(), permissions.clone()).await;
+                                let model_response = model.store_api_key_hash(tenant_id, &name, &key, permissions.clone()).await;
+                                let impl_response = handle.db.store_api_key_hash(tenant_id, &name, &key, permissions.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             },
                             StorageAction::ValidateApiKey(tenant_id,key) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.validate_api_key(key.clone()).await;
-                                let impl_response = handle.db.validate_api_key(key.clone()).await;
+                                let model_response = model.validate_api_key(&key).await;
+                                let impl_response = handle.db.validate_api_key(&key).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::CreatePipelineRevision(new_revision_id, tenant_id, pipeline_id) => {
@@ -1664,7 +1666,7 @@ struct DbModel {
     pub programs: BTreeMap<(TenantId, ProgramId), ProgramData>,
     pub pipelines: BTreeMap<(TenantId, PipelineId), Pipeline>,
     pub history: BTreeMap<(TenantId, PipelineId), PipelineRevision>,
-    pub api_keys: BTreeMap<String, (TenantId, Vec<ApiPermission>)>,
+    pub api_keys: BTreeMap<(TenantId, String), (String, Vec<ApiPermission>)>,
     pub connectors: BTreeMap<(TenantId, ConnectorId), ConnectorDescr>,
     pub services: BTreeMap<(TenantId, ServiceId), ServiceDescr>,
     pub tenants: BTreeMap<TenantId, TenantRecord>,
@@ -2470,30 +2472,53 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
+    async fn list_api_keys(&self, tenant_id: TenantId) -> DBResult<Vec<ApiKeyDescr>> {
+        let s = self.lock().await;
+        Ok(s.api_keys
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| ApiKeyDescr {
+                name: k.0 .1.clone(),
+                scopes: k.1 .1.clone(),
+            })
+            .collect())
+    }
+
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
-        key: String,
+        name: &str,
+        key: &str,
         permissions: Vec<ApiPermission>,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        if let btree_map::Entry::Vacant(e) = s.api_keys.entry(hash) {
-            e.insert((tenant_id, permissions));
-            Ok(())
-        } else {
-            Err(DBError::duplicate_key())
+        if s.api_keys.contains_key(&(tenant_id, name.to_string())) {
+            return Err(DBError::DuplicateName);
         }
+        if s.api_keys.iter().any(|k| k.1 .0 == hash) {
+            return Err(DBError::duplicate_key());
+        }
+        s.api_keys
+            .insert((tenant_id, name.to_string()), (hash, permissions));
+        Ok(())
     }
 
-    async fn validate_api_key(&self, key: String) -> DBResult<(TenantId, Vec<ApiPermission>)> {
+    async fn validate_api_key(&self, key: &str) -> DBResult<(TenantId, Vec<ApiPermission>)> {
         let s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        let record = s.api_keys.get(&hash);
+        let record: Vec<(TenantId, Vec<ApiPermission>)> = s
+            .api_keys
+            .iter()
+            .filter(|k| k.1 .0 == hash)
+            .map(|k| (k.0 .0, k.1 .1.clone()))
+            .collect();
+        assert!(record.len() <= 1);
+        let record = record.get(0);
         match record {
             Some(record) => Ok((record.0, record.1.clone())),
             None => Err(DBError::InvalidKey),
