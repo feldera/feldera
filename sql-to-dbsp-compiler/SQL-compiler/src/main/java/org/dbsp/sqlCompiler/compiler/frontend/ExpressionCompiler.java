@@ -624,6 +624,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 2);
                     }
+                    case "sin":
+                    case "cos":
+                    {
+                        // Turn the argument into Double
+                        DBSPExpression exp = ops.get(0);
+                        ops.set(0, exp.cast(new DBSPTypeDouble(node, exp.getType().mayBeNull)));
+                        return this.compilePolymorphicFunction(call, node, type, ops, 1);
+                    }
                     case "split":
                         // If any argument is NULL, cast it to a string.
                         // Calcite should be doing this, but it doesn't.

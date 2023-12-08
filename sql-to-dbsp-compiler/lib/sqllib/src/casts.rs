@@ -11,6 +11,9 @@ use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
 use rust_decimal::Decimal;
 
+const FLOAT_DISPLAY_PRECISION: usize = 6;
+const DOUBLE_DISPLAY_PRECISION: usize = 15;
+
 /////////// cast to b
 
 macro_rules! cast_to_b {
@@ -808,25 +811,33 @@ pub fn cast_to_s_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> Str
 
 #[inline]
 pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
-    let result = value.to_string();
+    let result = format!("{1:.0$}", DOUBLE_DISPLAY_PRECISION, value);
+    let result = result.trim_end_matches('0').to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
 pub fn cast_to_s_dN(value: Option<F64>, size: i32, fixed: bool) -> String {
-    let result = s_helper(value);
+    let result = match value {
+        Some(inner) => return cast_to_s_d(inner, size, fixed),
+        None => String::from("NULL"),
+    };
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
 pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
-    let result = value.to_string();
+    let result = format!("{1:.0$}", FLOAT_DISPLAY_PRECISION, value);
+    let result = result.trim_end_matches('0').to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
 pub fn cast_to_s_fN(value: Option<F32>, size: i32, fixed: bool) -> String {
-    let result = s_helper(value);
+    let result = match value {
+        Some(inner) => return cast_to_s_f(inner, size, fixed),
+        None => String::from("NULL"),
+    };
     limit_or_size_string(result, size, fixed)
 }
 
