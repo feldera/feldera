@@ -38,6 +38,9 @@ Casting a string to a floating-point value will produce the value
 Casting a value that is out of the supported range to a floating
 point type will produce a value that is `inf` or `-inf`.
 
+Casting a floating-point value to string, `float` is rounded off 
+to 6 decimal places and `double` is rounded off to 15 decimal places.
+
 Please note that numeric values with a decimal point have the
 `decimal` type by default.  To write a floating-point literal you have
 to include the `e` for exponent using the following grammar:
@@ -94,6 +97,6 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>PI</code></td>
-    <td>Returns the approximate value of <code>PI</code> as double.</td>
+    <td>Returns the approximate value of <code>PI</code> as double. Note that <code>()</code> is not required. Example: <code>SELECT PI;</code></td>
   </tr>
 </table>

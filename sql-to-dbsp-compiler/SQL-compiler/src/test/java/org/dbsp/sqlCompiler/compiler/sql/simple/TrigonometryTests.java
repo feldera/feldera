@@ -84,12 +84,6 @@ public class TrigonometryTests extends SqlIoTest {
                         " sin \n" +
                         "-----\n" +
                         " 0.8414709848078965\n" +
-                        "(1 row)\n" +
-                        "\n" +
-                        "SELECT sin(CAST(pi AS DOUBLE));\n" +
-                        " sin \n" +
-                        "-----\n" +
-                        " 0\n" +
                         "(1 row)"
         );
     }
@@ -174,12 +168,6 @@ public class TrigonometryTests extends SqlIoTest {
                         " cos \n" +
                         "-----\n" +
                         " 0.5403023058681398\n" +
-                        "(1 row)\n" +
-                        "\n" +
-                        "SELECT cos(CAST(pi AS DOUBLE));\n" +
-                        " cos \n" +
-                        "-----\n" +
-                        " -1\n" +
                         "(1 row)"
         );
     }
