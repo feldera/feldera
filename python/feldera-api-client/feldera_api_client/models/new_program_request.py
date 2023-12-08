@@ -7,7 +7,7 @@ T = TypeVar("T", bound="NewProgramRequest")
 
 @define
 class NewProgramRequest:
-    """Request to create a new DBSP program.
+    """Request to create a new Feldera program.
 
     Attributes:
         code (str): SQL code of the program. Example: CREATE TABLE Example(name varchar);.
