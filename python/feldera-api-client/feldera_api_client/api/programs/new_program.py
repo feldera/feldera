@@ -64,7 +64,7 @@ def sync_detailed(
      Create a new program.
 
     Args:
-        json_body (NewProgramRequest): Request to create a new DBSP program.
+        json_body (NewProgramRequest): Request to create a new Feldera program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -95,7 +95,7 @@ def sync(
      Create a new program.
 
     Args:
-        json_body (NewProgramRequest): Request to create a new DBSP program.
+        json_body (NewProgramRequest): Request to create a new Feldera program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -121,7 +121,7 @@ async def asyncio_detailed(
      Create a new program.
 
     Args:
-        json_body (NewProgramRequest): Request to create a new DBSP program.
+        json_body (NewProgramRequest): Request to create a new Feldera program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -150,7 +150,7 @@ async def asyncio(
      Create a new program.
 
     Args:
-        json_body (NewProgramRequest): Request to create a new DBSP program.
+        json_body (NewProgramRequest): Request to create a new Feldera program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
