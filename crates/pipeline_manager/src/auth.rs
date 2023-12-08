@@ -603,12 +603,12 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 }
 
 // Fetch keys on every authentication attempt, so cache the
-// results. TODO: implement periodic refresh
+// results.
 async fn validate_api_keys(
     db: &ProjectDB,
     api_key: &str,
 ) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
-    db.validate_api_key(api_key.to_owned()).await
+    db.validate_api_key(api_key).await
 }
 
 const API_KEY_LENGTH: usize = 128;
@@ -745,7 +745,8 @@ mod test {
                 .unwrap();
             conn.store_api_key_hash(
                 tenant_id,
-                api_key.unwrap(),
+                "foo",
+                &api_key.unwrap(),
                 vec![ApiPermission::Read, ApiPermission::Write],
             )
             .await
@@ -923,12 +924,15 @@ mod test {
     #[tokio::test]
     async fn valid_api_key() {
         let validation = validation("some-client", "some-iss");
-        let api_key = auth::generate_api_key();
+        let api_key_hash = auth::generate_api_key();
         let req = test::TestRequest::get()
             .uri("/")
-            .insert_header((HeaderName::from_str("x-api-key").unwrap(), api_key.clone()))
+            .insert_header((
+                HeaderName::from_str("x-api-key").unwrap(),
+                api_key_hash.clone(),
+            ))
             .to_request();
-        let res = run_test(req, None, Some(api_key), validation).await;
+        let res = run_test(req, None, Some(api_key_hash), validation).await;
         assert_eq!(200, res.status());
     }
 }

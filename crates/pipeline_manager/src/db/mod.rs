@@ -845,8 +845,15 @@ pub(crate) struct ServiceDescr {
     pub config: ServiceConfig,
 }
 
+/// Api Key descriptor.
+#[derive(Deserialize, Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
+pub(crate) struct ApiKeyDescr {
+    pub name: String,
+    pub scopes: Vec<ApiPermission>,
+}
+
 /// Permission types for invoking pipeline manager APIs
-#[derive(Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
+#[derive(Deserialize, Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) enum ApiPermission {
     Read,
@@ -2118,10 +2125,36 @@ impl Storage for ProjectDB {
         }
     }
 
+    async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("SELECT name, scopes FROM api_key WHERE tenant_id = $1")
+            .await?;
+        let rows = manager.query(&stmt, &[&tenant_id.0]).await?;
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            let name: String = row.get(0);
+            let vec: Vec<String> = row.get(1);
+            let scopes = vec
+                .iter()
+                .map(|s| {
+                    if s == "read" {
+                        ApiPermission::Read
+                    } else {
+                        ApiPermission::Write
+                    }
+                })
+                .collect();
+            result.push(ApiKeyDescr { name, scopes });
+        }
+        Ok(result)
+    }
+
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
-        key: String,
+        name: &str,
+        key: &str,
         scopes: Vec<ApiPermission>,
     ) -> Result<(), DBError> {
         let mut hasher = sha::Sha256::new();
@@ -2129,14 +2162,17 @@ impl Storage for ProjectDB {
         let hash = openssl::base64::encode_block(&hasher.finish());
         let manager = self.pool.get().await?;
         let stmt = manager
-            .prepare_cached("INSERT INTO api_key (hash, tenant_id, scopes) VALUES ($1, $2, $3)")
+            .prepare_cached(
+                "INSERT INTO api_key (tenant_id, name, hash, scopes) VALUES ($1, $2, $3, $4)",
+            )
             .await?;
         let res = manager
             .execute(
                 &stmt,
                 &[
-                    &hash,
                     &tenant_id.0,
+                    &name,
+                    &hash,
                     &scopes
                         .iter()
                         .map(|scope| match scope {
@@ -2160,7 +2196,7 @@ impl Storage for ProjectDB {
 
     async fn validate_api_key(
         &self,
-        api_key: String,
+        api_key: &str,
     ) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
         let mut hasher = sha::Sha256::new();
         hasher.update(api_key.as_bytes());
@@ -2896,7 +2932,7 @@ impl ProjectDB {
                     Some("connector_pkey") => DBError::unique_key_violation("connector_pkey"),
                     Some("service_pkey") => DBError::unique_key_violation("service_pkey"),
                     Some("pipeline_pkey") => DBError::unique_key_violation("pipeline_pkey"),
-                    Some("api_key_pkey") => DBError::duplicate_key(),
+                    Some("unique_hash") => DBError::duplicate_key(),
                     Some(_constraint) => DBError::DuplicateName,
                     None => DBError::DuplicateName,
                 }
