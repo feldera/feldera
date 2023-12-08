@@ -59,8 +59,20 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
       isCompiling: false,
       label: labelSuccess
     }))
-    .with('None', () => ({ visible: false, color: 'warning' as const, isCompiling: false, label: labelCompiling }))
-    .with('Pending', () => ({ visible: true, color: 'warning' as const, isCompiling: true, label: labelPending }))
+    .with('None', () => ({
+      visible: false,
+      color: 'warning' as const,
+      isCompiling: false,
+      label: labelCompiling,
+      status: 'compiling'
+    }))
+    .with('Pending', () => ({
+      visible: true,
+      color: 'warning' as const,
+      isCompiling: true,
+      label: labelPending,
+      status: 'queued'
+    }))
     .with('CompilingSql', () => ({
       visible: true,
       color: 'warning' as const,
@@ -74,7 +86,13 @@ export const CompileIndicator = (props: CompileIndicatorProps) => {
       label: labelSuccess
     }))
     // If you change the 'Success' string, adjust the webui-tester too
-    .with('Success', () => ({ visible: true, color: 'success' as const, isCompiling: false, label: labelSuccess }))
+    .with('Success', () => ({
+      visible: true,
+      color: 'success' as const,
+      isCompiling: false,
+      label: labelSuccess,
+      status: 'success'
+    }))
     .exhaustive()
 
   if (buttonState.visible) {

@@ -19,6 +19,7 @@ import { showOnHashPart } from '$lib/functions/urlHash'
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
+import { SVGImport } from '$lib/types/imports'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import IconX from '~icons/bx/x'
@@ -28,7 +29,7 @@ import { Breadcrumbs, Button, Card, CardContent, Chip, Grid, Link } from '@mui/m
 import Box, { BoxProps } from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
-import { styled } from '@mui/material/styles'
+import { styled, useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
 
@@ -42,9 +43,15 @@ const Header = styled(Box)<BoxProps>(({ theme }) => ({
   backgroundColor: theme.palette.background.paper
 }))
 
-const IoSelectBox = (props: { icon: string; howMany: number; onNew: string; onSelect: () => void }) => {
+const IoSelectBox = (props: {
+  icon: string | SVGImport
+  howMany: number
+  onNew: string
+  onSelect: () => void
+  'data-testid'?: string
+}) => {
   const countColor = props.howMany === 0 ? 'secondary' : 'success'
-
+  const theme = useTheme()
   return (
     <>
       <Grid item xs={6}>
@@ -58,12 +65,38 @@ const IoSelectBox = (props: { icon: string; howMany: number; onNew: string; onSe
           }}
         >
           <CardContent sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-            <Image
-              src={props.icon}
-              alt='An icon'
-              style={{ height: 64, objectFit: 'cover', width: 'fit-content', padding: 6 }}
-            />
-            <Button fullWidth variant='outlined' color='secondary' href={`#${props.onNew}`}>
+            {typeof props.icon === 'string' ? (
+              <Image
+                src={props.icon}
+                alt='An icon'
+                style={{
+                  height: 64,
+                  objectFit: 'cover',
+                  width: 'fit-content',
+                  padding: 6,
+                  fill: theme.palette.text.primary
+                }}
+              />
+            ) : (
+              (Icon => (
+                <Icon
+                  style={{
+                    height: 64,
+                    objectFit: 'cover',
+                    width: 'fit-content',
+                    padding: 6,
+                    fill: theme.palette.text.primary
+                  }}
+                ></Icon>
+              ))(props.icon)
+            )}
+            <Button
+              fullWidth
+              variant='outlined'
+              color='secondary'
+              href={`#${props.onNew}`}
+              data-testid='button-add-connector'
+            >
               New
             </Button>
             <Button

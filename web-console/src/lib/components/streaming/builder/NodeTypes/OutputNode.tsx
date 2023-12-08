@@ -8,13 +8,14 @@ import { ConnectorDescr } from '$lib/services/manager'
 import { Connection, NodeProps, Position, useReactFlow } from 'reactflow'
 import IconX from '~icons/bx/x'
 
-import { Avatar, Box, Link } from '@mui/material'
+import { Avatar, Box, Link, useTheme } from '@mui/material'
 import CardHeader from '@mui/material/CardHeader'
 import IconButton from '@mui/material/IconButton'
 
 import { Handle, Node } from '../NodeTypes'
 
 const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
+  const theme = useTheme()
   const { getNode } = useReactFlow()
   const onDelete = useDeleteNode(() => {})(id)
 
@@ -48,7 +49,16 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           avatar={
             <Avatar variant='rounded' sx={{ mt: 1.5, width: 42, height: 42 }}>
               {(Icon => {
-                return <Icon style={{ width: '90%', height: '90%' }}></Icon>
+                return (
+                  <Icon
+                    style={{
+                      width: '90%',
+                      height: '90%',
+                      fill: theme.palette.text.primary,
+                      color: theme.palette.text.primary
+                    }}
+                  ></Icon>
+                )
               })(connectorTypeToIcon(connectorDescrToType(data.connector)))}
             </Avatar>
           }

@@ -6,17 +6,19 @@ import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
 import { ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import assert from 'assert'
-import imageBoilingFlask from 'public/icons/generic/boiling-flask.svg'
-import imageHttpGet from 'public/images/generic/http-get.svg'
-import debeziumLogo from 'public/images/vendors/debezium-logo-color.svg'
-import kafkaLogo from 'public/images/vendors/kafka-logo-black.svg'
-import snowflakeLogo from 'public/images/vendors/snowflake-logo.svg'
+import ImageBoilingFlask from 'public/icons/generic/boiling-flask.svg'
+import ImageHttpGet from 'public/images/generic/http-get.svg'
+import DebeziumLogo from 'public/images/vendors/debezium-logo-color.svg'
+import KafkaLogo from 'public/images/vendors/kafka-logo-black.svg'
+import SnowflakeLogo from 'public/images/vendors/snowflake-logo.svg'
 import { match, P } from 'ts-pattern'
 import iconBoilingFlask from '~icons/generic/boiling-flask'
-import iconKafka from '~icons/logos/kafka-icon'
 import iconHttpGet from '~icons/tabler/http-get'
+import iconKafka from '~icons/vendors/apache-kafka-icon'
 import iconDebezium from '~icons/vendors/debezium-icon-color'
 import iconSnowflake from '~icons/vendors/snowflake-icon'
+
+import { SVGImport } from '../types/imports'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
@@ -228,25 +230,25 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
     .exhaustive()
 
 // Return the icon of a connector (for display in components).
-export const connectorTypeToLogo = (status: ConnectorType) =>
+export const connectorTypeToLogo = (status: ConnectorType): SVGImport =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
-      return kafkaLogo
+      return KafkaLogo
     })
     .with(ConnectorType.KAFKA_OUT, () => {
-      return kafkaLogo
+      return KafkaLogo
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
-      return debeziumLogo
+      return DebeziumLogo
     })
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
-      return snowflakeLogo
+      return SnowflakeLogo
     })
     .with(ConnectorType.URL, () => {
-      return imageHttpGet
+      return ImageHttpGet
     })
     .with(ConnectorType.UNKNOWN, () => {
-      return imageBoilingFlask
+      return ImageBoilingFlask
     })
     .exhaustive()
 

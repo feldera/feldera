@@ -18,7 +18,8 @@
 				"rust-lang.rust-analyzer",
 				"serayuzgur.crates",
 				"vadimcn.vscode-lldb",
-				"mike-co.import-sorter"
+				"mike-co.import-sorter",
+				"lihui.vs-color-picker"
 			],
 			"settings": {
 				"editor.formatOnSave": true,

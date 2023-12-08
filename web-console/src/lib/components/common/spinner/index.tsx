@@ -1,7 +1,6 @@
 // A loading screen that can be used to show a loading spinner and the logo
 // while data is being fetched on initial page loads.
 
-import Image from 'next/image'
 import MainLogo from 'public/images/feldera/LogoSolid.svg'
 
 import Box, { BoxProps } from '@mui/material/Box'
@@ -19,7 +18,7 @@ const LoadingScreen = ({ sx }: { sx?: BoxProps['sx'] }) => {
         ...sx
       }}
     >
-      <Image src={MainLogo} alt='Logo' width={350} height={350} />
+      <MainLogo alt='Logo' width={350} height={350} />
       <CircularProgress disableShrink sx={{ mt: 6 }} />
     </Box>
   )
