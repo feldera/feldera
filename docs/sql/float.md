@@ -92,4 +92,8 @@ REAL '1.23'  -- string style
     <td><code>COS(value)</code></td>
     <td>The cosine of value as radians. <code>cos</code> only supports argument of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
+  <tr>
+    <td><code>PI</code></td>
+    <td>Returns the approximate value of <code>PI</code> as double.</td>
+  </tr>
 </table>

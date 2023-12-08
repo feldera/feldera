@@ -889,6 +889,12 @@ some_polymorphic_function1!(sign, f, F32, F32);
 some_polymorphic_function1!(sign, d, F64, F64);
 some_polymorphic_function1!(sign, decimal, Decimal, Decimal);
 
+// PI
+#[inline(always)]
+pub fn pi() -> F64 {
+    std::f64::consts::PI.into()
+}
+
 /////////// Trigonometric Fucntions //////////////
 
 #[inline(always)]
