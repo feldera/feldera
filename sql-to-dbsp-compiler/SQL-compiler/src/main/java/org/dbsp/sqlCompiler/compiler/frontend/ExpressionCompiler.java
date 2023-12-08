@@ -628,8 +628,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "cos":
                     {
                         // Turn the argument into Double
-                        ops.set(0, ops.get(0).cast(new DBSPTypeDouble(node, false)));
-                        return this.compileFunction(call, node, type, ops, 1);
+                        DBSPExpression exp = ops.get(0);
+                        ops.set(0, exp.cast(new DBSPTypeDouble(node, exp.getType().mayBeNull)));
+                        return this.compilePolymorphicFunction(call, node, type, ops, 1);
                     }
                     case "split":
                         // If any argument is NULL, cast it to a string.

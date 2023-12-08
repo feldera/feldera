@@ -86,10 +86,10 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>SIN(value)</code></td>
-    <td>The sine of value as radians.</td>
+    <td>The sine of value as radians. <code>sin</code> only supports argument of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><code>COS(value)</code></td>
-    <td>The cosine of value as radians.</td>
+    <td>The cosine of value as radians. <code>cos</code> only supports argument of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
 </table>

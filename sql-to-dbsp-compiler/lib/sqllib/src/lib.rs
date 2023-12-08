@@ -889,21 +889,21 @@ some_polymorphic_function1!(sign, f, F32, F32);
 some_polymorphic_function1!(sign, d, F64, F64);
 some_polymorphic_function1!(sign, decimal, Decimal, Decimal);
 
-///////////////////// sin //////////////////////
+/////////// Trigonometric Fucntions //////////////
 
 #[inline(always)]
-pub fn sin_(value: F64) -> F64 {
+pub fn sin_d(value: F64) -> F64 {
     value.into_inner().sin().into()
 }
 
-////////////////////////////////////////////////
-
-///////////////////// cos //////////////////////
+some_polymorphic_function1!(sin, d, F64, F64);
 
 #[inline(always)]
-pub fn cos_(value: F64) -> F64 {
+pub fn cos_d(value: F64) -> F64 {
     value.into_inner().cos().into()
 }
+
+some_polymorphic_function1!(cos, d, F64, F64);
 
 ////////////////////////////////////////////////
 
