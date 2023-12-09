@@ -7,6 +7,8 @@ import { UnknownConnectorDialog } from '$lib/components/connectors/dialogs/Unkno
 import Metadata from '$lib/components/streaming/builder/Metadata'
 import MissingSchemaDialog from '$lib/components/streaming/builder/NoSchemaDialog'
 import PipelineGraph from '$lib/components/streaming/builder/PipelineBuilder'
+import { PipelineResourcesDialog } from '$lib/components/streaming/management/PipelineResourcesDialog'
+import { PipelineResourcesThumb } from '$lib/components/streaming/management/PipelineResourcesThumb'
 import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
@@ -20,11 +22,9 @@ import {
   NewPipelineRequest,
   NewPipelineResponse,
   PipelineId,
-  PipelinesService,
-  UpdatePipelineRequest,
-  UpdatePipelineResponse
+  PipelinesService
 } from '$lib/services/manager'
-import { invalidatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { invalidatePipeline, mutationUpdatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
 import assert from 'assert'
 import { useSearchParams } from 'next/navigation'
@@ -34,7 +34,7 @@ import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
-import { Card, CardContent, Link } from '@mui/material'
+import { Box, Button, Card, CardContent, Link } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -89,13 +89,7 @@ const PipelineBuilderPage = (props: {
   const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, ApiError, NewPipelineRequest>({
     mutationFn: PipelinesService.newPipeline
   })
-  const { mutate: updatePipelineMutate } = useMutation<
-    UpdatePipelineResponse,
-    ApiError,
-    { pipeline_id: PipelineId; request: UpdatePipelineRequest }
-  >({
-    mutationFn: args => PipelinesService.updatePipeline(args.pipeline_id, args.request)
-  })
+  const { mutate: updatePipelineMutate } = useMutation(mutationUpdatePipeline(queryClient))
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
 
@@ -290,7 +284,7 @@ const PipelineBuilderPage = (props: {
     }
 
     updatePipelineMutate(
-      { pipeline_id: pipelineId, request: updateRequest },
+      { pipelineId: pipelineId, request: updateRequest },
       {
         onSettled: () => {
           assert(pipelineId !== undefined)
@@ -342,24 +336,32 @@ const PipelineBuilderPage = (props: {
     queryClient
   ])
 
+  const [show, setShow] = useState(false)
+
   return (
     <>
       <BreadcrumbsHeader>
         <Link href={`/streaming/management`}>Pipelines</Link>
         <Link href={`/streaming/builder/?pipeline_id=${pipelineId}`}>{name}</Link>
       </BreadcrumbsHeader>
+      {/* id referenced by webui-tester */}
       <Grid container spacing={6} className='match-height' id='pipeline-builder-content' sx={{ pl: 6, pt: 6 }}>
         <Grid item xs={12}>
-          {/* id referenced by webui-tester */}
           <Card>
             <CardContent>
               <Metadata errors={{}} />
             </CardContent>
-            <CardContent>
-              <Grid item xs={12}>
-                {/* id referenced by webui-tester */}
-                <SaveIndicator id='save-indicator' stateToLabel={stateToSaveLabel} state={saveState} />
-              </Grid>
+            <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
+              {/* id referenced by webui-tester */}
+              <SaveIndicator id='save-indicator' stateToLabel={stateToSaveLabel} state={saveState} />
+              {pipelineId && (
+                <Box sx={{ ml: 'auto' }}>
+                  <PipelineResourcesThumb pipelineId={pipelineId}></PipelineResourcesThumb>
+                </Box>
+              )}
+              <Button sx={{ flex: 'none' }} onClick={() => setShow(true)}>
+                Configure resources
+              </Button>
             </CardContent>
           </Card>
         </Grid>
@@ -376,6 +378,7 @@ const PipelineBuilderPage = (props: {
       {(id => id && <UnknownConnectorDialog {...showOnHash('edit/connector')} connectorId={id} />)(
         /edit\/connector\/([\w-]+)/.exec(hash)?.[1]
       )}
+      {pipelineId && <PipelineResourcesDialog {...{ show, setShow }} pipelineId={pipelineId}></PipelineResourcesDialog>}
     </>
   )
 }

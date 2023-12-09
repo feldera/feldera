@@ -4,7 +4,7 @@
 /* eslint-disable */
 
 /**
- * Configuration for writing data to a file with [`FileOutputTransport`].
+ * Configuration for writing data to a file with `FileOutputTransport`.
  */
 export type FileOutputConfig = {
   /**

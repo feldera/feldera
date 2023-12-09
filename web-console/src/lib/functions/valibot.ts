@@ -1,5 +1,5 @@
-import type { BaseSchema, Issues, Output } from 'valibot'
-import { getSchemaIssues } from 'valibot'
+import type { BaseSchema, Issues, Output, Pipe } from 'valibot'
+import { getSchemaIssues, maxValue, minValue } from 'valibot'
 
 // ====================================
 
@@ -124,3 +124,11 @@ export function intersection<TIntersectionOptions extends IntersectionOptions>(
     }
   }
 }
+
+export const valibotRange: ((range: { min: string; max: string }) => Pipe<string>) &
+  ((range: { min: number; max: number }) => Pipe<number>) &
+  ((range: { min: bigint; max: bigint }) => Pipe<bigint>) &
+  ((range: { min: Date; max: Date }) => Pipe<Date>) = (range: { min: any; max: any }) => [
+  minValue<any, any>(range.min),
+  maxValue<any, any>(range.max)
+]
