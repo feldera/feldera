@@ -624,6 +624,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 2);
                     }
+                    case "pi": {
+                        return this.compileFunction(call, node, type, ops, 0);
+                    }
                     case "sin":
                     case "cos":
                     {

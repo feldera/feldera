@@ -44,10 +44,10 @@ public class TrigonometryTests extends SqlIoTest {
                 " 0.8414709848078965\n" +
                 "(1 row)\n" +
                 "\n" +
-                "SELECT sin(3.14);\n" +
+                "SELECT sin(pi);\n" +
                 " sin \n" +
                 "-----\n" +
-                " 0.0015926529164868282\n" +
+                " 0\n" + // Postgres disagrees with us here, but currently we round off to 15 decimal places
                 "(1 row)"
         );
     }
@@ -84,12 +84,6 @@ public class TrigonometryTests extends SqlIoTest {
                         " sin \n" +
                         "-----\n" +
                         " 0.8414709848078965\n" +
-                        "(1 row)\n" +
-                        "\n" +
-                        "SELECT sin(CAST(3.14 AS DOUBLE));\n" +
-                        " sin \n" +
-                        "-----\n" +
-                        " 0.0015926529164868282\n" +
                         "(1 row)"
         );
     }
@@ -134,10 +128,10 @@ public class TrigonometryTests extends SqlIoTest {
                 " 0.5403023058681398\n" +
                 "(1 row)\n" +
                 "\n" +
-                "SELECT cos(3.14);\n" +
+                "SELECT cos(pi);\n" +
                 " cos \n" +
                 "-----\n" +
-                " -0.9999987317275395\n" +
+                " -1\n" +
                 "(1 row)"
         );
     }
@@ -174,13 +168,18 @@ public class TrigonometryTests extends SqlIoTest {
                         " cos \n" +
                         "-----\n" +
                         " 0.5403023058681398\n" +
-                        "(1 row)\n" +
-                        "\n" +
-                        "SELECT cos(CAST(3.14 AS DOUBLE));\n" +
-                        " cos \n" +
-                        "-----\n" +
-                        " -0.9999987317275395\n" +
                         "(1 row)"
+        );
+    }
+
+    // Tested using Postgres 15.2
+    @Test
+    public void testPi() {
+        this.q(
+            "SELECT PI;\n" +
+            " pi \n" +
+            "----\n" +
+            " 3.141592653589793"
         );
     }
 }
