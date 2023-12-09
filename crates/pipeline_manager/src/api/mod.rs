@@ -16,6 +16,7 @@
 //! * Runner.  The runner component is responsible for starting and killing
 //!   compiled pipelines and for interacting with them at runtime.
 
+mod api_key;
 mod auth_api;
 mod connector;
 mod examples;
@@ -153,6 +154,10 @@ request is rejected."
         service::delete_service,
         http_io::http_input,
         http_io::http_output,
+        api_key::create_api_key,
+        api_key::list_api_keys,
+        api_key::get_api_key,
+        api_key::delete_api_key,
         auth_api::get_authentication_config,
     ),
     components(schemas(
@@ -174,6 +179,8 @@ request is rejected."
         crate::db::PipelineRevision,
         crate::db::Revision,
         crate::db::PipelineStatus,
+        crate::db::ApiKeyDescr,
+        crate::db::ApiPermission,
         pipeline_types::query::NeighborhoodQuery,
         pipeline_types::query::OutputQuery,
         pipeline_types::config::PipelineConfig,
@@ -233,6 +240,8 @@ request is rejected."
         service::NewServiceResponse,
         service::UpdateServiceRequest,
         service::UpdateServiceResponse,
+        api_key::NewApiKeyRequest,
+        api_key::NewApiKeyResponse,
     ),),
     tags(
         (name = "Manager", description = "Configure system behavior"),
@@ -293,6 +302,10 @@ fn api_scope() -> Scope {
         .service(service::new_service)
         .service(service::update_service)
         .service(service::delete_service)
+        .service(api_key::create_api_key)
+        .service(api_key::list_api_keys)
+        .service(api_key::get_api_key)
+        .service(api_key::delete_api_key)
         .service(http_io::http_input)
         .service(http_io::http_output)
 }
@@ -309,6 +322,22 @@ pub(crate) fn parse_uuid_param(
                 error: e.to_string(),
             }),
             Ok(uuid) => Ok(uuid),
+        },
+    }
+}
+
+pub(crate) fn parse_string_param(
+    req: &HttpRequest,
+    param_name: &'static str,
+) -> Result<String, ManagerError> {
+    match req.match_info().get(param_name) {
+        None => Err(ManagerError::MissingUrlEncodedParam { param: param_name }),
+        Some(id) => match id.parse::<String>() {
+            Err(e) => Err(ManagerError::InvalidNameParam {
+                value: id.to_string(),
+                error: e.to_string(),
+            }),
+            Ok(id) => Ok(id),
         },
     }
 }

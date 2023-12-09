@@ -382,6 +382,12 @@ pub(crate) trait Storage {
     /// Get a list of API key names
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError>;
 
+    /// Get an API key by name
+    async fn get_api_key(&self, tenant_id: TenantId, name: &str) -> Result<ApiKeyDescr, DBError>;
+
+    /// Delete an API key by name
+    async fn delete_api_key(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError>;
+
     /// Persist a hash of API key in the database
     async fn store_api_key_hash(
         &self,

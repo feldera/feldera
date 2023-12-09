@@ -48,6 +48,10 @@ pub enum ManagerError {
         value: String,
         error: String,
     },
+    InvalidNameParam {
+        value: String,
+        error: String,
+    },
     InvalidPipelineAction {
         action: String,
     },
@@ -155,6 +159,9 @@ impl Display for ManagerError {
             Self::InvalidUuidParam { value, error } => {
                 write!(f, "Invalid UUID string '{value}': '{error}'")
             }
+            Self::InvalidNameParam { value, error } => {
+                write!(f, "Invalid name string '{value}': '{error}'")
+            }
             Self::InvalidPipelineAction { action } => {
                 write!(f, "Invalid pipeline action '{action}'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'")
             }
@@ -183,6 +190,7 @@ impl ResponseError for ManagerError {
             Self::ConnectorNotSpecified => StatusCode::BAD_REQUEST,
             Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidUuidParam { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidNameParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidPipelineAction { .. } => StatusCode::BAD_REQUEST,
             Self::DBError { db_error } => db_error.status_code(),
             Self::RunnerError { runner_error } => runner_error.status_code(),
@@ -205,6 +213,7 @@ impl DetailedError for ManagerError {
             Self::ConnectorNotSpecified => Cow::from("ConnectorNotSpecified"),
             Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
             Self::InvalidUuidParam { .. } => Cow::from("InvalidUuidParam"),
+            Self::InvalidNameParam { .. } => Cow::from("InvalidNameParam"),
             Self::InvalidPipelineAction { .. } => Cow::from("InvalidPipelineAction"),
             Self::DBError { db_error } => db_error.error_code(),
             Self::RunnerError { runner_error } => runner_error.error_code(),

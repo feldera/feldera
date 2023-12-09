@@ -67,6 +67,9 @@ pub enum DBError {
     UnknownService {
         service_id: ServiceId,
     },
+    UnknownApiKey {
+        name: String,
+    },
     UnknownTenant {
         tenant_id: TenantId,
     },
@@ -352,6 +355,9 @@ impl Display for DBError {
             DBError::UnknownService { service_id } => {
                 write!(f, "Unknown service id '{service_id}'")
             }
+            DBError::UnknownApiKey { name } => {
+                write!(f, "Unknown API key '{name}'")
+            }
             DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")
             }
@@ -435,6 +441,7 @@ impl DetailedError for DBError {
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
             Self::UnknownService { .. } => Cow::from("UnknownService"),
+            Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownAttachedConnector { .. } => Cow::from("UnknownAttachedConnector"),
             Self::UnknownName { .. } => Cow::from("UnknownName"),
@@ -484,6 +491,7 @@ impl ResponseError for DBError {
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnector { .. } => StatusCode::NOT_FOUND,
             Self::UnknownService { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             // TODO: should we report not found instead?
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED,
             Self::UnknownAttachedConnector { .. } => StatusCode::NOT_FOUND,

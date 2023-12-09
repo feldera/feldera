@@ -1,5 +1,7 @@
 """ Contains all the data models used in inputs/outputs """
 
+from .api_key_descr import ApiKeyDescr
+from .api_permission import ApiPermission
 from .attached_connector import AttachedConnector
 from .auth_provider_type_0 import AuthProviderType0
 from .auth_provider_type_1 import AuthProviderType1
@@ -38,6 +40,8 @@ from .kafka_output_ft_config_producer_options import KafkaOutputFtConfigProducer
 from .mysql_config import MysqlConfig
 from .neighborhood_query import NeighborhoodQuery
 from .neighborhood_query_anchor import NeighborhoodQueryAnchor
+from .new_api_key_request import NewApiKeyRequest
+from .new_api_key_response import NewApiKeyResponse
 from .new_connector_request import NewConnectorRequest
 from .new_connector_response import NewConnectorResponse
 from .new_pipeline_request import NewPipelineRequest
@@ -90,6 +94,8 @@ from .update_service_response import UpdateServiceResponse
 from .url_input_config import UrlInputConfig
 
 __all__ = (
+    "ApiKeyDescr",
+    "ApiPermission",
     "AttachedConnector",
     "AuthProviderType0",
     "AuthProviderType1",
@@ -128,6 +134,8 @@ __all__ = (
     "MysqlConfig",
     "NeighborhoodQuery",
     "NeighborhoodQueryAnchor",
+    "NewApiKeyRequest",
+    "NewApiKeyResponse",
     "NewConnectorRequest",
     "NewConnectorResponse",
     "NewPipelineRequest",
