@@ -1187,6 +1187,9 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_service_config()")] Option<ServiceConfig>,
     ),
     DeleteService(TenantId, ServiceId),
+    ListApiKeys(TenantId),
+    GetApiKey(TenantId, String),
+    DeleteApiKey(TenantId, String),
     StoreApiKeyHash(TenantId, String, String, Vec<ApiPermission>),
     ValidateApiKey(TenantId, String),
     CreatePipelineRevision(
@@ -1578,6 +1581,25 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_connector(tenant_id, connector_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::ListApiKeys(tenant_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.list_api_keys(tenant_id).await.unwrap();
+                                let mut impl_response = handle.db.list_api_keys(tenant_id).await.unwrap();
+                                impl_response.sort_by(|a, b| a.name.cmp(&b.name));
+                                assert_eq!(model_response, impl_response);
+                            },
+                            StorageAction::GetApiKey(tenant_id, name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_api_key(tenant_id, &name).await;
+                                let impl_response = handle.db.get_api_key(tenant_id, &name).await;
+                                check_responses(i, model_response, impl_response);
+                            },
+                            StorageAction::DeleteApiKey(tenant_id, name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.delete_api_key(tenant_id, &name).await;
+                                let impl_response = handle.db.delete_api_key(tenant_id, &name).await;
+                                check_responses(i, model_response, impl_response);
+                            },
                             StorageAction::StoreApiKeyHash(tenant_id, name, key, permissions) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.store_api_key_hash(tenant_id, &name, &key, permissions.clone()).await;
@@ -2482,6 +2504,31 @@ impl Storage for Mutex<DbModel> {
                 scopes: k.1 .1.clone(),
             })
             .collect())
+    }
+
+    async fn get_api_key(&self, tenant_id: TenantId, name: &str) -> DBResult<ApiKeyDescr> {
+        let s = self.lock().await;
+        s.api_keys.get(&(tenant_id, name.to_string())).map_or(
+            Err(DBError::UnknownApiKey {
+                name: name.to_string(),
+            }),
+            |k| {
+                Ok(ApiKeyDescr {
+                    name: name.to_string(),
+                    scopes: k.1.clone(),
+                })
+            },
+        )
+    }
+
+    async fn delete_api_key(&self, tenant_id: TenantId, name: &str) -> DBResult<()> {
+        let mut s = self.lock().await;
+        s.api_keys
+            .remove(&(tenant_id, name.to_string()))
+            .map(|_| ())
+            .ok_or(DBError::UnknownApiKey {
+                name: name.to_string(),
+            })
     }
 
     async fn store_api_key_hash(

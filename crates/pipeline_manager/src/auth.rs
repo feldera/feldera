@@ -614,8 +614,7 @@ async fn validate_api_keys(
 const API_KEY_LENGTH: usize = 128;
 
 /// Generates a random 128 character API key
-#[allow(dead_code)]
-pub(crate) fn generate_api_key() -> String {
+pub fn generate_api_key() -> String {
     assert_impl_any!(ThreadRng: rand::CryptoRng);
     rand::thread_rng()
         .sample_iter(Alphanumeric)

@@ -2150,6 +2150,49 @@ impl Storage for ProjectDB {
         Ok(result)
     }
 
+    async fn get_api_key(&self, tenant_id: TenantId, name: &str) -> Result<ApiKeyDescr, DBError> {
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("SELECT name, scopes FROM api_key WHERE tenant_id = $1 and name = $2")
+            .await?;
+        let maybe_row = manager.query_opt(&stmt, &[&tenant_id.0, &name]).await?;
+        if let Some(row) = maybe_row {
+            let name: String = row.get(0);
+            let vec: Vec<String> = row.get(1);
+            let scopes = vec
+                .iter()
+                .map(|s| {
+                    if s == "read" {
+                        ApiPermission::Read
+                    } else {
+                        ApiPermission::Write
+                    }
+                })
+                .collect();
+
+            Ok(ApiKeyDescr { name, scopes })
+        } else {
+            Err(DBError::UnknownApiKey {
+                name: name.to_string(),
+            })
+        }
+    }
+
+    async fn delete_api_key(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError> {
+        let manager = self.pool.get().await?;
+        let stmt = manager
+            .prepare_cached("DELETE FROM api_key WHERE tenant_id = $1 AND name = $2")
+            .await?;
+        let res = manager.execute(&stmt, &[&tenant_id.0, &name]).await?;
+        if res > 0 {
+            Ok(())
+        } else {
+            Err(DBError::UnknownApiKey {
+                name: name.to_string(),
+            })
+        }
+    }
+
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
