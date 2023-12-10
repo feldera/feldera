@@ -3,7 +3,7 @@ use super::{ManagerError, ServerState};
 use crate::{
     api::{examples, parse_string_param},
     auth::TenantId,
-    db::storage::Storage,
+    db::{storage::Storage, ApiKeyId},
 };
 use actix_web::{
     delete, get,
@@ -15,6 +15,7 @@ use actix_web::{
 use log::info;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
 /// Request to create a new API key.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -27,6 +28,10 @@ pub(crate) struct NewApiKeyRequest {
 /// Response to a successful API key creation.
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct NewApiKeyResponse {
+    /// Id of the newly created API key.
+    #[schema(example = 42)]
+    api_key_id: ApiKeyId,
+
     /// API key name
     #[schema(example = "my-api-key")]
     name: String,
@@ -163,12 +168,14 @@ async fn create_api_key(
     req: web::Json<NewApiKeyRequest>,
 ) -> Result<HttpResponse, ManagerError> {
     let api_key = crate::auth::generate_api_key();
+    let id = Uuid::now_v7();
     let res = state
         .db
         .lock()
         .await
         .store_api_key_hash(
             *tenant_id,
+            id,
             &req.name,
             &api_key,
             vec![
@@ -182,6 +189,7 @@ async fn create_api_key(
             HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&NewApiKeyResponse {
+                    api_key_id: ApiKeyId(id),
                     name: req.name.clone(),
                     api_key,
                 })

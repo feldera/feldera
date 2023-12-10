@@ -845,9 +845,22 @@ pub(crate) struct ServiceDescr {
     pub config: ServiceConfig,
 }
 
-/// Api Key descriptor.
+/// ApiKey ID.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct ApiKeyId(#[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid);
+impl Display for ApiKeyId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// ApiKey descriptor.
 #[derive(Deserialize, Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ApiKeyDescr {
+    pub id: ApiKeyId,
     pub name: String,
     pub scopes: Vec<ApiPermission>,
 }
@@ -2128,13 +2141,14 @@ impl Storage for ProjectDB {
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {
         let manager = self.pool.get().await?;
         let stmt = manager
-            .prepare_cached("SELECT name, scopes FROM api_key WHERE tenant_id = $1")
+            .prepare_cached("SELECT id, name, scopes FROM api_key WHERE tenant_id = $1")
             .await?;
         let rows = manager.query(&stmt, &[&tenant_id.0]).await?;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let name: String = row.get(0);
-            let vec: Vec<String> = row.get(1);
+            let id: ApiKeyId = ApiKeyId(row.get(0));
+            let name: String = row.get(1);
+            let vec: Vec<String> = row.get(2);
             let scopes = vec
                 .iter()
                 .map(|s| {
@@ -2145,7 +2159,7 @@ impl Storage for ProjectDB {
                     }
                 })
                 .collect();
-            result.push(ApiKeyDescr { name, scopes });
+            result.push(ApiKeyDescr { id, name, scopes });
         }
         Ok(result)
     }
@@ -2153,12 +2167,15 @@ impl Storage for ProjectDB {
     async fn get_api_key(&self, tenant_id: TenantId, name: &str) -> Result<ApiKeyDescr, DBError> {
         let manager = self.pool.get().await?;
         let stmt = manager
-            .prepare_cached("SELECT name, scopes FROM api_key WHERE tenant_id = $1 and name = $2")
+            .prepare_cached(
+                "SELECT id, name, scopes FROM api_key WHERE tenant_id = $1 and name = $2",
+            )
             .await?;
         let maybe_row = manager.query_opt(&stmt, &[&tenant_id.0, &name]).await?;
         if let Some(row) = maybe_row {
-            let name: String = row.get(0);
-            let vec: Vec<String> = row.get(1);
+            let id: ApiKeyId = ApiKeyId(row.get(0));
+            let name: String = row.get(1);
+            let vec: Vec<String> = row.get(2);
             let scopes = vec
                 .iter()
                 .map(|s| {
@@ -2170,7 +2187,7 @@ impl Storage for ProjectDB {
                 })
                 .collect();
 
-            Ok(ApiKeyDescr { name, scopes })
+            Ok(ApiKeyDescr { id, name, scopes })
         } else {
             Err(DBError::UnknownApiKey {
                 name: name.to_string(),
@@ -2196,6 +2213,7 @@ impl Storage for ProjectDB {
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
+        id: Uuid,
         name: &str,
         key: &str,
         scopes: Vec<ApiPermission>,
@@ -2206,13 +2224,14 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "INSERT INTO api_key (tenant_id, name, hash, scopes) VALUES ($1, $2, $3, $4)",
+                "INSERT INTO api_key (id, tenant_id, name, hash, scopes) VALUES ($1, $2, $3, $4, $5)",
             )
             .await?;
         let res = manager
             .execute(
                 &stmt,
                 &[
+                    &id,
                     &tenant_id.0,
                     &name,
                     &hash,
@@ -2975,6 +2994,7 @@ impl ProjectDB {
                     Some("connector_pkey") => DBError::unique_key_violation("connector_pkey"),
                     Some("service_pkey") => DBError::unique_key_violation("service_pkey"),
                     Some("pipeline_pkey") => DBError::unique_key_violation("pipeline_pkey"),
+                    Some("api_key_pkey") => DBError::unique_key_violation("api_key_pkey"),
                     Some("unique_hash") => DBError::duplicate_key(),
                     Some(_constraint) => DBError::DuplicateName,
                     None => DBError::DuplicateName,

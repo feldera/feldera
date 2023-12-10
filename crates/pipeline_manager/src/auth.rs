@@ -640,6 +640,7 @@ mod test {
     use chrono::Utc;
     use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
     use tokio::sync::Mutex;
+    use uuid::Uuid;
 
     use crate::{
         api::ServerState,
@@ -744,6 +745,7 @@ mod test {
                 .unwrap();
             conn.store_api_key_hash(
                 tenant_id,
+                Uuid::now_v7(),
                 "foo",
                 &api_key.unwrap(),
                 vec![ApiPermission::Read, ApiPermission::Write],

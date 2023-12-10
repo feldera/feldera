@@ -392,6 +392,7 @@ pub(crate) trait Storage {
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
+        id: Uuid,
         name: &str,
         key: &str,
         permissions: Vec<ApiPermission>,

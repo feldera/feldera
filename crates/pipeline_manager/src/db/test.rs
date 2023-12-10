@@ -4,7 +4,8 @@ use super::{
     Version,
 };
 use super::{
-    ApiKeyDescr, ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState, ProgramSchema,
+    ApiKeyDescr, ApiKeyId, ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState,
+    ProgramSchema,
 };
 use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::{Relation, ServiceDescr, ServiceId};
@@ -553,6 +554,7 @@ async fn save_api_key() {
             .db
             .store_api_key_hash(
                 tenant_id,
+                Uuid::now_v7(),
                 &format!("foo-{}", i),
                 &api_key,
                 vec![ApiPermission::Read, ApiPermission::Write],
@@ -1190,7 +1192,13 @@ enum StorageAction {
     ListApiKeys(TenantId),
     GetApiKey(TenantId, String),
     DeleteApiKey(TenantId, String),
-    StoreApiKeyHash(TenantId, String, String, Vec<ApiPermission>),
+    StoreApiKeyHash(
+        TenantId,
+        #[proptest(strategy = "limited_uuid()")] Uuid,
+        String,
+        String,
+        Vec<ApiPermission>,
+    ),
     ValidateApiKey(TenantId, String),
     CreatePipelineRevision(
         #[proptest(strategy = "limited_uuid()")] Uuid,
@@ -1600,10 +1608,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_api_key(tenant_id, &name).await;
                                 check_responses(i, model_response, impl_response);
                             },
-                            StorageAction::StoreApiKeyHash(tenant_id, name, key, permissions) => {
+                            StorageAction::StoreApiKeyHash(tenant_id, id, name, key, permissions) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.store_api_key_hash(tenant_id, &name, &key, permissions.clone()).await;
-                                let impl_response = handle.db.store_api_key_hash(tenant_id, &name, &key, permissions.clone()).await;
+                                let model_response = model.store_api_key_hash(tenant_id, id, &name, &key, permissions.clone()).await;
+                                let impl_response = handle.db.store_api_key_hash(tenant_id, id, &name, &key, permissions.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             },
                             StorageAction::ValidateApiKey(tenant_id,key) => {
@@ -1688,7 +1696,7 @@ struct DbModel {
     pub programs: BTreeMap<(TenantId, ProgramId), ProgramData>,
     pub pipelines: BTreeMap<(TenantId, PipelineId), Pipeline>,
     pub history: BTreeMap<(TenantId, PipelineId), PipelineRevision>,
-    pub api_keys: BTreeMap<(TenantId, String), (String, Vec<ApiPermission>)>,
+    pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Vec<ApiPermission>)>,
     pub connectors: BTreeMap<(TenantId, ConnectorId), ConnectorDescr>,
     pub services: BTreeMap<(TenantId, ServiceId), ServiceDescr>,
     pub tenants: BTreeMap<TenantId, TenantRecord>,
@@ -2500,8 +2508,9 @@ impl Storage for Mutex<DbModel> {
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| ApiKeyDescr {
+                id: k.1 .0,
                 name: k.0 .1.clone(),
-                scopes: k.1 .1.clone(),
+                scopes: k.1 .2.clone(),
             })
             .collect())
     }
@@ -2514,8 +2523,9 @@ impl Storage for Mutex<DbModel> {
             }),
             |k| {
                 Ok(ApiKeyDescr {
+                    id: k.0,
                     name: name.to_string(),
-                    scopes: k.1.clone(),
+                    scopes: k.2.clone(),
                 })
             },
         )
@@ -2534,6 +2544,7 @@ impl Storage for Mutex<DbModel> {
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
+        id: Uuid,
         name: &str,
         key: &str,
         permissions: Vec<ApiPermission>,
@@ -2542,14 +2553,19 @@ impl Storage for Mutex<DbModel> {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
+        if s.api_keys.iter().any(|k| k.1 .0 == ApiKeyId(id)) {
+            return Err(DBError::unique_key_violation("api_key_pkey"));
+        }
         if s.api_keys.contains_key(&(tenant_id, name.to_string())) {
             return Err(DBError::DuplicateName);
         }
-        if s.api_keys.iter().any(|k| k.1 .0 == hash) {
+        if s.api_keys.iter().any(|k| k.1 .1 == hash) {
             return Err(DBError::duplicate_key());
         }
-        s.api_keys
-            .insert((tenant_id, name.to_string()), (hash, permissions));
+        s.api_keys.insert(
+            (tenant_id, name.to_string()),
+            (ApiKeyId(id), hash, permissions),
+        );
         Ok(())
     }
 
@@ -2561,8 +2577,8 @@ impl Storage for Mutex<DbModel> {
         let record: Vec<(TenantId, Vec<ApiPermission>)> = s
             .api_keys
             .iter()
-            .filter(|k| k.1 .0 == hash)
-            .map(|k| (k.0 .0, k.1 .1.clone()))
+            .filter(|k| k.1 .1 == hash)
+            .map(|k| (k.0 .0, k.1 .2.clone()))
             .collect();
         assert!(record.len() <= 1);
         let record = record.get(0);
