@@ -179,6 +179,7 @@ request is rejected."
         crate::db::PipelineRevision,
         crate::db::Revision,
         crate::db::PipelineStatus,
+        crate::db::ApiKeyId,
         crate::db::ApiKeyDescr,
         crate::db::ApiPermission,
         pipeline_types::query::NeighborhoodQuery,

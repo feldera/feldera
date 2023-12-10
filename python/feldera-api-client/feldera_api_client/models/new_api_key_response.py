@@ -13,15 +13,18 @@ class NewApiKeyResponse:
         api_key (str): Generated API key. There is no way to
             retrieve this key again from the
             pipeline-manager, so store it securely. Example: 12345678.
+        api_key_id (str): ApiKey ID.
         name (str): API key name Example: my-api-key.
     """
 
     api_key: str
+    api_key_id: str
     name: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         api_key = self.api_key
+        api_key_id = self.api_key_id
         name = self.name
 
         field_dict: Dict[str, Any] = {}
@@ -29,6 +32,7 @@ class NewApiKeyResponse:
         field_dict.update(
             {
                 "api_key": api_key,
+                "api_key_id": api_key_id,
                 "name": name,
             }
         )
@@ -40,10 +44,13 @@ class NewApiKeyResponse:
         d = src_dict.copy()
         api_key = d.pop("api_key")
 
+        api_key_id = d.pop("api_key_id")
+
         name = d.pop("name")
 
         new_api_key_response = cls(
             api_key=api_key,
+            api_key_id=api_key_id,
             name=name,
         )
 

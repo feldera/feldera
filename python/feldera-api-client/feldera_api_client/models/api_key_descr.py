@@ -9,18 +9,21 @@ T = TypeVar("T", bound="ApiKeyDescr")
 
 @define
 class ApiKeyDescr:
-    """Api Key descriptor.
+    """ApiKey descriptor.
 
     Attributes:
+        id (str): ApiKey ID.
         name (str):
         scopes (List[ApiPermission]):
     """
 
+    id: str
     name: str
     scopes: List[ApiPermission]
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        id = self.id
         name = self.name
         scopes = []
         for scopes_item_data in self.scopes:
@@ -32,6 +35,7 @@ class ApiKeyDescr:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
+                "id": id,
                 "name": name,
                 "scopes": scopes,
             }
@@ -42,6 +46,8 @@ class ApiKeyDescr:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
+        id = d.pop("id")
+
         name = d.pop("name")
 
         scopes = []
@@ -52,6 +58,7 @@ class ApiKeyDescr:
             scopes.append(scopes_item)
 
         api_key_descr = cls(
+            id=id,
             name=name,
             scopes=scopes,
         )
