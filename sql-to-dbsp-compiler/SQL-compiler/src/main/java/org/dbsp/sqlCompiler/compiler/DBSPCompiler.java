@@ -27,30 +27,35 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
+import org.apache.calcite.sql.SqlFunction;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
+import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -73,6 +78,10 @@ import java.util.List;
  * The contents after insertions can be obtained using getTableContents().
  */
 public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorReporter {
+    /** Name of the Rust file that will contain the user-defined functions.
+     * The definitions supplied by the user will be copied here. */
+    public static final String UDF_FILE_NAME = "udf.rs";
+
     /**
      * Where does the compiled program come from?
      */
@@ -150,6 +159,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return this.hasWarnings;
     }
 
+    public CustomFunctions getCustomFunctions() {
+        return this.frontend.getCustomFunctions();
+    }
+
     @Override
     public DBSPCompiler getCompiler() {
         return this;
@@ -203,6 +216,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
 
         try {
+            // Parse using Calcite
             SqlNodeList parsed;
             if (many) {
                 if (statements.isEmpty())
@@ -216,15 +230,39 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
             if (this.hasErrors())
                 return;
-            for (SqlNode node : parsed) {
+
+            // Compile first the statements that define functions.
+            List<SqlFunction> functions = new ArrayList<>();
+            for (SqlNode node: parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result: ")
                         .append(node.toString())
                         .newline();
+                if (node.getKind().equals(SqlKind.CREATE_FUNCTION)) {
+                    SqlFunction function = this.frontend.compileFunction(node);
+                    functions.add(function);
+                }
+            }
+
+            if (!functions.isEmpty()) {
+                // Reload the operator table to include all the newly defined functions
+                SqlOperatorTable newTable = SqlOperatorTables.of(functions);
+                this.frontend.addOperatorTable(newTable);
+                if (this.options.ioOptions.udfs.isEmpty()) {
+                    this.getCompiler().reportError(
+                            SourcePositionRange.INVALID,
+                            true, "No UDFs",
+                            "Program contains `CREATE FUNCTION` statements but the compiler" +
+                                    " was invoked without the `-udf` flag");
+                }
+            }
+
+            // Compile all statements which do not define functions
+            for (SqlNode node : parsed) {
+                if (node.getKind().equals(SqlKind.CREATE_FUNCTION))
+                    continue;
                 FrontEndStatement fe = this.frontend.compile(
                         node.toString(), node, comment, this.inputTables, this.outputViews);
-                if (fe == null)
-                    continue;
                 this.midend.compile(fe);
             }
         } catch (SqlParseException e) {

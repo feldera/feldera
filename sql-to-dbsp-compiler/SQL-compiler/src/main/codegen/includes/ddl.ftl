@@ -152,7 +152,7 @@ void AttributeDef(List<SqlNode> list) :
     }
 }
 
-SqlCreateFunctionDeclaration SqlFunction(Span s, boolean replace) :
+SqlCreateFunctionDeclaration SqlCreateFunction(Span s, boolean replace) :
 {
     final boolean ifNotExists;
     final SqlIdentifier id;
@@ -164,6 +164,7 @@ SqlCreateFunctionDeclaration SqlFunction(Span s, boolean replace) :
     <FUNCTION> ifNotExists = IfNotExistsOpt()
     id = SimpleIdentifier()
     parameters = AttributeDefList()
+    <RETURNS>
     type = DataType()
     nullable = NullableOptDefaultTrue()
     {

@@ -35,6 +35,7 @@ public enum DBSPTypeCode {
     INDEXED_ZSET("", ""),
     RAW_TUPLE("", ""),
     REF("", ""),
+    RESULT("", "Result"),
     SEMIGROUP("", ""),
     STREAM("", ""),
     STRUCT("", ""),

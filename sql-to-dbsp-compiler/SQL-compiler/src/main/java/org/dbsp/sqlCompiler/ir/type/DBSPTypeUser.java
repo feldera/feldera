@@ -31,9 +31,7 @@ import org.dbsp.util.IIndentStream;
 import java.util.Arrays;
 import java.util.Objects;
 
-/**
- * User-defined generic type with type arguments.
- */
+/** User-defined generic type with type arguments. */
 public class DBSPTypeUser extends DBSPType {
     public final String name;
     public final DBSPType[] typeArgs;

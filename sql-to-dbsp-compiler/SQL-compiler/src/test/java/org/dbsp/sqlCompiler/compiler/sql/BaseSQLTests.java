@@ -42,6 +42,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -83,13 +84,17 @@ public class BaseSQLTests {
         testsToRun.clear();
     }
 
+    public static File createInputFile(File file, String separator, String... contents) throws IOException {
+        file.deleteOnExit();
+        PrintWriter script = new PrintWriter(file, StandardCharsets.UTF_8);
+        script.println(String.join(separator, contents));
+        script.close();
+        return file;
+    }
+
     public static File createInputScript(String... contents) throws IOException {
         File result = File.createTempFile("script", ".sql", new File(rustDirectory));
-        result.deleteOnExit();
-        PrintWriter script = new PrintWriter(result, "UTF-8");
-        script.println(String.join(";" + System.lineSeparator(), contents));
-        script.close();
-        return result;
+        return createInputFile(result, ";" + System.lineSeparator(), contents);
     }
 
     DBSPCompiler noThrowCompiler() {

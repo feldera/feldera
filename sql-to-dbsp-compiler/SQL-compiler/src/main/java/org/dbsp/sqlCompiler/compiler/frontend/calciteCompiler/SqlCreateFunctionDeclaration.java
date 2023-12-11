@@ -55,6 +55,18 @@ public class SqlCreateFunctionDeclaration extends SqlCreate {
         return OPERATOR;
     }
 
+    public SqlNodeList getParameters() {
+        return this.parameters;
+    }
+
+    public SqlDataTypeSpec getReturnType() {
+        return this.returnType;
+    }
+
+    public SqlIdentifier getName() {
+        return this.name;
+    }
+
     @Override public List<SqlNode> getOperandList() {
         return Arrays.asList(this.name, this.parameters);
     }

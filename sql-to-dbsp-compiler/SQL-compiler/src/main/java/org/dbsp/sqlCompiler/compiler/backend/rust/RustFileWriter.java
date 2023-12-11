@@ -280,7 +280,7 @@ public class RustFileWriter implements ICompilerComponent {
         stream.decrease().append("}\n\n");
     }
 
-    public String generatePreamble(StructuresUsed used) {
+    String generatePreamble(StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
         stream.append(rustPreamble)
@@ -292,6 +292,16 @@ public class RustFileWriter implements ICompilerComponent {
                 .append(";")
                 .newline();
         this.generateStructures(used, stream);
+
+        if (!this.compiler.options.ioOptions.udfs.isEmpty()) {
+            int dot = DBSPCompiler.UDF_FILE_NAME.lastIndexOf(".");
+            stream.append("mod ")
+                    .append(DBSPCompiler.UDF_FILE_NAME.substring(0, dot))
+                    .append(";")
+                    .newline()
+                    .append("use crate::udf::*;")
+                    .newline();
+        }
         return stream.toString();
     }
 

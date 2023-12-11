@@ -56,6 +56,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --ignoreOrder
       Ignore ORDER BY clauses at the end
       Default: false
+    --udf
+      Specify a Rust file containing implementations of user-defined functions
+      Default: <empty string>
     -O
       Optimization level (0, 1, or 2)
       Default: 2

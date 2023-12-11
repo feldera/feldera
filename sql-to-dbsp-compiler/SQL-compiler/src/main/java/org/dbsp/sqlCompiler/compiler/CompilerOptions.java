@@ -99,8 +99,9 @@ public class CompilerOptions {
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
         @Parameter(names="-o", description = "Output file; stdout if null")
-        @Nullable
-        public String outputFile = null;
+        public String outputFile = "";
+        @Parameter(names = "--udf", description = "Specify a Rust file containing implementations of user-defined functions")
+        public String udfs = "";
         @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")
         public boolean emitJpeg = false;
         @Parameter(names = "-png", description = "Emit a png image of the circuit instead of Rust")

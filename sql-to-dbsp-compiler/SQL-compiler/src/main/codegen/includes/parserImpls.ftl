@@ -73,15 +73,6 @@ TableCollectionType TableCollectionTypeOpt() :
     { return TableCollectionType.UNSPECIFIED; }
 }
 
-boolean VolatileOpt() :
-{
-}
-{
-    <VOLATILE> { return true; }
-|
-    { return false; }
-}
-
 /* Extra operators */
 
 <DEFAULT, DQID, BTID> TOKEN :

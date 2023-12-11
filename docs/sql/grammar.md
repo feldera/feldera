@@ -1,6 +1,14 @@
 # SQL Grammar
 
-This is a short formal description of the grammar supported:
+This is a short formal description of the grammar supported in a BNF
+form.
+
+- Constructs enclosed between `[]` are optional.
+- `*` denotes zero or many repetitions.
+- Uppercase words (`FUNCTION`) and single-quoted text (`')'`) indicate
+  grammar terminals.
+- Parentheses `()` are used for grouping productions together.
+- The vertical bar `|` indicates alternation.
 
 ```
 statementList:
@@ -15,7 +23,7 @@ generalType
   :   type [NOT NULL]
 
 createFunctionStatement
-  :   CREATE FUNCTION name '(' [ columnDecl [, columnDecl ]* ] ')' generalType
+  :   CREATE FUNCTION name '(' [ columnDecl [, columnDecl ]* ] ')' RETURNS generalType
 
 createTableStatement
   :   CREATE TABLE name
@@ -148,6 +156,9 @@ and is currently ignored.
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
+
+SQL `CREATE FUNCTION` can be used to declare [user-defined
+functions](udf.md).
 
 An aggregate query is a query that contains a `GROUP BY` or a `HAVING`
 clause, or aggregate functions in the `SELECT` clause. In the

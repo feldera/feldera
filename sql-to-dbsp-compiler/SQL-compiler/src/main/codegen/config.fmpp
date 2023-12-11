@@ -29,7 +29,7 @@ data: {
       "SEMI"
       "SEQUENCES"
       "TEMP"
-      "VOLATILE"
+      #"VOLATILE"
     ]
 
     # List of keywords from "keywords" section that are not reserved.
@@ -884,13 +884,6 @@ data: {
     # List of methods for parsing custom SQL statements.
     # Return type of method implementation should be 'SqlNode'.
     statementParserMethods: [
-      # The following are not yet released
-      # "PostgresqlSqlShow()",
-      # "PostgresqlSqlSetOption()",
-      # "PostgresqlSqlBegin()",
-      # "PostgresqlSqlDiscard()",
-      # "PostgresqlSqlCommit()",
-      # "PostgresqlSqlRollback()"
     ]
 
     # List of methods for parsing custom literals.
@@ -919,7 +912,7 @@ data: {
       "SqlCreateView"
       "SqlCreateExtendedTable"
       "SqlCreateType"
-      "SqlFunction"
+      "SqlCreateFunction"
     ]
 
     truncateStatementParserMethods: [

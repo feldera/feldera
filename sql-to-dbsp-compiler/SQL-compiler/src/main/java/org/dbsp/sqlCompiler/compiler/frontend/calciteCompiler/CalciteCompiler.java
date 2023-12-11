@@ -53,12 +53,15 @@ import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.runtime.MapEntry;
+import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlExplainFormat;
 import org.apache.calcite.sql.SqlExplainLevel;
+import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
@@ -69,6 +72,7 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUnresolvedFunction;
+import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.ddl.SqlCreateView;
@@ -141,18 +145,24 @@ import java.util.Properties;
 public class CalciteCompiler implements IWritesLogs {
     private final CompilerOptions options;
     private final SqlParser.Config parserConfig;
-    private final SqlValidator validator;
     private final Catalog catalog;
-    private final SqlToRelConverter converter;
     public final RelOptCluster cluster;
     public final RelDataTypeFactory typeFactory;
     private final SqlToRelConverter.Config converterConfig;
     private final RewriteDivision astRewriter;
     /** Perform additional type validation in top of the Calcite rules. */
-    private final ValidateTypes validateTypes;
+    @Nullable
+    private SqlValidator validator;
+    @Nullable
+    private SqlToRelConverter converter;
+    @Nullable
+    private ValidateTypes validateTypes;
+    private final CalciteConnectionConfig connectionConfig;
     private final IErrorReporter errorReporter;
     /** If true the next view will be an output, otherwise it's just an intermediate result */
     boolean generateOutputForNextView = true;
+    private final SchemaPlus rootSchema;
+    private final CustomFunctions customFunctions;
 
     /**
      * This class rewrites instances of the division operator in the SQL AST
@@ -180,6 +190,10 @@ public class CalciteCompiler implements IWritesLogs {
             }
             return node;
         }
+    }
+
+    public CustomFunctions getCustomFunctions() {
+        return this.customFunctions;
     }
 
     public void generateOutputForNextView(boolean generate) {
@@ -247,6 +261,7 @@ public class CalciteCompiler implements IWritesLogs {
         this.astRewriter = new RewriteDivision();
         this.options = options;
         this.errorReporter = errorReporter;
+        this.customFunctions = new CustomFunctions();
 
         final boolean preserveCasing = false;
         Properties connConfigProp = new Properties();
@@ -256,7 +271,7 @@ public class CalciteCompiler implements IWritesLogs {
             connConfigProp.put(CalciteConnectionProperty.QUOTED_CASING.camelName(), Casing.UNCHANGED.toString());
             connConfigProp.put(CalciteConnectionProperty.CONFORMANCE.camelName(), SqlConformanceEnum.BABEL.toString());
         }
-        CalciteConnectionConfig connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
+        this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
                 .withLex(options.languageOptions.lexicalRules)
                 // Our own parser factory, which is a blend of DDL and BABEL
@@ -267,26 +282,24 @@ public class CalciteCompiler implements IWritesLogs {
                 .withConformance(SqlConformanceEnum.LENIENT);
         this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
         this.catalog = new Catalog("schema");
-        CalciteSchema rootSchema = CalciteSchema.createRootSchema(false, false);
-        rootSchema.add(catalog.schemaName, this.catalog);
+        this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
+        this.rootSchema.add(catalog.schemaName, this.catalog);
         // Register new types
-        rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
-        rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
-        rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
-        rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));
-        rootSchema.add("INT4", factory -> factory.createSqlType(SqlTypeName.INTEGER));
-        rootSchema.add("SIGNED", factory -> factory.createSqlType(SqlTypeName.INTEGER));
-        rootSchema.add("INT64", factory -> factory.createSqlType(SqlTypeName.BIGINT));
-        rootSchema.add("FLOAT64", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
-        rootSchema.add("FLOAT32", factory -> factory.createSqlType(SqlTypeName.REAL));
-        rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.REAL));
-        rootSchema.add("FLOAT8", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
-        rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
-        rootSchema.add("NUMBER", factory -> factory.createSqlType(SqlTypeName.DECIMAL));
-        rootSchema.add("TEXT", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
-        rootSchema.add("BOOL", factory -> factory.createSqlType(SqlTypeName.BOOLEAN));
-        Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
-                rootSchema, Collections.singletonList(catalog.schemaName), this.typeFactory, connectionConfig);
+        this.rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
+        this.rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
+        this.rootSchema.add("INT2", factory -> factory.createSqlType(SqlTypeName.SMALLINT));
+        this.rootSchema.add("INT8", factory -> factory.createSqlType(SqlTypeName.BIGINT));
+        this.rootSchema.add("INT4", factory -> factory.createSqlType(SqlTypeName.INTEGER));
+        this.rootSchema.add("SIGNED", factory -> factory.createSqlType(SqlTypeName.INTEGER));
+        this.rootSchema.add("INT64", factory -> factory.createSqlType(SqlTypeName.BIGINT));
+        this.rootSchema.add("FLOAT64", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
+        this.rootSchema.add("FLOAT32", factory -> factory.createSqlType(SqlTypeName.REAL));
+        this.rootSchema.add("FLOAT4", factory -> factory.createSqlType(SqlTypeName.REAL));
+        this.rootSchema.add("FLOAT8", factory -> factory.createSqlType(SqlTypeName.DOUBLE));
+        this.rootSchema.add("STRING", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
+        this.rootSchema.add("NUMBER", factory -> factory.createSqlType(SqlTypeName.DECIMAL));
+        this.rootSchema.add("TEXT", factory -> factory.createSqlType(SqlTypeName.VARCHAR));
+        this.rootSchema.add("BOOL", factory -> factory.createSqlType(SqlTypeName.BOOLEAN));
 
         SqlOperatorTable operatorTable = SqlOperatorTables.chain(
                 SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
@@ -297,19 +310,8 @@ public class CalciteCompiler implements IWritesLogs {
                                 SqlLibrary.BIG_QUERY,
                                 SqlLibrary.SPARK,
                                 SqlLibrary.SPATIAL)),
-                SqlOperatorTables.of(CustomFunctions.INSTANCE.getUDFs())
+                SqlOperatorTables.of(this.customFunctions.getInitialFunctions())
         );
-
-        SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
-                .withIdentifierExpansion(true);
-        this.validator = SqlValidatorUtil.newValidator(
-                operatorTable,
-                catalogReader,
-                this.typeFactory,
-                validatorConfig
-        );
-        this.validateTypes = new ValidateTypes(this.validator, errorReporter);
-
         // This planner does not do anything.
         // We use a series of planner stages later to perform the real optimizations.
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
@@ -317,6 +319,34 @@ public class CalciteCompiler implements IWritesLogs {
         this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
         this.converterConfig = SqlToRelConverter.config()
                 .withExpand(true);
+        this.validator = null;
+        this.validateTypes = null;
+        this.converter = null;
+        this.addOperatorTable(operatorTable);
+    }
+
+    /** Add a new set of operators to the operator table.  Creates a new validator, converter */
+    public void addOperatorTable(SqlOperatorTable operatorTable) {
+        SqlOperatorTable newOperatorTable;
+        if (this.validator != null) {
+            newOperatorTable = SqlOperatorTables.chain(
+                    this.validator.getOperatorTable(),
+                    operatorTable);
+        } else {
+            newOperatorTable = operatorTable;
+        }
+        SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
+                .withIdentifierExpansion(true);
+        Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
+                CalciteSchema.from(this.rootSchema), Collections.singletonList(catalog.schemaName),
+                this.typeFactory, connectionConfig);
+        this.validator = SqlValidatorUtil.newValidator(
+                newOperatorTable,
+                catalogReader,
+                this.typeFactory,
+                validatorConfig
+        );
+        this.validateTypes = new ValidateTypes(this.validator, errorReporter);
         this.converter = new SqlToRelConverter(
                 (type, query, schema, path) -> null,
                 this.validator,
@@ -560,6 +590,10 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
+    public SqlToRelConverter getConverter() {
+        return Objects.requireNonNull(this.converter);
+    }
+
     List<RelColumnMetadata> createTableColumnsMetadata(SqlNodeList list) {
         List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
@@ -631,19 +665,20 @@ public class CalciteCompiler implements IWritesLogs {
                 isPrimaryKey = cd.primaryKey || declaredPrimary;
                 if (declaredPrimary)
                     primaryKeys.remove(name.getSimple());
+                SqlToRelConverter converter = this.getConverter();
                 if (cd.lateness != null)
-                    lateness = this.converter.convertExpression(cd.lateness);
+                    lateness = converter.convertExpression(cd.lateness);
                 if (cd.defaultValue != null) {
                     // workaround for https://issues.apache.org/jira/browse/CALCITE-6129
                     if (cd.defaultValue instanceof SqlLiteral) {
                         SqlLiteral literal = (SqlLiteral) cd.defaultValue;
                         if (literal.getTypeName() == SqlTypeName.NULL) {
-                            RelDataType type = literal.createSqlType(this.converter.getCluster().getTypeFactory());
-                            defaultValue = this.converter.getRexBuilder().makeLiteral(null, type);
+                            RelDataType type = literal.createSqlType(converter.getCluster().getTypeFactory());
+                            defaultValue = converter.getRexBuilder().makeLiteral(null, type);
                         }
                     }
                     if (defaultValue == null)
-                        defaultValue = this.converter.convertExpression(cd.defaultValue);
+                        defaultValue = converter.convertExpression(cd.defaultValue);
                 }
             } else if (col instanceof SqlKeyConstraint) {
                 continue;
@@ -741,6 +776,23 @@ public class CalciteCompiler implements IWritesLogs {
         return columns;
     }
 
+    /** Compile a SQL statement which declares a user-defined function */
+    public SqlFunction compileFunction(SqlNode node) {
+        SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node;
+        List<Map.Entry<String, RelDataType>> parameters = Linq.map(
+                decl.getParameters(), param -> {
+                    SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
+                    String name = attr.name.getSimple();
+                    RelDataType type = this.convertType(attr.dataType);
+                    return new MapEntry<>(name, type);
+                });
+        RelDataType structType = this.typeFactory.createStructType(parameters);
+        RelDataType returnType = this.convertType(decl.getReturnType());
+        return this.customFunctions.createUDF(
+                CalciteObject.create(node), decl.getName(), structType, returnType
+        );
+    }
+
     /**
      * Compile a SQL statement.  Returns null if the statement does not require further processing.
      * @param node         Compiled version of the SQL statement.
@@ -749,7 +801,6 @@ public class CalciteCompiler implements IWritesLogs {
      * @param inputs       If not null, add here a JSON description of the tables defined by the statement, if any.
      * @param outputs      If not null, add here a JSON description of the views defined by the statement, if any.
      */
-    @Nullable
     public FrontEndStatement compile(
             String sqlStatement,
             SqlNode node,
@@ -784,7 +835,7 @@ public class CalciteCompiler implements IWritesLogs {
                     Logger.INSTANCE.belowLevel(this, 1)
                             .append(ct.query.toString())
                             .newline();
-                    RelRoot relRoot = this.converter.convertQuery(ct.query, true, true);
+                    RelRoot relRoot = converter.convertQuery(ct.query, true, true);
                     cols = this.createColumnsMetadata(
                             ct.name, false, relRoot, null);
                      */
@@ -794,6 +845,7 @@ public class CalciteCompiler implements IWritesLogs {
                 inputs.add(new InputTableDescription(table));
                 return table;
             } else if (node.getKind().equals(SqlKind.CREATE_VIEW)) {
+                SqlToRelConverter converter = this.getConverter();
                 SqlCreateView cv = (SqlCreateView) node;
                 SqlNode query = cv.query;
                 if (cv.getReplace())
@@ -805,7 +857,7 @@ public class CalciteCompiler implements IWritesLogs {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append(Objects.requireNonNull(query).toString())
                         .newline();
-                RelRoot relRoot = this.converter.convertQuery(query, true, true);
+                RelRoot relRoot = converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createColumnsMetadata(CalciteObject.create(node),
                         cv.name, true, relRoot, cv.columnList);
                 RelNode optimized = this.optimize(relRoot.rel);
@@ -819,21 +871,19 @@ public class CalciteCompiler implements IWritesLogs {
                 if (this.generateOutputForNextView)
                     outputs.add(new OutputViewDescription(view));
                 return view;
-            } else if (node.getKind().equals(SqlKind.CREATE_FUNCTION)) {
-                SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node;
-                return null;
             }
         }
 
         if (SqlKind.DML.contains(node.getKind())) {
             if (node instanceof SqlInsert) {
+                SqlToRelConverter converter = this.getConverter();
                 SqlInsert insert = (SqlInsert) node;
                 SqlNode table = insert.getTargetTable();
                 if (!(table instanceof SqlIdentifier))
                     throw new UnimplementedException(CalciteObject.create(table));
                 SqlIdentifier id = (SqlIdentifier) table;
                 TableModifyStatement stat = new TableModifyStatement(node, sqlStatement, id.toString(), insert.getSource(), comment);
-                RelRoot values = this.converter.convertQuery(stat.data, true, true);
+                RelRoot values = converter.convertQuery(stat.data, true, true);
                 values = values.withRel(this.optimize(values.rel));
                 stat.setTranslation(values.rel);
                 return stat;
