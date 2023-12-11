@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - WebConsole: Vendor logos now change color when in dark mode
 
+### Changed
+- WebConsole: group.id Kafka connector configuration field is now optional
+- pipeline-manager: reference programs and connectors by name when creating pipelines (#1143)
+
 ### Added
 - SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
 - SQL: support for mathematical constant `PI` ([#1123](https://github.com/feldera/feldera/pull/1123))
@@ -24,9 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: Support for user-defined functions, declared in SQL and implemented in Rust ([#1129](https://github.com/feldera/feldera/pull/1129))
 - SQL: support for other trigonometric functions supported by Calcite ([#1127](https://github.com/feldera/feldera/pull/1127))
 - WebConsole: Add Settings page, add a view to manage API keys (#1136)
-
-### Changed
-- WebConsole: group.id Kafka connector configuration field is now optional
 
 ## [0.5.0] - 2023-12-05
 

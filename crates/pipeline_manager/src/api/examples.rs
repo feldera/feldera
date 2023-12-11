@@ -150,7 +150,7 @@ format:
     let input = crate::db::AttachedConnector {
         name: "Input-To-Table".into(),
         is_input: true,
-        connector_id: input_connector.connector_id,
+        connector_name: input_connector.name.clone(),
         relation_name: "my_input_table".into(),
     };
     let output_connector = crate::db::ConnectorDescr {
@@ -172,12 +172,12 @@ format:
     let output = crate::db::AttachedConnector {
         name: "Output-To-View".into(),
         is_input: false,
-        connector_id: output_connector.connector_id,
+        connector_name: output_connector.name.clone(),
         relation_name: "my_output_view".into(),
     };
     let pipeline = crate::db::PipelineDescr {
         pipeline_id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
-        program_id: Some(ProgramId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0"))),
+        program_name: Some("my-program".to_string()),
         name: "My Pipeline".into(),
         description: "My Description".into(),
         config: RuntimeConfig::from_yaml("workers: 8\n"),

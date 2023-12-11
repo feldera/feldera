@@ -658,6 +658,7 @@ mod test {
     use crate::{api::ManagerError, auth::TenantRecord};
 
     use super::{PipelineExecutionDesc, PipelineExecutor};
+    use crate::logging;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -760,7 +761,7 @@ mod test {
             .new_pipeline(
                 tenant_id,
                 pipeline_id,
-                Some(program_id),
+                &Some("test0".to_string()),
                 "pipeline-id",
                 "2",
                 &rc,
@@ -797,6 +798,7 @@ mod test {
 
     #[tokio::test]
     async fn pipeline_start() {
+        logging::init_logging("foo".into());
         let (conn, _temp) = crate::db::test::setup_pg().await;
         let conn = Arc::new(tokio::sync::Mutex::new(conn));
         // Start a background HTTP server on a random local port

@@ -52,6 +52,9 @@ pub enum DBError {
     UnknownProgram {
         program_id: ProgramId,
     },
+    UnknownProgramName {
+        program_name: String,
+    },
     ProgramInUseByPipeline {
         program_id: ProgramId,
     },
@@ -63,6 +66,9 @@ pub enum DBError {
     },
     UnknownConnector {
         connector_id: ConnectorId,
+    },
+    UnknownConnectorName {
+        connector_name: String,
     },
     UnknownService {
         service_id: ServiceId,
@@ -331,6 +337,9 @@ impl Display for DBError {
             DBError::UnknownProgram { program_id } => {
                 write!(f, "Unknown program id '{program_id}'")
             }
+            DBError::UnknownProgramName { program_name } => {
+                write!(f, "Unknown program name '{program_name}'")
+            }
             DBError::ProgramInUseByPipeline { program_id } => {
                 write!(f, "Program id '{program_id}' is in use by a pipeline")
             }
@@ -351,6 +360,9 @@ impl Display for DBError {
             }
             DBError::UnknownConnector { connector_id } => {
                 write!(f, "Unknown connector id '{connector_id}'")
+            }
+            DBError::UnknownConnectorName { connector_name } => {
+                write!(f, "Unknown connector name '{connector_name}'")
             }
             DBError::UnknownService { service_id } => {
                 write!(f, "Unknown service id '{service_id}'")
@@ -436,10 +448,12 @@ impl DetailedError for DBError {
             Self::InvalidData { .. } => Cow::from("InvalidData"),
             Self::InvalidStatus { .. } => Cow::from("InvalidStatus"),
             Self::UnknownProgram { .. } => Cow::from("UnknownProgram"),
+            Self::UnknownProgramName { .. } => Cow::from("UnknownProgramName"),
             Self::ProgramInUseByPipeline { .. } => Cow::from("ProgramInUseByPipeline"),
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
+            Self::UnknownConnectorName { .. } => Cow::from("UnknownConnectorName"),
             Self::UnknownService { .. } => Cow::from("UnknownService"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
@@ -464,8 +478,10 @@ impl DetailedError for DBError {
     fn log_level(&self) -> Level {
         match self {
             Self::UnknownProgram { .. } => Level::Info,
+            Self::UnknownProgramName { .. } => Level::Info,
             Self::UnknownPipeline { .. } => Level::Info,
             Self::UnknownConnector { .. } => Level::Info,
+            Self::UnknownConnectorName { .. } => Level::Info,
             Self::UnknownName { .. } => Level::Info,
             _ => Level::Error,
         }
@@ -485,11 +501,13 @@ impl ResponseError for DBError {
             Self::InvalidData { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownProgram { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownProgramName { .. } => StatusCode::NOT_FOUND,
             Self::ProgramInUseByPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::DuplicateName => StatusCode::CONFLICT,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnector { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownConnectorName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownService { .. } => StatusCode::NOT_FOUND,
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             // TODO: should we report not found instead?
