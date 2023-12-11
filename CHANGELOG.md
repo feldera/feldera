@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
 - SQL: support for mathematical constant `PI` ([#1123](https://github.com/feldera/feldera/pull/1123))
 - WebConsole: 'Inspect connector' button in the connector list in Pipeline Builder that opens a non-editable popup
+- SQL: Support for user-defined functions, declared in SQL and implemented
+        in Rust ([#1129](https://github.com/feldera/feldera/pull/1129))
 
 ## [0.5.0] - 2023-12-05
 

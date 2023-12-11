@@ -33,8 +33,11 @@ impl SourcePosition {
 
 impl fmt::Display for SourcePosition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.isValid() { write!(f, "{}:{}", self.line, self.column) }
-        else { write!(f, "") }
+        if self.isValid() {
+            write!(f, "{}:{}", self.line, self.column)
+        } else {
+            write!(f, "")
+        }
     }
 }
 
@@ -50,7 +53,10 @@ impl SourcePositionRange {
 
 impl fmt::Display for SourcePositionRange {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.isValid() { write!(f, "{}-{}", self.start, self.end) }
-        else { write!(f, "") }
+        if self.isValid() {
+            write!(f, "{}-{}", self.start, self.end)
+        } else {
+            write!(f, "")
+        }
     }
 }

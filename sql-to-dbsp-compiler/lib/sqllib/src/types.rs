@@ -5,5 +5,5 @@ pub use dbsp::algebra::{F32, F64};
 
 pub use crate::{
     Date, GeoPoint, LongInterval, ShortInterval, SourcePosition, SourcePositionRange, Time,
-    Timestamp
+    Timestamp,
 };
