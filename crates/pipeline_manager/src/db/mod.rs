@@ -732,7 +732,7 @@ impl PipelineRevision {
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub(crate) struct PipelineDescr {
     pub pipeline_id: PipelineId,
-    pub program_id: Option<ProgramId>,
+    pub program_name: Option<String>,
     pub version: Version,
     pub name: String,
     pub description: String,
@@ -1509,11 +1509,11 @@ impl Storage for ProjectDB {
                 .get_committed_pipeline_by_id(tenant_id, pipeline_id, revision)
                 .await?;
             // expect() is ok here - we don't allow to commit something without a program
-            let program_id = pipeline
-                .program_id
+            let program_name = pipeline
+                .program_name
                 .expect("pre-condition: pipeline has a program");
             let program = self
-                .get_committed_program_by_id(tenant_id, program_id, revision)
+                .get_committed_program_by_id(tenant_id, program_name, revision)
                 .await?;
             let connectors = self
                 .get_committed_connectors_by_id(tenant_id, pipeline_id, revision)
@@ -2645,10 +2645,10 @@ impl ProjectDB {
 
     async fn row_to_pipeline_descr(&self, row: &Row) -> Result<PipelineDescr, DBError> {
         let pipeline_id = PipelineId(row.get(0));
-        let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+        let program_name = row.get::<_, Option<String>>(5);
         Ok(PipelineDescr {
             pipeline_id,
-            program_id,
+            program_name,
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
@@ -2681,10 +2681,10 @@ impl ProjectDB {
 
     async fn row_to_pipeline(&self, row: &Row) -> Result<Pipeline, DBError> {
         let pipeline_id = PipelineId(row.get(0));
-        let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+        let program_name = row.get::<_, Option<String>>(5);
         let descriptor = PipelineDescr {
             pipeline_id,
-            program_id,
+            program_name,
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
@@ -2747,8 +2747,13 @@ impl ProjectDB {
         let pipeline = self
             .get_pipeline_descr_by_id(tenant_id, pipeline_id)
             .await?;
-        let program_id = pipeline.program_id.ok_or(DBError::ProgramNotSet)?;
-        let program = self.get_program_by_id(tenant_id, program_id, true).await?;
+        let program_name = pipeline
+            .program_name
+            .as_ref()
+            .ok_or(DBError::ProgramNotSet)?;
+        let program = self
+            .get_program_by_name(tenant_id, &program_name, true)
+            .await?;
         let connectors = self
             .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
             .await?;
@@ -2771,37 +2776,38 @@ impl ProjectDB {
         PipelineRevision::generate_pipeline_config(&pipeline, &connectors)
     }
 
-    async fn get_committed_program_by_id(
+    async fn get_committed_program_by_name(
         &self,
         tenant_id: TenantId,
-        program_id: ProgramId,
+        program_name: String,
         revision: Revision,
     ) -> Result<ProgramDescr, DBError> {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
                 "SELECT
-                name, description, version, status, error, schema, code
-                FROM program_history WHERE id = $1 AND tenant_id = $2 AND revision = $3",
+                id, name, description, version, status, error, schema, code
+                FROM program_history WHERE tenant_id = $1 AND  name = $2 AND revision = $3",
             )
             .await?;
         let row = manager
-            .query_opt(&stmt, &[&program_id.0, &tenant_id.0, &revision.0])
+            .query_opt(&stmt, &[&tenant_id.0, &program_name, &revision.0])
             .await?;
 
         if let Some(row) = row {
-            let name: String = row.get(0);
-            let description: String = row.get(1);
-            let version: Version = Version(row.get(2));
-            let status: Option<String> = row.get(3);
-            let error: Option<String> = row.get(4);
+            let program_id: ProgramId = ProgramId(row.get(0));
+            let name: String = row.get(1);
+            let description: String = row.get(2);
+            let version: Version = Version(row.get(3));
+            let status: Option<String> = row.get(4);
+            let error: Option<String> = row.get(5);
             let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(5)
+                .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-            let code = row.get(6);
+            let code = row.get(7);
             Ok(ProgramDescr {
                 program_id,
                 name,
@@ -2812,7 +2818,7 @@ impl ProjectDB {
                 code,
             })
         } else {
-            Err(DBError::UnknownProgram { program_id })
+            Err(DBError::UnknownProgram { program_name })
         }
     }
 
@@ -2825,7 +2831,7 @@ impl ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, version, p.name as cname, description, p.config, program_name,
                 COALESCE(json_agg(json_build_object('name', ach.name,
                                                     'connector_id', connector_id,
                                                     'config', ach.config,
