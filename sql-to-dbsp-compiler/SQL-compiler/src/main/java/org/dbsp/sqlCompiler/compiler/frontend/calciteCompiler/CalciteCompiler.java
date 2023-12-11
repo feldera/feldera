@@ -794,7 +794,7 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     /**
-     * Compile a SQL statement.  
+     * Compile a SQL statement.
      * @param node         Compiled version of the SQL statement.
      * @param sqlStatement SQL statement as a string to compile.
      * @param comment      Additional information about the compiled statement.

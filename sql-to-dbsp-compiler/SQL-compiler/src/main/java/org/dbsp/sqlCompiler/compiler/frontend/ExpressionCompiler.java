@@ -646,14 +646,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return result;
             }
             case ST_POINT: {
-                if (ops.size() != 2)
-                    throw new UnimplementedException("Expected only 2 operands", node);
-                DBSPExpression left = ops.get(0);
-                DBSPExpression right = ops.get(1);
-                String functionName = "make_geopoint" + type.nullableSuffix() +
-                        "_" + left.getType().baseTypeWithSuffix() +
-                        "_" + right.getType().baseTypeWithSuffix();
-                return new DBSPApplyExpression(node, functionName, type, left, right);
+                return this.compilePolymorphicFunction(call, node, type, ops, 2);
             }
             case OTHER_FUNCTION: {
                 String opName = call.op.getName().toLowerCase();

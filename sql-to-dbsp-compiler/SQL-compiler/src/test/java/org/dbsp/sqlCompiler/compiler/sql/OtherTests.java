@@ -370,7 +370,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         File implementation = File.createTempFile("impl", ".rs", new File(rustDirectory));
         createInputFile(implementation,
                 System.lineSeparator(),
-                "use sqllib::types::*;",
+                "use sqllib::*;",
                 "pub fn CONTAINS_NUMBER(pos: &SourcePositionRange, str: String, value: Option<i32>) -> " +
                 "   Result<bool, Box<dyn std::error::Error>> {",
                 "   match value {",

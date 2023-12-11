@@ -21,7 +21,7 @@ canonical function name.  Here is a possible implementation of the
 function `contains_number` above:
 
 ```rs
-use sqllib::types::*;
+use sqllib::*;
 
 pub fn CONTAINS_NUMBER(pos: &SourcePositionRange, str: String, value: Option<i32>) ->
    Result<bool, Box<dyn std::error::Error>> {
@@ -40,8 +40,8 @@ Notice the function implemented has an all-capitals name (which is not
 a standard convention for Rust), dictated by the default SQL
 capitalization rules.
 
-There is no type casting or type inference performed for the function
-arguments in the SQL program.  For example, a call such as
+Currently there is no type casting or type inference performed for the
+function arguments in the SQL program.  For example, a call such as
 `CONTAINS_NUMBER('2010-10-20', '5')` will fail at SQL compilation time
 because the first argument has type `CHAR(8)` instead of `VARCHAR`,
 and the second argument has type `CHAR(1)` instead of `INTEGER`.
@@ -60,23 +60,23 @@ Rust types, but are defined in the DBSP runtime library.
 
 SQL | Rust
 -----------
-BOOLEAN | bool
-TINYINT | i8
-SMALLINT | i16
-INT  | i32
-BIGINT | i64
-DECIMAL(p, s) | Decimal
-REAL | F32
-DOUBLE | F64
-CHAR(n) | String
-VARCHAR, VARCHAR(n) | String
-BINARY, BINARY(n) | ByteArray
-NULL | ()
-INTERVAL | ShortInterval, LongInterval
-TIME | Time
-TIMESTAMP | Timestamp
-DATE | Date
-T ARRAY | Vec<T>
+`BOOLEAN` | `bool`
+`TINYINT` | `i8`
+`SMALLINT` | `i16`
+`INT`  | `i32`
+`BIGINT` | `i64`
+`DECIMAL`(p, s) | `Decimal`
+`REAL` | `F32`
+`DOUBLE` | `F64`
+`CHAR`(n) | `String`
+`VARCHAR`, `VARCHAR`(n) | `String`
+`BINARY`, `BINARY`(n) | `ByteArray`
+`NULL` | `()`
+`INTERVAL` | `ShortInterval`, `LongInterval`
+`TIME` | `Time`
+`TIMESTAMP` | `Timestamp`
+`DATE` | `Date`
+`ARRAY T` | `Vec<T>`
 
 Multiple SQL types may be represented by the same Rust type.  For
 example, `CHAR`, `CHAR(n)`, `VARCHAR(n)`, and `VARCHAR` are all
@@ -85,26 +85,28 @@ represented by the standard Rust `String` type.
 The SQL family of `INTERVAL` types translates to one of two Rust
 types: `ShortInterval` (representing intervals from days to seconds),
 and `LongInterval` (representing intervals from years to months).
-(Our dialect of SQL does allow mixing the two kinds of intervals in a
-single expression.)
+(Our dialect of SQL does not allow mixing the two kinds of intervals
+in a single expression.)
 
 In the Rust implementation the function always has to return the type
 `Result<T, Box<dyn std::error::Error>>`, where `T` is the Rust
-equivalent expected return type of the SQL function.  The Rust
+equivalent of the expected return type of the SQL function.  The Rust
 function should return an `Err` only when the function fails at
 runtime; in this case the returned error can use the source position
 information to indicate where the error has originated in the code.
+The function should return an error only for fatal conditions, similar
+to other SQL functions (e.g., array index out of bounds, arithmetic
+overflows, etc.).
 
 ## Source position information
 
 The first argument passed to the Rust function is always `pos:
-&SourcePositionRange`.  This argument indicates where in the source
-position is placed the code that generated the call to this
-user-defined function.  This information can be used to generate
-better runtime error messages when the user-defined function
-encounters an error. (Note: currently Calcite does not provide any
-source position information, but we hope to remedy this state of
-affairs soon.)
+&SourcePositionRange`.  This argument indicates the position in the
+SQL source code of the call to this user-defined function.  This
+information can be used to generate better runtime error messages when
+the user-defined function encounters an error. (Note: currently
+Calcite does not provide any source position information, but we hope
+to remedy this state of affairs soon.)
 
 ## Limitations
 

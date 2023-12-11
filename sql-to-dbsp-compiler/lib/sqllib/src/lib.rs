@@ -9,9 +9,7 @@ pub mod operators;
 pub mod source;
 pub mod string;
 pub mod timestamp;
-pub mod types;
 
-// Types re-exported by types.rs
 pub use geopoint::GeoPoint;
 pub use interval::LongInterval;
 pub use interval::ShortInterval;

@@ -50,29 +50,11 @@ impl GeoPoint {
     }
 }
 
-pub fn make_geopoint_d_d(left: F64, right: F64) -> GeoPoint {
+pub fn st_point_d_d(left: F64, right: F64) -> GeoPoint {
     GeoPoint::new(left, right)
 }
 
-pub fn make_geopointN_d_d(left: F64, right: F64) -> Option<GeoPoint> {
-    Some(make_geopoint_d_d(left, right))
-}
-
-pub fn make_geopointN_dN_d(left: Option<F64>, right: F64) -> Option<GeoPoint> {
-    left.map(|x| make_geopoint_d_d(x, right))
-}
-
-pub fn make_geopointN_d_dN(left: F64, right: Option<F64>) -> Option<GeoPoint> {
-    right.map(|x| make_geopoint_d_d(left, x))
-}
-
-pub fn make_geopointN_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<GeoPoint> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(x), Some(y)) => make_geopointN_d_d(x, y),
-    }
-}
+some_polymorphic_function2!(st_point, d, F64, d, F64, GeoPoint);
 
 pub fn st_distance_geopoint_geopoint(left: GeoPoint, right: GeoPoint) -> F64 {
     left.distance(&right)
