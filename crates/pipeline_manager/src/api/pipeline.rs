@@ -108,6 +108,7 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
             )
         ),
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[post("/pipelines")]
@@ -158,6 +159,7 @@ pub(crate) async fn new_pipeline(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[patch("/pipelines/{pipeline_id}")]
@@ -195,6 +197,7 @@ pub(crate) async fn update_pipeline(
         (status = OK, description = "Pipeline list retrieved successfully.", body = [Pipeline])
     ),
     params(PipelineIdOrNameQuery),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[get("/pipelines")]
@@ -239,6 +242,7 @@ pub(crate) async fn list_pipelines(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/deployed")]
@@ -289,6 +293,7 @@ pub(crate) async fn pipeline_deployed(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/stats")]
@@ -319,6 +324,7 @@ pub(crate) async fn pipeline_stats(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}")]
@@ -360,6 +366,7 @@ pub(crate) async fn get_pipeline(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/config")]
@@ -412,6 +419,7 @@ pub(crate) async fn get_pipeline_config(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[get("/pipelines/{pipeline_id}/validate")]
@@ -479,6 +487,7 @@ pub(crate) async fn pipeline_validate(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
         ("action" = String, Path, description = "Pipeline action [start, pause, shutdown]")
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[post("/pipelines/{pipeline_id}/{action}")]
@@ -534,6 +543,7 @@ pub(crate) async fn pipeline_action(
     params(
         ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
     ),
+    security(("JWT token or API key" = [])),
     tag = "Pipelines"
 )]
 #[delete("/pipelines/{pipeline_id}")]

@@ -64,7 +64,7 @@ def _build_response(
 def sync_detailed(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
 ) -> Response[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change one or more of a program's code, description or name.
@@ -105,7 +105,7 @@ def sync_detailed(
 def sync(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
 ) -> Optional[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change one or more of a program's code, description or name.
@@ -141,7 +141,7 @@ def sync(
 async def asyncio_detailed(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
 ) -> Response[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change one or more of a program's code, description or name.
@@ -180,7 +180,7 @@ async def asyncio_detailed(
 async def asyncio(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
 ) -> Optional[Union[ErrorResponse, UpdateProgramResponse]]:
     """Change one or more of a program's code, description or name.

@@ -56,7 +56,7 @@ def _build_response(
 
 def sync_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewPipelineRequest,
 ) -> Response[Union[ErrorResponse, NewPipelineResponse]]:
     """Create a new pipeline.
@@ -87,7 +87,7 @@ def sync_detailed(
 
 def sync(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewPipelineRequest,
 ) -> Optional[Union[ErrorResponse, NewPipelineResponse]]:
     """Create a new pipeline.
@@ -113,7 +113,7 @@ def sync(
 
 async def asyncio_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewPipelineRequest,
 ) -> Response[Union[ErrorResponse, NewPipelineResponse]]:
     """Create a new pipeline.
@@ -142,7 +142,7 @@ async def asyncio_detailed(
 
 async def asyncio(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewPipelineRequest,
 ) -> Optional[Union[ErrorResponse, NewPipelineResponse]]:
     """Create a new pipeline.

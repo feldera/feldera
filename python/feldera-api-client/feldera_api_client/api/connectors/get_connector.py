@@ -54,7 +54,7 @@ def _build_response(
 def sync_detailed(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ConnectorDescr, ErrorResponse]]:
     """Fetch a connector by ID.
 
@@ -85,7 +85,7 @@ def sync_detailed(
 def sync(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
     """Fetch a connector by ID.
 
@@ -111,7 +111,7 @@ def sync(
 async def asyncio_detailed(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ConnectorDescr, ErrorResponse]]:
     """Fetch a connector by ID.
 
@@ -140,7 +140,7 @@ async def asyncio_detailed(
 async def asyncio(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
     """Fetch a connector by ID.
 

@@ -54,11 +54,11 @@ def _build_response(
 def sync_detailed(
     api_key_name: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ApiKeyDescr, ErrorResponse]]:
-    """List all API keys
+    """Get an API key description
 
-     List all API keys
+     Get an API key description
 
     Args:
         api_key_name (str):
@@ -85,11 +85,11 @@ def sync_detailed(
 def sync(
     api_key_name: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ApiKeyDescr, ErrorResponse]]:
-    """List all API keys
+    """Get an API key description
 
-     List all API keys
+     Get an API key description
 
     Args:
         api_key_name (str):
@@ -111,11 +111,11 @@ def sync(
 async def asyncio_detailed(
     api_key_name: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ApiKeyDescr, ErrorResponse]]:
-    """List all API keys
+    """Get an API key description
 
-     List all API keys
+     Get an API key description
 
     Args:
         api_key_name (str):
@@ -140,11 +140,11 @@ async def asyncio_detailed(
 async def asyncio(
     api_key_name: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ApiKeyDescr, ErrorResponse]]:
-    """List all API keys
+    """Get an API key description
 
-     List all API keys
+     Get an API key description
 
     Args:
         api_key_name (str):

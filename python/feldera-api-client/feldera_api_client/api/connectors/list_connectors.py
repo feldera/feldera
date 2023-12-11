@@ -66,7 +66,7 @@ def _build_response(
 
 def sync_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ConnectorDescr"]]]:
@@ -100,7 +100,7 @@ def sync_detailed(
 
 def sync(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ConnectorDescr"]]]:
@@ -129,7 +129,7 @@ def sync(
 
 async def asyncio_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ConnectorDescr"]]]:
@@ -161,7 +161,7 @@ async def asyncio_detailed(
 
 async def asyncio(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ConnectorDescr"]]]:

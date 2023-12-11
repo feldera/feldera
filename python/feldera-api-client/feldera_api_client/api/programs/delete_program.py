@@ -56,7 +56,7 @@ def _build_response(
 def sync_detailed(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Delete a program.
 
@@ -90,7 +90,7 @@ def sync_detailed(
 def sync(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Delete a program.
 
@@ -119,7 +119,7 @@ def sync(
 async def asyncio_detailed(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Delete a program.
 
@@ -151,7 +151,7 @@ async def asyncio_detailed(
 async def asyncio(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Delete a program.
 

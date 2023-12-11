@@ -63,7 +63,7 @@ def _build_response(
 
 def sync_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     name: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ApiKeyDescr"]]]:
     """List all API keys
@@ -94,7 +94,7 @@ def sync_detailed(
 
 def sync(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     name: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ApiKeyDescr"]]]:
     """List all API keys
@@ -120,7 +120,7 @@ def sync(
 
 async def asyncio_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     name: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ApiKeyDescr"]]]:
     """List all API keys
@@ -149,7 +149,7 @@ async def asyncio_detailed(
 
 async def asyncio(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     name: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ApiKeyDescr"]]]:
     """List all API keys
