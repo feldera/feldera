@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -34,41 +35,45 @@ import java.util.List;
 import java.util.Objects;
 
 public class DBSPIndexOperator extends DBSPUnaryOperator {
-    public final DBSPType keyType;
-    public final DBSPType elementType;
-    public final DBSPType weightType;
-
+    /**
+     * Create an IndexOperator
+     * @param node            Corresponding Calcite node.
+     * @param indexFunction   Function that indexes.  The function has the shape
+     *                        |row| (key(row), value(row)).
+     * @param outputType      Type of output stream element.
+     * @param isMultiset      True if the output can be a multiset.
+     * @param input           Source operator.
+     */
     public DBSPIndexOperator(CalciteObject node, DBSPExpression indexFunction,
-                             DBSPType keyType, DBSPType elementType, DBSPType weightType,
+                             DBSPTypeIndexedZSet outputType,
                              boolean isMultiset, DBSPOperator input) {
         super(node, "index_with", indexFunction,
-                new DBSPTypeIndexedZSet(node, keyType, elementType, weightType),
-                isMultiset, input);
-        this.keyType = keyType;
-        this.elementType = elementType;
-        this.weightType = weightType;
+                outputType, isMultiset, input);
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPIndexOperator(
-                this.getNode(), Objects.requireNonNull(expression), ixOutputType.keyType,
-                ixOutputType.elementType, ixOutputType.weightType, this.isMultiset, this.input());
+                this.getNode(), Objects.requireNonNull(expression),
+                ixOutputType, this.isMultiset, this.input());
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIndexOperator(
-                    this.getNode(), this.getFunction(), this.keyType,
-                    this.elementType, this.weightType, this.isMultiset, newInputs.get(0));
+                    this.getNode(), this.getFunction(),
+                    this.outputType.to(DBSPTypeIndexedZSet.class), this.isMultiset, newInputs.get(0));
         return this;
     }
 

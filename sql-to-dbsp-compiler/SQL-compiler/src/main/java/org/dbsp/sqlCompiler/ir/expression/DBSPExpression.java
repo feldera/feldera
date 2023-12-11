@@ -25,12 +25,11 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
-import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IHasType;
 
 import javax.annotation.Nullable;
 
@@ -57,15 +56,13 @@ public abstract class DBSPExpression
     }
 
     public DBSPExpression deref() {
+        if (this.is(DBSPBorrowExpression.class))
+            return this.to(DBSPBorrowExpression.class).expression;
         return new DBSPDerefExpression(this);
     }
 
     public DBSPExpression borrow() {
         return new DBSPBorrowExpression(this);
-    }
-
-    public DBSPExpression unwrap() {
-        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", DBSPTypeAny.getDefault(), this);
     }
 
     public DBSPExpression borrow(boolean mutable) {

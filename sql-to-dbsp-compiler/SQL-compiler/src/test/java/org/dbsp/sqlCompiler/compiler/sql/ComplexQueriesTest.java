@@ -31,7 +31,12 @@ import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.IndexedInputs;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -216,7 +221,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "    pipeline_id,\n" +
                 "    vulnerability_id\n" +
                 ") as\n" +
-                "    SELECT pipeline_sources.pipeline_id as pipeline_id, vulnerability.vulnerability_id as vulnerability_id FROM\n" +
+                "    SELECT pipeline_sources.pipeline_id as pipeline_id, " +
+                "vulnerability.vulnerability_id as vulnerability_id FROM\n" +
                 "    pipeline_sources\n" +
                 "    INNER JOIN\n" +
                 "    vulnerability\n" +
@@ -226,7 +232,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "    artifact_id,\n" +
                 "    vulnerability_id\n" +
                 ") as\n" +
-                "    SELECT artifact.artifact_id as artifact_id, pipeline_vulnerability.vulnerability_id as vulnerability_id FROM\n" +
+                "    SELECT artifact.artifact_id as artifact_id, " +
+                "pipeline_vulnerability.vulnerability_id as vulnerability_id FROM\n" +
                 "    artifact\n" +
                 "    INNER JOIN\n" +
                 "    pipeline_vulnerability\n" +
@@ -358,7 +365,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "    pipeline_id,\n" +
                 "    vulnerability_id\n" +
                 ") as\n" +
-                "    SELECT pipeline_sources.pipeline_id as pipeline_id, vulnerability.vulnerability_id as vulnerability_id FROM\n" +
+                "    SELECT pipeline_sources.pipeline_id as pipeline_id, " +
+                "vulnerability.vulnerability_id as vulnerability_id FROM\n" +
                 "    pipeline_sources\n" +
                 "    INNER JOIN\n" +
                 "    vulnerability\n" +
@@ -369,7 +377,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "    artifact_id,\n" +
                 "    vulnerability_id\n" +
                 ") as\n" +
-                "    SELECT artifact.artifact_id as artifact_id, pipeline_vulnerability.vulnerability_id as vulnerability_id FROM\n" +
+                "    SELECT artifact.artifact_id as artifact_id, " +
+                "pipeline_vulnerability.vulnerability_id as vulnerability_id FROM\n" +
                 "    artifact\n" +
                 "    INNER JOIN\n" +
                 "    pipeline_vulnerability\n" +
@@ -381,7 +390,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "    via_artifact_id,\n" +
                 "    vulnerability_id\n" +
                 ") as\n" +
-                "    SELECT artifact_id, artifact_id as via_artifact_id, vulnerability_id from artifact_vulnerability\n" +
+                "    SELECT artifact_id, artifact_id as via_artifact_id, " +
+                "vulnerability_id from artifact_vulnerability\n" +
                 "    UNION\n" +
                 "    (\n" +
                 "        SELECT\n" +
@@ -497,7 +507,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "        is_fraud\n" +
                 "    FROM (\n" +
                 "        SELECT t1.*, t2.*\n" +
-                "               -- , LAG(trans_date_trans_time, 1) OVER (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date\n" +
+                "               -- , LAG(trans_date_trans_time, 1) OVER " +
+                "               -- (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date\n" +
                 "        FROM  transactions AS t1\n" +
                 "        LEFT JOIN  demographics AS t2\n" +
                 "        ON t1.cc_num = t2.cc_num);";
@@ -552,21 +563,22 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "SELECT\n" +
                         "*,\n" +
                         "COUNT(*) OVER(\n" +
-                        "                PARTITION BY  pickup_location_id\n" +
-                        "                ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) ) \n" +
-                        "                -- 1 hour is 3600  seconds\n" +
-                        "                RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,\n" +
+                        "   PARTITION BY  pickup_location_id\n" +
+                        "   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) ) \n" +
+                        "   -- 1 hour is 3600  seconds\n" +
+                        "   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,\n" +
                         "AVG(fare_amount) OVER(\n" +
-                        "                PARTITION BY  pickup_location_id\n" +
-                        "                ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) ) \n" +
-                        "                -- 1 hour is 3600  seconds\n" +
-                        "                RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,\n" +
+                        "   PARTITION BY  pickup_location_id\n" +
+                        "   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) ) \n" +
+                        "   -- 1 hour is 3600  seconds\n" +
+                        "   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,\n" +
                         "COUNT(*) OVER(\n" +
-                        "                PARTITION BY  dropoff_location_id\n" +
-                        "                ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) ) \n" +
-                        "                -- 0.5 hour is 1800  seconds\n" +
-                        "                RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,\n" +
-                        "case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5 then 1 else 0 end as dropoff_is_weekend\n" +
+                        "   PARTITION BY  dropoff_location_id\n" +
+                        "   ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) ) \n" +
+                        "   -- 0.5 hour is 1800  seconds\n" +
+                        "   RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,\n" +
+                        "case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5 " +
+                        "     then 1 else 0 end as dropoff_is_weekend\n" +
                         "FROM green_tripdata";
         DBSPCompiler compiler = testCompiler();
         query = "CREATE VIEW V AS (" + query + ")";

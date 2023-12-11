@@ -117,7 +117,7 @@ public class TableValue {
 
             if (connectionString.equals("csv")) {
                 // If the data is large, write it to a CSV file and read it at runtime.
-                String fileName = (Paths.get(directory, tables[i].tableName)).toString() + ".csv";
+                String fileName = (Paths.get(directory, tables[i].tableName)) + ".csv";
                 File file = new File(fileName);
                 file.deleteOnExit();
                 ToCsvVisitor.toCsv(new StderrErrorReporter(), file, tables[i].contents);

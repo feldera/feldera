@@ -710,7 +710,8 @@ public class CalciteCompiler implements IWritesLogs {
             RelDataType type = this.convertType(typeSpec);
             RelDataTypeField field = new RelDataTypeFieldImpl(
                     Catalog.identifierToString(name), index++, type);
-            RelColumnMetadata meta = new RelColumnMetadata(field, isPrimaryKey, Utilities.identifierIsQuoted(name),
+            RelColumnMetadata meta = new RelColumnMetadata(
+                    CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
                     lateness, defaultValue);
             result.add(meta);
         }
@@ -776,7 +777,7 @@ public class CalciteCompiler implements IWritesLogs {
                 }
                 colByName.put(specifiedName, field);
             }
-            RelColumnMetadata meta = new RelColumnMetadata(
+            RelColumnMetadata meta = new RelColumnMetadata(node,
                     field, false, nameIsQuoted, null, null);
             columns.add(meta);
             index++;
@@ -818,6 +819,8 @@ public class CalciteCompiler implements IWritesLogs {
                 if (ct.columnList != null) {
                     cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnList));
                 } else {
+                    throw new UnimplementedException();
+                    /*
                     if (ct.query == null)
                         throw new UnsupportedException("CREATE TABLE cannot contain a query",
                                 CalciteObject.create(node));
@@ -827,6 +830,7 @@ public class CalciteCompiler implements IWritesLogs {
                     RelRoot relRoot = this.converter.convertQuery(ct.query, true, true);
                     cols = this.createColumnsMetadata(
                             CalciteObject.create(ct), ct.name, false, relRoot, null);
+                     */
                 }
                 CreateTableStatement table = new CreateTableStatement(node, sqlStatement, tableName, comment, cols);
                 this.catalog.addTable(tableName, table.getEmulatedTable());

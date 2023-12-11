@@ -27,9 +27,7 @@ package org.dbsp.util;
 
 import javax.annotation.Nullable;
 
-/**
- * Utility interface providing some useful casting methods.
- */
+/** Utility interface providing some useful casting methods. */
 public interface ICastable {
     @Nullable
     default <T> T as(Class<T> clazz) {
@@ -38,33 +36,19 @@ public interface ICastable {
 
     @Nullable
     static <T> T as(Object obj, Class<T> clazz) {
-        try {
+        if (clazz.isInstance(obj))
             return clazz.cast(obj);
-        } catch (ClassCastException e) {
-            return null;
-        }
-    }
-
-    default void error(String message) {
-        System.err.println(message);
-    }
-
-    default <T> T as(Class<T> clazz, @Nullable String failureMessage) {
-        T result = this.as(clazz);
-        if (result == null) {
-            if (failureMessage == null)
-                failureMessage = this + "(" + this.getClass().getName() + ") is not an instance of " + clazz;
-            this.error(failureMessage);
-        }
-        assert result != null;
-        return result;
+        return null;
     }
 
     default <T> T to(Class<T> clazz) {
-        return this.as(clazz, (String)null);
+        T result = this.as(clazz);
+        if (result == null)
+            throw new RuntimeException(this + " is not an instance of " + clazz);
+        return result;
     }
 
     default <T> boolean is(Class<T> clazz) {
-        return this.as(clazz) != null;
+        return clazz.isInstance(this);
     }
 }

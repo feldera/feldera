@@ -3,6 +3,7 @@
 use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use core::fmt::Formatter;
+use dbsp::num_entries_scalar;
 use dbsp_adapters::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
@@ -952,4 +953,10 @@ mod test {
             r#"{"DATE":"2023-09-28","TIME":"23:21:15.123","TIMESTAMP":"2018-06-20 13:37:03"}"#
         );
     }
+}
+
+num_entries_scalar! {
+    Timestamp,
+    Date,
+    Time,
 }

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
 
@@ -48,7 +49,8 @@ public class DBSPTypeFunction extends DBSPType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.resultType.accept(visitor);
         for (DBSPType arg: this.argumentTypes)
@@ -76,8 +78,15 @@ public class DBSPTypeFunction extends DBSPType {
         return DBSPType.sameTypes(this.argumentTypes, other.argumentTypes);
     }
 
+    public boolean sameParameterTypes(DBSPTypeFunction other) {
+        return DBSPType.sameTypes(this.argumentTypes, other.argumentTypes);
+    }
+
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("_");
+        return builder.append("|")
+                .join(", ", this.argumentTypes)
+                .append("| -> ")
+                .append(this.resultType);
     }
 }

@@ -1,16 +1,16 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.SanitizeNames;
-import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.SanitizeNames;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
@@ -19,10 +19,13 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.ProgramAndTester;
 
-import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.PrintStream;
-import java.io.UnsupportedEncodingException;
-import java.util.*;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 /**
@@ -122,6 +125,7 @@ public class RustFileWriter implements ICompilerComponent {
             "    DBSPHandle,\n" +
             "    Error as DBSPError,\n" +
             "    Runtime,\n" +
+            "    NumEntries,\n" +
             "};\n" +
             "use dbsp_adapters::{deserialize_table_record, serialize_table_record, Catalog};\n" +
             "use size_of::*;\n" +
@@ -140,6 +144,7 @@ public class RustFileWriter implements ICompilerComponent {
             "use core::cmp::Ordering;\n" +
             "use rust_decimal::Decimal;\n" +
             "use tuple::declare_tuples;\n" +
+            "use tuple::{count_items,measure_items};\n" +
             "use sqllib::{\n" +
             "    *,\n" +
             "    casts::*,\n" +
@@ -167,8 +172,8 @@ public class RustFileWriter implements ICompilerComponent {
     }
 
     public RustFileWriter(DBSPCompiler compiler, String outputFile)
-            throws FileNotFoundException, UnsupportedEncodingException {
-        this(compiler, new PrintStream(outputFile, "UTF-8"));
+            throws IOException {
+        this(compiler, new PrintStream(outputFile, StandardCharsets.UTF_8));
     }
 
     @Override

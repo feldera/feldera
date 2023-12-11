@@ -41,6 +41,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintWriter;
 
 /**
@@ -60,11 +61,14 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
+        String name = node.outputName;
+        if (node.is(DBSPDelayOutputOperator.class))
+            name = "delay";
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
-                .append(node.id)
+                .append(node.getIdString())
                 .append(" ")
-                .append(node.outputName)
+                .append(name)
                 .append("\" ]")
                 .newline();
         return VisitDecision.STOP;
@@ -81,10 +85,25 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
+    public VisitDecision preorder(DBSPDelayOperator node) {
+        DBSPOperator input = node.input();
+        if (node.output != null) {
+            // Add the edge which isn't represented explicitly in the graph
+            this.stream.append(input.outputName)
+                    .append(" -> ")
+                    .append(node.output.outputName)
+                    .append(";")
+                    .newline();
+            return VisitDecision.STOP;
+        }
+        return this.preorder((DBSPUnaryOperator) node);
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSinkOperator node) {
         this.stream.append(node.outputName)
                 .append(" [ shape=box,label=\"")
-                .append(node.id)
+                .append(node.getIdString())
                 .append(" ")
                 .append(node.outputName)
                 .append("\" ]")
@@ -108,24 +127,33 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         if (node.is(DBSPFlatMapOperator.class)) {
             expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
         }
-        String function = ToRustInnerVisitor.toRustString(this.errorReporter, expression, true);
-        // Graphviz left-justify using \l.
-        String result = function; // .replace("\n", "\\l");
-        return Utilities.escape(result);
+        String result = ToRustInnerVisitor.toRustString(this.errorReporter, expression, true);
+        result = result.replace("\n", "\\l");
+        return Utilities.escapeDoubleQuotes(result);
+    }
+
+    String getColor(DBSPOperator operator) {
+        switch (operator.operation) {
+            case "waterline_monotonic": return " style=filled fillcolor=lightgreen";
+            case "controlled_filter": return " style=filled fillcolor=cyan";
+            case "apply": return " style=filled fillcolor=yellow";
+            default: return "";
+        }
     }
 
     @Override
     public VisitDecision preorder(DBSPOperator node) {
         this.stream.append(node.outputName)
-                .append(" [ shape=box,label=\"")
-                .append(node.id)
+                .append(" [ shape=box")
+                .append(this.getColor(node))
+                .append(" label=\"")
+                .append(node.getIdString())
                 .append(" ")
                 .append(node.operation);
         if (this.details) {
             this.stream
                     .append("(")
                     .append(this.getFunction(node))
-                    // For some reason there needs to be one \\l at the very end.
                     .append(")\\l");
         }
         this.stream.append("\" ]")
@@ -159,12 +187,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     public static void toDot(IErrorReporter reporter, String fileName, boolean details,
                              @Nullable String outputFormat, DBSPCircuit circuit) {
+        Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
+                .append("Writing circuit to ")
+                .append(fileName)
+                .newline();
+        File tmp = null;
         try {
-            Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
-                    .append("Writing circuit to ")
-                    .append(fileName)
-                    .newline();
-            File tmp = File.createTempFile("tmp", ".dot");
+            tmp = File.createTempFile("tmp", ".dot");
             tmp.deleteOnExit();
             PrintWriter writer = new PrintWriter(tmp.getAbsolutePath());
             IndentStream stream = new IndentStream(writer);
@@ -174,6 +203,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 Utilities.runProcess(".", "dot", "-T", outputFormat,
                         "-o", fileName, tmp.getAbsolutePath());
         } catch (Exception ex) {
+            if (tmp != null) {
+                try {
+                    System.out.println(Utilities.readFile(tmp.toPath()));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
             throw new RuntimeException(ex);
         }
     }

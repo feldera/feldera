@@ -6,6 +6,7 @@
 //! - Long intervals, representing differences between months. These are
 //!   represented as days.
 
+use dbsp::num_entries_scalar;
 use num::PrimInt;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -119,4 +120,9 @@ where
             days: i32::from(value),
         }
     }
+}
+
+num_entries_scalar! {
+    ShortInterval,
+    LongInterval,
 }

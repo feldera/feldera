@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 public class DBSPTypeIndexedZSet extends DBSPTypeUser {
@@ -39,9 +40,18 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         this.weightType = weightType;
     }
 
+    public DBSPTypeRawTuple getKVRefType() {
+        return new DBSPTypeRawTuple(this.keyType.ref(), this.elementType.ref());
+    }
+
+    public DBSPTypeRawTuple getKVType() {
+        return new DBSPTypeRawTuple(this.keyType, this.elementType);
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.keyType.accept(visitor);
         this.elementType.accept(visitor);

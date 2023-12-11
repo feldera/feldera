@@ -51,9 +51,4 @@ public abstract class FrontEndStatement implements ICastable {
     public CalciteObject getCalciteObject() {
         return CalciteObject.create(this.node);
     }
-
-    @Override
-    public void error(String message) {
-        throw new InternalCompilerError(message, this.getCalciteObject());
-    }
 }

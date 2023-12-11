@@ -24,12 +24,20 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.*;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IHasName;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -42,34 +50,31 @@ import java.util.Objects;
 
 /**
  * A DBSP operator that applies a function to the inputs and produces an output.
+ * On the naming of the operator classes:
+ * Each operator has an "operation" field. This one corresponds to the
+ * Rust Stream method that is invoked to implement the operator.
+ * Some operators have "Stream" in their name.  These usually correspond
+ * to a method starting with "stream_*".
+ * Some operators compute correctly both over deltas and aver whole sets, e.g. Map.
  */
 public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasType, IDBSPOuterNode {
     public final List<DBSPOperator> inputs;
-    /**
-     * Operation that is invoked on inputs; corresponds to a DBSP operator name, e.g., join.
-     */
+    /** Operation that is invoked on inputs; corresponds to a DBSP operator name, e.g., join. */
     public final String operation;
-    /**
-     * Computation invoked by the operator, usually a closure.
-     */
+    /** Computation invoked by the operator, usually a closure. */
     @Nullable
     public final DBSPExpression function;
-    /**
-     * Output assigned to this variable.
-     */
+    /** Output assigned to this variable. */
     public final String outputName;
-    /**
-     * Type of output produced.
-     */
+    /** Type of output produced. */
     public final DBSPType outputType;
-    /**
-     * True if the output of the operator is a multiset.
-     */
+    /** True if the output of the operator is a multiset. */
     public final boolean isMultiset;
     @Nullable
     public final String comment;
-
     public final DBSPType outputStreamType;
+    /** id of the operator this one is derived from.  -1 for "new" operators */
+    public long derivedFrom;
 
     protected DBSPOperator(CalciteObject node, String operation,
                            @Nullable DBSPExpression function, DBSPType outputType,
@@ -83,6 +88,19 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
         this.isMultiset = isMultiset;
         this.comment = comment;
         this.outputStreamType = new DBSPTypeStream(this.outputType);
+        this.derivedFrom = -1;
+        if (!operation.startsWith("waterline") &&
+                !operation.startsWith("apply") &&
+                !outputType.is(DBSPTypeZSet.class) &&
+                !outputType.is(DBSPTypeIndexedZSet.class))
+            throw new InternalCompilerError("Operator output type is unexpected " + outputType);
+    }
+
+    public String getIdString() {
+        String result = Long.toString(this.id);
+        if (this.derivedFrom >= 0)
+            result += "(" + this.derivedFrom + ")";
+        return result;
     }
 
     public DBSPOperator(CalciteObject node, String operation,
@@ -90,6 +108,11 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
                         DBSPType outputType, boolean isMultiset) {
         this(node, operation, function, outputType, isMultiset, null,
                 new NameGen("stream").nextName());
+    }
+
+    public void setDerivedFrom(long id) {
+        if (id != this.id)
+            this.derivedFrom = id;
     }
 
     /**
@@ -112,8 +135,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
      * e.g., AggregateOperator always returns 'true', although
      * the function can be represented as an Aggregate.
      * This is also true for ConstantOperator, although for these
-     * the function may not be a closure, but rather a constant.
-     */
+     * the function may not be a closure, but rather a constant. */
     public boolean hasFunction() {
         return this.function != null;
     }
@@ -123,8 +145,41 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
      */
     public abstract DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType);
 
+    public DBSPTypeZSet getOutputZSetType() { return this.outputType.to(DBSPTypeZSet.class); }
+
+    public DBSPTypeIndexedZSet getOutputIndexedZSetType() {
+        return this.outputType.to(DBSPTypeIndexedZSet.class);
+    }
+
     public DBSPType getOutputZSetElementType() {
-        return this.outputType.to(DBSPTypeZSet.class).elementType;
+        return this.getOutputZSetType().elementType;
+    }
+
+    /**
+     * If the output is a ZSet it returns the element type.
+     * If the output is an IndexedZSet it returns the tuple (keyType, elementType).
+     */
+    public DBSPType getOutputRowType() {
+        if (this.outputType.is(DBSPTypeZSet.class))
+            return this.getOutputZSetElementType();
+        return this.getOutputIndexedZSetType().getKVType();
+    }
+
+    /**
+     * Converts the type of a parameter as follows:
+     * - p: &T into T
+     * - p: (&K, &V) into (K, V).
+     * We do this because our Rust code dataflow analysis does not understand
+     * automatic dereferencing.
+     */
+    public static DBSPType typeWithoutReferences(DBSPType paramType) {
+        if (paramType.is(DBSPTypeRef.class)) {
+            return paramType.deref();
+        } else {
+            DBSPTypeRawTuple pair = paramType.to(DBSPTypeRawTuple.class);
+            assert pair.size() == 2: "Expected a pair, got: " + paramType;
+            return new DBSPTypeRawTuple(pair.tupFields[0].deref(), pair.tupFields[1].deref());
+        }
     }
 
     /**
@@ -144,9 +199,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
         if (zSet != null) {
             sourceElementType = zSet.elementType.ref();
         } else if (iZSet != null) {
-            sourceElementType = new DBSPTypeRawTuple(
-                    iZSet.keyType.ref(),
-                    iZSet.elementType.ref());
+            sourceElementType = iZSet.getKVRefType();
         } else {
             throw new InternalCompilerError(
                     "Source " + source + " does not produce an (Indexed)ZSet, but "
@@ -212,7 +265,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
                 .getSimpleName()
                 .replace("DBSP", "")
                 .replace("Operator", "")
-                + " " + this.id;
+                + " " + this.getIdString();
     }
 
     public SourcePositionRange getSourcePosition() {
@@ -229,7 +282,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
     
     IIndentStream writeComments(IIndentStream builder) {
         return this.writeComments(builder, 
-                this.getClass().getSimpleName() + " " + this.id +
+                this.getClass().getSimpleName() + " " + this.getIdString() +
                 (this.comment != null ? "\n" + this.comment : ""));
     }
 

@@ -97,7 +97,7 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
             return false;
         return this.variable.equals(o.variable) &&
                 this.initializer == o.initializer &&
-                this.type == o.type &&
+                this.type.sameType(o.type) &&
                 this.mutable == o.mutable;
     }
 

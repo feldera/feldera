@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -34,27 +34,31 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public class DBSPIncrementalJoinOperator extends DBSPOperator {
-    public final DBSPType elementResultType;
-    public final DBSPType weightType;
-
-    public DBSPIncrementalJoinOperator(
-            CalciteObject node, DBSPType elementResultType, DBSPType weightType,
-            DBSPExpression function, boolean isMultiset,
-            DBSPOperator left, DBSPOperator right) {
-        super(node, "join", function, TypeCompiler.makeZSet(elementResultType, weightType), isMultiset);
+public class DBSPStreamJoinOperator extends DBSPOperator {
+    public DBSPStreamJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
+                                  // Closure from key, valueLeft, valueRight to result type
+                                  DBSPExpression function, boolean isMultiset,
+                                  DBSPOperator left, DBSPOperator right) {
+        super(node, "stream_join", function, outputType, isMultiset);
         this.addInput(left);
         this.addInput(right);
-        this.elementResultType = elementResultType;
+        DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
-        this.weightType = weightType;
+    }
+
+    @Override
+    public void accept(CircuitVisitor visitor) {
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        DBSPTypeZSet zsetOutputType = outputType.to(DBSPTypeZSet.class);
-        return new DBSPIncrementalJoinOperator(
-                this.getNode(), zsetOutputType.elementType, zsetOutputType.weightType,
+        return new DBSPStreamJoinOperator(
+                this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
                 this.isMultiset, this.inputs.get(0), this.inputs.get(1));
     }
@@ -62,15 +66,9 @@ public class DBSPIncrementalJoinOperator extends DBSPOperator {
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPIncrementalJoinOperator(
-                    this.getNode(), this.elementResultType, this.weightType,
+            return new DBSPStreamJoinOperator(
+                    this.getNode(), this.getOutputZSetType(),
                     this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1));
         return this;
-    }
-
-    @Override
-    public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
     }
 }

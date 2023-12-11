@@ -15,7 +15,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
  * to its declaration.
  */
 public class ResolveReferences extends InnerVisitor {
-    protected final SubstitutionContext<IDBSPDeclaration> substitutionContext;
+    private final SubstitutionContext<IDBSPDeclaration> substitutionContext;
     public final ReferenceMap reference;
 
     public ResolveReferences(IErrorReporter reporter) {

@@ -1,16 +1,16 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentialOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIncrementalJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegralOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
@@ -86,13 +86,13 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPAggregateOperator operator) {
+    public void postorder(DBSPStreamAggregateOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }
 
     @Override
-    public void postorder(DBSPIncrementalAggregateOperator operator) {
+    public void postorder(DBSPAggregateOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }
@@ -104,7 +104,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPIncrementalDistinctOperator operator) {
+    public void postorder(DBSPDistinctOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }
@@ -128,19 +128,19 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPIntegralOperator operator) {
+    public void postorder(DBSPIntegrateOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }
 
     @Override
-    public void postorder(DBSPDifferentialOperator operator) {
+    public void postorder(DBSPDifferentiateOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }
 
     @Override
-    public void postorder(DBSPDistinctOperator operator) {
+    public void postorder(DBSPStreamDistinctOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }
@@ -192,7 +192,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPJoinOperator operator) {
+    public void postorder(DBSPStreamJoinOperator operator) {
         for (DBSPOperator prev: operator.inputs) {
             DBSPOperator source = this.mapped(prev);
             if (this.emptySources.contains(source)) {
@@ -207,7 +207,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPIncrementalJoinOperator operator) {
+    public void postorder(DBSPJoinOperator operator) {
         for (DBSPOperator prev: operator.inputs) {
             DBSPOperator source = this.mapped(prev);
             if (this.emptySources.contains(source)) {

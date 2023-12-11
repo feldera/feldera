@@ -27,9 +27,11 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +47,32 @@ public class CircuitOptimizer implements ICompilerComponent {
         this.compiler = compiler;
     }
 
+    @SuppressWarnings("ConstantValue")
+    CircuitTransform monotonicity() {
+        return circuit -> {
+            final boolean debug = false;
+
+            if (debug)
+                ToDotVisitor.toDot(compiler, "original.jpg", false, "jpg", circuit);
+            ExpandOperators expander = new ExpandOperators(this.compiler, 1);
+            Repeat repeat = new Repeat(this.compiler, expander);
+            DBSPCircuit expanded = repeat.apply(circuit);
+            if (debug)
+                ToDotVisitor.toDot(compiler, "expanded.jpg", false, "jpg", expanded);
+
+            MonotoneOperators monotone = new MonotoneOperators(this.compiler);
+            expanded = monotone.apply(expanded); // this does not really mutate the circuit
+
+            InsertLimiters limiters = new InsertLimiters(
+                    this.compiler, expanded, monotone.operatorMonotoneValue, expander.expansion);
+            // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
+            DBSPCircuit result = limiters.apply(circuit);
+            if (debug)
+                ToDotVisitor.toDot(compiler, "limited.jpg", true, "jpg", result);
+            return result;
+        };
+    }
+
     CircuitTransform getOptimizer() {
         List<CircuitTransform> passes = new ArrayList<>();
         IErrorReporter reporter = this.getCompiler();
@@ -52,7 +80,6 @@ public class CircuitOptimizer implements ICompilerComponent {
         passes.add(new IndexedInputs(reporter));
         if (this.getCompiler().options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
-        passes.add(new RemoveDeindexOperator(reporter));
         if (this.compiler.options.languageOptions.optimizationLevel < 2) {
             if (this.compiler.options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(this.getCompiler()));
@@ -75,7 +102,9 @@ public class CircuitOptimizer implements ICompilerComponent {
             // The predicate below controls which nodes have their output dumped at runtime
             passes.add(new InstrumentDump(reporter, t -> false));
         }
+        passes.add(this.monotonicity());
         // debugging aid
+        passes.add(new RemoveDeindexOperator(reporter));
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         return new Passes(reporter, passes);

@@ -24,25 +24,29 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
-public class DBSPIntegralOperator extends DBSPUnaryOperator {
-    public DBSPIntegralOperator(CalciteObject node, DBSPOperator source) {
+public class DBSPIntegrateOperator extends DBSPUnaryOperator {
+    public DBSPIntegrateOperator(CalciteObject node, DBSPOperator source) {
         super(node, "integrate", null, source.outputType, source.isMultiset, source);
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPIntegralOperator(
+            return new DBSPIntegrateOperator(
                     this.getNode(), newInputs.get(0));
         return this;
     }

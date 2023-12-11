@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VEC;
@@ -42,7 +43,8 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         for (DBSPType type: this.typeArgs)
             type.accept(visitor);

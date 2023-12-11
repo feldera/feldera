@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -55,6 +56,20 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     }
 
     @Override
+    public DBSPType makeType(List<DBSPType> fields) {
+        return new DBSPTypeRawTuple(CalciteObject.EMPTY, fields);
+    }
+
+    @Override
+    public DBSPTypeTupleBase project(List<Integer> fields) {
+        DBSPType[] resultFields = new DBSPType[fields.size()];
+        int index = 0;
+        for (int i: fields)
+            resultFields[index++] = this.tupFields[i];
+        return new DBSPTypeRawTuple(resultFields);
+    }
+
+    @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
@@ -78,7 +93,8 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         for (DBSPType type: this.tupFields)
             type.accept(visitor);
@@ -109,7 +125,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("(")
-                .join(", ", this.tupFields)
+                .intercalateI(", ", this.tupFields)
                 .append(")");
     }
 }

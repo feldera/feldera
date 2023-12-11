@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
-class SourcePosition {
+public class SourcePosition {
     public static final SourcePosition INVALID = new SourcePosition(0, 0);
 
     public final int line;    // Numbered from 1

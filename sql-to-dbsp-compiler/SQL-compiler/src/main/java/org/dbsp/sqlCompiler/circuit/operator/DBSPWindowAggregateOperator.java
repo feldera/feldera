@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -41,40 +42,27 @@ import java.util.List;
  * must differentiate its input, and integrate its output.
  */
 public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
-    public final DBSPType partitionKeyType;
-    public final DBSPType timestampType;
-    public final DBSPType aggregateType;
-    public final DBSPType weightType;
     public final DBSPExpression window;
 
     public DBSPWindowAggregateOperator(
             CalciteObject node,
             @Nullable DBSPExpression function, @Nullable DBSPAggregate aggregate,
             DBSPExpression window,
-            DBSPType partitionKeyType, DBSPType timestampType, DBSPType aggregateType, DBSPType weightType,
+            DBSPTypeIndexedZSet outputType,
             DBSPOperator input) {
-        super(node, "window_aggregate",
-                new DBSPTypeIndexedZSet(node,
-                        new DBSPTypeRawTuple(partitionKeyType, timestampType), aggregateType, weightType),
-                function, aggregate,
-                true, input, false);
+        super(node, "window_aggregate", outputType, function, aggregate, true, input, false);
         this.window = window;
-        this.partitionKeyType = partitionKeyType;
-        this.timestampType = timestampType;
-        this.aggregateType = aggregateType;
-        this.weightType = weightType;
+        // Expect a tuple with 2 fields
+        DBSPTypeRawTuple partAndTime = outputType.keyType.to(DBSPTypeRawTuple.class);
+        if (partAndTime.size() != 2)
+            throw new InternalCompilerError("Unexpected type for Window aggregate operator " + outputType);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
-        DBSPTypeRawTuple outputTuple = ixOutputType.keyType.to(DBSPTypeRawTuple.class);
-        if (outputTuple.tupFields.length != 2)
-            throw new InternalCompilerError("Expected two fields in output element type " + outputTuple, this);
         return new DBSPWindowAggregateOperator(
                 this.getNode(), expression, this.aggregate, this.window,
-                outputTuple.tupFields[0], outputTuple.tupFields[1],
-                ixOutputType.elementType, ixOutputType.weightType,
+                outputType.to(DBSPTypeIndexedZSet.class),
                 this.input());
     }
 
@@ -83,14 +71,16 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowAggregateOperator(
                     this.getNode(), this.function, this.aggregate, this.window,
-                    this.partitionKeyType, this.timestampType, this.aggregateType, this.weightType,
-                    newInputs.get(0));
+                    this.getOutputIndexedZSetType(), newInputs.get(0));
         return this;
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 }

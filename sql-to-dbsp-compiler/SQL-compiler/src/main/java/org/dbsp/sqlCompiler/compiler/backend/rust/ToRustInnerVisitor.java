@@ -824,12 +824,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDerefExpression expression) {
-        this.builder.append("*");
+        this.builder.append("(*");
         expression.expression.accept(this);
+        this.builder.append(")");
         return VisitDecision.STOP;
     }
 
-    @Override
     public VisitDecision preorder(DBSPEnumValue expression) {
         this.builder.append(expression.enumName)
                 .append("::")

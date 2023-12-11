@@ -45,6 +45,7 @@ where
 }
 
 /// Macro to implement [`NumEntries`] for a scalar type whose size is 1.
+#[macro_export]
 macro_rules! num_entries_scalar {
     ($($type:ty),+ $(,)?) => {
         $(

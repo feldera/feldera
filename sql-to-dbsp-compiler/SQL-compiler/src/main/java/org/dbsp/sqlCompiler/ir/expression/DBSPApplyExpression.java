@@ -25,8 +25,9 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
@@ -79,7 +80,8 @@ public class DBSPApplyExpression extends DBSPExpression {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
         this.function.accept(visitor);
@@ -111,5 +113,9 @@ public class DBSPApplyExpression extends DBSPExpression {
     public DBSPExpression deepCopy() {
         return new DBSPApplyExpression(this.function.deepCopy(), this.getType(),
                 Linq.map(this.arguments, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
+
+    public DBSPApplyExpression replaceArguments(DBSPExpression... arguments) {
+        return new DBSPApplyExpression(this.function, this.type, arguments);
     }
 }

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -34,38 +35,29 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
-    public final DBSPType keyType;
-    public final DBSPType outputElementType;
-    public final DBSPType weightType;
-
-    public DBSPAggregateOperator(CalciteObject node,
-                                 DBSPType keyType, DBSPType outputElementType,
-                                 DBSPType weightType,
-                                 @Nullable
-                                 DBSPExpression function,
-                                 @Nullable
-                                 DBSPAggregate aggregate,
-                                 DBSPOperator input,
-                                 boolean isLinear) {
-        super(node, isLinear ? "stream_aggregate_linear" : "stream_aggregate",
-                new DBSPTypeIndexedZSet(node, keyType, outputElementType, weightType),
+    public DBSPAggregateOperator(
+            CalciteObject node,
+            DBSPTypeIndexedZSet outputType,
+            @Nullable DBSPExpression function,
+            @Nullable DBSPAggregate aggregate, DBSPOperator input, boolean isLinear) {
+        super(node, isLinear ? "aggregate_linear" : "aggregate", outputType,
                 function, aggregate, false, input, isLinear);
-        this.keyType = keyType;
-        this.outputElementType = outputElementType;
-        this.weightType = weightType;
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
-        return new DBSPAggregateOperator(this.getNode(),
-                ixOutputType.keyType, ixOutputType.elementType, ixOutputType.weightType,
+        DBSPTypeIndexedZSet ix = outputType.to(DBSPTypeIndexedZSet.class);
+        return new DBSPAggregateOperator(
+                this.getNode(), ix,
                 expression, this.aggregate, this.input(), this.isLinear);
     }
 
@@ -73,7 +65,7 @@ public class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateOperator(
-                    this.getNode(), this.keyType, this.outputElementType, this.weightType,
+                    this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
                     this.function, this.aggregate, newInputs.get(0), this.isLinear);
         return this;
     }

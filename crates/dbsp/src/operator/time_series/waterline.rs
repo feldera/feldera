@@ -21,7 +21,7 @@ where
     ///
     /// Waterline is an attribute of a time series that indicates the latest
     /// timestamp such that no data points with timestamps older than the
-    /// waterlind should appear in the stream. Every record in the time
+    /// waterline should appear in the stream. Every record in the time
     /// series carries waterlind information that can be extracted by
     /// applying a user-provided function to it.  The waterline of the time
     /// series is the maximum of waterlines of all its data points.

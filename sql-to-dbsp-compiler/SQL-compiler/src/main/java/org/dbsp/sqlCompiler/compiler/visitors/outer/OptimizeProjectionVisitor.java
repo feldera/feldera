@@ -40,7 +40,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
         Projection projection = new Projection(this.errorReporter);
         projection.traverse(operator.getFunction());
         if (projection.isProjection) {
-            if ((source.is(DBSPJoinOperator.class) || source.is(DBSPIncrementalJoinOperator.class)) &&
+            if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
                     // We have to look up the original operator input, not source
                     this.canOptimize.apply(operator.input())) {
                 DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
@@ -58,13 +58,11 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 // Projection of a "simple" function.
                 Projection sourceProjection = new Projection(this.errorReporter);
                 sourceProjection.traverse(source.getFunction());
-                if (sourceProjection.isSimple) {
-                    DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
-                    DBSPClosureExpression newFunction = projection.applyAfter(expression);
-                    DBSPOperator result = source.withFunction(newFunction, operator.outputType);
-                    this.map(operator, result);
-                    return;
-                }
+                DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
+                DBSPClosureExpression newFunction = projection.applyAfter(expression);
+                DBSPOperator result = source.withFunction(newFunction, operator.outputType);
+                this.map(operator, result);
+                return;
             } else if (!source.hasFunction() &&
                     !source.is(DBSPSourceBaseOperator.class)) {
                 // For all such operators we can swap them with the projection

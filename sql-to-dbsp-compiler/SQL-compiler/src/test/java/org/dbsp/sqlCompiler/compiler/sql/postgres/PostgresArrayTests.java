@@ -68,6 +68,12 @@ public class PostgresArrayTests extends SqlIoTest {
                 " split \n" +
                 "-----------------\n" +
                 " { 1, 2, 3, 4, , 6}\n" +
+                "(1 row)\n" +
+                "\n" +
+                "select split('', '');\n" +
+                " split \n" +
+                "-----------------\n" +
+                " { }\n" +
                 "(1 row)");
         // Deleted some three-operand cases
     }

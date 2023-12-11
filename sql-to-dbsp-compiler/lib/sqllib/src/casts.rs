@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use crate::{geopoint::*, interval::*, timestamp::*};
+use crate::{geopoint::*, interval::*, some_polymorphic_function1, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
@@ -130,19 +130,36 @@ pub fn cast_to_Date_s(value: String) -> Date {
     }
 }
 
-/////////// cast to dateN
+pub fn cast_to_Date_Timestamp(value: Timestamp) -> Date {
+    let dt = value.to_dateTime();
+    let seconds = dt.timestamp();
+    // Is this right for negative timestamps?
+    Date::new((seconds / 86400i64) as i32)
+}
+
+some_polymorphic_function1!(cast_to_Date, s, String, Date);
+some_polymorphic_function1!(cast_to_Date, Timestamp, Timestamp, Date);
 
 #[inline]
 pub fn cast_to_DateN_nullN(_value: Option<()>) -> Option<Date> {
     None
 }
 
+/*
 #[inline]
 pub fn cast_to_DateN_s(value: String) -> Option<Date> {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d");
     dt.ok()
         .map(|value| Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32))
 }
+*/
+
+#[inline]
+pub fn cast_to_Date_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(cast_to_Date, Date, Date, Date);
 
 #[inline]
 pub fn cast_to_DateN_Date(value: Date) -> Option<Date> {

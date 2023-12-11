@@ -4,8 +4,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -19,7 +18,8 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     public final DBSPAggregate aggregate;
     public final boolean isLinear;
 
-    protected DBSPAggregateOperatorBase(CalciteObject node, String operation, DBSPType outputType,
+    protected DBSPAggregateOperatorBase(CalciteObject node, String operation,
+                                        DBSPTypeIndexedZSet outputType,
                                         @Nullable DBSPExpression function,
                                         @Nullable DBSPAggregate aggregate,
                                         boolean multiset,

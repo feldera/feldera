@@ -15,7 +15,7 @@ public class RemoveDeindexOperator extends CircuitCloneVisitor {
     public void postorder(DBSPDeindexOperator operator) {
         DBSPOperator input = this.mapped(operator.input());
         DBSPMapOperator result = new DBSPMapOperator(operator.getNode(), operator.getFunction(),
-                operator.getType(), input);
+                operator.getOutputZSetType(), input);
         this.map(operator, result);
     }
 }

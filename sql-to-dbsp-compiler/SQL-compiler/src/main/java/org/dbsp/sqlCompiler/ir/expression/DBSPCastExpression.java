@@ -24,8 +24,9 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
@@ -41,9 +42,14 @@ public class DBSPCastExpression extends DBSPExpression {
         this.source = source;
     }
 
+    public DBSPCastExpression replaceSource(DBSPExpression source) {
+        return new DBSPCastExpression(this.getNode(), source, this.type);
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
         visitor.push(this);
         this.source.accept(visitor);
         this.getType().accept(visitor);

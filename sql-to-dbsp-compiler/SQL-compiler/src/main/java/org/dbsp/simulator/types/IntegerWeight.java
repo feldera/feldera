@@ -7,7 +7,7 @@ package org.dbsp.simulator.types;
 public class IntegerWeight implements WeightType<Integer> {
     private IntegerWeight() {}
 
-    public static IntegerWeight INSTANCE = new IntegerWeight();
+    public static final IntegerWeight INSTANCE = new IntegerWeight();
 
     @Override
     public Integer add(Integer left, Integer right) {

@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -22,7 +22,7 @@ public class EnsureDistinctOutputs extends CircuitCloneVisitor {
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
         DBSPOperator input = sources.get(0);
         if (input.isMultiset) {
-            DBSPDistinctOperator distinct = new DBSPDistinctOperator(operator.getNode(), input);
+            DBSPStreamDistinctOperator distinct = new DBSPStreamDistinctOperator(operator.getNode(), input);
             this.addOperator(distinct);
             DBSPOperator result = operator.withInputs(Linq.list(distinct), true);
             this.map(operator, result);

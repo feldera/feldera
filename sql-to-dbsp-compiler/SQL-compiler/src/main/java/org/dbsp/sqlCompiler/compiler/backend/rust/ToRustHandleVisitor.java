@@ -25,8 +25,13 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -39,7 +44,6 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.List;
 import java.util.Locale;
 
 /**
@@ -138,7 +142,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
      * @param metadata  Metadata for the input columns (null for an output view).
      */
     private void generateRenameMacro(String tableName, DBSPTypeStruct type,
-                                     @Nullable List<InputColumnMetadata> metadata) {
+                                     @Nullable InputTableMetadata metadata) {
         this.builder.append("deserialize_table_record!(");
         this.builder.append(type.sanitizedName)
                 .append("[")
@@ -161,7 +165,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                 name = name.toUpperCase();
                 quoted = false;
             } else {
-                meta = metadata.get(index);
+                meta = metadata.getColumnMetadata(field.name);
             }
             this.builder.append("(")
                     .append(field.sanitizedName)
@@ -310,8 +314,9 @@ public class ToRustHandleVisitor extends ToRustVisitor {
         int index = 0;
         for (DBSPSourceBaseOperator i : circuit.inputOperators) {
             if (i.is(DBSPSourceMultisetOperator.class)) {
+                DBSPSourceMultisetOperator ms = i.to(DBSPSourceMultisetOperator.class);
                 this.builder.append("catalog.register_input_set::<_, ");
-                i.originalRowType.accept(this.innerVisitor);
+                ms.originalRowType.accept(this.innerVisitor);
                 this.builder.append(">(")
                         .append(Utilities.doubleQuote(i.getName()))
                         .append(", ")
@@ -320,7 +325,7 @@ public class ToRustHandleVisitor extends ToRustVisitor {
                         .append(index++)
                         .append(");")
                         .newline();
-            } else {
+            } else if (i.is(DBSPSourceMapOperator.class)) {
                 DBSPSourceMapOperator map = i.to(DBSPSourceMapOperator.class);
                 this.builder.append("catalog.register_input_map::<");
                 DBSPTypeStruct keyStructType = map.getKeyStructType();

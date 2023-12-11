@@ -94,6 +94,20 @@ public class DBSPClosureExpression extends DBSPExpression {
                 Linq.same(this.parameters, o.parameters);
     }
 
+    /** Check if the two closures have the same parameter names,
+     * with the same corresponding types */
+    public boolean sameParameters(DBSPClosureExpression other) {
+        if (this.parameters.length != other.parameters.length)
+            return false;
+        for (int i = 0; i < this.parameters.length; i++) {
+            DBSPParameter mine = this.parameters[i];
+            DBSPParameter their = other.parameters[i];
+            if (!mine.sameFields(their))
+                return false;
+        }
+        return true;
+    }
+
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("(|")

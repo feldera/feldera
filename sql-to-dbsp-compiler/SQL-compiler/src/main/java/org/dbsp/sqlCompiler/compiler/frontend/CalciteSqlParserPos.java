@@ -1,8 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
-import org.apache.calcite.rel.rel2sql.RelToSqlConverter;
-import org.apache.calcite.sql.SqlDialect;
-import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 

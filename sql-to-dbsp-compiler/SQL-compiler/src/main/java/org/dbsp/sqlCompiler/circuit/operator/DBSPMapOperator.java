@@ -24,9 +24,11 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -34,7 +36,9 @@ import java.util.Objects;
 
 public class DBSPMapOperator extends DBSPUnaryOperator {
     public DBSPMapOperator(CalciteObject node, DBSPExpression expression,
-                           DBSPType outputType, DBSPOperator input) {
+                           DBSPTypeZSet outputType, DBSPOperator input) {
+        // Currently the output type can only be a ZSet, but the input
+        // type may be a ZSet or an IndexedZSet.
         super(node, "map", expression, outputType, true, input);
         DBSPType elementType = this.getOutputZSetElementType();
         this.checkResultType(expression, elementType);
@@ -43,15 +47,18 @@ public class DBSPMapOperator extends DBSPUnaryOperator {
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPMapOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                outputType, this.input());
+                outputType.to(DBSPTypeZSet.class), this.input());
     }
 
     @Override
@@ -59,7 +66,7 @@ public class DBSPMapOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapOperator(
                     this.getNode(), this.getFunction(),
-                    this.outputType, newInputs.get(0));
+                    this.getOutputZSetType(), newInputs.get(0));
         return this;
     }
 }

@@ -40,7 +40,6 @@ import java.util.List;
 public abstract class DBSPNode
         implements IDBSPNode {
     static long crtId = 0;
-
     public final long id;
 
     /**
@@ -83,6 +82,8 @@ public abstract class DBSPNode
     }
 
     static void saveLog() throws IOException {
+        if (!DEBUG_DETERMINISM)
+            return;
         if (log == null)
             return;
         File file = new File(logName);

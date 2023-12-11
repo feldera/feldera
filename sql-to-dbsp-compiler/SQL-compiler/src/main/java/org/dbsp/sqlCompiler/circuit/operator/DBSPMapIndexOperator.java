@@ -24,39 +24,34 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 
 import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
 public class DBSPMapIndexOperator extends DBSPUnaryOperator {
-    public final DBSPType keyType;
-    public final DBSPType valueType;
-    public final DBSPType weightType;
-
-    // Expression must return a tuple that is composed of a key and a value
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression expression,
-                                DBSPType keyType, DBSPType valueType, DBSPType weightType,
+                                DBSPTypeIndexedZSet outputType,
                                 DBSPOperator input) {
-        super(node, "map_index", expression,
-                new DBSPTypeIndexedZSet(node, keyType, valueType, weightType), true, input);
-        DBSPType outputElementType = new DBSPTypeRawTuple(keyType, valueType);
-        this.keyType = keyType;
-        this.valueType = valueType;
-        this.weightType = weightType;
+        super(node, "map_index", expression, outputType, true, input);
+        DBSPType outputElementType = outputType.getKVType();
+        // Expression must return a tuple that is composed of a key and a value
         this.checkResultType(expression, outputElementType);
         this.checkArgumentFunctionType(expression, 0, input);
     }
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
@@ -64,7 +59,7 @@ public class DBSPMapIndexOperator extends DBSPUnaryOperator {
         DBSPTypeIndexedZSet ixOutputType = type.to(DBSPTypeIndexedZSet.class);
         return new DBSPMapIndexOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                ixOutputType.keyType, ixOutputType.elementType, ixOutputType.weightType, this.input());
+                ixOutputType, this.input());
     }
 
     @Override
@@ -72,7 +67,7 @@ public class DBSPMapIndexOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapIndexOperator(
                     this.getNode(), this.getFunction(),
-                    this.keyType, this.valueType, this.weightType, newInputs.get(0));
+                    this.getOutputIndexedZSetType(), newInputs.get(0));
         return this;
     }
 }

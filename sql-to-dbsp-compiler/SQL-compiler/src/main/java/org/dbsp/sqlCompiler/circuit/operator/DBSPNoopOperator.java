@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -32,6 +33,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import javax.annotation.Nullable;
 import java.util.List;
 
+/**
+ * Implemented as a map with identity function.  Should be optimized away,
+ * but sometimes it's useful to have in intermediate representations.
+ */
 public class DBSPNoopOperator extends DBSPUnaryOperator {
     static DBSPClosureExpression getClosure() {
         DBSPVariablePath var = DBSPTypeAny.getDefault().var("i");
@@ -46,12 +51,17 @@ public class DBSPNoopOperator extends DBSPUnaryOperator {
 
     @Override
     public void accept(CircuitVisitor visitor) {
-        if (visitor.preorder(this).stop()) return;
-        visitor.postorder(this);
+        visitor.push(this);
+        VisitDecision decision = visitor.preorder(this);
+        if (!decision.stop())
+            visitor.postorder(this);
+        visitor.pop(this);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
-        return new DBSPNoopOperator(this.getNode(), newInputs.get(0), this.comment, this.outputName);
+        if (force || this.inputsDiffer(newInputs))
+            return new DBSPNoopOperator(this.getNode(), newInputs.get(0), this.comment, this.outputName);
+        return this;
     }
 }
