@@ -245,4 +245,25 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 "-------\n" +
                 " 32767");
     }
+
+    // Taken from Postgres `float8.out` and converted to `float4` using Postgres 15.2
+    // Note that the Postgres docs say `cbrt()` is implemented only for double
+    @Test
+    public void testCbrt() {
+        this.q("SELECT cbrt(null);\n" +
+                " cbrt \n" +
+                "------\n" +
+                "NULL"
+        );
+
+        this.q("SELECT f.f1, cbrt(f.f1) AS cbrt_f1 FROM FLOAT4_TBL f;\n" +
+                "          f1          |       cbrt_f1        \n" +
+                "----------------------+----------------------\n" +
+                "                    0 |                    0\n" +
+                "               1004.3 |    10.01431279725316\n" +
+                "               -34.84 |   -3.266074218210196\n" +
+                "  1.2345678901234e+20 |    4979338.599670366\n" +
+                "  1.2345678901234e-20 | 2.3112042296104156e-07"
+        );
+    }
 }

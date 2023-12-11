@@ -22,6 +22,7 @@ use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{DBData, DBWeight, OrdIndexedZSet, OrdZSet};
 use num::{Signed, ToPrimitive};
+use num_traits::Zero;
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -911,6 +912,77 @@ pub fn cos_d(value: F64) -> F64 {
 }
 
 some_polymorphic_function1!(cos, d, F64, F64);
+
+#[inline(always)]
+pub fn tan_d(value: F64) -> F64 {
+    value.into_inner().tan().into()
+}
+
+some_polymorphic_function1!(tan, d, F64, F64);
+
+#[inline(always)]
+pub fn cot_d(value: F64) -> F64 {
+    let tan = value.into_inner().tan();
+    if tan.is_zero() {
+        f64::INFINITY.into()
+    } else {
+        (1.0_f64 / tan).into()
+    }
+}
+
+some_polymorphic_function1!(cot, d, F64, F64);
+
+#[inline(always)]
+pub fn asin_d(value: F64) -> F64 {
+    value.into_inner().asin().into()
+}
+
+some_polymorphic_function1!(asin, d, F64, F64);
+
+#[inline(always)]
+pub fn acos_d(value: F64) -> F64 {
+    value.into_inner().acos().into()
+}
+
+some_polymorphic_function1!(acos, d, F64, F64);
+
+#[inline(always)]
+pub fn atan_d(value: F64) -> F64 {
+    value.into_inner().atan().into()
+}
+
+some_polymorphic_function1!(atan, d, F64, F64);
+
+#[inline(always)]
+pub fn atan2_d_d(y: F64, x: F64) -> F64 {
+    let y = y.into_inner();
+    let x = x.into_inner();
+
+    y.atan2(x).into()
+}
+
+some_polymorphic_function2!(atan2, d, F64, d, F64, F64);
+
+#[inline(always)]
+pub fn degrees_d(value: F64) -> F64 {
+    value.into_inner().to_degrees().into()
+}
+
+some_polymorphic_function1!(degrees, d, F64, F64);
+
+#[inline(always)]
+pub fn radians_d(value: F64) -> F64 {
+    value.into_inner().to_radians().into()
+}
+
+some_polymorphic_function1!(radians, d, F64, F64);
+
+#[inline(always)]
+pub fn cbrt_d(value: F64) -> F64 {
+    value.into_inner().cbrt().into()
+}
+
+some_polymorphic_function1!(cbrt, d, F64, F64);
 
 ////////////////////////////////////////////////
 

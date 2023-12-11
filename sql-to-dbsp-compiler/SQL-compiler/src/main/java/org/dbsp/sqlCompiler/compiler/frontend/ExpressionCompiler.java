@@ -699,11 +699,28 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     }
                     case "sin":
                     case "cos":
+                    case "tan":
+                    case "cot":
+                    case "asin":
+                    case "acos":
+                    case "atan":
+                    case "radians":
+                    case "degrees":
+                    case "cbrt":
                     {
                         // Turn the argument into Double
                         DBSPExpression exp = ops.get(0);
                         ops.set(0, exp.cast(new DBSPTypeDouble(node, exp.getType().mayBeNull)));
                         return this.compilePolymorphicFunction(call, node, type, ops, 1);
+                    }
+                    case "atan2":
+                    {
+                        // Turn the arguments into Double
+                        for (int i = 0; i < ops.size(); i++) {
+                            DBSPExpression arg = ops.get(i);
+                            ops.set(i, arg.cast(new DBSPTypeDouble(node, arg.getType().mayBeNull)));
+                        }
+                        return this.compilePolymorphicFunction(call, node, type, ops, 2);
                     }
                     case "split":
                         // If any argument is NULL, cast it to a string.

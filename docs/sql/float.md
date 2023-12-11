@@ -38,7 +38,7 @@ Casting a string to a floating-point value will produce the value
 Casting a value that is out of the supported range to a floating
 point type will produce a value that is `inf` or `-inf`.
 
-Casting a floating-point value to string, `float` is rounded off 
+Casting a floating-point value to string, `float` is rounded off
 to 6 decimal places and `double` is rounded off to 15 decimal places.
 
 Please note that numeric values with a decimal point have the
@@ -98,5 +98,41 @@ REAL '1.23'  -- string style
   <tr>
     <td><code>PI</code></td>
     <td>Returns the approximate value of <code>PI</code> as double. Note that <code>()</code> is not required. Example: <code>SELECT PI;</code></td>
+  </tr>
+  <tr>
+    <td><code>TAN(value)</code></td>
+    <td>The tangent of the value as radians. <code>tan</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>COT(value)</code></td>
+    <td>The cotangent of the value as radians. <code>cot</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>ASIN(value)</code></td>
+    <td>The arcsine of the value as radians. The returned value is in the range <code>[-pi/2, pi/2]</code> or <code>NaN</code> if the value is outside the range of <code>[-1, 1]</code>. <code>asin</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>ACOS(value)</code></td>
+    <td>The arccosine of the value as radians. The returned value is in the range <code>[0, pi]</code> or <code>NaN</code> if the value is outside the range of <code>[-1, 1]</code>. <code>acos</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>ATAN(value)</code></td>
+    <td>The arctangent of the value as radians. The returned value is in the range <code>[-pi/2, pi/2]</code>.<code>atan</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>ATAN2(y, x)</code></td>
+    <td>The inverse tangent of <code>y/x</code>. <code>atan2</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>DEGREES(value)</code></td>
+    <td>Converts the given value in radians to degrees. <code>degrees</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>RADIANS(value)</code></td>
+    <td>Converts the given value in degrees to radians. <code>radians</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>CBRT(value)</code></td>
+    <td>Calculates the cube root of the given value. <code>cbrt</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
 </table>
