@@ -10,7 +10,7 @@ class NewApiKeyRequest:
     """Request to create a new API key.
 
     Attributes:
-        name (str): Program name. Example: my-api-key.
+        name (str): Key name. Example: my-api-key.
     """
 
     name: str

@@ -69,7 +69,7 @@ use super::{ManagerError, ServerState};
         ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
         ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "HTTP input/output",
     request_body(
         content = String,
@@ -168,7 +168,7 @@ async fn http_input(
         description = "When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.",
         content_type = "application/json",
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "HTTP input/output"
 )]
 #[post("/pipelines/{pipeline_id}/egress/{table_name}")]

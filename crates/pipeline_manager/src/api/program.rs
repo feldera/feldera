@@ -112,7 +112,7 @@ pub(crate) struct UpdateProgramResponse {
         )
     ),
     params(ProgramIdOrNameQuery, WithCodeQuery),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
 #[get("/programs")]
@@ -170,7 +170,7 @@ pub(crate) async fn get_programs(
         ("program_id" = Uuid, Path, description = "Unique program identifier"),
         WithCodeQuery
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
 #[get("/programs/{program_id}")]
@@ -204,7 +204,7 @@ async fn get_program(
             , body = ErrorResponse
             , example = json!(examples::duplicate_name())),
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
 #[post("/programs")]
@@ -263,7 +263,7 @@ async fn new_program(
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
 #[patch("/programs/{program_id}")]
@@ -317,7 +317,7 @@ async fn update_program(
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
 #[post("/programs/{program_id}/compile")]
@@ -368,7 +368,7 @@ async fn compile_program(
     params(
         ("program_id" = Uuid, Path, description = "Unique program identifier")
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
 #[delete("/programs/{program_id}")]

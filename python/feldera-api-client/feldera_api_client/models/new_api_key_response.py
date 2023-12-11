@@ -12,7 +12,8 @@ class NewApiKeyResponse:
     Attributes:
         api_key (str): Generated API key. There is no way to
             retrieve this key again from the
-            pipeline-manager, so store it securely. Example: 12345678.
+            pipeline-manager, so store it securely. Example: apikey:v5y5QNtlPNVMwkmNjKwFU8bbIu5lMge3yHbyddxAOdXlEo84SEoNn32D
+            UhQaf1KLeI9aOOfnJjhQ1pYzMrU4wQXON6pm6BS7Zgzj46U2b8pwz1280vYBEtx41hiDBRP.
         api_key_id (str): ApiKey ID.
         name (str): API key name Example: my-api-key.
     """
