@@ -70,7 +70,7 @@ class DBSPPipelineConfig:
 
         self.attached_connectors.append(
             AttachedConnector(
-                connector_id=connector.connector_id,
+                connector_name=connector.name,
                 is_input=True,
                 name=name,
                 relation_name=stream,
@@ -169,7 +169,7 @@ class DBSPPipelineConfig:
 
         self.attached_connectors.append(
             AttachedConnector(
-                connector_id=connector.connector_id,
+                connector_name=connector.name,
                 is_input=False,
                 name=name,
                 relation_name=stream,
@@ -254,7 +254,7 @@ class DBSPPipelineConfig:
 
         if self.pipeline_id == None:
             body = NewPipelineRequest(
-                program_id=self.project.program_id,
+                program_name=self.project.program_name,
                 name=self.name,
                 description=self.description,
                 config=self.runtime_config(),
@@ -267,7 +267,7 @@ class DBSPPipelineConfig:
             self.pipeline_version = response.version
         else:
             body = UpdatePipelineRequest(
-                program_id=self.project.program_id,
+                program_name=self.project.program_name,
                 name=self.name,
                 description=self.description,
                 config=self.runtime_config(),

@@ -15,7 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::{examples, parse_uuid_param},
     auth::TenantId,
-    db::{storage::Storage, AttachedConnector, DBError, PipelineId, ProgramId, Version},
+    db::{storage::Storage, AttachedConnector, DBError, PipelineId, Version},
 };
 
 use super::{ManagerError, ServerState};
@@ -23,15 +23,16 @@ use uuid::Uuid;
 
 /// Request to create a new pipeline.
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NewPipelineRequest {
-    /// Config name.
+    /// Unique pipeline name.
     name: String,
-    /// Config description.
+    /// Pipeline description.
     description: String,
-    /// Program to create config for.
-    program_id: Option<ProgramId>,
-    /// Pipeline configuration parameters.
-    /// These knobs are independent of any connector
+    /// Name of the program to create a pipeline for.
+    program_name: Option<String>,
+    /// Pipeline configuration parameters (e.g. number of workers).
+    /// These knobs are independent of any connector attached to the pipeline.
     config: RuntimeConfig,
     /// Attached connectors.
     connectors: Option<Vec<AttachedConnector>>,
@@ -40,9 +41,9 @@ pub(crate) struct NewPipelineRequest {
 /// Response to a pipeline creation request.
 #[derive(Serialize, ToSchema)]
 pub(crate) struct NewPipelineResponse {
-    /// Id of the newly created config.
+    /// ID of the newly created pipeline.
     pipeline_id: PipelineId,
-    /// Initial config version (this field is always set to 1).
+    /// Initial pipeline version (this field is always set to 1).
     version: Version,
 }
 
@@ -56,6 +57,7 @@ pub struct PipelineIdOrNameQuery {
 
 /// Request to update an existing pipeline.
 #[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UpdatePipelineRequest {
     /// New pipeline name.
     name: String,
@@ -63,7 +65,7 @@ pub(crate) struct UpdatePipelineRequest {
     description: String,
     /// New program to create a pipeline for. If absent, program will be set to
     /// NULL.
-    program_id: Option<ProgramId>,
+    program_name: Option<String>,
     /// New pipeline configuration. If absent, the existing configuration will
     /// be kept unmodified.
     config: Option<RuntimeConfig>,
@@ -126,7 +128,7 @@ pub(crate) async fn new_pipeline(
         .new_pipeline(
             *tenant_id,
             Uuid::now_v7(),
-            request.program_id,
+            &request.program_name,
             &request.name,
             &request.description,
             &request.config,
@@ -179,7 +181,7 @@ pub(crate) async fn update_pipeline(
         .update_pipeline(
             *tenant_id,
             pipeline_id,
-            body.program_id,
+            &body.program_name,
             &body.name,
             &body.description,
             &body.config,

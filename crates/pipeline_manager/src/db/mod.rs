@@ -600,26 +600,26 @@ impl PipelineRevision {
             return Err(DBError::ProgramFailedToCompile);
         }
         // The pipline program_id is set
-        if pipeline.program_id.is_none() {
+        if pipeline.program_name.is_none() {
             return Err(DBError::ProgramNotSet);
         }
-        // ..  and matches the provided program id (this is an assert because
+        // ..  and matches the provided program name (this is an assert because
         // it's an error that can't be caused by a end-user)
         assert_eq!(
-            pipeline.program_id.unwrap(),
-            program.program_id,
+            pipeline.program_name.clone().unwrap(),
+            program.name,
             "pre-condition: pipeline program and program_descr match"
         );
         // We supplied all connectors referenced by the `pipeline`, also an assert
         // (not possible to trigger by end-user)
         assert_eq!(
-            HashSet::<Uuid>::from_iter(
+            HashSet::<String>::from_iter(
                 pipeline
                     .attached_connectors
                     .iter()
-                    .map(|ac| ac.connector_id.0)
+                    .map(|ac| ac.connector_name.clone())
             ),
-            HashSet::from_iter(connectors.iter().map(|c| c.connector_id.0)),
+            HashSet::from_iter(connectors.iter().map(|c| c.name.clone())),
             "pre-condition: supplied all connectors necessary"
         );
 
@@ -682,12 +682,10 @@ impl PipelineRevision {
         // Expand input and output attached connectors
         let mut expanded_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
         for ac in inputs.iter() {
-            let connector = connectors
-                .iter()
-                .find(|c| ac.connector_id == c.connector_id);
+            let connector = connectors.iter().find(|c| ac.connector_name == c.name);
             if connector.is_none() {
-                return Err(DBError::UnknownConnector {
-                    connector_id: ac.connector_id,
+                return Err(DBError::UnknownConnectorName {
+                    connector_name: ac.connector_name.clone(),
                 });
             }
             let input_endpoint_config = InputEndpointConfig {
@@ -699,12 +697,10 @@ impl PipelineRevision {
         let mut expanded_outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> =
             BTreeMap::new();
         for ac in outputs.iter() {
-            let connector = connectors
-                .iter()
-                .find(|c| ac.connector_id == c.connector_id);
+            let connector = connectors.iter().find(|c| ac.connector_name == c.name);
             if connector.is_none() {
-                return Err(DBError::UnknownConnector {
-                    connector_id: ac.connector_id,
+                return Err(DBError::UnknownConnectorName {
+                    connector_name: ac.connector_name.clone(),
                 });
             }
             let output_endpoint_config = OutputEndpointConfig {
@@ -732,7 +728,7 @@ impl PipelineRevision {
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub(crate) struct PipelineDescr {
     pub pipeline_id: PipelineId,
-    pub program_id: Option<ProgramId>,
+    pub program_name: Option<String>,
     pub version: Version,
     pub name: String,
     pub description: String,
@@ -818,8 +814,8 @@ pub(crate) struct AttachedConnector {
     pub name: String,
     /// True for input connectors, false for output connectors.
     pub is_input: bool,
-    /// The id of the connector to attach.
-    pub connector_id: ConnectorId,
+    /// The name of the connector to attach.
+    pub connector_name: String,
     /// The table or view this connector is attached to. Unquoted
     /// table/view names in the SQL program need to be capitalized
     /// here. Quoted table/view names have to exactly match the
@@ -1509,11 +1505,12 @@ impl Storage for ProjectDB {
                 .get_committed_pipeline_by_id(tenant_id, pipeline_id, revision)
                 .await?;
             // expect() is ok here - we don't allow to commit something without a program
-            let program_id = pipeline
-                .program_id
+            let program_name = pipeline
+                .program_name
+                .as_ref()
                 .expect("pre-condition: pipeline has a program");
             let program = self
-                .get_committed_program_by_id(tenant_id, program_id, revision)
+                .get_committed_program_by_name(tenant_id, program_name, revision)
                 .await?;
             let connectors = self
                 .get_committed_connectors_by_id(tenant_id, pipeline_id, revision)
@@ -1531,9 +1528,9 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name, p.description, p.config, program.name,
             COALESCE(json_agg(json_build_object('name', ac.name,
-                                                'connector_id', connector_id,
+                                                'connector_name', c.name,
                                                 'config', ac.config,
                                                 'is_input', is_input))
                             FILTER (WHERE ac.name IS NOT NULL),
@@ -1541,9 +1538,11 @@ impl Storage for ProjectDB {
             rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
             FROM pipeline p
             INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+            LEFT JOIN program on p.program_id = program.id
             LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+            LEFT JOIN connector c on ac.connector_id = c.id
             WHERE p.tenant_id = $1
-            GROUP BY p.id, rt.id;",
+            GROUP BY p.id, rt.id, program.name;",
             )
             .await?;
 
@@ -1567,9 +1566,9 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1577,9 +1576,11 @@ impl Storage for ProjectDB {
                 rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
                 FROM pipeline p
                 INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+                LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.id = $1 AND p.tenant_id = $2
-                GROUP BY p.id, rt.id
+                GROUP BY p.id, rt.id, program.name
                 ",
             )
             .await?;
@@ -1600,17 +1601,19 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
                         '[]')
                 FROM pipeline p
+                LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.id = $1 AND p.tenant_id = $2
-                GROUP BY p.id
+                GROUP BY p.id, program.name
                 ",
             )
             .await?;
@@ -1652,17 +1655,19 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
                         '[]')
                 FROM pipeline p
+                LEFT JOIN program prog on p.program_id = prog.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.name = $1 AND p.tenant_id = $2
-                GROUP BY p.id
+                GROUP BY p.id, prog.name
                 ",
             )
             .await?;
@@ -1683,9 +1688,9 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1693,9 +1698,11 @@ impl Storage for ProjectDB {
                 rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
                 FROM pipeline p
                 INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+                LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.name = $1 AND p.tenant_id = $2
-                GROUP BY p.id, rt.id
+                GROUP BY p.id, rt.id, program.name
                 ",
             )
             .await?;
@@ -1713,7 +1720,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         id: Uuid,
-        program_id: Option<ProgramId>,
+        program_name: &Option<String>,
         pipline_name: &str,
         pipeline_description: &str,
         config: &RuntimeConfig,
@@ -1723,13 +1730,26 @@ impl Storage for ProjectDB {
         let txn = client.transaction().await?;
         let new_pipeline = txn
             .prepare_cached(
-                "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) VALUES($1, $2, 1, $3, $4, $5, $6)")
+                "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) 
+                 VALUES($1, $2, 1, $3, $4, $5, $6)")
             .await?;
         let new_runtime_state = txn
             .prepare_cached(
                 "INSERT INTO pipeline_runtime_state (id, tenant_id, desired_status, current_status, status_since, created) VALUES($1, $2, 'shutdown', 'shutdown', extract(epoch from now()), extract(epoch from now()))")
             .await?;
-
+        let program_id = if let Some(program_name) = program_name {
+            let get_program_id = txn
+                .prepare_cached("SELECT id FROM program WHERE tenant_id = $1 AND name = $2")
+                .await?;
+            txn.query_opt(&get_program_id, &[&tenant_id.0, &program_name])
+                .await?
+                .map(|r| Some(ProgramId(r.get(0))))
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?
+        } else {
+            None
+        };
         let config_str = RuntimeConfig::to_yaml(config);
         txn.execute(
             &new_pipeline,
@@ -1777,18 +1797,16 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        program_id: Option<ProgramId>,
+        program_name: &Option<String>,
         pipline_name: &str,
         pipeline_description: &str,
         config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<Version, DBError> {
         log::trace!(
-            "Updating config {} {} {} {} {:?} {:?}",
+            "Updating config {} {:?} {} {} {:?} {:?}",
             pipeline_id.0,
-            program_id
-                .map(|pid| pid.0.to_string())
-                .unwrap_or("<not set>".into()),
+            program_name,
             pipline_name,
             pipeline_description,
             config,
@@ -1798,6 +1816,9 @@ impl Storage for ProjectDB {
         let txn = client.transaction().await?;
         let find_pipeline_id = txn
             .prepare_cached("SELECT id FROM pipeline WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let get_program_id = txn
+            .prepare_cached("SELECT id FROM program WHERE tenant_id = $1 AND name = $2")
             .await?;
         let delete_ac = txn
             .prepare_cached(
@@ -1818,6 +1839,17 @@ impl Storage for ProjectDB {
         if row.is_none() {
             return Err(DBError::UnknownPipeline { pipeline_id });
         }
+        // Next, check if the program exists
+        let program_id = if let Some(program_name) = program_name {
+            txn.query_opt(&get_program_id, &[&tenant_id.0, &program_name])
+                .await?
+                .map(|r| Some(ProgramId(r.get(0))))
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?
+        } else {
+            None
+        };
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
             txn.execute(&delete_ac, &[&pipeline_id.0, &tenant_id.0])
@@ -2645,10 +2677,10 @@ impl ProjectDB {
 
     async fn row_to_pipeline_descr(&self, row: &Row) -> Result<PipelineDescr, DBError> {
         let pipeline_id = PipelineId(row.get(0));
-        let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+        let program_name = row.get::<_, Option<String>>(5);
         Ok(PipelineDescr {
             pipeline_id,
-            program_id,
+            program_name,
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
@@ -2681,10 +2713,10 @@ impl ProjectDB {
 
     async fn row_to_pipeline(&self, row: &Row) -> Result<Pipeline, DBError> {
         let pipeline_id = PipelineId(row.get(0));
-        let program_id = row.get::<_, Option<Uuid>>(5).map(ProgramId);
+        let program_name = row.get::<_, Option<String>>(5);
         let descriptor = PipelineDescr {
             pipeline_id,
-            program_id,
+            program_name,
             version: Version(row.get(1)),
             name: row.get(2),
             description: row.get(3),
@@ -2747,8 +2779,13 @@ impl ProjectDB {
         let pipeline = self
             .get_pipeline_descr_by_id(tenant_id, pipeline_id)
             .await?;
-        let program_id = pipeline.program_id.ok_or(DBError::ProgramNotSet)?;
-        let program = self.get_program_by_id(tenant_id, program_id, true).await?;
+        let program_name = pipeline
+            .program_name
+            .as_ref()
+            .ok_or(DBError::ProgramNotSet)?;
+        let program = self
+            .get_program_by_name(tenant_id, program_name, true)
+            .await?;
         let connectors = self
             .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
             .await?;
@@ -2771,37 +2808,38 @@ impl ProjectDB {
         PipelineRevision::generate_pipeline_config(&pipeline, &connectors)
     }
 
-    async fn get_committed_program_by_id(
+    async fn get_committed_program_by_name(
         &self,
         tenant_id: TenantId,
-        program_id: ProgramId,
+        program_name: &str,
         revision: Revision,
     ) -> Result<ProgramDescr, DBError> {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
                 "SELECT
-                name, description, version, status, error, schema, code
-                FROM program_history WHERE id = $1 AND tenant_id = $2 AND revision = $3",
+                id, name, description, version, status, error, schema, code
+                FROM program_history WHERE tenant_id = $1 AND  name = $2 AND revision = $3",
             )
             .await?;
         let row = manager
-            .query_opt(&stmt, &[&program_id.0, &tenant_id.0, &revision.0])
+            .query_opt(&stmt, &[&tenant_id.0, &program_name, &revision.0])
             .await?;
 
         if let Some(row) = row {
-            let name: String = row.get(0);
-            let description: String = row.get(1);
-            let version: Version = Version(row.get(2));
-            let status: Option<String> = row.get(3);
-            let error: Option<String> = row.get(4);
+            let program_id: ProgramId = ProgramId(row.get(0));
+            let name: String = row.get(1);
+            let description: String = row.get(2);
+            let version: Version = Version(row.get(3));
+            let status: Option<String> = row.get(4);
+            let error: Option<String> = row.get(5);
             let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(5)
+                .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
             let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-            let code = row.get(6);
+            let code = row.get(7);
             Ok(ProgramDescr {
                 program_id,
                 name,
@@ -2812,7 +2850,9 @@ impl ProjectDB {
                 code,
             })
         } else {
-            Err(DBError::UnknownProgram { program_id })
+            Err(DBError::UnknownProgramName {
+                program_name: program_name.to_string(),
+            })
         }
     }
 
@@ -2825,17 +2865,19 @@ impl ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
                 COALESCE(json_agg(json_build_object('name', ach.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_name', ch.name,
                                                     'config', ach.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ach.name IS NOT NULL),
                         '[]')
                 FROM pipeline_history p
+                LEFT JOIN program_history prog on p.program_id = prog.id AND prog.revision = $3
                 LEFT JOIN attached_connector_history ach on p.id = ach.pipeline_id AND ach.revision = $3
+                LEFT JOIN connector_history ch on ach.connector_id = ch.id
                 WHERE p.id = $1 AND p.tenant_id = $2 AND p.revision = $3
-                GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id
+                GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id, prog.name
                 ")
             .await?;
         let row = manager
@@ -2935,7 +2977,7 @@ impl ProjectDB {
         let stmt = txn.prepare_cached("INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config, tenant_id)
             SELECT $2, $3, id, $5, $6, tenant_id
             FROM connector
-            WHERE tenant_id = $1 AND id = $4")
+            WHERE tenant_id = $1 AND name = $4")
         .await?;
         let rows = txn
             .execute(
@@ -2944,7 +2986,7 @@ impl ProjectDB {
                     &tenant_id.0,
                     &ac.name,
                     &pipeline_id.0,
-                    &ac.connector_id.0,
+                    &ac.connector_name,
                     &ac.is_input,
                     &ac.relation_name,
                 ],
@@ -2953,8 +2995,8 @@ impl ProjectDB {
             .map_err(|e| Self::maybe_pipeline_id_foreign_key_constraint_err(e, pipeline_id))
             .await?;
         if rows == 0 {
-            Err(DBError::UnknownConnector {
-                connector_id: ac.connector_id,
+            Err(DBError::UnknownConnectorName {
+                connector_name: ac.connector_name.to_string(),
             })
         } else {
             Ok(())
@@ -2971,14 +3013,20 @@ impl ProjectDB {
             let obj = connector.as_object().unwrap();
             let is_input: bool = obj.get("is_input").unwrap().as_bool().unwrap();
 
-            let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
-            let connector_id = ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| {
-                DBError::invalid_data(format!("error parsing connector id '{uuid_str}': {e}"))
-            })?);
+            // let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
+            // let connector_id = ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| {
+            //     DBError::invalid_data(format!("error parsing connector id '{uuid_str}':
+            // {e}")) })?);
+            let connector_name = obj
+                .get("connector_name")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
 
             attached_connectors.push(AttachedConnector {
                 name: obj.get("name").unwrap().as_str().unwrap().to_owned(),
-                connector_id,
+                connector_name,
                 relation_name: obj.get("config").unwrap().as_str().unwrap().to_owned(),
                 is_input,
             });

@@ -27,14 +27,15 @@ class UpdatePipelineRequest:
 
             - If present all existing connectors will be replaced with the new
             specified list.
-        program_id (Union[Unset, None, str]): Unique program id.
+        program_name (Union[Unset, None, str]): New program to create a pipeline for. If absent, program will be set to
+            NULL.
     """
 
     description: str
     name: str
     config: Union[Unset, None, "RuntimeConfig"] = UNSET
     connectors: Union[Unset, None, List["AttachedConnector"]] = UNSET
-    program_id: Union[Unset, None, str] = UNSET
+    program_name: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -55,7 +56,7 @@ class UpdatePipelineRequest:
 
                     connectors.append(connectors_item)
 
-        program_id = self.program_id
+        program_name = self.program_name
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -69,8 +70,8 @@ class UpdatePipelineRequest:
             field_dict["config"] = config
         if connectors is not UNSET:
             field_dict["connectors"] = connectors
-        if program_id is not UNSET:
-            field_dict["program_id"] = program_id
+        if program_name is not UNSET:
+            field_dict["program_name"] = program_name
 
         return field_dict
 
@@ -100,14 +101,14 @@ class UpdatePipelineRequest:
 
             connectors.append(connectors_item)
 
-        program_id = d.pop("program_id", UNSET)
+        program_name = d.pop("program_name", UNSET)
 
         update_pipeline_request = cls(
             description=description,
             name=name,
             config=config,
             connectors=connectors,
-            program_id=program_id,
+            program_name=program_name,
         )
 
         update_pipeline_request.additional_properties = d

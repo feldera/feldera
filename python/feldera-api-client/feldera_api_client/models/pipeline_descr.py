@@ -24,7 +24,7 @@ class PipelineDescr:
         name (str):
         pipeline_id (str): Unique pipeline id.
         version (int): Version number.
-        program_id (Union[Unset, None, str]): Unique program id.
+        program_name (Union[Unset, None, str]):
     """
 
     attached_connectors: List["AttachedConnector"]
@@ -33,7 +33,7 @@ class PipelineDescr:
     name: str
     pipeline_id: str
     version: int
-    program_id: Union[Unset, None, str] = UNSET
+    program_name: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -49,7 +49,7 @@ class PipelineDescr:
         name = self.name
         pipeline_id = self.pipeline_id
         version = self.version
-        program_id = self.program_id
+        program_name = self.program_name
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -63,8 +63,8 @@ class PipelineDescr:
                 "version": version,
             }
         )
-        if program_id is not UNSET:
-            field_dict["program_id"] = program_id
+        if program_name is not UNSET:
+            field_dict["program_name"] = program_name
 
         return field_dict
 
@@ -91,7 +91,7 @@ class PipelineDescr:
 
         version = d.pop("version")
 
-        program_id = d.pop("program_id", UNSET)
+        program_name = d.pop("program_name", UNSET)
 
         pipeline_descr = cls(
             attached_connectors=attached_connectors,
@@ -100,7 +100,7 @@ class PipelineDescr:
             name=name,
             pipeline_id=pipeline_id,
             version=version,
-            program_id=program_id,
+            program_name=program_name,
         )
 
         pipeline_descr.additional_properties = d
