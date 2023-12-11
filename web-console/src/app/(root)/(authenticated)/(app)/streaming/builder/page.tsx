@@ -27,14 +27,15 @@ import {
 import { invalidatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
 import assert from 'assert'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
+import IconCheck from '~icons/bx/check'
 
-import { Card, CardContent, Link } from '@mui/material'
+import { Button, Card, CardContent, Link } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -63,6 +64,7 @@ const PipelineBuilderPage = (props: {
   pipelineId: PipelineId | undefined
   setPipelineId: Dispatch<SetStateAction<PipelineId | undefined>>
 }) => {
+  const router = useRouter()
   const [hash, setHash] = useHashPart()
   const showOnHash = showOnHashPart([hash, setHash])
   const queryClient = useQueryClient()
@@ -373,9 +375,30 @@ const PipelineBuilderPage = (props: {
         setOpen={setMissingSchemaDialog}
         program_id={project?.program_id}
       />
-      {(id => id && <UnknownConnectorDialog {...showOnHash('edit/connector')} connectorId={id} />)(
-        /edit\/connector\/([\w-]+)/.exec(hash)?.[1]
-      )}
+      {(id =>
+        id && (
+          <UnknownConnectorDialog
+            {...showOnHash('edit/connector')}
+            connectorId={id}
+            existingTitle={name => 'Update ' + name}
+            submitButton={
+              <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
+                Update
+              </Button>
+            }
+          />
+        ))(/edit\/connector\/([\w-]+)/.exec(hash)?.[1])}
+      {(id =>
+        id && (
+          <UnknownConnectorDialog
+            show={hash.startsWith('view/connector')}
+            setShow={() => router.back()}
+            connectorId={id}
+            existingTitle={name => 'Inspect ' + name}
+            submitButton={<></>}
+            disabled={true}
+          />
+        ))(/view\/connector\/([\w-]+)/.exec(hash)?.[1])}
     </>
   )
 }

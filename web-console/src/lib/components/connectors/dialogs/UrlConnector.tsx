@@ -107,12 +107,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
 
   const tabList = ['detailsTab', 'formatTab']
   const tabFooter = (
-    <TabFooter
-      isUpdate={props.connector !== undefined}
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      tabsArr={tabList}
-    />
+    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabsArr={tabList} />
   )
   return (
     <Dialog
@@ -204,6 +199,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       fullWidth
                       placeholder={PLACEHOLDER_VALUES['connector_name']}
                       aria-describedby='validation-name'
+                      disabled={props.disabled}
                     />
                   </Grid>
                   <Grid item sm={8} xs={12}>
@@ -214,6 +210,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       fullWidth
                       placeholder={PLACEHOLDER_VALUES['connector_description']}
                       aria-describedby='validation-description'
+                      disabled={props.disabled}
                     />
                   </Grid>
                   <Grid item sm={12} xs={12}>
@@ -224,6 +221,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       fullWidth
                       placeholder='https://gist.githubusercontent.com/...'
                       aria-describedby='validation-description'
+                      disabled={props.disabled}
                     />
                   </Grid>
                 </Grid>
@@ -235,7 +233,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
                 {/* @ts-ignore: TODO: This type mismatch seems like a bug in hook-form and/or resolvers */}
-                <TabGenericInputFormatDetails />
+                <TabGenericInputFormatDetails disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
             </TabContext>

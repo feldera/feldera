@@ -8,7 +8,7 @@ import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
 import TextField from '@mui/material/TextField'
 
-const TabKafkaInputDetails = () => {
+const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
   const ctx = useFormContext()
   return (
     <Grid container spacing={4}>
@@ -21,6 +21,7 @@ const TabKafkaInputDetails = () => {
           placeholder='kafka.example.com'
           aria-describedby='validation-host'
           fullWidth
+          disabled={props.disabled}
         />
 
         <Grid item xs={12}>
@@ -40,6 +41,7 @@ const TabKafkaInputDetails = () => {
               }
             ]}
             helperText='From when to consume the topics.'
+            disabled={props.disabled}
           ></SelectElement>
         </Grid>
 
@@ -51,6 +53,7 @@ const TabKafkaInputDetails = () => {
             fullWidth
             placeholder='my-group-id'
             aria-describedby='validation-group-id'
+            disabled={props.disabled}
           />
         </Grid>
 
@@ -81,6 +84,7 @@ const TabKafkaInputDetails = () => {
                 )}
               />
             )}
+            disabled={props.disabled}
           />
           {(e =>
             e ? (

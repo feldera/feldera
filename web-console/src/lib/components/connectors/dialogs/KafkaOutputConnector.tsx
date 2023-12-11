@@ -126,12 +126,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
 
   const tabList = ['detailsTab', 'sourceTab', 'authTab', 'formatTab']
   const tabFooter = (
-    <TabFooter
-      isUpdate={props.connector !== undefined}
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      tabsArr={tabList}
-    />
+    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabsArr={tabList} />
   )
 
   return (
@@ -164,7 +159,7 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              {props.connector === undefined ? 'New Kafka Output' : 'Update ' + props.connector.name}
+              {props.connector === undefined ? 'New Kafka Output' : props.existingTitle?.(props.connector.name) ?? ''}
             </Typography>
             {props.connector === undefined && <Typography variant='body2'>Add a Kafka Output.</Typography>}
           </Box>
@@ -239,25 +234,25 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 value='detailsTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabKafkaNameAndDesc direction={Direction.OUTPUT} />
+                <TabKafkaNameAndDesc direction={Direction.OUTPUT} disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
               <TabPanel
                 value='sourceTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabkafkaOutputDetails />
+                <TabkafkaOutputDetails disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
               <TabPanel value='authTab' sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}>
-                <TabKafkaAuth />
+                <TabKafkaAuth disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
               <TabPanel
                 value='formatTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabOutputFormatDetails />
+                <TabOutputFormatDetails disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
             </TabContext>

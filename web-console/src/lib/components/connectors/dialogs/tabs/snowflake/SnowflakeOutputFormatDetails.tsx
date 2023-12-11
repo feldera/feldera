@@ -3,7 +3,7 @@ import { SelectElement } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
 
-export const SnowflakeOutputFormatDetails = () => {
+export const SnowflakeOutputFormatDetails = (props: { disabled?: boolean }) => {
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
@@ -23,6 +23,7 @@ export const SnowflakeOutputFormatDetails = () => {
               disabled: true
             }
           ]}
+          disabled={props.disabled}
         ></SelectElement>
       </GridItems>
     </Grid>

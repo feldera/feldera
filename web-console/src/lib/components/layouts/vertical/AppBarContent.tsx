@@ -6,7 +6,6 @@ import Menu from 'mdi-material-ui/Menu'
 import { Settings } from 'src/@core/context/settingsTypes'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
 import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
-import invariant from 'tiny-invariant'
 import IconLockOpenAlt from '~icons/bx/lock-open-alt'
 
 import { Tooltip } from '@mui/material'

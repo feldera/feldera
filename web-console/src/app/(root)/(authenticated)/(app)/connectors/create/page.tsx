@@ -15,12 +15,16 @@ import { useHashPart } from '$lib/compositions/useHashPart'
 import { connectorTypeToLogo } from '$lib/functions/connectors'
 import { showOnHashPart } from '$lib/functions/urlHash'
 import { ConnectorType } from '$lib/types/connectors'
+import { match } from 'ts-pattern'
+import IconCheck from '~icons/bx/check'
 
-import { Link } from '@mui/material'
+import { Button, Link } from '@mui/material'
 import Grid from '@mui/material/Grid'
 
 const ConnectorCreateGrid = () => {
-  const showOnHash = showOnHashPart(useHashPart())
+  const [hash, setHash] = useHashPart()
+  const showOnHash = showOnHashPart([hash, setHash])
+
   // id is referenced by webui-tester
   return (
     <>
@@ -60,12 +64,29 @@ const ConnectorCreateGrid = () => {
           />
         </GridItems>
       </Grid>
-      <UrlConnectorDialog {...showOnHash('input/url')}></UrlConnectorDialog>
-      <KafkaInputConnectorDialog {...showOnHash('input/kafka')}></KafkaInputConnectorDialog>
-      <KafkaOutputConnectorDialog {...showOnHash('output/kafka')}></KafkaOutputConnectorDialog>
-      <DebeziumInputConnectorDialog {...showOnHash('input/debezium')}></DebeziumInputConnectorDialog>
-      <SnowflakeOutputConnectorDialog {...showOnHash('output/snowflake')}></SnowflakeOutputConnectorDialog>
-      <ConfigEditorDialog {...showOnHash('generic')}></ConfigEditorDialog>
+      {(Dialog =>
+        Dialog ? (
+          <Dialog
+            {...showOnHash(hash)}
+            existingTitle={null}
+            submitButton={
+              <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
+                Create
+              </Button>
+            }
+          />
+        ) : (
+          <></>
+        ))(
+        match(hash)
+          .with('input/url', () => UrlConnectorDialog)
+          .with('input/kafka', () => KafkaInputConnectorDialog)
+          .with('output/kafka', () => KafkaOutputConnectorDialog)
+          .with('input/debezium', () => DebeziumInputConnectorDialog)
+          .with('output/snowflake', () => SnowflakeOutputConnectorDialog)
+          .with('generic', () => ConfigEditorDialog)
+          .otherwise(() => null)
+      )}
     </>
   )
 }

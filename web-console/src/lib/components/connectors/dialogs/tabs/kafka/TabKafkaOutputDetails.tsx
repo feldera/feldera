@@ -3,7 +3,7 @@ import { TextFieldElement } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
 
-const TabkafkaOutputDetails = () => {
+const TabkafkaOutputDetails = (props: { disabled?: boolean }) => {
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
@@ -15,6 +15,7 @@ const TabkafkaOutputDetails = () => {
           fullWidth
           placeholder='kafka.example.com'
           aria-describedby='validation-host'
+          disabled={props.disabled}
         />
 
         <TextFieldElement
@@ -24,6 +25,7 @@ const TabkafkaOutputDetails = () => {
           fullWidth
           placeholder='my-topic'
           aria-describedby='validation-topic'
+          disabled={props.disabled}
         />
       </GridItems>
     </Grid>

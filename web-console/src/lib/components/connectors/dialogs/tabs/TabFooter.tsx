@@ -1,6 +1,5 @@
 // Footer for a dialog with tabs it contains the next and previous buttons. The
 
-import IconCheck from '~icons/bx/check'
 import IconLeftArrowAlt from '~icons/bx/left-arrow-alt'
 import IconRightArrowAlt from '~icons/bx/right-arrow-alt'
 
@@ -8,7 +7,7 @@ import IconRightArrowAlt from '~icons/bx/right-arrow-alt'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 
-const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: string[]; isUpdate: boolean }) => {
+const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: string[]; submitButton: JSX.Element }) => {
   const { activeTab, setActiveTab, tabsArr } = props
 
   const prevTab = tabsArr[tabsArr.indexOf(activeTab) - 1]
@@ -16,27 +15,20 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
   const onLastTab = activeTab === tabsArr[tabsArr.length - 1]
   const onFirstTab = activeTab === tabsArr[0]
 
-  let nextOrSaveButton
-  if (!onLastTab) {
-    nextOrSaveButton = (
-      <Button
-        variant='contained'
-        color='primary'
-        endIcon={<IconRightArrowAlt />}
-        onClick={() => {
-          setActiveTab(nextTab)
-        }}
-      >
-        Next
-      </Button>
-    )
-  } else {
-    nextOrSaveButton = (
-      <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
-        {props.isUpdate ? 'Update' : 'Create'}
-      </Button>
-    )
-  }
+  const nextOrSaveButton = onLastTab ? (
+    props.submitButton
+  ) : (
+    <Button
+      variant='contained'
+      color='primary'
+      endIcon={<IconRightArrowAlt />}
+      onClick={() => {
+        setActiveTab(nextTab)
+      }}
+    >
+      Next
+    </Button>
+  )
 
   return (
     <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

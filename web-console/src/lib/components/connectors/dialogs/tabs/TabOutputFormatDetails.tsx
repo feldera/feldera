@@ -4,7 +4,7 @@ import { SelectElement, SwitchElement, useFormContext } from 'react-hook-form-mu
 
 import Grid from '@mui/material/Grid'
 
-const TabOutputFormatDetails = () => {
+const TabOutputFormatDetails = (props: { disabled?: boolean }) => {
   const selectedFormat = useFormContext<KafkaOutputSchema>().watch('format_name')
 
   return (
@@ -24,10 +24,16 @@ const TabOutputFormatDetails = () => {
               label: 'CSV'
             }
           ]}
+          disabled={props.disabled}
         ></SelectElement>
 
         {selectedFormat === 'json' && (
-          <SwitchElement name='json_array' label='Wrap records in an array' defaultValue='false' />
+          <SwitchElement
+            name='json_array'
+            label='Wrap records in an array'
+            defaultValue='false'
+            disabled={props.disabled}
+          />
         )}
       </GridItems>
     </Grid>

@@ -5,14 +5,20 @@ import { useQuery } from '@tanstack/react-query'
 
 import { AnyConnectorDialog } from './AnyConnector'
 
-export const UnknownConnectorDialog = (props: {
+export const UnknownConnectorDialog = ({
+  connectorId,
+  ...props
+}: {
   connectorId: string
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
+  existingTitle: (name: string) => string
+  submitButton: JSX.Element
+  disabled?: boolean
 }) => {
-  const { data } = useQuery(PipelineManagerQuery.connectorStatus(props.connectorId))
+  const { data } = useQuery(PipelineManagerQuery.connectorStatus(connectorId))
   if (!data) {
     return <></>
   }
-  return <AnyConnectorDialog show={props.show} setShow={props.setShow} connector={data}></AnyConnectorDialog>
+  return <AnyConnectorDialog connector={data} {...props}></AnyConnectorDialog>
 }

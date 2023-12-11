@@ -1,6 +1,6 @@
 'use client'
 
-import { AuthData, useAuth } from '$lib/compositions/auth/useAuth'
+import { useAuth } from '$lib/compositions/auth/useAuth'
 import AccountOutline from 'mdi-material-ui/AccountOutline'
 import CogOutline from 'mdi-material-ui/CogOutline'
 import LogoutVariant from 'mdi-material-ui/LogoutVariant'

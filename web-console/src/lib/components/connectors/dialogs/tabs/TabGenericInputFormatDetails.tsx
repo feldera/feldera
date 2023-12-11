@@ -3,7 +3,7 @@ import { SelectElement, SwitchElement, useWatch } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
 
-const TabGenericInputFormatDetails = () => {
+const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
   const watch = useWatch()
   const selectedFormat = watch['format_name']
 
@@ -25,6 +25,7 @@ const TabGenericInputFormatDetails = () => {
               label: 'CSV'
             }
           ]}
+          disabled={props.disabled}
         ></SelectElement>
 
         {selectedFormat === 'json' && (
@@ -43,8 +44,14 @@ const TabGenericInputFormatDetails = () => {
                   label: 'Insert & Delete'
                 }
               ]}
+              disabled={props.disabled}
             ></SelectElement>
-            <SwitchElement label='Records wrapped in an array' name='json_array' defaultValue={'false'} />
+            <SwitchElement
+              label='Records wrapped in an array'
+              name='json_array'
+              defaultValue={'false'}
+              disabled={props.disabled}
+            />
           </>
         )}
       </GridItems>
