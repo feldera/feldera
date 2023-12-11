@@ -59,7 +59,7 @@ def _build_response(
 def sync_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
     """Return the currently deployed version of the pipeline, if any.
 
@@ -90,7 +90,7 @@ def sync_detailed(
 def sync(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
     """Return the currently deployed version of the pipeline, if any.
 
@@ -116,7 +116,7 @@ def sync(
 async def asyncio_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, Optional[PipelineRevision]]]:
     """Return the currently deployed version of the pipeline, if any.
 
@@ -145,7 +145,7 @@ async def asyncio_detailed(
 async def asyncio(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, Optional[PipelineRevision]]]:
     """Return the currently deployed version of the pipeline, if any.
 

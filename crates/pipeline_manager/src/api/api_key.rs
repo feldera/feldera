@@ -64,6 +64,7 @@ pub(crate) struct ApiKeyNameQuery {
         )
     ),
     params(ApiKeyNameQuery),
+    security(("JWT token or API key" = [])),
     tag = "API keys"
 )]
 #[get("/api_keys")]
@@ -85,7 +86,7 @@ pub(crate) async fn list_api_keys(
     }
 }
 
-/// List all API keys
+/// Get an API key description
 #[utoipa::path(
     responses(
         (status = OK, description = "API key retrieved successfully", body = ApiKeyDescr),
@@ -100,6 +101,7 @@ pub(crate) async fn list_api_keys(
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
+    security(("JWT token or API key" = [])),
     tag = "API keys"
 )]
 #[get("/api_keys/{api_key_name}")]
@@ -115,10 +117,10 @@ pub(crate) async fn get_api_key(
         .json(&vec![api_key]))
 }
 
-/// List all API keys
+/// Delete an API key
 #[utoipa::path(
     responses(
-        (status = OK, description = "API keys deleted successfully", body = [ApiKeyDescr]),
+        (status = OK, description = "API key deleted successfully"),
         (status = NOT_FOUND
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
@@ -130,6 +132,7 @@ pub(crate) async fn get_api_key(
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
+    security(("JWT token or API key" = [])),
     tag = "API keys"
 )]
 #[delete("/api_keys/{api_key_name}")]
@@ -159,6 +162,7 @@ pub(crate) async fn delete_api_key(
             , body = ErrorResponse
             , example = json!(examples::duplicate_name())),
     ),
+    security(("JWT token or API key" = [])),
     tag = "API keys"
 )]
 #[post("/api_keys")]

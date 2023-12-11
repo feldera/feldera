@@ -51,7 +51,7 @@ def _build_response(
 
 def sync_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewConnectorRequest,
 ) -> Response[NewConnectorResponse]:
     """Create a new connector.
@@ -82,7 +82,7 @@ def sync_detailed(
 
 def sync(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewConnectorRequest,
 ) -> Optional[NewConnectorResponse]:
     """Create a new connector.
@@ -108,7 +108,7 @@ def sync(
 
 async def asyncio_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewConnectorRequest,
 ) -> Response[NewConnectorResponse]:
     """Create a new connector.
@@ -137,7 +137,7 @@ async def asyncio_detailed(
 
 async def asyncio(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewConnectorRequest,
 ) -> Optional[NewConnectorResponse]:
     """Create a new connector.

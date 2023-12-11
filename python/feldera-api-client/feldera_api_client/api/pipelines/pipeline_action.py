@@ -63,7 +63,7 @@ def sync_detailed(
     pipeline_id: str,
     action: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Change the desired state of the pipeline.
 
@@ -114,7 +114,7 @@ def sync(
     pipeline_id: str,
     action: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Change the desired state of the pipeline.
 
@@ -160,7 +160,7 @@ async def asyncio_detailed(
     pipeline_id: str,
     action: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Change the desired state of the pipeline.
 
@@ -209,7 +209,7 @@ async def asyncio(
     pipeline_id: str,
     action: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Change the desired state of the pipeline.
 

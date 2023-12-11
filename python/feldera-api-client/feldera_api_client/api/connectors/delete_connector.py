@@ -56,7 +56,7 @@ def _build_response(
 def sync_detailed(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Delete an existing connector.
 
@@ -87,7 +87,7 @@ def sync_detailed(
 def sync(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Delete an existing connector.
 
@@ -113,7 +113,7 @@ def sync(
 async def asyncio_detailed(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Delete an existing connector.
 
@@ -142,7 +142,7 @@ async def asyncio_detailed(
 async def asyncio(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Delete an existing connector.
 

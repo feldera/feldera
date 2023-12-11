@@ -62,7 +62,7 @@ def _build_response(
 def sync_detailed(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: CompileProgramRequest,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Mark a program for compilation.
@@ -100,7 +100,7 @@ def sync_detailed(
 def sync(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: CompileProgramRequest,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Mark a program for compilation.
@@ -133,7 +133,7 @@ def sync(
 async def asyncio_detailed(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: CompileProgramRequest,
 ) -> Response[Union[Any, ErrorResponse]]:
     """Mark a program for compilation.
@@ -169,7 +169,7 @@ async def asyncio_detailed(
 async def asyncio(
     program_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: CompileProgramRequest,
 ) -> Optional[Union[Any, ErrorResponse]]:
     """Mark a program for compilation.

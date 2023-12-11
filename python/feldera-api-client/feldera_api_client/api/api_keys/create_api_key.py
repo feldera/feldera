@@ -56,7 +56,7 @@ def _build_response(
 
 def sync_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewApiKeyRequest,
 ) -> Response[Union[ApiKeyDescr, ErrorResponse]]:
     """Create an API key
@@ -87,7 +87,7 @@ def sync_detailed(
 
 def sync(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewApiKeyRequest,
 ) -> Optional[Union[ApiKeyDescr, ErrorResponse]]:
     """Create an API key
@@ -113,7 +113,7 @@ def sync(
 
 async def asyncio_detailed(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewApiKeyRequest,
 ) -> Response[Union[ApiKeyDescr, ErrorResponse]]:
     """Create an API key
@@ -142,7 +142,7 @@ async def asyncio_detailed(
 
 async def asyncio(
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: NewApiKeyRequest,
 ) -> Optional[Union[ApiKeyDescr, ErrorResponse]]:
     """Create an API key

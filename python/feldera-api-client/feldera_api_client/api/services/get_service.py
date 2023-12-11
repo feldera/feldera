@@ -54,7 +54,7 @@ def _build_response(
 def sync_detailed(
     service_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, ServiceDescr]]:
     """Fetch a service by ID.
 
@@ -85,7 +85,7 @@ def sync_detailed(
 def sync(
     service_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, ServiceDescr]]:
     """Fetch a service by ID.
 
@@ -111,7 +111,7 @@ def sync(
 async def asyncio_detailed(
     service_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, ServiceDescr]]:
     """Fetch a service by ID.
 
@@ -140,7 +140,7 @@ async def asyncio_detailed(
 async def asyncio(
     service_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, ServiceDescr]]:
     """Fetch a service by ID.
 

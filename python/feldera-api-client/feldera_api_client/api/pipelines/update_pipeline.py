@@ -60,7 +60,7 @@ def _build_response(
 def sync_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
 ) -> Response[Union[ErrorResponse, UpdatePipelineResponse]]:
     """Change a pipeline's name, description, code, configuration, or connectors.
@@ -95,7 +95,7 @@ def sync_detailed(
 def sync(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
 ) -> Optional[Union[ErrorResponse, UpdatePipelineResponse]]:
     """Change a pipeline's name, description, code, configuration, or connectors.
@@ -125,7 +125,7 @@ def sync(
 async def asyncio_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
 ) -> Response[Union[ErrorResponse, UpdatePipelineResponse]]:
     """Change a pipeline's name, description, code, configuration, or connectors.
@@ -158,7 +158,7 @@ async def asyncio_detailed(
 async def asyncio(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
 ) -> Optional[Union[ErrorResponse, UpdatePipelineResponse]]:
     """Change a pipeline's name, description, code, configuration, or connectors.

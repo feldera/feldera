@@ -58,7 +58,7 @@ def _build_response(
 def sync_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, PipelineStatsResponse200]]:
     """Retrieve pipeline metrics and performance counters.
 
@@ -89,7 +89,7 @@ def sync_detailed(
 def sync(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, PipelineStatsResponse200]]:
     """Retrieve pipeline metrics and performance counters.
 
@@ -115,7 +115,7 @@ def sync(
 async def asyncio_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, PipelineStatsResponse200]]:
     """Retrieve pipeline metrics and performance counters.
 
@@ -144,7 +144,7 @@ async def asyncio_detailed(
 async def asyncio(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, PipelineStatsResponse200]]:
     """Retrieve pipeline metrics and performance counters.
 

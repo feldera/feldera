@@ -60,7 +60,7 @@ def _build_response(
 def sync_detailed(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
     """Change a connector's name, description or configuration.
@@ -94,7 +94,7 @@ def sync_detailed(
 def sync(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
     """Change a connector's name, description or configuration.
@@ -123,7 +123,7 @@ def sync(
 async def asyncio_detailed(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
     """Change a connector's name, description or configuration.
@@ -155,7 +155,7 @@ async def asyncio_detailed(
 async def asyncio(
     connector_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
     """Change a connector's name, description or configuration.

@@ -56,7 +56,7 @@ def _build_response(
 def sync_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, str]]:
     """Validate a pipeline.
 
@@ -92,7 +92,7 @@ def sync_detailed(
 def sync(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, str]]:
     """Validate a pipeline.
 
@@ -123,7 +123,7 @@ def sync(
 async def asyncio_detailed(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, str]]:
     """Validate a pipeline.
 
@@ -157,7 +157,7 @@ async def asyncio_detailed(
 async def asyncio(
     pipeline_id: str,
     *,
-    client: Union[AuthenticatedClient, Client],
+    client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, str]]:
     """Validate a pipeline.
 

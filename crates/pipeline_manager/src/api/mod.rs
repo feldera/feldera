@@ -43,6 +43,7 @@ use log::info;
 use pipeline_types::error::ErrorResponse;
 use std::{env, net::TcpListener, sync::Arc};
 use tokio::sync::Mutex;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{openapi::Server, Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
@@ -74,7 +75,7 @@ impl Modify for ServerAddon {
 
 #[derive(OpenApi)]
 #[openapi(
-    modifiers(&ServerAddon),
+    modifiers(&ServerAddon, &SecurityAddon),
     info(
         title = "Feldera API",
         description = r"
@@ -309,6 +310,29 @@ fn api_scope() -> Scope {
         .service(api_key::delete_api_key)
         .service(http_io::http_input)
         .service(http_io::http_output)
+}
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "JWT token or API key",
+                SecurityScheme::Http(
+                    HttpBuilder::new()
+                        .scheme(HttpAuthScheme::Bearer)
+                        .bearer_format("JWT")
+                        .description(Some(
+                            r#"Use a JWT token obtained via an OAuth2/OIDC 
+                               login workflow or an API key obtained via
+                               the `/v0/api-keys` endpoint."#,
+                        ))
+                        .build(),
+                ),
+            )
+        }
+    }
 }
 
 pub(crate) fn parse_uuid_param(
