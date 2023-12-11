@@ -833,7 +833,6 @@ pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
     let result = result.trim_end_matches('.').to_string();
 
     let result = match result.parse::<f64>() {
-        Ok(val) if val.is_zero() => String::from("0"),
         Ok(val) if val.is_infinite() && val.is_sign_positive() => String::from("Infinity"),
         Ok(val) if val.is_infinite() && val.is_sign_negative() => String::from("-Infinity"),
         _ => result,
@@ -858,7 +857,6 @@ pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
     let result = result.trim_end_matches('.').to_string();
 
     let result = match result.parse::<f32>() {
-        Ok(val) if val.is_zero() => String::from("0"),
         Ok(val) if val.is_infinite() && val.is_sign_positive() => String::from("Infinity"),
         Ok(val) if val.is_infinite() && val.is_sign_negative() => String::from("-Infinity"),
         _ => result,

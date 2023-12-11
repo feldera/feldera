@@ -101,11 +101,11 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>TAN(value)</code></td>
-    <td>The tangent of the value as radians. <code>tan</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The tangent of the value as radians. <code>tan</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>tan</code> (like <code>tan(pi / 2)</code>) an arbitrary value may be returned.</td>
   </tr>
   <tr>
     <td><code>COT(value)</code></td>
-    <td>The cotangent of the value as radians. <code>cot</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The cotangent of the value as radians. <code>cot</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>cot</code> (like <code>cot(pi)</code>) an arbitrary value may be returned.</td>
   </tr>
   <tr>
     <td><code>ASIN(value)</code></td>

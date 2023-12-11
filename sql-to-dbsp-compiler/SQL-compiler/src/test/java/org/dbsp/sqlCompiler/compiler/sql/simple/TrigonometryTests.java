@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class TrigonometryTests extends SqlIoTest {
@@ -227,7 +226,7 @@ public class TrigonometryTests extends SqlIoTest {
                         "SELECT tan(pi);\n" +
                         " tan \n" +
                         "-----\n" +
-                        " 0\n" +
+                        " -1.2246467991473532e-16\n" +
                         "(1 row)"
         );
     }
@@ -268,11 +267,9 @@ public class TrigonometryTests extends SqlIoTest {
         );
     }
 
-    // Ignored because I'm unsure how to test for `Infinity`
-    // `Infinity` seems to get converted to: `-8165619676597685`
+    // Tested using Postgres 15.2
     @Test
-    @Ignore
-    public void testCotInfinity() {
+    public void testCot() {
         this.qs(
                 "SELECT cot(0);\n" +
                         " cot \n" +
@@ -283,16 +280,10 @@ public class TrigonometryTests extends SqlIoTest {
                         "SELECT cot(pi);\n" +
                         " cot \n" +
                         "-----\n" +
-                        " Infinity\n" +
-                        "(1 row)"
-        );
-    }
-
-    // Tested using Postgres 15.2
-    @Test
-    public void testCot() {
-        this.qs(
-                "SELECT cot(null);\n" +
+                        " -8.165619676597685e+15\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT cot(null);\n" +
                         " cot \n" +
                         "-----\n" +
                         "NULL\n" +
