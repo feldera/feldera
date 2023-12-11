@@ -20,7 +20,7 @@ use uuid::Uuid;
 /// Request to create a new API key.
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct NewApiKeyRequest {
-    /// Program name.
+    /// Key name.
     #[schema(example = "my-api-key")]
     name: String,
 }
@@ -39,7 +39,9 @@ pub(crate) struct NewApiKeyResponse {
     /// Generated API key. There is no way to
     /// retrieve this key again from the
     /// pipeline-manager, so store it securely.
-    #[schema(example = "12345678")]
+    #[schema(
+        example = "apikey:v5y5QNtlPNVMwkmNjKwFU8bbIu5lMge3yHbyddxAOdXlEo84SEoNn32DUhQaf1KLeI9aOOfnJjhQ1pYzMrU4wQXON6pm6BS7Zgzj46U2b8pwz1280vYBEtx41hiDBRP"
+    )]
     api_key: String,
 }
 
@@ -64,7 +66,7 @@ pub(crate) struct ApiKeyNameQuery {
         )
     ),
     params(ApiKeyNameQuery),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]
 #[get("/api_keys")]
@@ -101,7 +103,7 @@ pub(crate) async fn list_api_keys(
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]
 #[get("/api_keys/{api_key_name}")]
@@ -114,7 +116,7 @@ pub(crate) async fn get_api_key(
     let api_key = state.db.lock().await.get_api_key(*tenant_id, &name).await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&vec![api_key]))
+        .json(&[api_key]))
 }
 
 /// Delete an API key
@@ -132,7 +134,7 @@ pub(crate) async fn get_api_key(
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]
 #[delete("/api_keys/{api_key_name}")]
@@ -162,7 +164,7 @@ pub(crate) async fn delete_api_key(
             , body = ErrorResponse
             , example = json!(examples::duplicate_name())),
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]
 #[post("/api_keys")]

@@ -72,7 +72,7 @@ pub(crate) struct UpdateServiceResponse {}
         )
     ),
     params(ServiceIdOrNameQuery),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Services"
 )]
 #[get("/services")]
@@ -114,7 +114,7 @@ async fn list_services(
     responses(
         (status = OK, description = "Service successfully created.", body = NewServiceResponse),
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Services"
 )]
 #[post("/services")]
@@ -155,7 +155,7 @@ async fn new_service(
     params(
         ("service_id" = Uuid, Path, description = "Unique service identifier")
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Services"
 )]
 #[patch("/services/{service_id}")]
@@ -195,7 +195,7 @@ async fn update_service(
     params(
         ("service_id" = Uuid, Path, description = "Unique service identifier")
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Services"
 )]
 #[delete("/services/{service_id}")]
@@ -229,7 +229,7 @@ async fn delete_service(
     params(
         ("service_id" = Uuid, Path, description = "Unique service identifier"),
     ),
-    security(("JWT token or API key" = [])),
+    security(("JSON web token (JWT) or API key" = [])),
     tag = "Services"
 )]
 #[get("/services/{service_id}")]

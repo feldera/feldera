@@ -388,7 +388,7 @@ pub(crate) trait Storage {
     /// Delete an API key by name
     async fn delete_api_key(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError>;
 
-    /// Persist a hash of API key in the database
+    /// Persist an SHA-256 hash of an API key in the database
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
@@ -398,7 +398,8 @@ pub(crate) trait Storage {
         permissions: Vec<ApiPermission>,
     ) -> Result<(), DBError>;
 
-    /// Validate an API key against the database
+    /// Validate an API key against the database by comparing its SHA-256 hash
+    /// against the stored value.
     async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Vec<ApiPermission>), DBError>;
 
     /// Get the tenant ID from the database for a given tenant name and

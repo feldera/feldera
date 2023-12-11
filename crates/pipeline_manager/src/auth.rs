@@ -87,7 +87,7 @@ pub(crate) async fn auth_validator(
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     let token = credentials.token();
     // Check if we are using an API key first.
-    if token.starts_with("apikey:") {
+    if token.starts_with(API_KEY_PREFIX) {
         return api_key_auth(req, token).await;
     }
     bearer_auth(req, token).await
@@ -602,6 +602,7 @@ async fn validate_api_keys(
 }
 
 const API_KEY_LENGTH: usize = 128;
+pub const API_KEY_PREFIX: &str = "apikey:";
 
 /// Generates a random 128 character API key
 pub fn generate_api_key() -> String {
@@ -611,7 +612,7 @@ pub fn generate_api_key() -> String {
         .take(API_KEY_LENGTH)
         .map(char::from)
         .collect();
-    format!("apikey:{key}") // the prefix "apikey" is part of the public API.
+    format!("{API_KEY_PREFIX}{key}") // the prefix is part of the public API.
 }
 
 #[cfg(test)]

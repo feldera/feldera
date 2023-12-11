@@ -24,6 +24,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     fmt,
     fmt::Display,
+    str::FromStr,
 };
 use storage::Storage;
 use tokio_postgres::{error::Error as PgError, NoTls, Row};
@@ -871,6 +872,21 @@ pub(crate) struct ApiKeyDescr {
 pub(crate) enum ApiPermission {
     Read,
     Write,
+}
+
+const API_PERMISSION_READ: &str = "read";
+const API_PERMISSION_WRITE: &str = "write";
+
+impl FromStr for ApiPermission {
+    type Err = ();
+
+    fn from_str(input: &str) -> Result<ApiPermission, Self::Err> {
+        match input {
+            API_PERMISSION_READ => Ok(ApiPermission::Read),
+            API_PERMISSION_WRITE => Ok(ApiPermission::Write),
+            _ => Err(()),
+        }
+    }
 }
 
 fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, DBError> {
@@ -2152,11 +2168,7 @@ impl Storage for ProjectDB {
             let scopes = vec
                 .iter()
                 .map(|s| {
-                    if s == "read" {
-                        ApiPermission::Read
-                    } else {
-                        ApiPermission::Write
-                    }
+                    ApiPermission::from_str(s).expect("Unexpected ApiPermission string in the DB")
                 })
                 .collect();
             result.push(ApiKeyDescr { id, name, scopes });
@@ -2179,11 +2191,7 @@ impl Storage for ProjectDB {
             let scopes = vec
                 .iter()
                 .map(|s| {
-                    if s == "read" {
-                        ApiPermission::Read
-                    } else {
-                        ApiPermission::Write
-                    }
+                    ApiPermission::from_str(s).expect("Unexpected ApiPermission string in the DB")
                 })
                 .collect();
 
@@ -2238,8 +2246,8 @@ impl Storage for ProjectDB {
                     &scopes
                         .iter()
                         .map(|scope| match scope {
-                            ApiPermission::Read => "read",
-                            ApiPermission::Write => "write",
+                            ApiPermission::Read => API_PERMISSION_READ,
+                            ApiPermission::Write => API_PERMISSION_WRITE,
                         })
                         .collect::<Vec<&str>>(),
                 ],
@@ -2275,13 +2283,7 @@ impl Storage for ProjectDB {
         let vec: Vec<String> = res.get(1);
         let vec = vec
             .iter()
-            .map(|s| {
-                if s == "read" {
-                    ApiPermission::Read
-                } else {
-                    ApiPermission::Write
-                }
-            })
+            .map(|s| ApiPermission::from_str(s).expect("Unexpected ApiPermission string in the DB"))
             .collect();
         Ok((tenant_id, vec))
     }
