@@ -3,7 +3,7 @@ import { SelectElement, useWatch } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
 
-export const DebeziumInputFormatDetails = () => {
+export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
   const watch = useWatch()
   const selectedFormat = watch['format_name']
 
@@ -42,6 +42,7 @@ export const DebeziumInputFormatDetails = () => {
                   disabled: true
                 }
               ]}
+              disabled={props.disabled}
             ></SelectElement>
           </>
         )}
@@ -61,6 +62,7 @@ export const DebeziumInputFormatDetails = () => {
               disabled: true
             }
           ]}
+          disabled={props.disabled}
         ></SelectElement>
       </GridItems>
     </Grid>

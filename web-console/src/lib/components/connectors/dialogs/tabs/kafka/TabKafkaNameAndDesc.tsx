@@ -8,7 +8,7 @@ import { TextFieldElement } from 'react-hook-form-mui'
 
 import { Grid } from '@mui/material'
 
-const TabKafkaNameAndDesc = (props: { direction: Direction }) => {
+const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: boolean }) => {
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
@@ -19,6 +19,7 @@ const TabKafkaNameAndDesc = (props: { direction: Direction }) => {
           fullWidth
           placeholder={PLACEHOLDER_VALUES['connector_name']}
           aria-describedby='validation-name'
+          disabled={props.disabled}
         />
         <TextFieldElement
           name='description'
@@ -27,6 +28,7 @@ const TabKafkaNameAndDesc = (props: { direction: Direction }) => {
           fullWidth
           placeholder={PLACEHOLDER_VALUES['connector_description']}
           aria-describedby='validation-description'
+          disabled={props.disabled}
         />
       </GridItems>
     </Grid>

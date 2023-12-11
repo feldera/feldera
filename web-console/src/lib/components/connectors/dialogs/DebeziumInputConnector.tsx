@@ -138,12 +138,7 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
 
   const tabList = ['detailsTab', 'sourceTab', 'authTab', 'formatTab']
   const tabFooter = (
-    <TabFooter
-      isUpdate={props.connector !== undefined}
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      tabsArr={tabList}
-    />
+    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabsArr={tabList} />
   )
   return (
     <Dialog
@@ -175,7 +170,9 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              {props.connector === undefined ? 'New Debezium Datasource' : 'Update ' + props.connector.name}
+              {props.connector === undefined
+                ? 'New Debezium Datasource'
+                : props.existingTitle?.(props.connector.name) ?? ''}
             </Typography>
             {props.connector === undefined && <Typography variant='body2'>Add a Debezium Input.</Typography>}
           </Box>
@@ -250,25 +247,25 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
                 value='detailsTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabKafkaNameAndDesc direction={Direction.INPUT} />
+                <TabKafkaNameAndDesc direction={Direction.INPUT} disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
               <TabPanel
                 value='sourceTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <TabKafkaInputDetails />
+                <TabKafkaInputDetails disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
               <TabPanel value='authTab' sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}>
-                <TabKafkaAuth />
+                <TabKafkaAuth disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
               <TabPanel
                 value='formatTab'
                 sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
               >
-                <DebeziumInputFormatDetails />
+                <DebeziumInputFormatDetails disabled={props.disabled} />
                 {tabFooter}
               </TabPanel>
             </TabContext>

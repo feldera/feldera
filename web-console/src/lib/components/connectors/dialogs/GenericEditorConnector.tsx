@@ -104,11 +104,11 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
-              {props.connector === undefined ? 'Connector Editor' : 'Update ' + props.connector.name}
+              {props.connector === undefined ? 'Connector Editor' : props.existingTitle?.(props.connector.name) ?? ''}
             </Typography>
             {props.connector === undefined && <Typography variant='body2'>Write a custom connector config</Typography>}
           </Box>
-          <GenericEditorForm></GenericEditorForm>
+          <GenericEditorForm disabled={props.disabled}></GenericEditorForm>
         </DialogContent>
         <DialogActions sx={{ pb: { xs: 8, sm: 12.5 }, justifyContent: 'center' }}>
           <Button
@@ -130,7 +130,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
   )
 }
 
-const GenericEditorForm = () => {
+const GenericEditorForm = (props: { disabled?: boolean }) => {
   const theme = useTheme()
   const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
   const ctx = useFormContext()
@@ -145,6 +145,7 @@ const GenericEditorForm = () => {
           id='connector-name' // referenced by webui-tester
           placeholder={PLACEHOLDER_VALUES['connector_name']}
           aria-describedby='validation-name'
+          disabled={props.disabled}
         />
       </Grid>
       <Grid item sm={8} xs={12}>
@@ -156,6 +157,7 @@ const GenericEditorForm = () => {
           id='connector-description' // referenced by webui-tester
           placeholder={PLACEHOLDER_VALUES['connector_description']}
           aria-describedby='validation-description'
+          disabled={props.disabled}
         />
       </Grid>
       <Grid item sm={12} xs={12}>
@@ -166,6 +168,7 @@ const GenericEditorForm = () => {
             render={({ field: { ref, ...field } }) => (
               void ref, (<Editor height='20vh' theme={vscodeTheme} defaultLanguage='yaml' {...field} />)
             )}
+            disabled={props.disabled}
           />
           {(e =>
             e && (

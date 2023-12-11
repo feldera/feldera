@@ -8,6 +8,9 @@ interface ConnectorDialogProps {
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
   onSuccess?: Dispatch<ConnectorDescr>
+  existingTitle: ((name: string) => string) | null
+  submitButton: JSX.Element
+  disabled?: boolean
 }
 
 export default ConnectorDialogProps

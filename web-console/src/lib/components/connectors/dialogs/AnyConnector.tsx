@@ -18,6 +18,9 @@ export const AnyConnectorDialog = (props: {
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
   connector: ConnectorDescr
+  existingTitle: (name: string) => string
+  submitButton: JSX.Element
+  disabled?: boolean
 }) =>
   match(connectorDescrToType(props.connector))
     .with(ConnectorType.KAFKA_IN, () => {

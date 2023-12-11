@@ -22,6 +22,7 @@ import { ConnectorType, Direction } from '$lib/types/connectors'
 import { SVGImport } from '$lib/types/imports'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
+import IconCheck from '~icons/bx/check'
 import IconX from '~icons/bx/x'
 
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
@@ -46,8 +47,8 @@ const Header = styled(Box)<BoxProps>(({ theme }) => ({
 const IoSelectBox = (props: {
   icon: string | SVGImport
   howMany: number
-  onNew: string
-  onSelect: () => void
+  newButtonProps: { href: string }
+  selectButtonProps: { onClick?: () => void; href?: string }
   'data-testid'?: string
 }) => {
   const countColor = props.howMany === 0 ? 'secondary' : 'success'
@@ -94,7 +95,8 @@ const IoSelectBox = (props: {
               fullWidth
               variant='outlined'
               color='secondary'
-              href={`#${props.onNew}`}
+              LinkComponent={Link}
+              {...props.newButtonProps}
               data-testid='button-add-connector'
             >
               New
@@ -104,7 +106,8 @@ const IoSelectBox = (props: {
               variant='outlined'
               color='secondary'
               disabled={props.howMany === 0}
-              onClick={props.onSelect}
+              LinkComponent={Link}
+              {...props.selectButtonProps}
             >
               Select&nbsp;
               <Chip sx={{ p: 0, m: 0 }} label={props.howMany} size='small' color={countColor} variant='outlined' />
@@ -147,10 +150,6 @@ const SideBarAddIo = () => {
 
     setSourceCounts(counts)
   }, [data, isPending, isError])
-
-  const openSelectTable = (ioTable: ConnectorType | undefined) => {
-    setHash(`${drawer!.nodeType}/${ioTable ?? ''}`)
-  }
 
   const addConnector = useAddConnector()
   const onAddClick = (direction: Direction) => (connector: ConnectorDescr) => {
@@ -207,8 +206,8 @@ const SideBarAddIo = () => {
                   key={type}
                   icon={connectorTypeToLogo(type)}
                   howMany={sourceCounts[type] ?? 0}
-                  onNew={`new/connector/${drawer.direction}/${type}`}
-                  onSelect={() => openSelectTable(type)}
+                  newButtonProps={{ href: `#new/connector/${drawer.direction}/${type}` }}
+                  selectButtonProps={{ href: `#${drawer!.nodeType}/${type ?? ''}` }}
                 />
               )
           )}
@@ -236,7 +235,18 @@ const SideBarAddIo = () => {
         }
         const [, direction, type] = res
         const Dialog = dialogs[type as keyof typeof dialogs]
-        return <Dialog {...showOnHash('new/connector/')} onSuccess={onAddClick(direction as Direction)} />
+        return (
+          <Dialog
+            {...showOnHash('new/connector/')}
+            onSuccess={onAddClick(direction as Direction)}
+            existingTitle={null}
+            submitButton={
+              <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
+                Create
+              </Button>
+            }
+          />
+        )
       })()}
     </Drawer>
   )

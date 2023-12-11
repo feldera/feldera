@@ -13,7 +13,7 @@ import { match } from 'ts-pattern'
 
 import { Grid, Tooltip } from '@mui/material'
 
-const saslOauthOidcForm = (
+const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
   <Grid container spacing={4}>
     <GridItems xs={12}>
       <TextFieldElement
@@ -23,6 +23,7 @@ const saslOauthOidcForm = (
         placeholder=''
         aria-describedby='validation-host'
         fullWidth
+        disabled={props.disabled}
       />
       <TextFieldElement
         name='sasl_oauthbearer_client_secret'
@@ -31,6 +32,7 @@ const saslOauthOidcForm = (
         placeholder=''
         aria-describedby='validation-host'
         fullWidth
+        disabled={props.disabled}
       />
       <TextFieldElement
         name='sasl_oauthbearer_token_endpoint_url'
@@ -39,6 +41,7 @@ const saslOauthOidcForm = (
         placeholder=''
         aria-describedby='validation-host'
         fullWidth
+        disabled={props.disabled}
       />
       <TextFieldElement
         name='sasl_oauthbearer_scope'
@@ -47,6 +50,7 @@ const saslOauthOidcForm = (
         placeholder=''
         aria-describedby='validation-host'
         fullWidth
+        disabled={props.disabled}
       />
       <TextFieldElement
         name='sasl_oauthbearer_extensions'
@@ -55,12 +59,13 @@ const saslOauthOidcForm = (
         placeholder=''
         aria-describedby='validation-host'
         fullWidth
+        disabled={props.disabled}
       />
     </GridItems>
   </Grid>
 )
 
-const SaslOauthForm = () => {
+const SaslOauthForm = (props: { disabled?: boolean }) => {
   const auth = useFormContext<KafkaAuthSchema>().watch()
   invariant(
     (auth['security_protocol'] === 'SASL_PLAINTEXT' || auth['security_protocol'] === 'SASL_SSL') &&
@@ -76,8 +81,13 @@ const SaslOauthForm = () => {
           placeholder=''
           aria-describedby='validation-host'
           fullWidth
+          disabled={props.disabled}
         />
-        <SwitchElement name='enable_sasl_oauthbearer_unsecure_jwt' label='enable.sasl.oauthbearer.unsecure.jwt' />
+        <SwitchElement
+          name='enable_sasl_oauthbearer_unsecure_jwt'
+          label='enable.sasl.oauthbearer.unsecure.jwt'
+          disabled={props.disabled}
+        />
         <SelectElement
           name='sasl_oauthbearer_method'
           label='sasl.oauthbearer.method'
@@ -92,9 +102,10 @@ const SaslOauthForm = () => {
               label: 'oidc'
             }
           ]}
+          disabled={props.disabled}
         ></SelectElement>
         {match(auth['sasl_oauthbearer_method'])
-          .with('oidc', () => saslOauthOidcForm)
+          .with('oidc', () => <SaslOauthOidcForm disabled={props.disabled} />)
           .otherwise(() => (
             <></>
           ))}
@@ -103,7 +114,7 @@ const SaslOauthForm = () => {
   )
 }
 
-const saslPassForm = (
+const SaslPassForm = (props: { disabled?: boolean }) => (
   <Grid container spacing={4}>
     <GridItems xs={12}>
       <TextFieldElement
@@ -113,13 +124,14 @@ const saslPassForm = (
         placeholder=''
         aria-describedby='validation-host'
         fullWidth
+        disabled={props.disabled}
       />
-      <PasswordElement name='sasl_password' label='sasl.password' size='small' fullWidth />
+      <PasswordElement name='sasl_password' label='sasl.password' size='small' fullWidth disabled={props.disabled} />
     </GridItems>
   </Grid>
 )
 
-const SaslForm = () => {
+const SaslForm = (props: { disabled?: boolean }) => {
   const auth = useFormContext<KafkaAuthSchema>().watch()
   invariant(auth['security_protocol'] === 'SASL_PLAINTEXT' || auth['security_protocol'] === 'SASL_SSL')
 
@@ -156,19 +168,22 @@ const SaslForm = () => {
                   disabled: true
                 }
               ]}
+              disabled={props.disabled}
             ></SelectElement>
           </div>
         </Tooltip>
         {match(auth['sasl_mechanism'])
-          .with('OAUTHBEARER', () => <SaslOauthForm />)
-          .with('GSSAPI', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512', undefined, () => saslPassForm)
+          .with('OAUTHBEARER', () => <SaslOauthForm disabled={props.disabled} />)
+          .with('GSSAPI', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512', undefined, () => (
+            <SaslPassForm disabled={props.disabled} />
+          ))
           .exhaustive()}
       </GridItems>
     </Grid>
   )
 }
 
-const sslForm = (
+const SslForm = (props: { disabled?: boolean }) => (
   <Grid container spacing={4}>
     <GridItems xs={12}>
       <Tooltip title="Client's private key string (PEM format) used for authentication.">
@@ -181,6 +196,7 @@ const sslForm = (
             aria-describedby='validation-host'
             fullWidth
             resizeStyle='vertical'
+            disabled={props.disabled}
           />
         </div>
       </Tooltip>
@@ -194,12 +210,17 @@ const sslForm = (
             aria-describedby='validation-host'
             fullWidth
             resizeStyle='vertical'
+            disabled={props.disabled}
           />
         </div>
       </Tooltip>
       <Tooltip title="Enable OpenSSL's builtin broker (server) certificate verification." placement='right'>
         <div>
-          <SwitchElement name='enable_ssl_certificate_verification' label='enable.ssl.certificate.verification' />
+          <SwitchElement
+            name='enable_ssl_certificate_verification'
+            label='enable.ssl.certificate.verification'
+            disabled={props.disabled}
+          />
         </div>
       </Tooltip>
       <Tooltip title="CA certificate string (PEM format) for verifying the broker's key.">
@@ -212,6 +233,7 @@ const sslForm = (
             aria-describedby='validation-host'
             fullWidth
             resizeStyle='vertical'
+            disabled={props.disabled}
           />
         </div>
       </Tooltip>
@@ -227,7 +249,7 @@ const securityProtocolDesc = (p: KafkaAuthSchema['security_protocol']) =>
     .with('SSL', () => 'SSL channel')
     .exhaustive()
 
-export const TabKafkaAuth = () => {
+export const TabKafkaAuth = (props: { disabled?: boolean }) => {
   const auth = useFormContext<KafkaAuthSchema>().watch()
   return (
     <Grid container spacing={4}>
@@ -256,15 +278,16 @@ export const TabKafkaAuth = () => {
               label: 'SASL_SSL'
             }
           ]}
+          disabled={props.disabled}
         ></SelectElement>
         {match(auth['security_protocol'])
           .with('PLAINTEXT', undefined, () => <></>)
-          .with('SSL', () => sslForm)
-          .with('SASL_PLAINTEXT', () => <SaslForm />)
+          .with('SSL', () => <SslForm disabled={props.disabled} />)
+          .with('SASL_PLAINTEXT', () => <SaslForm disabled={props.disabled} />)
           .with('SASL_SSL', () => (
             <>
-              {sslForm}
-              <SaslForm />
+              <SslForm disabled={props.disabled} />
+              <SaslForm disabled={props.disabled} />
             </>
           ))
           .exhaustive()}

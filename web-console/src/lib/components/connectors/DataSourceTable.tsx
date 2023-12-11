@@ -24,6 +24,7 @@ import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
+import IconCheck from '~icons/bx/check'
 import IconPencil from '~icons/bx/pencil'
 import IconTrashAlt from '~icons/bx/trash-alt'
 
@@ -231,7 +232,19 @@ const DataSourceTable = () => {
         />
       </Card>
 
-      {connector && <AnyConnectorDialog show={showDialog} setShow={setShowDialog} connector={connector} />}
+      {connector && (
+        <AnyConnectorDialog
+          show={showDialog}
+          setShow={setShowDialog}
+          connector={connector}
+          existingTitle={name => 'Update ' + name}
+          submitButton={
+            <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
+              Update
+            </Button>
+          }
+        />
+      )}
     </>
   )
 }

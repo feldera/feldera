@@ -5,8 +5,11 @@ import EntityTable from '$lib/components/common/table/EntityTable'
 import { connectorDescrToType } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import Link from 'next/link'
 import { Dispatch, useState } from 'react'
+import IconShow from '~icons/bx/show'
 
+import { Box, IconButton, Tooltip } from '@mui/material'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import { GridColDef, GridRenderCellParams } from '@mui/x-data-grid-pro'
@@ -35,16 +38,22 @@ const SelectSourceTable = (props: {
       field: 'name'
     },
     {
-      flex: 0.1,
-      minWidth: 90,
+      width: 120,
       sortable: false,
       field: 'actions',
       headerName: '',
-      renderCell: (params: GridRenderCellParams) => {
+      renderCell: (params: GridRenderCellParams<ConnectorDescr>) => {
         return (
-          <Button size='small' variant='outlined' color='secondary' onClick={() => props.onAddClick(params.row)}>
-            Add
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button size='small' variant='outlined' color='secondary' onClick={() => props.onAddClick(params.row)}>
+              Add
+            </Button>
+            <Tooltip title='Inspect' key='inspect'>
+              <IconButton size='small' component={Link} href={'#view/connector/' + params.row.connector_id}>
+                <IconShow fontSize={20} />
+              </IconButton>
+            </Tooltip>
+          </Box>
         )
       }
     }
@@ -60,7 +69,6 @@ const SelectSourceTable = (props: {
     }),
     hideFooter: true
   }
-
   return (
     <Card
       sx={{
