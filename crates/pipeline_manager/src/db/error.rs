@@ -50,7 +50,7 @@ pub enum DBError {
         backtrace: Backtrace,
     },
     UnknownProgram {
-        program_id: ProgramId,
+        program_name: String,
     },
     ProgramInUseByPipeline {
         program_id: ProgramId,
