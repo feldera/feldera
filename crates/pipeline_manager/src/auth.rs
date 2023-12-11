@@ -2,10 +2,10 @@
 //! The plan is to support different providers down the line, but for now, we've
 //! tested against client claims made via AWS Cognito.
 
-//! This file implements an actix-web middleware to validate bearer tokens and
-//! API keys.
+//! This file implements an actix-web middleware to validate JWT bearer tokens
+//! and API keys.
 //!
-//! 1) Bearer tokens:
+//! 1) JWT tokens:
 //!
 //! The expected workflow is for users to login via a browser to receive a JWT
 //! access token. Clients then issue pipeline manager APIs using an HTTP
@@ -27,13 +27,16 @@
 //! that the pipeline manager needs for the OAuth protocol: the client ID, the
 //! issuer ID, and the well known URL for fetching JWK keys.
 //!
-//! 2) API-keys
+//! 2) API-keys:
 //!
 //! For programmatic access, a user authenticated via a Bearer token may
-//! generate API keys. These API keys can then be used in the REST API along
-//! with an "x-api-key" header to authorize access. For now, we simply have two
-//! permission types: Read and Write. Later, we will expand to have fine-grained
-//! access to specific API resources.
+//! generate API keys. See the `API keys` endpoints in the pipeline manager's
+//! OpenAPI spec (or look at the endpoints in `api/api_keys`).
+//! These API keys can then be used in the REST API similar to how JWT tokens
+//! are used above, but with the bearer token being "apikey:1234..." to
+//! authorize access. For now, we simply have two permission types: Read and
+//! Write. Later, we will expand to have fine-grained access to specific API
+//! resources.
 //!
 //! API keys are randomly generated 128 character sequences that are never
 //! stored in the pipeline manager or in the database. It is the responsibility
@@ -75,26 +78,27 @@ pub(crate) fn tag_with_default_tenant_id(req: ServiceRequest) -> ServiceRequest 
     req
 }
 
-/// Authorization using a bearer token. This is strictly used for authorizing
-/// users, not machines.
+/// Authorization using a bearer token. Expects to find either a typical
+/// OAuth2/OIDC JWT token or an API key. JWT tokens are expected to be available
+/// as is, whereas API keys are prefix with the string "apikey:".
 pub(crate) async fn auth_validator(
     req: ServiceRequest,
-    credentials: Option<BearerAuth>,
+    credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
-    // First check if we have a bearer token. If not, we expect an API key.
-    match credentials {
-        Some(credentials) => bearer_auth(req, credentials).await,
-        None => api_key_auth(req).await,
+    let token = credentials.token();
+    // Check if we are using an API key first.
+    if token.starts_with("apikey:") {
+        return api_key_auth(req, token).await;
     }
+    bearer_auth(req, token).await
 }
 
 async fn bearer_auth(
     req: ServiceRequest,
-    credentials: BearerAuth,
+    token: &str,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     // Validate bearer token
     let configuration = req.app_data::<AuthConfiguration>().unwrap();
-    let token = credentials.token();
     let token = match configuration.provider {
         AuthProvider::AwsCognito(_) => decode_aws_cognito_token(token, &req, configuration).await,
         AuthProvider::GoogleIdentity(_) => {
@@ -160,39 +164,25 @@ async fn bearer_auth(
 
 async fn api_key_auth(
     req: ServiceRequest,
+    api_key_str: &str,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     // Check for an API-key
-    let api_key = req.headers().get("x-api-key");
-    match api_key {
-        Some(api_key) if api_key.to_str().is_ok() => {
-            let api_key_str = api_key.to_str().unwrap();
-            let ad = req.app_data::<Data<ServerState>>();
-            let validate = {
-                let db = &ad.unwrap().db.lock().await;
-                validate_api_keys(db, api_key_str).await
-            };
-            match validate {
-                Ok((tenant_id, permissions)) => {
-                    req.extensions_mut().insert(tenant_id);
-                    req.extensions_mut().insert(permissions);
-                    Ok(req)
-                }
-                Err(_) => {
-                    let config = req.app_data::<Config>().cloned().unwrap_or_default();
-                    Err((
-                        AuthenticationError::from(config)
-                            .with_error_description("Unauthorized API key")
-                            .into(),
-                        req,
-                    ))
-                }
-            }
+    let ad = req.app_data::<Data<ServerState>>();
+    let validate = {
+        let db = &ad.unwrap().db.lock().await;
+        validate_api_keys(db, api_key_str).await
+    };
+    match validate {
+        Ok((tenant_id, permissions)) => {
+            req.extensions_mut().insert(tenant_id);
+            req.extensions_mut().insert(permissions);
+            Ok(req)
         }
-        _ => {
+        Err(_) => {
             let config = req.app_data::<Config>().cloned().unwrap_or_default();
             Err((
                 AuthenticationError::from(config)
-                    .with_error_description("Missing bearer token or API key")
+                    .with_error_description("Unauthorized API key")
                     .into(),
                 req,
             ))
@@ -616,18 +606,19 @@ const API_KEY_LENGTH: usize = 128;
 /// Generates a random 128 character API key
 pub fn generate_api_key() -> String {
     assert_impl_any!(ThreadRng: rand::CryptoRng);
-    rand::thread_rng()
+    let key: String = rand::thread_rng()
         .sample_iter(Alphanumeric)
         .take(API_KEY_LENGTH)
         .map(char::from)
-        .collect()
+        .collect();
+    format!("apikey:{key}") // the prefix "apikey" is part of the public API.
 }
 
 #[cfg(test)]
 mod test {
-    use std::{str::FromStr, sync::Arc};
+    use std::sync::Arc;
 
-    use actix_http::{header::HeaderName, HttpMessage, StatusCode};
+    use actix_http::{HttpMessage, StatusCode};
     use actix_web::{
         body::{BoxBody, EitherBody},
         dev::ServiceResponse,
@@ -925,15 +916,15 @@ mod test {
     #[tokio::test]
     async fn valid_api_key() {
         let validation = validation("some-client", "some-iss");
-        let api_key_hash = auth::generate_api_key();
+        let api_key = auth::generate_api_key();
         let req = test::TestRequest::get()
             .uri("/")
             .insert_header((
-                HeaderName::from_str("x-api-key").unwrap(),
-                api_key_hash.clone(),
+                http::header::AUTHORIZATION,
+                format!("Bearer {}", api_key.clone()),
             ))
             .to_request();
-        let res = run_test(req, None, Some(api_key_hash), validation).await;
+        let res = run_test(req, None, Some(api_key), validation).await;
         assert_eq!(200, res.status());
     }
 }
