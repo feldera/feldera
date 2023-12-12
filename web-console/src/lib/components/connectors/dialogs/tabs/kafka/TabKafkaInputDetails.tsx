@@ -14,7 +14,7 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
     <Grid container spacing={4}>
       <GridItems xs={12}>
         <TextFieldElement
-          name='bootstrap_servers'
+          name='config.bootstrap_servers'
           label='bootstrap.servers'
           size='small'
           helperText='Bootstrap Server Hostname'
@@ -26,7 +26,7 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
 
         <Grid item xs={12}>
           <SelectElement
-            name='auto_offset_reset'
+            name='config.auto_offset_reset'
             label='auto.offset.reset'
             size='small'
             id='reset'
@@ -47,7 +47,7 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
 
         <Grid item xs={12}>
           <TextFieldElement
-            name='group_id'
+            name='config.group_id'
             label='group.id'
             size='small'
             fullWidth
@@ -59,7 +59,7 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
 
         <FormControl fullWidth>
           <Controller
-            name='topics'
+            name='config.topics'
             control={ctx.control}
             render={({ field: { ref, onChange, ...field } }) => (
               <Autocomplete

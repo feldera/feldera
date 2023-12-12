@@ -160,9 +160,9 @@ const DataSourceTable = () => {
       minWidth: 140,
       field: 'typ',
       headerName: 'Type',
-      renderCell: (params: GridRenderCellParams) => {
+      renderCell: (params: GridRenderCellParams<ConnectorDescr>) => {
         // Shows the connector type in a chip
-        const status = getStatusObj(connectorDescrToType(params.row))
+        const status = getStatusObj(connectorDescrToType(params.row.config))
         return <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
       }
     },

@@ -67,7 +67,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
                     }}
                   ></Icon>
                 )
-              })(connectorTypeToIcon(connectorDescrToType(data.connector)))}
+              })(connectorTypeToIcon(connectorDescrToType(data.connector.config)))}
             </Avatar>
           }
         />

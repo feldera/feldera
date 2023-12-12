@@ -1,11 +1,12 @@
 import { GridItems } from '$lib/components/common/GridItems'
+import { DebeziumInputSchema } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { SelectElement, useWatch } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
 
 export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
-  const watch = useWatch()
-  const selectedFormat = watch['format_name']
+  const watch = useWatch<DebeziumInputSchema>()
+  const selectedFormat = watch.config!['format_name']
 
   return (
     <Grid container spacing={4}>
@@ -13,7 +14,7 @@ export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
         {selectedFormat === 'json' && (
           <>
             <SelectElement
-              name='json_flavor'
+              name='config.json_flavor'
               label='Source database'
               size='small'
               options={[
@@ -47,7 +48,7 @@ export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
           </>
         )}
         <SelectElement
-          name='format_name'
+          name='config.format_name'
           label='Data Format'
           size='small'
           id='format_name'

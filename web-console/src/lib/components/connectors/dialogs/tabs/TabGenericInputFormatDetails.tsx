@@ -5,13 +5,13 @@ import Grid from '@mui/material/Grid'
 
 const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
   const watch = useWatch()
-  const selectedFormat = watch['format_name']
+  const selectedFormat = watch.config['format_name']
 
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
         <SelectElement
-          name='format_name'
+          name='config.format_name'
           label='Data Format'
           size='small'
           id='format_name'
@@ -31,7 +31,7 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
         {selectedFormat === 'json' && (
           <>
             <SelectElement
-              name='update_format'
+              name='config.update_format'
               label='Update Format'
               size='small'
               options={[
@@ -48,7 +48,7 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
             ></SelectElement>
             <SwitchElement
               label='Records wrapped in an array'
-              name='json_array'
+              name='config.json_array'
               defaultValue={'false'}
               disabled={props.disabled}
             />

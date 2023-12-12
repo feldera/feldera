@@ -1,4 +1,3 @@
-import { intersection } from '$lib/functions/valibot'
 import { match } from 'ts-pattern'
 import * as va from 'valibot'
 
@@ -15,7 +14,7 @@ const saslPassSchema = va.object({
   sasl_password: va.optional(va.string())
 })
 
-const saslOauthSchema = intersection([
+const saslOauthSchema = va.intersect([
   va.object({
     sasl_mechanism: va.literal('OAUTHBEARER'),
     sasl_oauthbearer_config: va.optional(va.string()),
@@ -48,13 +47,13 @@ export const authParamsSchema = va.union([
     }),
     sslSchema
   ]),
-  intersection([
+  va.intersect([
     va.object({
       security_protocol: va.literal('SASL_PLAINTEXT')
     }),
     saslPlaintextSchema
   ]),
-  intersection([
+  va.intersect([
     va.object({
       security_protocol: va.literal('SASL_SSL')
     }),
@@ -166,8 +165,8 @@ export const parseAuthParams = (config: Record<string, unknown>) => {
       authParamsSchema,
       Object.fromEntries(
         Object.entries(config).map(([k, v]) => [
-          k.replace('.', '_'),
-          ['true', 'false'].includes(v as string) ? Boolean(v) : v
+          k.replaceAll('.', '_'),
+          v === 'true' ? true : v === 'false' ? false : v
         ])
       )
     )

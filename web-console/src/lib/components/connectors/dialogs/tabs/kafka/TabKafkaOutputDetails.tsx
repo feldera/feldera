@@ -8,7 +8,7 @@ const TabkafkaOutputDetails = (props: { disabled?: boolean }) => {
     <Grid container spacing={4}>
       <GridItems xs={12}>
         <TextFieldElement
-          name='bootstrap_servers'
+          name='config.bootstrap_servers'
           label='bootstrap.servers'
           size='small'
           helperText='Bootstrap Server Hostname'
@@ -19,7 +19,7 @@ const TabkafkaOutputDetails = (props: { disabled?: boolean }) => {
         />
 
         <TextFieldElement
-          name='topic'
+          name='config.topic'
           label='Topic Name'
           size='small'
           fullWidth

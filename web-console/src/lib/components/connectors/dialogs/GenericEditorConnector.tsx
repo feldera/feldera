@@ -3,33 +3,26 @@
 // It just has an editor for the YAML config.
 'use client'
 
+import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
+import Transition from '$lib/components/connectors/dialogs/tabs/Transition'
 import { parseEditorSchema } from '$lib/functions/connectors'
-import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
+import { Direction } from '$lib/types/connectors'
 import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
-import { Controller } from 'react-hook-form'
-import { FormContainer, TextFieldElement, useFormContext } from 'react-hook-form-mui'
+import { FormContainer } from 'react-hook-form-mui'
 import * as va from 'valibot'
 import IconCheck from '~icons/bx/check'
 import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
-import { Editor } from '@monaco-editor/react'
-import { useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
-import FormControl from '@mui/material/FormControl'
-import FormHelperText from '@mui/material/FormHelperText'
-import Grid from '@mui/material/Grid'
 import IconButton from '@mui/material/IconButton'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-
-import Transition from './tabs/Transition'
 
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(2)])),
@@ -108,7 +101,12 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             </Typography>
             {props.connector === undefined && <Typography variant='body2'>Write a custom connector config</Typography>}
           </Box>
-          <GenericEditorForm disabled={props.disabled}></GenericEditorForm>
+          <GenericEditorForm
+            disabled={props.disabled}
+            direction={Direction.INPUT}
+            configFromText={a => a}
+            configToText={a => a as string}
+          ></GenericEditorForm>
         </DialogContent>
         <DialogActions sx={{ pb: { xs: 8, sm: 12.5 }, justifyContent: 'center' }}>
           <Button
@@ -127,57 +125,5 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
         </DialogActions>
       </FormContainer>
     </Dialog>
-  )
-}
-
-const GenericEditorForm = (props: { disabled?: boolean }) => {
-  const theme = useTheme()
-  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
-  const ctx = useFormContext()
-  return (
-    <Grid container spacing={4}>
-      <Grid item sm={4} xs={12}>
-        <TextFieldElement
-          name='name'
-          label='Data Source Name'
-          size='small'
-          fullWidth
-          id='connector-name' // referenced by webui-tester
-          placeholder={PLACEHOLDER_VALUES['connector_name']}
-          aria-describedby='validation-name'
-          disabled={props.disabled}
-        />
-      </Grid>
-      <Grid item sm={8} xs={12}>
-        <TextField
-          name='description'
-          label='Description'
-          size='small'
-          fullWidth
-          id='connector-description' // referenced by webui-tester
-          placeholder={PLACEHOLDER_VALUES['connector_description']}
-          aria-describedby='validation-description'
-          disabled={props.disabled}
-        />
-      </Grid>
-      <Grid item sm={12} xs={12}>
-        <FormControl fullWidth>
-          <Controller
-            name='config'
-            control={ctx.control}
-            render={({ field: { ref, ...field } }) => (
-              void ref, (<Editor height='20vh' theme={vscodeTheme} defaultLanguage='yaml' {...field} />)
-            )}
-            disabled={props.disabled}
-          />
-          {(e =>
-            e && (
-              <FormHelperText sx={{ color: 'error.main' }} id='validation-config'>
-                {e.message}
-              </FormHelperText>
-            ))(ctx.getFieldState('config').error)}
-        </FormControl>
-      </Grid>
-    </Grid>
   )
 }
