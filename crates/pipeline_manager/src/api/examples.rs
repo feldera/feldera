@@ -177,7 +177,7 @@ format:
     };
     let pipeline = crate::db::PipelineDescr {
         pipeline_id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
-        program_id: Some(ProgramId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0"))),
+        program_name: Some("my-program".to_string()),
         name: "My Pipeline".into(),
         description: "My Description".into(),
         config: RuntimeConfig::from_yaml("workers: 8\n"),

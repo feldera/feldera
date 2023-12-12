@@ -15,7 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::{examples, parse_uuid_param},
     auth::TenantId,
-    db::{storage::Storage, AttachedConnector, DBError, PipelineId, ProgramId, Version},
+    db::{storage::Storage, AttachedConnector, DBError, PipelineId, Version},
 };
 
 use super::{ManagerError, ServerState};
@@ -29,7 +29,7 @@ pub(crate) struct NewPipelineRequest {
     /// Config description.
     description: String,
     /// Program to create config for.
-    program_id: Option<ProgramId>,
+    program_name: Option<String>,
     /// Pipeline configuration parameters.
     /// These knobs are independent of any connector
     config: RuntimeConfig,
@@ -63,7 +63,7 @@ pub(crate) struct UpdatePipelineRequest {
     description: String,
     /// New program to create a pipeline for. If absent, program will be set to
     /// NULL.
-    program_id: Option<ProgramId>,
+    program_name: Option<String>,
     /// New pipeline configuration. If absent, the existing configuration will
     /// be kept unmodified.
     config: Option<RuntimeConfig>,
@@ -119,6 +119,24 @@ pub(crate) async fn new_pipeline(
     request: web::Json<NewPipelineRequest>,
 ) -> Result<HttpResponse, ManagerError> {
     debug!("Received new-pipeline request: {request:?}");
+    // TODO: we shouldn't need this call if we use program names as references in
+    // the DB
+    let program_id = if let Some(ref program_name) = request.program_name {
+        Some(
+            state
+                .db
+                .lock()
+                .await
+                .lookup_program(*tenant_id, program_name, false)
+                .await?
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?
+                .program_id,
+        )
+    } else {
+        None
+    };
     let (pipeline_id, version) = state
         .db
         .lock()
@@ -126,7 +144,7 @@ pub(crate) async fn new_pipeline(
         .new_pipeline(
             *tenant_id,
             Uuid::now_v7(),
-            request.program_id,
+            program_id,
             &request.name,
             &request.description,
             &request.config,
@@ -172,6 +190,24 @@ pub(crate) async fn update_pipeline(
     body: web::Json<UpdatePipelineRequest>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    // TODO: we shouldn't need this call if we use program names as references in
+    // the DB
+    let program_id = if let Some(ref program_name) = body.program_name {
+        Some(
+            state
+                .db
+                .lock()
+                .await
+                .lookup_program(*tenant_id, program_name, false)
+                .await?
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?
+                .program_id,
+        )
+    } else {
+        None
+    };
     let version = state
         .db
         .lock()
@@ -179,7 +215,7 @@ pub(crate) async fn update_pipeline(
         .update_pipeline(
             *tenant_id,
             pipeline_id,
-            body.program_id,
+            program_id,
             &body.name,
             &body.description,
             &body.config,
