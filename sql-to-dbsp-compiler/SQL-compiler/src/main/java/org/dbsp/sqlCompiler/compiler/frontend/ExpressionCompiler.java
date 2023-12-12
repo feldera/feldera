@@ -394,7 +394,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
      * depending on the argument types.
      * @param  call Operation that is compiled.
      * @param  node CalciteObject holding the call.
-     * @param  resultType Type of result produced by call.
+     * @param  resultType Type of result produced by call.  We assume that
+     *                    the typechecker is right, and this is the correct
+     *                    result produced by this function.  No cast needed.
      * @param  ops  Translated operands for the call.
      * @param  expectedArgCount A list containing all known possible argument counts.
      */
@@ -646,7 +648,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return result;
             }
             case ST_POINT: {
-                return this.compilePolymorphicFunction(call, node, type, ops, 2);
+                // Sometimes the Calcite type for ST_POINT is nullable
+                // even if all arguments are not nullable.  So we can't
+                // just use compilePolymorphicFunction.
+                if (ops.size() != 2)
+                    throw new UnimplementedException("Expected only 2 operands", node);
+                DBSPExpression left = ops.get(0);
+                DBSPExpression right = ops.get(1);
+                String functionName = "make_geopoint" + type.nullableSuffix() +
+                        "_" + left.getType().baseTypeWithSuffix() +
+                        "_" + right.getType().baseTypeWithSuffix();
+                return new DBSPApplyExpression(node, functionName, type, left, right);
             }
             case OTHER_FUNCTION: {
                 String opName = call.op.getName().toLowerCase();

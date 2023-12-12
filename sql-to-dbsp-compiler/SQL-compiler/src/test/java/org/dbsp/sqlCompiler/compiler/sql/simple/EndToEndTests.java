@@ -559,7 +559,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void geoDistanceTest() {
         String query = "SELECT ST_DISTANCE(ST_POINT(0, 0), ST_POINT(0,1))";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(new DBSPDoubleLiteral(1).some())));
+                new DBSPTupleExpression(new DBSPDoubleLiteral(1.0, true))));
     }
 
     @Test

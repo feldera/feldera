@@ -80,6 +80,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         this.addRustTestCase("ComplexQueriesTest.testDateDiff", compiler, getCircuit(compiler));
     }
 
+    /*
     @Test @Ignore("Not yet tested")
     public void testCrossApply() {
         String query = " select d.DocumentID, ds.Status, ds.DateCreated \n" +
@@ -90,6 +91,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "      where DocumentID = d.DocumentId\n" +
                 "      order by DateCreated desc) as ds";
     }
+     */
 
     @Test
     public void smallTaxiTest() {
@@ -468,8 +470,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 "    amt FLOAT64,\n" +
                 "    trans_num STRING,\n" +
                 "    unix_time INTEGER NOT NULL,\n" +
-                "    merch_lat FLOAT64,\n" +
-                "    merch_long FLOAT64,\n" +
+                "    merch_lat FLOAT64 NOT NULL,\n" +
+                "    merch_long FLOAT64 NOT NULL,\n" +
                 "    is_fraud INTEGER\n" +
                 ");\n" +
                 "\n" +
@@ -538,8 +540,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPDoubleLiteral(10.0, true),
                         new DBSPStringLiteral("Transnum", true),
                         new DBSPI32Literal(1000),
-                        new DBSPDoubleLiteral(128.0, true),
-                        new DBSPDoubleLiteral(128.0, true),
+                        new DBSPDoubleLiteral(128.0),
+                        new DBSPDoubleLiteral(128.0),
                         new DBSPI32Literal(0, true)
                 ))
         };

@@ -13,7 +13,7 @@ with `git commit -s`.
 Our team develops and tests using Linux and MacOS. Windows Subsystem for Linux works fine too.
 
 The Feldera container images and CI workflows use Linux. You can see our setup in
-our [Dockerfile](deploy/Dockerfile) and [Earthfile](Earthfile) .
+our [Dockerfile](deploy/Dockerfile) and [Earthfile](Earthfile).
 
 Our known dependencies are:
 - Runtime
@@ -29,6 +29,7 @@ Our known dependencies are:
   - Python 3
   - typescript
   - Redpanda or Kafka
+  - Earthly (https://earthly.dev/get-earthly)
 
 Additional dependencies are automatically installed by the Rust,
 maven, Python, and typescript build tools.
