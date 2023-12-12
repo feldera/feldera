@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: support for other trigonometric functions supported by Calcite ([#1127](https://github.com/feldera/feldera/pull/1127))
 - WebConsole: Add Settings page, add a view to manage API keys (#1136)
 
+### Enhanced
+- WebConsole: group.id Kafka connector configuration field is now optional
+
 ## [0.5.0] - 2023-12-05
 
 ### Fixed

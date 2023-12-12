@@ -47,7 +47,7 @@ const schema = intersection([
     description: va.optional(va.string(), ''),
     bootstrap_servers: va.nonOptional(va.string()),
     auto_offset_reset: va.optional(va.string(), 'none'),
-    group_id: va.nonOptional(va.string([va.minLength(1, 'group.id should not be empty')])),
+    group_id: va.coerce(va.optional(va.string([va.minLength(1, 'group.id should not be empty')])), v => v || undefined),
     topics: va.nonOptional(
       va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
         va.minLength(1, 'Provide at least one topic (press enter to add the topic).')
@@ -81,7 +81,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
     format_name: 'json',
     update_format: 'raw',
     json_array: false,
-    group_id: '',
+    group_id: undefined,
     ...defaultUiAuthParams
   }
 
