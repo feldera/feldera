@@ -50,6 +50,9 @@ pub enum DBError {
         backtrace: Backtrace,
     },
     UnknownProgram {
+        program_id: ProgramId,
+    },
+    UnknownProgramName {
         program_name: String,
     },
     ProgramInUseByPipeline {
@@ -331,6 +334,9 @@ impl Display for DBError {
             DBError::UnknownProgram { program_id } => {
                 write!(f, "Unknown program id '{program_id}'")
             }
+            DBError::UnknownProgramName { program_name } => {
+                write!(f, "Unknown program name '{program_name}'")
+            }
             DBError::ProgramInUseByPipeline { program_id } => {
                 write!(f, "Program id '{program_id}' is in use by a pipeline")
             }
@@ -436,6 +442,7 @@ impl DetailedError for DBError {
             Self::InvalidData { .. } => Cow::from("InvalidData"),
             Self::InvalidStatus { .. } => Cow::from("InvalidStatus"),
             Self::UnknownProgram { .. } => Cow::from("UnknownProgram"),
+            Self::UnknownProgramName { .. } => Cow::from("UnknownProgramName"),
             Self::ProgramInUseByPipeline { .. } => Cow::from("ProgramInUseByPipeline"),
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
@@ -485,6 +492,7 @@ impl ResponseError for DBError {
             Self::InvalidData { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownProgram { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownProgramName { .. } => StatusCode::NOT_FOUND,
             Self::ProgramInUseByPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::DuplicateName => StatusCode::CONFLICT,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,

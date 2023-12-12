@@ -600,14 +600,14 @@ impl PipelineRevision {
             return Err(DBError::ProgramFailedToCompile);
         }
         // The pipline program_id is set
-        if pipeline.program_id.is_none() {
+        if pipeline.program_name.is_none() {
             return Err(DBError::ProgramNotSet);
         }
-        // ..  and matches the provided program id (this is an assert because
+        // ..  and matches the provided program name (this is an assert because
         // it's an error that can't be caused by a end-user)
         assert_eq!(
-            pipeline.program_id.unwrap(),
-            program.program_id,
+            pipeline.program_name.clone().unwrap(),
+            program.name,
             "pre-condition: pipeline program and program_descr match"
         );
         // We supplied all connectors referenced by the `pipeline`, also an assert
@@ -1511,9 +1511,10 @@ impl Storage for ProjectDB {
             // expect() is ok here - we don't allow to commit something without a program
             let program_name = pipeline
                 .program_name
+                .as_ref()
                 .expect("pre-condition: pipeline has a program");
             let program = self
-                .get_committed_program_by_id(tenant_id, program_name, revision)
+                .get_committed_program_by_name(tenant_id, program_name, revision)
                 .await?;
             let connectors = self
                 .get_committed_connectors_by_id(tenant_id, pipeline_id, revision)
@@ -1531,7 +1532,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name, p.description, p.config, program.name,
             COALESCE(json_agg(json_build_object('name', ac.name,
                                                 'connector_id', connector_id,
                                                 'config', ac.config,
@@ -1541,9 +1542,10 @@ impl Storage for ProjectDB {
             rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
             FROM pipeline p
             INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+            LEFT JOIN program on p.program_id = program.id
             LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
             WHERE p.tenant_id = $1
-            GROUP BY p.id, rt.id;",
+            GROUP BY p.id, rt.id, program.name;",
             )
             .await?;
 
@@ -1567,7 +1569,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -1577,9 +1579,10 @@ impl Storage for ProjectDB {
                 rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
                 FROM pipeline p
                 INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+                LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
                 WHERE p.id = $1 AND p.tenant_id = $2
-                GROUP BY p.id, rt.id
+                GROUP BY p.id, rt.id, program.name
                 ",
             )
             .await?;
@@ -1600,7 +1603,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -1608,9 +1611,10 @@ impl Storage for ProjectDB {
                                 FILTER (WHERE ac.name IS NOT NULL),
                         '[]')
                 FROM pipeline p
+                LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
                 WHERE p.id = $1 AND p.tenant_id = $2
-                GROUP BY p.id
+                GROUP BY p.id, program.name
                 ",
             )
             .await?;
@@ -1683,7 +1687,7 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_id', connector_id,
                                                     'config', ac.config,
@@ -1693,9 +1697,10 @@ impl Storage for ProjectDB {
                 rt.location, rt.desired_status, rt.current_status, rt.status_since, rt.error, rt.created
                 FROM pipeline p
                 INNER JOIN pipeline_runtime_state rt on p.id = rt.id
+                LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
                 WHERE p.name = $1 AND p.tenant_id = $2
-                GROUP BY p.id, rt.id
+                GROUP BY p.id, rt.id, program.name
                 ",
             )
             .await?;
@@ -2779,7 +2784,7 @@ impl ProjectDB {
     async fn get_committed_program_by_name(
         &self,
         tenant_id: TenantId,
-        program_name: String,
+        program_name: &str,
         revision: Revision,
     ) -> Result<ProgramDescr, DBError> {
         let manager = self.pool.get().await?;
@@ -2818,7 +2823,9 @@ impl ProjectDB {
                 code,
             })
         } else {
-            Err(DBError::UnknownProgram { program_name })
+            Err(DBError::UnknownProgramName {
+                program_name: program_name.to_string(),
+            })
         }
     }
 
