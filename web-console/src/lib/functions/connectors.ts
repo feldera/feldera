@@ -5,12 +5,12 @@ import { assertUnion } from '$lib/functions/common/array'
 import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
 import { ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import assert from 'assert'
 import ImageBoilingFlask from 'public/icons/generic/boiling-flask.svg'
 import ImageHttpGet from 'public/images/generic/http-get.svg'
 import DebeziumLogo from 'public/images/vendors/debezium-logo-color.svg'
 import KafkaLogo from 'public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from 'public/images/vendors/snowflake-logo.svg'
+import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 import iconBoilingFlask from '~icons/generic/boiling-flask'
 import iconHttpGet from '~icons/tabler/http-get'
@@ -21,8 +21,8 @@ import iconSnowflake from '~icons/vendors/snowflake-icon'
 import { SVGImport } from '../types/imports'
 
 // Determine the type of a connector from its config entries.
-export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
-  return match(cd.config)
+export const connectorDescrToType = (config: ConnectorDescr['config']): ConnectorType => {
+  return match(config)
     .with(
       { transport: { name: 'kafka', config: { topics: P._ } }, format: { config: { update_format: 'debezium' } } },
       () => {
@@ -49,18 +49,27 @@ export const connectorDescrToType = (cd: ConnectorDescr): ConnectorType => {
     })
 }
 
+export const parseConnectorDescrWith =
+  <Config>(parseConfig: (config: ConnectorDescr['config']) => Config) =>
+  (connector: ConnectorDescr) => {
+    return {
+      name: connector.name,
+      description: connector.description,
+      config: parseConfig(connector.config)
+    }
+  }
+
 // Given an existing ConnectorDescr return the KafkaInputSchema
 // if connector is of type KAFKA_IN.
-export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSchema => {
-  assert(connectorDescrToType(connector) === ConnectorType.KAFKA_IN)
-  const config = connector.config
-  assert(config.transport.config)
+export const parseKafkaInputSchemaConfig = (config: ConnectorDescr['config']): KafkaInputSchema['config'] => {
+  invariant(connectorDescrToType(config) === ConnectorType.KAFKA_IN)
+  invariant(config.transport.config)
 
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
-    name: connector.name,
-    description: connector.description,
+    transport_user_config: config.transport.config,
+    format_user_config: config.format.config,
     bootstrap_servers: config.transport.config['bootstrap.servers'],
     auto_offset_reset: config.transport.config['auto.offset.reset'],
     group_id: config.transport.config['group.id'] || undefined,
@@ -72,17 +81,18 @@ export const parseKafkaInputSchema = (connector: ConnectorDescr): KafkaInputSche
   }
 }
 
+export const parseKafkaInputSchema = parseConnectorDescrWith(parseKafkaInputSchemaConfig)
+
 // Given an existing ConnectorDescr return the KafkaOutputSchema
 // if connector is of type KAFKA_OUT.
-export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSchema => {
-  assert(connectorDescrToType(connector) === ConnectorType.KAFKA_OUT)
-  const config = connector.config
-  assert(config.transport.config)
+export const parseKafkaOutputSchemaConfig = (config: ConnectorDescr['config']): KafkaOutputSchema['config'] => {
+  invariant(connectorDescrToType(config) === ConnectorType.KAFKA_OUT)
+  invariant(config.transport.config)
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
-    name: connector.name,
-    description: connector.description,
+    transport_user_config: config.transport.config,
+    format_user_config: config.format.config,
     bootstrap_servers: config.transport.config['bootstrap.servers'],
     topic: config.transport.config.topic,
     format_name: assertUnion(['json', 'csv'] as const, config.format.name),
@@ -91,18 +101,18 @@ export const parseKafkaOutputSchema = (connector: ConnectorDescr): KafkaOutputSc
   }
 }
 
+export const parseKafkaOutputSchema = parseConnectorDescrWith(parseKafkaOutputSchemaConfig)
+
 // Given an existing ConnectorDescr return the DebeziumInputSchema
 // if connector is of type DEBEZIUM_IN.
-export const parseDebeziumInputSchema = (connector: ConnectorDescr): DebeziumInputSchema => {
-  assert(connectorDescrToType(connector) === ConnectorType.DEBEZIUM_IN)
-  const config = connector.config
-  assert(config.transport.config)
+export const parseDebeziumInputSchemaConfig = (config: ConnectorDescr['config']): DebeziumInputSchema['config'] => {
+  invariant(connectorDescrToType(config) === ConnectorType.DEBEZIUM_IN)
+  invariant(config.transport.config)
 
   const authConfig = parseAuthParams(config.transport.config)
-
   return {
-    name: connector.name,
-    description: connector.description,
+    transport_user_config: config.transport.config,
+    format_user_config: config.format.config,
     bootstrap_servers: config.transport.config['bootstrap.servers'],
     auto_offset_reset: config.transport.config['auto.offset.reset'],
     group_id: config.transport.config['group.id'] || undefined,
@@ -114,16 +124,17 @@ export const parseDebeziumInputSchema = (connector: ConnectorDescr): DebeziumInp
   }
 }
 
-export const parseSnowflakeOutputSchema = (connector: ConnectorDescr): SnowflakeOutputSchema => {
-  assert(connectorDescrToType(connector) === ConnectorType.SNOWFLAKE_OUT)
-  const config = connector.config
-  assert(config.transport.config)
+export const parseDebeziumInputSchema = parseConnectorDescrWith(parseDebeziumInputSchemaConfig)
+
+export const parseSnowflakeOutputSchemaConfig = (config: ConnectorDescr['config']): SnowflakeOutputSchema['config'] => {
+  invariant(connectorDescrToType(config) === ConnectorType.SNOWFLAKE_OUT)
+  invariant(config.transport.config)
 
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
-    name: connector.name,
-    description: connector.description,
+    transport_user_config: config.transport.config,
+    format_user_config: config.format.config,
     bootstrap_servers: config.transport.config['bootstrap.servers'],
     topic: config.transport.config.topic,
     format_name: assertUnion(['json', 'avro'] as const, config.format.name),
@@ -132,16 +143,15 @@ export const parseSnowflakeOutputSchema = (connector: ConnectorDescr): Snowflake
   }
 }
 
+export const parseSnowflakeOutputSchema = parseConnectorDescrWith(parseSnowflakeOutputSchemaConfig)
+
 // Given an existing ConnectorDescr return the CsvFileSchema
 // if connector is of type FILE.
-export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
-  assert(connectorDescrToType(connector) === ConnectorType.URL)
-  const config = connector.config
-  assert(config.transport.config)
+export const parseUrlSchemaConfig = (config: ConnectorDescr['config']): UrlSchema['config'] => {
+  invariant(connectorDescrToType(config) === ConnectorType.URL)
+  invariant(config.transport.config)
 
   return {
-    name: connector.name,
-    description: connector.description,
     url: config.transport.config.path,
     format_name: assertUnion(['json', 'csv'] as const, config.format.name),
     update_format: config.format.config?.update_format || 'raw',
@@ -149,9 +159,11 @@ export const parseUrlSchema = (connector: ConnectorDescr): UrlSchema => {
   }
 }
 
+export const parseUrlSchema = parseConnectorDescrWith(parseUrlSchemaConfig)
+
 // Given an existing ConnectorDescr return EditorSchema for it.
 export const parseEditorSchema = (connector: ConnectorDescr): EditorSchema => {
-  assert(connector.config)
+  invariant(connector.config)
   return {
     name: connector.name,
     description: connector.description,

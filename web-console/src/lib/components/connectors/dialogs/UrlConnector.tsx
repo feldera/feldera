@@ -34,10 +34,12 @@ import Transition from './tabs/Transition'
 const schema = va.object({
   name: va.nonOptional(va.string()),
   description: va.optional(va.string(), ''),
-  url: va.nonOptional(va.string()),
-  format_name: va.nonOptional(va.enumType(['json', 'csv'])),
-  update_format: va.optional(va.enumType(['raw', 'insert_delete']), 'raw'),
-  json_array: va.nonOptional(va.boolean())
+  config: va.object({
+    url: va.nonOptional(va.string()),
+    format_name: va.nonOptional(va.enumType(['json', 'csv'])),
+    update_format: va.optional(va.enumType(['raw', 'insert_delete']), 'raw'),
+    json_array: va.nonOptional(va.boolean())
+  })
 })
 
 export type UrlSchema = va.Input<typeof schema>
@@ -56,10 +58,12 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const defaultValues: UrlSchema = {
     name: '',
     description: '',
-    url: '',
-    format_name: 'json',
-    update_format: 'raw',
-    json_array: false
+    config: {
+      url: '',
+      format_name: 'json',
+      update_format: 'raw',
+      json_array: false
+    }
   }
 
   const handleClose = () => {
@@ -71,6 +75,10 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const prepareData = (data: UrlSchema) => ({
     name: data.name,
     description: data.description,
+    config: normalizeConfig(data.config)
+  })
+
+  const normalizeConfig = (data: UrlSchema['config']) => ({
     config: {
       transport: {
         name: connectorTransportName(ConnectorType.URL),
@@ -94,13 +102,13 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = (errors: FieldErrors<UrlSchema>) => {
+  const handleErrors = ({ name, description, config }: FieldErrors<UrlSchema>) => {
     if (!props.show) {
       return
     }
-    if (errors?.name || errors?.description || errors?.url) {
+    if (name || description || config?.url) {
       setActiveTab('detailsTab')
-    } else if (errors?.format_name || errors?.json_array || errors?.update_format) {
+    } else if (config?.format_name || config?.json_array || config?.update_format) {
       setActiveTab('formatTab')
     }
   }
@@ -215,7 +223,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                   </Grid>
                   <Grid item sm={12} xs={12}>
                     <TextFieldElement
-                      name='url'
+                      name='config.url'
                       label='URL'
                       size='small'
                       fullWidth

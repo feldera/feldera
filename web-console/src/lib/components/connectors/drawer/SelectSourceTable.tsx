@@ -65,7 +65,7 @@ const SelectSourceTable = (props: {
     columnVisibilityModel: { connector_id: false },
     columns: columns,
     rows: rows.filter(row => {
-      return connectorDescrToType(row) == props.typ
+      return connectorDescrToType(row.config) == props.typ
     }),
     hideFooter: true
   }

@@ -17,7 +17,7 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
   <Grid container spacing={4}>
     <GridItems xs={12}>
       <TextFieldElement
-        name='sasl_oauthbearer_client_id'
+        name='config.sasl_oauthbearer_client_id'
         label='sasl.oauthbearer.client.id'
         size='small'
         placeholder=''
@@ -26,7 +26,7 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         disabled={props.disabled}
       />
       <TextFieldElement
-        name='sasl_oauthbearer_client_secret'
+        name='config.sasl_oauthbearer_client_secret'
         label='sasl.oauthbearer.client.secret'
         size='small'
         placeholder=''
@@ -35,7 +35,7 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         disabled={props.disabled}
       />
       <TextFieldElement
-        name='sasl_oauthbearer_token_endpoint_url'
+        name='config.sasl_oauthbearer_token_endpoint_url'
         label='sasl.oauthbearer.token.endpoint.url'
         size='small'
         placeholder=''
@@ -44,7 +44,7 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         disabled={props.disabled}
       />
       <TextFieldElement
-        name='sasl_oauthbearer_scope'
+        name='config.sasl_oauthbearer_scope'
         label='sasl.oauthbearer.scope'
         size='small'
         placeholder=''
@@ -53,7 +53,7 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
         disabled={props.disabled}
       />
       <TextFieldElement
-        name='sasl_oauthbearer_extensions'
+        name='config.sasl_oauthbearer_extensions'
         label='sasl.oauthbearer.extensions'
         size='small'
         placeholder=''
@@ -66,7 +66,7 @@ const SaslOauthOidcForm = (props: { disabled?: boolean }) => (
 )
 
 const SaslOauthForm = (props: { disabled?: boolean }) => {
-  const auth = useFormContext<KafkaAuthSchema>().watch()
+  const auth = useFormContext<{ config: KafkaAuthSchema }>().watch('config')
   invariant(
     (auth['security_protocol'] === 'SASL_PLAINTEXT' || auth['security_protocol'] === 'SASL_SSL') &&
       auth['sasl_mechanism'] === 'OAUTHBEARER'
@@ -75,7 +75,7 @@ const SaslOauthForm = (props: { disabled?: boolean }) => {
     <Grid container spacing={4}>
       <GridItems xs={12}>
         <TextFieldElement
-          name='sasl_oauthbearer_config'
+          name='config.sasl_oauthbearer_config'
           label='sasl.oauthbearer.config'
           size='small'
           placeholder=''
@@ -84,12 +84,12 @@ const SaslOauthForm = (props: { disabled?: boolean }) => {
           disabled={props.disabled}
         />
         <SwitchElement
-          name='enable_sasl_oauthbearer_unsecure_jwt'
+          name='config.enable_sasl_oauthbearer_unsecure_jwt'
           label='enable.sasl.oauthbearer.unsecure.jwt'
           disabled={props.disabled}
         />
         <SelectElement
-          name='sasl_oauthbearer_method'
+          name='config.sasl_oauthbearer_method'
           label='sasl.oauthbearer.method'
           size='small'
           options={[
@@ -118,7 +118,7 @@ const SaslPassForm = (props: { disabled?: boolean }) => (
   <Grid container spacing={4}>
     <GridItems xs={12}>
       <TextFieldElement
-        name='sasl_username'
+        name='config.sasl_username'
         label='sasl.username'
         size='small'
         placeholder=''
@@ -126,13 +126,19 @@ const SaslPassForm = (props: { disabled?: boolean }) => (
         fullWidth
         disabled={props.disabled}
       />
-      <PasswordElement name='sasl_password' label='sasl.password' size='small' fullWidth disabled={props.disabled} />
+      <PasswordElement
+        name='config.sasl_password'
+        label='sasl.password'
+        size='small'
+        fullWidth
+        disabled={props.disabled}
+      />
     </GridItems>
   </Grid>
 )
 
 const SaslForm = (props: { disabled?: boolean }) => {
-  const auth = useFormContext<KafkaAuthSchema>().watch()
+  const auth = useFormContext<{ config: KafkaAuthSchema }>().watch('config')
   invariant(auth['security_protocol'] === 'SASL_PLAINTEXT' || auth['security_protocol'] === 'SASL_SSL')
 
   return (
@@ -141,7 +147,7 @@ const SaslForm = (props: { disabled?: boolean }) => {
         <Tooltip title='SASL mechanism to use for authentication.' placement='right'>
           <div>
             <SelectElement
-              name='sasl_mechanism'
+              name='config.sasl_mechanism'
               label='sasl.mechanism'
               size='small'
               options={[
@@ -189,7 +195,7 @@ const SslForm = (props: { disabled?: boolean }) => (
       <Tooltip title="Client's private key string (PEM format) used for authentication.">
         <div>
           <TextareaAutosizeElement
-            name='ssl_key_pem'
+            name='config.ssl_key_pem'
             label='ssl.key.pem'
             size='small'
             placeholder=''
@@ -203,7 +209,7 @@ const SslForm = (props: { disabled?: boolean }) => (
       <Tooltip title="Client's public key string (PEM format) used for authentication.">
         <div>
           <TextareaAutosizeElement
-            name='ssl_certificate_pem'
+            name='config.ssl_certificate_pem'
             label='ssl.certificate.pem'
             size='small'
             placeholder=''
@@ -217,7 +223,7 @@ const SslForm = (props: { disabled?: boolean }) => (
       <Tooltip title="Enable OpenSSL's builtin broker (server) certificate verification." placement='right'>
         <div>
           <SwitchElement
-            name='enable_ssl_certificate_verification'
+            name='config.enable_ssl_certificate_verification'
             label='enable.ssl.certificate.verification'
             disabled={props.disabled}
           />
@@ -226,7 +232,7 @@ const SslForm = (props: { disabled?: boolean }) => (
       <Tooltip title="CA certificate string (PEM format) for verifying the broker's key.">
         <div>
           <TextareaAutosizeElement
-            name='ssl_ca_pem'
+            name='config.ssl_ca_pem'
             label='ssl.ca.pem'
             size='small'
             placeholder=''
@@ -250,12 +256,12 @@ const securityProtocolDesc = (p: KafkaAuthSchema['security_protocol']) =>
     .exhaustive()
 
 export const TabKafkaAuth = (props: { disabled?: boolean }) => {
-  const auth = useFormContext<KafkaAuthSchema>().watch()
+  const auth = useFormContext<{ config: KafkaAuthSchema }>().watch('config')
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
         <SelectElement
-          name='security_protocol'
+          name='config.security_protocol'
           value='security_protocol'
           label='security.protocol'
           size='small'

@@ -22,7 +22,7 @@ export const AnyConnectorDialog = (props: {
   submitButton: JSX.Element
   disabled?: boolean
 }) =>
-  match(connectorDescrToType(props.connector))
+  match(connectorDescrToType(props.connector.config))
     .with(ConnectorType.KAFKA_IN, () => {
       return <KafkaInputConnectorDialog {...props} />
     })

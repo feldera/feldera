@@ -142,7 +142,7 @@ const SideBarAddIo = () => {
       return
     }
     const counts = data
-      .map(s => connectorDescrToType(s))
+      .map(s => connectorDescrToType(s.config))
       .reduce((acc: typeof sourceCounts, typ: ConnectorType) => {
         acc[typ] = (acc[typ] ?? 0) + 1
         return acc
