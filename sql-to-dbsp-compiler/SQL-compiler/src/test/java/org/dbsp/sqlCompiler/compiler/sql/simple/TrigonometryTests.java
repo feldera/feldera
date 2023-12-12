@@ -235,6 +235,12 @@ public class TrigonometryTests extends SqlIoTest {
     @Test
     public void testTanDouble() {
         this.qs(
+                "SELECT tan(CAST(null as DOUBLE));\n" +
+                        " tan \n" +
+                        "-----\n" +
+                        "NULL\n" +
+                        "(1 row)\n" +
+                        "\n" +
                         "SELECT tan(CAST(0 AS DOUBLE));\n" +
                         " tan \n" +
                         "-----\n" +
@@ -271,7 +277,7 @@ public class TrigonometryTests extends SqlIoTest {
     @Test
     public void testCot() {
         this.qs(
-                "SELECT cot(0);\n" +
+                        "SELECT cot(0);\n" +
                         " cot \n" +
                         "-----\n" +
                         " Infinity\n" +
@@ -316,6 +322,54 @@ public class TrigonometryTests extends SqlIoTest {
     }
 
     // Tested using Postgres 15.2
+    @Test
+    public void testCotDouble() {
+        this.qs(
+                        "SELECT cot(CAST(0 AS DOUBLE));\n" +
+                        " cot \n" +
+                        "-----\n" +
+                        " Infinity\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT cot(pi);\n" +
+                        " cot \n" +
+                        "-----\n" +
+                        " -8.165619676597685e+15\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT cot(CAST(null AS DOUBLE));\n" +
+                        " cot \n" +
+                        "-----\n" +
+                        "NULL\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT cot(CAST(0.25 AS DOUBLE));\n" +
+                        " cot \n" +
+                        "-----\n" +
+                        " 3.91631736464594\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT cot(CAST(0.5 AS DOUBLE));\n" +
+                        " cot \n" +
+                        "-----\n" +
+                        " 1.830487721712452\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT cot(CAST(0.75 AS DOUBLE));\n" +
+                        " cot \n" +
+                        "-----\n" +
+                        " 1.0734261485493772\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT cot(CAST(1 AS DOUBLE));\n" +
+                        " cot \n" +
+                        "-----\n" +
+                        " 0.6420926159343306\n" +
+                        "(1 row)"
+        );
+    }
+
+    // Tested using Postgres 15.2
     // Postgres throws an error if the argument is out of the range: [-1, 1]
     // Right now, we return a NaN, instead of throwing an error
     @Test
@@ -324,7 +378,7 @@ public class TrigonometryTests extends SqlIoTest {
                 "SELECT asin(null);\n" +
                         " asin \n" +
                         "------\n" +
-                        " \n" +
+                        "NULL\n" +
                         "(1 row)\n" +
                         "\n" +
                         "SELECT asin(-2);\n" +
@@ -478,7 +532,7 @@ public class TrigonometryTests extends SqlIoTest {
                 "SELECT acos(null);\n" +
                         " acos \n" +
                         "------\n" +
-                        " \n" +
+                        "NULL\n" +
                         "(1 row)\n" +
                         "\n" +
                         "SELECT acos(-2);\n" +
@@ -630,7 +684,7 @@ public class TrigonometryTests extends SqlIoTest {
                 "SELECT atan(null);\n" +
                         " atan \n" +
                         "------\n" +
-                        " \n" +
+                        "NULL\n" +
                         "(1 row)\n" +
                         "\n" +
                         "SELECT atan(-1);\n" +
@@ -693,7 +747,13 @@ public class TrigonometryTests extends SqlIoTest {
     @Test
     public void testAtanDouble() {
         this.qs(
-                "SELECT atan(CAST(-1 AS DOUBLE));\n" +
+                "SELECT atan(CAST(null as DOUBLE));\n" +
+                        " atan \n" +
+                        "------\n" +
+                        "NULL\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT atan(CAST(-1 AS DOUBLE));\n" +
                         " atan \n" +
                         "------\n" +
                         " -0.7853981633974483\n" +
@@ -756,7 +816,7 @@ public class TrigonometryTests extends SqlIoTest {
                 "SELECT atan2(null, null);\n" +
                 " atan2 \n" +
                 "-------\n" +
-                " \n" +
+                "NULL\n" +
                 "(1 row)\n" +
                 "\n" +
                 "SELECT atan2(0, 0);\n" +
@@ -868,6 +928,60 @@ public class TrigonometryTests extends SqlIoTest {
                         "(1 row)\n" +
                         "\n" +
                         "SELECT radians(180);\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        " 3.141592653589793\n" +
+                        "(1 row)"
+        );
+    }
+
+    // Tested using Postgres 15.2
+    @Test
+    public void testRadiansDouble() {
+        this.qs(
+                "SELECT radians(CAST(null AS DOUBLE));\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        "NULL\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT radians(CAST(0 AS DOUBLE));\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        " 0\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT radians(CAST(30 AS DOUBLE));\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        " 0.5235987755982988\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT radians(CAST(45 AS DOUBLE));\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        " 0.7853981633974483\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT radians(CAST(60 AS DOUBLE));\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        " 1.0471975511965976\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT radians(CAST(90 AS DOUBLE));\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        " 1.5707963267948966\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT radians(CAST(120 AS DOUBLE));\n" +
+                        " radians \n" +
+                        "---------\n" +
+                        " 2.0943951023931953\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                        "SELECT radians(CAST(180 AS DOUBLE));\n" +
                         " radians \n" +
                         "---------\n" +
                         " 3.141592653589793\n" +
