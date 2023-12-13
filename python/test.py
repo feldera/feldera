@@ -119,7 +119,6 @@ CREATE VIEW transactions_with_demographics as
 
 def main():
     url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
-    url = url + "/v0" # API endpoint
     dbsp = DBSPConnection(url)
     connector_type = "file" if len(sys.argv) <= 2 else "http"
     print("Connection established")

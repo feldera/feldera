@@ -12,7 +12,7 @@ def execute(
     prepare_fn=None,
     verify_fn=None,
 ):
-    dbsp = DBSPConnection(dbsp_url + "/v0")
+    dbsp = DBSPConnection(dbsp_url)
     sql_code = open(code_file, "r").read()
     program = dbsp.create_or_replace_program(name=name, sql_code=sql_code)
     pipeline = make_pipeline_fn(program)
