@@ -89,39 +89,39 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>SIN(value)</code></td>
-    <td>The sine of value, returned in radians. <code>sin</code> only supports argument of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The sine of value as radians. <code>sin</code> only supports argument of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><code>COS(value)</code></td>
-    <td>The cosine of value, returned in radians. <code>cos</code> only supports argument of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The cosine of value as radians. <code>cos</code> only supports argument of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><code>PI</code></td>
-    <td>Returns the approximate value of <code>PI</code> as double. Note that <code>()</code> is not required. Example: <code>SELECT PI;</code></td>
+    <td>Returns the approximate value of <code>PI</code> as double. Note that <code>()</code> is not allowed. Example: <code>SELECT PI;</code></td>
   </tr>
   <tr>
     <td><code>TAN(value)</code></td>
-    <td>The tangent of the value, returned in radians. <code>tan</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>tan</code> (like <code>tan(pi / 2)</code>) an arbitrary value may be returned.</td>
+    <td>The tangent of the value as radians. <code>tan</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>tan</code> (like <code>tan(pi / 2)</code>) an arbitrary value may be returned.</td>
   </tr>
   <tr>
     <td><code>COT(value)</code></td>
-    <td>The cotangent of the value, returned in radians. <code>cot</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>cot</code> (like <code>cot(pi)</code>) an arbitrary value may be returned.</td>
+    <td>The cotangent of the value as radians. <code>cot</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>cot</code> (like <code>cot(pi)</code>) an arbitrary value may be returned.</td>
   </tr>
   <tr>
     <td><code>ASIN(value)</code></td>
-    <td>The arcsine of the value, returned in radians. The returned value is in the range <code>[-pi/2, pi/2]</code> or <code>NaN</code> if the value is outside the range of <code>[-1, 1]</code>. <code>asin</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The arcsine of the value, returned as radians. The returned value is in the range <code>[-pi/2, pi/2]</code> or <code>NaN</code> if the value is outside the range of <code>[-1, 1]</code>. <code>asin</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><code>ACOS(value)</code></td>
-    <td>The arccosine of the value, returned in radians. The returned value is in the range <code>[0, pi]</code> or <code>NaN</code> if the value is outside the range of <code>[-1, 1]</code>. <code>acos</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The arccosine of the value, returned as radians. The returned value is in the range <code>[0, pi]</code> or <code>NaN</code> if the value is outside the range of <code>[-1, 1]</code>. <code>acos</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><code>ATAN(value)</code></td>
-    <td>The arctangent of the value, returned in radians. The returned value is in the range <code>[-pi/2, pi/2]</code>.<code>atan</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The arctangent of the value, returned as radians. The returned value is in the range <code>[-pi/2, pi/2]</code>.<code>atan</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><code>ATAN2(y, x)</code></td>
-    <td>The arctangent of <code>y/x</code>, returned in radians. <code>atan2</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The arctangent of <code>y/x</code>, returned as radians. <code>atan2</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><code>DEGREES(value)</code></td>
