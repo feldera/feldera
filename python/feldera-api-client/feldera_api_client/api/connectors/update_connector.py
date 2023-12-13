@@ -22,7 +22,7 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/connectors/{connector_id}".format(
+        "url": "/v0/connectors/{connector_id}".format(
             connector_id=connector_id,
         ),
         "json": json_json_body,

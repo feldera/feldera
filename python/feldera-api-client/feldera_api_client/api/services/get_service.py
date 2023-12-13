@@ -17,7 +17,7 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/services/{service_id}".format(
+        "url": "/v0/services/{service_id}".format(
             service_id=service_id,
         ),
     }

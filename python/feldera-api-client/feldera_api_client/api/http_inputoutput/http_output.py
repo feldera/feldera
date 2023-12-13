@@ -51,7 +51,7 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": "/pipelines/{pipeline_id}/egress/{table_name}".format(
+        "url": "/v0/pipelines/{pipeline_id}/egress/{table_name}".format(
             pipeline_id=pipeline_id,
             table_name=table_name,
         ),

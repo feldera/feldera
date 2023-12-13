@@ -16,7 +16,7 @@ def _get_kwargs(
 
     return {
         "method": "delete",
-        "url": "/pipelines/{pipeline_id}".format(
+        "url": "/v0/pipelines/{pipeline_id}".format(
             pipeline_id=pipeline_id,
         ),
     }

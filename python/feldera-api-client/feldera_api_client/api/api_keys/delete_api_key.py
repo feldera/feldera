@@ -16,7 +16,7 @@ def _get_kwargs(
 
     return {
         "method": "delete",
-        "url": "/api_keys/{api_key_name}".format(
+        "url": "/v0/api_keys/{api_key_name}".format(
             api_key_name=api_key_name,
         ),
     }

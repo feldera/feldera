@@ -22,7 +22,7 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/pipelines/{pipeline_id}".format(
+        "url": "/v0/pipelines/{pipeline_id}".format(
             pipeline_id=pipeline_id,
         ),
         "json": json_json_body,

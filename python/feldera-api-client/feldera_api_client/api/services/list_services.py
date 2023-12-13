@@ -26,7 +26,7 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/services",
+        "url": "/v0/services",
         "params": params,
     }
 

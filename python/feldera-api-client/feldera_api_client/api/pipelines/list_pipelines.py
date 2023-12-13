@@ -25,7 +25,7 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/pipelines",
+        "url": "/v0/pipelines",
         "params": params,
     }
 
