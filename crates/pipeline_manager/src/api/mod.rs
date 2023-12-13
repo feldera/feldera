@@ -44,7 +44,7 @@ use pipeline_types::error::ErrorResponse;
 use std::{env, net::TcpListener, sync::Arc};
 use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
-use utoipa::{openapi::Server, Modify, OpenApi};
+use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
@@ -58,24 +58,9 @@ use crate::runner::RunnerApi;
 
 use crate::auth::TenantId;
 
-struct ServerAddon;
-
-// We use this to add a server variable to the OpenAPI spec
-// rendered by the swagger-ui
-// https://docs.rs/utoipa/1.0.1/utoipa/trait.Modify.html
-//
-// Note, even though this percolates to the OpenAPI spec,
-// the openapi-python-generator ignores it.
-// See: https://github.com/openapi-generators/openapi-python-client/issues/112
-impl Modify for ServerAddon {
-    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-        openapi.servers = Some(vec![Server::new("/v0")])
-    }
-}
-
 #[derive(OpenApi)]
 #[openapi(
-    modifiers(&ServerAddon, &SecurityAddon),
+    modifiers(&SecurityAddon),
     info(
         title = "Feldera API",
         description = r"

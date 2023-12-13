@@ -61,6 +61,7 @@ pub struct ConnectorIdOrNameQuery {
         )
     ),
     params(ConnectorIdOrNameQuery),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]
@@ -103,6 +104,7 @@ async fn list_connectors(
     responses(
         (status = OK, description = "Connector successfully created.", body = NewConnectorResponse),
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]
@@ -159,6 +161,7 @@ pub(crate) struct UpdateConnectorResponse {}
     params(
         ("connector_id" = Uuid, Path, description = "Unique connector identifier")
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]
@@ -205,6 +208,7 @@ async fn update_connector(
     params(
         ("connector_id" = Uuid, Path, description = "Unique connector identifier")
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]
@@ -239,6 +243,7 @@ async fn delete_connector(
     params(
         ("connector_id" = Uuid, Path, description = "Unique connector identifier"),
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]

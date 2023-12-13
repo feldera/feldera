@@ -29,7 +29,7 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/programs",
+        "url": "/v0/programs",
         "params": params,
     }
 

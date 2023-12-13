@@ -69,6 +69,7 @@ use super::{ManagerError, ServerState};
         ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
         ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "HTTP input/output",
     request_body(
@@ -168,6 +169,7 @@ async fn http_input(
         description = "When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.",
         content_type = "application/json",
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "HTTP input/output"
 )]

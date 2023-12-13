@@ -20,7 +20,7 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": "/connectors",
+        "url": "/v0/connectors",
         "json": json_json_body,
     }
 

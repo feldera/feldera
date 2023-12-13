@@ -17,7 +17,7 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/pipelines/{pipeline_id}/config".format(
+        "url": "/v0/pipelines/{pipeline_id}/config".format(
             pipeline_id=pipeline_id,
         ),
     }

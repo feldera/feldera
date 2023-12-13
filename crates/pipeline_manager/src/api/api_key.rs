@@ -66,6 +66,7 @@ pub(crate) struct ApiKeyNameQuery {
         )
     ),
     params(ApiKeyNameQuery),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]
@@ -103,6 +104,7 @@ pub(crate) async fn list_api_keys(
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]
@@ -134,6 +136,7 @@ pub(crate) async fn get_api_key(
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]
@@ -164,6 +167,7 @@ pub(crate) async fn delete_api_key(
             , body = ErrorResponse
             , example = json!(examples::duplicate_name())),
     ),
+    context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "API keys"
 )]

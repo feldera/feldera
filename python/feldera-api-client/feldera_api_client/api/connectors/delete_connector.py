@@ -16,7 +16,7 @@ def _get_kwargs(
 
     return {
         "method": "delete",
-        "url": "/connectors/{connector_id}".format(
+        "url": "/v0/connectors/{connector_id}".format(
             connector_id=connector_id,
         ),
     }

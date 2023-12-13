@@ -17,7 +17,7 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": "/pipelines/{pipeline_id}/{action}".format(
+        "url": "/v0/pipelines/{pipeline_id}/{action}".format(
             pipeline_id=pipeline_id,
             action=action,
         ),

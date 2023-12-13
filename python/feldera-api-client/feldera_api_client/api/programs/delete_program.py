@@ -16,7 +16,7 @@ def _get_kwargs(
 
     return {
         "method": "delete",
-        "url": "/programs/{program_id}".format(
+        "url": "/v0/programs/{program_id}".format(
             program_id=program_id,
         ),
     }

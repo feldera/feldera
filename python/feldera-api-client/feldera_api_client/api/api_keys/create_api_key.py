@@ -21,7 +21,7 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": "/api_keys",
+        "url": "/v0/api_keys",
         "json": json_json_body,
     }
 

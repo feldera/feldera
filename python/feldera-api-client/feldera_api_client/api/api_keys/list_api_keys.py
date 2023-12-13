@@ -23,7 +23,7 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/api_keys",
+        "url": "/v0/api_keys",
         "params": params,
     }
 
