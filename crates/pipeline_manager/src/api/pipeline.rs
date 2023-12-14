@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 /// Request to create a new pipeline.
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NewPipelineRequest {
     /// Config name.
     name: String,
@@ -47,6 +48,7 @@ pub(crate) struct NewPipelineResponse {
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
+#[serde(deny_unknown_fields)]
 pub struct PipelineIdOrNameQuery {
     /// Unique pipeline id.
     id: Option<Uuid>,
@@ -56,6 +58,7 @@ pub struct PipelineIdOrNameQuery {
 
 /// Request to update an existing pipeline.
 #[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct UpdatePipelineRequest {
     /// New pipeline name.
     name: String,
