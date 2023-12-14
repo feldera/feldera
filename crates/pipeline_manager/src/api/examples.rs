@@ -150,7 +150,7 @@ format:
     let input = crate::db::AttachedConnector {
         name: "Input-To-Table".into(),
         is_input: true,
-        connector_id: input_connector.connector_id,
+        connector_id: input_connector.name.clone(),
         relation_name: "my_input_table".into(),
     };
     let output_connector = crate::db::ConnectorDescr {
@@ -172,7 +172,7 @@ format:
     let output = crate::db::AttachedConnector {
         name: "Output-To-View".into(),
         is_input: false,
-        connector_id: output_connector.connector_id,
+        connector_id: output_connector.name.clone(),
         relation_name: "my_output_view".into(),
     };
     let pipeline = crate::db::PipelineDescr {
