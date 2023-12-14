@@ -4,6 +4,6 @@
 /* eslint-disable */
 
 /**
- * Configuration for reading data from Kafka topics with `InputTransport`.
+ * Response to a config update request.
  */
-export type KafkaInputConfig = Record<string, string>
+export type UpdateServiceResponse = Record<string, any>

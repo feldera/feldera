@@ -2,13 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Chunk } from '../models/Chunk'
-import type { EgressMode } from '../models/EgressMode'
-import type { JsonUpdateFormat } from '../models/JsonUpdateFormat'
-import type { NeighborhoodQuery } from '../models/NeighborhoodQuery'
 import type { NewPipelineRequest } from '../models/NewPipelineRequest'
 import type { NewPipelineResponse } from '../models/NewPipelineResponse'
-import type { OutputQuery } from '../models/OutputQuery'
 import type { Pipeline } from '../models/Pipeline'
 import type { PipelineConfig } from '../models/PipelineConfig'
 import type { PipelineRevision } from '../models/PipelineRevision'
@@ -31,7 +26,7 @@ export class PipelinesService {
   public static listPipelines(id?: string | null, name?: string | null): CancelablePromise<Array<Pipeline>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipelines',
+      url: '/v0/pipelines',
       query: {
         id: id,
         name: name
@@ -49,7 +44,7 @@ export class PipelinesService {
   public static newPipeline(requestBody: NewPipelineRequest): CancelablePromise<NewPipelineResponse> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/pipelines',
+      url: '/v0/pipelines',
       body: requestBody,
       mediaType: 'application/json',
       errors: {
@@ -68,7 +63,7 @@ export class PipelinesService {
   public static getPipeline(pipelineId: string): CancelablePromise<Pipeline> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipelines/{pipeline_id}',
+      url: '/v0/pipelines/{pipeline_id}',
       path: {
         pipeline_id: pipelineId
       },
@@ -88,7 +83,7 @@ export class PipelinesService {
   public static pipelineDelete(pipelineId: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/pipelines/{pipeline_id}',
+      url: '/v0/pipelines/{pipeline_id}',
       path: {
         pipeline_id: pipelineId
       },
@@ -114,7 +109,7 @@ export class PipelinesService {
   ): CancelablePromise<UpdatePipelineResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/pipelines/{pipeline_id}',
+      url: '/v0/pipelines/{pipeline_id}',
       path: {
         pipeline_id: pipelineId
       },
@@ -143,7 +138,7 @@ export class PipelinesService {
   public static getPipelineConfig(pipelineId: string): CancelablePromise<PipelineConfig> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipelines/{pipeline_id}/config',
+      url: '/v0/pipelines/{pipeline_id}/config',
       path: {
         pipeline_id: pipelineId
       },
@@ -163,121 +158,12 @@ export class PipelinesService {
   public static pipelineDeployed(pipelineId: string): CancelablePromise<PipelineRevision | null> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipelines/{pipeline_id}/deployed',
+      url: '/v0/pipelines/{pipeline_id}/deployed',
       path: {
         pipeline_id: pipelineId
       },
       errors: {
         404: `Specified \`pipeline_id\` does not exist.`
-      }
-    })
-  }
-
-  /**
-   * Subscribe to a stream of updates from a SQL view or table.
-   * Subscribe to a stream of updates from a SQL view or table.
-   *
-   * The pipeline responds with a continuous stream of changes to the specified
-   * table or view, encoded using the format specified in the `?format=`
-   * parameter. Updates are split into `Chunk`'s.
-   *
-   * The pipeline continuous sending updates until the client closes the
-   * connection or the pipeline is shut down.
-   * @param pipelineId Unique pipeline identifier.
-   * @param tableName SQL table or view name.
-   * @param format Output data format, e.g., 'csv' or 'json'.
-   * @param query Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'
-   * @param mode Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'
-   * @param quantiles For 'quantiles' queries: the number of quantiles to output. The default value is 100.
-   * @param array Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`
-   * @param requestBody When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.
-   * @returns Chunk Connection to the endpoint successfully established. The body of the response contains a stream of data chunks.
-   * @throws ApiError
-   */
-  public static httpOutput(
-    pipelineId: string,
-    tableName: string,
-    format: string,
-    query?: OutputQuery | null,
-    mode?: EgressMode | null,
-    quantiles?: number | null,
-    array?: boolean | null,
-    requestBody?: NeighborhoodQuery | null
-  ): CancelablePromise<Chunk> {
-    return __request(OpenAPI, {
-      method: 'POST',
-      url: '/pipelines/{pipeline_id}/egress/{table_name}',
-      path: {
-        pipeline_id: pipelineId,
-        table_name: tableName
-      },
-      query: {
-        format: format,
-        query: query,
-        mode: mode,
-        quantiles: quantiles,
-        array: array
-      },
-      body: requestBody,
-      mediaType: 'application/json',
-      errors: {
-        400: `Unknown data format specified in the '?format=' argument.`,
-        404: `Specified table or view does not exist.`,
-        410: `Pipeline is not currently running because it has been shutdown or not yet started.`,
-        500: `Request failed.`
-      }
-    })
-  }
-
-  /**
-   * Push data to a SQL table.
-   * Push data to a SQL table.
-   *
-   * The client sends data encoded using the format specified in the `?format=`
-   * parameter as a body of the request.  The contents of the data must match
-   * the SQL table schema specified in `table_name`
-   *
-   * The pipeline ingests data as it arrives without waiting for the end of
-   * the request.  Successful HTTP response indicates that all data has been
-   * ingested successfully.
-   * @param pipelineId Unique pipeline identifier.
-   * @param tableName SQL table name.
-   * @param force When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`
-   * @param format Input data format, e.g., 'csv' or 'json'.
-   * @param requestBody Contains the new input data in CSV.
-   * @param array Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`.
-   * @param updateFormat JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'.
-   * @returns any Data successfully delivered to the pipeline.
-   * @throws ApiError
-   */
-  public static httpInput(
-    pipelineId: string,
-    tableName: string,
-    force: boolean,
-    format: string,
-    requestBody: string,
-    array?: boolean | null,
-    updateFormat?: JsonUpdateFormat | null
-  ): CancelablePromise<any> {
-    return __request(OpenAPI, {
-      method: 'POST',
-      url: '/pipelines/{pipeline_id}/ingress/{table_name}',
-      path: {
-        pipeline_id: pipelineId,
-        table_name: tableName
-      },
-      query: {
-        force: force,
-        format: format,
-        array: array,
-        update_format: updateFormat
-      },
-      body: requestBody,
-      mediaType: 'text/csv',
-      errors: {
-        400: `Error parsing input data.`,
-        404: `Pipeline is not currently running because it has been shutdown or not yet started.`,
-        500: `Request failed.`
       }
     })
   }
@@ -292,7 +178,7 @@ export class PipelinesService {
   public static pipelineStats(pipelineId: string): CancelablePromise<Record<string, any>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipelines/{pipeline_id}/stats',
+      url: '/v0/pipelines/{pipeline_id}/stats',
       path: {
         pipeline_id: pipelineId
       },
@@ -318,7 +204,7 @@ export class PipelinesService {
   public static pipelineValidate(pipelineId: string): CancelablePromise<string> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/pipelines/{pipeline_id}/validate',
+      url: '/v0/pipelines/{pipeline_id}/validate',
       path: {
         pipeline_id: pipelineId
       },
@@ -357,7 +243,7 @@ export class PipelinesService {
   public static pipelineAction(pipelineId: string, action: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/pipelines/{pipeline_id}/{action}',
+      url: '/v0/pipelines/{pipeline_id}/{action}',
       path: {
         pipeline_id: pipelineId,
         action: action

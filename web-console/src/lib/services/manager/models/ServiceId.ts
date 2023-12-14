@@ -4,6 +4,6 @@
 /* eslint-disable */
 
 /**
- * Configuration for reading data from Kafka topics with `InputTransport`.
+ * Unique service id.
  */
-export type KafkaInputConfig = Record<string, string>
+export type ServiceId = string

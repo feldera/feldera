@@ -8,7 +8,7 @@ import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
 
-export class ManagerService {
+export class AuthenticationService {
   /**
    * Get authentication provider configuration
    * Get authentication provider configuration
@@ -18,7 +18,7 @@ export class ManagerService {
   public static getAuthenticationConfig(): CancelablePromise<AuthProvider> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/../config/authentication',
+      url: '/config/authentication',
       errors: {
         500: `Request failed.`
       }

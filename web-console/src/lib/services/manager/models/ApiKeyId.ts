@@ -4,6 +4,6 @@
 /* eslint-disable */
 
 /**
- * Configuration for reading data from Kafka topics with `InputTransport`.
+ * ApiKey ID.
  */
-export type KafkaInputConfig = Record<string, string>
+export type ApiKeyId = string
