@@ -830,6 +830,14 @@ pub fn cast_to_s_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> Str
 pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
     let result = format!("{1:.0$}", DOUBLE_DISPLAY_PRECISION, value);
     let result = result.trim_end_matches('0').to_string();
+    let result = result.trim_end_matches('.').to_string();
+
+    let result = match result.parse::<f64>() {
+        Ok(val) if val.is_infinite() && val.is_sign_positive() => String::from("Infinity"),
+        Ok(val) if val.is_infinite() && val.is_sign_negative() => String::from("-Infinity"),
+        _ => result,
+    };
+
     limit_or_size_string(result, size, fixed)
 }
 
@@ -846,6 +854,14 @@ pub fn cast_to_s_dN(value: Option<F64>, size: i32, fixed: bool) -> String {
 pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
     let result = format!("{1:.0$}", FLOAT_DISPLAY_PRECISION, value);
     let result = result.trim_end_matches('0').to_string();
+    let result = result.trim_end_matches('.').to_string();
+
+    let result = match result.parse::<f32>() {
+        Ok(val) if val.is_infinite() && val.is_sign_positive() => String::from("Infinity"),
+        Ok(val) if val.is_infinite() && val.is_sign_negative() => String::from("-Infinity"),
+        _ => result,
+    };
+
     limit_or_size_string(result, size, fixed)
 }
 

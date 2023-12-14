@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebConsole: 'Inspect connector' button in the connector list in Pipeline Builder that opens a non-editable popup
 - SQL: Support for user-defined functions, declared in SQL and implemented
         in Rust ([#1129](https://github.com/feldera/feldera/pull/1129))
+- SQL: support for other trigonometric functions supported by Calcite ([#1127](https://github.com/feldera/feldera/pull/1127))
 
 ## [0.5.0] - 2023-12-05
 
