@@ -2759,7 +2759,7 @@ impl ProjectDB {
             .as_ref()
             .ok_or(DBError::ProgramNotSet)?;
         let program = self
-            .get_program_by_name(tenant_id, &program_name, true)
+            .get_program_by_name(tenant_id, program_name, true)
             .await?;
         let connectors = self
             .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
