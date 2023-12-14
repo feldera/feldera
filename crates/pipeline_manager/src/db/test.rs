@@ -370,7 +370,7 @@ async fn program_queries() {
 async fn program_config() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
-    let connector_id = handle
+    handle
         .db
         .new_connector(
             tenant_id,
@@ -384,7 +384,7 @@ async fn program_config() {
     let ac = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id,
+        connector_id: "a".to_string(),
         relation_name: "".to_string(),
     };
     let rc = RuntimeConfig::from_yaml("");
@@ -504,7 +504,7 @@ async fn update_status() {
 async fn duplicate_attached_conn_name() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
-    let connector_id = handle
+    handle
         .db
         .new_connector(
             tenant_id,
@@ -518,13 +518,13 @@ async fn duplicate_attached_conn_name() {
     let ac = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id,
+        connector_id: "a".to_string(),
         relation_name: "".to_string(),
     };
     let ac2 = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id,
+        connector_id: "a".to_string(),
         relation_name: "".to_string(),
     };
     let rc = RuntimeConfig::from_yaml("");
@@ -728,10 +728,10 @@ async fn versioning() {
     let mut ac1 = AttachedConnector {
         name: "ac1".to_string(),
         is_input: true,
-        connector_id: connector_id1,
+        connector_id: "a".to_string(),
         relation_name: "t1".to_string(),
     };
-    let connector_id2 = handle
+    handle
         .db
         .new_connector(tenant_id, Uuid::now_v7(), "d", "e", &config2)
         .await
@@ -739,7 +739,7 @@ async fn versioning() {
     let mut ac2 = AttachedConnector {
         name: "ac2".to_string(),
         is_input: false,
-        connector_id: connector_id2,
+        connector_id: "d".to_string(),
         relation_name: "v1".to_string(),
     };
     let rc = RuntimeConfig::from_yaml("");
@@ -2006,7 +2006,7 @@ impl Storage for Mutex<DbModel> {
                         .descriptor
                         .attached_connectors
                         .iter()
-                        .any(|ac| ac.connector_id == c.connector_id)
+                        .any(|ac| ac.connector_id == c.name)
                 })
                 .cloned()
                 .collect::<Vec<ConnectorDescr>>();
@@ -2138,9 +2138,12 @@ impl Storage for Mutex<DbModel> {
             for ac in connectors {
                 // Check that all attached connectors point to a valid
                 // connector_id
-                if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
-                    return Err(DBError::UnknownConnector {
-                        connector_id: ac.connector_id,
+                if !db_connectors
+                    .iter()
+                    .any(|entry| entry.0 .0 == tenant_id && entry.1.name == ac.connector_id)
+                {
+                    return Err(DBError::UnknownConnectorName {
+                        connector_name: ac.connector_id.to_string(),
                     });
                 }
                 if new_acs.iter().any(|nac| nac.name == ac.name) {
@@ -2203,9 +2206,12 @@ impl Storage for Mutex<DbModel> {
             for ac in connectors {
                 // Check that all attached connectors point to a valid
                 // connector_id
-                if !db_connectors.contains_key(&(tenant_id, ac.connector_id)) {
-                    return Err(DBError::UnknownConnector {
-                        connector_id: ac.connector_id,
+                if !db_connectors
+                    .iter()
+                    .any(|entry| entry.0 .0 == tenant_id && entry.1.name == ac.connector_id)
+                {
+                    return Err(DBError::UnknownConnectorName {
+                        connector_name: ac.connector_id.to_string(),
                     });
                 }
                 if new_acs.iter().any(|nac| nac.name == ac.name) {
@@ -2522,13 +2528,14 @@ impl Storage for Mutex<DbModel> {
         connector_id: super::ConnectorId,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
-        s.connectors
+        let row = s
+            .connectors
             .remove(&(tenant_id, connector_id))
             .ok_or(DBError::UnknownConnector { connector_id })?;
         s.pipelines.values_mut().for_each(|c| {
             c.descriptor
                 .attached_connectors
-                .retain(|c| c.connector_id != connector_id);
+                .retain(|c| c.name != row.name);
         });
         Ok(())
     }
