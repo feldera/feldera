@@ -259,7 +259,6 @@ const SslForm = (props: { disabled?: boolean }) => (
             name='config.enable_ssl_certificate_verification'
             label='enable.ssl.certificate.verification'
             disabled={props.disabled}
-
             data-testid='input-enable-ssl-certificate-verification'
           />
         </div>

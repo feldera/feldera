@@ -12,7 +12,6 @@ import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FormContainer } from 'react-hook-form-mui'
 import * as va from 'valibot'
-import IconCheck from '~icons/bx/check'
 import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
@@ -105,16 +104,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
           ></GenericEditorForm>
         </DialogContent>
         <DialogActions sx={{ pb: { xs: 8, sm: 12.5 }, justifyContent: 'center' }}>
-          <Button
-            variant='contained'
-            sx={{ mr: 1 }}
-            color='success'
-            endIcon={<IconCheck />}
-            form='generic-connector-form'
-            type='submit'
-          >
-            {props.connector !== undefined ? 'Update' : 'Create'}
-          </Button>
+          {props.submitButton}
           <Button variant='outlined' color='secondary' onClick={() => props.setShow(false)}>
             Cancel
           </Button>
