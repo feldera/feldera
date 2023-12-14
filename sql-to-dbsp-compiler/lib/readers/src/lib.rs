@@ -72,7 +72,9 @@ where
 }
 
 #[cfg(test)]
-use tuple::declare_tuples;
+use dbsp::NumEntries;
+#[cfg(test)]
+use tuple::{count_items, declare_tuples, measure_items};
 
 #[cfg(test)]
 declare_tuples! {
