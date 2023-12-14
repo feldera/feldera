@@ -97,5 +97,6 @@ class DBSPConnection:
         return DBSPProgram(
             api_client=self.api_client,
             program_id=program_id,
+            program_name=name,
             program_version=program_response.version,
         )
