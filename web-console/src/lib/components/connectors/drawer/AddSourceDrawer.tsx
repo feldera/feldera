@@ -243,7 +243,13 @@ const SideBarAddIo = () => {
             onSuccess={onAddClick(direction as Direction)}
             existingTitle={null}
             submitButton={
-              <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
+              <Button
+                variant='contained'
+                color='success'
+                endIcon={<IconCheck />}
+                type='submit'
+                data-testid='button-create'
+              >
                 Create
               </Button>
             }

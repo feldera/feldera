@@ -1290,13 +1290,6 @@
   dependencies:
     "@iconify/types" "*"
 
-"@iconify-json/logos@^1.1.37":
-  version "1.1.37"
-  resolved "https://registry.npmjs.org/@iconify-json/logos/-/logos-1.1.37.tgz"
-  integrity sha512-H2S8frTEznk6paX2kMzeUGn4KSiykghvO0b8UvEDd1fFFzt0WxCXpP1tBv67XaWK99e6JgA34hhv4lRGAm1hJg==
-  dependencies:
-    "@iconify/types" "*"
-
 "@iconify-json/mdi@^1.1.54":
   version "1.1.55"
   resolved "https://registry.npmjs.org/@iconify-json/mdi/-/mdi-1.1.55.tgz"

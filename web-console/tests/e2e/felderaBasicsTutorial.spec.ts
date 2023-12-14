@@ -2,6 +2,7 @@ import invariant from 'tiny-invariant'
 
 import { expect, Page, test } from '@playwright/test'
 
+import { apiOrigin, appOrigin } from '../../playwright.config'
 import felderaBasicsTutorialSql from '../resources/sql/felderaBasicsTutorial'
 
 // Insert data rows into an empty table
@@ -33,11 +34,19 @@ const addUrlConnector = async (page: Page, params: { name: string; url: string }
   // Connector created successfully!
 }
 
-const apiOrigin = process.env.PLAYWRIGHT_API_ORIGIN!
-const appOrigin = process.env.PLAYWRIGHT_APP_ORIGIN!
-
 const pipelineName = 'Supply Chain Test Pipeline'
 const programName = 'Supply Chain Analytics'
+
+/**
+ * Example setup
+
+test.beforeAll('Prepare', async ({browser}) => {
+  const page = await browser.newPage()
+  await page.goto(appOrigin)
+  ...
+  await page.close()
+})
+ */
 
 test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   test.setTimeout(150000)

@@ -6,6 +6,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 // require('dotenv').config();
 
+export const apiOrigin = process.env.PLAYWRIGHT_API_ORIGIN!
+export const appOrigin = process.env.PLAYWRIGHT_APP_ORIGIN!
+
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -34,18 +37,25 @@ export default defineConfig({
   /* Configure projects for major browsers */
   projects: [
     {
+      name: 'setup',
+      testMatch: /global\.setup\.ts/,
+    },
+    {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
     },
 
     // {
     //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
+    //   use: { ...devices['Desktop Firefox'] },,
+    //   dependencies: ['setup'],
     // },
 
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
+      dependencies: ['setup'],
     },
 
     /* Test against mobile viewports. */

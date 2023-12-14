@@ -238,7 +238,13 @@ const DataSourceTable = () => {
           connector={connector}
           existingTitle={name => 'Update ' + name}
           submitButton={
-            <Button variant='contained' color='success' endIcon={<IconCheck />} type='submit'>
+            <Button
+              variant='contained'
+              color='success'
+              endIcon={<IconCheck />}
+              type='submit'
+              data-testid='button-update'
+            >
               Update
             </Button>
           }
