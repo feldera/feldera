@@ -1655,17 +1655,19 @@ impl Storage for ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_id,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_id', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
                         '[]')
                 FROM pipeline p
+                LEFT JOIN program prog on p.program_id = prog.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.name = $1 AND p.tenant_id = $2
-                GROUP BY p.id
+                GROUP BY p.id, prog.name
                 ",
             )
             .await?;
@@ -1688,7 +1690,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_id', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1698,6 +1700,7 @@ impl Storage for ProjectDB {
                 INNER JOIN pipeline_runtime_state rt on p.id = rt.id
                 LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.name = $1 AND p.tenant_id = $2
                 GROUP BY p.id, rt.id, program.name
                 ",
@@ -2837,17 +2840,19 @@ impl ProjectDB {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
-                "SELECT p.id, version, p.name as cname, description, p.config, program_name,
+                "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
                 COALESCE(json_agg(json_build_object('name', ach.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_id', ch.name,
                                                     'config', ach.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ach.name IS NOT NULL),
                         '[]')
                 FROM pipeline_history p
+                LEFT JOIN program_history prog on p.program_id = prog.id AND prog.revision = $3
                 LEFT JOIN attached_connector_history ach on p.id = ach.pipeline_id AND ach.revision = $3
+                LEFT JOIN connector_history ch on ach.connector_id = ch.id
                 WHERE p.id = $1 AND p.tenant_id = $2 AND p.revision = $3
-                GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id
+                GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id, prog.name
                 ")
             .await?;
         let row = manager
@@ -2985,8 +2990,8 @@ impl ProjectDB {
 
             // let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
             // let connector_id = ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| {
-            //     DBError::invalid_data(format!("error parsing connector id '{uuid_str}': {e}"))
-            // })?);
+            //     DBError::invalid_data(format!("error parsing connector id '{uuid_str}':
+            // {e}")) })?);
             let connector_id = obj
                 .get("connector_id")
                 .unwrap()
