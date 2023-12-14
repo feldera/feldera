@@ -23,6 +23,9 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
+import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -38,10 +41,12 @@ import java.util.Map;
 public class Catalog extends AbstractSchema {
     public final String schemaName;
     private final Map<String, Table> tableMap;
+    private final Multimap<String, Function> functionMap;
 
     public Catalog(String schemaName) {
         this.schemaName = schemaName;
         this.tableMap = new HashMap<>();
+        this.functionMap = ArrayListMultimap.create();
     }
 
     public static String identifierToString(SqlIdentifier identifier) {
@@ -54,9 +59,16 @@ public class Catalog extends AbstractSchema {
         this.tableMap.put(name, table);
     }
 
+    public void addFunction(String name, Function function) { this.functionMap.put(name, function); }
+
     @Override
     public Map<String, Table> getTableMap() {
         return this.tableMap;
+    }
+
+    @Override
+    protected Multimap<String, Function> getFunctionMultimap() {
+        return this.functionMap;
     }
 
     public void dropTable(String tableName) {

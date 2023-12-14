@@ -6,14 +6,21 @@ pub mod casts;
 pub mod geopoint;
 pub mod interval;
 pub mod operators;
+pub mod source;
 pub mod string;
 pub mod timestamp;
 
-use crate::interval::ShortInterval;
+pub use geopoint::GeoPoint;
+pub use interval::LongInterval;
+pub use interval::ShortInterval;
+pub use source::{SourcePosition, SourcePositionRange};
+pub use timestamp::Date;
+pub use timestamp::Time;
+pub use timestamp::Timestamp;
+
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{DBData, DBWeight, OrdIndexedZSet, OrdZSet};
-use geopoint::GeoPoint;
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
@@ -661,12 +668,6 @@ where
         w = w.add_by_ref(&negone);
     }
 }
-
-pub fn st_distance_geopoint_geopoint(left: GeoPoint, right: GeoPoint) -> F64 {
-    left.distance(&right)
-}
-
-some_polymorphic_function2!(st_distance, geopoint, GeoPoint, geopoint, GeoPoint, F64);
 
 pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
     left * right

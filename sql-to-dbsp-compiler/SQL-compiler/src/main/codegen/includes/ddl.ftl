@@ -98,7 +98,7 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
         )
 }
 
-SqlNodeList AttributeDefList() :
+SqlNodeList NonEmptyAttributeDefList() :
 {
     final Span s;
     final List<SqlNode> list = new ArrayList<SqlNode>();
@@ -109,6 +109,23 @@ SqlNodeList AttributeDefList() :
     (
         <COMMA> AttributeDef(list)
     )*
+    <RPAREN> {
+        return new SqlNodeList(list, s.end(this));
+    }
+}
+
+SqlNodeList AttributeDefList() :
+{
+    final Span s;
+    final List<SqlNode> list = new ArrayList<SqlNode>();
+}
+{
+    <LPAREN> { s = span(); }
+    ( AttributeDef(list)
+        (
+            <COMMA> AttributeDef(list)
+        )*
+    )?
     <RPAREN> {
         return new SqlNodeList(list, s.end(this));
     }
@@ -135,6 +152,27 @@ void AttributeDef(List<SqlNode> list) :
     }
 }
 
+SqlCreateFunctionDeclaration SqlCreateFunction(Span s, boolean replace) :
+{
+    final boolean ifNotExists;
+    final SqlIdentifier id;
+    final SqlNodeList parameters;
+    final SqlDataTypeSpec type;
+    final boolean nullable;
+}
+{
+    <FUNCTION> ifNotExists = IfNotExistsOpt()
+    id = SimpleIdentifier()
+    parameters = AttributeDefList()
+    <RETURNS>
+    type = DataType()
+    nullable = NullableOptDefaultTrue()
+    {
+        return new SqlCreateFunctionDeclaration(s.end(this), replace, ifNotExists,
+            id, parameters, type.withNullable(nullable));
+    }
+}
+
 SqlCreate SqlCreateType(Span s, boolean replace) :
 {
     final SqlIdentifier id;
@@ -146,7 +184,7 @@ SqlCreate SqlCreateType(Span s, boolean replace) :
     id = CompoundIdentifier()
     <AS>
     (
-        attributeDefList = AttributeDefList()
+        attributeDefList = NonEmptyAttributeDefList()
     |
         type = DataType()
     )

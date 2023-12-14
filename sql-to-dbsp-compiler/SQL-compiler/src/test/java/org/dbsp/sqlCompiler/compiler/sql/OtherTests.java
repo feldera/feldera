@@ -21,28 +21,37 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler;
+package org.dbsp.sqlCompiler.compiler.sql;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
-import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
-import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -62,8 +71,15 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.imageio.ImageIO;
-import java.io.*;
-import java.sql.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -319,6 +335,54 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         ") select * FROM LOW_PRICE_CTE";
         File file = createInputScript(statement);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+    }
+
+    @Test
+    public void testUDFWarning() throws IOException {
+        File file = createInputScript("CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR",
+                "CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', CAST(5 AS INTEGER))");
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        Assert.assertEquals(1, messages.warningCount());
+        Assert.assertTrue(messages.toString().contains("the compiler was invoked without the `-udf` flag"));
+    }
+
+    @Test
+    public void testUDFTypeError() throws IOException {
+        File file = createInputScript("CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR NOT NULL",
+                "CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5')");
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
+        Assert.assertEquals(1, messages.errorCount());
+        Assert.assertTrue(messages.toString().contains(
+                "Cannot apply 'MYFUNCTION' to arguments of type 'MYFUNCTION(<DATE>, <CHAR(1)>)'. " +
+                "Supported form(s): MYFUNCTION(<DATE>, <INTEGER>)"));
+    }
+
+    @Test
+    public void testUDF() throws IOException, InterruptedException {
+        File file = createInputScript(
+                "CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL",
+                "CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5)",
+                "CREATE FUNCTION \"empty\"() RETURNS VARCHAR",
+                "CREATE VIEW V1 AS SELECT \"empty\"()");
+        File implementation = File.createTempFile("impl", ".rs", new File(rustDirectory));
+        createInputFile(implementation,
+                System.lineSeparator(),
+                "use sqllib::*;",
+                "pub fn CONTAINS_NUMBER(pos: &SourcePositionRange, str: String, value: Option<i32>) -> " +
+                "   Result<bool, Box<dyn std::error::Error>> {",
+                "   match value {",
+                "      None => Err(format!(\"{}: null value\", pos).into()),",
+                "      Some(value) => Ok(str.contains(&format!(\"{}\", value).to_string())),",
+                "   }",
+                "}",
+                "pub fn empty(pos: &SourcePositionRange) -> Result<Option<String>, Box<dyn std::error::Error>> {",
+                "   Ok(Some(\"\".to_string()))",
+                "}");
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, "--udf",
+                implementation.getPath(), file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);

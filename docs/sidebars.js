@@ -108,6 +108,7 @@ const sidebars = {
         'sql/binary',
         'sql/array',
         'sql/datetime'
+        'sql/udf'
       ]
     },
     {

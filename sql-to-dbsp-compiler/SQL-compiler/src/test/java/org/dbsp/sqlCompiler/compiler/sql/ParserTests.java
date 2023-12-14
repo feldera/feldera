@@ -23,11 +23,14 @@
  *
  */
 
-package org.dbsp.sqlCompiler.compiler;
+package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.junit.Assert;
 import org.junit.Test;
@@ -61,14 +64,26 @@ public class ParserTests {
     }
 
     @Test
+    public void createFunctionTest() throws SqlParseException {
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = "CREATE FUNCTION to_json(data VARCHAR) RETURNS VARBINARY;\n" +
+                "CREATE FUNCTION from_json(data VARBINARY) RETURNS VARCHAR;\n";
+        SqlNode node = calcite.parseStatements(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
     public void createTypeTest() throws SqlParseException {
         CalciteCompiler calcite = this.getCompiler();
         String ddl = "CREATE TYPE address_typ AS (\n" +
                 "   street          VARCHAR(30),\n" +
                 "   city            VARCHAR(30),\n" +
                 "   state           CHAR(2),\n" +
-                "   postal_code     VARCHAR(6))";
-        SqlNode node = calcite.parse(ddl);
+                "   postal_code     VARCHAR(6));\n" +
+                "CREATE TYPE person_type AS (\n" +
+                "   firstname       VARCHAR(30),\n" +
+                "   lastname        VARCHAR(30));";
+        SqlNode node = calcite.parseStatements(ddl);
         Assert.assertNotNull(node);
     }
 

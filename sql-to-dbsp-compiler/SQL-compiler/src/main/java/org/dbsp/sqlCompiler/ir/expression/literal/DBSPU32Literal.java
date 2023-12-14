@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -49,6 +50,8 @@ public class DBSPU32Literal extends DBSPIntLiteral {
 
     public DBSPU32Literal(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
+        if (value != null && value < 0)
+            throw new CompilationError("Negative value for u32 literal " + value);
         this.value = value;
     }
 

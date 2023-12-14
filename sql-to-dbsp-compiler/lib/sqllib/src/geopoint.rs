@@ -1,5 +1,6 @@
 // I cannot use the standard geopoint object because it doesn't implement Ord
 
+use crate::some_polymorphic_function2;
 use ::serde::{Deserialize, Serialize};
 use dbsp::algebra::F64;
 use dbsp::num_entries_scalar;
@@ -72,3 +73,9 @@ pub fn make_geopointN_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<Geo
         (Some(x), Some(y)) => make_geopointN_d_d(x, y),
     }
 }
+
+pub fn st_distance_geopoint_geopoint(left: GeoPoint, right: GeoPoint) -> F64 {
+    left.distance(&right)
+}
+
+some_polymorphic_function2!(st_distance, geopoint, GeoPoint, geopoint, GeoPoint, F64);

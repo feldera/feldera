@@ -1,9 +1,10 @@
-package org.dbsp.sqlCompiler.compiler;
+package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.CompilerMain;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.junit.Assert;
 import org.junit.Test;
 

@@ -24,22 +24,86 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rex.*;
+import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
-import org.dbsp.sqlCompiler.ir.type.*;
-import org.dbsp.sqlCompiler.ir.type.primitive.*;
-import org.dbsp.util.*;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeResult;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Point;
 
@@ -59,7 +123,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     private final List<RexLiteral> constants;
     private final DBSPCompiler compiler;
 
-    public ExpressionCompiler(@Nullable DBSPVariablePath inputRow, DBSPCompiler compiler) {
+    public ExpressionCompiler(
+            @Nullable DBSPVariablePath inputRow, DBSPCompiler compiler) {
         this(inputRow, Linq.list(), compiler);
     }
 
@@ -329,7 +394,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
      * depending on the argument types.
      * @param  call Operation that is compiled.
      * @param  node CalciteObject holding the call.
-     * @param  resultType Type of result produced by call.
+     * @param  resultType Type of result produced by call.  We assume that
+     *                    the typechecker is right, and this is the correct
+     *                    result produced by this function.  No cast needed.
      * @param  ops  Translated operands for the call.
      * @param  expectedArgCount A list containing all known possible argument counts.
      */
@@ -581,6 +648,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return result;
             }
             case ST_POINT: {
+                // Sometimes the Calcite type for ST_POINT is nullable
+                // even if all arguments are not nullable.  So we can't
+                // just use compilePolymorphicFunction.
                 if (ops.size() != 2)
                     throw new UnimplementedException("Expected only 2 operands", node);
                 DBSPExpression left = ops.get(0);
@@ -694,7 +764,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "array":
                         return this.compileFunction(call, node, type, ops, 0);
                 }
-                throw new UnimplementedException(node);
+                return this.compileUDF(node, call, type, ops);
             }
             case OTHER:
                 String opName = call.op.getName().toLowerCase();
@@ -758,6 +828,37 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             default:
                 throw new UnimplementedException(node);
         }
+    }
+
+    DBSPExpression toPosition(SourcePosition pos) {
+        return new DBSPConstructorExpression(
+                new DBSPPath("SourcePosition", "new").toExpression(),
+                DBSPTypeAny.getDefault(),
+                new DBSPU32Literal(pos.line), new DBSPU32Literal(pos.column));
+    }
+
+    DBSPExpression toPosition(SourcePositionRange range) {
+        return new DBSPConstructorExpression(
+                new DBSPPath("SourcePositionRange", "new").toExpression(),
+                DBSPTypeAny.getDefault(),
+                toPosition(range.start), toPosition(range.end));
+    }
+
+    private DBSPExpression compileUDF(CalciteObject node, RexCall call, DBSPType type, List<DBSPExpression> ops) {
+        String function = call.op.getName();  // no lowercase applied
+        CustomFunctions.ExternalFunction ef = this.compiler.getCustomFunctions()
+                .getImplementation(function);
+        if (ef == null)
+            throw new CompilationError("Function " + Utilities.singleQuote(function) + " is unknown", node);
+        List<DBSPType> operandTypes = Linq.map(ef.parameterList,
+                p -> this.typeCompiler.convertType(p.getType(), false));
+        List<DBSPExpression> converted = Linq.zip(ops, operandTypes, DBSPExpression::cast);
+        SourcePositionRange pos = node.getPositionRange();
+        DBSPExpression[] arguments = new DBSPExpression[converted.size() + 1];
+        arguments[0] = this.toPosition(pos).borrow();
+        for (int i = 0; i < converted.size(); i++)
+            arguments[i+1] = converted.get(i);
+        return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).unwrap();
     }
 
     private DBSPExpression castTo(DBSPExpression expression, DBSPType type) {

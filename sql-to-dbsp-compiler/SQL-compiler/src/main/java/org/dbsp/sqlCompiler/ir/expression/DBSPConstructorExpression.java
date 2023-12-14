@@ -30,9 +30,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
-/**
- * Invocation of a Rust constructor with some arguments.
- */
+/** Invocation of a Rust constructor with some arguments. */
 public class DBSPConstructorExpression extends DBSPExpression {
     public final DBSPExpression function;
     public final DBSPExpression[] arguments;
