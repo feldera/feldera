@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class TrigonometryTests extends SqlIoTest {
@@ -1040,6 +1041,66 @@ public class TrigonometryTests extends SqlIoTest {
                         "---------\n" +
                         " 360\n" +
                         "(1 row)"
+        );
+    }
+
+    // Tested on Postgres
+    @Test
+    public void validInputs() {
+        this.qs(
+                "SELECT sin('-3');\n" +
+                        " sin \n" +
+                        "-----\n" +
+                        " -0.1411200080598672\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                "SELECT sin(CAST(-3.0 AS DECIMAL(3, 2)));\n" +
+                        " sin \n" +
+                        "-----\n" +
+                        " -0.1411200080598672\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                "SELECT sin(CAST(-3 AS TINYINT));\n" +
+                        " sin \n" +
+                        "-----\n" +
+                        " -0.1411200080598672\n" +
+                        "(1 row)\n" +
+                        "\n" +
+                "SELECT sin(CAST(-3 AS BIGINT));\n" +
+                        " sin \n" +
+                        "-----\n" +
+                        " -0.1411200080598672\n" +
+                        "(1 row)"
+        );
+    }
+
+    @Test
+    public void invalidInputs() {
+        this.shouldFail(
+                "SELECT sin(CAST('2023-12-14' AS DATE))",
+                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<DATE>)'. Supported form(s): 'SIN(<NUMERIC>)'"
+        );
+
+        this.shouldFail("SELECT sin(true)",
+                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<BOOLEAN>)'. Supported form(s): 'SIN(<NUMERIC>)'"
+        );
+
+        this.shouldFail("SELECT sin(CAST('101' AS BINARY(3)))",
+                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<BINARY(3)>)'. Supported form(s): 'SIN(<NUMERIC>)'"
+        );
+
+        this.shouldFail("SELECT sin(CAST('15:06:51.06731' AS TIME))",
+                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<TIME(0)>)'. Supported form(s): 'SIN(<NUMERIC>)'"
+        );
+    }
+
+
+    // This test fails right now
+    // When sin casts to Double, 'test' gets turned into 0 instead of returning an error
+    @Test @Ignore
+    public void testStringAsInput() {
+        this.shouldFail("SELECT sin('test')",
+                "Cannot apply 'SIN' to arguments of type 'SIN(<String>)'."
         );
     }
 }
