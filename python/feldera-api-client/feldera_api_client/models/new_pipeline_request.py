@@ -22,14 +22,14 @@ class NewPipelineRequest:
         description (str): Config description.
         name (str): Config name.
         connectors (Union[Unset, None, List['AttachedConnector']]): Attached connectors.
-        program_id (Union[Unset, None, str]): Unique program id.
+        program_name (Union[Unset, None, str]): Program to create config for.
     """
 
     config: "RuntimeConfig"
     description: str
     name: str
     connectors: Union[Unset, None, List["AttachedConnector"]] = UNSET
-    program_id: Union[Unset, None, str] = UNSET
+    program_name: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -48,7 +48,7 @@ class NewPipelineRequest:
 
                     connectors.append(connectors_item)
 
-        program_id = self.program_id
+        program_name = self.program_name
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -61,8 +61,8 @@ class NewPipelineRequest:
         )
         if connectors is not UNSET:
             field_dict["connectors"] = connectors
-        if program_id is not UNSET:
-            field_dict["program_id"] = program_id
+        if program_name is not UNSET:
+            field_dict["program_name"] = program_name
 
         return field_dict
 
@@ -85,14 +85,14 @@ class NewPipelineRequest:
 
             connectors.append(connectors_item)
 
-        program_id = d.pop("program_id", UNSET)
+        program_name = d.pop("program_name", UNSET)
 
         new_pipeline_request = cls(
             config=config,
             description=description,
             name=name,
             connectors=connectors,
-            program_id=program_id,
+            program_name=program_name,
         )
 
         new_pipeline_request.additional_properties = d

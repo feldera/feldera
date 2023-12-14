@@ -17,9 +17,10 @@ class DBSPProgram:
     compiler.
     """
 
-    def __init__(self, api_client, program_id, program_version):
+    def __init__(self, api_client, program_id, program_name, program_version):
         self.api_client = api_client
         self.program_id = program_id
+        self.program_name = program_name
         self.program_version = program_version
 
     def compile(self, *, timeout: float = sys.maxsize):
