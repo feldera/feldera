@@ -574,7 +574,7 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
     let pipeline_request = json!({
         "name":  "test",
         "description": "desc",
-        "program_id": Some(id.to_string()),
+        "program_name": Some("test".to_string()),
         "config": {},
         "connectors": null
     });
@@ -793,7 +793,7 @@ async fn program_delete_with_pipeline() {
     let pipeline_request = json!({
         "name":  "test",
         "description": "desc",
-        "program_id": Some(program_id.to_string()),
+        "program_name": Some("test".to_string()),
         "config": {},
         "connectors": null
     });
@@ -1358,7 +1358,7 @@ async fn pipeline_runtime_configuration() {
     let pipeline_request = json!({
         "name":  "pipeline_runtime_configuration",
         "description": "desc",
-        "program_id": null,
+        "program_name": null,
         "config": {
             "workers": 100,
             "resources": {
@@ -1432,7 +1432,7 @@ async fn pipeline_start_without_compiling() {
     let pipeline_request = json!({
         "name":  "test",
         "description": "desc",
-        "program_id": Some(program_id.to_string()),
+        "program_name": Some("test".to_string()),
         "config": {},
         "connectors": null
     });
