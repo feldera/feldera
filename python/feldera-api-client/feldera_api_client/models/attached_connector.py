@@ -10,7 +10,7 @@ class AttachedConnector:
     """Format to add attached connectors during a config update.
 
     Attributes:
-        connector_id (str): Unique connector id.
+        connector_id (str): The name of the connector to attach.
         is_input (bool): True for input connectors, false for output connectors.
         name (str): A unique identifier for this attachement.
         relation_name (str): The table or view this connector is attached to. Unquoted
