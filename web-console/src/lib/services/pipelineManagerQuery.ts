@@ -3,15 +3,18 @@ import { compose } from '$lib/functions/common/function'
 import { getQueryData, invalidateQuery, mkQuery, setQueryData } from '$lib/functions/common/tanstack'
 import {
   ApiError,
+  ApiKeyDescr,
+  ApiKeysService,
+  AuthenticationService,
   CancelablePromise,
   ConnectorsService,
-  ManagerService,
   PipelineId,
   PipelinesService,
   PipelineStatus as RawPipelineStatus,
   ProgramId,
   ProgramsService,
   ProgramStatus,
+  ServicesService,
   UpdateProgramRequest
 } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
@@ -95,9 +98,43 @@ export const PipelineManagerQuery = (({ pipelines, pipelineStatus, ...queries })
     pipelineValidate: PipelinesService.pipelineValidate,
     connector: () => ConnectorsService.listConnectors(),
     connectorStatus: ConnectorsService.getConnector,
-    getAuthConfig: ManagerService.getAuthenticationConfig
+    getAuthConfig: AuthenticationService.getAuthenticationConfig,
+    listApiKeys: ApiKeysService.listApiKeys,
+    getApiKey: ApiKeysService.getApiKey,
+    listServices: ServicesService.listServices,
+    getService: ServicesService.getService,
+    newService: ServicesService.newService
   })
 )
+
+export const mutationGenerateApiKey = (queryClient: QueryClient) => ({
+  mutationFn: ApiKeysService.createApiKey,
+  onSettled: () => {
+    invalidateQuery(queryClient, PipelineManagerQuery.listApiKeys())
+  }
+})
+
+/**
+ * Delete API key with optimistic cache update
+ * @param queryClient
+ * @returns
+ */
+export const mutationDeleteApiKey = (queryClient: QueryClient) =>
+  ({
+    mutationFn: ApiKeysService.deleteApiKey,
+    onMutate: async name => {
+      await queryClient.cancelQueries(PipelineManagerQuery.listApiKeys())
+      const previous = getQueryData(queryClient, PipelineManagerQuery.listApiKeys())
+      setQueryData(queryClient, PipelineManagerQuery.listApiKeys(), old => old?.filter(key => key.name !== name))
+      return previous
+    },
+    onError: (_error, _name, context) => {
+      setQueryData(queryClient, PipelineManagerQuery.listApiKeys(), context)
+    },
+    onSettled: () => {
+      invalidateQuery(queryClient, PipelineManagerQuery.listApiKeys())
+    }
+  }) satisfies UseMutationOptions<{}, ApiError, string, ApiKeyDescr[]>
 
 /**
  * Cache is considered valid if it was not invalidated and was set less than 10 seconds ago
