@@ -506,33 +506,31 @@ const Editors = (props: { programId: string | null }) => {
         <Link href={`/analytics/programs`}>SQL Programs</Link>
         <Link href={`/analytics/editor/?program_id=${programId}`}>{project.name}</Link>
       </BreadcrumbsHeader>
-      <Grid item xs={12}>
-        <Card>
-          <CardHeader title='SQL Code'></CardHeader>
-          <CardContent>
-            <MetadataForm project={project} setProject={setProject} setState={setState} errors={formError} />
-          </CardContent>
-          <CardContent>
-            <Grid item xs={12}>
-              {/* ids referenced by webui-tester */}
-              <SaveIndicator id='save-indicator' stateToLabel={stateToEditorLabel} state={state} />
-              <CompileIndicator id='compile-indicator' state={project.status} />
-            </Grid>
-          </CardContent>
-          {/* id referenced by webui-tester */}
-          <CardContent id='editor-content'>
-            <Editor
-              height='60vh'
-              theme={vscodeTheme}
-              defaultLanguage='sql'
-              value={project.code || ''}
-              onChange={updateCode}
-              onMount={editor => handleEditorDidMount(editor)}
-            />
-          </CardContent>
-          <Divider sx={{ m: '0 !important' }} />
-        </Card>
-      </Grid>
+      <Card>
+        <CardHeader title='SQL Code'></CardHeader>
+        <CardContent>
+          <MetadataForm project={project} setProject={setProject} setState={setState} errors={formError} />
+        </CardContent>
+        <CardContent>
+          <Grid item xs={12}>
+            {/* ids referenced by webui-tester */}
+            <SaveIndicator id='save-indicator' stateToLabel={stateToEditorLabel} state={state} />
+            <CompileIndicator id='compile-indicator' state={project.status} />
+          </Grid>
+        </CardContent>
+        {/* id referenced by webui-tester */}
+        <CardContent id='editor-content'>
+          <Editor
+            height='60vh'
+            theme={vscodeTheme}
+            defaultLanguage='sql'
+            value={project.code || ''}
+            onChange={updateCode}
+            onMount={editor => handleEditorDidMount(editor)}
+          />
+        </CardContent>
+        <Divider sx={{ m: '0 !important' }} />
+      </Card>
     </>
   ) : (
     <>Loading...</>

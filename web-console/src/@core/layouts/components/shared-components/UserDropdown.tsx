@@ -1,11 +1,11 @@
 'use client'
 
 import { useAuth } from '$lib/compositions/auth/useAuth'
-import AccountOutline from 'mdi-material-ui/AccountOutline'
-import CogOutline from 'mdi-material-ui/CogOutline'
-import LogoutVariant from 'mdi-material-ui/LogoutVariant'
 import { Fragment, SyntheticEvent, useState } from 'react'
 import invariant from 'tiny-invariant'
+import AccountOutline from '~icons/mdi/account-outline'
+import CogOutline from '~icons/mdi/cog-outline'
+import LogoutVariant from '~icons/mdi/logout-variant'
 
 import { useClipboard } from '@mantine/hooks'
 import { Button, Link } from '@mui/material'
@@ -46,6 +46,7 @@ const UserDropdown = () => {
     width: '100%',
     display: 'flex',
     alignItems: 'center',
+    gap: 2,
     color: 'text.primary',
     textDecoration: 'none',
     '& svg': {
@@ -98,20 +99,22 @@ const UserDropdown = () => {
         <Divider sx={{ mt: 0, mb: 1 }} />
         <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled>
           <Box sx={styles}>
-            <AccountOutline sx={{ marginRight: 2 }} />
+            <AccountOutline />
             Profile
           </Box>
         </MenuItem>
-        <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled>
-          <Box sx={styles}>
-            <CogOutline sx={{ marginRight: 2 }} />
-            Settings
-          </Box>
-        </MenuItem>
+        <Link href='/settings/'>
+          <MenuItem sx={{ p: 0 }}>
+            <Box sx={styles}>
+              <CogOutline />
+              Settings
+            </Box>
+          </MenuItem>
+        </Link>
         <Divider />
         <Link href={auth.signOutUrl}>
           <MenuItem sx={{ py: 2 }} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
-            <LogoutVariant sx={{ marginRight: 2, fontSize: '1.375rem', color: 'text.secondary' }} />
+            <LogoutVariant />
             Logout
           </MenuItem>
         </Link>

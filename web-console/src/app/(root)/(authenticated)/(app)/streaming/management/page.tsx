@@ -5,8 +5,7 @@ import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import PipelineTable from '$lib/components/streaming/management/PipelineTable'
 import { ErrorBoundary } from 'react-error-boundary'
 
-import { Link } from '@mui/material'
-import Grid from '@mui/material/Grid'
+import { Box, Link } from '@mui/material'
 
 const PipelineManagement = () => {
   return (
@@ -15,11 +14,11 @@ const PipelineManagement = () => {
         <Link href={`/streaming/management`}>Pipelines</Link>
       </BreadcrumbsHeader>
       {/* id referenced by webui-tester */}
-      <Grid item xs={12} id='pipeline-management-content'>
+      <Box id='pipeline-management-content'>
         <ErrorBoundary FallbackComponent={ErrorOverlay}>
           <PipelineTable />
         </ErrorBoundary>
-      </Grid>
+      </Box>
     </>
   )
 }

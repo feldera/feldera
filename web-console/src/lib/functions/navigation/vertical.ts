@@ -5,6 +5,7 @@ import IconFile from '~icons/bx/file'
 import IconGitRepoForked from '~icons/bx/git-repo-forked'
 import IconHomeCircle from '~icons/bx/home-circle'
 import IconUnite from '~icons/bx/unite'
+import CogOutline from '~icons/mdi/cog-outline'
 
 const navigation = (): VerticalNavItemsType => {
   return [
@@ -63,7 +64,12 @@ const navigation = (): VerticalNavItemsType => {
     //icon: 'bx:table'
     //}
     {
-      sectionTitle: 'Ecosystem'
+      sectionTitle: 'Platform'
+    },
+    {
+      title: 'Settings',
+      path: '/settings',
+      icon: CogOutline
     },
     {
       title: 'Documentation',

@@ -1,5 +1,5 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { ApiError, PipelinesService } from '$lib/services/manager'
+import { ApiError, HttpInputOutputService } from '$lib/services/manager'
 import { useCallback } from 'react'
 import JSONbig from 'true-json-bigint'
 
@@ -18,15 +18,14 @@ export function useInsertDeleteRows() {
 
   const { mutate: pipelineDelete, isPending } = useMutation<string, ApiError, Args>({
     mutationFn: ([pipelineId, relation, force, rows, isArray]) => {
-      return isArray
-        ? PipelinesService.httpInput(pipelineId, relation, force, 'json', JSONbig.stringify(rows), true)
-        : PipelinesService.httpInput(
-            pipelineId,
-            relation,
-            force,
-            'json',
-            rows.map(row => JSONbig.stringify(row)).join('')
-          )
+      return HttpInputOutputService.httpInput(
+        pipelineId,
+        relation,
+        force,
+        'json',
+        isArray ? JSONbig.stringify(rows) : rows.map(row => JSONbig.stringify(row)).join(''),
+        true
+      )
     }
   })
 

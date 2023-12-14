@@ -40,7 +40,7 @@ const AppBarContent = (props: Props) => {
           <ModeToggler settings={settings} saveSettings={saveSettings} />
           {auth === 'NoAuth' ? (
             <Tooltip title='No authentication'>
-              <IconButton disableRipple data-testid='icon-no-auth'>
+              <IconButton disableRipple data-testid='icon-no-auth' sx={{ width: 40, height: 40 }}>
                 <IconLockOpenAlt />
               </IconButton>
             </Tooltip>
