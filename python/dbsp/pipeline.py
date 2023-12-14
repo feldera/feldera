@@ -70,7 +70,7 @@ class DBSPPipelineConfig:
 
         self.attached_connectors.append(
             AttachedConnector(
-                connector_id=connector.name,
+                connector_name=connector.name,
                 is_input=True,
                 name=name,
                 relation_name=stream,
@@ -169,7 +169,7 @@ class DBSPPipelineConfig:
 
         self.attached_connectors.append(
             AttachedConnector(
-                connector_id=connector.name,
+                connector_name=connector.name,
                 is_input=False,
                 name=name,
                 relation_name=stream,

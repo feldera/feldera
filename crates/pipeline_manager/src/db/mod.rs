@@ -617,7 +617,7 @@ impl PipelineRevision {
                 pipeline
                     .attached_connectors
                     .iter()
-                    .map(|ac| ac.connector_id.clone())
+                    .map(|ac| ac.connector_name.clone())
             ),
             HashSet::from_iter(connectors.iter().map(|c| c.name.clone())),
             "pre-condition: supplied all connectors necessary"
@@ -682,10 +682,10 @@ impl PipelineRevision {
         // Expand input and output attached connectors
         let mut expanded_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
         for ac in inputs.iter() {
-            let connector = connectors.iter().find(|c| ac.connector_id == c.name);
+            let connector = connectors.iter().find(|c| ac.connector_name == c.name);
             if connector.is_none() {
                 return Err(DBError::UnknownConnectorName {
-                    connector_name: ac.connector_id.clone(),
+                    connector_name: ac.connector_name.clone(),
                 });
             }
             let input_endpoint_config = InputEndpointConfig {
@@ -697,10 +697,10 @@ impl PipelineRevision {
         let mut expanded_outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> =
             BTreeMap::new();
         for ac in outputs.iter() {
-            let connector = connectors.iter().find(|c| ac.connector_id == c.name);
+            let connector = connectors.iter().find(|c| ac.connector_name == c.name);
             if connector.is_none() {
                 return Err(DBError::UnknownConnectorName {
-                    connector_name: ac.connector_id.clone(),
+                    connector_name: ac.connector_name.clone(),
                 });
             }
             let output_endpoint_config = OutputEndpointConfig {
@@ -815,7 +815,7 @@ pub(crate) struct AttachedConnector {
     /// True for input connectors, false for output connectors.
     pub is_input: bool,
     /// The name of the connector to attach.
-    pub connector_id: String,
+    pub connector_name: String,
     /// The table or view this connector is attached to. Unquoted
     /// table/view names in the SQL program need to be capitalized
     /// here. Quoted table/view names have to exactly match the
@@ -1530,7 +1530,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name, p.description, p.config, program.name,
             COALESCE(json_agg(json_build_object('name', ac.name,
-                                                'connector_id', c.name,
+                                                'connector_name', c.name,
                                                 'config', ac.config,
                                                 'is_input', is_input))
                             FILTER (WHERE ac.name IS NOT NULL),
@@ -1568,7 +1568,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', c.name,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1603,7 +1603,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', c.name,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1657,7 +1657,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', c.name,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1690,7 +1690,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', c.name,
+                                                    'connector_name', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -2842,7 +2842,7 @@ impl ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
                 COALESCE(json_agg(json_build_object('name', ach.name,
-                                                    'connector_id', ch.name,
+                                                    'connector_name', ch.name,
                                                     'config', ach.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ach.name IS NOT NULL),
@@ -2961,7 +2961,7 @@ impl ProjectDB {
                     &tenant_id.0,
                     &ac.name,
                     &pipeline_id.0,
-                    &ac.connector_id,
+                    &ac.connector_name,
                     &ac.is_input,
                     &ac.relation_name,
                 ],
@@ -2971,7 +2971,7 @@ impl ProjectDB {
             .await?;
         if rows == 0 {
             Err(DBError::UnknownConnectorName {
-                connector_name: ac.connector_id.to_string(),
+                connector_name: ac.connector_name.to_string(),
             })
         } else {
             Ok(())
@@ -2992,8 +2992,8 @@ impl ProjectDB {
             // let connector_id = ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| {
             //     DBError::invalid_data(format!("error parsing connector id '{uuid_str}':
             // {e}")) })?);
-            let connector_id = obj
-                .get("connector_id")
+            let connector_name = obj
+                .get("connector_name")
                 .unwrap()
                 .as_str()
                 .unwrap()
@@ -3001,7 +3001,7 @@ impl ProjectDB {
 
             attached_connectors.push(AttachedConnector {
                 name: obj.get("name").unwrap().as_str().unwrap().to_owned(),
-                connector_id,
+                connector_name,
                 relation_name: obj.get("config").unwrap().as_str().unwrap().to_owned(),
                 is_input,
             });

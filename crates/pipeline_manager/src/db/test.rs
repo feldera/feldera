@@ -384,7 +384,7 @@ async fn program_config() {
     let ac = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id: "a".to_string(),
+        connector_name: "a".to_string(),
         relation_name: "".to_string(),
     };
     let rc = RuntimeConfig::from_yaml("");
@@ -518,13 +518,13 @@ async fn duplicate_attached_conn_name() {
     let ac = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id: "a".to_string(),
+        connector_name: "a".to_string(),
         relation_name: "".to_string(),
     };
     let ac2 = AttachedConnector {
         name: "foo".to_string(),
         is_input: true,
-        connector_id: "a".to_string(),
+        connector_name: "a".to_string(),
         relation_name: "".to_string(),
     };
     let rc = RuntimeConfig::from_yaml("");
@@ -728,7 +728,7 @@ async fn versioning() {
     let mut ac1 = AttachedConnector {
         name: "ac1".to_string(),
         is_input: true,
-        connector_id: "a".to_string(),
+        connector_name: "a".to_string(),
         relation_name: "t1".to_string(),
     };
     handle
@@ -739,7 +739,7 @@ async fn versioning() {
     let mut ac2 = AttachedConnector {
         name: "ac2".to_string(),
         is_input: false,
-        connector_id: "d".to_string(),
+        connector_name: "d".to_string(),
         relation_name: "v1".to_string(),
     };
     let rc = RuntimeConfig::from_yaml("");
@@ -2006,7 +2006,7 @@ impl Storage for Mutex<DbModel> {
                         .descriptor
                         .attached_connectors
                         .iter()
-                        .any(|ac| ac.connector_id == c.name)
+                        .any(|ac| ac.connector_name == c.name)
                 })
                 .cloned()
                 .collect::<Vec<ConnectorDescr>>();
@@ -2137,13 +2137,13 @@ impl Storage for Mutex<DbModel> {
         if let Some(connectors) = connectors {
             for ac in connectors {
                 // Check that all attached connectors point to a valid
-                // connector_id
+                // connector_name
                 if !db_connectors
                     .iter()
-                    .any(|entry| entry.0 .0 == tenant_id && entry.1.name == ac.connector_id)
+                    .any(|entry| entry.0 .0 == tenant_id && entry.1.name == ac.connector_name)
                 {
                     return Err(DBError::UnknownConnectorName {
-                        connector_name: ac.connector_id.to_string(),
+                        connector_name: ac.connector_name.to_string(),
                     });
                 }
                 if new_acs.iter().any(|nac| nac.name == ac.name) {
@@ -2205,13 +2205,13 @@ impl Storage for Mutex<DbModel> {
         if let Some(connectors) = connectors {
             for ac in connectors {
                 // Check that all attached connectors point to a valid
-                // connector_id
+                // connector_name
                 if !db_connectors
                     .iter()
-                    .any(|entry| entry.0 .0 == tenant_id && entry.1.name == ac.connector_id)
+                    .any(|entry| entry.0 .0 == tenant_id && entry.1.name == ac.connector_name)
                 {
                     return Err(DBError::UnknownConnectorName {
-                        connector_name: ac.connector_id.to_string(),
+                        connector_name: ac.connector_name.to_string(),
                     });
                 }
                 if new_acs.iter().any(|nac| nac.name == ac.name) {
