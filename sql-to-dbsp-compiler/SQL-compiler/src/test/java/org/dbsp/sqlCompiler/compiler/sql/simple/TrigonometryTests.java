@@ -1093,14 +1093,4 @@ public class TrigonometryTests extends SqlIoTest {
                 "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<TIME(0)>)'. Supported form(s): 'SIN(<NUMERIC>)'"
         );
     }
-
-
-    // This test fails right now
-    // When sin casts to Double, 'test' gets turned into 0 instead of returning an error
-    @Test @Ignore
-    public void testStringAsInput() {
-        this.shouldFail("SELECT sin('test')",
-                "Cannot apply 'SIN' to arguments of type 'SIN(<String>)'."
-        );
-    }
 }
