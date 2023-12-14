@@ -4,7 +4,7 @@
 /* eslint-disable */
 
 /**
- * Configuration for reading data from a file with [`FileInputTransport`].
+ * Configuration for reading data from a file with `FileInputTransport`
  */
 export type FileInputConfig = {
   /**
@@ -17,7 +17,7 @@ export type FileInputConfig = {
   /**
    * Enable file following.
    *
-   * When `false`, the endpoint outputs an [`eoi`](`InputConsumer::eoi`)
+   * When `false`, the endpoint outputs an `InputConsumer::eoi`
    * message and stops upon reaching the end of file.  When `true`, the
    * endpoint will keep watching the file and outputting any new content
    * appended to it.

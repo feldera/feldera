@@ -4,6 +4,9 @@
 /* eslint-disable */
 
 /**
- * Configuration for reading data from Kafka topics with `InputTransport`.
+ * Permission types for invoking pipeline manager APIs
  */
-export type KafkaInputConfig = Record<string, string>
+export enum ApiPermission {
+  READ = 'Read',
+  WRITE = 'Write'
+}

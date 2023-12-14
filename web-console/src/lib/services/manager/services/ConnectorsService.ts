@@ -24,7 +24,7 @@ export class ConnectorsService {
   public static listConnectors(id?: string | null, name?: string | null): CancelablePromise<Array<ConnectorDescr>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/connectors',
+      url: '/v0/connectors',
       query: {
         id: id,
         name: name
@@ -45,7 +45,7 @@ export class ConnectorsService {
   public static newConnector(requestBody: NewConnectorRequest): CancelablePromise<NewConnectorResponse> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/connectors',
+      url: '/v0/connectors',
       body: requestBody,
       mediaType: 'application/json'
     })
@@ -61,7 +61,7 @@ export class ConnectorsService {
   public static getConnector(connectorId: string): CancelablePromise<ConnectorDescr> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/connectors/{connector_id}',
+      url: '/v0/connectors/{connector_id}',
       path: {
         connector_id: connectorId
       },
@@ -81,7 +81,7 @@ export class ConnectorsService {
   public static deleteConnector(connectorId: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/connectors/{connector_id}',
+      url: '/v0/connectors/{connector_id}',
       path: {
         connector_id: connectorId
       },
@@ -106,7 +106,7 @@ export class ConnectorsService {
   ): CancelablePromise<UpdateConnectorResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/connectors/{connector_id}',
+      url: '/v0/connectors/{connector_id}',
       path: {
         connector_id: connectorId
       },

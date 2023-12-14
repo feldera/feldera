@@ -11,7 +11,7 @@ import type { ConnectorId } from './ConnectorId'
 export type AttachedConnector = {
   connector_id: ConnectorId
   /**
-   * Is this an input or an output?
+   * True for input connectors, false for output connectors.
    */
   is_input: boolean
   /**
@@ -19,7 +19,10 @@ export type AttachedConnector = {
    */
   name: string
   /**
-   * The table or view this connector is attached to.
+   * The table or view this connector is attached to. Unquoted
+   * table/view names in the SQL program need to be capitalized
+   * here. Quoted table/view names have to exactly match the
+   * casing from the SQL program.
    */
   relation_name: string
 }

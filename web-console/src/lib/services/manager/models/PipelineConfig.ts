@@ -5,10 +5,14 @@
 
 import type { InputEndpointConfig } from './InputEndpointConfig'
 import type { OutputEndpointConfig } from './OutputEndpointConfig'
+import type { ResourceConfig } from './ResourceConfig'
 
 /**
  * Pipeline configuration specified by the user when creating
  * a new pipeline instance.
+ *
+ * This is the shape of the overall pipeline configuration, but is not
+ * the publicly exposed type with which users configure pipelines.
  */
 export type PipelineConfig = {
   /**
@@ -30,6 +34,7 @@ export type PipelineConfig = {
    * Defaults to 0.
    */
   min_batch_size_records?: number
+  resources?: ResourceConfig
   /**
    * Number of DBSP worker threads.
    */

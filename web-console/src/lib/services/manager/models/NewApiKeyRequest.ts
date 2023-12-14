@@ -4,6 +4,11 @@
 /* eslint-disable */
 
 /**
- * Configuration for reading data from Kafka topics with `InputTransport`.
+ * Request to create a new API key.
  */
-export type KafkaInputConfig = Record<string, string>
+export type NewApiKeyRequest = {
+  /**
+   * Key name.
+   */
+  name: string
+}

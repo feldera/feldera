@@ -8,5 +8,6 @@
  */
 export enum JsonFlavor {
   DEFAULT = 'default',
-  DEBEZIUM_MYSQL = 'debezium_mysql'
+  DEBEZIUM_MYSQL = 'debezium_mysql',
+  SNOWFLAKE = 'snowflake'
 }

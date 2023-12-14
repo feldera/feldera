@@ -3,20 +3,19 @@
 /* tslint:disable */
 /* eslint-disable */
 
+import type { ServiceConfig } from './ServiceConfig'
+
 /**
- * Request to create a new Feldera program.
+ * Request to create a new service.
  */
-export type NewProgramRequest = {
+export type NewServiceRequest = {
+  config: ServiceConfig
   /**
-   * SQL code of the program.
-   */
-  code: string
-  /**
-   * Program description.
+   * Service description.
    */
   description: string
   /**
-   * Program name.
+   * Service name.
    */
   name: string
 }
