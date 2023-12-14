@@ -613,13 +613,13 @@ impl PipelineRevision {
         // We supplied all connectors referenced by the `pipeline`, also an assert
         // (not possible to trigger by end-user)
         assert_eq!(
-            HashSet::<Uuid>::from_iter(
+            HashSet::<String>::from_iter(
                 pipeline
                     .attached_connectors
                     .iter()
-                    .map(|ac| ac.connector_id.0)
+                    .map(|ac| ac.connector_id.clone())
             ),
-            HashSet::from_iter(connectors.iter().map(|c| c.connector_id.0)),
+            HashSet::from_iter(connectors.iter().map(|c| c.name.clone())),
             "pre-condition: supplied all connectors necessary"
         );
 
@@ -682,12 +682,10 @@ impl PipelineRevision {
         // Expand input and output attached connectors
         let mut expanded_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
         for ac in inputs.iter() {
-            let connector = connectors
-                .iter()
-                .find(|c| ac.connector_id == c.connector_id);
+            let connector = connectors.iter().find(|c| ac.connector_id == c.name);
             if connector.is_none() {
-                return Err(DBError::UnknownConnector {
-                    connector_id: ac.connector_id,
+                return Err(DBError::UnknownConnectorName {
+                    connector_name: ac.connector_id.clone(),
                 });
             }
             let input_endpoint_config = InputEndpointConfig {
@@ -699,12 +697,10 @@ impl PipelineRevision {
         let mut expanded_outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> =
             BTreeMap::new();
         for ac in outputs.iter() {
-            let connector = connectors
-                .iter()
-                .find(|c| ac.connector_id == c.connector_id);
+            let connector = connectors.iter().find(|c| ac.connector_id == c.name);
             if connector.is_none() {
-                return Err(DBError::UnknownConnector {
-                    connector_id: ac.connector_id,
+                return Err(DBError::UnknownConnectorName {
+                    connector_name: ac.connector_id.clone(),
                 });
             }
             let output_endpoint_config = OutputEndpointConfig {
@@ -818,8 +814,8 @@ pub(crate) struct AttachedConnector {
     pub name: String,
     /// True for input connectors, false for output connectors.
     pub is_input: bool,
-    /// The id of the connector to attach.
-    pub connector_id: ConnectorId,
+    /// The name of the connector to attach.
+    pub connector_id: String,
     /// The table or view this connector is attached to. Unquoted
     /// table/view names in the SQL program need to be capitalized
     /// here. Quoted table/view names have to exactly match the
@@ -1534,7 +1530,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name, p.description, p.config, program.name,
             COALESCE(json_agg(json_build_object('name', ac.name,
-                                                'connector_id', connector_id,
+                                                'connector_id', c.name,
                                                 'config', ac.config,
                                                 'is_input', is_input))
                             FILTER (WHERE ac.name IS NOT NULL),
@@ -1544,6 +1540,7 @@ impl Storage for ProjectDB {
             INNER JOIN pipeline_runtime_state rt on p.id = rt.id
             LEFT JOIN program on p.program_id = program.id
             LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+            LEFT JOIN connector c on ac.connector_id = c.id
             WHERE p.tenant_id = $1
             GROUP BY p.id, rt.id, program.name;",
             )
@@ -1571,7 +1568,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_id', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1581,6 +1578,7 @@ impl Storage for ProjectDB {
                 INNER JOIN pipeline_runtime_state rt on p.id = rt.id
                 LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.id = $1 AND p.tenant_id = $2
                 GROUP BY p.id, rt.id, program.name
                 ",
@@ -1605,7 +1603,7 @@ impl Storage for ProjectDB {
             .prepare_cached(
                 "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
-                                                    'connector_id', connector_id,
+                                                    'connector_id', c.name,
                                                     'config', ac.config,
                                                     'is_input', is_input))
                                 FILTER (WHERE ac.name IS NOT NULL),
@@ -1613,6 +1611,7 @@ impl Storage for ProjectDB {
                 FROM pipeline p
                 LEFT JOIN program on p.program_id = program.id
                 LEFT JOIN attached_connector ac on p.id = ac.pipeline_id
+                LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.id = $1 AND p.tenant_id = $2
                 GROUP BY p.id, program.name
                 ",
@@ -2948,7 +2947,7 @@ impl ProjectDB {
         let stmt = txn.prepare_cached("INSERT INTO attached_connector (name, pipeline_id, connector_id, is_input, config, tenant_id)
             SELECT $2, $3, id, $5, $6, tenant_id
             FROM connector
-            WHERE tenant_id = $1 AND id = $4")
+            WHERE tenant_id = $1 AND name = $4")
         .await?;
         let rows = txn
             .execute(
@@ -2957,7 +2956,7 @@ impl ProjectDB {
                     &tenant_id.0,
                     &ac.name,
                     &pipeline_id.0,
-                    &ac.connector_id.0,
+                    &ac.connector_id,
                     &ac.is_input,
                     &ac.relation_name,
                 ],
@@ -2966,8 +2965,8 @@ impl ProjectDB {
             .map_err(|e| Self::maybe_pipeline_id_foreign_key_constraint_err(e, pipeline_id))
             .await?;
         if rows == 0 {
-            Err(DBError::UnknownConnector {
-                connector_id: ac.connector_id,
+            Err(DBError::UnknownConnectorName {
+                connector_name: ac.connector_id.to_string(),
             })
         } else {
             Ok(())
@@ -2984,10 +2983,16 @@ impl ProjectDB {
             let obj = connector.as_object().unwrap();
             let is_input: bool = obj.get("is_input").unwrap().as_bool().unwrap();
 
-            let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
-            let connector_id = ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| {
-                DBError::invalid_data(format!("error parsing connector id '{uuid_str}': {e}"))
-            })?);
+            // let uuid_str = obj.get("connector_id").unwrap().as_str().unwrap();
+            // let connector_id = ConnectorId(Uuid::parse_str(uuid_str).map_err(|e| {
+            //     DBError::invalid_data(format!("error parsing connector id '{uuid_str}': {e}"))
+            // })?);
+            let connector_id = obj
+                .get("connector_id")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
 
             attached_connectors.push(AttachedConnector {
                 name: obj.get("name").unwrap().as_str().unwrap().to_owned(),
