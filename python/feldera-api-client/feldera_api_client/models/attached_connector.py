@@ -10,7 +10,7 @@ class AttachedConnector:
     """Format to add attached connectors during a config update.
 
     Attributes:
-        connector_id (str): The name of the connector to attach.
+        connector_name (str): The name of the connector to attach.
         is_input (bool): True for input connectors, false for output connectors.
         name (str): A unique identifier for this attachement.
         relation_name (str): The table or view this connector is attached to. Unquoted
@@ -19,14 +19,14 @@ class AttachedConnector:
             casing from the SQL program.
     """
 
-    connector_id: str
+    connector_name: str
     is_input: bool
     name: str
     relation_name: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        connector_id = self.connector_id
+        connector_name = self.connector_name
         is_input = self.is_input
         name = self.name
         relation_name = self.relation_name
@@ -35,7 +35,7 @@ class AttachedConnector:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "connector_id": connector_id,
+                "connector_name": connector_name,
                 "is_input": is_input,
                 "name": name,
                 "relation_name": relation_name,
@@ -47,7 +47,7 @@ class AttachedConnector:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        connector_id = d.pop("connector_id")
+        connector_name = d.pop("connector_name")
 
         is_input = d.pop("is_input")
 
@@ -56,7 +56,7 @@ class AttachedConnector:
         relation_name = d.pop("relation_name")
 
         attached_connector = cls(
-            connector_id=connector_id,
+            connector_name=connector_name,
             is_input=is_input,
             name=name,
             relation_name=relation_name,
