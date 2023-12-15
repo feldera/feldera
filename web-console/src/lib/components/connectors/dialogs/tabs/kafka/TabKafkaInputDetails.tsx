@@ -93,7 +93,7 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
               </FormHelperText>
             ) : (
               <FormHelperText>A list of Kafka topics to consume from.</FormHelperText>
-            ))(ctx.getFieldState('topics').error)}
+            ))(ctx.getFieldState('config.topics').error)}
         </FormControl>
       </GridItems>
     </Grid>

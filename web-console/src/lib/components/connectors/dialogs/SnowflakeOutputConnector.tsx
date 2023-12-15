@@ -143,7 +143,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
 
   const jsonSwitch = (
     <Box sx={{ pl: 2, marginTop: { xs: '0', md: '-4rem' } }}>
-      <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> raw JSON
+      <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> Edit JSON
     </Box>
   )
   return (

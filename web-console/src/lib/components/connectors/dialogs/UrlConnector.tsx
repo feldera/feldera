@@ -79,23 +79,21 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   })
 
   const normalizeConfig = (data: UrlSchema['config']) => ({
-    config: {
-      transport: {
-        name: connectorTransportName(ConnectorType.URL),
-        config: {
-          path: data.url
-        }
-      },
-      format: {
-        name: data.format_name,
-        config:
-          data.format_name === 'json'
-            ? {
-                update_format: data.update_format,
-                array: data.json_array
-              }
-            : {}
+    transport: {
+      name: connectorTransportName(ConnectorType.URL),
+      config: {
+        path: data.url
       }
+    },
+    format: {
+      name: data.format_name,
+      config:
+        data.format_name === 'json'
+          ? {
+              update_format: data.update_format,
+              array: data.json_array
+            }
+          : {}
     }
   })
 

@@ -54,7 +54,7 @@ const schema = va.object({
       ),
       topics: va.nonOptional(
         va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
-          va.minLength(1, 'Provide at least one topic (press enter to add the topic).')
+          va.minLength(1, 'Provide at least one topic')
         ])
       ),
       format_name: va.nonOptional(va.enumType(['json', 'csv'])),
@@ -157,7 +157,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   )
   const jsonSwitch = (
     <Box sx={{ pl: 2, marginTop: { xs: '0', md: '-4rem' } }}>
-      <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> raw JSON
+      <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> Edit JSON
     </Box>
   )
   return (

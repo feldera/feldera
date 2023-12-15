@@ -27,7 +27,7 @@ import Typography from '@mui/material/Typography'
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(2)])),
   description: va.optional(va.string(), ''),
-  config: va.nonOptional(va.string())
+  config: va.nonOptional(va.any())
 })
 
 export type EditorSchema = va.Input<typeof schema>
@@ -45,28 +45,24 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
   const defaultValues: EditorSchema = {
     name: '',
     description: '',
-    config: JSON.stringify(
-      {
-        transport: {
-          name: 'transport-name',
-          config: {
-            property: 'value'
-          }
-        },
-        format: {
-          name: 'csv'
+    config: {
+      transport: {
+        name: 'transport-name',
+        config: {
+          property: 'value'
         }
       },
-      null,
-      2
-    )
+      format: {
+        name: 'csv'
+      }
+    }
   }
 
   const handleClose = () => {
     props.setShow(false)
   }
   // Define what should happen when the form is submitted
-  const prepareData = (data: EditorSchema) => ({ ...data, config: JSON.parse(data.config) })
+  const prepareData = (data: EditorSchema) => data
 
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
@@ -104,8 +100,8 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
           <GenericEditorForm
             disabled={props.disabled}
             direction={Direction.INPUT}
-            configFromText={a => a}
-            configToText={a => a as string}
+            configFromText={config => JSON.parse(config)}
+            configToText={config => JSON.stringify(config, null, 2)}
           ></GenericEditorForm>
         </DialogContent>
         <DialogActions sx={{ pb: { xs: 8, sm: 12.5 }, justifyContent: 'center' }}>
