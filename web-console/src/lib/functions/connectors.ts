@@ -167,7 +167,7 @@ export const parseEditorSchema = (connector: ConnectorDescr): EditorSchema => {
   return {
     name: connector.name,
     description: connector.description,
-    config: JSON.stringify(connector.config, null, 2)
+    config: connector.config
   }
 }
 

@@ -50,7 +50,7 @@ export const useNewConnectorRequest = <TData extends FieldValues>(
         })
       },
       onError: error => {
-        pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
+        pushMessage({ message: error.body.message ?? error.body, key: new Date().getTime(), color: 'error' })
         onFormSubmitted(undefined)
       }
     })
@@ -103,7 +103,7 @@ export const useUpdateConnectorRequest = <
           })
         },
         onError: error => {
-          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
+          pushMessage({ message: error.body.message ?? error.body, key: new Date().getTime(), color: 'error' })
           onFormSubmitted(undefined)
         }
       }

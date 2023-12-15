@@ -2,14 +2,14 @@
 
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
-import { Controller } from 'react-hook-form'
-import { TextFieldElement, useFormContext } from 'react-hook-form-mui'
+import { editor } from 'monaco-editor'
+import { useEffect, useRef } from 'react'
+import { TextFieldElement, useFormContext, useFormState } from 'react-hook-form-mui'
+import invariant from 'tiny-invariant'
 
-import { Editor } from '@monaco-editor/react'
+import { Editor, Monaco, useMonaco } from '@monaco-editor/react'
 import { useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
-import FormControl from '@mui/material/FormControl'
-import FormHelperText from '@mui/material/FormHelperText'
 import Grid from '@mui/material/Grid'
 import TextField from '@mui/material/TextField'
 
@@ -19,9 +19,6 @@ export const GenericEditorForm = (props: {
   configFromText: (t: string) => unknown
   configToText: (c: unknown) => string
 }) => {
-  const theme = useTheme()
-  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
-  const ctx = useFormContext()
   return (
     <Grid container spacing={4}>
       <Grid item sm={4} xs={12}>
@@ -49,42 +46,125 @@ export const GenericEditorForm = (props: {
         />
       </Grid>
       <Grid item sm={12} xs={12}>
-        <FormControl fullWidth disabled={props.disabled}>
-          <Controller
-            name='config'
-            control={ctx.control}
-            render={({ field: { ref, value, onChange, ...field } }) => (
-              void ref,
-              (
-                <Box sx={{ height: { xs: '50vh', md: '40vh' } }}>
-                  <Editor
-                    theme={vscodeTheme}
-                    defaultLanguage='yaml'
-                    options={{ domReadOnly: props.disabled, readOnly: props.disabled }}
-                    {...{
-                      ...field,
-                      onChange: e => {
-                        try {
-                          // Ignore parsing errors when haven't finished typing configuration
-                          onChange(props.configFromText(e ?? ''))
-                        } catch {}
-                      },
-                      value: props.configToText(value)
-                    }}
-                  />
-                </Box>
-              )
-            )}
-            disabled={props.disabled}
-          />
-          {(e =>
-            e && (
-              <FormHelperText sx={{ color: 'error.main' }} id='validation-config'>
-                {e.message}
-              </FormHelperText>
-            ))(ctx.getFieldState('config').error)}
-        </FormControl>
+        <Box sx={{ height: { xs: '50vh', md: '40vh' } }}>
+          <JSONConfigEditor {...props}></JSONConfigEditor>
+        </Box>
       </Grid>
     </Grid>
+  )
+}
+
+const JSONConfigEditor = (props: {
+  disabled?: boolean
+  configFromText: (t: string) => unknown
+  configToText: (c: unknown) => string
+}) => {
+  const theme = useTheme()
+  const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
+  const ctx = useFormContext()
+  const configText: string = ctx.watch('config')
+  const { errors } = useFormState({ control: ctx.control })
+  const editorRef = useRef<editor.IStandaloneCodeEditor>()
+  const monaco = useMonaco()!
+  useEffect(() => {
+    if (!editorRef.current) {
+      return
+    }
+    const errorMarkers = Object.entries(errors?.config ?? {}).map(([field, error]) => {
+      const offenderPos = editorRef
+        .current!.getModel()!
+        .findNextMatch(`"${field}":`, { lineNumber: 0, column: 0 }, false, false, null, false)?.range
+      const defaultErr = {
+        startLineNumber: 0,
+        endLineNumber: 0,
+        startColumn: 0,
+        endColumn: 1,
+        message: error.message,
+        severity: monaco.MarkerSeverity.Error
+      }
+      if (!offenderPos) {
+        return defaultErr
+      }
+      return {
+        startLineNumber: offenderPos.startLineNumber,
+        endLineNumber: offenderPos.endLineNumber,
+        startColumn: offenderPos.startColumn,
+        endColumn: offenderPos.endColumn,
+        message: error.message,
+        severity: monaco.MarkerSeverity.Error
+      }
+    })
+    monaco.editor.setModelMarkers(editorRef.current.getModel()!, 'config-errors', errorMarkers)
+  }, [errors, editorRef])
+  function handleEditorDidMount(editor: editor.IStandaloneCodeEditor, monaco: Monaco) {
+    editorRef.current = editor
+    // Only process input when we have finished typing
+    editor.onDidBlurEditorText(() => {
+      try {
+        const v = props.configFromText(editor.getValue() ?? '')
+        ctx.setValue('config', v)
+        monaco.editor.setModelMarkers(editorRef.current!.getModel()!, 'parse-errors', [])
+      } catch (e) {
+        invariant(e instanceof Error)
+        const errorMarkers = [e].map(error => {
+          const defaultErr = {
+            startLineNumber: 0,
+            endLineNumber: 0,
+            startColumn: 0,
+            endColumn: 1,
+            message: error.message,
+            severity: monaco.MarkerSeverity.Error
+          }
+          if (e instanceof SyntaxError) {
+            const offender = error.message.match(/"(.*)(\r\n|\r|\n|.*)*"\.\.\. is not valid JSON/)?.[1]
+            if (offender) {
+              const offenderPos = editor
+                .getModel()!
+                .findNextMatch(offender, { lineNumber: 0, column: 0 }, false, true, null, false)?.range
+              if (!offenderPos) {
+                return defaultErr
+              }
+
+              return {
+                startLineNumber: offenderPos.startLineNumber,
+                endLineNumber: offenderPos.endLineNumber,
+                startColumn: offenderPos.startColumn,
+                endColumn: offenderPos.endColumn,
+                message: error.message,
+                severity: monaco.MarkerSeverity.Error
+              }
+            }
+            const [line, col] = (([_, line, col]) => [parseInt(line), parseInt(col)])(
+              Array.from(error.message.match(/line (\d+) column (\d+)/) ?? [])
+            )
+            if (line >= 0 && col >= 0) {
+              return {
+                startLineNumber: line,
+                endLineNumber: line,
+                startColumn: col,
+                endColumn: col + 1,
+                message: error.message,
+                severity: monaco.MarkerSeverity.Error
+              }
+            }
+            return defaultErr
+          }
+
+          return defaultErr
+        })
+        monaco.editor.setModelMarkers(editorRef.current!.getModel()!, 'parse-errors', errorMarkers)
+      }
+    })
+  }
+  return (
+    <Editor
+      onMount={handleEditorDidMount}
+      theme={vscodeTheme}
+      defaultLanguage='yaml'
+      options={{ domReadOnly: props.disabled, readOnly: props.disabled }}
+      {...{
+        value: props.configToText(configText)
+      }}
+    />
   )
 }
