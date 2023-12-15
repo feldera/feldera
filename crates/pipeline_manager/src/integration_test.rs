@@ -1733,3 +1733,26 @@ async fn service_basic() {
     let response: Value = request.json().await.unwrap();
     assert_eq!(response.as_array().unwrap().len(), 0);
 }
+
+/// Run all configured Playwright tests
+#[actix_web::test]
+#[serial]
+async fn test_ui_tutorial() {
+    let config = setup().await;
+    let dbsp_origin = format!("{}/", &config.dbsp_url);
+    println!("Running yarn playwright test against {}", dbsp_origin);
+    assert_eq!(
+        0,
+        Command::new("yarn")
+            .env("PLAYWRIGHT_API_ORIGIN", &dbsp_origin)
+            .env("PLAYWRIGHT_APP_ORIGIN", &dbsp_origin)
+            .env("DISPLAY", "")
+            .current_dir("../../web-console")
+            .arg("playwright")
+            .arg("test")
+            .status()
+            .unwrap()
+            .code()
+            .unwrap()
+    );
+}
