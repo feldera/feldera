@@ -273,7 +273,7 @@ mod test {
                 .new_pipeline(
                     tenant_id,
                     pipeline_id,
-                    None,
+                    &None,
                     &format!("{i}"),
                     "2",
                     &rc,
@@ -313,7 +313,7 @@ mod test {
                 .update_pipeline(
                     tenant_id,
                     pipeline_id,
-                    None,
+                    &None,
                     &format!("{i}"),
                     "some new description",
                     &None,
@@ -379,7 +379,7 @@ mod test {
             .new_pipeline(
                 tenant_id,
                 pipeline_id,
-                None,
+                &None,
                 "test1",
                 "2",
                 &rc,
