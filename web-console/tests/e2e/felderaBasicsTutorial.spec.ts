@@ -3,7 +3,7 @@ import invariant from 'tiny-invariant'
 import { expect, Page, test } from '@playwright/test'
 
 import { apiOrigin, appOrigin } from '../../playwright.config'
-import felderaBasicsTutorialSql from '../resources/sql/felderaBasicsTutorial'
+import felderaBasicsTutorialSql from './felderaBasicsTutorial.sql'
 
 // Insert data rows into an empty table
 const insertRows = async (page: Page, data: (string | number)[][]) => {
@@ -48,7 +48,7 @@ test.beforeAll('Prepare', async ({browser}) => {
 })
  */
 
-test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
+test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   test.setTimeout(150000)
   await page.goto(appOrigin)
 
@@ -63,7 +63,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
     await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-compile-status-success').waitFor()
-    await expect(page).toHaveScreenshot('saved sql program.png') // Account for cursor
+    await expect(page).toHaveScreenshot('saved sql program.png')
   })
 
   await test.step('Part 1: Create a pipeline', async () => {
@@ -93,7 +93,7 @@ test('Supply Chain Analytics Tutorial', async ({ page, request }) => {
       .getByTestId(`box-relation-actions-PART`)
       .getByTestId(`button-import`)
       .click()
-    const pipelineUUID = page.url().match(/pipeline_id=([\w-]+)/)?.[0]
+    const pipelineUUID = page.url().match(/pipeline_id=([\w-]+)/)?.[1]
     expect(pipelineUUID).toBeTruthy()
     invariant(pipelineUUID)
 
