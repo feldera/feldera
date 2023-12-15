@@ -761,7 +761,7 @@ mod test {
             .new_pipeline(
                 tenant_id,
                 pipeline_id,
-                Some(program_id),
+                &Some("test0".to_string()),
                 "pipeline-id",
                 "2",
                 &rc,

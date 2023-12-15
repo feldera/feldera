@@ -393,7 +393,7 @@ async fn program_config() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
-            None,
+            &None,
             "1",
             "2",
             &rc,
@@ -533,7 +533,7 @@ async fn duplicate_attached_conn_name() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
-            None,
+            &None,
             "1",
             "2",
             &rc,
@@ -651,7 +651,7 @@ async fn versioning_no_change_no_connectors() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
-            Some(program_id),
+            &Some("".to_string()),
             "",
             "",
             &rc,
@@ -748,7 +748,7 @@ async fn versioning() {
         .new_pipeline(
             tenant_id,
             Uuid::now_v7(),
-            Some(program_id),
+            &Some("test1".to_string()),
             "1",
             "2",
             &rc,
@@ -846,7 +846,7 @@ async fn versioning() {
         .update_pipeline(
             tenant_id,
             pipeline_id,
-            Some(program_id),
+            &Some("test1".into()),
             "1",
             "2",
             &Some(gp_config.clone()),
@@ -868,7 +868,7 @@ async fn versioning() {
         .update_pipeline(
             tenant_id,
             pipeline_id,
-            Some(program_id),
+            &Some("test1".into()),
             "1",
             "2",
             &Some(gp_config.clone()),
@@ -901,7 +901,7 @@ async fn versioning() {
         .update_pipeline(
             tenant_id,
             pipeline_id,
-            Some(program_id),
+            &Some("test1".into()),
             "1",
             "2",
             &Some(gp_config.clone()),
@@ -918,7 +918,7 @@ async fn versioning() {
         .update_pipeline(
             tenant_id,
             pipeline_id,
-            Some(program_id),
+            &Some("test1".into()),
             "1",
             "2",
             &Some(gp_config.clone()),
@@ -935,7 +935,7 @@ async fn versioning() {
         .update_pipeline(
             tenant_id,
             pipeline_id,
-            Some(program_id),
+            &Some("test1".into()),
             "1",
             "2",
             &Some(RuntimeConfig {
@@ -1126,7 +1126,7 @@ enum StorageAction {
     NewPipeline(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
-        Option<ProgramId>,
+        Option<String>,
         String,
         String,
         // TODO: Somehow, deriving Arbitrary for GlobalPipelineConfig isn't visible
@@ -1138,7 +1138,7 @@ enum StorageAction {
     UpdatePipeline(
         TenantId,
         PipelineId,
-        Option<ProgramId>,
+        Option<String>,
         String,
         String,
         #[proptest(strategy = "option_runtime_config()")] Option<RuntimeConfig>,
@@ -1510,22 +1510,22 @@ fn db_impl_behaves_like_model() {
                                 impl_response.sort_by(|a, b| a.descriptor.pipeline_id.cmp(&b.descriptor.pipeline_id));
                                 compare_pipelines(model_response, impl_response);
                             }
-                            StorageAction::NewPipeline(tenant_id, id, program_id, name, description, config, connectors) => {
+                            StorageAction::NewPipeline(tenant_id, id, program_name, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_pipeline(tenant_id, id, program_id, &name, &description, &config, &connectors.clone()).await;
+                                    model.new_pipeline(tenant_id, id, &program_name, &name, &description, &config, &connectors.clone()).await;
                                 let impl_response =
-                                    handle.db.new_pipeline(tenant_id, id, program_id, &name, &description, &config, &connectors).await;
+                                    handle.db.new_pipeline(tenant_id, id, &program_name, &name, &description, &config, &connectors).await;
                                     check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdatePipeline(tenant_id,pipeline_id, program_id, name, description, config, connectors) => {
+                            StorageAction::UpdatePipeline(tenant_id, pipeline_id, program_name, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_pipeline(tenant_id, pipeline_id, program_id, &name, &description, &config, &connectors.clone())
+                                    .update_pipeline(tenant_id, pipeline_id, &program_name, &name, &description, &config, &connectors.clone())
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_pipeline(tenant_id, pipeline_id, program_id, &name, &description, &config, &connectors)
+                                    .update_pipeline(tenant_id, pipeline_id, &program_name, &name, &description, &config, &connectors)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -2095,7 +2095,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         id: Uuid,
-        program_id: Option<super::ProgramId>,
+        program_name: &Option<String>,
         pipeline_name: &str,
         pipeline_description: &str,
         config: &RuntimeConfig,
@@ -2105,6 +2105,15 @@ impl Storage for Mutex<DbModel> {
         let mut s = self.lock().await;
         let db_connectors = s.connectors.clone();
 
+        // Model the foreign key constraint on `program_id`
+        if let Some(program_name) = program_name {
+            s.programs
+                .iter()
+                .find(|entry| entry.0 .0 == tenant_id && entry.1 .0.name == *program_name)
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?;
+        };
         // UUIDs are global
         if s.pipelines.keys().any(|k| k.1 == PipelineId(id)) {
             return Err(DBError::unique_key_violation("pipeline_pkey"));
@@ -2119,19 +2128,6 @@ impl Storage for Mutex<DbModel> {
         {
             return Err(DBError::DuplicateName.into());
         }
-        // Model the foreign key constraint on `program_id`
-        let program_name = if let Some(program_id) = program_id {
-            Some(
-                s.programs
-                    .get(&(tenant_id, program_id))
-                    .ok_or(DBError::UnknownProgram { program_id })?
-                    .0
-                    .name
-                    .clone(),
-            )
-        } else {
-            None
-        };
 
         let mut new_acs: Vec<AttachedConnector> = vec![];
         if let Some(connectors) = connectors {
@@ -2161,7 +2157,7 @@ impl Storage for Mutex<DbModel> {
             Pipeline {
                 descriptor: PipelineDescr {
                     pipeline_id,
-                    program_name,
+                    program_name: program_name.clone(),
                     name: pipeline_name.to_owned(),
                     description: pipeline_description.to_owned(),
                     config: config.clone(),
@@ -2186,7 +2182,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        program_id: Option<ProgramId>,
+        program_name: &Option<String>,
         pipeline_name: &str,
         pipeline_description: &str,
         config: &Option<RuntimeConfig>,
@@ -2194,13 +2190,21 @@ impl Storage for Mutex<DbModel> {
     ) -> DBResult<Version> {
         let mut s = self.lock().await;
         let db_connectors = s.connectors.clone();
-        let db_programs = s.programs.clone();
 
         // pipeline must exist
         s.pipelines
             .get_mut(&(tenant_id, pipeline_id))
             .ok_or(DBError::UnknownPipeline { pipeline_id })?;
 
+        // Model the foreign key constraint on `program_id`
+        if let Some(program_name) = program_name {
+            s.programs
+                .iter()
+                .find(|entry| entry.0 .0 == tenant_id && entry.1 .0.name == *program_name)
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?;
+        };
         let mut new_acs: Vec<AttachedConnector> = vec![];
         if let Some(connectors) = connectors {
             for ac in connectors {
@@ -2248,23 +2252,9 @@ impl Storage for Mutex<DbModel> {
             .ok_or(DBError::UnknownPipeline { pipeline_id })?
             .descriptor;
 
-        // Foreign key constraint on `program_id`
-        let program_name = if let Some(program_id) = program_id {
-            Some(
-                db_programs
-                    .get(&(tenant_id, program_id))
-                    .ok_or(DBError::UnknownProgram { program_id })?
-                    .0
-                    .name
-                    .clone(),
-            )
-        } else {
-            None
-        };
-
         c.attached_connectors = new_acs;
         c.name = pipeline_name.to_owned();
-        c.program_name = program_name;
+        c.program_name = program_name.clone();
         c.description = pipeline_description.to_owned();
         c.version = c.version.increment();
         c.config = config.clone().unwrap_or(c.config.clone());
