@@ -25,14 +25,14 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NewPipelineRequest {
-    /// Config name.
+    /// Unique pipeline name.
     name: String,
-    /// Config description.
+    /// Pipeline description.
     description: String,
-    /// Program to create config for.
+    /// Name of the program to create a pipeline for.
     program_name: Option<String>,
-    /// Pipeline configuration parameters.
-    /// These knobs are independent of any connector
+    /// Pipeline configuration parameters (e.g. number of workers).
+    /// These knobs are independent of any connector attached to the pipeline.
     config: RuntimeConfig,
     /// Attached connectors.
     connectors: Option<Vec<AttachedConnector>>,
@@ -41,14 +41,13 @@ pub(crate) struct NewPipelineRequest {
 /// Response to a pipeline creation request.
 #[derive(Serialize, ToSchema)]
 pub(crate) struct NewPipelineResponse {
-    /// Id of the newly created config.
+    /// ID of the newly created pipeline.
     pipeline_id: PipelineId,
-    /// Initial config version (this field is always set to 1).
+    /// Initial pipeline version (this field is always set to 1).
     version: Version,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
-#[serde(deny_unknown_fields)]
 pub struct PipelineIdOrNameQuery {
     /// Unique pipeline id.
     id: Option<Uuid>,
