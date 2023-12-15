@@ -1720,7 +1720,7 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         id: Uuid,
-        program_id: Option<ProgramId>,
+        program_name: &Option<String>,
         pipline_name: &str,
         pipeline_description: &str,
         config: &RuntimeConfig,
@@ -1730,13 +1730,26 @@ impl Storage for ProjectDB {
         let txn = client.transaction().await?;
         let new_pipeline = txn
             .prepare_cached(
-                "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) VALUES($1, $2, 1, $3, $4, $5, $6)")
+                "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) 
+                 VALUES($1, $2, 1, $3, $4, $5, $6)")
             .await?;
         let new_runtime_state = txn
             .prepare_cached(
                 "INSERT INTO pipeline_runtime_state (id, tenant_id, desired_status, current_status, status_since, created) VALUES($1, $2, 'shutdown', 'shutdown', extract(epoch from now()), extract(epoch from now()))")
             .await?;
-
+        let program_id = if let Some(program_name) = program_name {
+            let get_program_id = txn
+                .prepare_cached("SELECT id FROM program WHERE tenant_id = $1 AND name = $2")
+                .await?;
+            txn.query_opt(&get_program_id, &[&tenant_id.0, &program_name])
+                .await?
+                .map(|r| Some(ProgramId(r.get(0))))
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?
+        } else {
+            None
+        };
         let config_str = RuntimeConfig::to_yaml(config);
         txn.execute(
             &new_pipeline,
@@ -1784,18 +1797,16 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        program_id: Option<ProgramId>,
+        program_name: &Option<String>,
         pipline_name: &str,
         pipeline_description: &str,
         config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<Version, DBError> {
         log::trace!(
-            "Updating config {} {} {} {} {:?} {:?}",
+            "Updating config {} {:?} {} {} {:?} {:?}",
             pipeline_id.0,
-            program_id
-                .map(|pid| pid.0.to_string())
-                .unwrap_or("<not set>".into()),
+            program_name,
             pipline_name,
             pipeline_description,
             config,
@@ -1805,6 +1816,9 @@ impl Storage for ProjectDB {
         let txn = client.transaction().await?;
         let find_pipeline_id = txn
             .prepare_cached("SELECT id FROM pipeline WHERE id = $1 AND tenant_id = $2")
+            .await?;
+        let get_program_id = txn
+            .prepare_cached("SELECT id FROM program WHERE tenant_id = $1 AND name = $2")
             .await?;
         let delete_ac = txn
             .prepare_cached(
@@ -1825,6 +1839,17 @@ impl Storage for ProjectDB {
         if row.is_none() {
             return Err(DBError::UnknownPipeline { pipeline_id });
         }
+        // Next, check if the program exists
+        let program_id = if let Some(program_name) = program_name {
+            txn.query_opt(&get_program_id, &[&tenant_id.0, &program_name])
+                .await?
+                .map(|r| Some(ProgramId(r.get(0))))
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?
+        } else {
+            None
+        };
         if let Some(connectors) = connectors {
             // Delete all existing attached connectors.
             txn.execute(&delete_ac, &[&pipeline_id.0, &tenant_id.0])
