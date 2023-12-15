@@ -71,9 +71,17 @@ const JSONConfigEditor = (props: {
       return
     }
     const errorMarkers = Object.entries(errors?.config ?? {}).map(([field, error]) => {
-      const offenderPos = editorRef
-        .current!.getModel()!
-        .findNextMatch(`"${field}":`, { lineNumber: 0, column: 0 }, false, false, null, false)?.range
+      const offenderPos = (model =>
+        model.findNextMatch(`"${field}":`, { lineNumber: 0, column: 0 }, false, true, null, false) ??
+        model.findNextMatch(
+          `"${field.replaceAll('_', '.')}":`,
+          { lineNumber: 0, column: 0 },
+          false,
+          true,
+          null,
+          false
+        ))(editorRef.current!.getModel()!)?.range
+
       const defaultErr = {
         startLineNumber: 0,
         endLineNumber: 0,

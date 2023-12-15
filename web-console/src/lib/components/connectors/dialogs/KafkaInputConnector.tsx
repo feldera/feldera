@@ -47,7 +47,10 @@ const schema = va.object({
   config: va.intersect([
     va.object({
       bootstrap_servers: va.nonOptional(va.string()),
-      auto_offset_reset: va.optional(va.string(), 'none'),
+      auto_offset_reset: va.optional(
+        va.picklist(['smallest', 'earliest', 'beginning', 'largest', 'latest', 'end', 'error', 'Invalid enum value']),
+        'earliest'
+      ),
       group_id: va.coerce(
         va.optional(va.string([va.minLength(1, 'group.id should not be empty')])),
         v => v || undefined
