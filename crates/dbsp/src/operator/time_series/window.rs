@@ -238,6 +238,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::Tup2;
     use crate::{
         indexed_zset,
         operator::{trace::TraceBound, Generator},
@@ -249,28 +250,28 @@ mod test {
     #[test]
     fn sliding() {
         let circuit = RootCircuit::build(move |circuit| {
-            type Time = usize;
+            type Time = u64;
 
             let mut input = vec![
                 zset! {
                     // old value before the first window, should never appear in the output.
-                    (800, "800".to_string()) => 1, (900, "900".to_string()) => 1, (950, "950".to_string()) => 1, (999, "999".to_string()) => 1,
+                    Tup2(800, "800".to_string()) => 1i64, Tup2(900, "900".to_string()) => 1, Tup2(950, "950".to_string()) => 1, Tup2(999, "999".to_string()) => 1,
                     // will appear in the next window
-                    (1000, "1000".to_string()) => 1
+                    Tup2(1000, "1000".to_string()) => 1
                 },
                 zset! {
                     // old value before the first window
-                    (700, "700".to_string()) => 1,
+                    Tup2(700, "700".to_string()) => 1,
                     // too late, the window already moved forward
-                    (900, "900".to_string()) => 1,
-                    (901, "901".to_string()) => 1,
-                    (999, "999".to_string()) => 1,
-                    (1000, "1000".to_string()) => 1,
-                    (1001, "1001".to_string()) => 1, // will appear in the next window
-                    (1002, "1002".to_string()) => 1, // will appear two windows later
-                    (1003, "1003".to_string()) => 1, // will appear three windows later
+                    Tup2(900, "900".to_string()) => 1,
+                    Tup2(901, "901".to_string()) => 1,
+                    Tup2(999, "999".to_string()) => 1,
+                    Tup2(1000, "1000".to_string()) => 1,
+                    Tup2(1001, "1001".to_string()) => 1, // will appear in the next window
+                    Tup2(1002, "1002".to_string()) => 1, // will appear two windows later
+                    Tup2(1003, "1003".to_string()) => 1, // will appear three windows later
                 },
-                zset! { (1004, "1004".to_string()) => 1 }, // no new values in this window
+                zset! { Tup2(1004, "1004".to_string()) => 1 }, // no new values in this window
                 zset! {},
                 zset! {},
                 zset! {},
@@ -294,7 +295,7 @@ mod test {
                 res
             }));
 
-            let index1: Stream<_, OrdIndexedZSet<Time, String, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<Time, String, i64>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .index();
             index1
@@ -313,23 +314,23 @@ mod test {
     #[test]
     fn tumbling() {
         let circuit = RootCircuit::build(move |circuit| {
-            type Time = usize;
+            type Time = u64;
 
             let mut input = vec![
                 // window: 995..1000
-                zset! { (700, "700".to_string()) => 1 , (995, "995".to_string()) => 1 , (996, "996".to_string()) => 1 , (999, "999".to_string()) => 1 , (1000, "1000".to_string()) => 1 },
-                zset! { (995, "995".to_string()) =>  1 , (1000, "1000".to_string()) => 1 , (1001, "1001".to_string()) => 1 },
-                zset! { (999, "999".to_string()) => 1 },
-                zset! { (1002, "1002".to_string()) => 1 },
-                zset! { (1003, "1003".to_string()) => 1 },
+                zset! { Tup2(700, "700".to_string()) => 1 , Tup2(995, "995".to_string()) => 1 , Tup2(996, "996".to_string()) => 1 , Tup2(999, "999".to_string()) => 1 , Tup2(1000, "1000".to_string()) => 1 },
+                zset! { Tup2(995, "995".to_string()) =>  1 , Tup2(1000, "1000".to_string()) => 1 , Tup2(1001, "1001".to_string()) => 1 },
+                zset! { Tup2(999, "999".to_string()) => 1 },
+                zset! { Tup2(1002, "1002".to_string()) => 1 },
+                zset! { Tup2(1003, "1003".to_string()) => 1 },
                 // window: 1000..1005
-                zset! { (996, "996".to_string()) => 1 }, // no longer within window
-                zset! { (999, "999".to_string()) => 1 },
-                zset! { (1004, "1004".to_string()) => 1 },
-                zset! { (1005, "1005".to_string()) => 1 }, // next window
-                zset! { (1010, "1010".to_string()) => 1 },
+                zset! { Tup2(996, "996".to_string()) => 1 }, // no longer within window
+                zset! { Tup2(999, "999".to_string()) => 1 },
+                zset! { Tup2(1004, "1004".to_string()) => 1 },
+                zset! { Tup2(1005, "1005".to_string()) => 1 }, // next window
+                zset! { Tup2(1010, "1010".to_string()) => 1 },
                 // window: 1005..1010
-                zset! { (1005, "1005".to_string()) => 1  },
+                zset! { Tup2(1005, "1005".to_string()) => 1  },
             ]
             .into_iter();
 
@@ -358,7 +359,7 @@ mod test {
                     res
                 }));
 
-            let index1: Stream<_, OrdIndexedZSet<Time, String, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<Time, String, i64>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .index();
             index1
@@ -376,34 +377,34 @@ mod test {
     #[test]
     fn shrinking() {
         let circuit = RootCircuit::build(move |circuit| {
-            type Time = usize;
+            type Time = u64;
 
             let mut input = vec![
                 zset! {
-                    (800, "800".to_string()) => 1,
-                    (900, "900".to_string()) => 1,
-                    (950, "950".to_string()) => 1,
-                    (990, "990".to_string()) => 1,
-                    (999, "999".to_string()) => 1,
-                    (1000, "1000".to_string()) => 1
+                    Tup2(800, "800".to_string()) => 1,
+                    Tup2(900, "900".to_string()) => 1,
+                    Tup2(950, "950".to_string()) => 1,
+                    Tup2(990, "990".to_string()) => 1,
+                    Tup2(999, "999".to_string()) => 1,
+                    Tup2(1000, "1000".to_string()) => 1
                 },
                 zset! {
-                    (700, "700".to_string()) => 1,
-                    (900, "900".to_string()) => 1,
-                    (901, "901".to_string()) => 1,
-                    (915, "915".to_string()) => 1,
-                    (940, "940".to_string()) => 1,
-                    (985, "985".to_string()) => 1,
-                    (999, "999".to_string()) => 1,
-                    (1000, "1000".to_string()) => 1,
-                    (1001, "1001".to_string()) => 1,
-                    (1002, "1002".to_string()) => 1,
-                    (1003, "1003".to_string()) => 1,
+                    Tup2(700, "700".to_string()) => 1,
+                    Tup2(900, "900".to_string()) => 1,
+                    Tup2(901, "901".to_string()) => 1,
+                    Tup2(915, "915".to_string()) => 1,
+                    Tup2(940, "940".to_string()) => 1,
+                    Tup2(985, "985".to_string()) => 1,
+                    Tup2(999, "999".to_string()) => 1,
+                    Tup2(1000, "1000".to_string()) => 1,
+                    Tup2(1001, "1001".to_string()) => 1,
+                    Tup2(1002, "1002".to_string()) => 1,
+                    Tup2(1003, "1003".to_string()) => 1,
                 },
-                zset! { (1004, "1004".to_string()) => 1,
-                        (1010, "1010".to_string()) => 1,
-                        (1020, "1020".to_string()) => 1,
-                        (1039, "1039".to_string()) => 1 },
+                zset! { Tup2(1004, "1004".to_string()) => 1,
+                        Tup2(1010, "1010".to_string()) => 1,
+                        Tup2(1020, "1020".to_string()) => 1,
+                        Tup2(1039, "1039".to_string()) => 1 },
                 zset! {},
                 zset! {},
                 zset! {},
@@ -438,7 +439,7 @@ mod test {
                 }));
 
 
-            let index1: Stream<_, OrdIndexedZSet<Time, String, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<Time, String, i64>> = circuit
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .index();
             index1
@@ -456,13 +457,13 @@ mod test {
     #[test]
     fn bounded_memory() {
         let (mut dbsp, input_handle) = Runtime::init_circuit(8, |circuit| {
-            let (input, input_handle) = circuit.add_input_zset::<isize, isize>();
+            let (input, input_handle) = circuit.add_input_zset::<i64, i64>();
             let bounds = input
                 .waterline_monotonic(|| 0, |ts| *ts)
                 .apply(|ts| (*ts - 1000, *ts));
 
             let bound = TraceBound::new();
-            bound.set(isize::max_value());
+            bound.set(i64::max_value());
 
             input.window(&bounds);
 

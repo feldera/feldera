@@ -11,7 +11,7 @@ use crate::{
         Aggregator,
     },
     trace::{Batch, BatchReader, Builder, Spine},
-    Circuit, NumEntries, OrdIndexedZSet, Stream,
+    Circuit, DBData, NumEntries, OrdIndexedZSet, Stream,
 };
 use num::PrimInt;
 use size_of::SizeOf;
@@ -57,16 +57,14 @@ where
     pub fn tree_aggregate<Agg>(
         &self,
         aggregator: Agg,
-    ) -> Stream<C, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>
+    ) -> Stream<C, OrdRadixTree<Z::Key, Agg::Accumulator, i64>>
     where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
         Agg: Aggregator<Z::Val, (), Z::R>,
-        Agg::Accumulator: Default,
+        Agg::Accumulator: Default + DBData,
     {
-        self.tree_aggregate_generic::<Agg, OrdRadixTree<Z::Key, Agg::Accumulator, isize>>(
-            aggregator,
-        )
+        self.tree_aggregate_generic::<Agg, OrdRadixTree<Z::Key, Agg::Accumulator, i64>>(aggregator)
     }
 
     /// Like [`Self::tree_aggregate`], but can return any batch type.
@@ -75,7 +73,7 @@ where
         Z: IndexedZSet + SizeOf + NumEntries + Send,
         Z::Key: PrimInt,
         Agg: Aggregator<Z::Val, (), Z::R>,
-        Agg::Accumulator: Default,
+        Agg::Accumulator: Default + DBData,
         O: RadixTreeBatch<Z::Key, Agg::Accumulator>,
         O::R: ZRingValue,
     {
@@ -227,6 +225,7 @@ where
 #[cfg(test)]
 mod test {
     use super::super::{test::test_aggregate_range, RadixTreeCursor};
+    use crate::utils::Tup2;
     use crate::{
         algebra::DefaultSemigroup, operator::Fold, trace::BatchReader, CollectionHandle,
         RootCircuit,
@@ -237,12 +236,12 @@ mod test {
     };
 
     fn update_key(
-        input: &CollectionHandle<u64, (u64, isize)>,
+        input: &CollectionHandle<u64, Tup2<u64, i64>>,
         contents: &mut BTreeMap<u64, u64>,
         key: u64,
-        upd: (u64, isize),
+        upd: (u64, i64),
     ) {
-        input.push(key, upd);
+        input.push(key, upd.into());
         match contents.entry(key) {
             Entry::Vacant(ve) => {
                 assert_eq!(upd.1, 1);
@@ -268,11 +267,11 @@ mod test {
         let contents_clone = contents.clone();
 
         let (circuit, input) = RootCircuit::build(move |circuit| {
-            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64, isize>();
+            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64, i64>();
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                 0u64,
-                |agg: &mut u64, val: &u64, _w: isize| *agg += val,
+                |agg: &mut u64, val: &u64, _w: i64| *agg += val,
             );
 
             input

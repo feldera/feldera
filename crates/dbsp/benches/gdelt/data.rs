@@ -57,7 +57,7 @@
 //! [GKG cookbook]: http://data.gdeltproject.org/documentation/GDELT-Global_Knowledge_Graph_Codebook-V2.1.pdf
 
 use csv::{ReaderBuilder, Trim};
-use dbsp::{algebra::ArcStr, arcstr_literal as literal, CollectionHandle};
+use dbsp::CollectionHandle;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -79,15 +79,22 @@ const MASTER_LIST: &str = "http://data.gdeltproject.org/gdeltv2/masterfilelist.t
 pub const GKG_SUFFIX: &str = ".gkg.csv.zip";
 pub const GDELT_URL: &str = "http://data.gdeltproject.org/gdeltv2/";
 
-type Interner = HashSet<ArcStr, Xxh3Builder>;
 type Invalid = HashSet<&'static str, Xxh3Builder>;
-type Normalizations = HashMap<&'static str, &'static [ArcStr], Xxh3Builder>;
+type Normalizations = HashMap<&'static str, &'static [&'static str], Xxh3Builder>;
 
 #[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct PersonalNetworkGkgEntry {
-    pub id: ArcStr,
+    pub id: String,
     pub date: u64,
-    pub people: Vec<ArcStr>,
+    pub people: Vec<String>,
+}
+
+impl Clone for ArchivedPersonalNetworkGkgEntry {
+    fn clone(&self) -> Self {
+        todo!()
+    }
 }
 
 impl PartialEq for PersonalNetworkGkgEntry {
@@ -207,7 +214,6 @@ pub fn get_gkg_file(url: &str) -> Option<File> {
 
 pub fn parse_personal_network_gkg(
     handle: &mut CollectionHandle<PersonalNetworkGkgEntry, i32>,
-    interner: &mut Interner,
     normalizations: &Normalizations,
     invalid: &Invalid,
     file: File,
@@ -224,7 +230,7 @@ pub fn parse_personal_network_gkg(
     // We're insanely lenient on our parsing since GDELT's "data format" is more of
     // a suggestion than anything else
     for record in reader.flatten() {
-        if let Some(id) = record.get(0).map(ArcStr::from) {
+        if let Some(id) = record.get(0).map(String::from) {
             if let Some(date) = record.get(1).and_then(|date| date.parse().ok()) {
                 if let Some(people_record) = record.get(11) {
                     let mut people = Vec::new();
@@ -232,14 +238,9 @@ pub fn parse_personal_network_gkg(
                     for person in people_record.to_lowercase().split(';').map(str::trim) {
                         if !person.is_empty() && !invalid.contains(person) {
                             if let Some(normals) = normalizations.get(person) {
-                                people.extend(normals.iter().cloned());
+                                people.extend(normals.iter().map(|s| s.to_string()));
                             } else {
-                                people.push(loop {
-                                    if let Some(s) = interner.get(person) {
-                                        break s.clone();
-                                    }
-                                    interner.insert(ArcStr::from(person));
-                                });
+                                people.push(person.to_string());
                             }
                         }
                     }
@@ -247,7 +248,11 @@ pub fn parse_personal_network_gkg(
                     people.sort();
                     people.dedup();
 
-                    let entry = PersonalNetworkGkgEntry { id, date, people };
+                    let entry = PersonalNetworkGkgEntry {
+                        id,
+                        date,
+                        people: people.iter().map(|s| s.to_string()).collect(),
+                    };
                     handle.push(entry, 1);
                     records += 1;
                 }
@@ -260,48 +265,34 @@ pub fn parse_personal_network_gkg(
 
 /// The GDELT data isn't perfect so we have to do some corrections to the
 /// generated data
-pub fn build_gdelt_normalizations() -> (Interner, Normalizations, Invalid) {
-    let mut interner = HashSet::with_capacity_and_hasher(4096, Xxh3Builder::new());
-
+pub fn build_gdelt_normalizations() -> (Normalizations, Invalid) {
     let normalizations = {
-        static NORMALS: &[(&str, &[ArcStr])] = &[
-            ("a los angeles", &[literal!("los angeles")]),
-            ("a harry truman", &[literal!("harry truman")]),
-            ("a ronald reagan", &[literal!("ronald reagan")]),
-            ("a lyndon johnson", &[literal!("lyndon johnson")]),
-            ("a sanatan dharam", &[literal!("sanatan dharam")]),
-            ("b richard nixon", &[literal!("richard nixon")]),
-            ("b dwight eisenhower", &[literal!("dwight eisenhower")]),
-            ("c george w bush", &[literal!("george w bush")]),
-            ("c gerald ford", &[literal!("gerald ford")]),
-            ("c john f kennedy", &[literal!("john f kennedy")]),
+        static NORMALS: &[(&str, &[&str])] = &[
+            ("a los angeles", &["los angeles"]),
+            ("a harry truman", &["harry truman"]),
+            ("a ronald reagan", &["ronald reagan"]),
+            ("a lyndon johnson", &["lyndon johnson"]),
+            ("a sanatan dharam", &["sanatan dharam"]),
+            ("b richard nixon", &["richard nixon"]),
+            ("b dwight eisenhower", &["dwight eisenhower"]),
+            ("c george w bush", &["george w bush"]),
+            ("c gerald ford", &["gerald ford"]),
+            ("c john f kennedy", &["john f kennedy"]),
             // I can't even begin to explain this one
-            ("obama jeb bush", &[literal!("jeb bush")]),
-            (
-                "brandon morse thebrandonmorse",
-                &[literal!("brandon morse")],
-            ),
-            ("lady michelle obama", &[literal!("michelle obama")]),
-            ("jo biden", &[literal!("joe biden")]),
-            ("joseph robinette biden jr", &[literal!("joe biden")]),
-            ("brad thor bradthor", &[literal!("brad thor")]),
-            ("hilary clinton", &[literal!("hillary clinton")]),
-            ("hillary rodham clinton", &[literal!("hillary clinton")]),
-            (
-                "sherlockian a sherlock holmes",
-                &[literal!("sherlock holmes")],
-            ),
-            ("america larry pratt", &[literal!("larry pratt")]),
-            ("cullen hawkins sircullen", &[literal!("cullen hawkins")]),
-            (
-                "leslie knope joe biden",
-                &[literal!("leslie knope"), literal!("joe biden")],
-            ),
-            ("jacquelyn martin europe", &[literal!("jacquelyn martin")]),
+            ("obama jeb bush", &["jeb bush"]),
+            ("brandon morse thebrandonmorse", &["brandon morse"]),
+            ("lady michelle obama", &["michelle obama"]),
+            ("jo biden", &["joe biden"]),
+            ("joseph robinette biden jr", &["joe biden"]),
+            ("brad thor bradthor", &["brad thor"]),
+            ("hilary clinton", &["hillary clinton"]),
+            ("hillary rodham clinton", &["hillary clinton"]),
+            ("sherlockian a sherlock holmes", &["sherlock holmes"]),
+            ("america larry pratt", &["larry pratt"]),
+            ("cullen hawkins sircullen", &["cullen hawkins"]),
+            ("leslie knope joe biden", &["leslie knope", "joe biden"]),
+            ("jacquelyn martin europe", &["jacquelyn martin"]),
         ];
-        // Add the static normals to the interner, might as well reuse them
-        interner.extend(NORMALS.iter().flat_map(|&(_, person)| person).cloned());
-
         let mut map = HashMap::with_capacity_and_hasher(NORMALS.len(), Xxh3Builder::new());
         map.extend(NORMALS.iter().copied());
         map
@@ -318,5 +309,5 @@ pub fn build_gdelt_normalizations() -> (Interner, Normalizations, Invalid) {
         set
     };
 
-    (interner, normalizations, invalid)
+    (normalizations, invalid)
 }

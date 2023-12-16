@@ -125,7 +125,7 @@ mod test {
                 // Generate expected values in `counts` by another means, using the formula for
                 // A077925 (https://oeis.org/A077925).
                 let mut term = 0;
-                fn a077925(n: isize) -> isize {
+                fn a077925(n: i64) -> i64 {
                     let mut x = 2 << n;
                     if (n & 1) == 0 {
                         x = -x;
@@ -134,7 +134,7 @@ mod test {
                 }
                 let expected_ones = circuit.add_source(Generator::new(move || {
                     term += 1;
-                    indexed_zset! { 1 => {a077925 (term - 1) => 1 } }
+                    indexed_zset! { 1 => { a077925(term - 1) => 1 } }
                 }));
                 let expected_twos = expected_ones.map_index(|(&_k, &v)| (2, v)).delay();
                 let expected_counts = expected_ones.plus(&expected_twos);
@@ -169,24 +169,24 @@ mod test {
         // range `V`, and weights in range `W`, and `expected` as a vector that
         // for each element in `input` contains a Z-set that maps from each key
         // to the number of values with positive weight.
-        const K: Range<usize> = 0..10; // Range of keys in Z-set.
-        const V: Range<usize> = 0..10; // Range of values in Z-set.
-        const W: Range<isize> = -10..10; // Range of weights in Z-set.
+        const K: Range<u64> = 0..10; // Range of keys in Z-set.
+        const V: Range<u64> = 0..10; // Range of values in Z-set.
+        const W: Range<i64> = -10..10; // Range of weights in Z-set.
         let mut rng = StdRng::seed_from_u64(0); // Make the test reproducible.
-        let mut input: Vec<OrdIndexedZSet<usize, isize, isize>> = Vec::new();
-        let mut expected: Vec<OrdIndexedZSet<usize, isize, isize>> = Vec::new();
+        let mut input: Vec<OrdIndexedZSet<u64, i64, i64>> = Vec::new();
+        let mut expected: Vec<OrdIndexedZSet<u64, i64, i64>> = Vec::new();
         for _ in 0..N {
             let mut input_tuples = Vec::new();
             let mut expected_tuples = Vec::new();
             for k in K {
-                let mut v: Vec<usize> = V.collect();
+                let mut v: Vec<u64> = V.collect();
                 let n = rng.gen_range(V);
-                v.partial_shuffle(&mut rng, n);
+                v.partial_shuffle(&mut rng, n as usize);
 
                 let mut distinct_count = 0;
-                for &v in &v[0..n] {
+                for &v in &v[0..n as usize] {
                     let w = rng.gen_range(W);
-                    input_tuples.push(((k, v as isize), w));
+                    input_tuples.push(((k, v as i64), w));
                     if w > 0 {
                         distinct_count += 1;
                     }

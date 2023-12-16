@@ -196,6 +196,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::Tup2;
     use crate::{operator::Generator, zset, Circuit, RootCircuit};
 
     #[test]
@@ -203,63 +204,63 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
-                    (1, 'a') => 1,
-                    (1, 'b') => 2,
-                    (2, 'c') => 3,
-                    (2, 'd') => 4,
-                    (3, 'e') => 5,
-                    (3, 'f') => -2,
+                    Tup2(1, 'a') => 1,
+                    Tup2(1, 'b') => 2,
+                    Tup2(2, 'c') => 3,
+                    Tup2(2, 'd') => 4,
+                    Tup2(3, 'e') => 5,
+                    Tup2(3, 'f') => -2,
                 },
-                zset! {(1, 'a') => 1},
-                zset! {(1, 'a') => 1},
-                zset! {(4, 'n') => 2},
-                zset! {(1, 'a') => 0},
+                zset! {Tup2(1, 'a') => 1},
+                zset! {Tup2(1, 'a') => 1},
+                zset! {Tup2(4, 'n') => 2},
+                zset! {Tup2(1, 'a') => 0},
             ]
             .into_iter();
             let mut input2 = vec![
                 zset! {
-                    (2, 'g') => 3,
-                    (2, 'h') => 4,
-                    (3, 'i') => 5,
-                    (3, 'j') => -2,
-                    (4, 'k') => 5,
-                    (4, 'l') => -2,
+                    Tup2(2, 'g') => 3,
+                    Tup2(2, 'h') => 4,
+                    Tup2(3, 'i') => 5,
+                    Tup2(3, 'j') => -2,
+                    Tup2(4, 'k') => 5,
+                    Tup2(4, 'l') => -2,
                 },
-                zset! {(1, 'b') => 1},
-                zset! {(4, 'm') => 1},
+                zset! {Tup2(1, 'b') => 1},
+                zset! {Tup2(4, 'm') => 1},
                 zset! {},
                 zset! {},
             ]
             .into_iter();
             let mut outputs = vec![
                 zset! {
-                    ((1, 'a'), (2, 'g')) => 3,
-                    ((1, 'a'), (2, 'h')) => 4,
-                    ((1, 'b'), (2, 'g')) => 6,
-                    ((1, 'b'), (2, 'h')) => 8,
-                    ((2, 'c'), (2, 'g')) => 9,
-                    ((2, 'c'), (2, 'h')) => 12,
-                    ((2, 'c'), (3, 'i')) => 15,
-                    ((2, 'c'), (3, 'j')) => -6,
-                    ((2, 'd'), (2, 'g')) => 12,
-                    ((2, 'd'), (2, 'h')) => 16,
-                    ((2, 'd'), (3, 'i')) => 20,
-                    ((2, 'd'), (3, 'j')) => -8,
-                    ((3, 'e'), (2, 'g')) => 15,
-                    ((3, 'e'), (2, 'h')) => 20,
-                    ((3, 'e'), (3, 'i')) => 25,
-                    ((3, 'e'), (3, 'j')) => -10,
-                    ((3, 'e'), (4, 'k')) => 25,
-                    ((3, 'e'), (4, 'l')) => -10,
-                    ((3, 'f'), (2, 'g')) => -6,
-                    ((3, 'f'), (2, 'h')) => -8,
-                    ((3, 'f'), (3, 'i')) => -10,
-                    ((3, 'f'), (3, 'j')) => 4,
-                    ((3, 'f'), (4, 'k')) => -10,
-                    ((3, 'f'), (4, 'l')) => 4,
+                    Tup2(Tup2(1, 'a'), Tup2(2, 'g')) => 3,
+                    Tup2(Tup2(1, 'a'), Tup2(2, 'h')) => 4,
+                    Tup2(Tup2(1, 'b'), Tup2(2, 'g')) => 6,
+                    Tup2(Tup2(1, 'b'), Tup2(2, 'h')) => 8,
+                    Tup2(Tup2(2, 'c'), Tup2(2, 'g')) => 9,
+                    Tup2(Tup2(2, 'c'), Tup2(2, 'h')) => 12,
+                    Tup2(Tup2(2, 'c'), Tup2(3, 'i')) => 15,
+                    Tup2(Tup2(2, 'c'), Tup2(3, 'j')) => -6,
+                    Tup2(Tup2(2, 'd'), Tup2(2, 'g')) => 12,
+                    Tup2(Tup2(2, 'd'), Tup2(2, 'h')) => 16,
+                    Tup2(Tup2(2, 'd'), Tup2(3, 'i')) => 20,
+                    Tup2(Tup2(2, 'd'), Tup2(3, 'j')) => -8,
+                    Tup2(Tup2(3, 'e'), Tup2(2, 'g')) => 15,
+                    Tup2(Tup2(3, 'e'), Tup2(2, 'h')) => 20,
+                    Tup2(Tup2(3, 'e'), Tup2(3, 'i')) => 25,
+                    Tup2(Tup2(3, 'e'), Tup2(3, 'j')) => -10,
+                    Tup2(Tup2(3, 'e'), Tup2(4, 'k')) => 25,
+                    Tup2(Tup2(3, 'e'), Tup2(4, 'l')) => -10,
+                    Tup2(Tup2(3, 'f'), Tup2(2, 'g')) => -6,
+                    Tup2(Tup2(3, 'f'), Tup2(2, 'h')) => -8,
+                    Tup2(Tup2(3, 'f'), Tup2(3, 'i')) => -10,
+                    Tup2(Tup2(3, 'f'), Tup2(3, 'j')) => 4,
+                    Tup2(Tup2(3, 'f'), Tup2(4, 'k')) => -10,
+                    Tup2(Tup2(3, 'f'), Tup2(4, 'l')) => 4,
                 },
                 zset! {
-                    ((1, 'a'), (1, 'b')) => 1,
+                    Tup2(Tup2(1, 'a'), Tup2(1, 'b')) => 1,
                 },
                 zset! {},
                 zset! {},
@@ -276,13 +277,13 @@ mod test {
             let output1 = index1.stream_join_range(
                 &index2,
                 |&k| (k - 1, k + 2),
-                |&k1, &v1, &k2, &v2| Some(((k1, v1), (k2, v2))),
+                |&k1, &v1, &k2, &v2| Some(Tup2(Tup2(k1, v1), Tup2(k2, v2))),
             );
             output1.inspect(move |fm| assert_eq!(fm, &outputs.next().unwrap()));
             let output2 = index1.stream_join_range_index(
                 &index2,
                 |&k| (k - 1, k + 2),
-                |&k1, &v1, &k2, &v2| Some(((k1, v1), (k2, v2))),
+                |&k1, &v1, &k2, &v2| Some((Tup2(k1, v1), Tup2(k2, v2))),
             );
             output1
                 .index()

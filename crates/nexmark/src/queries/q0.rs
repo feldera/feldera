@@ -14,11 +14,11 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{trace::Batch, RootCircuit, OrdZSet};
+    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
 
     #[test]
     fn test_q0() {
-        fn input_vecs() -> Vec<Vec<(Event, isize)>> {
+        fn input_vecs() -> Vec<Vec<(Event, i64)>> {
             vec![
                 vec![
                     (
@@ -82,7 +82,7 @@ mod tests {
         }
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q0(stream);
 

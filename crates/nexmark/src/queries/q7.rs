@@ -1,8 +1,8 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
-use dbsp::algebra::ArcStr;
 use dbsp::{
     operator::{FilterMap, Min},
+    utils::{Tup4, Tup5},
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
@@ -37,8 +37,8 @@ use dbsp::{
 /// WHERE B.dateTime BETWEEN B1.dateTime  - INTERVAL '10' SECOND AND B1.dateTime;
 /// ```
 
-type Q7Output = (u64, u64, usize, u64, ArcStr);
-type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output, isize>>;
+type Q7Output = Tup5<u64, u64, u64, u64, String>;
+type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output, i64>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
@@ -46,7 +46,10 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     // All bids indexed by date time to be able to window the result.
     let bids_by_time: Stream<_, OrdIndexedZSet<u64, _, _>> =
         input.flat_map_index(|event| match event {
-            Event::Bid(b) => Some((b.date_time, (b.auction, b.bidder, b.price, b.extra.clone()))),
+            Event::Bid(b) => Some((
+                b.date_time,
+                Tup4(b.auction, b.bidder, b.price, b.extra.clone()),
+            )),
             _ => None,
         });
 
@@ -70,24 +73,25 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
 
     // Only consider bids within the current window.
     let windowed_bids = bids_by_time.window(&window_bounds);
-    let bids_by_price = windowed_bids.map_index(|(date_time, (auction, bidder, price, extra))| {
-        (
-            *price,
-            (*auction, *bidder, *price, *date_time, extra.clone()),
-        )
-    });
+    let bids_by_price =
+        windowed_bids.map_index(|(date_time, Tup4(auction, bidder, price, extra))| {
+            (
+                *price,
+                Tup5(*auction, *bidder, *price, *date_time, extra.clone()),
+            )
+        });
 
     // Find the maximum bid across all bids.
     windowed_bids
-        .map_index(|(_date_time, (_auction, _bidder, price, _extra))| {
+        .map_index(|(_date_time, Tup4(_auction, _bidder, price, _extra))| {
             // Negate price, so we can use the more efficient `Min` aggregate
             // instead of `Max`.
             // TODO: we can go back to using `Max` once we have an efficient implementation
             // using reverse cursors.
-            ((), -(*price as isize))
+            ((), -(*price as i64))
         })
         .aggregate(Min)
-        .map(|((), price)| ((-*price) as usize))
+        .map(|((), price)| ((-*price) as u64))
         // Find _all_ bids with computed max price.
         .join(&bids_by_price, |_price, &(), tuple| tuple.clone())
 }
@@ -102,14 +106,14 @@ mod tests {
     use dbsp::{zset, RootCircuit};
     use rstest::rstest;
 
-    type Q7Tuple = (u64, u64, usize, u64, ArcStr);
+    type Q7Tuple = Tup5<u64, u64, u64, u64, String>;
 
     #[rstest]
     // The latest bid is at t=32_000, so the watermark as at t=28_000
     // and the tumbled window is from 10_000 - 20_000.
     #[case::latest_bid_determines_window(
         vec![vec![(9_000, 1_000_000), (11_000, 50), (14_000, 90), (16_000, 70), (21_000, 1_000_000), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 90, 14_000, ArcStr::new()) => 1}],
+        vec![zset! {Tup5(1, 1, 90, 14_000, String::new()) => 1}],
     )]
     // The window is rounded to the 10 second boundary
     #[case::window_boundary_below(
@@ -118,11 +122,11 @@ mod tests {
     )]
     #[case::window_boundary_lower(
         vec![vec![(10_000, 50), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 50, 10_000, ArcStr::new()) => 1}],
+        vec![zset! {Tup5(1, 1, 50, 10_000, String::new()) => 1}],
     )]
     #[case::window_boundary_upper(
         vec![vec![(19_999, 50), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 50, 19_999, ArcStr::new()) => 1}],
+        vec![zset! {Tup5(1, 1, 50, 19_999, String::new()) => 1}],
     )]
     #[case::window_boundary_above(
         vec![vec![(20_000, 50), (32_000, 1_000_000)]],
@@ -131,23 +135,23 @@ mod tests {
     #[case::tumble_into_new_window(
         vec![vec![(9_000, 1_000_000), (11_000, 50), (14_000, 90), (16_000, 70), (21_000, 1_000_000)], vec![(32_000, 10)], vec![(42_000, 10)]],
         vec![
-            zset! {(1, 1, 1_000_000, 9_000, ArcStr::new()) => 1},
+            zset! {Tup5(1, 1, 1_000_000, 9_000, String::new()) => 1},
             zset! {
-                (1, 1, 1_000_000, 9_000, ArcStr::new()) => -1,
-                (1, 1, 90, 14_000, ArcStr::new()) => 1,
+                Tup5(1, 1, 1_000_000, 9_000, String::new()) => -1,
+                Tup5(1, 1, 90, 14_000, String::new()) => 1,
             },
             zset! {
-                (1, 1, 90, 14_000, ArcStr::new()) => -1,
-                (1, 1, 1_000_000, 21_000, ArcStr::new()) => 1,
+                Tup5(1, 1, 90, 14_000, String::new()) => -1,
+                Tup5(1, 1, 1_000_000, 21_000, String::new()) => 1,
             }],
     )]
     #[case::multiple_max_bids(
         vec![vec![(11_000, 90), (14_000, 90), (16_000, 90), (21_000, 1_000_000), (32_000, 1_000_000)]],
-        vec![zset! {(1, 1, 90, 11_000, ArcStr::new()) => 1, (1, 1, 90, 14_000, ArcStr::new()) => 1, (1, 1, 90, 16_000, ArcStr::new()) => 1}],
+        vec![zset! {Tup5(1, 1, 90, 11_000, String::new()) => 1, Tup5(1, 1, 90, 14_000, String::new()) => 1, Tup5(1, 1, 90, 16_000, String::new()) => 1}],
     )]
     fn test_q7(
-        #[case] input_batches: Vec<Vec<(u64, usize)>>,
-        #[case] expected_zsets: Vec<OrdZSet<Q7Tuple, isize>>,
+        #[case] input_batches: Vec<Vec<(u64, u64)>>,
+        #[case] expected_zsets: Vec<OrdZSet<Q7Tuple, i64>>,
     ) {
         let input_vecs = input_batches.into_iter().map(|batch| {
             batch
@@ -166,7 +170,7 @@ mod tests {
         });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q7(stream);
 

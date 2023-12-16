@@ -271,7 +271,7 @@ mod test {
             }));
             source1
                 .plus(&source2)
-                .inspect(|s| assert_eq!(s, &<OrdZSet<usize, isize>>::zero()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<u64, i64>>::zero()));
             (source1, source2)
         };
 

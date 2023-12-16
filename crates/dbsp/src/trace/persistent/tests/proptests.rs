@@ -40,7 +40,7 @@ const ACTIONS_RANGE: Range<usize> = 0..64;
 /// - but neither Spine nor PersistentTrace handles integer overflows.
 /// - and by having a very small range we force more "interesting cases" where
 ///   weights cancel each other out.
-const WEIGHT_RANGE: Range<isize> = -10..10;
+const WEIGHT_RANGE: Range<i64> = -10..10;
 
 /// This is a "complex" key for testing.
 ///
@@ -51,9 +51,11 @@ const WEIGHT_RANGE: Range<isize> = -10..10;
 /// ordering as the DRAM based version which is defined through the [`Ord`]
 /// trait.
 #[derive(Clone, Debug, Arbitrary, SizeOf, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub(super) struct ComplexKey {
     /// We ignore this type for ordering.
-    pub(super) _a: isize,
+    pub(super) _a: i64,
     /// We use this to define the order of `Self`.
     pub(super) ord: String,
 }
@@ -533,45 +535,45 @@ proptest! {
     // behaves the same as spine (non-persistent traces):
 
     #[test]
-    fn cursor_val_batch_ptrace_behaves_like_spine(ks in kvr_tuples::<ComplexKey, String, isize>(WEIGHT_RANGE), ops in actions::<ComplexKey, String, u32>()) {
-        cursor_trait::<OrdValBatch<ComplexKey, String, u32, isize>, (ComplexKey, String)>(ks, ops);
+    fn cursor_val_batch_ptrace_behaves_like_spine(ks in kvr_tuples::<ComplexKey, String, i64>(WEIGHT_RANGE), ops in actions::<ComplexKey, String, u32>()) {
+        cursor_trait::<OrdValBatch<ComplexKey, String, u32, i64>, (ComplexKey, String)>(ks, ops);
     }
 
     #[test]
-    fn cursor_key_batch_ptrace_behaves_like_spine(ks in kr_tuples::<ComplexKey, isize>(WEIGHT_RANGE), ops in actions::<ComplexKey, (), u32>()) {
-        cursor_trait::<OrdKeyBatch<ComplexKey, u32, isize>, ComplexKey>(ks, ops);
+    fn cursor_key_batch_ptrace_behaves_like_spine(ks in kr_tuples::<ComplexKey, i64>(WEIGHT_RANGE), ops in actions::<ComplexKey, (), u32>()) {
+        cursor_trait::<OrdKeyBatch<ComplexKey, u32, i64>, ComplexKey>(ks, ops);
     }
 
     #[test]
-    fn cursor_zset_ptrace_behaves_like_spine(ks in kr_tuples::<ComplexKey, isize>(WEIGHT_RANGE), ops in actions::<ComplexKey, (), ()>()) {
-        cursor_trait::<OrdZSet<ComplexKey, isize>, ComplexKey>(ks, ops);
+    fn cursor_zset_ptrace_behaves_like_spine(ks in kr_tuples::<ComplexKey, i64>(WEIGHT_RANGE), ops in actions::<ComplexKey, (), ()>()) {
+        cursor_trait::<OrdZSet<ComplexKey, i64>, ComplexKey>(ks, ops);
     }
 
     #[test]
-    fn cursor_indexed_zset_ptrace_behaves_like_spine(ks in kvr_tuples::<ComplexKey, u64, isize>(WEIGHT_RANGE), ops in actions::<ComplexKey, u64, ()>()) {
-        cursor_trait::<OrdIndexedZSet<ComplexKey, u64, isize>, (ComplexKey, u64)>(ks, ops);
+    fn cursor_indexed_zset_ptrace_behaves_like_spine(ks in kvr_tuples::<ComplexKey, u64, i64>(WEIGHT_RANGE), ops in actions::<ComplexKey, u64, ()>()) {
+        cursor_trait::<OrdIndexedZSet<ComplexKey, u64, i64>, (ComplexKey, u64)>(ks, ops);
     }
 
     // Verify that our [`Trace`] implementation behaves the same as the spine
     // trace implementation:
 
     #[test]
-    fn val_batch_trace_behaves_like_spine(actions in trace_actions::<NestedTimestamp32, (ComplexKey, String), isize>(kv_tuple::<ComplexKey, String>(), WEIGHT_RANGE)) {
-        trace_trait::<OrdValBatch<ComplexKey, String, NestedTimestamp32, isize>, (ComplexKey, String)>(actions);
+    fn val_batch_trace_behaves_like_spine(actions in trace_actions::<NestedTimestamp32, (ComplexKey, String), i64>(kv_tuple::<ComplexKey, String>(), WEIGHT_RANGE)) {
+        trace_trait::<OrdValBatch<ComplexKey, String, NestedTimestamp32, i64>, (ComplexKey, String)>(actions);
     }
 
     #[test]
-    fn key_batch_trace_behaves_like_spine(actions in trace_actions::<NestedTimestamp32, ComplexKey, isize>(any::<ComplexKey>(), WEIGHT_RANGE)) {
-        trace_trait::<OrdKeyBatch<ComplexKey, NestedTimestamp32, isize>, ComplexKey>(actions);
+    fn key_batch_trace_behaves_like_spine(actions in trace_actions::<NestedTimestamp32, ComplexKey, i64>(any::<ComplexKey>(), WEIGHT_RANGE)) {
+        trace_trait::<OrdKeyBatch<ComplexKey, NestedTimestamp32, i64>, ComplexKey>(actions);
     }
 
     #[test]
-    fn zset_trace_behaves_like_spine(actions in trace_actions::<(), ComplexKey, isize>(any::<ComplexKey>(), WEIGHT_RANGE)) {
-        trace_trait::<OrdZSet<ComplexKey, isize>, ComplexKey>(actions);
+    fn zset_trace_behaves_like_spine(actions in trace_actions::<(), ComplexKey, i64>(any::<ComplexKey>(), WEIGHT_RANGE)) {
+        trace_trait::<OrdZSet<ComplexKey, i64>, ComplexKey>(actions);
     }
 
     #[test]
-    fn indexed_zset_trace_behaves_like_spine(actions in trace_actions::<(), (ComplexKey, u64), isize>(kv_tuple::<ComplexKey, u64>(), WEIGHT_RANGE)) {
-        trace_trait::<OrdIndexedZSet<ComplexKey, u64, isize>, (ComplexKey, u64)>(actions);
+    fn indexed_zset_trace_behaves_like_spine(actions in trace_actions::<(), (ComplexKey, u64), i64>(kv_tuple::<ComplexKey, u64>(), WEIGHT_RANGE)) {
+        trace_trait::<OrdIndexedZSet<ComplexKey, u64, i64>, (ComplexKey, u64)>(actions);
     }
 }

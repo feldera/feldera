@@ -78,6 +78,7 @@ use dbsp::{
         time_series::{OrdPartitionedIndexedZSet, RelOffset, RelRange},
         Avg, FilterMap,
     },
+    utils::{Tup2, Tup3},
     CollectionHandle, DBSPHandle, OrdIndexedZSet, Runtime, Stream,
 };
 use itertools::Itertools;
@@ -114,6 +115,8 @@ const DAY_IN_SECONDS: i64 = 24 * 3600;
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct QueryResult {
     // day: Weekday,
     // age: u32,
@@ -146,6 +149,8 @@ struct QueryResult {
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct Demographics {
     cc_num: F64,
     first: u32,
@@ -175,6 +180,8 @@ struct Demographics {
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct Transaction {
     #[serde(deserialize_with = "naive_date_time_from_str")]
     trans_date_trans_time: NaiveDateTime,
@@ -224,7 +231,7 @@ struct Args {
 
 type Weight = i32;
 
-type EnrichedTransactions = OrdIndexedZSet<(F64, i64), (Transaction, Demographics), Weight>;
+type EnrichedTransactions = OrdIndexedZSet<Tup2<F64, i64>, Tup2<Transaction, Demographics>, Weight>;
 type AverageSpendingPerWeek = OrdPartitionedIndexedZSet<F64, i64, Option<F64>, Weight>;
 type AverageSpendingPerMonth = OrdPartitionedIndexedZSet<F64, i64, Option<F64>, Weight>;
 type TransactionFrequency = OrdPartitionedIndexedZSet<F64, i64, Option<i32>, Weight>;
@@ -243,7 +250,7 @@ impl FraudBenchmark {
 
             let amounts = transactions.map_index(|t| {
                 let timestamp = t.trans_date_trans_time.and_utc().timestamp();
-                (t.cc_num, (timestamp, t.amt))
+                (t.cc_num, Tup2(timestamp, t.amt))
             });
 
             let transactions_by_ccnum = transactions.map_index(|t| (t.cc_num, t.clone()));
@@ -252,7 +259,7 @@ impl FraudBenchmark {
             let enriched_transactions: Stream<_, EnrichedTransactions> = transactions_by_ccnum
                 .join_index(&demographics_by_ccnum, |cc_num, tran, dem| {
                     let timestamp = tran.trans_date_trans_time.and_utc().timestamp();
-                    Some(((*cc_num, timestamp), (tran.clone(), dem.clone())))
+                    Some((Tup2(*cc_num, timestamp), Tup2(tran.clone(), dem.clone())))
                 });
 
             // AVG(amt) OVER(
@@ -267,8 +274,8 @@ impl FraudBenchmark {
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 7), RelOffset::Before(1)),
                 );
 
-            let avg_spend_pw_indexed =
-                avg_spend_pw.map_index(|(cc_num, (ts, avg_amt))| ((*cc_num, *ts), *avg_amt));
+            let avg_spend_pw_indexed = avg_spend_pw
+                .map_index(|(cc_num, Tup2(ts, avg_amt))| (Tup2(*cc_num, *ts), *avg_amt));
 
             // AVG(amt) OVER(
             //     PARTITION BY  CAST(cc_num AS NUMERIC)
@@ -282,8 +289,8 @@ impl FraudBenchmark {
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 30), RelOffset::Before(1)),
                 );
 
-            let avg_spend_pm_indexed =
-                avg_spend_pm.map_index(|(cc_num, (ts, avg_amt))| ((*cc_num, *ts), *avg_amt));
+            let avg_spend_pm_indexed = avg_spend_pm
+                .map_index(|(cc_num, Tup2(ts, avg_amt))| (Tup2(*cc_num, *ts), *avg_amt));
 
             // COUNT(*) OVER(
             //     PARTITION BY  CAST(cc_num AS NUMERIC)
@@ -297,22 +304,22 @@ impl FraudBenchmark {
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS), RelOffset::Before(1)),
                 );
 
-            let trans_freq_24_indexed =
-                trans_freq_24.map_index(|(cc_num, (ts, freq))| ((*cc_num, *ts), freq.unwrap_or(0)));
+            let trans_freq_24_indexed = trans_freq_24
+                .map_index(|(cc_num, Tup2(ts, freq))| (Tup2(*cc_num, *ts), freq.unwrap_or(0)));
 
             avg_spend_pw_indexed
                 .join_index(&avg_spend_pm_indexed, |&cc_num_ts, pw_avg, pm_avg| {
-                    Some((cc_num_ts, (*pw_avg, *pm_avg)))
+                    Some((cc_num_ts, Tup2(*pw_avg, *pm_avg)))
                 })
                 .join_index(
                     &trans_freq_24_indexed,
-                    |&cc_num_ts, (pw_avg, pm_avg), freq| {
-                        Some((cc_num_ts, (*pw_avg, *pm_avg, *freq)))
+                    |cc_num_ts, Tup2(pw_avg, pm_avg), freq| {
+                        Some((*cc_num_ts, Tup3(*pw_avg, *pm_avg, *freq)))
                     },
                 )
                 .join(
                     &enriched_transactions,
-                    |(_cc_num, _ts), (pw_avg, pm_avg, freq), (tran, dem)| QueryResult {
+                    |Tup2(_cc_num, _ts), Tup3(pw_avg, pm_avg, freq), Tup2(tran, dem)| QueryResult {
                         avg_spend_pw: *pw_avg,
                         avg_spend_pm: *pm_avg,
                         trans_freq_24: *freq as u32,

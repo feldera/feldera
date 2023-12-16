@@ -1,7 +1,6 @@
 use super::NexmarkStream;
-use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
-use dbsp::algebra::ArcStr;
+use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 22: Get URL Directories (Not in original suite)
@@ -30,7 +29,7 @@ use dbsp::algebra::ArcStr;
 ///     SPLIT_INDEX(url, '/', 5) as dir3 FROM bid;
 /// ```
 
-type Q22Set = OrdZSet<(u64, u64, usize, ArcStr, ArcStr, ArcStr, ArcStr), isize>;
+type Q22Set = OrdZSet<(u64, u64, usize, String, String, String, String), isize>;
 type Q22Stream = Stream<RootCircuit, Q22Set>;
 
 pub fn q22(input: NexmarkStream) -> Q22Stream {
@@ -61,45 +60,45 @@ pub fn q22(input: NexmarkStream) -> Q22Stream {
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::{zset, arcstr_literal};
+    use dbsp::zset;
     use rstest::rstest;
 
     #[rstest]
     #[case::bids_with_well_formed_urls(
         vec![vec![
             Event::Bid(Bid {
-                channel: arcstr_literal!("https://example.com/foo/bar/zed"),
+                channel: String::from("https://example.com/foo/bar/zed"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: arcstr_literal!("https://example.com/dir1/dir2/dir3/dir4/dir5"),
+                channel: String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"),
                 ..make_bid()
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, arcstr_literal!("https://example.com/foo/bar/zed"), arcstr_literal!("foo"), arcstr_literal!("bar"), arcstr_literal!("zed")) => 1,
-            (1, 1, 99, arcstr_literal!("https://example.com/dir1/dir2/dir3/dir4/dir5"), arcstr_literal!("dir1"), arcstr_literal!("dir2"), arcstr_literal!("dir3")) => 1,
+            (1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
+            (1, 1, 99, String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"), String::from("dir1"), String::from("dir2"), String::from("dir3")) => 1,
         }],
     )]
     #[case::bids_mixed_with_non_urls(
         vec![vec![
             Event::Bid(Bid {
-                channel: arcstr_literal!("https://example.com/foo/bar/zed"),
+                channel: String::from("https://example.com/foo/bar/zed"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: arcstr_literal!("Google"),
+                channel: String::from("Google"),
                 ..make_bid()
             }),
             Event::Bid(Bid {
-                channel: arcstr_literal!("https:badly.formed/dir1/dir2/dir3"),
+                channel: String::from("https:badly.formed/dir1/dir2/dir3"),
                 ..make_bid()
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, arcstr_literal!("https://example.com/foo/bar/zed"), arcstr_literal!("foo"), arcstr_literal!("bar"), arcstr_literal!("zed")) => 1,
-            (1, 1, 99, arcstr_literal!("Google"), arcstr_literal!(""), arcstr_literal!(""), arcstr_literal!("")) => 1,
-            (1, 1, 99, arcstr_literal!("https:badly.formed/dir1/dir2/dir3"), arcstr_literal!("dir3"), arcstr_literal!(""), arcstr_literal!("")) => 1,
+            (1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
+            (1, 1, 99, String::from("Google"), String::from(""), String::from(""), String::from("")) => 1,
+            (1, 1, 99, String::from("https:badly.formed/dir1/dir2/dir3"), String::from("dir3"), String::from(""), String::from("")) => 1,
         }],
     )]
     fn test_q22(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q22Set>) {
@@ -108,7 +107,7 @@ mod tests {
             .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q22(stream);
 

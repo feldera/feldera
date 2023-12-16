@@ -179,14 +179,14 @@ mod test {
 
     #[test]
     fn test_indexed_zset_iterator() {
-        let tuples: Vec<((usize, String), i32)> = vec![
+        let tuples: Vec<((i64, String), i32)> = vec![
             ((1, "a".to_string()), 1),
             ((1, "b".to_string()), 2),
             ((1, "c".to_string()), -1),
             ((2, "d".to_string()), 1),
         ];
 
-        let indexed_zset = <OrdIndexedZSet<usize, String, i32>>::from_tuples((), tuples.clone());
+        let indexed_zset = <OrdIndexedZSet<i64, String, i32>>::from_tuples((), tuples.clone());
 
         assert_eq!(
             indexed_zset
@@ -196,7 +196,7 @@ mod test {
             tuples
         );
 
-        let indexed_zset = <OrdIndexedZSet<usize, String, i32>>::from_tuples((), Vec::new());
+        let indexed_zset = <OrdIndexedZSet<i64, String, i32>>::from_tuples((), Vec::new());
 
         assert_eq!(
             indexed_zset

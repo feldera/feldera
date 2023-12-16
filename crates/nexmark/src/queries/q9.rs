@@ -2,10 +2,9 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
     operator::{FilterMap, Max},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use dbsp::algebra::ArcStr;
-use rkyv::{Archive, Serialize, Deserialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 
 /// Query 9: Winning Bids (Not in original suite)
@@ -57,26 +56,30 @@ use size_of::SizeOf;
 /// WHERE rownum <= 1;
 /// ```
 
-#[derive(Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize)]
+#[derive(
+    Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize,
+)]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Q9Output(
     u64,
-    ArcStr,
-    ArcStr,
-    usize,
-    usize,
+    String,
+    String,
     u64,
     u64,
     u64,
-    usize,
-    ArcStr,
     u64,
     u64,
-    usize,
     u64,
-    ArcStr,
+    String,
+    u64,
+    u64,
+    u64,
+    u64,
+    String,
 );
 
-type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output, isize>>;
+type Q9Stream = Stream<RootCircuit, OrdZSet<Q9Output, i64>>;
 
 pub fn q9(input: NexmarkStream) -> Q9Stream {
     // Select auctions and index by auction id.
@@ -108,19 +111,8 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
         RootCircuit,
         OrdZSet<
             (
-                (
-                    u64,
-                    ArcStr,
-                    ArcStr,
-                    usize,
-                    usize,
-                    u64,
-                    u64,
-                    u64,
-                    usize,
-                    ArcStr,
-                ),
-                (u64, usize, u64, ArcStr),
+                (u64, String, String, u64, u64, u64, u64, u64, u64, String),
+                (u64, u64, u64, String),
             ),
             isize,
         >,
@@ -208,19 +200,8 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     type AuctionsWithWinningBids = Stream<
         RootCircuit,
         OrdIndexedZSet<
-            (
-                u64,
-                ArcStr,
-                ArcStr,
-                usize,
-                usize,
-                u64,
-                u64,
-                u64,
-                usize,
-                ArcStr,
-            ),
-            (usize, u64, u64, ArcStr),
+            (u64, String, String, u64, u64, u64, u64, u64, u64, String),
+            (u64, u64, u64, String),
             isize,
         >,
     >;
@@ -368,7 +349,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.

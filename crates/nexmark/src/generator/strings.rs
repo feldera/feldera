@@ -3,33 +3,32 @@
 //! API based on the equivalent [Nexmark Flink StringsGenerator API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/model/StringsGenerator.java).
 
 use super::NexmarkGenerator;
-use dbsp::{algebra::ArcStr, arcstr_literal};
 use rand::{distributions::Alphanumeric, distributions::DistString, Rng};
 
 const MIN_STRING_LENGTH: usize = 3;
 
 /// Return a random string of up to `max_length`.
-pub(super) fn next_string<R: Rng>(rng: &mut R, max_length: usize) -> ArcStr {
+pub(super) fn next_string<R: Rng>(rng: &mut R, max_length: usize) -> String {
     let len = rng.gen_range(MIN_STRING_LENGTH..=max_length);
-    ArcStr::from(Alphanumeric.sample_string(rng, len))
+    String::from(Alphanumeric.sample_string(rng, len))
 }
 
 /// Return a random string such that the current_size + string length is on
 /// average the desired average size.
-fn next_extra<R: Rng>(rng: &mut R, current_size: usize, desired_average_size: usize) -> ArcStr {
+fn next_extra<R: Rng>(rng: &mut R, current_size: usize, desired_average_size: usize) -> String {
     if current_size > desired_average_size {
-        return arcstr_literal!("");
+        return String::from("");
     }
 
     let avg_extra_size = desired_average_size - current_size;
     let delta = (avg_extra_size as f32 * 0.2).round() as usize;
     if delta == 0 {
-        return arcstr_literal!("");
+        return String::from("");
     }
 
     let desired_size =
         rng.gen_range((avg_extra_size.saturating_sub(delta))..=(avg_extra_size + delta));
-    ArcStr::from(Alphanumeric.sample_string(rng, desired_size))
+    String::from(Alphanumeric.sample_string(rng, desired_size))
 }
 
 impl<R: Rng> NexmarkGenerator<R> {
@@ -39,13 +38,13 @@ impl<R: Rng> NexmarkGenerator<R> {
     /// only adds a special spacer char with a 1 in 13 chance (' ' by default)
     /// If both are necessary, we can update to a less optimized version, but
     /// otherwise it's simpler to use the Alphanumeric distribution.
-    pub fn next_string(&mut self, max_length: usize) -> ArcStr {
+    pub fn next_string(&mut self, max_length: usize) -> String {
         next_string(&mut self.rng, max_length)
     }
 
     /// Return a random string such that the current_size + string length is on
     /// average the desired average size.
-    pub fn next_extra(&mut self, current_size: usize, desired_average_size: usize) -> ArcStr {
+    pub fn next_extra(&mut self, current_size: usize, desired_average_size: usize) -> String {
         next_extra(&mut self.rng, current_size, desired_average_size)
     }
 }

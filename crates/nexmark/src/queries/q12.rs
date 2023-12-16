@@ -1,6 +1,6 @@
 use super::{process_time, NexmarkStream};
-use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
+use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 12: Processing Time Windows (Not in original suite)
@@ -124,7 +124,7 @@ mod tests {
         let process_time = move || -> u64 { proc_time_iter.borrow_mut().next().unwrap() };
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q12_for_process_time(stream, process_time);
 

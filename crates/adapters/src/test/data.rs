@@ -21,6 +21,8 @@ use crate::{deserialize_without_context, serialize_struct};
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct TestStruct {
     pub id: u32,
     pub b: bool,

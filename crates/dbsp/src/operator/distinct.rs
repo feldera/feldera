@@ -853,7 +853,7 @@ mod test {
                     distinct_inc
                         .apply2(
                             &distinct_noninc,
-                            |d1: &OrdZSet<usize, isize>, d2: &OrdZSet<usize, isize>| {
+                            |d1: &OrdZSet<u64, i64>, d2: &OrdZSet<u64, i64>| {
                                 (d1.clone(), d2.clone())
                             },
                         )
@@ -887,7 +887,7 @@ mod test {
         let output2_clone = output2.clone();
 
         let (mut circuit, input) = Runtime::init_circuit(4, move |circuit| {
-            let (input, input_handle) = circuit.add_input_indexed_zset::<usize, usize, isize>();
+            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64, i64>();
 
             input
                 .integrate()
@@ -914,10 +914,10 @@ mod test {
         .unwrap();
 
         input.append(&mut vec![
-            (1, (0, 1)),
-            (1, (1, 2)),
-            (2, (0, 1)),
-            (2, (1, 1)),
+            (1, Tup2(0, 1)),
+            (1, Tup2(1, 2)),
+            (2, Tup2(0, 1)),
+            (2, Tup2(1, 1)),
         ]);
         circuit.step().unwrap();
         assert_eq!(
@@ -926,7 +926,7 @@ mod test {
         );
         assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
 
-        input.append(&mut vec![(3, (1, 1)), (2, (1, 1))]);
+        input.append(&mut vec![(3, Tup2(1, 1)), (2, Tup2(1, 1))]);
         circuit.step().unwrap();
         assert_eq!(
             &*output1.lock().unwrap(),
@@ -934,7 +934,7 @@ mod test {
         );
         assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
 
-        input.append(&mut vec![(1, (1, 3)), (2, (1, -3))]);
+        input.append(&mut vec![(1, Tup2(1, 3)), (2, Tup2(1, -3))]);
         circuit.step().unwrap();
         assert_eq!(
             &*output1.lock().unwrap(),
@@ -945,19 +945,20 @@ mod test {
         circuit.kill().unwrap();
     }
 
+    use crate::utils::Tup2;
     use proptest::{collection, prelude::*};
 
-    type TestZSet = OrdZSet<usize, isize>;
-    type TestIndexedZSet = OrdIndexedZSet<usize, isize, isize>;
+    type TestZSet = OrdZSet<u64, i64>;
+    type TestIndexedZSet = OrdIndexedZSet<u64, i64, i64>;
 
     const MAX_ROUNDS: usize = 15;
     const MAX_ITERATIONS: usize = 15;
-    const NUM_KEYS: usize = 10;
-    const MAX_VAL: isize = 3;
+    const NUM_KEYS: u64 = 10;
+    const MAX_VAL: i64 = 3;
     const MAX_TUPLES: usize = 10;
 
     fn test_zset() -> impl Strategy<Value = TestZSet> {
-        collection::vec((0..NUM_KEYS, -1..=1isize), 0..MAX_TUPLES)
+        collection::vec((0..NUM_KEYS, -1..=1i64), 0..MAX_TUPLES)
             .prop_map(|tuples| OrdZSet::from_tuples((), tuples))
     }
 
@@ -966,11 +967,8 @@ mod test {
     }
 
     fn test_indexed_zset() -> impl Strategy<Value = TestIndexedZSet> {
-        collection::vec(
-            ((0..NUM_KEYS, -MAX_VAL..MAX_VAL), -1..=1isize),
-            0..MAX_TUPLES,
-        )
-        .prop_map(|tuples| OrdIndexedZSet::from_tuples((), tuples))
+        collection::vec(((0..NUM_KEYS, -MAX_VAL..MAX_VAL), -1..=1i64), 0..MAX_TUPLES)
+            .prop_map(|tuples| OrdIndexedZSet::from_tuples((), tuples))
     }
 
     fn test_indexed_input() -> impl Strategy<Value = Vec<TestIndexedZSet>> {

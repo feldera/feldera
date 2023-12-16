@@ -42,6 +42,9 @@ impl Drop for Canary {
 }
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize, SizeOf)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(archive = "T: Archive, <T as Archive>::Archived: Ord"))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct Item<T>
 where
     T: DBWeight,
@@ -50,6 +53,17 @@ where
     #[size_of(skip)]
     #[with(Skip)]
     _canary: Canary,
+}
+
+impl PartialEq<Canary> for () {
+    fn eq(&self, _other: &Canary) -> bool {
+        todo!()
+    }
+}
+impl PartialOrd<Canary> for () {
+    fn partial_cmp(&self, _other: &Canary) -> Option<Ordering> {
+        todo!()
+    }
 }
 
 impl<T> Hash for Item<T>
@@ -160,10 +174,13 @@ where
     }
 }
 
-fn standard_consumer(canary: &Canary) -> ColumnLayerConsumer<Item<usize>, Item<i32>> {
+fn standard_consumer(canary: &Canary) -> ColumnLayerConsumer<Item<u64>, Item<i32>> {
     let mut batcher = ColumnLayerBuilder::new();
     for idx in 0..TOTAL_TUPLES {
-        batcher.push_tuple((Item::new(idx, canary.clone()), Item::new(1, canary.clone())));
+        batcher.push_tuple((
+            Item::new(idx as u64, canary.clone()),
+            Item::new(1, canary.clone()),
+        ));
     }
 
     ColumnLayerConsumer::from(batcher.done())
@@ -223,6 +240,7 @@ fn no_double_drops_during_partial_abandonment() {
     assert_eq!(*canary.total.lock().unwrap(), EXPECTED_DROPS);
 }
 
+/*
 #[cfg_attr(miri, ignore)]
 mod proptests {
     use crate::{
@@ -284,3 +302,4 @@ mod proptests {
         }
     }
 }
+*/

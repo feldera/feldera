@@ -187,6 +187,7 @@ where
 mod tests {
     use std::cmp::max;
 
+    use crate::utils::Tup2;
     use crate::Runtime;
 
     fn test_warerline_monotonic(workers: usize) {
@@ -252,16 +253,32 @@ mod tests {
         })
         .unwrap();
 
-        input_handle.append(&mut vec![(-100, (-5, 1)), (-10, (1, 1)), (-200, (1, 1))]);
+        input_handle.append(&mut vec![
+            (-100, Tup2(-5, 1)),
+            (-10, Tup2(1, 1)),
+            (-200, Tup2(1, 1)),
+        ]);
         dbsp.step().unwrap();
 
-        input_handle.append(&mut vec![(0, (1, 1)), (-100, (2, 1)), (100, (3, 1))]);
+        input_handle.append(&mut vec![
+            (0, Tup2(1, 1)),
+            (-100, Tup2(2, 1)),
+            (100, Tup2(3, 1)),
+        ]);
         dbsp.step().unwrap();
 
-        input_handle.append(&mut vec![(50, (5, 1)), (-200, (-10, 1)), (99, (7, 1))]);
+        input_handle.append(&mut vec![
+            (50, Tup2(5, 1)),
+            (-200, Tup2(-10, 1)),
+            (99, Tup2(7, 1)),
+        ]);
         dbsp.step().unwrap();
 
-        input_handle.append(&mut vec![(130, (1, 1)), (140, (1, 1)), (250, (1, 1))]);
+        input_handle.append(&mut vec![
+            (130, Tup2(1, 1)),
+            (140, Tup2(1, 1)),
+            (250, Tup2(1, 1)),
+        ]);
         dbsp.step().unwrap();
 
         dbsp.kill().unwrap();

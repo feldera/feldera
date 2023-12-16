@@ -1,10 +1,10 @@
 use super::NexmarkStream;
+use crate::model::{Bid, Event};
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap, Fold},
-    RootCircuit, OrdZSet, Stream,
+    OrdZSet, RootCircuit, Stream,
 };
-use crate::model::{Bid, Event};
 
 ///
 /// Query 19: Auction TOP-10 Price (Not in original suite)
@@ -58,8 +58,8 @@ pub fn q19(input: NexmarkStream) -> Q19Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dbsp::zset;
     use crate::{generator::tests::make_bid, model::Bid};
+    use dbsp::zset;
     use rstest::rstest;
 
     #[rstest]
@@ -280,7 +280,7 @@ mod tests {
         });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q19(stream);
 

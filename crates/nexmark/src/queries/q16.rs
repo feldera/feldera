@@ -2,10 +2,9 @@ use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
 use dbsp::{
     operator::{FilterMap, Max},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use dbsp::algebra::ArcStr;
-use rkyv::{Archive, Serialize, Deserialize};
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     hash::Hash,
@@ -84,9 +83,9 @@ use time::{
     Deserialize,
 )]
 pub struct Q16Output {
-    channel: ArcStr,
-    day: ArcStr,
-    minute: ArcStr,
+    channel: String,
+    day: String,
+    minute: String,
     total_bids: usize,
     rank1_bids: usize,
     rank2_bids: usize,
@@ -251,42 +250,38 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
         .index();
 
     // Compute bids per channel per day.
-    let count_total_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = bids
-        .index()
-        .weighted_count();
+    let count_total_bids: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
+        bids.index().weighted_count();
     let max_minutes = bids
         .map_index(|((channel, day), (_auction, _price, _bidder, mins))| {
             ((channel.clone(), *day), *mins)
         })
         .aggregate(Max);
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank1_bids
-        .index()
-        .weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank2_bids
-        .index()
-        .weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> = rank3_bids
-        .index()
-        .weighted_count();
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
+        rank1_bids.index().weighted_count();
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
+        rank2_bids.index().weighted_count();
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
+        rank3_bids.index().weighted_count();
 
     // Count unique bidders per channel per day.
-    let count_total_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_total_bidders: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         distinct_bidder.weighted_count();
-    let count_rank1_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_rank1_bidders: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         rank1_distinct_bidder.weighted_count();
-    let count_rank2_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_rank2_bidders: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         rank2_distinct_bidder.weighted_count();
-    let count_rank3_bidders: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_rank3_bidders: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         rank3_distinct_bidder.weighted_count();
 
     // Count unique auctions per channel per day.
-    let count_total_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_total_auctions: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         distinct_auction.weighted_count();
-    let count_rank1_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_rank1_auctions: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         rank1_distinct_auction.weighted_count();
-    let count_rank2_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_rank2_auctions: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         rank2_distinct_auction.weighted_count();
-    let count_rank3_auctions: Stream<_, OrdIndexedZSet<(ArcStr, OrdinalDate), isize, _>> =
+    let count_rank3_auctions: Stream<_, OrdIndexedZSet<(String, OrdinalDate), isize, _>> =
         rank3_distinct_auction.weighted_count();
 
     // The following abomination simply joins all aggregates computed above into a
@@ -588,9 +583,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        generator::tests::make_bid, model::Bid,
-    };
+    use crate::{generator::tests::make_bid, model::Bid};
     use dbsp::{zset, Runtime};
     use rstest::rstest;
 
@@ -708,7 +701,7 @@ mod tests {
         .into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(num_threads, move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let mut expected_output = vec![
                 zset![

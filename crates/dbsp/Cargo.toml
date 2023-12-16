@@ -10,12 +10,12 @@ keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["algorithms", "data-structures"]
 publish = true
 
-    [package.metadata.release]
-    release = true
+[package.metadata.release]
+release = true
 
-    [package.metadata.docs.rs]
-    all-features = true
-    rustdoc-args = ["--cfg", "docsrs"]
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
@@ -24,7 +24,7 @@ default = ["with-serde"]
 persistence = ["rocksdb", "uuid"]
 with-serde = ["serde"]
 with-csv = ["csv"]
-with-arbitrary = ["proptest", "proptest-derive"]
+persistence2 = []
 
 [dependencies]
 num = "0.4.0"
@@ -40,7 +40,7 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 impl-trait-for-tuples = "0.2"
 itertools = "0.10.5"
 textwrap = "0.15.0"
-ordered-float = { version = "3.9.1", features = ["serde", "rkyv"] }
+ordered-float = { version = "3.9.1", features = ["serde", "rkyv_64"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
 rocksdb = { version = "0.21", default-features = false, features = [
@@ -51,15 +51,15 @@ arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
 rust_decimal = "1.29"
-rkyv = "0.7.42"
-arcstr = { version = "1.1.4" }
-size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
+# Go back to rkyv repo once https://github.com/rkyv/rkyv/pull/462 is merged:
+rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
+# Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3013071", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
 tarpc = { version = "0.33.0", features = ["full"] }
 futures = "0.3"
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
 log = "0.4.20"
-proptest-derive = { version = "0.3.0", optional = true }
-proptest = { version = "1.0.0", optional = true }
+paste = "1.0.14"
 
 [dev-dependencies]
 csv = "1.2.2"
@@ -76,7 +76,8 @@ indicatif = "0.17.0-rc.11"
 clap = { version = "3.2.8", features = ["derive", "env"] }
 reqwest = { version = "0.11.11", features = ["blocking"] }
 serde_json = "1.0.87"
-chrono = { version = "0.4.31", features = ["rkyv", "serde"] }
+# Go back to a version once commit containing 849932 is released:
+chrono = { git = "https://github.com/chronotope/chrono", rev = "849932", features = ["rkyv-64", "serde"] }
 
 [dependencies.time]
 version = "0.3.20"

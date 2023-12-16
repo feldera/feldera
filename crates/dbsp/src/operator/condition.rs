@@ -140,6 +140,7 @@ impl<C> Condition<C> {
 
 #[cfg(test)]
 mod test {
+    use crate::utils::Tup2;
     use crate::{
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
@@ -168,15 +169,15 @@ mod test {
             // Graph edges
             let edges = circuit.add_source(Generator::new(move || {
                 zset! {
-                    (0, 3) => 1,
-                    (1, 2) => 1,
-                    (2, 1) => 1,
-                    (3, 1) => 1,
-                    (3, 4) => 1,
-                    (4, 5) => 1,
-                    (4, 6) => 1,
-                    (5, 6) => 1,
-                    (5, 1) => 1,
+                    Tup2(0, 3) => 1,
+                    Tup2(1, 2) => 1,
+                    Tup2(2, 1) => 1,
+                    Tup2(3, 1) => 1,
+                    Tup2(3, 4) => 1,
+                    Tup2(4, 5) => 1,
+                    Tup2(4, 6) => 1,
+                    Tup2(5, 6) => 1,
+                    Tup2(5, 1) => 1,
                 }
             }));
 
@@ -191,8 +192,7 @@ mod test {
                     let init1 = init1.delta0(child).integrate();
                     let init2 = init2.delta0(child).integrate();
 
-                    let edges_indexed: Stream<_, OrdIndexedZSet<usize, usize, isize>> =
-                        edges.index();
+                    let edges_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = edges.index();
 
                     // Builds a subcircuit that computes nodes reachable from `init`:
                     //
@@ -210,12 +210,12 @@ mod test {
                     //
                     // where suc computes the set of successor nodes.
                     let reachable_circuit =
-                        |init: Stream<ChildCircuit<RootCircuit>, OrdZSet<usize, isize>>| {
-                            let feedback = <DelayedFeedback<_, OrdZSet<usize, isize>>>::new(child);
+                        |init: Stream<ChildCircuit<RootCircuit>, OrdZSet<u64, i64>>| {
+                            let feedback = <DelayedFeedback<_, OrdZSet<u64, i64>>>::new(child);
 
-                            let feedback_pairs: Stream<_, OrdZSet<(usize, ()), isize>> =
-                                feedback.stream().map(|&node| (node, ()));
-                            let feedback_indexed: Stream<_, OrdIndexedZSet<usize, (), isize>> =
+                            let feedback_pairs: Stream<_, OrdZSet<Tup2<u64, ()>, i64>> =
+                                feedback.stream().map(|&node| Tup2(node, ()));
+                            let feedback_indexed: Stream<_, OrdIndexedZSet<u64, (), i64>> =
                                 feedback_pairs.index();
 
                             let suc =

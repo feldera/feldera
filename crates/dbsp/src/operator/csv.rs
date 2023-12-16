@@ -126,9 +126,7 @@ mod test {
                 .from_reader(csv_data.as_bytes());
             circuit
                 .add_source(CsvSource::from_csv_reader(reader))
-                .inspect(move |data: &OrdZSet<(usize, usize, usize), isize>| {
-                    assert_eq!(data, &expected)
-                });
+                .inspect(move |data: &OrdZSet<(u64, u64, u64), i64>| assert_eq!(data, &expected));
             Ok(())
         })
         .unwrap()

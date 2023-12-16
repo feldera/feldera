@@ -19,13 +19,15 @@ use size_of::SizeOf;
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct Record {
     location: String,
     date: NaiveDate,
     daily_vaccinations: Option<u64>,
 }
-fn build_circuit(circuit: &mut RootCircuit) -> Result<CollectionHandle<Record, isize>> {
-    let (input_stream, input_handle) = circuit.add_input_zset::<Record, isize>();
+fn build_circuit(circuit: &mut RootCircuit) -> Result<CollectionHandle<Record, i64>> {
+    let (input_stream, input_handle) = circuit.add_input_zset::<Record, i64>();
     input_stream.inspect(|records| {
         println!("{}", records.weighted_count());
     });
@@ -45,7 +47,7 @@ fn main() -> Result<()> {
     let mut input_records = Reader::from_path(path)?
         .deserialize()
         .map(|result| result.map(|record| (record, 1)))
-        .collect::<Result<Vec<(Record, isize)>, _>>()?;
+        .collect::<Result<Vec<(Record, i64)>, _>>()?;
     input_handle.append(&mut input_records);
 
     // Execute circuit.

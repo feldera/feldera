@@ -681,6 +681,8 @@ mod test {
         rkyv::Serialize,
         rkyv::Deserialize,
     )]
+    #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+    #[archive(compare(PartialEq, PartialOrd))]
     struct TestStruct {
         id: i64,
         s: String,
@@ -696,9 +698,9 @@ mod test {
         Box<dyn DeCollectionHandle>,
     );
     type OutputHandles = (
-        OutputHandle<OrdZSet<TestStruct, isize>>,
-        OutputHandle<OrdZSet<TestStruct, isize>>,
-        OutputHandle<OrdIndexedZSet<i64, TestStruct, isize>>,
+        OutputHandle<OrdZSet<TestStruct, i64>>,
+        OutputHandle<OrdZSet<TestStruct, i64>>,
+        OutputHandle<OrdIndexedZSet<i64, TestStruct, i64>>,
     );
 
     // Test circuit for DeScalarHandle.
@@ -781,9 +783,9 @@ mod test {
     fn decollection_test_circuit(workers: usize) -> (DBSPHandle, InputHandles, OutputHandles) {
         let (dbsp, ((zset_input, zset_output), (set_input, set_output), (map_input, map_output))) =
             Runtime::init_circuit(workers, |circuit| {
-                let (zset, zset_handle) = circuit.add_input_zset::<TestStruct, isize>();
-                let (set, set_handle) = circuit.add_input_set::<TestStruct, isize>();
-                let (map, map_handle) = circuit.add_input_map::<i64, TestStruct, isize>();
+                let (zset, zset_handle) = circuit.add_input_zset::<TestStruct, i64>();
+                let (set, set_handle) = circuit.add_input_set::<TestStruct, i64>();
+                let (map, map_handle) = circuit.add_input_map::<i64, TestStruct, i64>();
 
                 let zset_output = zset.output();
                 let set_output = set.output();
@@ -837,11 +839,11 @@ mod test {
             (),
             inputs.iter().map(|v| (v.clone(), 1)).collect::<Vec<_>>(),
         );
-        let map = <OrdIndexedZSet<i64, TestStruct, isize, usize>>::from_tuples(
+        let map = <OrdIndexedZSet<i64, TestStruct, i64>>::from_tuples(
             (),
             inputs
                 .iter()
-                .map(|v| ((v.id, v.clone()), 1isize))
+                .map(|v| ((v.id, v.clone()), 1i64))
                 .collect::<Vec<_>>(),
         );
 
@@ -925,11 +927,11 @@ mod test {
             (),
             inputs.iter().map(|v| (v.clone(), -1)).collect::<Vec<_>>(),
         );
-        let map = <OrdIndexedZSet<i64, TestStruct, isize, usize>>::from_tuples(
+        let map = <OrdIndexedZSet<i64, TestStruct, i64>>::from_tuples(
             (),
             inputs
                 .iter()
-                .map(|v| ((v.id, v.clone()), -1isize))
+                .map(|v| ((v.id, v.clone()), -1i64))
                 .collect::<Vec<_>>(),
         );
 

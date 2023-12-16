@@ -7,6 +7,7 @@ use crate::{
         Scope,
     },
     trace::{Batch, BatchReader, Builder, Cursor},
+    utils::Tup2,
     Circuit, DBData, DBWeight, OrdZSet, RootCircuit, Stream,
 };
 use rand::thread_rng;
@@ -85,7 +86,7 @@ where
     pub fn stream_sample_unique_key_vals(
         &self,
         sample_size: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<(B::Key, B::Val), B::R>> {
+    ) -> Stream<RootCircuit, OrdZSet<Tup2<B::Key, B::Val>, B::R>> {
         self.circuit().region("stream_sample_unique_key_vals", || {
             let stream = self.try_sharded_version();
 
@@ -168,7 +169,7 @@ where
     pub fn stream_unique_key_val_quantiles(
         &self,
         num_quantiles: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<(B::Key, B::Val), B::R>> {
+    ) -> Stream<RootCircuit, OrdZSet<Tup2<B::Key, B::Val>, B::R>> {
         let sample_size = num_quantiles.apply(|num| num * num);
 
         self.stream_sample_unique_key_vals(&sample_size)
@@ -278,14 +279,18 @@ where
     }
 }
 
-impl<T> BinaryOperator<T, usize, OrdZSet<(T::Key, T::Val), T::R>> for SampleUniqueKeyVals<T>
+impl<T> BinaryOperator<T, usize, OrdZSet<Tup2<T::Key, T::Val>, T::R>> for SampleUniqueKeyVals<T>
 where
     T: BatchReader<Time = ()>,
     T::Key: DBData,
     T::Val: DBData,
     T::R: DBWeight + ZRingValue,
 {
-    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> OrdZSet<(T::Key, T::Val), T::R> {
+    fn eval(
+        &mut self,
+        input_trace: &T,
+        &sample_size: &usize,
+    ) -> OrdZSet<Tup2<T::Key, T::Val>, T::R> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
         if sample_size != 0 {
@@ -302,7 +307,7 @@ where
 
                 while cursor.val_valid() {
                     if !cursor.weight().is_zero() {
-                        sample_with_vals.push((key, cursor.val().clone()));
+                        sample_with_vals.push(Tup2(key, cursor.val().clone()));
                         break;
                     }
                     cursor.step_val();
@@ -330,6 +335,7 @@ mod test {
             test_batch::{batch_to_tuples, TestBatch},
             BatchReader, Trace,
         },
+        utils::Tup2,
         CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
         UpsertHandle,
     };
@@ -341,7 +347,7 @@ mod test {
         circuit: &mut RootCircuit,
     ) -> AnyResult<(
         InputHandle<usize>,
-        CollectionHandle<i32, (i32, i32)>,
+        CollectionHandle<i32, Tup2<i32, i32>>,
         OutputHandle<OrdZSet<i32, i32>>,
         OutputHandle<OrdZSet<i32, i32>>,
     )> {
@@ -373,8 +379,8 @@ mod test {
     ) -> AnyResult<(
         InputHandle<usize>,
         UpsertHandle<i32, Option<i32>>,
-        OutputHandle<OrdZSet<(i32, i32), i32>>,
-        OutputHandle<OrdZSet<(i32, i32), i32>>,
+        OutputHandle<OrdZSet<Tup2<i32, i32>, i32>>,
+        OutputHandle<OrdZSet<Tup2<i32, i32>, i32>>,
         OutputHandle<OrdIndexedZSet<i32, i32, i32>>,
     )> {
         let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
@@ -435,7 +441,7 @@ mod test {
                 ref_trace.insert(ref_batch);
 
                 for (k, v, r) in batch.into_iter() {
-                    input_handle.push(k, (v, r));
+                    input_handle.push(k, Tup2(v, r));
                 }
 
                 sample_size_handle.set_for_all(sample_size);
@@ -514,7 +520,7 @@ mod test {
                 let mut all_keys = Vec::new();
                 let mut cursor = batch.cursor();
                 while cursor.key_valid() {
-                    all_keys.push((*cursor.key(), *cursor.val()));
+                    all_keys.push(Tup2(*cursor.key(), *cursor.val()));
                     cursor.step_key();
                 }
                 let all_keys_set = all_keys.iter().cloned().collect::<BTreeSet<_>>();

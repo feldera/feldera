@@ -1,3 +1,4 @@
+use crate::trace::Spine;
 use crate::{
     algebra::{HasZero, ZRingValue},
     circuit::{
@@ -5,6 +6,7 @@ use crate::{
         Scope,
     },
     trace::{cursor::Cursor, Batch, BatchReader, Builder},
+    utils::Tup2,
     Circuit, DBData, DBWeight, IndexedZSet, NumEntries, OrdIndexedZSet, OrdZSet, RootCircuit,
     Stream,
 };
@@ -57,7 +59,7 @@ use std::{borrow::Cow, marker::PhantomData};
 ///             │ -2  │ "a" │ 101 │ -1
 ///             │ -2  │ "a" │ 102 │ +1 // ("a", 102) in inserted in positon -2.
 /// ```
-pub type Neighborhood<K, V, R> = OrdZSet<(isize, (K, V)), R>;
+pub type Neighborhood<K, V, R> = OrdZSet<Tup2<i64, Tup2<K, V>>, R>;
 
 /// Neighborhood descriptor represents a request from the user to
 /// output a specific neighborhood.
@@ -149,7 +151,7 @@ where
     /// stream are smaller than the anchor), then the neighborhood will only
     /// contain negative indexes.
     ///
-    /// The first index in the neightborhood may be greater
+    /// The first index in the neighborhood may be greater
     /// than `-descr.before` if the input stream doesn't contain enough rows
     /// preceding the specified anchor.  The last index may be smaller than
     /// `descr.after - 1` if the input stream doesn't contain `descr.after`
@@ -179,11 +181,13 @@ where
             // Gather all results in worker 0.  Worker 0 then computes
             // the final neighborhood.
             // TODO: use different workers for different collections.
-            let output = self.circuit().add_binary_operator(
-                NeighborhoodNumbered::new(),
-                &local_output.gather(0).integrate_trace(),
-                neighborhood_descr,
-            );
+            #[allow(clippy::type_complexity)]
+            let output: Stream<RootCircuit, Neighborhood<B::Key, B::Val, B::R>> =
+                self.circuit().add_binary_operator(
+                    NeighborhoodNumbered::<Spine<OrdIndexedZSet<B::Key, B::Val, B::R>>>::new(),
+                    &local_output.gather(0).integrate_trace(),
+                    neighborhood_descr,
+                );
 
             output.differentiate()
         })
@@ -382,9 +386,9 @@ where
 
                 if !cursor.weight().is_zero() {
                     after.push((
-                        (
-                            offset as isize,
-                            (cursor.key().clone(), cursor.val().clone()),
+                        Tup2(
+                            offset as i64,
+                            Tup2(cursor.key().clone(), cursor.val().clone()),
                         ),
                         w,
                     ));
@@ -410,9 +414,9 @@ where
 
                     if !cursor.weight().is_zero() {
                         before.push((
-                            (
-                                -(offset as isize),
-                                (cursor.key().clone(), cursor.val().clone()),
+                            Tup2(
+                                -(offset as i64),
+                                Tup2(cursor.key().clone(), cursor.val().clone()),
                             ),
                             w,
                         ));
@@ -450,6 +454,7 @@ mod test {
             test_batch::{assert_batch_eq, batch_to_tuples, TestBatch},
             Trace,
         },
+        utils::Tup2,
         CollectionHandle, DBData, DBWeight, InputHandle, OrdIndexedZSet, OutputHandle, RootCircuit,
         Runtime,
     };
@@ -465,7 +470,7 @@ mod test {
         fn neighborhood(
             &self,
             descr: &Option<NeighborhoodDescr<K, V>>,
-        ) -> TestBatch<isize, (K, V), (), R> {
+        ) -> TestBatch<i64, Tup2<K, V>, (), R> {
             if let Some(descr) = &descr {
                 let anchor_k = &descr.anchor;
                 let anchor_v = &descr.anchor_val;
@@ -475,23 +480,23 @@ mod test {
                     tuples
                         .iter()
                         .position(|((k, v, ()), _w)| (k, v) >= (anchor_k, anchor_v))
-                        .unwrap_or(tuples.len()) as isize
+                        .unwrap_or(tuples.len()) as i64
                 } else {
                     0
                 };
 
-                let mut from = start - descr.before as isize;
-                let mut to = start + descr.after as isize + 1;
+                let mut from = start - descr.before as i64;
+                let mut to = start + descr.after as i64 + 1;
 
                 from = max(from, 0);
-                to = min(to, tuples.len() as isize);
+                to = min(to, tuples.len() as i64);
 
                 let output = tuples[from as usize..to as usize]
                     .iter()
                     .enumerate()
                     .map(|(i, ((k, v, ()), w))| {
                         (
-                            (i as isize - (start - from), (k.clone(), v.clone()), ()),
+                            (i as i64 - (start - from), Tup2(k.clone(), v.clone()), ()),
                             w.clone(),
                         )
                     })
@@ -508,8 +513,8 @@ mod test {
         circuit: &mut RootCircuit,
     ) -> AnyResult<(
         InputHandle<Option<NeighborhoodDescr<i32, i32>>>,
-        CollectionHandle<i32, (i32, i32)>,
-        OutputHandle<OrdIndexedZSet<isize, (i32, i32), i32>>,
+        CollectionHandle<i32, Tup2<i32, i32>>,
+        OutputHandle<OrdIndexedZSet<i64, Tup2<i32, i32>, i32>>,
     )> {
         let (descr_stream, descr_handle) =
             circuit.add_input_stream::<Option<NeighborhoodDescr<i32, i32>>>();
@@ -518,7 +523,7 @@ mod test {
         let range_handle = input_stream
             .neighborhood(&descr_stream)
             .integrate()
-            .index()
+            .index_with(|Tup2(k, v)| Tup2(k.clone(), v.clone()))
             .output();
 
         Ok((descr_handle, input_handle, range_handle))
@@ -543,130 +548,130 @@ mod test {
         assert!(batch_to_tuples(&output_handle.consolidate()).is_empty());
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(9, (0, 1));
+        input_handle.push(9, Tup2(0, 1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
-            &[((-1, (9, 0), ()), 1)]
+            &[((-1, Tup2(9, 0), ()), 1)]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(None, 10, 3, 5)));
         dbsp.step().unwrap();
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
-            &[((0, (9, 0), ()), 1)]
+            &[((0, Tup2(9, 0), ()), 1)]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(9, (1, 1));
+        input_handle.push(9, Tup2(1, 1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
-            &[((-2, (9, 0), ()), 1), ((-1, (9, 1), ()), 1)]
+            &[((-2, Tup2(9, 0), ()), 1), ((-1, Tup2(9, 1), ()), 1)]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(8, (1, 1));
+        input_handle.push(8, Tup2(1, 1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, (8, 1), ()), 1),
-                ((-2, (9, 0), ()), 1),
-                ((-1, (9, 1), ()), 1)
+                ((-3, Tup2(8, 1), ()), 1),
+                ((-2, Tup2(9, 0), ()), 1),
+                ((-1, Tup2(9, 1), ()), 1)
             ]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(7, (1, 1));
+        input_handle.push(7, Tup2(1, 1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, (8, 1), ()), 1),
-                ((-2, (9, 0), ()), 1),
-                ((-1, (9, 1), ()), 1)
+                ((-3, Tup2(8, 1), ()), 1),
+                ((-2, Tup2(9, 0), ()), 1),
+                ((-1, Tup2(9, 1), ()), 1)
             ]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(10, (10, 1));
+        input_handle.push(10, Tup2(10, 1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, (8, 1), ()), 1),
-                ((-2, (9, 0), ()), 1),
-                ((-1, (9, 1), ()), 1),
-                ((0, (10, 10), ()), 1)
+                ((-3, Tup2(8, 1), ()), 1),
+                ((-2, Tup2(9, 0), ()), 1),
+                ((-1, Tup2(9, 1), ()), 1),
+                ((0, Tup2(10, 10), ()), 1)
             ]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(10, (11, 1));
-        input_handle.push(12, (0, 1));
+        input_handle.push(10, Tup2(11, 1));
+        input_handle.push(12, Tup2(0, 1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, (8, 1), ()), 1),
-                ((-2, (9, 0), ()), 1),
-                ((-1, (9, 1), ()), 1),
-                ((0, (10, 10), ()), 1),
-                ((1, (10, 11), ()), 1),
-                ((2, (12, 0), ()), 1)
+                ((-3, Tup2(8, 1), ()), 1),
+                ((-2, Tup2(9, 0), ()), 1),
+                ((-1, Tup2(9, 1), ()), 1),
+                ((0, Tup2(10, 10), ()), 1),
+                ((1, Tup2(10, 11), ()), 1),
+                ((2, Tup2(12, 0), ()), 1)
             ]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(10, (10, -1));
+        input_handle.push(10, Tup2(10, -1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, (8, 1), ()), 1),
-                ((-2, (9, 0), ()), 1),
-                ((-1, (9, 1), ()), 1),
-                ((0, (10, 11), ()), 1),
-                ((1, (12, 0), ()), 1)
+                ((-3, Tup2(8, 1), ()), 1),
+                ((-2, Tup2(9, 0), ()), 1),
+                ((-1, Tup2(9, 1), ()), 1),
+                ((0, Tup2(10, 11), ()), 1),
+                ((1, Tup2(12, 0), ()), 1)
             ]
         );
 
         descr_handle.set_for_all(Some(NeighborhoodDescr::new(Some(10), 10, 3, 5)));
-        input_handle.push(13, (0, 1));
-        input_handle.push(14, (0, 1));
-        input_handle.push(14, (1, 1));
-        input_handle.push(14, (2, 1));
-        input_handle.push(14, (3, 1));
+        input_handle.push(13, Tup2(0, 1));
+        input_handle.push(14, Tup2(0, 1));
+        input_handle.push(14, Tup2(1, 1));
+        input_handle.push(14, Tup2(2, 1));
+        input_handle.push(14, Tup2(3, 1));
 
         dbsp.step().unwrap();
 
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((-3, (8, 1), ()), 1),
-                ((-2, (9, 0), ()), 1),
-                ((-1, (9, 1), ()), 1),
-                ((0, (10, 11), ()), 1),
-                ((1, (12, 0), ()), 1),
-                ((2, (13, 0), ()), 1),
-                ((3, (14, 0), ()), 1),
-                ((4, (14, 1), ()), 1),
-                ((5, (14, 2), ()), 1)
+                ((-3, Tup2(8, 1), ()), 1),
+                ((-2, Tup2(9, 0), ()), 1),
+                ((-1, Tup2(9, 1), ()), 1),
+                ((0, Tup2(10, 11), ()), 1),
+                ((1, Tup2(12, 0), ()), 1),
+                ((2, Tup2(13, 0), ()), 1),
+                ((3, Tup2(14, 0), ()), 1),
+                ((4, Tup2(14, 1), ()), 1),
+                ((5, Tup2(14, 2), ()), 1)
             ]
         );
 
@@ -677,12 +682,12 @@ mod test {
         assert_eq!(
             &batch_to_tuples(&output_handle.consolidate()),
             &[
-                ((0, (7, 1), ()), 1),
-                ((1, (8, 1), ()), 1),
-                ((2, (9, 0), ()), 1),
-                ((3, (9, 1), ()), 1),
-                ((4, (10, 11), ()), 1),
-                ((5, (12, 0), ()), 1),
+                ((0, Tup2(7, 1), ()), 1),
+                ((1, Tup2(8, 1), ()), 1),
+                ((2, Tup2(9, 0), ()), 1),
+                ((3, Tup2(9, 1), ()), 1),
+                ((4, Tup2(10, 11), ()), 1),
+                ((5, Tup2(12, 0), ()), 1),
             ]
         );
     }
@@ -723,7 +728,7 @@ mod test {
                 ref_trace.insert(ref_batch);
 
                 for (k, v, r) in batch.into_iter() {
-                    input_handle.push(k, (v, r));
+                    input_handle.push(k, Tup2(v, r));
                 }
                 let descr = NeighborhoodDescr::new(Some(start_key), start_val, before, after);
                 descr_handle.set_for_all(Some(descr.clone()));

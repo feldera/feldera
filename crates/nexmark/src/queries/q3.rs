@@ -1,6 +1,7 @@
 use super::NexmarkStream;
-use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
+use dbsp::utils::{Tup3, Tup4};
+use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 
 /// Local Item Suggestion
 ///
@@ -28,9 +29,9 @@ use crate::model::Event;
 /// 'CA');
 
 const STATES_OF_INTEREST: &[&str] = &["OR", "ID", "CA"];
-const CATEGORY_OF_INTEREST: usize = 10;
+const CATEGORY_OF_INTEREST: u64 = 10;
 
-type Q3Stream = Stream<RootCircuit, OrdZSet<(String, String, String, u64), isize>>;
+type Q3Stream = Stream<RootCircuit, OrdZSet<Tup4<String, String, String, u64>, i64>>;
 
 pub fn q3(input: NexmarkStream) -> Q3Stream {
     // Select auctions of interest and index them by seller id.
@@ -42,7 +43,7 @@ pub fn q3(input: NexmarkStream) -> Q3Stream {
     // Select people from states of interest and index them by person id.
     let person_by_id = input.flat_map_index(|event| match event {
         Event::Person(p) => match STATES_OF_INTEREST.contains(&p.state.as_str()) {
-            true => Some((p.id, (p.name.clone(), p.city.clone(), p.state.clone()))),
+            true => Some((p.id, Tup3(p.name.clone(), p.city.clone(), p.state.clone()))),
             false => None,
         },
         _ => None,
@@ -51,8 +52,8 @@ pub fn q3(input: NexmarkStream) -> Q3Stream {
     // In the future, it won't be necessary to specify type arguments to join.
     auction_by_seller.join(
         &person_by_id,
-        |_seller, &auction_id, (name, city, state)| {
-            (
+        |_seller, &auction_id, Tup3(name, city, state)| {
+            Tup4(
                 name.to_string(),
                 city.to_string(),
                 state.to_string(),
@@ -69,11 +70,11 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Person},
     };
-    use dbsp::{trace::Batch, RootCircuit, OrdZSet};
+    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
 
     #[test]
     fn test_q3_people() {
-        let input_vecs: Vec<Vec<(Event, isize)>> = vec![
+        let input_vecs: Vec<Vec<(Event, i64)>> = vec![
             vec![
                 (
                     Event::Person(Person {
@@ -164,7 +165,7 @@ mod tests {
         ];
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q3(stream);
 
@@ -173,7 +174,7 @@ mod tests {
                     (),
                     vec![
                         (
-                            (
+                            Tup4(
                                 String::from("CA Seller"),
                                 String::from("Phoenix"),
                                 String::from("CA"),
@@ -182,7 +183,7 @@ mod tests {
                             1,
                         ),
                         (
-                            (
+                            Tup4(
                                 String::from("ID Seller"),
                                 String::from("Phoenix"),
                                 String::from("ID"),
@@ -195,7 +196,7 @@ mod tests {
                 OrdZSet::from_keys(
                     (),
                     vec![(
-                        (
+                        Tup4(
                             String::from("OR Seller"),
                             String::from("Phoenix"),
                             String::from("OR"),

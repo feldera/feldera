@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
+use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 
 /// Selection
 ///
@@ -19,7 +19,7 @@ use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 /// SELECT auction, price FROM bid WHERE MOD(auction, 123) = 0;
 const AUCTION_ID_MODULO: u64 = 123;
 
-pub fn q2(input: NexmarkStream) -> Stream<RootCircuit, OrdZSet<(u64, usize), isize>> {
+pub fn q2(input: NexmarkStream) -> Stream<RootCircuit, OrdZSet<(u64, u64), i64>> {
     input.flat_map(|event| match event {
         Event::Bid(b) => match b.auction % AUCTION_ID_MODULO == 0 {
             true => Some((b.auction, b.price)),
@@ -36,11 +36,11 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{trace::Batch, RootCircuit, OrdZSet};
+    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
 
     #[test]
     fn test_q2() {
-        let input_vecs: Vec<Vec<(Event, isize)>> = vec![
+        let input_vecs: Vec<Vec<(Event, i64)>> = vec![
             vec![
                 (
                     Event::Bid(Bid {
@@ -88,7 +88,7 @@ mod tests {
         ];
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q2(stream);
 

@@ -18,6 +18,8 @@ use size_of::SizeOf;
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Record {
     pub location: String,
     pub date: NaiveDate,
@@ -39,6 +41,8 @@ pub struct Record {
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct VaxMonthly {
     pub count: u64,
     pub year: i32,
@@ -48,5 +52,5 @@ pub struct VaxMonthly {
 #[tarpc::service]
 pub trait Circuit {
     async fn init(layout: Layout);
-    async fn run(records: Vec<(Record, isize)>) -> Vec<(String, VaxMonthly, isize)>;
+    async fn run(records: Vec<(Record, i64)>) -> Vec<(String, VaxMonthly, i64)>;
 }

@@ -2,9 +2,9 @@ use super::super::config::Config as NexmarkConfig;
 
 // We start the ids at specific values to help ensure the queries find a match
 // even on small synthesized dataset sizes.
-pub const FIRST_PERSON_ID: usize = 1000;
-pub const FIRST_AUCTION_ID: usize = 1000;
-pub const FIRST_CATEGORY_ID: usize = 10;
+pub const FIRST_PERSON_ID: u64 = 1000;
+pub const FIRST_AUCTION_ID: u64 = 1000;
+pub const FIRST_CATEGORY_ID: u64 = 10;
 
 /// The generator config is a combination of the CLI configuration and the
 /// options specific to this generator instantiation.

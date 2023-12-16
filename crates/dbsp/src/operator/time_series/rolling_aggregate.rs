@@ -15,6 +15,7 @@ use crate::{
         Aggregator, Avg, FilterMap,
     },
     trace::{BatchReader, Builder, Cursor, Spine},
+    utils::Tup2,
     Circuit, DBData, DBWeight, RootCircuit, Stream,
 };
 use num::{Bounded, PrimInt};
@@ -181,7 +182,7 @@ where
                 // Trace bound used inside `partitioned_rolling_aggregate_inner` to
                 // bound its output trace.  This is the same bound we use to construct
                 // the input window here.
-                let bound: TraceBound<(TS, Option<Agg::Output>)> = TraceBound::new();
+                let bound: TraceBound<Tup2<TS, Option<Agg::Output>>> = TraceBound::new();
                 let bound_clone = bound.clone();
 
                 // Restrict the input stream to the `[lb -> ∞)` time window,
@@ -193,7 +194,7 @@ where
                         .range_of(wm)
                         .map(|range| range.from)
                         .unwrap_or_else(|| Bounded::min_value());
-                    bound_clone.set((lower, None));
+                    bound_clone.set(Tup2(lower, None));
                     (lower, Bounded::max_value())
                 });
                 let window = self.window(&bounds);
@@ -205,11 +206,11 @@ where
 
                 let partitioned_window = window.map_index(move |(ts, v)| {
                     let (partition_key, val) = partition_func_clone(v);
-                    (partition_key, (*ts, val))
+                    (partition_key, Tup2(*ts, val))
                 });
                 let partitioned_self = self.map_index(move |(ts, v)| {
                     let (partition_key, val) = partition_func(v);
-                    (partition_key, (*ts, val))
+                    (partition_key, Tup2(*ts, val))
                 });
 
                 partitioned_self.partitioned_rolling_aggregate_inner(
@@ -252,7 +253,7 @@ impl<B> Stream<RootCircuit, B> {
         TS: DBData + PrimInt,
         V: DBData,
     {
-        self.partitioned_rolling_aggregate_generic::<TS, V, Agg, _>(aggregator, range)
+        self.partitioned_rolling_aggregate_generic::<TS, V, Agg, OrdPartitionedIndexedZSet<B::Key, TS, Option<Agg::Output>, B::R>>(aggregator, range)
     }
 
     /// Like [`Self::partitioned_rolling_aggregate`], but can return any
@@ -296,7 +297,7 @@ impl<B> Stream<RootCircuit, B> {
         self_window: &Self,
         aggregator: Agg,
         range: RelRange<TS>,
-        bound: TraceBound<(TS, Option<Agg::Output>)>,
+        bound: TraceBound<Tup2<TS, Option<Agg::Output>>>,
     ) -> Stream<RootCircuit, O>
     where
         B: PartitionedIndexedZSet<TS, V>,
@@ -373,6 +374,8 @@ impl<B> Stream<RootCircuit, B> {
         TS: DBData + PrimInt,
         V: DBData,
         O: DBData,
+        //rkyv::option::ArchivedOption<<O as crate::trace::ArchivedDBData>::Repr>:
+        //    PartialOrd<Option<O>>,
     {
         let aggregator = LinearAggregator::new(f, output_func);
         self.partitioned_rolling_aggregate_generic::<TS, V, _, _>(aggregator, range)
@@ -515,7 +518,7 @@ where
     T: PartitionedBatchReader<TS, V, Key = B::Key, R = B::R> + Clone,
     RT: PartitionedRadixTreeReader<TS, Agg::Accumulator, Key = B::Key> + Clone,
     OT: PartitionedBatchReader<TS, Option<Agg::Output>, Key = B::Key, R = B::R> + Clone,
-    O: IndexedZSet<Key = B::Key, Val = (TS, Option<Agg::Output>), R = B::R>,
+    O: IndexedZSet<Key = B::Key, Val = Tup2<TS, Option<Agg::Output>>, R = B::R>,
 {
     fn eval<'a>(
         &mut self,
@@ -562,7 +565,7 @@ where
                             retraction_builder.push((
                                 O::item_from(
                                     delta_cursor.key().clone(),
-                                    (*range_cursor.key(), range_cursor.val().clone()),
+                                    Tup2(*range_cursor.key(), range_cursor.val().clone()),
                                 ),
                                 weight.neg(),
                             ));
@@ -611,7 +614,7 @@ where
                             insertion_builder.push((
                                 O::item_from(
                                     delta_cursor.key().clone(),
-                                    (*input_range_cursor.key(), agg),
+                                    Tup2(*input_range_cursor.key(), agg),
                                 ),
                                 HasOne::one(),
                             ));
@@ -647,13 +650,14 @@ mod test {
             FilterMap, Fold,
         },
         trace::{Batch, BatchReader, Cursor},
+        utils::Tup2,
         CollectionHandle, DBSPHandle, IndexedZSet, OrdIndexedZSet, RootCircuit, Runtime, Stream,
     };
     use size_of::SizeOf;
 
-    type DataBatch = OrdIndexedZSet<u64, (u64, i64), isize>;
+    type DataBatch = OrdIndexedZSet<u64, Tup2<u64, i64>, i64>;
     type DataStream = Stream<RootCircuit, DataBatch>;
-    type OutputBatch = OrdIndexedZSet<u64, (u64, Option<i64>), isize>;
+    type OutputBatch = OrdIndexedZSet<u64, Tup2<u64, Option<i64>>, i64>;
     type OutputStream = Stream<RootCircuit, OutputBatch>;
 
     // Reference implementation of `aggregate_range` for testing.
@@ -699,11 +703,11 @@ mod test {
                 while cursor.key_valid() {
                     while cursor.val_valid() {
                         let partition = *cursor.key();
-                        let (ts, _val) = *cursor.val();
+                        let Tup2(ts, _val) = *cursor.val();
                         let agg = range_spec
                             .range_of(&ts)
                             .and_then(|range| aggregate_range_slow(batch, partition, range));
-                        tuples.push(((partition, (ts, agg)), 1));
+                        tuples.push(((partition, Tup2(ts, agg)), 1));
                         cursor.step_val();
                     }
                     cursor.step_key();
@@ -715,7 +719,7 @@ mod test {
             .gather(0)
     }
 
-    type RangeHandle = CollectionHandle<u64, ((u64, i64), isize)>;
+    type RangeHandle = CollectionHandle<u64, Tup2<Tup2<u64, i64>, i64>>;
 
     fn partition_rolling_aggregate_circuit(
         lateness: u64,
@@ -723,17 +727,17 @@ mod test {
     ) -> (DBSPHandle, RangeHandle) {
         Runtime::init_circuit(4, move |circuit| {
             let (input_stream, input_handle) =
-                circuit.add_input_indexed_zset::<u64, (u64, i64), isize>();
+                circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>, i64>();
 
             let input_by_time =
-                input_stream.map_index(|(partition, (ts, val))| (*ts, (*partition, *val)));
+                input_stream.map_index(|(partition, Tup2(ts, val))| (*ts, (*partition, *val)));
 
             let warerline =
                 input_by_time.waterline_monotonic(|| 0, move |ts| ts.saturating_sub(lateness));
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                 0i64,
-                |agg: &mut i64, val: &i64, w: isize| *agg += val * (w as i64),
+                |agg: &mut i64, val: &i64, w: i64| *agg += val * (w as i64),
             );
 
             let range_spec = RelRange::new(RelOffset::Before(1000), RelOffset::Before(0));
@@ -791,7 +795,7 @@ mod test {
             let output_500_500_warerline = aggregate_500_500_warerline.gather(0).integrate();
 
             let bound = TraceBound::new();
-            bound.set((u64::max_value(), None));
+            bound.set(Tup2(u64::max_value(), None));
 
             aggregate_500_500_warerline
                 .integrate_trace_with_bound(TraceBound::new(), bound)
@@ -838,10 +842,10 @@ mod test {
 
         circuit.step().unwrap();
 
-        input.append(&mut vec![(2, ((110271, 100), 1))]);
+        input.append(&mut vec![(2, Tup2(Tup2(110271, 100), 1))]);
         circuit.step().unwrap();
 
-        input.append(&mut vec![(2, ((0, 100), 1))]);
+        input.append(&mut vec![(2, Tup2(Tup2(0, 100), 1))]);
         circuit.step().unwrap();
 
         circuit.kill().unwrap();
@@ -854,32 +858,32 @@ mod test {
         circuit.step().unwrap();
 
         input.append(&mut vec![
-            (0, ((1, 100), 1)),
-            (0, ((10, 100), 1)),
-            (0, ((20, 100), 1)),
-            (0, ((30, 100), 1)),
+            (0, Tup2(Tup2(1, 100), 1)),
+            (0, Tup2(Tup2(10, 100), 1)),
+            (0, Tup2(Tup2(20, 100), 1)),
+            (0, Tup2(Tup2(30, 100), 1)),
         ]);
         circuit.step().unwrap();
 
         input.append(&mut vec![
-            (0, ((5, 100), 1)),
-            (0, ((15, 100), 1)),
-            (0, ((25, 100), 1)),
-            (0, ((35, 100), 1)),
+            (0, Tup2(Tup2(5, 100), 1)),
+            (0, Tup2(Tup2(15, 100), 1)),
+            (0, Tup2(Tup2(25, 100), 1)),
+            (0, Tup2(Tup2(35, 100), 1)),
         ]);
         circuit.step().unwrap();
 
         input.append(&mut vec![
-            (0, ((1, 100), -1)),
-            (0, ((10, 100), -1)),
-            (0, ((20, 100), -1)),
-            (0, ((30, 100), -1)),
+            (0, Tup2(Tup2(1, 100), -1)),
+            (0, Tup2(Tup2(10, 100), -1)),
+            (0, Tup2(Tup2(20, 100), -1)),
+            (0, Tup2(Tup2(30, 100), -1)),
         ]);
         input.append(&mut vec![
-            (1, ((1, 100), 1)),
-            (1, ((1000, 100), 1)),
-            (1, ((2000, 100), 1)),
-            (1, ((3000, 100), 1)),
+            (1, Tup2(Tup2(1, 100), 1)),
+            (1, Tup2(Tup2(1000, 100), 1)),
+            (1, Tup2(Tup2(2000, 100), 1)),
+            (1, Tup2(Tup2(3000, 100), 1)),
         ]);
         circuit.step().unwrap();
 
@@ -890,19 +894,20 @@ mod test {
     #[test]
     fn test_partitioned_rolling_aggregate2() {
         let (circuit, (input, expected)) = RootCircuit::build(move |circuit| {
-            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, (u64, i64), i64>();
+            let (input, input_handle) =
+                circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>, i64>();
             let (expected, expected_handle) =
-                circuit.add_input_indexed_zset::<u64, (u64, Option<i64>), i64>();
+                circuit.add_input_indexed_zset::<u64, Tup2<u64, Option<i64>>, i64>();
 
             input.inspect(|f| {
-                for (p, (ts, v), w) in f.iter() {
+                for (p, Tup2(ts, v), w) in f.iter() {
                     println!(" input {p} {ts} {v:6} {w:+}");
                 }
             });
             let range_spec = RelRange::new(RelOffset::Before(3), RelOffset::Before(2));
             let sum = input.partitioned_rolling_aggregate_linear(|&f| f, |x| x, range_spec);
             sum.inspect(|f| {
-                for (p, (ts, sum), w) in f.iter() {
+                for (p, Tup2(ts, sum), w) in f.iter() {
                     println!("output {p} {ts} {:6} {w:+}", sum.unwrap_or_default());
                 }
             });
@@ -912,22 +917,22 @@ mod test {
         .unwrap();
 
         input.append(&mut vec![
-            (1, ((0, 1), 1)),
-            (1, ((1, 10), 1)),
-            (1, ((2, 100), 1)),
-            (1, ((3, 1000), 1)),
-            (1, ((4, 10000), 1)),
-            (1, ((5, 100000), 1)),
-            (1, ((9, 123456), 1)),
+            (1, Tup2(Tup2(0, 1), 1)),
+            (1, Tup2(Tup2(1, 10), 1)),
+            (1, Tup2(Tup2(2, 100), 1)),
+            (1, Tup2(Tup2(3, 1000), 1)),
+            (1, Tup2(Tup2(4, 10000), 1)),
+            (1, Tup2(Tup2(5, 100000), 1)),
+            (1, Tup2(Tup2(9, 123456), 1)),
         ]);
         expected.append(&mut vec![
-            (1, ((0, None), 1)),
-            (1, ((1, None), 1)),
-            (1, ((2, Some(1)), 1)),
-            (1, ((3, Some(11)), 1)),
-            (1, ((4, Some(110)), 1)),
-            (1, ((5, Some(1100)), 1)),
-            (1, ((9, None), 1)),
+            (1, Tup2(Tup2(0, None), 1)),
+            (1, Tup2(Tup2(1, None), 1)),
+            (1, Tup2(Tup2(2, Some(1)), 1)),
+            (1, Tup2(Tup2(3, Some(11)), 1)),
+            (1, Tup2(Tup2(4, Some(110)), 1)),
+            (1, Tup2(Tup2(5, Some(1100)), 1)),
+            (1, Tup2(Tup2(9, None), 1)),
         ]);
         circuit.step().unwrap();
     }
@@ -936,9 +941,9 @@ mod test {
     fn test_partitioned_rolling_average() {
         let (circuit, (input, expected)) = RootCircuit::build(move |circuit| {
             let (input_stream, input_handle) =
-                circuit.add_input_indexed_zset::<u64, (u64, i64), i64>();
+                circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>, i64>();
             let (expected_stream, expected_handle) =
-                circuit.add_input_indexed_zset::<u64, (u64, Option<i64>), i64>();
+                circuit.add_input_indexed_zset::<u64, Tup2<u64, Option<i64>>, i64>();
 
             let range_spec = RelRange::new(RelOffset::Before(3), RelOffset::Before(1));
             input_stream
@@ -951,20 +956,20 @@ mod test {
         circuit.step().unwrap();
 
         input.append(&mut vec![
-            (0, ((10, 10), 1)),
-            (0, ((11, 20), 1)),
-            (0, ((12, 30), 1)),
-            (0, ((13, 40), 1)),
-            (0, ((14, 50), 1)),
-            (0, ((15, 60), 1)),
+            (0, Tup2(Tup2(10, 10), 1)),
+            (0, Tup2(Tup2(11, 20), 1)),
+            (0, Tup2(Tup2(12, 30), 1)),
+            (0, Tup2(Tup2(13, 40), 1)),
+            (0, Tup2(Tup2(14, 50), 1)),
+            (0, Tup2(Tup2(15, 60), 1)),
         ]);
         expected.append(&mut vec![
-            (0, ((10, None), 1)),
-            (0, ((11, Some(10)), 1)),
-            (0, ((12, Some(15)), 1)),
-            (0, ((13, Some(20)), 1)),
-            (0, ((14, Some(30)), 1)),
-            (0, ((15, Some(40)), 1)),
+            (0, Tup2(Tup2(10, None), 1)),
+            (0, Tup2(Tup2(11, Some(10)), 1)),
+            (0, Tup2(Tup2(12, Some(15)), 1)),
+            (0, Tup2(Tup2(13, Some(20)), 1)),
+            (0, Tup2(Tup2(14, Some(30)), 1)),
+            (0, Tup2(Tup2(15, Some(40)), 1)),
         ]);
         circuit.step().unwrap();
     }
@@ -973,17 +978,17 @@ mod test {
     fn test_partitioned_rolling_aggregate() {
         let (circuit, input) = RootCircuit::build(move |circuit| {
             let (input_stream, input_handle) =
-                circuit.add_input_indexed_zset::<u64, (u64, i64), i64>();
+                circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>, i64>();
 
             input_stream.inspect(|f| {
-                for (p, (ts, v), w) in f.iter() {
+                for (p, Tup2(ts, v), w) in f.iter() {
                     println!(" input {p} {ts} {v:6} {w:+}");
                 }
             });
             let range_spec = RelRange::new(RelOffset::Before(3), RelOffset::Before(2));
             let sum = input_stream.partitioned_rolling_aggregate_linear(|&f| f, |x| x, range_spec);
             sum.inspect(|f| {
-                for (p, (ts, sum), w) in f.iter() {
+                for (p, Tup2(ts, sum), w) in f.iter() {
                     println!("output {p} {ts} {:6} {w:+}", sum.unwrap_or_default());
                 }
             });
@@ -992,26 +997,30 @@ mod test {
         .unwrap();
 
         input.append(&mut vec![
-            (1, ((0, 1), 1)),
-            (1, ((1, 10), 1)),
-            (1, ((2, 100), 1)),
-            (1, ((3, 1000), 1)),
-            (1, ((4, 10000), 1)),
-            (1, ((5, 100000), 1)),
-            (1, ((9, 123456), 1)),
+            (1, Tup2(Tup2(0, 1), 1)),
+            (1, Tup2(Tup2(1, 10), 1)),
+            (1, Tup2(Tup2(2, 100), 1)),
+            (1, Tup2(Tup2(3, 1000), 1)),
+            (1, Tup2(Tup2(4, 10000), 1)),
+            (1, Tup2(Tup2(5, 100000), 1)),
+            (1, Tup2(Tup2(9, 123456), 1)),
         ]);
         circuit.step().unwrap();
     }
 
     use proptest::{collection, prelude::*};
 
-    type InputTuple = (u64, ((u64, i64), isize));
+    type InputTuple = (u64, Tup2<Tup2<u64, i64>, i64>);
     type InputBatch = Vec<InputTuple>;
 
     fn input_tuple(partitions: u64, window: (u64, u64)) -> impl Strategy<Value = InputTuple> {
         (
             (0..partitions),
-            ((window.0..window.1, 100..101i64), 1..2isize),
+            (
+                (window.0..window.1, 100..101i64).prop_map(|(x, y)| Tup2(x, y)),
+                1..2i64,
+            )
+                .prop_map(|(x, y)| Tup2(x, y)),
         )
     }
 

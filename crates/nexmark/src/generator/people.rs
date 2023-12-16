@@ -6,7 +6,6 @@ use super::{
     super::{config as nexmark_config, model::Person},
     config, NexmarkGenerator,
 };
-use dbsp::{algebra::ArcStr, arcstr_literal};
 use rand::{seq::SliceRandom, Rng};
 use std::{
     cmp::min,
@@ -15,26 +14,26 @@ use std::{
 
 // Keep the number of states small so that the example queries will find
 // results even with a small batch of events.
-static US_STATES: [ArcStr; 6] = [
-    arcstr_literal!("AZ"),
-    arcstr_literal!("CA"),
-    arcstr_literal!("ID"),
-    arcstr_literal!("OR"),
-    arcstr_literal!("WA"),
-    arcstr_literal!("WY"),
+static US_STATES: [String; 6] = [
+    String::from("AZ"),
+    String::from("CA"),
+    String::from("ID"),
+    String::from("OR"),
+    String::from("WA"),
+    String::from("WY"),
 ];
 
-static US_CITIES: [ArcStr; 10] = [
-    arcstr_literal!("Phoenix"),
-    arcstr_literal!("Los Angeles"),
-    arcstr_literal!("San Francisco"),
-    arcstr_literal!("Boise"),
-    arcstr_literal!("Portland"),
-    arcstr_literal!("Bend"),
-    arcstr_literal!("Redmond"),
-    arcstr_literal!("Seattle"),
-    arcstr_literal!("Kent"),
-    arcstr_literal!("Cheyenne"),
+static US_CITIES: [String; 10] = [
+    String::from("Phoenix"),
+    String::from("Los Angeles"),
+    String::from("San Francisco"),
+    String::from("Boise"),
+    String::from("Portland"),
+    String::from("Bend"),
+    String::from("Redmond"),
+    String::from("Seattle"),
+    String::from("Kent"),
+    String::from("Cheyenne"),
 ];
 
 const FIRST_NAMES: &[&str] = &[
@@ -118,17 +117,17 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 
     // Return a random US state.
-    fn next_us_state(&mut self) -> ArcStr {
+    fn next_us_state(&mut self) -> String {
         US_STATES.choose(&mut self.rng).unwrap().clone()
     }
 
     // Return a random US city.
-    fn next_us_city(&mut self) -> ArcStr {
+    fn next_us_city(&mut self) -> String {
         US_CITIES.choose(&mut self.rng).unwrap().clone()
     }
 
     // Return a random person name.
-    fn next_person_name(&mut self) -> ArcStr {
+    fn next_person_name(&mut self) -> String {
         format!(
             "{} {}",
             FIRST_NAMES.choose(&mut self.rng).unwrap(),
@@ -138,12 +137,12 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 
     // Return a random email address.
-    fn next_email(&mut self) -> ArcStr {
+    fn next_email(&mut self) -> String {
         format!("{}@{}.com", self.next_string(7), self.next_string(5)).into()
     }
 
     // Return a random credit card number.
-    fn next_credit_card(&mut self) -> ArcStr {
+    fn next_credit_card(&mut self) -> String {
         format!(
             "{:04} {:04} {:04} {:04}",
             &mut self.rng.gen_range(0..10_000),

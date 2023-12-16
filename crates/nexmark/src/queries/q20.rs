@@ -1,9 +1,6 @@
 use super::NexmarkStream;
 use crate::model::{Auction, Bid, Event};
-use dbsp::{
-    operator::FilterMap,
-    RootCircuit, OrdZSet, Stream,
-};
+use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 20: Expand bid with auction (Not in original suite)
@@ -233,7 +230,7 @@ mod tests {
             .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q20(stream);
 

@@ -22,14 +22,14 @@
 //! ```
 
 use crate::data::PersonalNetworkGkgEntry;
-use dbsp::{algebra::ArcStr, operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{operator::FilterMap, utils::Tup2, OrdZSet, RootCircuit, Stream};
 
 pub fn personal_network(
-    target: ArcStr,
+    target: String,
     date_start: Option<u64>,
     date_end: Option<u64>,
     events: &Stream<RootCircuit, OrdZSet<PersonalNetworkGkgEntry, i32>>,
-) -> Stream<RootCircuit, OrdZSet<(ArcStr, ArcStr), i32>> {
+) -> Stream<RootCircuit, OrdZSet<Tup2<String, String>, i32>> {
     // Filter out events outside of our date range and that don't mention our target
     let events_filter: Box<dyn Fn(&PersonalNetworkGkgEntry) -> bool> = match (date_start, date_end)
     {
@@ -47,7 +47,7 @@ pub fn personal_network(
     let relevant_events = events.filter(events_filter);
 
     let forward_events =
-        relevant_events.index_with(|entry| (entry.id.clone(), entry.people.clone()));
+        relevant_events.index_with(|entry| Tup2(entry.id.clone(), entry.people.clone()));
     let flattened = relevant_events.flat_map_index(|event| {
         event
             .people
@@ -60,10 +60,10 @@ pub fn personal_network(
         .join_index(&forward_events, |_id, a, people| {
             people
                 .iter()
-                .filter_map(|b| (a < b).then(|| ((a.clone(), b.clone()), ())))
+                .filter_map(|b| (a < b).then(|| (Tup2(a.clone(), b.clone()), ())))
                 .collect::<Vec<_>>()
         })
-        .map(|((a, b), ())| (a.clone(), b.clone()));
+        .map(|(Tup2(a, b), ())| Tup2(a.clone(), b.clone()));
 
     // expected.minus(&joined).gather(0).inspect(|errors| {
     //     let mut cursor = errors.cursor();

@@ -24,6 +24,11 @@ use std::fmt::{Debug, Display, Formatter};
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "TOuter: Archive, TInner: Archive, <TOuter as Archive>::Archived: Ord, <TInner as Archive>::Archived: Ord"
+))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Product<TOuter, TInner> {
     /// Outer timestamp.
     pub outer: TOuter,

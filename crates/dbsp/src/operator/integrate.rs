@@ -205,7 +205,7 @@ mod test {
     fn zset_integrate() {
         let circuit = RootCircuit::build(move |circuit| {
             let mut counter1 = 0;
-            let mut s = <OrdZSet<usize, isize>>::zero();
+            let mut s = <OrdZSet<u64, i64>>::zero();
             let source = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
                 s = s.merge(&zset! { counter1 => 1});
@@ -218,7 +218,7 @@ mod test {
             integral.inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 0..counter2 {
-                    batch.push((i, (counter2 - i) as isize));
+                    batch.push((i as u64, (counter2 - i) as i64));
                 }
                 assert_eq!(s, &<OrdZSet<_, _>>::from_keys((), batch));
                 counter2 += 1;
@@ -227,7 +227,7 @@ mod test {
             integral.delay().inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 1..counter3 {
-                    batch.push(((i - 1), (counter3 - i) as isize));
+                    batch.push(((i - 1) as u64, (counter3 - i) as i64));
                 }
                 assert_eq!(s, &<OrdZSet<_, _>>::from_keys((), batch));
                 counter3 += 1;

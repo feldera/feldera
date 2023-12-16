@@ -8,7 +8,6 @@ use super::{
     strings::next_string,
 };
 use cached::Cached;
-use dbsp::{algebra::ArcStr, arcstr_format, arcstr_literal};
 use rand::Rng;
 use std::mem::size_of;
 
@@ -20,23 +19,23 @@ const HOT_CHANNELS_RATIO: usize = 100;
 
 pub const CHANNELS_NUMBER: u32 = 10_000;
 
-static HOT_CHANNELS: [ArcStr; 4] = [
-    arcstr_literal!("Google"),
-    arcstr_literal!("Facebook"),
-    arcstr_literal!("Baidu"),
-    arcstr_literal!("Apple"),
+static HOT_CHANNELS: [String; 4] = [
+    String::from("Google"),
+    String::from("Facebook"),
+    String::from("Baidu"),
+    String::from("Apple"),
 ];
-static HOT_URLS: [ArcStr; 4] = [
-    arcstr_literal!("https://www.nexmark.com/googl/item.htm?query=1"),
-    arcstr_literal!("https://www.nexmark.com/meta/item.htm?query=1"),
-    arcstr_literal!("https://www.nexmark.com/bidu/item.htm?query=1"),
-    arcstr_literal!("https://www.nexmark.com/aapl/item.htm?query=1"),
+static HOT_URLS: [String; 4] = [
+    String::from("https://www.nexmark.com/googl/item.htm?query=1"),
+    String::from("https://www.nexmark.com/meta/item.htm?query=1"),
+    String::from("https://www.nexmark.com/bidu/item.htm?query=1"),
+    String::from("https://www.nexmark.com/aapl/item.htm?query=1"),
 ];
 
 const BASE_URL_PATH_LENGTH: usize = 5;
 
 impl<R: Rng> NexmarkGenerator<R> {
-    fn get_new_channel_instance(&mut self, channel_number: u32) -> (ArcStr, ArcStr) {
+    fn get_new_channel_instance(&mut self, channel_number: u32) -> (String, String) {
         // Manually check the cache. Note: using a manual SizedCache because the
         // `cached` library doesn't allow using the proc_macro `cached` with
         // `self`.
@@ -115,8 +114,8 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 }
 
-fn get_base_url<R: Rng>(rng: &mut R) -> ArcStr {
-    arcstr_format!(
+fn get_base_url<R: Rng>(rng: &mut R) -> String {
+    format!(
         "https://www.nexmark.com/{}/item.htm?query=1",
         next_string(rng, BASE_URL_PATH_LENGTH),
     )
@@ -153,8 +152,8 @@ pub mod tests {
                 auction: expected_auction_id,
                 bidder: expected_bidder_id,
                 price: 100,
-                channel: arcstr_literal!("Google"),
-                url: arcstr_literal!("https://www.nexmark.com/googl/item.htm?query=1"),
+                channel: String::from("Google"),
+                url: String::from("https://www.nexmark.com/googl/item.htm?query=1"),
                 date_time: 1_000_000_000_000,
                 extra: "A".repeat(expected_size).into(),
             },
@@ -190,8 +189,8 @@ pub mod tests {
         ng.bid_channel_cache.cache_set(
             1234,
             (
-                arcstr_literal!("Google"),
-                arcstr_literal!("https://google.example.com"),
+                String::from("Google"),
+                String::from("https://google.example.com"),
             ),
         );
 

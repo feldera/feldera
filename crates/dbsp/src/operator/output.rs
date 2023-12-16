@@ -349,7 +349,7 @@ mod test {
     #[test]
     fn test_output_handle() {
         let (mut dbsp, (input, output)) = Runtime::init_circuit(4, |circuit| {
-            let (zset, zset_handle) = circuit.add_input_zset::<u64, isize>();
+            let (zset, zset_handle) = circuit.add_input_zset::<u64, i64>();
             let zset_output = zset.output();
 
             Ok((zset_handle, zset_output))
@@ -376,7 +376,7 @@ mod test {
     #[test]
     fn test_guarded_output_handle() {
         let (mut dbsp, (input, guard, output)) = Runtime::init_circuit(4, |circuit| {
-            let (zset, zset_handle) = circuit.add_input_zset::<u64, isize>();
+            let (zset, zset_handle) = circuit.add_input_zset::<u64, i64>();
             let (guard, guard_handle) = circuit.add_input_stream::<bool>();
             let zset_output = zset.output_guarded(&guard);
 

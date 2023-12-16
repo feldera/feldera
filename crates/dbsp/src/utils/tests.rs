@@ -41,6 +41,7 @@ fn cast_uninit_vecs() {
 pub(crate) struct ArtificialPanic;
 
 impl ArtificialPanic {
+    #[allow(unused)]
     pub(crate) fn catch<F>(closure: F)
     where
         F: FnOnce(),
@@ -69,6 +70,7 @@ impl Hash for RandomlyOrdered {
 }
 
 impl RandomlyOrdered {
+    #[allow(unused)]
     pub(crate) fn new(orderings: Vec<Ordering>) -> Self {
         Self {
             orderings: Arc::new(Mutex::new(orderings)),
@@ -103,9 +105,11 @@ impl Ord for RandomlyOrdered {
 }
 
 #[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(archive = "T: Archive, <T as Archive>::Archived: Ord"))]
+//#[archive(compare(PartialEq, PartialOrd))]
 pub(crate) struct LimitedDrops<T> {
     #[size_of(skip)]
-    #[with(Skip)]
     inner: T,
     #[size_of(skip)]
     #[with(Skip)]
@@ -119,6 +123,7 @@ impl<T> Hash for LimitedDrops<T> {
 }
 
 impl<T> LimitedDrops<T> {
+    #[allow(unused)]
     pub(crate) fn new(inner: T, allowed_drops: Option<Arc<Mutex<usize>>>) -> Self {
         Self {
             inner,
@@ -188,11 +193,11 @@ prop_compose! {
     /// Generate a `ColumnLayer`
     pub(crate) fn column_leaf(max_length: usize)
         (length in 0..=max_length)
-        (length in length..=length, diffs in vec(any::<isize>(), length))
-    -> ColumnLayer<usize, isize> {
-        let mut builder = ColumnLayerBuilder::with_capacity(length);
+        (length in length..=length, diffs in vec(any::<i64>(), length as usize))
+    -> ColumnLayer<u64, i64> {
+        let mut builder = ColumnLayerBuilder::with_capacity(length as usize);
         for (idx, diff) in diffs.into_iter().enumerate() {
-            builder.push_tuple((idx, diff));
+            builder.push_tuple((idx as u64, diff));
         }
 
         builder.done()

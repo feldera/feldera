@@ -129,13 +129,13 @@ fn count_tuples() {
     let empty = <MergeSorter<usize, isize>>::new();
     assert_eq!(empty.tuples(), 0);
 
-    let still_empty: MergeSorter<usize, isize> = MergeSorter {
+    let still_empty: MergeSorter<u64, i64> = MergeSorter {
         queue: Vec::new(),
         stash: preallocated_stashes(100),
     };
     assert_eq!(still_empty.tuples(), 0);
 
-    let has_tuples: MergeSorter<(usize, usize), isize> = MergeSorter {
+    let has_tuples: MergeSorter<(u64, u64), i64> = MergeSorter {
         queue: vec![
             vec![Vec::new(), vec![((0, 0), 0); 1000], vec![((1, 1), 1)]],
             Vec::new(),
@@ -146,16 +146,12 @@ fn count_tuples() {
     assert_eq!(has_tuples.tuples(), 1257);
 
     #[allow(clippy::type_complexity)]
-    let batcher: MergeBatcher<
-        (usize, usize),
-        u32,
-        isize,
-        OrdValBatch<usize, usize, u32, isize, usize>,
-    > = MergeBatcher {
-        sorter: has_tuples,
-        time: 0,
-        phantom: PhantomData,
-    };
+    let batcher: MergeBatcher<(u64, u64), u32, i64, OrdValBatch<u64, u64, u32, i64, u64>> =
+        MergeBatcher {
+            sorter: has_tuples,
+            time: 0,
+            phantom: PhantomData,
+        };
     assert_eq!(batcher.tuples(), 1257);
 }
 

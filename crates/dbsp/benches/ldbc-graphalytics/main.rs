@@ -18,6 +18,7 @@ use dbsp::{
     operator::Generator,
     profile::CPUProfiler,
     trace::{BatchReader, Cursor},
+    utils::Tup2,
     Circuit, RootCircuit,
 };
 use hashbrown::HashMap;
@@ -326,7 +327,7 @@ fn main() {
                         let mut print_count = MAX_PRINT_COUNT;
 
                         while cursor.key_valid() && print_count > 0 {
-                            let (node, distance) = *cursor.key();
+                            let Tup2(node, distance) = *cursor.key();
                             let weight = cursor.weight();
                             writeln!(stdout, "{node}, {distance} ({weight:+})").unwrap();
                             cursor.step_key();

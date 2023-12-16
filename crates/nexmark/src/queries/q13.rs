@@ -1,6 +1,6 @@
 use super::{process_time, NexmarkStream};
-use dbsp::{operator::FilterMap, RootCircuit, OrdZSet, Stream};
 use crate::model::Event;
+use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 
 use csv;
 use std::{
@@ -127,10 +127,8 @@ pub fn q13(input: NexmarkStream, side_input: SideInputStream) -> Q13Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dbsp::{
-        zset,
-    };
     use crate::{generator::tests::make_bid, model::Bid};
+    use dbsp::zset;
 
     #[test]
     fn test_q13() {
@@ -153,7 +151,7 @@ mod tests {
         .into_iter();
 
         let (circuit, (input_handle, side_input_handle)) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
             let (side_stream, side_input_handle) =
                 circuit.add_input_zset::<(usize, String, u64), isize>();
 

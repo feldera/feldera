@@ -185,6 +185,7 @@ where
     ///     time::NestedTimestamp32,
     ///     trace::ord::OrdZSet,
     ///     Circuit, RootCircuit, Stream, zset, zset_set,
+    ///     utils::Tup2,
     /// };
     /// use std::vec;
     ///
@@ -193,11 +194,11 @@ where
     ///     // Graph topology.
     ///     let mut edges = vec![
     ///         // Start with four nodes connected in a cycle.
-    ///         zset_set! { (1, 2), (2, 3), (3, 4), (4, 1) },
+    ///         zset_set! { Tup2(1, 2), Tup2(2, 3), Tup2(3, 4), Tup2(4, 1) },
     ///         // Add an edge.
-    ///         zset_set! { (4, 5) },
+    ///         zset_set! { Tup2(4, 5) },
     ///         // Remove an edge, breaking the cycle.
-    ///         zset! { (1, 2) => -1 },
+    ///         zset! { Tup2(1, 2) => -1 },
     ///     ]
     ///     .into_iter();
     ///
@@ -207,9 +208,9 @@ where
     ///     // Initial labeling of the graph.
     ///     let mut init_labels = vec![
     ///         // Start with a single label on node 1.
-    ///         zset_set! { (1, "l1".to_string()) },
+    ///         zset_set! { Tup2(1, "l1".to_string()) },
     ///         // Add a label to node 2.
-    ///         zset_set! { (2, "l2".to_string()) },
+    ///         zset_set! { Tup2(2, "l2".to_string()) },
     ///         zset! { },
     ///     ]
     ///     .into_iter();
@@ -219,13 +220,13 @@ where
     ///
     ///     // Expected _changes_ to the output graph labeling after each clock cycle.
     ///     let mut expected_outputs = vec![
-    ///         zset! { (1, "l1".to_string()) => 1, (2, "l1".to_string()) => 1, (3, "l1".to_string()) => 1, (4, "l1".to_string()) => 1 },
-    ///         zset! { (1, "l2".to_string()) => 1, (2, "l2".to_string()) => 1, (3, "l2".to_string()) => 1, (4, "l2".to_string()) => 1, (5, "l1".to_string()) => 1, (5, "l2".to_string()) => 1 },
-    ///         zset! { (2, "l1".to_string()) => -1, (3, "l1".to_string()) => -1, (4, "l1".to_string()) => -1, (5, "l1".to_string()) => -1 },
+    ///         zset! { Tup2(1, "l1".to_string()) => 1, Tup2(2, "l1".to_string()) => 1, Tup2(3, "l1".to_string()) => 1, Tup2(4, "l1".to_string()) => 1 },
+    ///         zset! { Tup2(1, "l2".to_string()) => 1, Tup2(2, "l2".to_string()) => 1, Tup2(3, "l2".to_string()) => 1, Tup2(4, "l2".to_string()) => 1, Tup2(5, "l1".to_string()) => 1, Tup2(5, "l2".to_string()) => 1 },
+    ///         zset! { Tup2(2, "l1".to_string()) => -1, Tup2(3, "l1".to_string()) => -1, Tup2(4, "l1".to_string()) => -1, Tup2(5, "l1".to_string()) => -1 },
     ///     ]
     ///     .into_iter();
     ///
-    ///     let labels = circuit.recursive(|child, labels: Stream<_, OrdZSet<(usize, String), isize>>| {
+    ///     let labels = circuit.recursive(|child, labels: Stream<_, OrdZSet<Tup2<i64, String>, i64>>| {
     ///         // Import `edges` and `init_labels` relations from the parent circuit.
     ///         let edges = edges.delta0(child);
     ///         let init_labels = init_labels.delta0(child);
@@ -235,7 +236,7 @@ where
     ///         let result = labels.index()
     ///               .join(
     ///                   &edges.index(),
-    ///                   |_from, l, to| (*to, l.clone()),
+    ///                   |_from, l, to| Tup2(*to, l.clone()),
     ///               )
     ///               .plus(&init_labels);
     ///         Ok(result)
@@ -296,10 +297,11 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::Tup2;
     use crate::{
         operator::{FilterMap, Generator},
         trace::ord::OrdZSet,
-        zset, Circuit, RootCircuit, Stream,
+        zset, Circuit, OrdIndexedZSet, RootCircuit, Stream,
     };
     use std::vec;
 
@@ -308,44 +310,44 @@ mod test {
         let root = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (2, 3) => 1},
-                zset! { (1, 3) => 1},
-                zset! { (3, 1) => 1},
-                zset! { (3, 1) => -1},
-                zset! { (1, 2) => -1},
-                zset! { (2, 4) => 1, (4, 1) => 1 },
-                zset! { (2, 3) => -1, (3, 2) => 1 },
+                zset! { Tup2(1, 2) => 1i64 },
+                zset! { Tup2(2, 3) => 1},
+                zset! { Tup2(1, 3) => 1},
+                zset! { Tup2(3, 1) => 1},
+                zset! { Tup2(3, 1) => -1},
+                zset! { Tup2(1, 2) => -1},
+                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
+                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
             ]
             .into_iter();
 
             // Expected content of the reachability relation.
             let mut outputs = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (1, 2) => 1, (1, 3) => 1, (2, 3) => 1, (2, 1) => 1, (3, 1) => 1, (3, 2) => 1},
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 3) => 1, (2, 3) => 1, (2, 4) => 1, (2, 1) => 1, (4, 1) => 1, (4, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (4, 4) => 1,
-                        (1, 2) => 1, (1, 3) => 1, (1, 4) => 1,
-                        (2, 1) => 1, (2, 3) => 1, (2, 4) => 1,
-                        (3, 1) => 1, (3, 2) => 1, (3, 4) => 1,
-                        (4, 1) => 1, (4, 2) => 1, (4, 3) => 1 },
+                zset! { Tup2(1, 2) => 1 },
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
+                        Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
+                        Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
+                        Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
+                        Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
             ]
             .into_iter();
 
             let edges = circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let paths = circuit.recursive(|child, paths: Stream<_, OrdZSet<(usize, usize), isize>>| {
+            let paths = circuit.recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>, i64>>| {
                 let edges = edges.delta0(child);
 
-                let paths_indexed = paths.index_with(|&(x, y)| (y, x));
+                let paths_indexed = paths.index_with(|&Tup2(x, y)| Tup2(y, x));
                 let edges_indexed = edges.index();
 
-                Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| (*from, *to))))
+                Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
             })
             .unwrap();
 
@@ -365,56 +367,61 @@ mod test {
     // tuples: compute forward and backward reachability at the same time.
     #[test]
     fn reachability2() {
-        type Edges<S> = Stream<S, OrdZSet<(usize, usize), isize>>;
+        type Edges<S> = Stream<S, OrdZSet<Tup2<u64, u64>, i64>>;
 
         let root = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
             let mut edges = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (2, 3) => 1},
-                zset! { (1, 3) => 1},
-                zset! { (3, 1) => 1},
-                zset! { (3, 1) => -1},
-                zset! { (1, 2) => -1},
-                zset! { (2, 4) => 1, (4, 1) => 1 },
-                zset! { (2, 3) => -1, (3, 2) => 1 },
+                zset! { Tup2(1u64, 2u64) => 1i64 },
+                zset! { Tup2(2, 3) => 1},
+                zset! { Tup2(1, 3) => 1},
+                zset! { Tup2(3, 1) => 1},
+                zset! { Tup2(3, 1) => -1},
+                zset! { Tup2(1, 2) => -1},
+                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
+                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
             ]
             .into_iter();
 
             // Expected content of the reachability relation.
             let output_vec = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (1, 2) => 1, (1, 3) => 1, (2, 3) => 1, (2, 1) => 1, (3, 1) => 1, (3, 2) => 1},
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 3) => 1, (2, 3) => 1, (2, 4) => 1, (2, 1) => 1, (4, 1) => 1, (4, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (4, 4) => 1,
-                              (1, 2) => 1, (1, 3) => 1, (1, 4) => 1,
-                              (2, 1) => 1, (2, 3) => 1, (2, 4) => 1,
-                              (3, 1) => 1, (3, 2) => 1, (3, 4) => 1,
-                              (4, 1) => 1, (4, 2) => 1, (4, 3) => 1 },
+                zset! { Tup2(1u64, 2u64) => 1i64 },
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
+                              Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
+                              Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
+                              Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
+                              Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
             ];
 
             let mut outputs = output_vec.clone().into_iter();
             let mut outputs2 = output_vec.into_iter();
 
-            let edges = circuit
+            let edges: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let (paths, reverse_paths) = circuit.recursive(|child, (paths, reverse_paths): (Edges<_>, Edges<_>)| {
+            let (paths, reverse_paths):
+                (Stream<_, OrdZSet<Tup2<u64, u64>, i64>>, Stream<_, OrdZSet<Tup2<u64, u64>, i64>>)
+                = circuit.recursive(|child, (paths, reverse_paths): (Edges<_>, Edges<_>)| {
                 let edges = edges.delta0(child);
 
-                let paths_indexed = paths.index_with(|&(x, y)| (y, x));
-                let reverse_paths_indexed = reverse_paths.index_with(|&(x, y)| (y, x));
-                let edges_indexed = edges.index();
-                let reverse_edges = edges.map(|&(x, y)| (y, x));
-                let reverse_edges_indexed = reverse_edges.index();
+                let paths_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = paths.index_with(|&Tup2(x, y)| Tup2(y, x));
+                let reverse_paths_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = reverse_paths.index_with(|&Tup2(x, y)| Tup2(y, x));
+                let edges_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = edges.index();
+                let reverse_edges: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = edges.map(|&Tup2(x, y)| Tup2(y, x));
+                let reverse_edges_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = reverse_edges.index();
 
-                Ok((edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| (*from, *to))),
-                    reverse_edges.plus(&reverse_paths_indexed.join(&reverse_edges_indexed, |_via, from, to| (*from, *to)))
-                ))
+                let a_1: Stream<_, OrdZSet<Tup2<u64, u64>, i64>>  = paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to));
+                let a: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = edges.plus(&a_1);
+
+                let b_1: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = reverse_paths_indexed.join(&reverse_edges_indexed, |_via, from, to| Tup2(*from, *to));
+                let b: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = reverse_edges.plus(&b_1);
+                Ok((a, b))
             })
             .unwrap();
 
@@ -422,7 +429,7 @@ mod test {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
 
-            reverse_paths.map(|(x, y)| (*y, *x)).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_,_>| {
+            reverse_paths.map(|Tup2(x, y)| Tup2(*y, *x)).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_,_>| {
                 assert_eq!(*ps, outputs2.next().unwrap());
             });
             Ok(())

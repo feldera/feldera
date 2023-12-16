@@ -11,14 +11,17 @@ pipeline_types = { path = "../../../crates/pipeline-types/" }
 rust_decimal = { version = "1.32.0", features = ["maths", "rkyv"] }
 geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
-size-of = { version = "0.1.5", features = ["rust_decimal"] }
+# Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3013071", features = ["rust_decimal"] }
 serde = { version = "1.0", features = ["derive"] }
 num = { version = "0.4.1" }
-chrono = { version = "0.4.31" }
+# Go back to a version once commit containing 849932 is released:
+chrono = { git = "https://github.com/chronotope/chrono", rev = "849932" }
 like = { version = "0.3.1" }
 paste = { version = "1.0.12" }
 regex = { version = "1.9.1" }
-rkyv = "0.7.42"
+# Go back to rkyv repo once https://github.com/rkyv/rkyv/pull/462 is merged:
+rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
 hex = "0.4.3"
 num-traits = "0.2"
 

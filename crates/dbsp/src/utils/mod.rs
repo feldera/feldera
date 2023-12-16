@@ -1,11 +1,13 @@
 mod dyn_vec;
 mod sample;
 pub(crate) mod tests;
+mod tuple;
 mod vec_ext;
 
 pub use dyn_vec::{DynIter, DynVec, DynVecVTable};
 
 pub use sample::sample_slice;
+pub use tuple::{Tup2, Tup3, Tup4, Tup5, Tup9};
 pub(crate) use vec_ext::VecExt;
 
 use std::{

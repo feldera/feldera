@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{serialize_struct, static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
-use dbsp::InputHandle;
+use dbsp::{utils::Tup2, InputHandle};
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::query::OutputQuery;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ pub enum RecordFormat {
 
 // Helper type only used to serialize neighborhoods as a map vs tuple.
 pub struct NeighborhoodEntry<KD> {
-    index: isize,
+    index: i64,
     key: KD,
 }
 
@@ -32,11 +32,11 @@ serialize_struct!(NeighborhoodEntry(KD)[2]{
     key["key"]: KD
 });
 
-impl<K, KD> From<(isize, (K, ()))> for NeighborhoodEntry<KD>
+impl<K, KD> From<Tup2<i64, Tup2<K, ()>>> for NeighborhoodEntry<KD>
 where
     KD: From<K>,
 {
-    fn from((index, (key, ())): (isize, (K, ()))) -> Self {
+    fn from(Tup2(index, Tup2(key, ())): Tup2<i64, Tup2<K, ()>>) -> Self {
         Self {
             index,
             key: KD::from(key),

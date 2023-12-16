@@ -1,10 +1,9 @@
 use super::NexmarkStream;
+use crate::{model::Event, queries::OrdinalDate};
 use dbsp::{
     operator::{FilterMap, Max, Min},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use crate::{model::Event, queries::OrdinalDate};
-use dbsp::algebra::ArcStr;
 use std::time::{Duration, SystemTime};
 use time::{
     format_description::well_known::{iso8601, iso8601::FormattedComponents, Iso8601},
@@ -51,7 +50,7 @@ use time::{
 
 type Q17Output = (
     u64,
-    ArcStr,
+    String,
     isize,
     isize,
     isize,
@@ -98,8 +97,7 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
         .weighted_count();
     let min_price = bids_indexed.aggregate(Min);
     let max_price = bids_indexed.aggregate(Max);
-    let sum_price =
-        bids_indexed.aggregate_linear(|price| -> isize { *price as isize });
+    let sum_price = bids_indexed.aggregate_linear(|price| -> isize { *price as isize });
 
     // Another outer-join abomination to put all aggregates into single stream.
     count_total_bids
@@ -187,8 +185,8 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dbsp::zset;
     use crate::{generator::tests::make_bid, model::Bid};
+    use dbsp::zset;
     use rstest::rstest;
 
     #[rstest]
@@ -327,7 +325,7 @@ mod tests {
         });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q17(stream);
 

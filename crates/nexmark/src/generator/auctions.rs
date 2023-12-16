@@ -16,7 +16,7 @@ use std::{
 
 /// Keep the number of categories small so the example queries will find results
 /// even with a small batch of events.
-const NUM_CATEGORIES: usize = 5;
+const NUM_CATEGORIES: u64 = 5;
 
 /// Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are
 /// 1 over these values.
@@ -147,7 +147,6 @@ impl<R: Rng> NexmarkGenerator<R> {
 mod tests {
     use super::super::tests::make_test_generator;
     use super::*;
-    use dbsp::arcstr_literal;
     use rstest::rstest;
 
     #[test]
@@ -171,8 +170,8 @@ mod tests {
         assert_eq!(
             Auction {
                 id: FIRST_AUCTION_ID as u64,
-                item_name: arcstr_literal!("AAA"),
-                description: arcstr_literal!("AAA"),
+                item_name: String::from("AAA"),
+                description: String::from("AAA"),
                 initial_bid: 100,
                 reserve: 200,
                 date_time: 0,

@@ -1,10 +1,7 @@
 use super::NexmarkStream;
-use dbsp::{
-    operator::FilterMap,
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
-};
-use rkyv::{Archive, Serialize, Deserialize};
 use crate::{model::Event, queries::OrdinalDate};
+use dbsp::{operator::FilterMap, OrdIndexedZSet, OrdZSet, RootCircuit, Stream};
+use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     hash::Hash,
@@ -57,7 +54,20 @@ use time::{
 /// GROUP BY DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
 
-#[derive(Eq, Clone, SizeOf, Debug, Default, Hash, PartialEq, PartialOrd, Ord, Archive, Serialize, Deserialize)]
+#[derive(
+    Eq,
+    Clone,
+    SizeOf,
+    Debug,
+    Default,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Archive,
+    Serialize,
+    Deserialize,
+)]
 pub struct Q15Output {
     day: String,
     total_bids: usize,
@@ -147,18 +157,14 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .index();
 
     // Compute bids per day.
-    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = bids
-        .index()
-        .weighted_count();
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = rank1_bids
-        .index()
-        .weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = rank2_bids
-        .index()
-        .weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> = rank3_bids
-        .index()
-        .weighted_count();
+    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        bids.index().weighted_count();
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank1_bids.index().weighted_count();
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank2_bids.index().weighted_count();
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+        rank3_bids.index().weighted_count();
 
     // Count unique bidders per day.
     let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
@@ -428,10 +434,8 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dbsp::{
-        zset, Runtime,
-    };
     use crate::{generator::tests::make_bid, model::Bid};
+    use dbsp::{zset, Runtime};
     use rstest::rstest;
 
     // 52 years with 13 leap years (extra days)
@@ -540,7 +544,7 @@ mod tests {
         .into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(num_threads, move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let mut expected_output = vec![
                 zset![

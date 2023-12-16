@@ -12,6 +12,7 @@
 use crate::{
     algebra::IndexedZSet,
     trace::{Batch, BatchReader, Cursor},
+    utils::Tup2,
     OrdIndexedZSet,
 };
 use std::marker::PhantomData;
@@ -20,15 +21,18 @@ use std::marker::PhantomData;
 ///
 /// Models a partitioned collection as a `BatchReader` indexed
 /// (partitioned) by `BatchReader::Key` and by `K` within each partition.
-pub trait PartitionedBatchReader<K, V>: BatchReader<Val = (K, V), Time = ()> {}
-impl<K, V, B> PartitionedBatchReader<K, V> for B where B: BatchReader<Val = (K, V), Time = ()> {}
+pub trait PartitionedBatchReader<K, V>: BatchReader<Val = Tup2<K, V>, Time = ()> {}
+impl<K, V, B> PartitionedBatchReader<K, V> for B where B: BatchReader<Val = Tup2<K, V>, Time = ()> {}
 
 /// Read/write API to partitioned data (see [`PartitionedBatchReader`]).
-pub trait PartitionedBatch<K, V>: Batch<Val = (K, V), Time = ()> {}
-impl<K, V, B> PartitionedBatch<K, V> for B where B: Batch<Val = (K, V), Time = ()> {}
+pub trait PartitionedBatch<K, V>: Batch<Val = Tup2<K, V>, Time = ()> {}
+impl<K, V, B> PartitionedBatch<K, V> for B where B: Batch<Val = Tup2<K, V>, Time = ()> {}
 
-pub trait PartitionedIndexedZSet<K, V>: IndexedZSet<Val = (K, V)> + Clone + Send {}
-impl<K, V, B> PartitionedIndexedZSet<K, V> for B where B: IndexedZSet<Val = (K, V)> + Clone + Send {}
+pub trait PartitionedIndexedZSet<K, V>: IndexedZSet<Val = Tup2<K, V>> + Clone + Send {}
+impl<K, V, B> PartitionedIndexedZSet<K, V> for B where
+    B: IndexedZSet<Val = Tup2<K, V>> + Clone + Send
+{
+}
 
 /// Cursor over a single partition of a partitioned batch.
 ///
@@ -41,7 +45,7 @@ pub struct PartitionCursor<'b, PK, K, V, R, C> {
 
 impl<'b, PK, K, V, R, C> PartitionCursor<'b, PK, K, V, R, C>
 where
-    C: Cursor<PK, (K, V), (), R>,
+    C: Cursor<PK, Tup2<K, V>, (), R>,
     K: Clone,
 {
     pub fn new(cursor: &'b mut C) -> Self {
@@ -56,7 +60,7 @@ where
 
 impl<'b, C, PK, K, V, R> Cursor<K, V, (), R> for PartitionCursor<'b, PK, K, V, R, C>
 where
-    C: Cursor<PK, (K, V), (), R>,
+    C: Cursor<PK, Tup2<K, V>, (), R>,
     K: Clone + Eq + Ord,
     V: 'static,
 {
@@ -117,7 +121,7 @@ where
     }
 
     fn seek_key(&mut self, key: &K) {
-        self.cursor.seek_val_with(|(k, _)| k >= key);
+        self.cursor.seek_val_with(|Tup2(k, _)| k >= key);
         if self.cursor.val_valid() {
             self.key = self.cursor.val().0.clone();
         }
@@ -127,7 +131,7 @@ where
     where
         P: Fn(&K) -> bool + Clone,
     {
-        self.cursor.seek_val_with(|(k, _)| predicate(k));
+        self.cursor.seek_val_with(|Tup2(k, _)| predicate(k));
         if self.cursor.val_valid() {
             self.key = self.cursor.val().0.clone();
         }
@@ -137,14 +141,14 @@ where
     where
         P: Fn(&K) -> bool + Clone,
     {
-        self.cursor.seek_val_with_reverse(|(k, _)| predicate(k));
+        self.cursor.seek_val_with_reverse(|Tup2(k, _)| predicate(k));
         if self.cursor.val_valid() {
             self.key = self.cursor.val().0.clone();
         }
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
-        self.cursor.seek_val_with_reverse(|(k, _)| k <= key);
+        self.cursor.seek_val_with_reverse(|Tup2(k, _)| k <= key);
         if self.cursor.val_valid() {
             self.key = self.cursor.val().0.clone();
         }
@@ -199,4 +203,4 @@ where
     }
 }
 
-pub type OrdPartitionedIndexedZSet<PK, TS, V, R> = OrdIndexedZSet<PK, (TS, V), R>;
+pub type OrdPartitionedIndexedZSet<PK, TS, V, R> = OrdIndexedZSet<PK, Tup2<TS, V>, R>;

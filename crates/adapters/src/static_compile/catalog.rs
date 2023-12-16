@@ -6,6 +6,7 @@ use crate::{
 use dbsp::{
     algebra::ZRingValue,
     operator::{DelayedFeedback, FilterMap, NeighborhoodDescr},
+    utils::Tup2,
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, UpsertHandle, ZSet,
 };
 
@@ -286,14 +287,14 @@ impl Catalog {
 
         // Neighborhood delta stream.
         let neighborhood_handle = neighborhood_stream
-            .map(|(idx, (_k, v))| (*idx, (v.clone(), ())))
+            .map(|Tup2(idx, Tup2(_k, v))| Tup2(*idx, Tup2(v.clone(), ())))
             .output();
 
         // Neighborhood snapshot stream.  The integral computation
         // is essentially free thanks to stream caching.
         let neighborhood_snapshot_stream = neighborhood_stream.integrate();
         let neighborhood_snapshot_handle = neighborhood_snapshot_stream
-            .map(|(idx, (_k, v))| (*idx, (v.clone(), ())))
+            .map(|Tup2(idx, Tup2(_k, v))| Tup2(*idx, Tup2(v.clone(), ())))
             .output_guarded(&neighborhood_descr_stream.apply(|(reset, _descr)| *reset));
 
         // Handle for the quantiles query.
@@ -304,7 +305,7 @@ impl Catalog {
             .integrate_trace()
             .stream_unique_key_val_quantiles(&num_quantiles_stream);
         let quantiles_handle = quantiles_stream
-            .map(|(_k, v)| v.clone())
+            .map(|Tup2(_k, v)| v.clone())
             .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
 
         let handles = OutputCollectionHandles {
