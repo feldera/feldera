@@ -1,6 +1,7 @@
 use anyhow::Result as AnyResult;
 use chrono::Datelike;
 use clap::Parser;
+use dbsp::utils::{Tup2, Tup3};
 use dbsp::{
     circuit::{IntoLayout, Layout},
     operator::FilterMap,
@@ -35,10 +36,10 @@ struct Args {
 fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> AnyResult<(
-    CollectionHandle<Record, isize>,
-    OutputHandle<OrdIndexedZSet<String, VaxMonthly, isize>>,
+    CollectionHandle<Record, i64>,
+    OutputHandle<OrdIndexedZSet<String, VaxMonthly, i64>>,
 )> {
-    let (input_stream, input_handle) = circuit.add_input_zset::<Record, isize>();
+    let (input_stream, input_handle) = circuit.add_input_zset::<Record, i64>();
     let subset = input_stream.filter(|r| {
         r.location == "England"
             || r.location == "Northern Ireland"
@@ -47,14 +48,14 @@ fn build_circuit(
     });
     let monthly_totals = subset
         .index_with(|r| {
-            (
-                (r.location.clone(), r.date.year(), r.date.month() as u8),
+            Tup2(
+                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
-        .aggregate_linear(|v| *v as isize);
+        .aggregate_linear(|v| *v as i64);
     let most_vax = monthly_totals
-        .map_index(|((l, y, m), sum)| {
+        .map_index(|(Tup3(l, y, m), sum)| {
             (
                 l.clone(),
                 VaxMonthly {
@@ -70,8 +71,8 @@ fn build_circuit(
 
 struct Inner {
     circuit: DBSPHandle,
-    input_handle: CollectionHandle<Record, isize>,
-    output_handle: OutputHandle<OrdIndexedZSet<String, VaxMonthly, isize>>,
+    input_handle: CollectionHandle<Record, i64>,
+    output_handle: OutputHandle<OrdIndexedZSet<String, VaxMonthly, i64>>,
 }
 
 impl Inner {
@@ -113,8 +114,8 @@ impl Circuit for Server {
         self.replace(layout);
         future::ready(())
     }
-    type RunFut = Ready<Vec<(String, VaxMonthly, isize)>>;
-    fn run(self, _: context::Context, mut records: Vec<(Record, isize)>) -> Self::RunFut {
+    type RunFut = Ready<Vec<(String, VaxMonthly, i64)>>;
+    fn run(self, _: context::Context, mut records: Vec<(Record, i64)>) -> Self::RunFut {
         self.inner()
             .as_ref()
             .unwrap()

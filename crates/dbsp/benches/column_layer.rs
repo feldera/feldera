@@ -75,7 +75,7 @@ macro_rules! leaf_benches {
             let mut group = c.benchmark_group("ordered-builder-push-merge");
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
+                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.cursor(), right.cursor()),
@@ -95,7 +95,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
+                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
@@ -110,7 +110,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
+                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (&left, &right),
@@ -125,7 +125,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
+                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
@@ -140,7 +140,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<usize, isize, $layer<_,_>>($size);
+                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
 
                     b.iter_batched(
                         || (left.clone(), &right),
@@ -155,7 +155,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let leaf = data_leaf::<usize, isize, $layer<usize, isize>>($size);
+                    let leaf = data_leaf::<u64, i64, $layer<u64, i64>>($size);
 
                     b.iter_batched(
                         || leaf.clone(),
@@ -170,7 +170,7 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let leaf = data_leaf::<usize, isize, $layer<usize, isize>>($size);
+                    let leaf = data_leaf::<u64, i64, $layer<u64, i64>>($size);
 
                     b.iter_batched(
                         || &leaf,

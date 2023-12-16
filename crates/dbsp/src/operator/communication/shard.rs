@@ -272,12 +272,17 @@ mod tests {
         do_test_shard(16);
     }
 
-    fn test_data(worker_index: usize, num_workers: usize) -> OrdIndexedZSet<usize, usize, isize> {
+    fn test_data(worker_index: usize, num_workers: usize) -> OrdIndexedZSet<u64, u64, i64> {
         let tuples: Vec<_> = (0..1000)
             .filter(|n| n % num_workers == worker_index)
-            .flat_map(|n| vec![((n, n), 1), ((n, 1000 * n), 1)])
+            .flat_map(|n| {
+                vec![
+                    ((n as u64, n as u64), 1i64),
+                    ((n as u64, 1000 * n as u64), 1i64),
+                ]
+            })
             .collect();
-        <OrdIndexedZSet<usize, usize, isize>>::from_tuples((), tuples)
+        <OrdIndexedZSet<u64, u64, i64>>::from_tuples((), tuples)
     }
 
     fn do_test_shard(workers: usize) {
@@ -291,7 +296,7 @@ mod tests {
                 input
                     .shard()
                     .gather(0)
-                    .inspect(|batch: &OrdIndexedZSet<usize, usize, isize>| {
+                    .inspect(|batch: &OrdIndexedZSet<u64, u64, i64>| {
                         if Runtime::worker_index() == 0 {
                             assert_eq!(batch, &test_data(0, 1))
                         } else {

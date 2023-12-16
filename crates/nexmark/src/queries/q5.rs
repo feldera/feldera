@@ -2,6 +2,7 @@ use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
     operator::{FilterMap, Max},
+    utils::Tup2,
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
@@ -68,7 +69,7 @@ use dbsp::{
 /// will aggregate within each window exactly once, which is what we implement
 /// here.
 
-type Q5Stream = Stream<RootCircuit, OrdZSet<(u64, usize), isize>>;
+type Q5Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>, i64>>;
 
 const WINDOW_WIDTH_SECONDS: u64 = 10;
 const TUMBLE_SECONDS: u64 = 2;
@@ -117,7 +118,7 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
     let auction_by_count = auction_counts.map_index(|(auction, count)| (*count, *auction));
 
     max_auction_count.join(&auction_by_count, |max_count, &(), &auction| {
-        (auction, *max_count as usize)
+        Tup2(auction, *max_count as u64)
     })
 }
 
@@ -128,7 +129,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{zset, RootCircuit};
+    use dbsp::{utils::Tup2, zset, RootCircuit};
     use rstest::rstest;
 
     #[rstest]
@@ -137,28 +138,28 @@ mod tests {
     #[case::latest_bid_determines_window(
         vec![vec![2_001, 4_000, 11_000]],
         vec![vec![20_000]],
-        vec![zset! { (1, 1) => 1}] )]
+        vec![zset! { Tup2(1, 1) => 1}] )]
     // Auction 2's single bid is at 19_000 which leaves the rounded window at
     // 4_000-14_000, capturing 2 bids from auction 1 only (4_000 and 11_000).
     #[case::windows_rounded_to_2_s_boundary(
         vec![vec![2_001, 4_000, 11_000, 15_000]],
         vec![vec![19_000]],
-        vec![zset! { (1, 2) => 1}] )]
+        vec![zset! { Tup2(1, 2) => 1}] )]
     // Both auctions have the maximum two bids in the window (0 - 2000)
     #[case::multiple_auctions_have_same_hotness(
         vec![vec![2_000, 3_999, 8_000]],
         vec![vec![2_000, 3_999]],
-        vec![zset! { (1, 2) => 1, (2, 2) => 1}])]
+        vec![zset! { Tup2(1, 2) => 1, Tup2(2, 2) => 1}])]
     // A second batch arrives changing the window to 6_000-16_000, switching
     // the hottest auction from 1 to 2.
     #[case::batch_2_updates_hotness_to_new_window(
         vec![vec![2_000, 4_000, 6_000], vec![20_000]],
         vec![vec![2_000, 4_000, 8_000, 12_000], vec![]],
-        vec![zset! {(1, 3) => 1}, zset! {(2, 2) => 1, (1, 3) => -1}])]
+        vec![zset! {Tup2(1, 3) => 1}, zset! {Tup2(2, 2) => 1, Tup2(1, 3) => -1}])]
     fn test_q5(
         #[case] auction1_batches: Vec<Vec<u64>>,
         #[case] auction2_batches: Vec<Vec<u64>>,
-        #[case] expected_zsets: Vec<OrdZSet<(u64, usize), isize>>,
+        #[case] expected_zsets: Vec<OrdZSet<Tup2<u64, u64>, i64>>,
     ) {
         // Just ensure we don't get a false positive with zip only including
         // part of the input data. We could instead directly import zip_eq?
@@ -198,7 +199,7 @@ mod tests {
                 });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q5(stream);
 

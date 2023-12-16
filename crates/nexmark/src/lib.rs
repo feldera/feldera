@@ -194,7 +194,7 @@ impl<W, C> NexmarkSource<W, C> {
         }
     }
 
-    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource<isize, OrdZSet<Event, isize>> {
+    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource<isize, OrdZSet<Event, i64>> {
         NexmarkSource::from_next_events(create_generators_for_config::<ThreadRng>(nexmark_config))
     }
 
@@ -249,7 +249,7 @@ pub mod tests {
     pub fn make_source_with_wallclock_times(
         times: Range<u64>,
         max_events: u64,
-    ) -> NexmarkSource<isize, OrdZSet<Event, isize>> {
+    ) -> NexmarkSource<isize, OrdZSet<Event, i64>> {
         let (next_event_tx, next_event_rx) = mpsc::sync_channel(max_events as usize + 1);
         let mut generator = NexmarkGenerator::new(
             GeneratorConfig {
@@ -278,7 +278,7 @@ pub mod tests {
     pub fn generate_expected_zset_tuples(
         wallclock_base_time: u64,
         num_events: usize,
-    ) -> Vec<(Event, isize)> {
+    ) -> Vec<(Event, i64)> {
         let expected_events = generate_expected_next_events(wallclock_base_time, num_events);
 
         expected_events
@@ -289,11 +289,8 @@ pub mod tests {
     }
 
     // Generates a zset manually using the default test NexmarkGenerator
-    fn generate_expected_zset(
-        wallclock_base_time: u64,
-        num_events: usize,
-    ) -> OrdZSet<Event, isize> {
-        OrdZSet::<Event, isize>::from_keys(
+    fn generate_expected_zset(wallclock_base_time: u64, num_events: usize) -> OrdZSet<Event, i64> {
+        OrdZSet::<Event, i64>::from_keys(
             (),
             generate_expected_zset_tuples(wallclock_base_time, num_events),
         )
@@ -306,7 +303,7 @@ pub mod tests {
 
             let expected_zset = generate_expected_zset(0, 10);
 
-            stream.inspect(move |data: &OrdZSet<Event, isize>| {
+            stream.inspect(move |data: &OrdZSet<Event, i64>| {
                 assert_eq!(data, &expected_zset);
             });
             Ok(input_handle)
@@ -328,7 +325,7 @@ pub mod tests {
             ..NexmarkConfig::default()
         };
         let receiver = create_generators_for_config::<ThreadRng>(nexmark_config);
-        let source = NexmarkSource::<isize, OrdZSet<Event, isize>>::from_next_events(receiver);
+        let source = NexmarkSource::<isize, OrdZSet<Event, i64>>::from_next_events(receiver);
 
         let expected_zset_tuple = generate_expected_zset_tuples(0, 10);
 

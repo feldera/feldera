@@ -7,8 +7,8 @@ use crate::data::{
 };
 use clap::Parser;
 use dbsp::{
-    algebra::ArcStr,
     trace::{BatchReader, Cursor},
+    utils::Tup2,
     Runtime,
 };
 use std::{
@@ -69,7 +69,7 @@ fn main() {
         .map(NonZeroUsize::get)
         .unwrap_or(1);
     let batches = args.batches.get();
-    let person = ArcStr::from(args.person.trim().to_lowercase());
+    let person = args.person.trim().to_lowercase();
 
     if let Some((start, end)) = args.date_start.zip(args.date_end) {
         if start > end {
@@ -90,7 +90,7 @@ fn main() {
                     while cursor.key_valid() {
                         if cursor.val_valid() {
                             let count = cursor.weight();
-                            let (source, target) = cursor.key().clone();
+                            let Tup2(source, target) = cursor.key().clone();
                             network_buf.push((source, target, count));
                         }
                         cursor.step_key();
@@ -157,7 +157,7 @@ fn main() {
             .map(|url| url.to_owned())
         });
 
-    let (mut interner, normalizations, invalid) = build_gdelt_normalizations();
+    let (normalizations, invalid) = build_gdelt_normalizations();
 
     let (mut are_remaining_urls, mut current_batch) = (true, 0);
     while current_batch < args.batches.get() && are_remaining_urls {
@@ -169,13 +169,8 @@ fn main() {
 
             if let Some(url) = file_urls.next() {
                 if let Some(file) = get_gkg_file(&url) {
-                    records += parse_personal_network_gkg(
-                        &mut entries,
-                        &mut interner,
-                        &normalizations,
-                        &invalid,
-                        file,
-                    );
+                    records +=
+                        parse_personal_network_gkg(&mut entries, &normalizations, &invalid, file);
 
                     aggregate += 1;
                     current_batch += 1;

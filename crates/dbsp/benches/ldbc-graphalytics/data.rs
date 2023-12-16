@@ -1,4 +1,5 @@
 use clap::{PossibleValue, ValueEnum};
+use dbsp::utils::Tup2;
 use dbsp::{
     algebra::{HasOne, Present, F64},
     default_hash,
@@ -26,13 +27,13 @@ pub type Node = u64;
 /// Pagerank must use 64bit float values
 pub type Rank = F64;
 pub type Vertex = u64;
-pub type Weight = isize;
+pub type Weight = i64;
 pub type Distance = u64;
 
 pub type VertexSet<D = Present> = OrdZSet<Node, D>;
 pub type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
 pub type EdgeMap<D = Present> = OrdIndexedZSet<Node, Node, D>;
-pub type DistanceSet<D = Present> = OrdZSet<(Node, Distance), D>;
+pub type DistanceSet<D = Present> = OrdZSet<Tup2<Node, Distance>, D>;
 pub type DistanceMap<D = Present> = OrdIndexedZSet<Node, Distance, D>;
 
 pub type Streamed<P, T> = Stream<ChildCircuit<P>, T>;
@@ -770,7 +771,7 @@ impl ResultParser for BfsResults {
             let vertex = vertex.parse().unwrap();
             let distance = distance.parse().unwrap();
 
-            results.push(((vertex, distance), 1));
+            results.push((Tup2(vertex, distance), 1));
             buffer.clear();
         }
 

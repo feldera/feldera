@@ -13,7 +13,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::hash::Hash;
 
-type EmployeeID = usize;
+type EmployeeID = u64;
 
 /// Indicates that `manager` is the immediate manager of `employee`.
 ///
@@ -21,6 +21,8 @@ type EmployeeID = usize;
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct Manages {
     manager: EmployeeID,
     employee: EmployeeID,
@@ -31,6 +33,8 @@ struct Manages {
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct SkipLevel {
     grandmanager: EmployeeID,
     manager: EmployeeID,
@@ -54,7 +58,7 @@ fn print_output(output: &OutputHandle<OrdZSet<SkipLevel, Weight>>) {
 struct Args {
     /// Number of employees.
     #[clap(long, default_value = "10")]
-    size: usize,
+    size: u64,
 
     /// Number of threads.
     #[clap(long, default_value = "2")]

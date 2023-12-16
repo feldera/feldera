@@ -67,7 +67,7 @@ use crate::{
     circuit::Scope,
     trace::{
         ord::{OrdKeyBatch, OrdValBatch},
-        Batch, Rkyv,
+        Batch,
     },
     DBData, DBWeight, OrdIndexedZSet, OrdZSet,
 };
@@ -86,7 +86,7 @@ pub use product::Product;
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
 pub trait Timestamp:
-    PartialOrder + Lattice + Debug + Clone + Ord + PartialEq + Eq + Hash + Rkyv + 'static
+    PartialOrder + Lattice + Debug + Clone + Ord + PartialEq + Eq + Hash + 'static
 {
     type Nested: Timestamp;
 
@@ -193,6 +193,8 @@ pub trait Timestamp:
 #[derive(
     Clone, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd, Hash))]
+#[archive(compare(PartialEq, PartialOrd))]
 #[archive_attr(doc(hidden))]
 pub struct UnitTimestamp;
 

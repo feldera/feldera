@@ -71,10 +71,63 @@ use std::{fmt::Debug, hash::Hash};
 /// must be generic over any relational data, it is sufficient to impose
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
-pub trait DBData: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Rkyv + 'static {}
-impl<T> DBData for T where T: Clone + Eq + Ord + Hash + SizeOf + Send + Debug + Rkyv + 'static {}
+pub trait DBData:
+    Clone
+    + Eq
+    + Ord
+    + Hash
+    + SizeOf
+    + Send
+    + Debug
+    + Archive
+    + Serialize<Serializer>
+    + ArchivedDBData
+    + 'static
+where
+    // We want to be able Clone the serialized version and compare it with the
+    // original as well as serialized version.
+    <Self as ArchivedDBData>::Repr: Ord + PartialOrd<Self>,
+{
+}
+
+/// Automatically implement DBData for everything that satisfied the bounds.
+impl<T> DBData for T
+where
+    T: Clone
+        + Eq
+        + Ord
+        + Hash
+        + SizeOf
+        + Send
+        + Debug
+        + Archive
+        + Serialize<Serializer>
+        + ArchivedDBData
+        + 'static,
+    <T as ArchivedDBData>::Repr: Ord + PartialOrd<T>,
+{
+}
+
+/// Trait for DBData that can be deserialized with [`rkyv`].
+///
+/// The associated type `Repr` with the bound + connecting it to Archived
+/// seems to be the key for rust to know the bounds exist globally in the code
+/// without having to specify the bounds everywhere.
+pub trait ArchivedDBData: Archive<Archived = Self::Repr> + Sized {
+    type Repr: Deserialize<Self, Deserializer> + Ord + PartialOrd<Self>;
+}
+
+/// We also automatically implement this bound for everything that satisfies it.
+impl<T: Archive> ArchivedDBData for T
+where
+    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialOrd<T>,
+{
+    type Repr = Archived<T>;
+}
 
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
+///
+/// This trait doesn't have any extra bounds on Deserializable.
 pub trait Rkyv: Archive + Serialize<Serializer> + Deserializable {}
 impl<T> Rkyv for T where T: Archive + Serialize<Serializer> + Deserializable {}
 

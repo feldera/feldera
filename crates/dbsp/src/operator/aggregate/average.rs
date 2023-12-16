@@ -37,6 +37,9 @@ use std::{
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(archive = "<T as Archive>::Archived: Ord, <R as Archive>::Archived: Ord"))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Avg<T, R> {
     sum: T,
     count: R,

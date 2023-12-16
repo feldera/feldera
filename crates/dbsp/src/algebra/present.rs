@@ -21,6 +21,8 @@ use super::{F32, F64};
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Present;
 
 impl HasZero for Present {

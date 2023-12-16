@@ -5,6 +5,7 @@ use crate::{
         cursor::{CursorPair, ReverseKeyCursor},
         Cursor,
     },
+    utils::Tup2,
     DBData, DBWeight, IndexedZSet, OrdIndexedZSet, RootCircuit, Stream,
 };
 use std::{cmp::Ordering, marker::PhantomData};
@@ -32,7 +33,7 @@ where
         &self,
         offset: usize,
         project: PF,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, (B::Val, OV), B::R>>
+    ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, Tup2<B::Val, OV>, B::R>>
     where
         B::R: ZRingValue,
         OV: DBData,
@@ -65,7 +66,7 @@ where
         &self,
         offset: usize,
         project: PF,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, (B::Val, OV), B::R>>
+    ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, Tup2<B::Val, OV>, B::R>>
     where
         B::R: ZRingValue,
         OV: DBData,
@@ -90,7 +91,7 @@ struct Lag<I, O, R, PF, KCF, VCF> {
     project: PF,
     /// Array of retractions reused across multiple
     /// invocations of the operator.
-    retractions: Vec<Retraction<(I, O), R>>,
+    retractions: Vec<Retraction<Tup2<I, O>, R>>,
     /// Index of the next key from `retractions` we expect to
     /// encounter.
     next_key: isize,
@@ -129,7 +130,7 @@ where
         }
     }
 
-    fn push_retraction(&mut self, key: (I, O), w: R) {
+    fn push_retraction(&mut self, key: Tup2<I, O>, w: R) {
         self.retractions.push(Retraction::new(key, w));
     }
 
@@ -184,7 +185,7 @@ where
     fn compute_retractions<C1, C2>(&mut self, input_delta: &mut C1, output_trace: &mut C2)
     where
         C1: Cursor<I, (), (), R>,
-        C2: Cursor<(I, O), (), (), R>,
+        C2: Cursor<Tup2<I, O>, (), (), R>,
     {
         self.retractions.clear();
 
@@ -211,7 +212,7 @@ where
                     } else {
                         // Done processing previous key. Seek to the next key to process.
                         let delta_key = input_delta.key();
-                        output_trace.seek_key_with(|(key, _)| {
+                        output_trace.seek_key_with(|Tup2(key, _)| {
                             (self.key_cmp)(key, delta_key) != Ordering::Less
                         });
                         skip_zeros(output_trace);
@@ -228,7 +229,7 @@ where
                     // present in the output trace.  Record the key as a zero-weight retraction,
                     // so we process it during reverse pass.
                     self.push_retraction(
-                        (input_delta.key().clone(), (self.project)(None)),
+                        Tup2(input_delta.key().clone(), (self.project)(None)),
                         HasZero::zero(),
                     );
                     input_delta.step_key();
@@ -251,7 +252,7 @@ where
         // Record remaining keys in `input_delta`.
         while input_delta.key_valid() {
             self.push_retraction(
-                (input_delta.key().clone(), (self.project)(None)),
+                Tup2(input_delta.key().clone(), (self.project)(None)),
                 HasZero::zero(),
             );
             input_delta.step_key();
@@ -265,7 +266,7 @@ where
     fn compute_updates<C, CB>(&mut self, input_cursor: &mut C, mut output_cb: CB)
     where
         C: Cursor<I, (), (), R>,
-        CB: FnMut((I, O), R),
+        CB: FnMut(Tup2<I, O>, R),
     {
         input_cursor.fast_forward_keys();
         // println!("current key after fast_forward: {:?}", input_cursor.key());
@@ -300,7 +301,7 @@ where
                     // Output retraction and insertion in the correct order.
 
                     let new_val = (self.project)(input_cursor.get_key());
-                    let ((key, old_val), old_weight) = self.retractions[current as usize]
+                    let (Tup2(key, old_val), old_weight) = self.retractions[current as usize]
                         .key_weight
                         .take()
                         .unwrap();
@@ -308,25 +309,25 @@ where
 
                     if old_weight.is_zero() {
                         if !new_weight.is_zero() {
-                            output_cb((key, new_val), new_weight);
+                            output_cb(Tup2(key, new_val), new_weight);
                         }
                     } else if new_weight.is_zero() {
-                        output_cb((key.clone(), old_val), old_weight);
+                        output_cb(Tup2(key.clone(), old_val), old_weight);
                     } else {
                         match (self.val_cmp)(&old_val, &new_val) {
                             Ordering::Greater => {
-                                output_cb((key.clone(), old_val), old_weight);
-                                output_cb((key, new_val), new_weight);
+                                output_cb(Tup2(key.clone(), old_val), old_weight);
+                                output_cb(Tup2(key, new_val), new_weight);
                             }
                             Ordering::Equal => {
                                 let weight = new_weight + old_weight;
                                 if !weight.is_zero() {
-                                    output_cb((key, old_val), weight);
+                                    output_cb(Tup2(key, old_val), weight);
                                 }
                             }
                             Ordering::Less => {
-                                output_cb((key.clone(), new_val), new_weight);
-                                output_cb((key, old_val), old_weight);
+                                output_cb(Tup2(key.clone(), new_val), new_weight);
+                                output_cb(Tup2(key, old_val), old_weight);
                             }
                         }
                     }
@@ -336,12 +337,12 @@ where
                 Some(None) => {
                     // println!("offset: Some(None)");
                     // Key does not occur in the input trace.  Output retraction only.
-                    let ((key, old_val), old_weight) = self.retractions[current as usize]
+                    let (Tup2(key, old_val), old_weight) = self.retractions[current as usize]
                         .key_weight
                         .take()
                         .unwrap();
                     if !old_weight.is_zero() {
-                        output_cb((key, old_val), old_weight);
+                        output_cb(Tup2(key, old_val), old_weight);
                     }
                     current -= 1;
                 }
@@ -446,7 +447,7 @@ impl<K, R> Retraction<K, R> {
     }
 }
 
-impl<I, O, R, PF, KCF, VCF> GroupTransformer<I, (I, O), R> for Lag<I, O, R, PF, KCF, VCF>
+impl<I, O, R, PF, KCF, VCF> GroupTransformer<I, Tup2<I, O>, R> for Lag<I, O, R, PF, KCF, VCF>
 where
     I: DBData,
     O: DBData,
@@ -479,8 +480,8 @@ where
     ) where
         C1: Cursor<I, (), (), R>,
         C2: Cursor<I, (), (), R>,
-        C3: Cursor<(I, O), (), (), R>,
-        CB: FnMut((I, O), R),
+        C3: Cursor<Tup2<I, O>, (), (), R>,
+        CB: FnMut(Tup2<I, O>, R),
     {
         /*
         {

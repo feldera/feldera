@@ -6,7 +6,10 @@ use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::mimalloc::MiMalloc;
 use dbsp::{
-    monitor::TraceMonitor, operator::CsvSource, Circuit, OrdZSet, RootCircuit, Runtime, Stream,
+    monitor::TraceMonitor,
+    operator::CsvSource,
+    utils::{Tup2, Tup3},
+    Circuit, OrdZSet, RootCircuit, Runtime, Stream,
 };
 use std::{
     fs::{self, File, OpenOptions},
@@ -44,7 +47,7 @@ q(?x,?e,?o) :- q(?x,?y,?z),r(?y,?u,?e),q(?z,?u,?o).
 */
 
 type Number = u32;
-type Weight = isize;
+type Weight = i64;
 
 const GALEN_DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data");
 const GALEN_ARCHIVE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/galen_data.zip");
@@ -141,12 +144,12 @@ fn main() -> Result<()> {
             });
             */
 
-            let p_source = csv_source::<(Number, Number)>("p.txt");
-            let q_source = csv_source::<(Number, Number, Number)>("q.txt");
-            let r_source = csv_source::<(Number, Number, Number)>("r.txt");
-            let c_source = csv_source::<(Number, Number, Number)>("c.txt");
-            let u_source = csv_source::<(Number, Number, Number)>("u.txt");
-            let s_source = csv_source::<(Number, Number)>("s.txt");
+            let p_source = csv_source::<Tup2<Number, Number>>("p.txt");
+            let q_source = csv_source::<Tup3<Number, Number, Number>>("q.txt");
+            let r_source = csv_source::<Tup3<Number, Number, Number>>("r.txt");
+            let c_source = csv_source::<Tup3<Number, Number, Number>>("c.txt");
+            let u_source = csv_source::<Tup3<Number, Number, Number>>("u.txt");
+            let s_source = csv_source::<Tup2<Number, Number>>("s.txt");
 
             let p: Stream<_, OrdZSet<_, Weight>> =
                 circuit.region("p", || circuit.add_source(p_source));
@@ -161,34 +164,35 @@ fn main() -> Result<()> {
             let s: Stream<_, OrdZSet<_, Weight>> =
                 circuit.region("s", || circuit.add_source(s_source));
 
-            type Pair = OrdZSet<(Number, Number), Weight>;
-            type Triple = OrdZSet<(Number, Number, Number), Weight>;
+            type Pair = OrdZSet<Tup2<Number, Number>, Weight>;
+            type Triple = OrdZSet<Tup3<Number, Number, Number>, Weight>;
 
             let (outp, outq) = circuit
                 .recursive(
                     |child, (pvar, qvar): (Stream<_, Pair>, Stream<_, Triple>)| {
                         let p_by_1 = pvar.index();
-                        let p_by_2 = pvar.index_with(|&(x, y)| (y, x));
-                        let p_by_12 = pvar.index_with(|&(x, y)| ((x, y), ()));
-                        let u_by_1 = u.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
-                        let q_by_1 = qvar.index_with(|&(x, y, z)| (x, (y, z)));
-                        let q_by_2 = qvar.index_with(|&(x, y, z)| (y, (x, z)));
-                        let q_by_12 = qvar.index_with(|&(x, y, z)| ((x, y), z));
-                        let q_by_23 = qvar.index_with(|&(x, y, z)| ((y, z), x));
-                        let c_by_2 = c.delta0(child).index_with(|&(x, y, z)| (y, (x, z)));
-                        let r_by_1 = r.delta0(child).index_with(|&(x, y, z)| (x, (y, z)));
+                        let p_by_2 = pvar.index_with(|&Tup2(x, y)| Tup2(y, x));
+                        let p_by_12 = pvar.index_with(|&Tup2(x, y)| Tup2((x, y), ()));
+                        let u_by_1 = u.delta0(child).index_with(|&Tup3(x, y, z)| Tup2(x, (y, z)));
+                        let q_by_1 = qvar.index_with(|&Tup3(x, y, z)| Tup2(x, (y, z)));
+                        let q_by_2 = qvar.index_with(|&Tup3(x, y, z)| Tup2(y, (x, z)));
+                        let q_by_12 = qvar.index_with(|&Tup3(x, y, z)| Tup2((x, y), z));
+                        let q_by_23 = qvar.index_with(|&Tup3(x, y, z)| Tup2((y, z), x));
+                        let c_by_2 = c.delta0(child).index_with(|&Tup3(x, y, z)| Tup2(y, (x, z)));
+                        let r_by_1 = r.delta0(child).index_with(|&Tup3(x, y, z)| Tup2(x, (y, z)));
                         let s_by_1 = s.delta0(child).index();
 
                         // IR1: p(x,z) :- p(x,y), p(y,z).
                         let ir1 =
-                            child.region("IR1", || p_by_2.join(&p_by_1, |&_y, &x, &z| (x, z)));
+                            child.region("IR1", || p_by_2.join(&p_by_1, |&_y, &x, &z| Tup2(x, z)));
                         /*ir1.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir1: {}", Runtime::worker_index(), zs.len())
                         });*/
 
                         // IR2: q(x,r,z) := p(x,y), q(y,r,z)
-                        let ir2 = child
-                            .region("IR2", || p_by_2.join(&q_by_1, |&_y, &x, &(r, z)| (x, r, z)));
+                        let ir2 = child.region("IR2", || {
+                            p_by_2.join(&q_by_1, |&_y, &x, &(r, z)| Tup3(x, r, z))
+                        });
 
                         /*ir2.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir2: {}", Runtime::worker_index(), zs.len())
@@ -198,7 +202,7 @@ fn main() -> Result<()> {
                         let ir3 = child.region("IR3", || {
                             p_by_2
                                 .join_index(&u_by_1, |&_w, &y, &(r, z)| once(((r, y), z)))
-                                .join(&q_by_23, |&(_r, _y), &z, &x| (x, z))
+                                .join(&q_by_23, |&(_r, _y), &z, &x| Tup2(x, z))
                         });
                         /*ir3.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir3: {}", Runtime::worker_index(), zs.len())
@@ -212,15 +216,17 @@ fn main() -> Result<()> {
                             println!("{}: ir4_1: {}", Runtime::worker_index(), zs.len())
                         });*/
 
-                        let ir4 = child
-                            .region("IR4-2", || ir4_1.join(&p_by_12, |&(x, _y), &z, &()| (x, z)));
+                        let ir4 = child.region("IR4-2", || {
+                            ir4_1.join(&p_by_12, |&(x, _y), &z, &()| Tup2(x, z))
+                        });
                         /*ir4.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir4: {}", Runtime::worker_index(), zs.len())
                         });*/
 
                         // IR5: q(x,q,z) := q(x,r,z), s(r,q)
-                        let ir5 = child
-                            .region("IR5", || q_by_2.join(&s_by_1, |&_r, &(x, z), &q| (x, q, z)));
+                        let ir5 = child.region("IR5", || {
+                            q_by_2.join(&s_by_1, |&_r, &(x, z), &q| Tup3(x, q, z))
+                        });
                         /*ir5.inspect(|zs: &OrdZSet<_, _>| {
                             println!("{}: ir5: {}", Runtime::worker_index(), zs.len())
                         });*/
@@ -231,7 +237,7 @@ fn main() -> Result<()> {
                                 .join_index(&r_by_1, |&_y, &(x, z), &(u, e)| once(((z, u), (x, e))))
                         });
                         let ir6 = child.region("IR6", || {
-                            ir6_1.join(&q_by_12, |&(_z, _u), &(x, e), &o| (x, e, o))
+                            ir6_1.join(&q_by_12, |&(_z, _u), &(x, e), &o| Tup3(x, e, o))
                         });
 
                         /*ir6.inspect(|zs: &OrdZSet<_, _>| {

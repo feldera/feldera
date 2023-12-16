@@ -1,8 +1,9 @@
 use super::NexmarkStream;
 use crate::model::Event;
+use dbsp::utils::Tup2;
 use dbsp::{
     operator::{FilterMap, Max},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 
 /// Query 4: Average Price for a Category
@@ -38,7 +39,7 @@ use dbsp::{
 /// GROUP BY Q.category;
 /// ```
 
-type Q4Stream = Stream<RootCircuit, OrdZSet<(usize, usize), isize>>;
+type Q4Stream = Stream<RootCircuit, OrdZSet<(u64, u64), i64>>;
 
 pub fn q4(input: NexmarkStream) -> Q4Stream {
     // Select auctions and index by auction id.
@@ -59,7 +60,7 @@ pub fn q4(input: NexmarkStream) -> Q4Stream {
         &bids_by_auction,
         |&auction_id, &(category, a_date_time, a_expires), &(bid_price, bid_date_time)| {
             if bid_date_time >= a_date_time && bid_date_time <= a_expires {
-                Some(((auction_id, category), bid_price))
+                Some((Tup2(auction_id, category), bid_price))
             } else {
                 None
             }
@@ -70,16 +71,16 @@ pub fn q4(input: NexmarkStream) -> Q4Stream {
     // need the auction ids anymore.
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
-    let winning_bids: Stream<RootCircuit, OrdIndexedZSet<(u64, usize), usize, isize>> =
+    let winning_bids: Stream<RootCircuit, OrdIndexedZSet<Tup2<u64, u64>, u64, i64>> =
         bids_for_auctions_indexed.aggregate(Max);
     let winning_bids_by_category_indexed =
-        winning_bids.map_index(|((_, category), winning_bid)| (*category, *winning_bid));
+        winning_bids.map_index(|(Tup2(_, category), winning_bid)| (*category, *winning_bid));
 
     // Finally, calculate the average winning bid per category.
     // TODO: use linear aggregation when ready (#138).
     winning_bids_by_category_indexed
-        .average(|val| *val as isize)
-        .map(|(category, avg): (&usize, &isize)| (*category, *avg as usize))
+        .average(|val| *val as i64)
+        .map(|(category, avg): (&u64, &i64)| (*category, *avg as u64))
 }
 
 #[cfg(test)]
@@ -89,11 +90,11 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{trace::Batch, RootCircuit, OrdZSet};
+    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
 
     #[test]
     fn test_q4_average_final_bids_per_category() {
-        let input_vecs: Vec<Vec<(Event, isize)>> = vec![
+        let input_vecs: Vec<Vec<(Event, i64)>> = vec![
             vec![
                 (
                     Event::Auction(Auction {
@@ -210,7 +211,7 @@ mod tests {
         ];
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q4(stream);
 

@@ -2,7 +2,6 @@
 //!
 //! Based on the equivalent [Nexmark Flink Java model classes](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model).
 
-use dbsp::algebra::ArcStr;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 
@@ -13,15 +12,17 @@ use size_of::SizeOf;
 #[derive(
     Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Person {
     pub id: u64,
-    pub name: ArcStr,
-    pub email_address: ArcStr,
-    pub credit_card: ArcStr,
-    pub city: ArcStr,
-    pub state: ArcStr,
+    pub name: String,
+    pub email_address: String,
+    pub credit_card: String,
+    pub city: String,
+    pub state: String,
     pub date_time: u64,
-    pub extra: ArcStr,
+    pub extra: String,
 }
 
 /// The Nexmark Auction model based on the [Nexmark Java Auction class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Auction.java).
@@ -42,17 +43,19 @@ pub struct Person {
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Auction {
     pub id: u64,
-    pub item_name: ArcStr,
-    pub description: ArcStr,
-    pub initial_bid: usize,
-    pub reserve: usize,
+    pub item_name: String,
+    pub description: String,
+    pub initial_bid: u64,
+    pub reserve: u64,
     pub date_time: u64,
     pub expires: u64,
     pub seller: u64,
-    pub category: usize,
-    pub extra: ArcStr,
+    pub category: u64,
+    pub extra: String,
 }
 
 /// The Nexmark Bid model based on the [Nexmark Java Bid class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Bid.java).
@@ -73,22 +76,24 @@ pub struct Auction {
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Bid {
     /// Id of auction this bid is for.
     pub auction: u64,
     /// Id of the person bidding in auction.
     pub bidder: u64,
     /// Price of bid, in cents.
-    pub price: usize,
+    pub price: u64,
     /// The channel that introduced this bidding.
-    pub channel: ArcStr,
+    pub channel: String,
     /// The url of this channel.
-    pub url: ArcStr,
+    pub url: String,
     /// Instant at which this bid was made. NOTE: This may be earlier than teh
     /// system's event time.
     pub date_time: u64,
     /// Additional arbitrary payload for performance testing.
-    pub extra: ArcStr,
+    pub extra: String,
 }
 
 /// An event in the auction system, either a (new) `Person`, a (new) `Auction`,
@@ -96,6 +101,8 @@ pub struct Bid {
 #[derive(
     Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub enum Event {
     Person(Person),
     Auction(Auction),

@@ -920,6 +920,7 @@ where
 mod test {
     use std::cmp::max;
 
+    use crate::utils::Tup2;
     use crate::{operator::FilterMap, Runtime, Stream};
     use proptest::{collection::vec, prelude::*};
     use size_of::SizeOf;
@@ -988,7 +989,7 @@ mod test {
             .unwrap();
 
             for batch in batches {
-                let mut tuples = batch.into_iter().map(|((k, v), r)| (k, (v, r))).collect::<Vec<_>>();
+                let mut tuples = batch.into_iter().map(|((k, v), r)| (k, Tup2(v, r))).collect::<Vec<_>>();
                 input_handle.append(&mut tuples);
                 dbsp.step().unwrap();
             }

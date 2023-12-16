@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 use csv::Reader;
+use dbsp::utils::{Tup2, Tup3};
 use dbsp::{
     operator::FilterMap, CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
 };
@@ -21,6 +22,8 @@ use size_of::SizeOf;
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct Record {
     location: String,
     date: NaiveDate,
@@ -41,6 +44,8 @@ struct Record {
     rkyv::Deserialize,
     serde::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct VaxMonthly {
     count: u64,
     year: i32,
@@ -50,10 +55,10 @@ struct VaxMonthly {
 fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> Result<(
-    CollectionHandle<Record, isize>,
-    OutputHandle<OrdIndexedZSet<String, VaxMonthly, isize>>,
+    CollectionHandle<Record, i64>,
+    OutputHandle<OrdIndexedZSet<String, VaxMonthly, i64>>,
 )> {
-    let (input_stream, input_handle) = circuit.add_input_zset::<Record, isize>();
+    let (input_stream, input_handle) = circuit.add_input_zset::<Record, i64>();
     let subset = input_stream.filter(|r| {
         r.location == "England"
             || r.location == "Northern Ireland"
@@ -62,14 +67,14 @@ fn build_circuit(
     });
     let monthly_totals = subset
         .index_with(|r| {
-            (
-                (r.location.clone(), r.date.year(), r.date.month() as u8),
+            Tup2(
+                Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
-        .aggregate_linear(|v| *v as isize);
+        .aggregate_linear(|v| *v as i64);
     let most_vax = monthly_totals
-        .map_index(|((l, y, m), sum)| {
+        .map_index(|(Tup3(l, y, m), sum)| {
             (
                 l.clone(),
                 VaxMonthly {

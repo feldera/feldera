@@ -710,6 +710,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::Tup2;
     use crate::{
         indexed_zset,
         operator::{FilterMap, Generator},
@@ -721,8 +722,8 @@ mod test {
     #[test]
     fn filter_map_test() {
         let circuit = RootCircuit::build(move |circuit| {
-            let mut input: vec::IntoIter<OrdZSet<(isize, String), isize>> =
-                vec![zset! { (1, "1".to_string()) => 1, (-1, "-1".to_string()) => 1, (5, "5 foo".to_string()) => 1, (-2, "-2".to_string()) => 1 }].into_iter();
+            let mut input: vec::IntoIter<OrdZSet<Tup2<i64, String>, i64>> =
+                vec![zset! { Tup2(1, "1".to_string()) => 1, Tup2(-1, "-1".to_string()) => 1, Tup2(5, "5 foo".to_string()) => 1, Tup2(-2, "-2".to_string()) => 1 }].into_iter();
 
             let mut filter_output =
                 vec![zset! { 1 => 1, 5 => 1 }].into_iter();
@@ -751,11 +752,11 @@ mod test {
             let mut abs_output =
                 vec![zset! { 1 => 2, 5 => 1, 2 => 1 }].into_iter();
             let mut i_abs_output =
-                vec![zset! { (1, "1".to_string()) => 1, (1, "-1".to_string()) => 1, (5, "5 foo".to_string()) => 1, (2, "-2".to_string()) => 1 }].into_iter();
+                vec![zset! { Tup2(1, "1".to_string()) => 1, Tup2(1, "-1".to_string()) => 1, Tup2(5, "5 foo".to_string()) => 1, Tup2(2, "-2".to_string()) => 1 }].into_iter();
             let mut abs_pos_output =
                 vec![zset! { 1 => 1, 5 => 1 }].into_iter();
             let mut i_abs_pos_output =
-                vec![zset! { (1, "1".to_string()) => 1, (5, "5 foo".to_string()) => 1 }].into_iter();
+                vec![zset! { Tup2(1, "1".to_string()) => 1, Tup2(5, "5 foo".to_string()) => 1 }].into_iter();
             let mut sqr_output =
                 vec![zset! { 1 => 2, 25 => 1, 4 => 1 }].into_iter();
             let mut i_sqr_output =
@@ -792,8 +793,8 @@ mod test {
             let i_times2_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(n * 2) } else { None });
             let i_neg = input_indexed.map(|(n, _)| -n);
             let i_neg_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(-n) } else { None });
-            let i_abs = input_indexed.map(|(n, s)| (n.abs(), s.clone()));
-            let i_abs_pos = input_indexed.flat_map(|(&n, s)| if n > 0 { Some((n.abs(), s.clone())) } else { None });
+            let i_abs = input_indexed.map(|(n, s)| Tup2(n.abs(), s.clone()));
+            let i_abs_pos = input_indexed.flat_map(|(&n, s)| if n > 0 { Some(Tup2(n.abs(), s.clone())) } else { None });
             let i_sqr = input_indexed.map(|(n, _)| n * n);
             let i_sqr_pos = input_indexed.flat_map(|(&n, s)| if n > 0 && s.contains("foo") { Some(n * n) } else { None });
             let i_sqr_pos_indexed = input_indexed.flat_map_index(|(&n, s)| if n > 0 { Some((n * n, s.clone())) } else { None });

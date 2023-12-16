@@ -1,5 +1,6 @@
 //! Operators to convert Z-sets into indexed Z-sets.
 
+use crate::utils::Tup2;
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
@@ -30,7 +31,7 @@ where
     where
         K: DBData,
         V: DBData,
-        CI: BatchReader<Key = (K, V), Val = (), Time = ()>,
+        CI: BatchReader<Key = Tup2<K, V>, Val = (), Time = ()>,
     {
         self.index_generic()
     }
@@ -39,7 +40,7 @@ where
     /// not just `OrdIndexedZSet`.
     pub fn index_generic<CO>(&self) -> Stream<C, CO>
     where
-        CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R>,
+        CI: BatchReader<Key = Tup2<CO::Key, CO::Val>, Val = (), Time = (), R = CO::R>,
         CO: Batch<Time = ()>,
     {
         self.circuit()
@@ -61,7 +62,7 @@ where
     pub fn index_with<K, V, F>(&self, index_func: F) -> Stream<C, OrdIndexedZSet<K, V, CI::R>>
     where
         CI: BatchReader<Time = (), Val = ()>,
-        F: Fn(&CI::Key) -> (K, V) + Clone + 'static,
+        F: Fn(&CI::Key) -> Tup2<K, V> + Clone + 'static,
         K: DBData,
         V: DBData,
     {
@@ -74,7 +75,7 @@ where
     where
         CI: BatchReader<Time = (), Val = ()>,
         CO: Batch<Time = (), R = CI::R>,
-        F: Fn(&CI::Key) -> (CO::Key, CO::Val) + Clone + 'static,
+        F: Fn(&CI::Key) -> Tup2<CO::Key, CO::Val> + Clone + 'static,
     {
         self.circuit()
             .add_unary_operator(IndexWith::new(index_func), self)
@@ -123,14 +124,14 @@ where
 impl<CI, CO> UnaryOperator<CI, CO> for Index<CI, CO>
 where
     CO: Batch<Time = ()>,
-    CI: BatchReader<Key = (CO::Key, CO::Val), Val = (), Time = (), R = CO::R>,
+    CI: BatchReader<Key = Tup2<CO::Key, CO::Val>, Val = (), Time = (), R = CO::R>,
 {
     fn eval(&mut self, input: &CI) -> CO {
         let mut builder = <CO as Batch>::Builder::with_capacity((), input.len());
 
         let mut cursor = input.cursor();
         while cursor.key_valid() {
-            let (k, v) = cursor.key().clone();
+            let Tup2(k, v) = cursor.key().clone();
             // TODO: pass key (and value?) by reference
             let w = cursor.weight();
             builder.push((CO::item_from(k, v), w));
@@ -145,7 +146,7 @@ where
 
         let mut consumer = input.consumer();
         while consumer.key_valid() {
-            let ((key, value), mut values) = consumer.next_key();
+            let (Tup2(key, value), mut values) = consumer.next_key();
 
             debug_assert!(values.value_valid(), "found zst value with no weight");
             let ((), weight, ()) = values.next_value();
@@ -208,14 +209,14 @@ impl<CI, CO, F> UnaryOperator<CI, CO> for IndexWith<CI, CO, F>
 where
     CO: Batch<Time = ()>,
     CI: BatchReader<Val = (), Time = (), R = CO::R>,
-    F: Fn(&CI::Key) -> (CO::Key, CO::Val) + 'static,
+    F: Fn(&CI::Key) -> Tup2<CO::Key, CO::Val> + 'static,
 {
     fn eval(&mut self, i: &CI) -> CO {
         let mut tuples = Vec::with_capacity(i.len());
 
         let mut cursor = i.cursor();
         while cursor.key_valid() {
-            let (k, v) = (self.index_func)(cursor.key());
+            let Tup2(k, v) = (self.index_func)(cursor.key());
             // TODO: pass key (and value?) by reference
             let w = cursor.weight();
             tuples.push((CO::item_from(k, v), w));
@@ -234,24 +235,25 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        indexed_zset, operator::Generator, trace::ord::OrdIndexedZSet, zset, Circuit, RootCircuit,
+        indexed_zset, operator::Generator, trace::ord::OrdIndexedZSet, utils::Tup2, zset, Circuit,
+        RootCircuit,
     };
 
     #[test]
     fn index_test() {
         let circuit = RootCircuit::build(move |circuit| {
             let mut inputs = vec![
-                zset!{ (1, 'a') => 1
-                     , (1, 'b') => 1
-                     , (2, 'a') => 1
-                     , (2, 'c') => 1
-                     , (1, 'a') => 2
-                     , (1, 'b') => -1
+                zset!{ Tup2(1, 'a') => 1
+                     , Tup2(1, 'b') => 1
+                     , Tup2(2, 'a') => 1
+                     , Tup2(2, 'c') => 1
+                     , Tup2(1, 'a') => 2
+                     , Tup2(1, 'b') => -1
                 },
-                zset!{ (1, 'd') => 1
-                     , (1, 'e') => 1
-                     , (2, 'a') => -1
-                     , (3, 'a') => 2
+                zset!{ Tup2(1, 'd') => 1
+                     , Tup2(1, 'e') => 1
+                     , Tup2(2, 'a') => -1
+                     , Tup2(3, 'a') => 2
                 },
             ].into_iter();
             let mut outputs = vec![
@@ -275,17 +277,17 @@ mod test {
     fn index_with_test() {
         let circuit = RootCircuit::build(move |circuit| {
             let mut inputs = vec![
-                zset!{ (1, 'a') => 1
-                     , (1, 'b') => 1
-                     , (2, 'a') => 1
-                     , (2, 'c') => 1
-                     , (1, 'a') => 2
-                     , (1, 'b') => -1
+                zset!{ Tup2(1, 'a') => 1
+                     , Tup2(1, 'b') => 1
+                     , Tup2(2, 'a') => 1
+                     , Tup2(2, 'c') => 1
+                     , Tup2(1, 'a') => 2
+                     , Tup2(1, 'b') => -1
                 },
-                zset!{ (1, 'd') => 1
-                     , (1, 'e') => 1
-                     , (2, 'a') => -1
-                     , (3, 'a') => 2
+                zset!{ Tup2(1, 'd') => 1
+                     , Tup2(1, 'e') => 1
+                     , Tup2(2, 'a') => -1
+                     , Tup2(3, 'a') => 2
                 },
             ].into_iter();
             let mut outputs = vec![
@@ -293,7 +295,7 @@ mod test {
                 indexed_zset!{ 1 => {'a' => 3, 'd' => 1, 'e' => 1}, 2 => {'c' => 1}, 3 => {'a' => 2}},
             ].into_iter();
             circuit.add_source(Generator::new(move || inputs.next().unwrap() ))
-                   .index_with(|&(k, v)| (k, v))
+                   .index_with(|&Tup2(k, v)| Tup2(k, v))
                    .integrate()
                    .inspect(move |fm: &OrdIndexedZSet<_, _, _>| assert_eq!(fm, &outputs.next().unwrap()));
             Ok(())

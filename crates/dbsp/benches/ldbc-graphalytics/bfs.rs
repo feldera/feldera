@@ -6,6 +6,7 @@
 //! [A.1]: https://arxiv.org/pdf/2011.15028v4.pdf#section.A.1
 
 use crate::data::{Distance, DistanceMap, DistanceSet, EdgeMap, Edges, Node, VertexSet, Vertices};
+use dbsp::utils::Tup2;
 use dbsp::{
     circuit::WithClock,
     operator::{recursive::RecursiveStreams, FilterMap, Min},
@@ -35,7 +36,7 @@ where
 
             let mut cursor = roots.cursor();
             while cursor.key_valid() {
-                builder.push(((*cursor.key(), 0), 1));
+                builder.push((Tup2(*cursor.key(), 0), 1));
                 cursor.step_key();
             }
 
@@ -72,13 +73,13 @@ where
             let distances = nodes
                 .index()
                 // Iterate over each edge within the graph, increasing the distance on each step
-                .join_generic(&edges, |_, &dist, &dest| once(((dest, dist + 1), ())))
+                .join_generic(&edges, |_, &dist, &dest| once((Tup2(dest, dist + 1), ())))
                 // Add in the root nodes
                 .plus(&roots)
                 .index::<Node, Distance>()
                 // Select only the shortest distance to continue iterating.
                 .aggregate_generic::<_, DistanceMap<i32>>(Min)
-                .map(|(&node, &distance)| (node, distance));
+                .map(|(&node, &distance)| Tup2(node, distance));
             Ok(distances)
         })
         .expect("failed to build dfs recursive scope");
@@ -122,11 +123,11 @@ where
         .mark_sharded();
 
     // Collect all reachable nodes
-    let reachable_nodes = distances.map(|&(node, _)| node);
+    let reachable_nodes = distances.map(|&Tup2(node, _)| node);
     // Find all unreachable nodes (vertices not included in `distances`) and give
     // them a weight of -1
     let unreachable_nodes =
-        antijoin(&vertices, &reachable_nodes).map(|&node| (node, i64::MAX as Distance));
+        antijoin(&vertices, &reachable_nodes).map(|&node| Tup2(node, i64::MAX as Distance));
 
     distances.plus(&unreachable_nodes)
 }

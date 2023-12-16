@@ -3,8 +3,13 @@ members = ["crates/*", "sql-to-dbsp-compiler/lib/*"]
 exclude = ["sql-to-dbsp-compiler/temp"]
 resolver = "2"
 
-    [workspace.metadata.release]
-    release = false
+[workspace.metadata.release]
+release = false
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86" }
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "77df097" }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3013071" }

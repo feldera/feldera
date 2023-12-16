@@ -1,10 +1,11 @@
 use super::NexmarkStream;
+use crate::model::Event;
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap, Fold, Max},
-    RootCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    utils::Tup2,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
-use crate::model::Event;
 
 /// Query 6: Average Selling Price by Seller
 ///
@@ -37,7 +38,7 @@ use crate::model::Event;
 /// ) AS Q;
 /// ```
 
-type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, usize, isize>>;
+type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64, i64>>;
 
 const NUM_AUCTIONS_PER_SELLER: usize = 10;
 
@@ -54,8 +55,7 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
         _ => None,
     });
 
-    type BidsAuctionsJoin =
-        Stream<RootCircuit, OrdZSet<((u64, u64, u64, u64), (usize, u64)), isize>>;
+    type BidsAuctionsJoin = Stream<RootCircuit, OrdZSet<((u64, u64, u64, u64), (u64, u64)), i64>>;
 
     // Join to get bids for each auction.
     let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join(
@@ -85,28 +85,30 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     // need the auction ids anymore.
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
-    type WinningBidsBySeller = Stream<RootCircuit, OrdIndexedZSet<u64, (u64, usize), isize>>;
+    type WinningBidsBySeller = Stream<RootCircuit, OrdIndexedZSet<u64, Tup2<u64, u64>, i64>>;
     let winning_bids_by_seller_indexed: WinningBidsBySeller = bids_for_auctions_indexed
         .aggregate(Max)
-        .map_index(|(key, max)| (key.1, (key.0, *max)));
+        .map_index(|(key, max)| (key.1, Tup2(key.0, *max)));
 
     // Finally, calculate the average winning bid per seller, using the last
     // 10 closed auctions.
     // TODO: use linear aggregation when ready (#138).
-    winning_bids_by_seller_indexed.aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::with_output(
-        Vec::with_capacity(NUM_AUCTIONS_PER_SELLER),
-        |top: &mut Vec<usize>, val: &(u64, usize), _w| {
-            if top.len() >= NUM_AUCTIONS_PER_SELLER {
-                top.remove(0);
-            }
-            top.push(val.1);
-        },
-        |top: Vec<usize>| -> usize {
-            let len = top.len();
-            let sum: usize = Iterator::sum(top.into_iter());
-            sum / len
-        },
-    ))
+    winning_bids_by_seller_indexed.aggregate(
+        <Fold<_, UnimplementedSemigroup<_>, _, _>>::with_output(
+            Vec::with_capacity(NUM_AUCTIONS_PER_SELLER),
+            |top: &mut Vec<u64>, val: &Tup2<u64, u64>, _w| {
+                if top.len() >= NUM_AUCTIONS_PER_SELLER {
+                    top.remove(0);
+                }
+                top.push(val.1);
+            },
+            |top: Vec<u64>| -> u64 {
+                let len = top.len() as u64;
+                let sum: u64 = Iterator::sum(top.into_iter());
+                sum / len
+            },
+        ),
+    )
 }
 
 #[cfg(test)]
@@ -176,7 +178,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
@@ -253,7 +255,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
                 indexed_zset! { 99 => {100 => 1} },
@@ -493,7 +495,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
             let mut expected_output = vec![
                 // First has 5 auction for person 99, but average is (200 + 100 * 4) / 5.
                 indexed_zset! { 99 => {120 => 1} },
@@ -611,7 +613,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.

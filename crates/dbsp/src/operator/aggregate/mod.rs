@@ -747,7 +747,7 @@ mod test {
         zset, Circuit, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream,
     };
 
-    type TestZSet = OrdZSet<(usize, isize), isize>;
+    type TestZSet = OrdZSet<Tup2<u64, i64>, i64>;
 
     fn aggregate_test_circuit(
         circuit: &mut RootCircuit,
@@ -775,15 +775,15 @@ mod test {
                 // Weighted sum aggregate.
                 let sum = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                     0,
-                    |acc: &mut isize, v: &isize, w: isize| *acc += *v * w,
+                    |acc: &mut i64, v: &i64, w: i64| *acc += *v * w,
                 );
 
                 // Weighted sum aggregate that returns only the weighted sum
                 // value and is therefore linear.
-                let sum_linear = |val: &isize| -> isize { *val };
+                let sum_linear = |val: &i64| -> i64 { *val };
 
                 let sum_inc = input.aggregate(sum.clone()).gather(0);
-                let sum_inc_linear: Stream<_, OrdIndexedZSet<usize, isize, isize>> =
+                let sum_inc_linear: Stream<_, OrdIndexedZSet<u64, i64, i64>> =
                     input.aggregate_linear(sum_linear).gather(0);
                 let sum_noninc = input
                     .integrate_nested()
@@ -804,8 +804,7 @@ mod test {
                 sum_inc
                     .apply2(
                         &sum_noninc,
-                        |d1: &OrdIndexedZSet<usize, isize, isize>,
-                         d2: &OrdIndexedZSet<usize, isize, isize>| {
+                        |d1: &OrdIndexedZSet<u64, i64, i64>, d2: &OrdIndexedZSet<u64, i64, i64>| {
                             (d1.clone(), d2.clone())
                         },
                     )
@@ -817,8 +816,7 @@ mod test {
 
                 sum_inc.apply2(
                     &sum_inc_linear,
-                    |d1: &OrdIndexedZSet<usize, isize, isize>,
-                     d2: &OrdIndexedZSet<usize, isize, isize>| {
+                    |d1: &OrdIndexedZSet<u64, i64, i64>, d2: &OrdIndexedZSet<u64, i64, i64>| {
                         // println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
                         // println!("{}: linear: {:?}", Runtime::worker_index(), d2);
 
@@ -854,8 +852,7 @@ mod test {
                 sum_inc_linear
                     .apply2(
                         &sum_noninc_linear,
-                        |d1: &OrdIndexedZSet<usize, isize, isize>,
-                         d2: &OrdIndexedZSet<usize, isize, isize>| {
+                        |d1: &OrdIndexedZSet<u64, i64, i64>, d2: &OrdIndexedZSet<u64, i64, i64>| {
                             (d1.clone(), d2.clone())
                         },
                     )
@@ -877,8 +874,7 @@ mod test {
                 min_inc
                     .apply2(
                         &min_noninc,
-                        |d1: &OrdIndexedZSet<usize, isize, isize>,
-                         d2: &OrdIndexedZSet<usize, isize, isize>| {
+                        |d1: &OrdIndexedZSet<u64, i64, i64>, d2: &OrdIndexedZSet<u64, i64, i64>| {
                             (d1.clone(), d2.clone())
                         },
                     )
@@ -898,17 +894,21 @@ mod test {
         Ok(())
     }
 
+    use crate::utils::Tup2;
     use proptest::{collection, prelude::*};
 
     const MAX_ROUNDS: usize = 15;
     const MAX_ITERATIONS: usize = 15;
-    const NUM_KEYS: usize = 5;
-    const MAX_VAL: isize = 3;
+    const NUM_KEYS: u64 = 5;
+    const MAX_VAL: i64 = 3;
     const MAX_TUPLES: usize = 10;
 
     fn test_zset() -> impl Strategy<Value = TestZSet> {
         collection::vec(
-            ((0..NUM_KEYS, -MAX_VAL..MAX_VAL), -1..=1isize),
+            (
+                (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(t1, t2)| Tup2(t1, t2)),
+                -1..=1i64,
+            ),
             0..MAX_TUPLES,
         )
         .prop_map(|tuples| OrdZSet::from_tuples((), tuples))
@@ -947,13 +947,13 @@ mod test {
     }
 
     fn count_test(workers: usize) {
-        let count_weighted_output: Arc<Mutex<OrdIndexedZSet<usize, isize, isize>>> =
+        let count_weighted_output: Arc<Mutex<OrdIndexedZSet<u64, i64, i64>>> =
             Arc::new(Mutex::new(indexed_zset! {}));
-        let sum_weighted_output: Arc<Mutex<OrdIndexedZSet<usize, isize, isize>>> =
+        let sum_weighted_output: Arc<Mutex<OrdIndexedZSet<u64, i64, i64>>> =
             Arc::new(Mutex::new(indexed_zset! {}));
-        let count_distinct_output: Arc<Mutex<OrdIndexedZSet<usize, usize, isize>>> =
+        let count_distinct_output: Arc<Mutex<OrdIndexedZSet<u64, u64, i64>>> =
             Arc::new(Mutex::new(indexed_zset! {}));
-        let sum_distinct_output: Arc<Mutex<OrdIndexedZSet<usize, usize, isize>>> =
+        let sum_distinct_output: Arc<Mutex<OrdIndexedZSet<u64, u64, i64>>> =
             Arc::new(Mutex::new(indexed_zset! {}));
 
         let count_weighted_output_clone = count_weighted_output.clone();
@@ -973,7 +973,7 @@ mod test {
                 });
 
             input_stream
-                .aggregate_linear(|value: &usize| *value as isize)
+                .aggregate_linear(|value: &u64| *value as i64)
                 .gather(0)
                 .inspect(move |batch| {
                     if Runtime::worker_index() == 0 {
@@ -984,7 +984,7 @@ mod test {
             input_stream
                 .aggregate(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
                     0,
-                    |sum: &mut usize, _v: &usize, _w| *sum += 1,
+                    |sum: &mut u64, _v: &u64, _w| *sum += 1,
                 ))
                 .gather(0)
                 .inspect(move |batch| {
@@ -996,7 +996,7 @@ mod test {
             input_stream
                 .aggregate(<Fold<_, DefaultSemigroup<_>, _, _>>::new(
                     0,
-                    |sum: &mut usize, v: &usize, _w| *sum += v,
+                    |sum: &mut u64, v: &u64, _w| *sum += v,
                 ))
                 .gather(0)
                 .inspect(move |batch| {
@@ -1008,7 +1008,7 @@ mod test {
         })
         .unwrap();
 
-        input_handle.append(&mut vec![(1, (1, 1)), (1, (2, 2))]);
+        input_handle.append(&mut vec![(1, Tup2(1, 1)), (1, Tup2(2, 2))]);
         dbsp.step().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
@@ -1027,7 +1027,11 @@ mod test {
             &indexed_zset! {1 => {5 => 1}}
         );
 
-        input_handle.append(&mut vec![(2, (2, 1)), (2, (4, 1)), (1, (2, -1))]);
+        input_handle.append(&mut vec![
+            (2, Tup2(2, 1)),
+            (2, Tup2(4, 1)),
+            (1, Tup2(2, -1)),
+        ]);
         dbsp.step().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
@@ -1046,7 +1050,7 @@ mod test {
             &indexed_zset! {2 => {6 => 1}, 1 => {5 => -1, 3 => 1}}
         );
 
-        input_handle.append(&mut vec![(1, (3, 1)), (1, (2, -1))]);
+        input_handle.append(&mut vec![(1, Tup2(3, 1)), (1, Tup2(2, -1))]);
         dbsp.step().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),

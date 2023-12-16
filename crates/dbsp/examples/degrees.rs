@@ -9,31 +9,31 @@ use anyhow::Result;
 use clap::Parser;
 use dbsp::{operator::FilterMap, IndexedZSet, OrdIndexedZSet, OutputHandle, Runtime};
 
-type Node = usize;
-type Weight = isize;
+type Node = u64;
+type Weight = i64;
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
     /// Number of initial edges in the graph.
     #[clap(long, default_value = "100")]
-    edges: usize,
+    edges: u64,
 
     /// Number of source nodes in the graph.
     #[clap(long, default_value = "13")]
-    sources: usize,
+    sources: u64,
 
     /// Number of extra edges added later to the graph.
     #[clap(long, default_value = "5")]
-    extra: usize,
+    extra: u64,
 
     /// Number of threads.
     #[clap(long, default_value = "2")]
-    threads: usize,
+    threads: u64,
 }
 
 fn print_changes(
-    degrees: &OutputHandle<OrdIndexedZSet<Node, isize, Weight>>,
-    distribution: &OutputHandle<OrdIndexedZSet<isize, isize, Weight>>,
+    degrees: &OutputHandle<OrdIndexedZSet<Node, i64, Weight>>,
+    distribution: &OutputHandle<OrdIndexedZSet<i64, i64, Weight>>,
 ) {
     for (src, outdegree, weight) in degrees.consolidate().iter() {
         println!("    {weight:+}: Node {src} has out-degree {outdegree}");
@@ -54,19 +54,20 @@ fn main() -> Result<()> {
         extra,
     } = Args::parse();
 
-    let (mut dbsp, (hedges, degrees, distribution)) = Runtime::init_circuit(threads, |circuit| {
-        let (edges, hedges) = circuit.add_input_zset::<(Node, Node), Weight>();
+    let (mut dbsp, (hedges, degrees, distribution)) =
+        Runtime::init_circuit(threads as usize, |circuit| {
+            let (edges, hedges) = circuit.add_input_zset::<(Node, Node), Weight>();
 
-        // Count the number of edges with each node as its source (each node's
-        // out-degree).
-        let degrees = edges.map(|(src, _dst)| *src).weighted_count();
+            // Count the number of edges with each node as its source (each node's
+            // out-degree).
+            let degrees = edges.map(|(src, _dst)| *src).weighted_count();
 
-        // Count the number of nodes with each out-degree.
-        let distribution = degrees.map(|(_src, count)| *count).weighted_count();
+            // Count the number of nodes with each out-degree.
+            let distribution = degrees.map(|(_src, count)| *count).weighted_count();
 
-        Ok((hedges, degrees.output(), distribution.output()))
-    })
-    .unwrap();
+            Ok((hedges, degrees.output(), distribution.output()))
+        })
+        .unwrap();
 
     // Add some initial edges and print the results.
     for i in 0..edges {

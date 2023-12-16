@@ -873,6 +873,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::Tup2;
     use crate::{
         circuit::WithClock,
         indexed_zset,
@@ -897,47 +898,47 @@ mod test {
         let circuit = RootCircuit::build(move |circuit| {
             let mut input1 = vec![
                 zset! {
-                    (1, "a".to_string()) => 1,
-                    (1, "b".to_string()) => 2,
-                    (2, "c".to_string()) => 3,
-                    (2, "d".to_string()) => 4,
-                    (3, "e".to_string()) => 5,
-                    (3, "f".to_string()) => -2,
+                    Tup2(1, "a".to_string()) => 1i64,
+                    Tup2(1, "b".to_string()) => 2,
+                    Tup2(2, "c".to_string()) => 3,
+                    Tup2(2, "d".to_string()) => 4,
+                    Tup2(3, "e".to_string()) => 5,
+                    Tup2(3, "f".to_string()) => -2,
                 },
-                zset! {(1, "a".to_string()) => 1},
-                zset! {(1, "a".to_string()) => 1},
-                zset! {(4, "n".to_string()) => 2},
-                zset! {(1, "a".to_string()) => 0},
+                zset! {Tup2(1, "a".to_string()) => 1},
+                zset! {Tup2(1, "a".to_string()) => 1},
+                zset! {Tup2(4, "n".to_string()) => 2},
+                zset! {Tup2(1, "a".to_string()) => 0},
             ]
             .into_iter();
             let mut input2 = vec![
                 zset! {
-                    (2, "g".to_string()) => 3,
-                    (2, "h".to_string()) => 4,
-                    (3, "i".to_string()) => 5,
-                    (3, "j".to_string()) => -2,
-                    (4, "k".to_string()) => 5,
-                    (4, "l".to_string()) => -2,
+                    Tup2(2, "g".to_string()) => 3i64,
+                    Tup2(2, "h".to_string()) => 4,
+                    Tup2(3, "i".to_string()) => 5,
+                    Tup2(3, "j".to_string()) => -2,
+                    Tup2(4, "k".to_string()) => 5,
+                    Tup2(4, "l".to_string()) => -2,
                 },
-                zset! {(1, "b".to_string()) => 1},
-                zset! {(4, "m".to_string()) => 1},
+                zset! {Tup2(1, "b".to_string()) => 1},
+                zset! {Tup2(4, "m".to_string()) => 1},
                 zset! {},
                 zset! {},
             ]
             .into_iter();
             let mut outputs = vec![
                 zset! {
-                    (2, "c g".to_string()) => 9,
-                    (2, "c h".to_string()) => 12,
-                    (2, "d g".to_string()) => 12,
-                    (2, "d h".to_string()) => 16,
-                    (3, "e i".to_string()) => 25,
-                    (3, "e j".to_string()) => -10,
-                    (3, "f i".to_string()) => -10,
-                    (3, "f j".to_string()) => 4
+                    Tup2(2, "c g".to_string()) => 9i64,
+                    Tup2(2, "c h".to_string()) => 12,
+                    Tup2(2, "d g".to_string()) => 12,
+                    Tup2(2, "d h".to_string()) => 16,
+                    Tup2(3, "e i".to_string()) => 25,
+                    Tup2(3, "e j".to_string()) => -10,
+                    Tup2(3, "f i".to_string()) => -10,
+                    Tup2(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    (1, "a b".to_string()) => 1,
+                    Tup2(1, "a b".to_string()) => 1,
                 },
                 zset! {},
                 zset! {},
@@ -946,26 +947,26 @@ mod test {
             .into_iter();
             let inc_outputs_vec = vec![
                 zset! {
-                    (2, "c g".to_string()) => 9,
-                    (2, "c h".to_string()) => 12,
-                    (2, "d g".to_string()) => 12,
-                    (2, "d h".to_string()) => 16,
-                    (3, "e i".to_string()) => 25,
-                    (3, "e j".to_string()) => -10,
-                    (3, "f i".to_string()) => -10,
-                    (3, "f j".to_string()) => 4
+                    Tup2(2, "c g".to_string()) => 9,
+                    Tup2(2, "c h".to_string()) => 12,
+                    Tup2(2, "d g".to_string()) => 12,
+                    Tup2(2, "d h".to_string()) => 16,
+                    Tup2(3, "e i".to_string()) => 25,
+                    Tup2(3, "e j".to_string()) => -10,
+                    Tup2(3, "f i".to_string()) => -10,
+                    Tup2(3, "f j".to_string()) => 4
                 },
                 zset! {
-                    (1, "a b".to_string()) => 2,
-                    (1, "b b".to_string()) => 2,
+                    Tup2(1, "a b".to_string()) => 2,
+                    Tup2(1, "b b".to_string()) => 2,
                 },
                 zset! {
-                    (1, "a b".to_string()) => 1,
+                    Tup2(1, "a b".to_string()) => 1,
                 },
                 zset! {
-                    (4, "n k".to_string()) => 10,
-                    (4, "n l".to_string()) => -4,
-                    (4, "n m".to_string()) => 2,
+                    Tup2(4, "n k".to_string()) => 10,
+                    Tup2(4, "n l".to_string()) => -4,
+                    Tup2(4, "n m".to_string()) => 2,
                 },
                 zset! {},
             ];
@@ -973,7 +974,7 @@ mod test {
             let mut inc_outputs = inc_outputs_vec.clone().into_iter();
             let mut inc_outputs2 = inc_outputs_vec.into_iter();
 
-            let index1: Stream<_, OrdIndexedZSet<usize, String, isize>> = circuit
+            let index1: Stream<_, OrdIndexedZSet<u64, String, i64>> = circuit
                 .add_source(Generator::new(move || {
                     if Runtime::worker_index() == 0 {
                         input1.next().unwrap()
@@ -982,7 +983,7 @@ mod test {
                     }
                 }))
                 .index();
-            let index2: Stream<_, OrdIndexedZSet<usize, String, isize>> = circuit
+            let index2: Stream<_, OrdIndexedZSet<u64, String, i64>> = circuit
                 .add_source(Generator::new(move || {
                     if Runtime::worker_index() == 0 {
                         input2.next().unwrap()
@@ -992,26 +993,32 @@ mod test {
                 }))
                 .index();
             index1
-                .stream_join(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .stream_join(&index2, |&k: &u64, s1, s2| {
+                    Tup2(k, format!("{} {}", s1, s2))
+                })
                 .gather(0)
-                .inspect(move |fm: &OrdZSet<(usize, String), _>| {
+                .inspect(move |fm: &OrdZSet<Tup2<u64, String>, _>| {
                     if Runtime::worker_index() == 0 {
                         assert_eq!(fm, &outputs.next().unwrap())
                     }
                 });
             index1
-                .join_incremental(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .join_incremental(&index2, |&k: &u64, s1, s2| {
+                    Tup2(k, format!("{} {}", s1, s2))
+                })
                 .gather(0)
-                .inspect(move |fm: &OrdZSet<(usize, String), _>| {
+                .inspect(move |fm: &OrdZSet<Tup2<u64, String>, _>| {
                     if Runtime::worker_index() == 0 {
                         assert_eq!(fm, &inc_outputs.next().unwrap())
                     }
                 });
 
             index1
-                .join(&index2, |&k: &usize, s1, s2| (k, format!("{} {}", s1, s2)))
+                .join(&index2, |&k: &u64, s1, s2| {
+                    Tup2(k, format!("{} {}", s1, s2))
+                })
                 .gather(0)
-                .inspect(move |fm: &OrdZSet<(usize, String), _>| {
+                .inspect(move |fm: &OrdZSet<Tup2<u64, String>, _>| {
                     if Runtime::worker_index() == 0 {
                         assert_eq!(fm, &inc_outputs2.next().unwrap())
                     }
@@ -1048,40 +1055,40 @@ mod test {
     fn join_trace_test() {
         let circuit = RootCircuit::build(move |circuit| {
             // Changes to the edges relation.
-            let mut edges: vec::IntoIter<OrdZSet<(usize, usize), isize>> = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (2, 3) => 1},
-                zset! { (1, 3) => 1},
-                zset! { (3, 1) => 1},
-                zset! { (3, 1) => -1},
-                zset! { (1, 2) => -1},
-                zset! { (2, 4) => 1, (4, 1) => 1 },
-                zset! { (2, 3) => -1, (3, 2) => 1 },
+            let mut edges: vec::IntoIter<OrdZSet<Tup2<u64, u64>, i64>> = vec![
+                zset! { Tup2(1, 2) => 1 },
+                zset! { Tup2(2, 3) => 1},
+                zset! { Tup2(1, 3) => 1},
+                zset! { Tup2(3, 1) => 1},
+                zset! { Tup2(3, 1) => -1},
+                zset! { Tup2(1, 2) => -1},
+                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
+                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
             ]
             .into_iter();
 
             // Expected content of the reachability relation.
-            let mut outputs: vec::IntoIter<OrdZSet<(usize, usize), isize>> = vec![
-                zset! { (1, 2) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (1, 2) => 1, (1, 3) => 1, (2, 3) => 1, (2, 1) => 1, (3, 1) => 1, (3, 2) => 1},
-                zset! { (1, 2) => 1, (2, 3) => 1, (1, 3) => 1 },
-                zset! { (2, 3) => 1, (1, 3) => 1 },
-                zset! { (1, 3) => 1, (2, 3) => 1, (2, 4) => 1, (2, 1) => 1, (4, 1) => 1, (4, 3) => 1 },
-                zset! { (1, 1) => 1, (2, 2) => 1, (3, 3) => 1, (4, 4) => 1,
-                              (1, 2) => 1, (1, 3) => 1, (1, 4) => 1,
-                              (2, 1) => 1, (2, 3) => 1, (2, 4) => 1,
-                              (3, 1) => 1, (3, 2) => 1, (3, 4) => 1,
-                              (4, 1) => 1, (4, 2) => 1, (4, 3) => 1 },
+            let mut outputs: vec::IntoIter<OrdZSet<Tup2<u64, u64>, i64>> = vec![
+                zset! { Tup2(1, 2) => 1 },
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
+                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
+                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
+                              Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
+                              Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
+                              Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
+                              Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
             ]
             .into_iter();
 
-            let edges: Stream<_, OrdZSet<(usize, usize), isize>> =
+            let edges: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> =
                 circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let paths = circuit.recursive(|child, paths_delayed: Stream<_, OrdZSet<(usize, usize), isize>>| {
+            let paths = circuit.recursive(|child, paths_delayed: Stream<_, OrdZSet<Tup2<u64, u64>, i64>>| {
                 // ```text
                 //                             distinct
                 //               ┌───┐          ┌───┐
@@ -1100,13 +1107,13 @@ mod test {
                 // ```
                 let edges = edges.delta0(child);
 
-                let paths_inverted: Stream<_, OrdZSet<(usize, usize), isize>> = paths_delayed
-                    .map(|&(x, y)| (y, x));
+                let paths_inverted: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = paths_delayed
+                    .map(|&Tup2(x, y)| Tup2(y, x));
 
                 let paths_inverted_indexed = paths_inverted.index();
                 let edges_indexed = edges.index();
 
-                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| (*from, *to))))
+                Ok(edges.plus(&paths_inverted_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
             })
             .unwrap();
 
@@ -1137,7 +1144,9 @@ mod test {
         Serialize,
         Deserialize,
     )]
-    struct Label(pub usize, pub u16);
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    #[archive(compare(PartialEq, PartialOrd))]
+    struct Label(pub u64, pub u16);
 
     impl Display for Label {
         fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -1159,7 +1168,9 @@ mod test {
         Serialize,
         Deserialize,
     )]
-    struct Edge(pub usize, pub usize);
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    #[archive(compare(PartialEq, PartialOrd))]
+    struct Edge(pub u64, pub u64);
 
     impl Display for Edge {
         fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -1171,9 +1182,9 @@ mod test {
     // the join operator in isolation, so we don't want to use `distinct`.
     fn propagate<C>(
         circuit: &C,
-        edges: &Stream<C, OrdZSet<Edge, isize>>,
-        labels: &Stream<C, OrdZSet<Label, isize>>,
-    ) -> Stream<C, OrdZSet<Label, isize>>
+        edges: &Stream<C, OrdZSet<Edge, i64>>,
+        labels: &Stream<C, OrdZSet<Label, i64>>,
+    ) -> Stream<C, OrdZSet<Label, i64>>
     where
         C: Circuit,
         <<C as WithClock>::Time as Timestamp>::Nested: DBTimestamp,
@@ -1184,11 +1195,10 @@ mod test {
                 let labels = labels.delta0(child);
 
                 let computed_labels = <DelayedFeedback<_, OrdZSet<_, _>>>::new(child);
-                let result: Stream<_, OrdZSet<Label, isize>> =
-                    labels.plus(computed_labels.stream());
+                let result: Stream<_, OrdZSet<Label, i64>> = labels.plus(computed_labels.stream());
 
-                computed_labels.connect(&result.index_with(|label| (label.0, label.1)).join(
-                    &edges.index_with(|edge| (edge.0, edge.1)),
+                computed_labels.connect(&result.index_with(|label| Tup2(label.0, label.1)).join(
+                    &edges.index_with(|edge| Tup2(edge.0, edge.1)),
                     |_from, label, to| Label(*to, *label),
                 ));
 
@@ -1202,7 +1212,7 @@ mod test {
     #[test]
     fn propagate_test() {
         let circuit = RootCircuit::build(move |circuit| {
-            let mut edges: vec::IntoIter<OrdZSet<Edge, isize>> = vec![
+            let mut edges: vec::IntoIter<OrdZSet<Edge, i64>> = vec![
                 zset! { Edge(1, 2) => 1, Edge(1, 3) => 1, Edge(2, 4) => 1, Edge(3, 4) => 1 },
                 zset! { Edge(5, 7) => 1, Edge(6, 7) => 1 },
                 zset! { Edge(4, 5) => 1, Edge(4, 6) => 1, },
@@ -1214,7 +1224,7 @@ mod test {
             ]
             .into_iter();
 
-            let mut labels: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+            let mut labels: vec::IntoIter<OrdZSet<Label, i64>> = vec![
                 zset! { Label(1, 0) => 1 },
                 zset! { Label(4, 1) => 1 },
                 zset! { },
@@ -1226,7 +1236,7 @@ mod test {
             ]
             .into_iter();
 
-            let mut outputs: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+            let mut outputs: vec::IntoIter<OrdZSet<Label, i64>> = vec![
                 zset! { Label(1, 0) => 1, Label(2, 0) => 1, Label(3, 0) => 1, Label(4, 0) => 2 },
                 zset! { Label(4, 1) => 1 },
                 zset! { Label(5, 0) => 2, Label(5, 1) => 1, Label(6, 0) => 2, Label(6, 1) => 1, Label(7, 0) => 4, Label(7, 1) => 2 },
@@ -1238,11 +1248,11 @@ mod test {
             ]
             .into_iter();
 
-            let edges: Stream<_, OrdZSet<Edge, isize>> =
+            let edges: Stream<_, OrdZSet<Edge, i64>> =
                 circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let labels: Stream<_, OrdZSet<Label, isize>> =
+            let labels: Stream<_, OrdZSet<Label, i64>> =
                 circuit
                     .add_source(Generator::new(move || labels.next().unwrap()));
 
@@ -1262,7 +1272,7 @@ mod test {
     #[test]
     fn propagate_nested_test() {
         let circuit = RootCircuit::build(move |circuit| {
-            let mut edges: vec::IntoIter<OrdZSet<Edge, isize>> = vec![
+            let mut edges: vec::IntoIter<OrdZSet<Edge, i64>> = vec![
                 zset! { Edge(1, 2) => 1, Edge(1, 3) => 1, Edge(2, 4) => 1, Edge(3, 4) => 1 },
                 zset! { Edge(5, 7) => 1, Edge(6, 7) => 1 },
                 zset! { Edge(4, 5) => 1, Edge(4, 6) => 1 },
@@ -1274,7 +1284,7 @@ mod test {
             ]
             .into_iter();
 
-            let mut labels: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+            let mut labels: vec::IntoIter<OrdZSet<Label, i64>> = vec![
                 zset! { Label(1, 0) => 1 },
                 zset! { Label(4, 1) => 1 },
                 zset! { },
@@ -1286,7 +1296,7 @@ mod test {
             ]
             .into_iter();
 
-            let mut outputs: vec::IntoIter<OrdZSet<Label, isize>> = vec![
+            let mut outputs: vec::IntoIter<OrdZSet<Label, i64>> = vec![
                 zset!{ Label(1,0) => 2, Label(2,0) => 3, Label(3,0) => 3, Label(4,0) => 8 },
                 zset!{ Label(4,1) => 2 },
                 zset!{ Label(5,0) => 10, Label(5,1) => 3, Label(6,0) => 10, Label(6,1) => 3, Label(7,0) => 24, Label(7,1) => 8 },
@@ -1301,11 +1311,11 @@ mod test {
                 zset!{ Label(7,2) => 6, Label(7,3) => 4, Label(10,2) => 7, Label(10,3) => 5 },
             ].into_iter();
 
-            let edges: Stream<_, OrdZSet<Edge, isize>> =
+            let edges: Stream<_, OrdZSet<Edge, i64>> =
                 circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let labels: Stream<_, OrdZSet<Label, isize>> =
+            let labels: Stream<_, OrdZSet<Label, i64>> =
                 circuit
                     .add_source(Generator::new(move || labels.next().unwrap()));
 
@@ -1333,7 +1343,7 @@ mod test {
                 result.integrate_trace().export()))
             }).unwrap();
 
-            result.consolidate().inspect(move |res: &OrdZSet<Label, isize>| {
+            result.consolidate().inspect(move |res: &OrdZSet<Label, i64>| {
                 assert_eq!(*res, outputs.next().unwrap());
             });
             Ok(())
@@ -1352,8 +1362,8 @@ mod test {
         let output_clone = output.clone();
 
         let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
-            let (input1, input_handle1) = circuit.add_input_indexed_zset::<usize, usize, isize>();
-            let (input2, input_handle2) = circuit.add_input_indexed_zset::<usize, usize, isize>();
+            let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64, i64>();
+            let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64, i64>();
 
             input1.antijoin(&input2).gather(0).inspect(move |batch| {
                 if Runtime::worker_index() == 0 {
@@ -1366,10 +1376,10 @@ mod test {
         .unwrap();
 
         input1.append(&mut vec![
-            (1, (0, 1)),
-            (1, (1, 2)),
-            (2, (0, 1)),
-            (2, (1, 1)),
+            (1, Tup2(0, 1)),
+            (1, Tup2(1, 2)),
+            (2, Tup2(0, 1)),
+            (2, Tup2(1, 1)),
         ]);
         circuit.step().unwrap();
         assert_eq!(
@@ -1377,19 +1387,19 @@ mod test {
             &indexed_zset! { 1 => { 0 => 1, 1 => 2}, 2 => { 0 => 1, 1 => 1 } }
         );
 
-        input1.append(&mut vec![(3, (1, 1))]);
+        input1.append(&mut vec![(3, Tup2(1, 1))]);
         circuit.step().unwrap();
         assert_eq!(&*output.lock().unwrap(), &indexed_zset! { 3 => { 1 => 1 } });
 
-        input2.append(&mut vec![(1, (1, 3))]);
+        input2.append(&mut vec![(1, Tup2(1, 3))]);
         circuit.step().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),
             &indexed_zset! { 1 => { 0 => -1, 1 => -2 } }
         );
 
-        input2.append(&mut vec![(2, (5, 1))]);
-        input1.append(&mut vec![(2, (2, 1)), (4, (1, 1))]);
+        input2.append(&mut vec![(2, Tup2(5, 1))]);
+        input1.append(&mut vec![(2, Tup2(2, 1)), (4, Tup2(1, 1))]);
         circuit.step().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),

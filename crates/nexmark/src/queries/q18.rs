@@ -1,10 +1,10 @@
 use super::NexmarkStream;
+use crate::model::{Bid, Event};
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap, Fold},
-    RootCircuit, OrdZSet, Stream,
+    OrdZSet, RootCircuit, Stream,
 };
-use crate::model::{Bid, Event};
 
 //
 // Query 18: Find last bid (Not in original suite)
@@ -41,11 +41,14 @@ pub fn q18(input: NexmarkStream) -> Q18Stream {
     });
 
     bids_by_auction_bidder
-        .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(Bid::default(), |top: &mut Bid, val: &Bid, _w| {
-            if val.date_time > top.date_time {
-                *top = val.clone();
-            }
-        }))
+        .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
+            Bid::default(),
+            |top: &mut Bid, val: &Bid, _w| {
+                if val.date_time > top.date_time {
+                    *top = val.clone();
+                }
+            },
+        ))
         .map(|((_, _), bid)| bid.clone())
 }
 
@@ -377,7 +380,7 @@ mod tests {
             .map(|batch| batch.into_iter().map(|b| (Event::Bid(b), 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q18(stream);
 

@@ -1,3 +1,4 @@
+use crate::utils::Tup2;
 use crate::{
     algebra::ZRingValue,
     circuit::{
@@ -107,21 +108,24 @@ impl RootCircuit {
     #[allow(clippy::type_complexity)]
     pub fn add_input_indexed_zset<K, V, R>(
         &self,
-    ) -> (IndexedZSetStream<K, V, R>, CollectionHandle<K, (V, R)>)
+    ) -> (IndexedZSetStream<K, V, R>, CollectionHandle<K, Tup2<V, R>>)
     where
         K: DBData,
         V: DBData,
         R: DBWeight,
     {
-        let (input, input_handle) = Input::new(|tuples: Vec<(K, (V, R))>| {
+        let (input, input_handle) = Input::new(|tuples: Vec<(K, Tup2<V, R>)>| {
             OrdIndexedZSet::from_tuples(
                 (),
-                tuples.into_iter().map(|(k, (v, w))| ((k, v), w)).collect(),
+                tuples
+                    .into_iter()
+                    .map(|(k, Tup2(v, w))| ((k, v), w))
+                    .collect(),
             )
         });
         let stream = self.add_source(input);
 
-        let zset_handle = <CollectionHandle<K, (V, R)>>::new(input_handle);
+        let zset_handle = <CollectionHandle<K, Tup2<V, R>>>::new(input_handle);
 
         (stream, zset_handle)
     }
@@ -367,6 +371,7 @@ impl RootCircuit {
         K: DBData,
         V: DBData,
         R: DBData + ZRingValue,
+        Option<V>: DBData,
     {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(|tuples: Vec<(K, Option<V>)>| tuples);
@@ -1029,6 +1034,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::Tup2;
     use crate::{
         indexed_zset,
         trace::{cursor::Cursor, Batch, BatchReader, Builder},
@@ -1038,7 +1044,7 @@ mod test {
     use anyhow::Result as AnyResult;
     use std::{cmp::max, iter::once, ops::Mul};
 
-    fn input_batches() -> Vec<OrdZSet<usize, isize>> {
+    fn input_batches() -> Vec<OrdZSet<u64, i64>> {
         vec![
             zset! { 1 => 1, 2 => 1, 3 => 1 },
             zset! { 5 => -1, 10 => 2, 11 => 11 },
@@ -1046,7 +1052,7 @@ mod test {
         ]
     }
 
-    fn input_vecs() -> Vec<Vec<(usize, isize)>> {
+    fn input_vecs() -> Vec<Vec<(u64, i64)>> {
         input_batches()
             .into_iter()
             .map(|batch| {
@@ -1065,18 +1071,18 @@ mod test {
     fn input_test_circuit(
         circuit: &RootCircuit,
         nworkers: usize,
-    ) -> AnyResult<InputHandle<OrdZSet<usize, isize>>> {
-        let (stream, handle) = circuit.add_input_stream::<OrdZSet<usize, isize>>();
+    ) -> AnyResult<InputHandle<OrdZSet<u64, i64>>> {
+        let (stream, handle) = circuit.add_input_stream::<OrdZSet<u64, i64>>();
 
         let mut expected_batches = input_batches().into_iter().chain(input_batches()).chain(
             input_batches().into_iter().map(move |batch| {
                 //let mut result = batch.clone();
                 let mut cursor = batch.cursor();
                 let mut result =
-                    <OrdZSet<usize, isize> as Batch>::Builder::with_capacity((), batch.len());
+                    <OrdZSet<u64, i64> as Batch>::Builder::with_capacity((), batch.len());
 
                 while cursor.key_valid() {
-                    result.push((cursor.key().clone(), cursor.weight().mul(nworkers as isize)));
+                    result.push((cursor.key().clone(), cursor.weight().mul(nworkers as i64)));
                     cursor.step_key();
                 }
                 result.done()
@@ -1146,8 +1152,8 @@ mod test {
         input_test_mt(4);
     }
 
-    fn zset_test_circuit(circuit: &RootCircuit) -> AnyResult<CollectionHandle<usize, isize>> {
-        let (stream, handle) = circuit.add_input_zset::<usize, isize>();
+    fn zset_test_circuit(circuit: &RootCircuit) -> AnyResult<CollectionHandle<u64, i64>> {
+        let (stream, handle) = circuit.add_input_zset::<u64, i64>();
 
         let mut expected_batches = input_batches()
             .into_iter()
@@ -1225,7 +1231,7 @@ mod test {
         zset_test_mt(4);
     }
 
-    fn input_indexed_batches() -> Vec<OrdIndexedZSet<usize, usize, isize>> {
+    fn input_indexed_batches() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
         vec![
             indexed_zset! { 1 => {1 => 1, 2 => 1}, 2 => { 3 => 1 }, 3 => {4 => -1, 5 => 5} },
             indexed_zset! { 5 => {10 => -1}, 10 => {2 => 1, 3 => -1}, 11 => {11 => 11} },
@@ -1233,7 +1239,7 @@ mod test {
         ]
     }
 
-    fn input_indexed_vecs() -> Vec<Vec<(usize, (usize, isize))>> {
+    fn input_indexed_vecs() -> Vec<Vec<(u64, Tup2<u64, i64>)>> {
         input_indexed_batches()
             .into_iter()
             .map(|batch| {
@@ -1242,7 +1248,7 @@ mod test {
 
                 while cursor.key_valid() {
                     while cursor.val_valid() {
-                        result.push((*cursor.key(), (*cursor.val(), cursor.weight())));
+                        result.push((*cursor.key(), Tup2(*cursor.val(), cursor.weight())));
                         cursor.step_val();
                     }
                     cursor.step_key();
@@ -1254,8 +1260,8 @@ mod test {
 
     fn indexed_zset_test_circuit(
         circuit: &RootCircuit,
-    ) -> AnyResult<CollectionHandle<usize, (usize, isize)>> {
-        let (stream, handle) = circuit.add_input_indexed_zset::<usize, usize, isize>();
+    ) -> AnyResult<CollectionHandle<u64, Tup2<u64, i64>>> {
+        let (stream, handle) = circuit.add_input_indexed_zset::<u64, u64, i64>();
 
         let mut expected_batches = input_indexed_batches()
             .into_iter()
@@ -1283,8 +1289,8 @@ mod test {
             for (k, v) in vec.into_iter() {
                 input_handle.push(k, v);
             }
-            input_handle.push(5, (7, 1));
-            input_handle.push(5, (7, -1));
+            input_handle.push(5, Tup2(7, 1));
+            input_handle.push(5, Tup2(7, -1));
             circuit.step().unwrap();
         }
     }
@@ -1318,7 +1324,7 @@ mod test {
         indexed_zset_test_mt(4);
     }
 
-    fn input_set_updates() -> Vec<Vec<(usize, bool)>> {
+    fn input_set_updates() -> Vec<Vec<(u64, bool)>> {
         vec![
             vec![(1, true), (2, true), (3, false)],
             vec![(1, false), (2, true), (3, true), (4, true)],
@@ -1331,7 +1337,7 @@ mod test {
         ]
     }
 
-    fn output_set_updates() -> Vec<OrdZSet<usize, isize>> {
+    fn output_set_updates() -> Vec<OrdZSet<u64, i64>> {
         vec![
             zset! { 1 => 1,  2 => 1},
             zset! { 1 => -1, 3 => 1,  4 => 1 },
@@ -1343,8 +1349,8 @@ mod test {
         ]
     }
 
-    fn set_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<usize, bool>> {
-        let (stream, handle) = circuit.add_input_set::<usize, isize>();
+    fn set_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<u64, bool>> {
+        let (stream, handle) = circuit.add_input_set::<u64, i64>();
         let watermark = stream.waterline(|| 0, |k, ()| *k, |k1, k2| max(*k1, *k2));
         stream.integrate_trace_retain_keys(&watermark, |k, ts| *k >= ts.saturating_sub(10));
 
@@ -1414,7 +1420,7 @@ mod test {
         set_test_mt(4);
     }
 
-    fn input_map_updates() -> Vec<Vec<(usize, Option<usize>)>> {
+    fn input_map_updates() -> Vec<Vec<(u64, Option<u64>)>> {
         vec![
             vec![(1, Some(1)), (1, Some(2)), (2, None), (3, Some(3))],
             vec![
@@ -1440,7 +1446,7 @@ mod test {
         ]
     }
 
-    fn output_map_updates() -> Vec<OrdIndexedZSet<usize, usize, isize>> {
+    fn output_map_updates() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
         vec![
             indexed_zset! { 1 => {2 => 1},  3 => {3 => 1}},
             indexed_zset! { 1 => {2 => -1}, 2 => {2 => 1}, 3 => {3 => -1, 4 => 1}, 4 => {5 => 1}},
@@ -1454,8 +1460,8 @@ mod test {
         ]
     }
 
-    fn map_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<usize, Option<usize>>> {
-        let (stream, handle) = circuit.add_input_map::<usize, usize, isize>();
+    fn map_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<u64, Option<u64>>> {
+        let (stream, handle) = circuit.add_input_map::<u64, u64, i64>();
         let watermark = stream.waterline(
             || (0, 0),
             |k, v| (*k, *v),

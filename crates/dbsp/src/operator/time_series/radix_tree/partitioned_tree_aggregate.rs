@@ -14,6 +14,7 @@ use crate::{
         Aggregator,
     },
     trace::{cursor::CursorEmpty, Builder, Cursor, Spine},
+    utils::Tup2,
     Circuit, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream,
 };
 use num::PrimInt;
@@ -50,13 +51,14 @@ impl<TS, A, B> PartitionedRadixTreeReader<TS, A> for B where
 {
 }
 
-type OrdPartitionedRadixTree<PK, TS, A, R> = OrdIndexedZSet<PK, (Prefix<TS>, TreeNode<TS, A>), R>;
+type OrdPartitionedRadixTree<PK, TS, A, R> =
+    OrdIndexedZSet<PK, Tup2<Prefix<TS>, TreeNode<TS, A>>, R>;
 type OrdPartitionedRadixTreeStream<PK, TS, A, R> =
     Stream<RootCircuit, OrdPartitionedRadixTree<PK, TS, A, R>>;
 
 /// Cursor over partitioned radix tree.
 pub trait PartitionedRadixTreeCursor<PK, TS, A, R>:
-    Cursor<PK, (Prefix<TS>, TreeNode<TS, A>), (), R> + Sized
+    Cursor<PK, Tup2<Prefix<TS>, TreeNode<TS, A>>, (), R> + Sized
 {
     /// Produce a semi-human-readable representation of the partitioned tree
     /// for debugging purposes.
@@ -102,7 +104,7 @@ pub trait PartitionedRadixTreeCursor<PK, TS, A, R>:
 }
 
 impl<PK, TS, A, R, C> PartitionedRadixTreeCursor<PK, TS, A, R> for C where
-    C: Cursor<PK, (Prefix<TS>, TreeNode<TS, A>), (), R>
+    C: Cursor<PK, Tup2<Prefix<TS>, TreeNode<TS, A>>, (), R>
 {
 }
 
@@ -118,7 +120,7 @@ where
     pub fn partitioned_tree_aggregate<TS, V, Agg>(
         &self,
         aggregator: Agg,
-    ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Agg::Accumulator, isize>
+    ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Agg::Accumulator, i64>
     where
         Z: PartitionedIndexedZSet<TS, V> + SizeOf,
         TS: DBData + PrimInt,
@@ -126,7 +128,7 @@ where
         Agg: Aggregator<V, (), Z::R>,
         Agg::Accumulator: Default,
     {
-        self.partitioned_tree_aggregate_generic::<TS, V, Agg, OrdPartitionedRadixTree<Z::Key, TS, Agg::Accumulator, isize>>(
+        self.partitioned_tree_aggregate_generic::<TS, V, Agg, OrdPartitionedRadixTree<Z::Key, TS, Agg::Accumulator, i64>>(
             aggregator,
         )
     }
@@ -337,13 +339,13 @@ where
                     Ordering::Less => {
                         if let Some(new) = update.new {
                             builder.push((
-                                O::item_from(key.clone(), (update.prefix.clone(), new)),
+                                O::item_from(key.clone(), Tup2(update.prefix.clone(), new)),
                                 O::R::one(),
                             ));
                         };
                         if let Some(old) = update.old {
                             builder.push((
-                                O::item_from(key.clone(), (update.prefix, old)),
+                                O::item_from(key.clone(), Tup2(update.prefix, old)),
                                 O::R::one().neg(),
                             ));
                         };
@@ -351,13 +353,13 @@ where
                     Ordering::Greater => {
                         if let Some(old) = update.old {
                             builder.push((
-                                O::item_from(key.clone(), (update.prefix.clone(), old)),
+                                O::item_from(key.clone(), Tup2(update.prefix.clone(), old)),
                                 O::R::one().neg(),
                             ));
                         };
                         if let Some(new) = update.new {
                             builder.push((
-                                O::item_from(key.clone(), (update.prefix, new)),
+                                O::item_from(key.clone(), Tup2(update.prefix, new)),
                                 O::R::one(),
                             ));
                         };
@@ -379,6 +381,7 @@ mod test {
         algebra::{DefaultSemigroup, HasZero, Semigroup},
         operator::Fold,
         trace::BatchReader,
+        utils::Tup2,
         CollectionHandle, DBData, RootCircuit,
     };
     use num::PrimInt;
@@ -413,13 +416,13 @@ mod test {
     }
 
     fn update_key(
-        input: &CollectionHandle<u64, ((u64, u64), isize)>,
+        input: &CollectionHandle<u64, Tup2<Tup2<u64, u64>, i64>>,
         contents: &mut BTreeMap<u64, BTreeMap<u64, u64>>,
         partition: u64,
         key: u64,
-        upd: (u64, isize),
+        upd: (u64, i64),
     ) {
-        input.push(partition, ((key, upd.0), upd.1));
+        input.push(partition, Tup2(Tup2(key, upd.0), upd.1));
 
         match contents.entry(partition).or_default().entry(key) {
             Entry::Vacant(ve) => {
@@ -446,11 +449,12 @@ mod test {
         let contents_clone = contents.clone();
 
         let (circuit, input) = RootCircuit::build(move |circuit| {
-            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, (u64, u64), isize>();
+            let (input, input_handle) =
+                circuit.add_input_indexed_zset::<u64, Tup2<u64, u64>, i64>();
 
             let aggregator = <Fold<_, DefaultSemigroup<_>, _, _>>::new(
                 0u64,
-                |agg: &mut u64, val: &u64, _w: isize| *agg += val,
+                |agg: &mut u64, val: &u64, _w: i64| *agg += val,
             );
 
             input

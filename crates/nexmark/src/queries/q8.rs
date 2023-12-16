@@ -1,7 +1,7 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::algebra::ArcStr;
-use dbsp::{operator::FilterMap, OrdIndexedZSet, OrdZSet, RootCircuit, Stream};
+use dbsp::utils::Tup2;
+use dbsp::{operator::FilterMap, utils::Tup3, OrdIndexedZSet, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 8: Monitor New Users
@@ -41,14 +41,14 @@ use dbsp::{operator::FilterMap, OrdIndexedZSet, OrdZSet, RootCircuit, Stream};
 /// ON P.id = A.seller AND P.starttime = A.starttime AND P.endtime = A.endtime;
 /// ```
 
-type Q8Stream = Stream<RootCircuit, OrdZSet<(u64, ArcStr, u64), isize>>;
+type Q8Stream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>, i64>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
 pub fn q8(input: NexmarkStream) -> Q8Stream {
     // People indexed by the date they entered the system.
     let people_by_time = input.flat_map_index(|event| match event {
-        Event::Person(p) => Some((p.date_time, (p.id, p.name.clone()))),
+        Event::Person(p) => Some((p.date_time, Tup2(p.id, p.name.clone()))),
         _ => None,
     });
 
@@ -78,14 +78,14 @@ pub fn q8(input: NexmarkStream) -> Q8Stream {
     let windowed_people = people_by_time.window(&window_bounds);
     let windowed_auctions = auctions_by_time.window(&window_bounds);
 
-    let people_by_id =
-        windowed_people.map_index(|(date_time, (id, name))| (*id, (name.clone(), *date_time)));
+    let people_by_id = windowed_people
+        .map_index(|(date_time, Tup2(id, name))| (*id, Tup2(name.clone(), *date_time)));
 
     // Re-calculate the window start-time to include in the output.
     people_by_id.join(
         &windowed_auctions.map(|(_date_time, seller)| *seller),
-        |&p_id, (p_name, p_date_time), ()| {
-            (
+        |&p_id, Tup2(p_name, p_date_time), ()| {
+            Tup3(
                 p_id,
                 p_name.clone(),
                 *p_date_time - (*p_date_time % (TUMBLE_SECONDS * 1000)),
@@ -101,8 +101,6 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Event, Person},
     };
-    use dbsp::algebra::ArcStr;
-    use dbsp::arcstr_literal;
     use dbsp::{zset, RootCircuit};
     use rstest::rstest;
 
@@ -113,10 +111,10 @@ mod tests {
     // in the next.
     #[case::people_with_auction(
         vec![vec![
-            (1, arcstr_literal!("James Potter"), 9_000),
-            (2, arcstr_literal!("Lily Potter"), 12_000),
-            (3, arcstr_literal!("Harry Potter"), 15_000),
-            (4, arcstr_literal!("Albus D"), 18_000)]],
+            (1, String::from("James Potter"), 9_000),
+            (2, String::from("Lily Potter"), 12_000),
+            (3, String::from("Harry Potter"), 15_000),
+            (4, String::from("Albus D"), 18_000)]],
         vec![vec![
             (1, 11_000),
             (2, 15_000),
@@ -124,8 +122,8 @@ mod tests {
             (4, 21_000),
             (99, 32_000)]],
         vec![zset! {
-            (2, String::from("Lily Potter").into(), 10_000) => 1,
-            (3, String::from("Harry Potter").into(), 10_000) => 1,
+            Tup3(2, String::from("Lily Potter").into(), 10_000) => 1,
+            Tup3(3, String::from("Harry Potter").into(), 10_000) => 1,
         }],
     )]
     // In this case, both persons 1 and 2 are added in the 10-20 window,
@@ -150,18 +148,18 @@ mod tests {
             vec![(101, 42_000)]
         ],
         vec![zset! {}, zset! {
-            (1, String::from("James Potter").into(), 10_000) => 1,
-            (2, String::from("Lily Potter").into(), 10_000) => 1,
+            Tup3(1, String::from("James Potter").into(), 10_000) => 1,
+            Tup3(2, String::from("Lily Potter").into(), 10_000) => 1,
         }, zset! {
-            (1, String::from("James Potter").into(), 10_000) => -1,
-            (2, String::from("Lily Potter").into(), 10_000) => -1,
-            (3, String::from("Harry Potter").into(), 20_000) => 1,
+            Tup3(1, String::from("James Potter").into(), 10_000) => -1,
+            Tup3(2, String::from("Lily Potter").into(), 10_000) => -1,
+            Tup3(3, String::from("Harry Potter").into(), 20_000) => 1,
         }]
     )]
     fn test_q8(
-        #[case] input_people_batches: Vec<Vec<(u64, ArcStr, u64)>>,
+        #[case] input_people_batches: Vec<Vec<(u64, String, u64)>>,
         #[case] input_auction_batches: Vec<Vec<(u64, u64)>>,
-        #[case] expected_zsets: Vec<OrdZSet<(u64, ArcStr, u64), isize>>,
+        #[case] expected_zsets: Vec<OrdZSet<Tup3<u64, String, u64>, i64>>,
     ) {
         // Just ensure we don't get a false positive with zip only including
         // part of the input data. We could instead directly import zip_eq?
@@ -202,7 +200,7 @@ mod tests {
             });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, isize>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
 
             let output = q8(stream);
 

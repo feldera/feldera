@@ -357,6 +357,9 @@ where
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(archive = "<TS as Archive>::Archived: Ord + PartialOrd<TS>"))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Prefix<TS> {
     /// Prefix bits.
     key: TS,
@@ -500,6 +503,11 @@ where
 #[derive(
     Clone, Debug, SizeOf, PartialEq, Eq, Hash, PartialOrd, Ord, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "<A as Archive>::Archived: Ord + PartialOrd<A>, Prefix<TS>: Archive, <Prefix<TS> as Archive>::Archived: Ord + PartialOrd<Prefix<TS>>"
+))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct ChildPtr<TS, A> {
     /// Unique prefix of a child subtree, which serves as a pointer
     /// to the child node.  Given this prefix the child node can
@@ -555,11 +563,90 @@ where
     Serialize,
     Deserialize,
 )]
+#[archive(bound(archive = "TS: Ord + Archive, \
+    A: Ord + Archive, \
+    <TS as Archive>::Archived: Ord + PartialOrd<TS>, \
+    <A as Archive>::Archived: Ord + PartialOrd<A>"))]
 pub struct TreeNode<TS, A> {
     /// Array of children.
     // `Option` doesn't introduce space overhead.
     children: [Option<ChildPtr<TS, A>>; RADIX],
 }
+
+// For some unknown reason we cant jsut use `#[archive(compare(PartialEq,
+// PartialOrd))]` and `#[archive_attr(derive(Clone, Ord, PartialOrd, Eq,
+// PartialEq))]` so we define these traits for now. They don't get called so
+// leaving it unimplemented!().
+
+impl<TS, A> PartialEq<TreeNode<TS, A>> for ArchivedTreeNode<TS, A>
+where
+    TS: Archive + Clone + Ord,
+    A: Archive + Clone + Ord,
+    <TS as Archive>::Archived: Ord + PartialOrd<TS>,
+    <A as Archive>::Archived: Ord + PartialOrd<A>,
+{
+    fn eq(&self, _other: &TreeNode<TS, A>) -> bool {
+        unimplemented!()
+    }
+}
+impl<TS, A> PartialOrd<TreeNode<TS, A>> for ArchivedTreeNode<TS, A>
+where
+    TS: Archive + Clone + Ord + PartialOrd<TS>,
+    A: Archive + Clone + Ord + PartialOrd<A>,
+    <TS as Archive>::Archived: Ord + PartialOrd<TS>,
+    <A as Archive>::Archived: Ord + PartialOrd<A>,
+{
+    fn partial_cmp(&self, _other: &TreeNode<TS, A>) -> Option<std::cmp::Ordering> {
+        unimplemented!()
+    }
+}
+
+impl<TS, A> PartialEq for ArchivedTreeNode<TS, A>
+where
+    TS: Archive + Clone + Ord,
+    A: Archive + Clone + Ord,
+    <TS as Archive>::Archived: Ord + PartialOrd<TS>,
+    <A as Archive>::Archived: Ord + PartialOrd<A>,
+{
+    fn eq(&self, _other: &Self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<TS, A> Eq for ArchivedTreeNode<TS, A>
+where
+    TS: Archive + Clone + Ord,
+    A: Archive + Clone + Ord,
+    <TS as Archive>::Archived: Ord + PartialOrd<TS>,
+    <A as Archive>::Archived: Ord + PartialOrd<A>,
+{
+}
+
+impl<TS, A> PartialOrd for ArchivedTreeNode<TS, A>
+where
+    TS: Archive + Clone + Ord,
+    A: Archive + Clone + Ord,
+    <TS as Archive>::Archived: Ord + PartialOrd<TS>,
+    <A as Archive>::Archived: Ord + PartialOrd<A>,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<TS, A> Ord for ArchivedTreeNode<TS, A>
+where
+    TS: Archive + Clone + Ord,
+    A: Archive + Clone + Ord,
+    <TS as Archive>::Archived: Ord + PartialOrd<TS>,
+    <A as Archive>::Archived: Ord + PartialOrd<A>,
+{
+    fn cmp(&self, _other: &Self) -> std::cmp::Ordering {
+        unimplemented!()
+    }
+}
+
+// end of not implemented, hopefully derivable, traits
 
 impl<TS, A> Display for TreeNode<TS, A>
 where

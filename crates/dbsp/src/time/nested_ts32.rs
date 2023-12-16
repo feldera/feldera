@@ -48,6 +48,8 @@ const EPOCH_MASK: u32 = 0x80000000;
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 #[repr(transparent)]
 pub struct NestedTimestamp32(u32);
 

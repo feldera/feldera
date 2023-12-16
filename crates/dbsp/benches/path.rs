@@ -1,3 +1,4 @@
+use dbsp::utils::Tup2;
 use dbsp::{
     mimalloc::MiMalloc,
     operator::{FilterMap, Generator},
@@ -69,19 +70,20 @@ fn main() {
                 for layer in 0..5 {
                     for from in 0..LAYER {
                         for to in 0..LAYER {
-                            tuples.push(((from + (LAYER * layer), to + LAYER * (layer + 1)), 1));
+                            tuples
+                                .push((Tup2(from + (LAYER * layer), to + LAYER * (layer + 1)), 1));
                         }
                     }
                 }
             }
 
-            let edges = <OrdZSet<(u32, u32), i32>>::from_tuples((), tuples);
+            let edges = <OrdZSet<Tup2<u32, u32>, i32>>::from_tuples((), tuples);
 
-            let edges: Stream<_, OrdZSet<(u32, u32), i32>> =
+            let edges: Stream<_, OrdZSet<Tup2<u32, u32>, i32>> =
                 circuit.add_source(Generator::new(move || edges.clone()));
 
             let paths = circuit
-                .recursive(|child, paths: Stream<_, OrdZSet<(u32, u32), i32>>| {
+                .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u32, u32>, i32>>| {
                     // ```text
                     //                            distinct
                     //               ┌───┐          ┌───┐
@@ -100,13 +102,14 @@ fn main() {
                     // ```
                     let edges = edges.delta0(child);
 
-                    let paths_inverted = paths.map(|&(x, y)| (y, x));
+                    let paths_inverted = paths.map(|&Tup2(x, y)| Tup2(y, x));
 
                     let paths_inverted_indexed = paths_inverted.index();
                     let edges_indexed = edges.index();
 
                     Ok(edges.plus(
-                        &paths_inverted_indexed.join(&edges_indexed, |_via, from, to| (*from, *to)),
+                        &paths_inverted_indexed
+                            .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
                     ))
                 })
                 .unwrap();
