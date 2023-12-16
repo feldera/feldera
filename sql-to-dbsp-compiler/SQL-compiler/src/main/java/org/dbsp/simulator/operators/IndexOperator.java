@@ -19,7 +19,7 @@ public class IndexOperator<Weight> extends UnaryOperator<Weight> {
     @Override
     public void step() {
         BaseCollection<Weight> input = this.getInputValue();
-        ZSet<SqlTuple, Weight> zset = input.to(ZSet.class);
+        ZSet<SqlTuple, Weight> zset = (ZSet<SqlTuple, Weight>) input;
         this.nextOutput = zset.index(this.keyFunction);
     }
 }

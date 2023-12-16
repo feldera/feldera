@@ -4,11 +4,14 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneOperators;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.util.Logger;
 import org.junit.Test;
 
 /** Tests that exercise streaming features. */

@@ -38,19 +38,19 @@ public class TableValue {
     public DBSPExpression generateReadDbCall(String connectionString) {
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
-        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
+        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
         DBSPTypeTuple tupleType = this.contents.zsetType.elementType.to(DBSPTypeTuple.class);
         final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
         for (int i = 0; i < tupleType.tupFields.length; i++) {
             DBSPApplyMethodExpression rowGet =
                     new DBSPApplyMethodExpression("get",
                             tupleType.tupFields[i],
-                            rowVariable, new DBSPUSizeLiteral(i));
+                            rowVariable.deref(), new DBSPUSizeLiteral(i));
             rowGets.add(rowGet);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
         DBSPClosureExpression mapClosure = new DBSPClosureExpression(CalciteObject.EMPTY, tuple,
-                rowVariable.asRefParameter());
+                rowVariable.asParameter());
         return new DBSPApplyExpression("read_db", this.contents.zsetType,
                 new DBSPStrLiteral(connectionString), new DBSPStrLiteral(this.tableName),
                 mapClosure);

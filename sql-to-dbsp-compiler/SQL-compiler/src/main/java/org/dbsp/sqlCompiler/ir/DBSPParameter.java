@@ -32,23 +32,16 @@ import org.dbsp.util.IIndentStream;
 
 /**
  * Rust supports parameters with patterns, but we don't.
- * We only use simple parameters, with a single name.
- */
+ * We only use simple parameters, with a single name. */
 public class DBSPParameter extends DBSPNode implements
         IHasType, IDBSPInnerNode, IDBSPDeclaration {
     public final String name;
     public final DBSPType type;
-    public final boolean mutable;
 
-    public DBSPParameter(String name, DBSPType type, boolean mutable) {
+    public DBSPParameter(String name, DBSPType type) {
         super(type.getNode());
         this.name = name;
         this.type = type;
-        this.mutable = mutable;
-    }
-
-    public DBSPParameter(String name, DBSPType type) {
-        this(name, type, false);
     }
 
     /**
@@ -84,14 +77,12 @@ public class DBSPParameter extends DBSPNode implements
         if (o == null)
             return false;
         return this.name.equals(o.name) &&
-                this.type.sameType(o.type) &&
-                this.mutable == o.mutable;
+                this.type.sameType(o.type);
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(this.mutable ? "mut " : "")
-                .append(this.name)
+        return builder.append(this.name)
                 .append(": ")
                 .append(this.type);
     }

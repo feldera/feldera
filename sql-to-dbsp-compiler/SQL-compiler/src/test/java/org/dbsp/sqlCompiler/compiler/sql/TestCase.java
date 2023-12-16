@@ -119,14 +119,14 @@ class TestCase {
                     // Convert FP values to strings to ensure deterministic comparisons
                     DBSPTypeTuple tuple = rowType.to(DBSPTypeTuple.class);
                     converted = new DBSPExpression[tuple.size()];
-                    var = new DBSPVariablePath("t", tuple);
+                    var = new DBSPVariablePath("t", tuple.ref());
                     for (int index = 0; index < tuple.size(); index++) {
                         DBSPType fieldType = tuple.getFieldType(index);
                         if (fieldType.is(DBSPTypeFP.class)) {
-                            converted[index] = var.field(index).cast(DBSPTypeString.varchar(fieldType.mayBeNull));
+                            converted[index] = var.deref().field(index).cast(DBSPTypeString.varchar(fieldType.mayBeNull));
                             found = true;
                         } else {
-                            converted[index] = var.field(index).applyCloneIfNeeded();
+                            converted[index] = var.deref().field(index).applyCloneIfNeeded();
                         }
                     }
                 } else {
@@ -138,7 +138,7 @@ class TestCase {
 
                 if (found) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
-                    DBSPExpression converter = convertedValue.closure(var.asRefParameter());
+                    DBSPExpression converter = convertedValue.closure(var.asParameter());
                     DBSPVariablePath converterVar = new DBSPVariablePath("converter", DBSPTypeAny.getDefault());
                     list.add(new DBSPLetStatement(converterVar.variable, converter));
                     expected = new DBSPApplyExpression("zset_map", convertedValue.getType(), expected.borrow(), converterVar);

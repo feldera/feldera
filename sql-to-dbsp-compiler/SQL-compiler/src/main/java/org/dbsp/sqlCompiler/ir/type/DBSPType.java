@@ -106,16 +106,6 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
      */
     public abstract DBSPType setMayBeNull(boolean mayBeNull);
 
-    /**
-     * Similar to 'to', but handles Ref types specially.
-     */
-    public <T> T toRef(Class<T> clazz) {
-        DBSPTypeRef ref = this.as(DBSPTypeRef.class);
-        if (ref != null)
-            return ref.type.to(clazz);
-        return this.to(clazz);
-    }
-
     public DBSPType ref() {
         return new DBSPTypeRef(this);
     }
@@ -177,16 +167,5 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
      */
     public DBSPExpression caster(DBSPType to) {
         throw new UnimplementedException("Casting from " + this + " to " + to, to);
-    }
-
-    /**
-     * If the type is a reference type,
-     * compute the type that is the dereferenced type.
-     */
-    public DBSPType derefIfNeeded() {
-        DBSPTypeRef ref = this.as(DBSPTypeRef.class);
-        if (ref != null)
-            return ref.type;
-        return this;
     }
 }

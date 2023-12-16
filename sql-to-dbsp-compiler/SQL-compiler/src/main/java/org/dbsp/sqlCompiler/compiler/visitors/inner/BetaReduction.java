@@ -27,6 +27,8 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 
@@ -36,20 +38,21 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
  * body with arguments substituted.
  * This code makes some simplifying assumptions:
  * - arguments do not have side effects.
- */
+ * - arguments are immutable */
 public class BetaReduction extends InnerRewriteVisitor {
-    final ExpressionSubstitutionContext context;
+    final DeclarationValue<DBSPExpression> variableValue;
+    final ResolveReferences resolver;
 
     public BetaReduction(IErrorReporter reporter) {
         super(reporter);
-        this.context = new ExpressionSubstitutionContext();
+        this.variableValue = new DeclarationValue<>();
+        this.resolver = new ResolveReferences(reporter, true);
     }
 
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         if (expression.function.is(DBSPClosureExpression.class)) {
             DBSPClosureExpression closure = expression.function.to(DBSPClosureExpression.class);
-            this.context.newContext();
             if (closure.parameters.length != expression.arguments.length)
                 throw new InternalCompilerError("Closure with " + closure.parameters.length +
                         " parameters called with " + expression.arguments.length + " arguments",
@@ -58,14 +61,13 @@ public class BetaReduction extends InnerRewriteVisitor {
             for (int i = 0; i < closure.parameters.length; i++) {
                 DBSPParameter param = closure.parameters[i];
                 DBSPExpression arg = this.transform(expression.arguments[i]);
-                this.context.substitute(param.name, arg);
+                this.variableValue.substitute(param, arg);
             }
 
             DBSPExpression newBody = this.transform(closure.body);
             this.pop(expression);
 
             this.map(expression, newBody);
-            this.context.popContext();
             return VisitDecision.STOP;
         }
         super.preorder(expression);
@@ -74,35 +76,38 @@ public class BetaReduction extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(DBSPVariablePath variable) {
-        DBSPExpression replacement = this.context.lookup(variable);
-        this.map(variable, replacement.deepCopy());
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPBlockExpression block) {
-        this.context.newContext();
-        super.preorder(block);
-        this.context.popContext();
+        DBSPExpression replacement = null;
+        IDBSPDeclaration declaration = this.resolver.reference.get(variable);
+        if (declaration != null) {
+            // Free variable mapped to itself
+            replacement = this.variableValue.get(declaration);
+        }
+        if (replacement != null)
+            this.map(variable, replacement.deepCopy());
+        else
+            // Map the variable to itself - no replacement
+            this.map(variable, variable);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPLetStatement statement) {
-        this.context.substitute(statement.variable, null);
         super.preorder(statement);
         return VisitDecision.STOP;
     }
 
     @Override
-    public void startVisit() {
-        this.context.newContext();
-        super.startVisit();
+    public void startVisit(IDBSPInnerNode node) {
+        this.resolver.apply(node);
+        super.startVisit(node);
     }
 
     @Override
     public void endVisit() {
-        this.context.popContext();
         super.endVisit();
+    }
+
+    public DBSPExpression reduce(DBSPExpression expression) {
+        return this.apply(expression).to(DBSPExpression.class);
     }
 }

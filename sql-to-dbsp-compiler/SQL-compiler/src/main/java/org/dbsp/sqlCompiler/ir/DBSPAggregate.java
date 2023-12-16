@@ -478,16 +478,16 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         DBSPVariablePath accumulator = accumulatorType.ref(true).var("a");
         DBSPVariablePath postAccumulator = accumulatorType.var("a");
 
-        BetaReduction reducer = new BetaReduction(reporter);
         DBSPVariablePath weightVar = new DBSPVariablePath("w", Objects.requireNonNull(weightType));
         for (int i = 0; i < parts; i++) {
-            DBSPExpression accumulatorField = accumulator.field(i);
+            DBSPExpression accumulatorField = accumulator.deref().field(i);
             DBSPExpression expr = increments[i].call(
                     accumulatorField, this.rowVar, weightVar);
-            increments[i] = Objects.requireNonNull(reducer.apply(expr)).to(DBSPExpression.class);
+            BetaReduction reducer = new BetaReduction(reporter);
+            increments[i] = reducer.reduce(expr);
             DBSPExpression postAccumulatorField = postAccumulator.field(i);
             expr = posts[i].call(postAccumulatorField);
-            posts[i] = Objects.requireNonNull(reducer.apply(expr)).to(DBSPExpression.class);
+            posts[i] = reducer.reduce(expr);
         }
         DBSPAssignmentExpression accumulatorBody = new DBSPAssignmentExpression(
                 accumulator.deref(), new DBSPTupleExpression(increments));

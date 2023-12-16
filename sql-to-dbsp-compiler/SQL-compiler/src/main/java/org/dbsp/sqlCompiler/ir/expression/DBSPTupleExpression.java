@@ -75,10 +75,10 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public static DBSPTupleExpression flatten(DBSPExpression... expressions) {
         List<DBSPExpression> fields = new ArrayList<>();
         for (DBSPExpression expression: expressions) {
-            DBSPTypeTuple type = expression.getType().toRef(DBSPTypeTuple.class);
+            DBSPTypeTuple type = expression.getType().to(DBSPTypeTuple.class);
             for (int i = 0; i < type.size(); i++) {
                 DBSPType fieldType = type.tupFields[i];
-                DBSPExpression field = new DBSPFieldExpression(expression, i, fieldType)
+                DBSPExpression field = new DBSPFieldExpression(expression.deepCopy(), i, fieldType)
                         .simplify()
                         .applyCloneIfNeeded();
                 fields.add(field);

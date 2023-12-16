@@ -5,30 +5,38 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 
 /**
- * Resolves the variable references by pointing each
- * to its declaration.
+ * Resolves the variable references by pointing each variable reference
+ * to a declaration that introduced the variable.
  */
 public class ResolveReferences extends InnerVisitor {
-    private final SubstitutionContext<IDBSPDeclaration> substitutionContext;
+    private final Scopes<String, IDBSPDeclaration> substitutionContext;
     public final ReferenceMap reference;
+    /** If true allow "free variables" that have no declarations */
+    public final boolean allowFreeVariables;
 
-    public ResolveReferences(IErrorReporter reporter) {
+    public ResolveReferences(IErrorReporter reporter, boolean allowFreeVariables) {
         super(reporter);
-        this.substitutionContext = new SubstitutionContext<>();
+        this.substitutionContext = new Scopes<>();
         this.reference = new ReferenceMap();
+        this.allowFreeVariables = allowFreeVariables;
     }
 
     @Override
     public VisitDecision preorder(DBSPVariablePath variable) {
         IDBSPDeclaration declaration = this.substitutionContext.get(variable.variable);
-        if (declaration == null)
-            throw new InternalCompilerError("Could not resolve", variable);
+        if (declaration == null) {
+            if (!this.allowFreeVariables)
+                throw new InternalCompilerError("Could not resolve " + variable);
+            else
+                return VisitDecision.STOP;
+        }
         this.reference.declare(variable, declaration);
         return VisitDecision.STOP;
     }
@@ -67,11 +75,11 @@ public class ResolveReferences extends InnerVisitor {
     }
 
     @Override
-    public void startVisit() {
+    public void startVisit(IDBSPInnerNode node) {
         this.substitutionContext.clear();
         this.substitutionContext.newContext();
         this.reference.clear();
-        super.startVisit();
+        super.startVisit(node);
     }
 
     @Override

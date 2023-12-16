@@ -1,6 +1,8 @@
 package org.dbsp.util;
 
+import javax.annotation.Nullable;
+
 @FunctionalInterface
 public interface TriFunction<T, U, V, R> {
-    R apply(T var1, U var2, V var3);
+    @Nullable R apply(@Nullable T var1, @Nullable U var2, @Nullable V var3);
 }

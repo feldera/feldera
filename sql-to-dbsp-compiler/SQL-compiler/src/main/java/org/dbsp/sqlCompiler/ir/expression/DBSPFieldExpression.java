@@ -52,7 +52,7 @@ public class DBSPFieldExpression extends DBSPExpression {
     static DBSPType getFieldType(DBSPType type, int fieldNo) {
         if (type.is(DBSPTypeAny.class))
             return type;
-        DBSPTypeTupleBase tuple = type.toRef(DBSPTypeTupleBase.class);
+        DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
         return tuple.getFieldType(fieldNo);
     }
 

@@ -169,7 +169,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || input != operator.input()
                 || function != operator.getFunction()) {
             result = new DBSPFlatMapOperator(
-                    operator.getNode(), function, resultType.to(DBSPTypeZSet.class), input);
+                    operator.getNode(), function,
+                    resultType.to(DBSPTypeZSet.class), input);
         }
         this.map(operator, result);
     }

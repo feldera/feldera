@@ -98,7 +98,7 @@ public class AggregateCompiler implements ICompilerComponent {
             this.aggArgument = null;
         } else if (argList.size() == 1) {
             int fieldNumber = call.getArgList().get(0);
-            this.aggArgument = this.v.field(fieldNumber);
+            this.aggArgument = this.v.deref().field(fieldNumber);
         } else {
             throw new UnimplementedException(CalciteObject.create(call.getAggregation()));
         }
@@ -134,7 +134,7 @@ public class AggregateCompiler implements ICompilerComponent {
     DBSPExpression filterArgument() {
         if (this.filterArgument < 0)
             return null;
-        return this.v.field(this.filterArgument);
+        return this.v.deref().field(this.filterArgument);
     }
 
     void processBitOp(SqlBitOpAggFunction function) {

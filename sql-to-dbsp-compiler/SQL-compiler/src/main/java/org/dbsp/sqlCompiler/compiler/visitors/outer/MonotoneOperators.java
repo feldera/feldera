@@ -16,7 +16,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.MonotoneFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosure;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneValue;
@@ -85,8 +85,7 @@ public class MonotoneOperators extends CircuitVisitor {
         DBSPClosureExpression closure = var.closure(var.asParameter());
         MonotoneFunctions analyzer = new MonotoneFunctions(
                 this.errorReporter, operator, projection, pairOfReferences);
-        analyzer.apply(closure);
-        return Objects.requireNonNull(analyzer.getResult());
+        return Objects.requireNonNull(analyzer.applyAnalysis(closure));
     }
     
     @Override
@@ -163,9 +162,7 @@ public class MonotoneOperators extends CircuitVisitor {
         DBSPExpression function = node.getFunction();
         MonotoneFunctions mm = new MonotoneFunctions(this
                 .errorReporter, node, inputValue.getProjection(), false);
-        mm.apply(function);
-        MonotoneValue result = mm.getResult();
-
+        MonotoneValue result = mm.applyAnalysis(function);
         if (result == null)
             return;
         this.set(node, result);
@@ -182,8 +179,7 @@ public class MonotoneOperators extends CircuitVisitor {
         boolean pairOfReferences = node.input().getType().is(DBSPTypeIndexedZSet.class);
         MonotoneFunctions mm = new MonotoneFunctions(
                 this.errorReporter, node, inputProjection, pairOfReferences);
-        mm.apply(node.getFunction());
-        MonotoneValue result = mm.getResult();
+        MonotoneValue result = mm.applyAnalysis(node.getFunction());
         if (result == null)
             return;
         this.set(node, result);
@@ -260,8 +256,7 @@ public class MonotoneOperators extends CircuitVisitor {
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneFunctions analyzer = new MonotoneFunctions(
                 this.errorReporter, node, projection, true);
-        analyzer.apply(closure);
-        MonotoneValue result = Objects.requireNonNull(analyzer.getResult());
-        this.set(node, result);
+        MonotoneValue result = analyzer.applyAnalysis(closure);
+        this.set(node, Objects.requireNonNull(result));
     }
 }

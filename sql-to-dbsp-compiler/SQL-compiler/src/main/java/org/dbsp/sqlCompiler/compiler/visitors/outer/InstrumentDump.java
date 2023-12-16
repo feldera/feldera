@@ -48,10 +48,10 @@ public class InstrumentDump extends CircuitCloneVisitor {
         DBSPOperator input = operator.withInputs(inputs, false);
         this.addOperator(input);
         DBSPTypeZSet zset = type.to(DBSPTypeZSet.class);
-        DBSPVariablePath row = new DBSPVariablePath("v", zset.elementType);
+        DBSPVariablePath row = new DBSPVariablePath("v", zset.elementType.ref());
         DBSPExpression dump = new DBSPApplyExpression(operator.getNode(), "dump", zset.elementType,
                 new DBSPStringLiteral(Long.toString(operator.id)), row);
-        DBSPExpression function = dump.closure(row.asRefParameter());
+        DBSPExpression function = dump.closure(row.asParameter());
         DBSPOperator map = new DBSPMapOperator(operator.getNode(), function, zset, input);
         this.map(operator, map);
     }

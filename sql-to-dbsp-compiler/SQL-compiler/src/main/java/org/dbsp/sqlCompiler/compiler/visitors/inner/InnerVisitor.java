@@ -82,10 +82,12 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     /**
      * Override to initialize before visiting any node.
      */
-    public void startVisit() {
+    public void startVisit(IDBSPInnerNode node) {
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Starting ")
-                .append(this.toString());
+                .append(this.toString())
+                .append(" at ")
+                .append(node);
     }
 
     /**
@@ -94,7 +96,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     public void endVisit() {}
 
     public void traverse(IDBSPInnerNode node) {
-        this.startVisit();
+        this.startVisit(node);
         node.accept(this);
         this.endVisit();
     }
@@ -463,6 +465,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public VisitDecision preorder(DBSPVariablePath node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
+    public VisitDecision preorder(NoExpression node) {
         return this.preorder((DBSPExpression) node);
     }
 
@@ -938,6 +944,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         this.postorder((DBSPExpression) node);
     }
 
+    public void postorder(NoExpression node) {
+        this.postorder((DBSPExpression) node);
+    }
+
     // Literals
     public void postorder(DBSPLiteral node) {
         this.postorder((DBSPExpression) node);
@@ -1058,7 +1068,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
 
     @Override
     public IDBSPInnerNode apply(IDBSPInnerNode node) {
-        this.startVisit();
+        this.startVisit(node);
         node.accept(this);
         this.endVisit();
         return node;

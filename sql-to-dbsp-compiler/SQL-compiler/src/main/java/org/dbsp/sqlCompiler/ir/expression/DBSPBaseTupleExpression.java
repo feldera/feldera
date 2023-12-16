@@ -46,4 +46,8 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     public int hashCode() {
         return Arrays.hashCode(fields);
     }
+
+    public boolean isRaw() {
+        return this.is(DBSPRawTupleExpression.class);
+    }
 }

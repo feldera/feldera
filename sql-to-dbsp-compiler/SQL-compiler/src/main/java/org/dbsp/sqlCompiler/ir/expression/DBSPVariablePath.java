@@ -42,22 +42,8 @@ public class DBSPVariablePath extends DBSPExpression {
         this.variable = variable;
     }
 
-    public DBSPParameter asParameter(boolean mutable) {
-        return new DBSPParameter(this.variable, this.getType(), mutable);
-    }
-
     public DBSPParameter asParameter() {
-        return this.asParameter(false);
-    }
-
-    public DBSPParameter asRefParameter(boolean mutable) {
-        return new DBSPParameter(
-                this.variable,
-                this.getType().ref(mutable));
-    }
-
-    public DBSPParameter asRefParameter() {
-        return this.asRefParameter(false);
+        return new DBSPParameter(this.variable, this.getType());
     }
 
     @Override

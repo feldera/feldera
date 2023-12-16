@@ -32,7 +32,7 @@ public class DBSPStructFieldExpression extends DBSPExpression {
     static DBSPType getFieldType(DBSPType type, String fieldName) {
         if (type.is(DBSPTypeAny.class))
             return type;
-        DBSPTypeStruct struct = type.toRef(DBSPTypeStruct.class);
+        DBSPTypeStruct struct = type.to(DBSPTypeStruct.class);
         return struct.getFieldType(fieldName);
     }
 

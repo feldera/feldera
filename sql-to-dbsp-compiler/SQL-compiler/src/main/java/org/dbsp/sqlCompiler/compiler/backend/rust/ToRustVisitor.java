@@ -384,17 +384,17 @@ public class ToRustVisitor extends CircuitVisitor {
         CalciteObject node = comparator.getNode();
         DBSPExpression result = new DBSPBoolLiteral(true);
         DBSPComparatorExpression comp = comparator.to(DBSPComparatorExpression.class);
-        DBSPType type = comp.tupleType();
+        DBSPType type = comp.tupleType().ref();
         DBSPVariablePath left = new DBSPVariablePath("left", type);
         DBSPVariablePath right = new DBSPVariablePath("right", type);
         while (comparator.is(DBSPFieldComparatorExpression.class)) {
             DBSPFieldComparatorExpression fc = comparator.to(DBSPFieldComparatorExpression.class);
             DBSPExpression eq = new DBSPBinaryExpression(node, new DBSPTypeBool(node, false),
-                    DBSPOpcode.IS_NOT_DISTINCT, left.field(fc.fieldNo), right.field(fc.fieldNo));
+                    DBSPOpcode.IS_NOT_DISTINCT, left.deref().field(fc.fieldNo), right.deref().field(fc.fieldNo));
             result = new DBSPBinaryExpression(node, eq.getType(), DBSPOpcode.AND, result, eq);
             comparator = fc.source;
         }
-        return result.closure(left.asRefParameter(), right.asRefParameter());
+        return result.closure(left.asParameter(), right.asParameter());
     }
 
     @Override

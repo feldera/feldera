@@ -50,6 +50,12 @@ public class DBSPDerefExpression extends DBSPExpression {
         visitor.postorder(this);
     }
 
+    public DBSPExpression simplify() {
+        if (this.expression.is(DBSPBorrowExpression.class))
+            return this.expression.to(DBSPBorrowExpression.class).expression;
+        return this;
+    }
+
     @Override
     public boolean sameFields(IDBSPNode other) {
         DBSPDerefExpression o = other.as(DBSPDerefExpression.class);

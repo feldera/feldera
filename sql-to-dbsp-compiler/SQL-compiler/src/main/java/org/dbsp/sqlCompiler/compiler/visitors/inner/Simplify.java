@@ -30,16 +30,32 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.util.Utilities;
 
 import java.math.BigDecimal;
@@ -213,6 +229,32 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression result = source.field(expression.fieldNo);
         if (source.is(DBSPBaseTupleExpression.class)) {
             result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
+        }
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDerefExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = source.deref();
+        if (source.is(DBSPBorrowExpression.class)) {
+            result = source.to(DBSPBorrowExpression.class).expression;
+        }
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPBorrowExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = source.borrow();
+        if (source.is(DBSPDerefExpression.class)) {
+            result = source.to(DBSPDerefExpression.class).expression;
         }
         this.map(expression, result);
         return VisitDecision.STOP;
