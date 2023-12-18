@@ -24,7 +24,7 @@ export function useInsertDeleteRows() {
         force,
         'json',
         isArray ? JSONbig.stringify(rows) : rows.map(row => JSONbig.stringify(row)).join(''),
-        true
+        isArray
       )
     }
   })
