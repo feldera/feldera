@@ -101,6 +101,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     const controller = new AbortController()
     const url = new URL(
       OpenAPI.BASE +
+        '/v0' +
         '/pipelines/' +
         pipeline.descriptor.pipeline_id +
         '/egress/' +
@@ -144,6 +145,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     const controller = new AbortController()
     const url = new URL(
       OpenAPI.BASE +
+        '/v0' +
         '/pipelines/' +
         pipeline.descriptor.pipeline_id +
         '/egress/' +
