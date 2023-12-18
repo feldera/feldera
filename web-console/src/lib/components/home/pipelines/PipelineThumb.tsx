@@ -87,9 +87,9 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             <Button
               variant={sqlHover ? 'outlined' : 'text'}
               sx={{ textTransform: 'none', flex: 'none' }}
-              disabled={!props.descriptor.program_id}
+              disabled={!props.descriptor.program_name}
               size='small'
-              href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}
+              href={`/analytics/editor/?program_name=${props.descriptor.program_name}`}
               onMouseEnter={() => setSqlHover(true)}
               onMouseLeave={() => setSqlHover(false)}
             >
@@ -107,7 +107,11 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             </Button>
           </>
         ) : (
-          <Button variant='outlined' size='small' href={`/analytics/editor/?program_id=${props.descriptor.program_id}`}>
+          <Button
+            variant='outlined'
+            size='small'
+            href={`/analytics/editor/?program_name=${props.descriptor.program_name}`}
+          >
             SQL
           </Button>
         )}

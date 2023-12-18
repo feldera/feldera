@@ -159,7 +159,7 @@ const TableSqlPrograms = () => {
         return (
           <>
             <Tooltip title='Edit'>
-              <IconButton size='small' href={`/analytics/editor/?program_id=${params.row.program_id}`}>
+              <IconButton size='small' href={`/analytics/editor/?program_name=${params.row.name}`}>
                 <IconPencil fontSize={20} />
               </IconButton>
             </Tooltip>
@@ -191,7 +191,7 @@ const TableSqlPrograms = () => {
       {
         onError: (error: ApiError) => {
           invalidateQuery(queryClient, PipelineManagerQuery.programs())
-          invalidateQuery(queryClient, PipelineManagerQuery.programStatus(newRow.program_id))
+          invalidateQuery(queryClient, PipelineManagerQuery.programStatus(newRow.name))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }

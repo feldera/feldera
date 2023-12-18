@@ -249,8 +249,8 @@ export const PipelineRevisionStatusChip = (props: Props) => {
 
   const curPipelineConfigQuery = useQuery(PipelineManagerQuery.pipelineConfig(pipeline.pipeline_id))
   const curProgramQuery = useQuery({
-    ...PipelineManagerQuery.programCode(pipeline.program_id!),
-    enabled: pipeline.program_id != null
+    ...PipelineManagerQuery.programCode(pipeline.program_name!),
+    enabled: pipeline.program_name != null
   })
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.pipeline_id))
   useEffect(() => {
