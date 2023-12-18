@@ -4,7 +4,6 @@
 /* eslint-disable */
 
 import type { AttachedConnector } from './AttachedConnector'
-import type { ProgramId } from './ProgramId'
 import type { RuntimeConfig } from './RuntimeConfig'
 
 /**
@@ -17,12 +16,15 @@ export type NewPipelineRequest = {
    */
   connectors?: Array<AttachedConnector> | null
   /**
-   * Config description.
+   * Pipeline description.
    */
   description: string
   /**
-   * Config name.
+   * Unique pipeline name.
    */
   name: string
-  program_id?: ProgramId | null
+  /**
+   * Name of the program to create a pipeline for.
+   */
+  program_name?: string | null
 }

@@ -30,7 +30,7 @@ import Typography from '@mui/material/Typography'
 import { useQuery } from '@tanstack/react-query'
 
 const ProgramLink = ({ program }: { program: ProgramDescr }) => (
-  <Link href={`/analytics/editor/?program_id=${program.program_id}`}>{program.name || 'Unnamed program'}</Link>
+  <Link href={`/analytics/editor/?program_name=${program.name}`}>{program.name || 'Unnamed program'}</Link>
 )
 
 const limitMessage = (text: string | null | undefined, max: number, prefix: string) =>
@@ -140,7 +140,7 @@ const pipelineErrors = (p: Pipeline) =>
                         ProgramsService.getProgram(p, true).then(
                           p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
                         )
-                    })(p.descriptor.program_id)
+                    })(p.descriptor.program_name)
             }
           }
         })

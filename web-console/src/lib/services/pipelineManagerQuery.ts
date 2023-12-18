@@ -11,7 +11,6 @@ import {
   PipelineId,
   PipelinesService,
   PipelineStatus as RawPipelineStatus,
-  ProgramId,
   ProgramsService,
   ProgramStatus,
   ServicesService,
@@ -83,8 +82,16 @@ export const PipelineManagerQuery = (({ pipelines, pipelineStatus, ...queries })
 }))(
   mkQuery({
     programs: () => ProgramsService.getPrograms(),
-    programCode: (programId: string) => ProgramsService.getProgram(programId, true),
-    programStatus: (programId: string) => ProgramsService.getProgram(programId, false).then(v => v),
+    // programCode: (programName: string) => ProgramsService.getProgram(programName, true), // TODO: Uncomment with an API update
+    programCode: (programName: string) =>
+      ProgramsService.getPrograms(undefined, programName, true).then(p =>
+        p.length ? p[0] : Promise.reject(new Error('/v0/programs: ' + programName + ' not found'))
+      ), // TODO: Temporary workaround
+    // programStatus: (programId: string) => ProgramsService.getProgram(programId, false).then(v => v), // TODO: Uncomment with an API update
+    programStatus: (programName: string) =>
+      ProgramsService.getPrograms(undefined, programName, true)
+        .then(p => p[0])
+        .then(p => ProgramsService.getProgram(p.program_id, false)),
     pipelines: () =>
       PipelinesService.listPipelines().then(ps =>
         ps.map(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
@@ -235,8 +242,8 @@ export const invalidatePipeline = (queryClient: QueryClient, pipelineId: Pipelin
 }
 
 // Updates just the program status in the query cache.
-export const programStatusUpdate = (queryClient: QueryClient, programId: ProgramId, newStatus: ProgramStatus) => {
-  setQueryData(queryClient, PipelineManagerQuery.programStatus(programId), oldData => {
+export const programStatusUpdate = (queryClient: QueryClient, programName: string, newStatus: ProgramStatus) => {
+  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), oldData => {
     if (!oldData) {
       return oldData
     }
@@ -247,7 +254,7 @@ export const programStatusUpdate = (queryClient: QueryClient, programId: Program
   })
   setQueryData(queryClient, PipelineManagerQuery.programs(), oldData => {
     return oldData?.map(item => {
-      if (item.program_id !== programId) {
+      if (item.name !== programName) {
         return item
       }
       return {
@@ -261,10 +268,10 @@ export const programStatusUpdate = (queryClient: QueryClient, programId: Program
 // Updates the query cache for a `UpdateProgramRequest` response.
 export const programQueryCacheUpdate = (
   queryClient: QueryClient,
-  programId: ProgramId,
+  programName: string,
   newData: UpdateProgramRequest
 ) => {
-  setQueryData(queryClient, PipelineManagerQuery.programCode(programId), oldData => {
+  setQueryData(queryClient, PipelineManagerQuery.programCode(programName), oldData => {
     if (!oldData) {
       return oldData
     }
@@ -276,7 +283,7 @@ export const programQueryCacheUpdate = (
     }
   })
 
-  setQueryData(queryClient, PipelineManagerQuery.programStatus(programId), oldData => {
+  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), oldData => {
     if (!oldData) {
       return oldData
     }
@@ -291,7 +298,7 @@ export const programQueryCacheUpdate = (
     PipelineManagerQuery.programs(),
     oldData =>
       oldData?.map(project => {
-        if (project.program_id !== programId) {
+        if (project.name !== programName) {
           return project
         }
         return {

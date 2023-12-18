@@ -110,7 +110,7 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
     const connections = attachedConnectors
       .filter(ac => ac.relation_name === relation.name)
       .map(ac => {
-        const connector = connectors.find(c => c.connector_id === ac?.connector_id)
+        const connector = connectors.find(c => c.name === ac?.connector_name)
         invariant(connector, 'Attached connector has no connector.') // This can't happen in a revision
         return tuple(ac, connector)
       })
@@ -469,7 +469,7 @@ export default function PipelineTable() {
         request: {
           name: newRow.descriptor.name,
           description: newRow.descriptor.description,
-          program_id: newRow.descriptor.program_id
+          program_name: newRow.descriptor.program_name
         }
       },
       {
@@ -577,7 +577,7 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
   const curProgramQuery = useQuery({
     ...PipelineManagerQuery.programs(),
-    enabled: pipeline.program_id !== null,
+    enabled: pipeline.program_name !== null,
     refetchInterval: 2000
   })
   const { data: pipelines } = useQuery({
@@ -585,7 +585,7 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
   })
 
   const programStatus =
-    pipeline.program_id === null
+    pipeline.program_name === null
       ? ('NoProgram' as const)
       : curProgramQuery.isPending || curProgramQuery.isError
         ? ('NotReady' as const)
@@ -597,7 +597,7 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
               .with('None', 'CompilingSql', () => 'NotReady' as const)
               .with('Pending', () => 'Pending' as const)
               .otherwise(() => 'Error' as const)
-          })(curProgramQuery.data.find(p => p.program_id === pipeline.program_id))
+          })(curProgramQuery.data.find(p => p.name === pipeline.program_name))
 
   const currentStatus =
     pipelines?.find(p => p.descriptor.pipeline_id === pipeline.pipeline_id)?.state.current_status ??

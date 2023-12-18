@@ -5,7 +5,6 @@
 
 import type { AttachedConnector } from './AttachedConnector'
 import type { PipelineId } from './PipelineId'
-import type { ProgramId } from './ProgramId'
 import type { RuntimeConfig } from './RuntimeConfig'
 import type { Version } from './Version'
 
@@ -18,6 +17,6 @@ export type PipelineDescr = {
   description: string
   name: string
   pipeline_id: PipelineId
-  program_id?: ProgramId | null
+  program_name?: string | null
   version: Version
 }

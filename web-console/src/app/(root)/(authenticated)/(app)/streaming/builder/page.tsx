@@ -149,7 +149,7 @@ const PipelineBuilderPage = (props: {
     // the saveState every time the backend returns some result. Because it
     // could cancel potentially in-progress saves (started by client action).
 
-    const project = projectsQuery.data.find(p => p.program_id === descriptor.program_id)
+    const project = projectsQuery.data.find(p => p.name === descriptor.program_name)
     const validConnections = !project
       ? attachedConnectors
       : (() => {
@@ -192,9 +192,7 @@ const PipelineBuilderPage = (props: {
         })()
 
     validConnections.forEach(attached_connector => {
-      const connector = connectorQuery.data.find(
-        connector => connector.connector_id === attached_connector.connector_id
-      )
+      const connector = connectorQuery.data.find(connector => connector.name === attached_connector.connector_name)
       if (connector) {
         addConnector(connector, attached_connector)
       }
@@ -246,7 +244,7 @@ const PipelineBuilderPage = (props: {
       newPipelineMutate(
         {
           name,
-          program_id: project?.program_id,
+          program_name: project?.name,
           description,
           config
         },
@@ -286,7 +284,7 @@ const PipelineBuilderPage = (props: {
     const updateRequest = {
       name,
       description,
-      program_id: project?.program_id,
+      program_name: project?.name,
       config,
       connectors
     }
@@ -370,11 +368,7 @@ const PipelineBuilderPage = (props: {
           <PipelineGraph />
         </div>
       </Grid>
-      <MissingSchemaDialog
-        open={missingSchemaDialog}
-        setOpen={setMissingSchemaDialog}
-        program_id={project?.program_id}
-      />
+      <MissingSchemaDialog open={missingSchemaDialog} setOpen={setMissingSchemaDialog} program_name={project?.name} />
       {(id =>
         id && (
           <UnknownConnectorDialog

@@ -156,7 +156,7 @@ const SideBarAddIo = () => {
     setHash('')
     const ac: AttachedConnector = {
       name: randomString(),
-      connector_id: connector.connector_id,
+      connector_name: connector.name,
       relation_name: '',
       is_input: direction === Direction.INPUT
     }

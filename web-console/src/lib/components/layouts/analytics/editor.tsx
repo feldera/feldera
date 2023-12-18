@@ -142,7 +142,7 @@ const useCreateProjectIfNew = (
           {
             onSettled: () => {
               invalidateQuery(queryClient, PipelineManagerQuery.programs())
-              invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
+              invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.name))
             },
             onSuccess: (data: NewProgramResponse) => {
               setProject((prevState: ProgramDescr) => ({
@@ -188,7 +188,7 @@ const useCreateProjectIfNew = (
 
 // Fetches the data for an existing project (if we have a program_id).
 const useFetchExistingProject = (
-  programId: string | null,
+  programName: string | null,
   setProject: Dispatch<SetStateAction<ProgramDescr>>,
   setState: Dispatch<SetStateAction<SaveIndicatorState>>,
   lastCompiledVersion: number,
@@ -197,8 +197,8 @@ const useFetchExistingProject = (
   setLoaded: Dispatch<SetStateAction<boolean>>
 ) => {
   const codeQuery = useQuery({
-    ...PipelineManagerQuery.programCode(programId!),
-    enabled: programId != null && !loaded
+    ...PipelineManagerQuery.programCode(programName!),
+    enabled: programName != null && !loaded
   })
   useEffect(() => {
     if (!loaded && codeQuery.data && !codeQuery.isPending && !codeQuery.isError) {
@@ -261,12 +261,12 @@ const useUpdateProjectIfChanged = (
         {
           onSettled: () => {
             invalidateQuery(queryClient, PipelineManagerQuery.programs())
-            invalidateQuery(queryClient, PipelineManagerQuery.programCode(project.program_id))
-            invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
+            invalidateQuery(queryClient, PipelineManagerQuery.programCode(project.name))
+            invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.name))
           },
           onSuccess: (data: UpdateProgramResponse) => {
             assert(project.program_id)
-            programQueryCacheUpdate(queryClient, project.program_id, updateRequest)
+            programQueryCacheUpdate(queryClient, project.name, updateRequest)
             setProject((prevState: ProgramDescr) => ({ ...prevState, version: data.version }))
             setState('isUpToDate')
             setFormError({})
@@ -336,7 +336,7 @@ const useCompileProjectIfChanged = (
         {
           onSettled: () => {
             invalidateQuery(queryClient, PipelineManagerQuery.programs())
-            invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.program_id))
+            invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.name))
           },
           onError: (error: ApiError) => {
             setProject((prevState: ProgramDescr) => ({ ...prevState, status: 'None' }))
@@ -368,7 +368,7 @@ const usePollCompilationStatus = (
 ) => {
   const queryClient = useQueryClient()
   const compilationStatus = useQuery({
-    ...PipelineManagerQuery.programStatus(project.program_id),
+    ...PipelineManagerQuery.programStatus(project.name),
     refetchInterval: ({ state: { data } }) =>
       data === undefined || data.status === 'None' || data.status === 'Pending' || data.status === 'CompilingSql'
         ? 1000
@@ -409,7 +409,7 @@ const usePollCompilationStatus = (
 
       if (project.status !== compilationStatus.data.status) {
         setProject((prevState: ProgramDescr) => ({ ...prevState, status: compilationStatus.data.status }))
-        programStatusUpdate(queryClient, project.program_id, compilationStatus.data.status)
+        programStatusUpdate(queryClient, project.name, compilationStatus.data.status)
       }
     }
   }, [
@@ -451,15 +451,15 @@ const useDisplayCompilerErrorsInEditor = (project: ProgramDescr, editorRef: Muta
   }, [monaco, project.status, editorRef])
 }
 
-const Editors = (props: { programId: string | null }) => {
-  const { programId } = props
+const Editors = (props: { programName: string | null }) => {
+  const { programName } = props
   const theme = useTheme()
   const [loaded, setLoaded] = useState<boolean>(false)
   const [lastCompiledVersion, setLastCompiledVersion] = useState<number>(0)
-  const [state, setState] = useState<SaveIndicatorState>(props.programId ? 'isNew' : 'isUpToDate')
+  const [state, setState] = useState<SaveIndicatorState>(props.programName ? 'isNew' : 'isUpToDate')
   const [project, setProject] = useState<ProgramDescr>({
-    program_id: programId || '',
-    name: '',
+    program_id: '',
+    name: programName || '',
     description: '',
     status: 'None',
     version: 0,
@@ -471,7 +471,7 @@ const Editors = (props: { programId: string | null }) => {
 
   useCreateProjectIfNew(state, project, setProject, setState, setFormError)
   useFetchExistingProject(
-    programId,
+    programName,
     setProject,
     setState,
     lastCompiledVersion,
@@ -500,11 +500,11 @@ const Editors = (props: { programId: string | null }) => {
   }
   useDisplayCompilerErrorsInEditor(project, editorRef)
 
-  return (programId !== null && loaded) || programId == null ? (
+  return (programName !== null && loaded) || programName == null ? (
     <>
       <BreadcrumbsHeader>
         <Link href={`/analytics/programs`}>SQL Programs</Link>
-        <Link href={`/analytics/editor/?program_id=${programId}`}>{project.name}</Link>
+        <Link href={`/analytics/editor/?program_name=${programName}`}>{project.name}</Link>
       </BreadcrumbsHeader>
       <Card>
         <CardHeader title='SQL Code'></CardHeader>
