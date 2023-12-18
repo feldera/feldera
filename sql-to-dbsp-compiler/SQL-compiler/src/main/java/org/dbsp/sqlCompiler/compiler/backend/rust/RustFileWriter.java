@@ -35,7 +35,6 @@ import java.util.stream.IntStream;
 public class RustFileWriter implements ICompilerComponent {
     final List<IDBSPNode> toWrite;
     final PrintStream outputStream;
-    boolean emitHandles = false;
 
     /**
      * Various visitors gather here information about the program prior to generating code.
@@ -70,14 +69,6 @@ public class RustFileWriter implements ICompilerComponent {
         public void postorder(DBSPTypeSemigroup type) {
             RustFileWriter.this.used.semigroupSizesUsed.add(type.semigroupSize());
         }
-    }
-
-    /**
-     * If this is called with 'true' the emitted Rust code will use handles
-     * instead of explicitly-typed ZSets.
-     */
-    public void emitCodeWithHandle(boolean emit) {
-        this.emitHandles = emit;
     }
 
     /**
@@ -355,7 +346,7 @@ public class RustFileWriter implements ICompilerComponent {
                 str = ToRustInnerVisitor.toRustString(this.compiler, inner, false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                if (this.emitHandles)
+                if (this.compiler.options.ioOptions.emitHandles)
                     str = ToRustHandleVisitor.toRustString(this.compiler, outer, outer.name);
                 else
                     str = ToRustVisitor.toRustString(this.getCompiler(), outer);

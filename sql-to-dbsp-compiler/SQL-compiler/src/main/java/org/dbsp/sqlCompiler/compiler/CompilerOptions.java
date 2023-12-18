@@ -120,6 +120,9 @@ public class CompilerOptions {
         public String functionName = "circuit";
         @Parameter(names = "-v", description = "Output verbosity")
         public int verbosity = 0;
+        /** Internal option only: emit Rust code with handles for I/O.
+         * Testing code does not use handles. */
+        public boolean emitHandles = true;
 
         /**
          * Only compare fields that matter.

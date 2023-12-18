@@ -159,7 +159,6 @@ public class CompilerMain {
         try {
             PrintStream stream = this.getOutputStream();
             RustFileWriter writer = new RustFileWriter(compiler, stream);
-            writer.emitCodeWithHandle(true);
             writer.add(dbsp);
             writer.write();
             stream.close();
