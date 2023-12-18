@@ -407,7 +407,7 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
                 App::new()
                     .app_data(state.clone())
                     .app_data(auth_configuration.clone())
-                    .wrap(Logger::default())
+                    .wrap(Logger::default().exclude("/healthz"))
                     .wrap(Condition::new(
                         api_config.dev_mode,
                         actix_cors::Cors::permissive(),
@@ -421,7 +421,7 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
             let server = HttpServer::new(move || {
                 App::new()
                     .app_data(state.clone())
-                    .wrap(Logger::default())
+                    .wrap(Logger::default().exclude("/healthz"))
                     .wrap(Condition::new(
                         api_config.dev_mode,
                         actix_cors::Cors::permissive(),
