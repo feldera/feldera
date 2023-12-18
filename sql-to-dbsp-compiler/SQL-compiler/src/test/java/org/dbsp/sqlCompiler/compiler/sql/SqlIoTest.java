@@ -73,15 +73,14 @@ import java.util.regex.Pattern;
  * one or multiple queries.
  */
 public abstract class SqlIoTest extends BaseSQLTests {
-    /**
-     * Override this method to prepare the tables on
-     * which the tests are built.
-     */
+    /** Override this method to prepare the tables on
+     * which the tests are built. */
     public void prepareData(DBSPCompiler compiler) {}
 
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.quiet = true;
+        options.ioOptions.emitHandles = false;
         options.languageOptions.throwOnError = true;
         options.languageOptions.optimizationLevel = optimize ? 2 : 0;
         options.languageOptions.generateInputForEveryTable = true;

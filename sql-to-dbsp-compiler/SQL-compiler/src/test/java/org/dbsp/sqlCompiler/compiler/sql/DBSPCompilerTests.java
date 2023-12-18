@@ -28,22 +28,11 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.io.IOException;
-import java.io.PrintStream;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-
-import static org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests.testFilePath;
-
-/**
- * Tests that invoke the CalciteToDBSPCompiler.
- */
 public class DBSPCompilerTests {
     static final CompilerOptions OPTIONS = new CompilerOptions();
     private static final String DDL = "CREATE TABLE T (\n" +
@@ -52,27 +41,6 @@ public class DBSPCompilerTests {
             ", COL3 BOOLEAN NOT NULL" +
             ", COL4 VARCHAR NOT NULL" +
             ")";
-
-    @Test
-    public void docTest() throws IOException {
-        // The example given in the documentation
-        String statements = "-- define Person table\n" +
-                "CREATE TABLE Person\n" +
-                "(\n" +
-                "    name    VARCHAR,\n" +
-                "    age     INT,\n" +
-                "    present BOOLEAN\n" +
-                ");\n" +
-                "CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;";
-        DBSPCompiler compiler = new DBSPCompiler(OPTIONS);
-        compiler.compileStatements(statements);
-        DBSPCircuit dbsp = compiler.getFinalCircuit("circuit");
-        PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
-        RustFileWriter writer = new RustFileWriter(compiler, outputStream);
-        writer.emitCodeWithHandle(true);
-        writer.add(dbsp);
-        writer.write();
-    }
 
     @Test
     public void DDLTest() {

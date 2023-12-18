@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.*;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -188,6 +189,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.outputName)
                 .append(");");
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSourceMapOperator operator) {
+       throw new UnimplementedException();
     }
 
     @Override

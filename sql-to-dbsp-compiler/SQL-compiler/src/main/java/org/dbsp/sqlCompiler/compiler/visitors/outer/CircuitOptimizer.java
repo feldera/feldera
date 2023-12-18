@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -76,27 +77,29 @@ public class CircuitOptimizer implements ICompilerComponent {
     CircuitTransform getOptimizer() {
         List<CircuitTransform> passes = new ArrayList<>();
         IErrorReporter reporter = this.getCompiler();
+        CompilerOptions options = this.getCompiler().options;
 
-        passes.add(new IndexedInputs(reporter));
-        if (this.getCompiler().options.languageOptions.outputsAreSets)
+        if (options.ioOptions.emitHandles)
+            passes.add(new IndexedInputs(reporter));
+        if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
-        if (this.compiler.options.languageOptions.optimizationLevel < 2) {
-            if (this.compiler.options.languageOptions.incrementalize) {
+        if (options.languageOptions.optimizationLevel < 2) {
+            if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(this.getCompiler()));
             }
         } else {
             // only on optimization level 2
             passes.add(new MergeSums(reporter));
             passes.add(new PropagateEmptySources(reporter));
-            passes.add(new DeadCode(reporter, this.compiler.options.languageOptions.generateInputForEveryTable, true));
+            passes.add(new DeadCode(reporter, options.languageOptions.generateInputForEveryTable, true));
             passes.add(new OptimizeProjections(reporter));
             passes.add(new OptimizeDistinctVisitor(reporter));
-            if (this.getCompiler().options.languageOptions.incrementalize) {
+            if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(reporter));
                 passes.add(new OptimizeIncrementalVisitor(reporter));
             }
             passes.add(new DeadCode(reporter, true, false));
-            if (this.getCompiler().options.languageOptions.incrementalize)
+            if (options.languageOptions.incrementalize)
                 passes.add(new NoIntegralVisitor(reporter));
             passes.add(new Simplify(reporter).circuitRewriter());
             // The predicate below controls which nodes have their output dumped at runtime

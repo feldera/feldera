@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
@@ -79,8 +80,15 @@ class TestCase {
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
+        boolean handles = this.compiler.options.ioOptions.emitHandles;
+        DBSPExpression[] circuitArguments = new DBSPExpression[0];
+        if (handles) {
+            circuitArguments = new DBSPExpression[1];
+            circuitArguments[0] = new DBSPUSizeLiteral(1);
+        }
         DBSPLetStatement circuit = new DBSPLetStatement("circuit",
-                new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault()), true);
+                new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault(), circuitArguments),
+                true);
         list.add(circuit);
         Simplify simplify = new Simplify(new StderrErrorReporter());
         int pair = 0;

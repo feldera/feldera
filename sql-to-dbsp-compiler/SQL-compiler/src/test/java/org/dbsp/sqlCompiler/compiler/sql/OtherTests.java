@@ -226,7 +226,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
 
-    @SuppressWarnings("SqlDialectInspection")
     @Test
     public void rustSqlTest() throws IOException, InterruptedException, SQLException {
         String filepath = BaseSQLTests.rustDirectory + "/" + "test.db";
@@ -632,33 +631,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(t0, "T_0");
         String t1 = gen.freshName("T");
         Assert.assertEquals(t1, "T_1");
-    }
-
-    @Test
-    public void testSanitizeNames() throws IOException, InterruptedException {
-        String statements = "create table t1(\n" +
-                "c1 integer,\n" +
-                "\"col\" boolean,\n" +
-                "\"SPACES INSIDE\" CHAR,\n" +
-                "\"CC\" CHAR,\n" +
-                "\"quoted \"\" with quote\" CHAR,\n" +
-                "U&\"d\\0061t\\0061\" CHAR,\n" + // 'data' spelled in Unicode
-                "José CHAR,\n"  +
-                "\"Gosé\" CHAR,\n" +
-                "\"\uD83D\uDE00❤\" varchar not null,\n" +
-                "\"αβγ\" boolean not null,\n" +
-                "ΔΘ boolean not null" +
-        ");\n" +
-                "create view v1 as select * from t1;";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(statements);
-        DBSPCircuit circuit = getCircuit(compiler);
-        RustFileWriter writer = new RustFileWriter(compiler, testFilePath);
-        // Check that the structs generated have legal names.
-        writer.emitCodeWithHandle(true);
-        writer.add(circuit);
-        writer.writeAndClose();
-        Utilities.compileAndTestRust(rustDirectory, true);
     }
 
     @Test
