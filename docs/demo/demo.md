@@ -24,7 +24,7 @@ tables using SQL.  Fire up the Feldera Platform demo and visit
 "SQL Programs", then find the "SecOps demo" row in the table of
 programs and click on the pencil icon <icon icon="bx:pencil" />.  The
 SQL `create table` statements at the top of the program establish the
-schema and relationships shown above.
+schema and relationships.
 
 The following list describes the meaning of a record in each table:
 
