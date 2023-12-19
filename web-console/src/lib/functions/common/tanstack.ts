@@ -4,11 +4,9 @@
  */
 
 import { ApiError } from '$lib/services/manager'
+import { Arguments, FunctionType } from '$lib/types/common/function'
 
 import { InvalidateQueryFilters, QueryClient, QueryFilters, Updater, UseQueryOptions } from '@tanstack/react-query'
-
-type FunctionType = (...args: any) => any
-type Arguments<F extends FunctionType> = F extends (...args: infer A) => any ? A : never
 
 type QueryType<U extends Record<string, FunctionType>, P extends keyof U> = {
   queryKey: readonly unknown[]

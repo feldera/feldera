@@ -6,7 +6,10 @@
 
 import { readLineFromStream } from '$lib/functions/common/stream'
 import { parseValueSafe } from '$lib/functions/ddl'
-import { Chunk, Relation } from '$lib/services/manager'
+import { getUrl, httpOutputOptions } from '$lib/services/HttpInputOutputService'
+import { Chunk, HttpInputOutputService, OpenAPI, Relation } from '$lib/services/manager'
+import { getHeaders } from '$lib/services/manager/core/request'
+import { Arguments } from '$lib/types/common/function'
 import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 
@@ -14,16 +17,20 @@ function useQuantiles() {
   const utf8Decoder = useMemo(() => new TextDecoder('utf-8'), [])
   const readStream = useCallback(
     async (
-      url: URL,
+      egressParams: Arguments<typeof HttpInputOutputService.httpOutput>,
       setQuantiles: Dispatch<SetStateAction<any[][] | undefined>>,
       relation: Relation,
       controller: AbortController
     ) => {
+      // TODO:
+      //    The following uses some of the code generated from OpenAPI to enable request authentication when it is configured
+      //    This needs to be eventually refactored away, probably in favor of HttpInputOutputService.httpOutput(...egressParams)
+      const options = httpOutputOptions(...egressParams)
+      const url = await getUrl(OpenAPI, options)
+      const headers = await getHeaders(OpenAPI, options)
       const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        method: options.method,
+        headers,
         signal: controller.signal
       }).catch(error => {
         return Promise.reject(error)
