@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -38,14 +38,14 @@ import java.util.List;
  * but sometimes it's useful to have in intermediate representations.
  */
 public class DBSPNoopOperator extends DBSPUnaryOperator {
-    static DBSPClosureExpression getClosure() {
-        DBSPVariablePath var = DBSPTypeAny.getDefault().var("i");
-        return var.applyClone().closure(var.asRefParameter());
+    static DBSPClosureExpression getClosure(DBSPType rowType) {
+        DBSPVariablePath var = rowType.ref().var("i");
+        return var.deref().applyClone().closure(var.asParameter());
     }
 
     public DBSPNoopOperator(CalciteObject node, DBSPOperator source,
                             @Nullable String comment, String outputName) {
-        super(node, "map", getClosure(),
+        super(node, "map", getClosure(source.getOutputRowType()),
                 source.getType(), source.isMultiset, source, comment, outputName);
     }
 

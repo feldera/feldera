@@ -44,9 +44,23 @@ public class DBSPApplyExpression extends DBSPExpression {
     public final DBSPExpression[] arguments;
 
     void checkArgs() {
-        for (DBSPExpression arg: this.arguments)
-            if (arg == null)
+        DBSPType[] parameterTypes = null;
+        if (this.function.getType().is(DBSPTypeFunction.class)) {
+            DBSPTypeFunction funcType = this.function.getType().to(DBSPTypeFunction.class);
+            assert funcType.argumentTypes.length == this.arguments.length:
+                    "Has " + funcType.argumentTypes.length + " parameters, but only " +
+                            this.arguments.length + " arguments";
+            parameterTypes = funcType.argumentTypes;
+        }
+        int index = 0;
+        for (DBSPExpression arg: this.arguments) {
+            if (arg == null) {
                 throw new InternalCompilerError("Null arg", this);
+            }
+            assert parameterTypes == null || parameterTypes[index].sameType(arg.getType()) :
+                "Argument " + arg + " does not match paramter type " + parameterTypes[index];
+            index++;
+        }
     }
 
     public DBSPApplyExpression(CalciteObject node, String function, DBSPType returnType, DBSPExpression... arguments) {

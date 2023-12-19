@@ -1,15 +1,12 @@
-package org.dbsp.sqlCompiler.compiler.visitors.inner;
+package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosure;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneConstant;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneScalar;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTuple;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneValue;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ValueProjection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.DeclarationValue;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.TranslateVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -30,11 +27,8 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Logger;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Given a function (ClosureExpression) and a set of almost monotone columns
@@ -52,18 +46,11 @@ import java.util.Map;
  * monotone fields, and to only produce the output fields which are
  * themselves monotone.
  */
-public class MonotoneFunctions extends InnerVisitor {
+public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
     final ValueProjection inputProjection;
 
-    @Nullable
-    public MonotoneValue result;
-
     /** Maps each declaration to its current value. */
-    final Map<IDBSPDeclaration, MonotoneValue> variables;
-    /**
-     * Maps each expression ID to its current value.
-     * Entries are immutable once inserted. */
-    final Map<Long, MonotoneValue> expressions;
+    final DeclarationValue<MonotoneValue> variables;
     final ResolveReferences resolver;
     /** True iff the closure we analyze has a parameter of the form
      * (&k, &v).  Otherwise, the parameter is of the form &k. */
@@ -80,27 +67,8 @@ public class MonotoneFunctions extends InnerVisitor {
         this.operator = operator;
         this.inputProjection = inputProjection;
         this.pairOfReferences = pairOfReferences;
-        this.result = null;
-        this.variables = new HashMap<>();
-        this.expressions = new HashMap<>();
-        this.resolver = new ResolveReferences(reporter);
-    }
-
-    @Nullable
-    public MonotoneValue getResult() {
-        return this.result;
-    }
-
-    void set(DBSPExpression expression, @Nullable MonotoneValue value) {
-        if (value != null)
-            Utilities.putNew(this.expressions, expression.id, value);
-    }
-
-    @Nullable
-    MonotoneValue get(@Nullable DBSPExpression expression) {
-        if (expression == null)
-            return null;
-        return this.expressions.get(expression.id);
+        this.variables = new DeclarationValue<>();
+        this.resolver = new ResolveReferences(reporter, false);
     }
 
     @Override
@@ -114,28 +82,26 @@ public class MonotoneFunctions extends InnerVisitor {
         assert expression.parameters.length == 1: "Expected a single parameter " + expression;
         DBSPParameter param = expression.parameters[0];
 
-        DBSPType paramType = DBSPOperator.typeWithoutReferences(param.getType());
+        DBSPType paramType = param.getType();
         DBSPType inputProjectionType = this.inputProjection.getType();
-        assert inputProjectionType.sameType(paramType) :
+        assert inputProjectionType.ref().sameType(paramType) :
           "Expected same type " + inputProjectionType + " and " + paramType;
 
         DBSPType projectedType = this.inputProjection.getProjectedType();
         DBSPParameter projectedParameterRef = new DBSPParameter(param.getName(), projectedType.ref());
         DBSPParameter projectedParameter = new DBSPParameter(param.getName(), projectedType);
         MonotoneValue monotoneParam = this.inputProjection.createInput(projectedParameter.asVariable());
-        Utilities.putNew(this.variables, param, monotoneParam);
+        this.variables.put(param, monotoneParam);
         this.push(expression);
         expression.body.accept(this);
         this.pop(expression);
-        MonotoneValue bodyValue = this.get(expression.body);
-
+        MonotoneValue bodyValue = this.maybeGet(expression.body);
         if (bodyValue != null) {
             DBSPClosureExpression closure = bodyValue.getExpression().closure(projectedParameterRef);
             MonotoneClosure result = new MonotoneClosure(closure, bodyValue);
-            this.expressions.put(expression.id, result);
+            this.set(expression, result);
             Logger.INSTANCE.belowLevel(this, 2)
-                            .append("Monotone value for " + expression + " is " + result);
-            this.result = result;
+                    .append("Monotone value for " + expression + " is " + result);
         }
         return VisitDecision.STOP;
     }
@@ -144,19 +110,17 @@ public class MonotoneFunctions extends InnerVisitor {
     public void postorder(DBSPVariablePath var) {
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         MonotoneValue value = this.variables.get(declaration);
-        this.expressions.put(var.id, value);  // may overwrite
+        this.maybeSet(var, value);  // may overwrite
     }
 
     @Override
     public void postorder(DBSPFieldExpression expression) {
-        MonotoneValue value = this.get(expression.expression);
+        MonotoneValue value = this.maybeGet(expression.expression);
         if (value == null)
             return;
         MonotoneTuple tuple = value.to(MonotoneTuple.class);
         value = tuple.field(expression.fieldNo);
-        if (value == null)
-            return;
-        this.set(expression, value);
+        this.maybeSet(expression, value);
     }
 
     @Override
@@ -164,7 +128,7 @@ public class MonotoneFunctions extends InnerVisitor {
         MonotoneTuple tuple = new MonotoneTuple(expression.getType().to(DBSPTypeTupleBase.class));
         int index = 0;
         for (DBSPExpression field: expression.fields) {
-            MonotoneValue value = this.get(field);
+            MonotoneValue value = this.maybeGet(field);
             if (value != null)
                 tuple.addField(index, value);
             index++;
@@ -181,15 +145,17 @@ public class MonotoneFunctions extends InnerVisitor {
 
     @Override
     public void postorder(DBSPBlockExpression expression) {
-        MonotoneValue value = this.get(expression.lastExpression);
-        this.set(expression, value);
+        if (expression.lastExpression != null) {
+            MonotoneValue value = this.maybeGet(expression.lastExpression);
+            this.maybeSet(expression, value);
+        }
     }
 
     @Override
     public void postorder(DBSPLetStatement statement) {
         if (statement.initializer == null)
             return;
-        MonotoneValue value = this.get(statement.initializer);
+        MonotoneValue value = this.maybeGet(statement.initializer);
         if (value == null)
             return;
         this.variables.put(statement, value);
@@ -197,8 +163,8 @@ public class MonotoneFunctions extends InnerVisitor {
 
     @Override
     public void postorder(DBSPBinaryExpression expression) {
-        MonotoneValue left = this.get(expression.left);
-        MonotoneValue right = this.get(expression.right);
+        MonotoneValue left = this.maybeGet(expression.left);
+        MonotoneValue right = this.maybeGet(expression.right);
         if (left == null || right == null)
             return;
         if (expression.operation == DBSPOpcode.ADD ||
@@ -219,7 +185,7 @@ public class MonotoneFunctions extends InnerVisitor {
 
     @Override
     public void postorder(DBSPCastExpression expression) {
-        MonotoneValue source = this.get(expression.source);
+        MonotoneValue source = this.maybeGet(expression.source);
         if (source == null)
             return;
         MonotoneValue result = new MonotoneScalar(expression.replaceSource(source.getExpression()));
@@ -228,7 +194,7 @@ public class MonotoneFunctions extends InnerVisitor {
 
     @Override
     public void postorder(DBSPUnaryExpression expression) {
-        MonotoneValue source = this.get(expression.source);
+        MonotoneValue source = this.maybeGet(expression.source);
         if (source == null)
             return;
         if (expression.operation == DBSPOpcode.UNARY_PLUS) {
@@ -243,7 +209,7 @@ public class MonotoneFunctions extends InnerVisitor {
         DBSPExpression[] arguments = new DBSPExpression[expression.arguments.length];
         int index = 0;
         for (DBSPExpression argument: expression.arguments) {
-            MonotoneValue arg = this.get(argument);
+            MonotoneValue arg = this.maybeGet(argument);
             if (arg == null)
                 return;
             arguments[index++] = arg.getExpression();
@@ -269,7 +235,7 @@ public class MonotoneFunctions extends InnerVisitor {
             }
 
             if (name.startsWith("datediff_") || name.startsWith("timestamp_diff_")) {
-                MonotoneValue arg1 = this.get(expression.arguments[1]);
+                MonotoneValue arg1 = this.maybeGet(expression.arguments[1]);
                 if (arg1 != null && arg1.is(MonotoneConstant.class)) {
                     MonotoneValue result = new MonotoneScalar(expression.replaceArguments(arguments));
                     this.set(expression, result);

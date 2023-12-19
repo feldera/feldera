@@ -23,65 +23,61 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.util.TriFunction;
 import org.dbsp.util.Utilities;
 
-import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Describes a substitution from names to values.
- */
-public class Substitution<T> {
-    /**
-     * Maps names to values.
-     */
-    final Map<String, T> replacement;
-    /**
-     * When a variable is defined it shadows parameters with the same
-     * name.  These are represented in the tombstones.
-     */
-    final Set<String> tombstone;
+public class Substitution<K, V> extends HashMap<K, V> {
+    public Substitution() {}
 
-    public Substitution() {
-        this.replacement = new HashMap<>();
-        this.tombstone = new HashSet<>();
+    public Substitution(HashMap<K, V> data) {
+        data.forEach(this::substitute);
     }
 
-    public void substitute(String name, @Nullable T expression) {
-        if (expression == null)
-            this.tombstone.add(name);
-        else
-            this.replacement.put(name, expression);
+    public void substitute(K name, V value) {
+        this.put(name, value);
     }
 
-    /**
-     * Returns null if there is a tombstone with this name.
-     * Returns the substitution otherwise.
-     * Throws if there is no such substitution.
-     */
-    @Nullable
-    public T getReplacement(String name) {
-        if (this.tombstone.contains(name))
-            return null;
-        return Utilities.getExists(this.replacement, name);
+    public void substituteNew(K key, V value) {
+        Utilities.putNew(this, key, value);
     }
 
-    public boolean contains(String name) {
-        return this.tombstone.contains(name) ||
-                this.replacement.containsKey(name);
+    @SuppressWarnings("MethodDoesntCallSuperMethod")
+    public Substitution<K, V> clone() {
+        return new Substitution<>(this);
     }
 
-    public void clear() {
-        this.replacement.clear();
-        this.tombstone.clear();
+    public Substitution<K, V> mergeWith(
+            Substitution<K, V> other, TriFunction<K, V, V, V> merger) {
+        if (this.equals(other))
+            return this;
+
+        Substitution<K, V> result = new Substitution<>();
+        Set<K> commonKeys = new HashSet<>(this.keySet());
+        commonKeys.addAll(other.keySet());
+
+        for (K k: commonKeys) {
+            V thisValue = this.get(k);
+            V otherValue = other.get(k);
+            V merged = merger.apply(k, thisValue, otherValue);
+            if (merged != null)
+                result.substitute(k, merged);
+        }
+        return result;
     }
 
     @Override
     public String toString() {
-        return this.replacement +
-            System.lineSeparator() + "HIDDEN: " + this.tombstone;
+        StringBuilder builder = new StringBuilder();
+        builder.append("[");
+        for (Map.Entry<K, V> entry: this.entrySet()) {
+            builder.append(entry.toString()).append(",");
+        }
+        builder.append("]");
+        return builder.toString();
     }
 }

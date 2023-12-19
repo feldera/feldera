@@ -67,8 +67,7 @@ import java.util.Objects;
  * This class recurses over the structure of expressions, types, and statements
  * and if any fields have changed builds a new version of the object.  Classes
  * that extend this should override the preorder methods and ignore the postorder
- * methods.
- */
+ * methods. */
 public abstract class InnerRewriteVisitor
         extends InnerVisitor
         implements IWritesLogs {
@@ -87,9 +86,9 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public IDBSPInnerNode apply(IDBSPInnerNode dbspNode) {
-        this.startVisit();
-        dbspNode.accept(this);
+    public IDBSPInnerNode apply(IDBSPInnerNode node) {
+        this.startVisit(node);
+        node.accept(this);
         this.endVisit();
         return this.getResult();
     }
@@ -122,7 +121,8 @@ public abstract class InnerRewriteVisitor
     }
 
     protected DBSPExpression getResultExpression() {
-        return this.getResult().to(DBSPExpression.class);
+        IDBSPInnerNode result = this.getResult();
+        return result.to(DBSPExpression.class);
     }
 
     protected DBSPType getResultType() { return this.getResult().to(DBSPType.class); }

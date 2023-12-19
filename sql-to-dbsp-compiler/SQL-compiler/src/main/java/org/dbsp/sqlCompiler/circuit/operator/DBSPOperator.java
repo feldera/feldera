@@ -33,8 +33,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -163,23 +161,6 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
         if (this.outputType.is(DBSPTypeZSet.class))
             return this.getOutputZSetElementType();
         return this.getOutputIndexedZSetType().getKVType();
-    }
-
-    /**
-     * Converts the type of a parameter as follows:
-     * - p: &T into T
-     * - p: (&K, &V) into (K, V).
-     * We do this because our Rust code dataflow analysis does not understand
-     * automatic dereferencing.
-     */
-    public static DBSPType typeWithoutReferences(DBSPType paramType) {
-        if (paramType.is(DBSPTypeRef.class)) {
-            return paramType.deref();
-        } else {
-            DBSPTypeRawTuple pair = paramType.to(DBSPTypeRawTuple.class);
-            assert pair.size() == 2: "Expected a pair, got: " + paramType;
-            return new DBSPTypeRawTuple(pair.tupFields[0].deref(), pair.tupFields[1].deref());
-        }
     }
 
     /**

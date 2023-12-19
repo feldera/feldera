@@ -40,7 +40,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //            Tuple3::new(xA.clone(), xB.clone(), e)
         //        }
         //     })
-        DBSPVariablePath rowVar = new DBSPVariablePath("x", flatmap.inputElementType);
+        DBSPVariablePath rowVar = new DBSPVariablePath("x", flatmap.inputElementType.ref());
         DBSPType eType = flatmap.collectionElementType;
         if (flatmap.indexType != null)
             eType = new DBSPTypeRawTuple(new DBSPTypeUSize(CalciteObject.EMPTY, false), eType);
@@ -67,7 +67,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             } else {
                 // let xA: Vec<i32> = x.0.clone();
                 // let xB: x.1.clone();
-                DBSPExpression field = rowVar.field(index).applyCloneIfNeeded();
+                DBSPExpression field = rowVar.deref().field(index).applyCloneIfNeeded();
                 DBSPVariablePath fieldClone = new DBSPVariablePath("x" + index, field.getType());
                 DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
                 clones.add(stat);
@@ -80,7 +80,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPClosureExpression toTuple = new DBSPTupleExpression(resultColumns, false)
                 .closure(elem.asParameter());
         DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter", DBSPTypeAny.getDefault(),
-                rowVar.field(flatmap.collectionFieldIndex).applyCloneIfNeeded());
+                rowVar.deref().field(flatmap.collectionFieldIndex).applyCloneIfNeeded());
         if (flatmap.indexType != null) {
             iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate", DBSPTypeAny.getDefault(), iter);
         }
@@ -88,7 +88,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                 "map", DBSPTypeAny.getDefault(),
                 iter, toTuple);
         DBSPExpression block = new DBSPBlockExpression(clones, function);
-        return block.closure(rowVar.asRefParameter());
+        return block.closure(rowVar.asParameter());
     }
 
     @Override

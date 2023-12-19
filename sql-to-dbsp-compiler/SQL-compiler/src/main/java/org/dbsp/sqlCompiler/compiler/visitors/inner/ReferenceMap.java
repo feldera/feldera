@@ -5,12 +5,11 @@ import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Maps names to their declarations.
- */
+/** Maps (variable) names to their declarations. */
 public class ReferenceMap {
     final Map<DBSPVariablePath, IDBSPDeclaration> declarations;
 
@@ -31,6 +30,11 @@ public class ReferenceMap {
 
     public IDBSPDeclaration getDeclaration(DBSPVariablePath var) {
         return Utilities.getExists(this.declarations, var);
+    }
+
+    @Nullable
+    public IDBSPDeclaration get(DBSPVariablePath var) {
+        return this.declarations.get(var);
     }
 
     public void clear() {

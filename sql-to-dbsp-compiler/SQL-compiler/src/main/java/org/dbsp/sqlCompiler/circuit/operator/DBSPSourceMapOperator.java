@@ -92,13 +92,13 @@ public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
      * Return a closure that describes the key function.
      */
     public DBSPExpression getKeyFunc() {
-        DBSPVariablePath var = new DBSPVariablePath("t", this.getOutputIndexedZSetType().elementType);
+        DBSPVariablePath var = new DBSPVariablePath("t", this.getOutputIndexedZSetType().elementType.ref());
         DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
         int insertAt = 0;
         for (int index: this.keyFields) {
-            fields[insertAt++] = var.field(index);
+            fields[insertAt++] = var.deref().field(index);
         }
         DBSPExpression tuple = new DBSPTupleExpression(fields);
-        return tuple.closure(var.asRefParameter());
+        return tuple.closure(var.asParameter());
     }
 }

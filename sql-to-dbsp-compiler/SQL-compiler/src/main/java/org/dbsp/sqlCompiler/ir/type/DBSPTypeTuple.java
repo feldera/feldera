@@ -121,13 +121,13 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         DBSPTypeTuple tuple = to.to(DBSPTypeTuple.class);
         if (tuple.size() != this.size())
             return super.caster(to);  // throw
-        DBSPVariablePath var = new DBSPVariablePath("x", this);
+        DBSPVariablePath var = new DBSPVariablePath("x", this.ref());
         DBSPExpression[] casts = new DBSPExpression[this.tupFields.length];
         for (int i = 0; i < this.tupFields.length; i++) {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);
-            casts[i] = casts[i].call(var.field(i));
+            casts[i] = casts[i].call(var.deref().field(i));
         }
-        return new DBSPTupleExpression(casts).closure(var.asRefParameter());
+        return new DBSPTupleExpression(casts).closure(var.asParameter());
     }
 
     @Override

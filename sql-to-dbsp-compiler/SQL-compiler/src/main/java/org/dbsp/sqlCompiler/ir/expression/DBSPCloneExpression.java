@@ -36,7 +36,7 @@ public class DBSPCloneExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPCloneExpression(CalciteObject object, DBSPExpression expression) {
-        super(object, expression.getType().derefIfNeeded());
+        super(object, expression.getType());
         this.expression = expression;
     }
 

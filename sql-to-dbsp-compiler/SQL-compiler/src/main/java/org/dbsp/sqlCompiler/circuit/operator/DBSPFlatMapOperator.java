@@ -61,7 +61,8 @@ public class DBSPFlatMapOperator extends DBSPUnaryOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPFlatMapOperator(
-                    this.getNode(), this.getFunction(), this.getOutputZSetType(), newInputs.get(0));
+                    this.getNode(), this.getFunction(),
+                    this.getOutputZSetType(), newInputs.get(0));
         return this;
     }
 }

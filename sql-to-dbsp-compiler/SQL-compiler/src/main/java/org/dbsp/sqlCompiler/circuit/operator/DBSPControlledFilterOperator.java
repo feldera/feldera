@@ -81,19 +81,19 @@ public class DBSPControlledFilterOperator extends DBSPOperator {
                 "Projection type does not match control type " + leftSliceType + "/" + controlType;
 
         DBSPType rowType = data.getOutputRowType();
-        DBSPVariablePath dataArg = new DBSPVariablePath("d", rowType);
+        DBSPVariablePath dataArg = new DBSPVariablePath("d", rowType.ref());
         DBSPParameter param;
         if (rowType.is(DBSPTypeRawTuple.class)) {
             DBSPTypeRawTuple raw = rowType.to(DBSPTypeRawTuple.class);
             param = new DBSPParameter(dataArg.variable,
                     new DBSPTypeRawTuple(raw.tupFields[0].ref(), raw.tupFields[1].ref()));
         } else {
-            param = dataArg.asRefParameter();
+            param = dataArg.asParameter();
         }
-        DBSPVariablePath controlArg = new DBSPVariablePath("c", controlType);
-        DBSPExpression projection = dataProjection.project(dataArg);
-        DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(projection, controlArg);
-        DBSPExpression closure = compare.closure(param, controlArg.asRefParameter());
+        DBSPVariablePath controlArg = new DBSPVariablePath("c", controlType.ref());
+        DBSPExpression projection = dataProjection.project(dataArg.deref());
+        DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(projection, controlArg.deref());
+        DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPControlledFilterOperator(node, closure, data, control);
     }
 

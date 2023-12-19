@@ -133,8 +133,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    // DBSPSourceMultisetOperator 53\n" +
                 "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
                 "    let T = T();\n" +
-                "    // DBSPMapOperator 74\n" +
-                "    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new((t.2), )));\n" +
+                "    // DBSPMapOperator 76\n" +
+                "    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new(((*t).2), )));\n" +
                 "    // CREATE VIEW `V` AS\n" +
                 "    // SELECT `T`.`COL3`\n" +
                 "    // FROM `T`\n" +
@@ -246,19 +246,19 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String connectionString = "sqlite://" + filepath;
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
-        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType);
+        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
         DBSPExpression[] fields = EndToEndTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
         final List<DBSPExpression> rowGets = new ArrayList<>(fields.length);
         for (int i = 0; i < fields.length; i++) {
             DBSPApplyMethodExpression rowGet =
                     new DBSPApplyMethodExpression("get",
                             fields[i].getType(),
-                            rowVariable, new DBSPUSizeLiteral(i));
+                            rowVariable.deref(), new DBSPUSizeLiteral(i));
             rowGets.add(rowGet);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
         DBSPClosureExpression mapClosure = new DBSPClosureExpression(tuple,
-               rowVariable.asRefParameter());
+               rowVariable.asParameter());
         DBSPApplyExpression readDb = new DBSPApplyExpression("read_db", data.getType(),
                 new DBSPStrLiteral(connectionString), new DBSPStrLiteral("t1"), mapClosure);
 

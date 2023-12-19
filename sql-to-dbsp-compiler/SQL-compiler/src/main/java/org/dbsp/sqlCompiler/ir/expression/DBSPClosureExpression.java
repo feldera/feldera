@@ -65,7 +65,7 @@ public class DBSPClosureExpression extends DBSPExpression {
         return new DBSPClosureExpression(this.getNode(), this.body.deepCopy(), this.parameters);
     }
 
-    public DBSPExpression call(DBSPExpression... arguments) {
+    public DBSPApplyExpression call(DBSPExpression... arguments) {
         if (arguments.length != this.parameters.length)
             throw new InternalCompilerError("Received " + arguments.length + " but need " + this.parameters.length, this);
         return new DBSPApplyExpression(this, arguments);

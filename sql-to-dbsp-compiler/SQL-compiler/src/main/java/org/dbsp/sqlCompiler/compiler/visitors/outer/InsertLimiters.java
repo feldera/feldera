@@ -151,10 +151,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<DBSPExpression> minimums = new ArrayList<>();
         List<DBSPExpression> zeros = new ArrayList<>();
         int index = 0;
-        DBSPVariablePath t = new DBSPVariablePath("t", operator.getOutputZSetType().elementType);
+        DBSPVariablePath t = new DBSPVariablePath("t", operator.getOutputZSetType().elementType.ref());
         for (InputColumnMetadata column: operator.metadata.getColumns()) {
             if (column.lateness != null) {
-                DBSPExpression field = t.field(index);
+                DBSPExpression field = t.deref().field(index);
                 DBSPType type = field.getType();
                 field = new DBSPBinaryExpression(operator.getNode(), field.getType(),
                         DBSPOpcode.SUB, field, column.lateness);
@@ -182,7 +182,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
         DBSPType outputType = min.getType();
         DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
-                operator.getNode(), zero.closure(), min.closure(t.asRefParameter()), outputType, operator);
+                operator.getNode(), zero.closure(), min.closure(t.asParameter()), outputType, operator);
         this.addOperator(waterline);
 
         DBSPControlledFilterOperator filter = DBSPControlledFilterOperator.create(

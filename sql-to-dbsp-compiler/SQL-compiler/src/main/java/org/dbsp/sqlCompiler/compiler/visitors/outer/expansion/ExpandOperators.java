@@ -112,7 +112,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
             DBSPExpression function = operator.getAggregate().combineLinear();
             DBSPTypeIndexedZSet ix = input.getOutputIndexedZSetType();
             DBSPVariablePath arg = new DBSPVariablePath("kv",
-                    new DBSPTypeTuple(ix.keyType, ix.elementType));
+                    new DBSPTypeTuple(ix.keyType.ref(), ix.elementType.ref()));
             DBSPExpression body = function.call(arg.field(1));
             DBSPExpression closure = body.closure(arg.asParameter());
             DBSPWeighOperator weigh = new DBSPWeighOperator(operator.getNode(), closure, input);

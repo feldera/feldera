@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeResult;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 
 import javax.annotation.Nullable;
@@ -48,6 +49,7 @@ public abstract class DBSPExpression
      * Generates an expression that calls clone() on this.
      */
     public DBSPExpression applyClone() {
+        assert !this.type.is(DBSPTypeRef.class): "Cloning a reference " + this;
         return new DBSPCloneExpression(this.getNode(), this);
     }
 
@@ -56,9 +58,7 @@ public abstract class DBSPExpression
         return this.type;
     }
 
-    public DBSPExpression deref() {
-        if (this.is(DBSPBorrowExpression.class))
-            return this.to(DBSPBorrowExpression.class).expression;
+    public DBSPDerefExpression deref() {
         return new DBSPDerefExpression(this);
     }
 
@@ -76,7 +76,7 @@ public abstract class DBSPExpression
         return new DBSPBorrowExpression(this, mutable);
     }
 
-    public DBSPExpression field(int index) {
+    public DBSPFieldExpression field(int index) {
         return new DBSPFieldExpression(this, index);
     }
 

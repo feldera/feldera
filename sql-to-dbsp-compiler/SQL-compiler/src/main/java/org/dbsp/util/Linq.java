@@ -117,6 +117,13 @@ public class Linq {
         return result;
     }
 
+    public static @Nullable <T> T first(T[] data, Predicate<T> test) {
+        for (int i=0; i < data.length; i++)
+            if (test.test(data[i]))
+                return data[i];
+        return null;
+    }
+
     public static <T, S, R> R[] zip(T[] left, S[] right, BiFunction<T, S, R> function, Class<R> rc) {
         @SuppressWarnings("unchecked")
         R[] result = (R[])Array.newInstance(rc, Math.min(left.length, right.length));

@@ -32,14 +32,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A set of nested contexts where substitution is performed.
- * Each context is a namespace which can define new substitutions, which may
- * shadow substitutions in the outer contexts.
- */
-public class SubstitutionContext<T> {
-    protected final List<Substitution<T>> stack;
+ * A set of nested scopes where substitution is performed.
+ * Each scope is a namespace which can define new substitutions, which may
+ * shadow substitutions in the outer contexts. */
+public class Scopes<K, V> {
+    protected final List<Substitution<K, V>> stack;
 
-    public SubstitutionContext() {
+    public Scopes() {
         this.stack = new ArrayList<>();
     }
 
@@ -51,10 +50,10 @@ public class SubstitutionContext<T> {
         Utilities.removeLast(this.stack);
     }
 
-    public void substitute(String name, @Nullable T value) {
+    public void substitute(K key, V value) {
         if (this.stack.isEmpty())
             throw new InternalCompilerError("Empty context", CalciteObject.EMPTY);
-        this.stack.get(this.stack.size() - 1).substitute(name, value);
+        this.stack.get(this.stack.size() - 1).substitute(key, value);
     }
 
     public void mustBeEmpty() {
@@ -63,33 +62,27 @@ public class SubstitutionContext<T> {
     }
 
     /**
-     * The substitution for this name.
-     * null if there is a tombstone or no substitution.
-     */
+     * The substitution for this key.
+     * null if there isn't any. */
     @Nullable
-    public T get(String name) {
+    public V get(K name) {
         for (int i = 0; i < this.stack.size(); i++) {
             int index = this.stack.size() - i - 1;
-            Substitution<T> subst = this.stack.get(index);
-            if (subst.contains(name))
-                return subst.getReplacement(name);
+            Substitution<K, V> subst = this.stack.get(index);
+            if (subst.containsKey(name))
+                return subst.get(name);
         }
         return null;
     }
 
-    /**
-     * True if there is a substitution for this variable.
-     */
-    public boolean containsSubstitution(String name) {
-        for (int i = 0; i < this.stack.size(); i++) {
-            int index = this.stack.size() - i - 1;
-            Substitution<T> subst = this.stack.get(index);
-            if (subst.contains(name)) {
-                T expression = subst.getReplacement(name);
-                return expression != null;
-            }
+    @SuppressWarnings("MethodDoesntCallSuperMethod")
+    public Scopes<K, V> clone() {
+        Scopes<K, V> result = new Scopes<>();
+        for (Substitution<K, V> subst: this.stack) {
+            Substitution<K, V> copy = subst.clone();
+            result.stack.add(copy);
         }
-        return false;
+        return result;
     }
 
     void clear() {
@@ -99,5 +92,10 @@ public class SubstitutionContext<T> {
     @Override
     public String toString() {
         return this.stack.toString();
+    }
+
+    public void replace(Scopes<K, V> save) {
+        this.stack.clear();
+        this.stack.addAll(save.stack);
     }
 }

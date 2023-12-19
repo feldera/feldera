@@ -784,8 +784,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPParameter parameter) {
-        if (parameter.mutable)
-            this.builder.append("mut ");
         this.builder.append(parameter.name);
         if (!this.compact) {
             this.builder.append(": ");
