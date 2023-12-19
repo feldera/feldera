@@ -544,6 +544,62 @@ async fn duplicate_attached_conn_name() {
 }
 
 #[tokio::test]
+async fn update_conn_name() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let connector_id = handle
+        .db
+        .new_connector(
+            tenant_id,
+            Uuid::now_v7(),
+            "a",
+            "b",
+            &test_connector_config(),
+        )
+        .await
+        .unwrap();
+    let ac = AttachedConnector {
+        name: "foo".to_string(),
+        is_input: true,
+        connector_name: "a".to_string(),
+        relation_name: "".to_string(),
+    };
+    let rc = RuntimeConfig::from_yaml("");
+    handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            &None,
+            "1",
+            "2",
+            &rc,
+            &Some(vec![ac]),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .update_connector(tenant_id, connector_id, "not-a", "b", &None)
+        .await
+        .unwrap();
+    let pipeline = handle
+        .db
+        .get_pipeline_by_name(tenant_id, "1".to_string())
+        .await
+        .unwrap();
+    assert_eq!(
+        "not-a".to_string(),
+        pipeline
+            .descriptor
+            .attached_connectors
+            .get(0)
+            .unwrap()
+            .connector_name
+    );
+}
+
+#[tokio::test]
 async fn save_api_key() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
