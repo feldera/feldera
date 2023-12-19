@@ -122,6 +122,7 @@ pub(crate) trait Storage {
 
     /// Update program name, description and, optionally, code.
     /// XXX: Description should be optional too
+    #[allow(clippy::too_many_arguments)]
     async fn update_program(
         &self,
         tenant_id: TenantId,
@@ -129,6 +130,9 @@ pub(crate) trait Storage {
         program_name: &Option<String>,
         program_description: &Option<String>,
         program_code: &Option<String>,
+        status: &Option<String>,
+        error: &Option<String>,
+        schema: &Option<String>,
         guard: Option<Version>,
     ) -> Result<Version, DBError>;
 
