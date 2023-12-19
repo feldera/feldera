@@ -301,6 +301,9 @@ async fn update_program() {
             &Some("test2".to_string()),
             &Some("different desc".to_string()),
             &Some("create table t2(c2 integer);".to_string()),
+            &None,
+            &None,
+            &None,
             None,
         )
         .await;
@@ -320,6 +323,9 @@ async fn update_program() {
             program_id,
             &Some("updated_test1".to_string()),
             &Some("some new description".to_string()),
+            &None,
+            &None,
+            &None,
             &None,
             None,
         )
@@ -826,6 +832,9 @@ async fn versioning() {
             &None,
             &None,
             &Some("only schema matters--this isn't compiled2".to_string()),
+            &None,
+            &None,
+            &None,
             None,
         )
         .await
@@ -1472,11 +1481,11 @@ fn db_impl_behaves_like_model() {
                             StorageAction::UpdateProgram(tenant_id, program_id, name, description, code, guard) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_program(tenant_id, program_id, &name, &description, &code, guard)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, &None, guard)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_program(tenant_id, program_id, &name, &description, &code, guard)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, &None, guard)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -1837,6 +1846,9 @@ impl Storage for Mutex<DbModel> {
         program_name: &Option<String>,
         program_description: &Option<String>,
         program_code: &Option<String>,
+        status: &Option<String>,
+        error: &Option<String>,
+        schema: &Option<String>,
         guard: Option<Version>,
     ) -> DBResult<super::Version> {
         let mut s = self.lock().await;

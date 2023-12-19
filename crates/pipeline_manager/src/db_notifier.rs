@@ -305,6 +305,9 @@ mod test {
                     &Some(format!("updated_test{i}")),
                     &Some("some new description".to_string()),
                     &None,
+                    &None,
+                    &None,
+                    &None,
                     None,
                 )
                 .await;

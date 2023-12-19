@@ -988,6 +988,9 @@ impl Storage for ProjectDB {
         program_name: &Option<String>,
         program_description: &Option<String>,
         program_code: &Option<String>,
+        status: &Option<String>,
+        error: &Option<String>,
+        schema: &Option<String>,
         guard: Option<Version>,
     ) -> Result<Version, DBError> {
         let mut manager = self.pool.get().await?;
@@ -995,56 +998,67 @@ impl Storage for ProjectDB {
         // current version. Only apply a change if the version matched the
         // guard.
         let txn = manager.transaction().await?;
+        let get_version = txn
+            .prepare_cached("SELECT version, code FROM program WHERE tenant_id = $1 AND id = $2 ")
+            .await?;
+        let row = txn
+            .query_opt(&get_version, &[&tenant_id.0, &program_id.0])
+            .await
+            .map_err(ProjectDB::maybe_unique_violation)?
+            .ok_or(DBError::UnknownProgram { program_id })?;
+        let latest_version = Version(row.get(0));
+        let code: String = row.get(1);
+
+        if let Some(guard) = guard {
+            if guard.0 != latest_version.0 {
+                return Err(DBError::OutdatedProgramVersion { latest_version });
+            }
+        }
+        // Reset status, error and schema if the code (i.e., the version) changes.
         let stmt = txn
             .prepare_cached(
                 r#"UPDATE program
                         SET
-                            version = (CASE WHEN code = COALESCE($3, code)
-                                            THEN version ELSE version + 1 END),
-                            name = COALESCE($1, name),
-                            description = COALESCE($2, description),
-                            code = COALESCE($3, code),
-                            status = (CASE WHEN code = COALESCE($3, code)
-                                           THEN status ELSE NULL END),
-                            error = (CASE WHEN code = COALESCE($3, code)
-                                          THEN error ELSE NULL END),
-                            schema = (CASE WHEN code = COALESCE($3, code)
-                                           THEN schema ELSE NULL END)
-                    FROM (SELECT version AS old_version FROM program
-                          WHERE id = $4 AND tenant_id = $5) y
-                    WHERE id = $4 AND tenant_id = $5
-                    RETURNING version as new_version, y.old_version
+                            name = COALESCE($3, name),
+                            description = COALESCE($4, description),
+                            code = COALESCE($5, code),
+                            version = $6,
+                            status = (CASE WHEN version = $6 THEN COALESCE($7, status) ELSE NULL END),
+                            error = (CASE WHEN version = $6 THEN COALESCE($8, error) ELSE NULL END),
+                            schema = (CASE WHEN version = $6 THEN COALESCE($9, schema) ELSE NULL END)
+                    WHERE tenant_id = $1 AND id = $2
+                    RETURNING version
                 "#,
             )
             .await?;
-
+        let has_code_changed = program_code.as_ref().is_some_and(|c| *c != code);
+        let new_version = if has_code_changed {
+            latest_version.0 + 1
+        } else {
+            latest_version.0
+        };
         let row = txn
             .query_opt(
                 &stmt,
                 &[
+                    &tenant_id.0,
+                    &program_id.0,
                     &program_name,
                     &program_description,
                     &program_code,
-                    &program_id.0,
-                    &tenant_id.0,
+                    &new_version,
+                    &status,
+                    &schema,
+                    &error,
                 ],
             )
             .await
             .map_err(ProjectDB::maybe_unique_violation)?;
         if let Some(row) = row {
-            let new_version = Version(row.get(0));
-            let old_version = Version(row.get(1));
-            if guard.is_some_and(|v| v.0 != old_version.0) {
-                txn.rollback().await?;
-                return Err(DBError::OutdatedProgramVersion {
-                    latest_version: Version(old_version.0),
-                });
-            } else {
-                txn.commit().await?;
-                Ok(new_version)
-            }
-        } else {
             txn.commit().await?;
+            Ok(Version(row.get(0)))
+        } else {
+            txn.rollback().await?;
             Err(DBError::UnknownProgram { program_id })
         }
     }

@@ -291,6 +291,9 @@ async fn update_program(
             &body.name,
             &body.description,
             &body.code,
+            &None,
+            &None,
+            &None,
             body.guard,
         )
         .await?;
