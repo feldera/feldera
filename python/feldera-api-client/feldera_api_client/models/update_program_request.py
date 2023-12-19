@@ -12,49 +12,55 @@ class UpdateProgramRequest:
     """Update program request.
 
     Attributes:
-        name (str): New name for the program.
         code (Union[Unset, None, str]): New SQL code for the program or `None` to keep existing program
             code unmodified.
-        description (Union[Unset, str]): New description for the program.
+        description (Union[Unset, None, str]): New description for the program.
+        guard (Union[Unset, None, int]): Version number.
+        name (Union[Unset, None, str]): New name for the program.
     """
 
-    name: str
     code: Union[Unset, None, str] = UNSET
-    description: Union[Unset, str] = UNSET
+    description: Union[Unset, None, str] = UNSET
+    guard: Union[Unset, None, int] = UNSET
+    name: Union[Unset, None, str] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        name = self.name
         code = self.code
         description = self.description
+        guard = self.guard
+        name = self.name
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update(
-            {
-                "name": name,
-            }
-        )
+        field_dict.update({})
         if code is not UNSET:
             field_dict["code"] = code
         if description is not UNSET:
             field_dict["description"] = description
+        if guard is not UNSET:
+            field_dict["guard"] = guard
+        if name is not UNSET:
+            field_dict["name"] = name
 
         return field_dict
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        name = d.pop("name")
-
         code = d.pop("code", UNSET)
 
         description = d.pop("description", UNSET)
 
+        guard = d.pop("guard", UNSET)
+
+        name = d.pop("name", UNSET)
+
         update_program_request = cls(
-            name=name,
             code=code,
             description=description,
+            guard=guard,
+            name=name,
         )
 
         update_program_request.additional_properties = d
