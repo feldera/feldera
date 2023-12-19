@@ -302,9 +302,10 @@ mod test {
                 .update_program(
                     tenant_id,
                     program_id,
-                    format!("updated_test{i}").as_str(),
-                    "some new description",
+                    &Some(format!("updated_test{i}")),
+                    &Some("some new description".to_string()),
                     &None,
+                    None,
                 )
                 .await;
             let _ = conn

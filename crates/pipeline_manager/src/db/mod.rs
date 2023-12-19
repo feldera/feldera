@@ -979,77 +979,72 @@ impl Storage for ProjectDB {
         Ok((ProgramId(id), Version(1)))
     }
 
-    /// Update program name, description and, optionally, code.
-    /// XXX: Description should be optional too
+    /// Optionally update the program name, description and/or code. This call
+    /// also accepts an optional version to do guarded updates to the code.
     async fn update_program(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-        program_name: &str,
-        program_description: &str,
+        program_name: &Option<String>,
+        program_description: &Option<String>,
         program_code: &Option<String>,
+        guard: Option<Version>,
     ) -> Result<Version, DBError> {
-        let row = match program_code {
-            Some(code) => {
-                let manager = self.pool.get().await?;
-                // Only increment `version` if new code actually differs from the
-                // current version.
-                let stmt = manager
-                    .prepare_cached(
-                        "UPDATE program
+        let mut manager = self.pool.get().await?;
+        // Only increment `version` if new code actually differs from the
+        // current version. Only apply a change if the version matched the
+        // guard.
+        let txn = manager.transaction().await?;
+        let stmt = txn
+            .prepare_cached(
+                r#"UPDATE program
                         SET
-                            version = (CASE WHEN code = $3 THEN version ELSE version + 1 END),
-                            name = $1,
-                            description = $2,
-                            code = $3,
-                            status = (CASE WHEN code = $3 THEN status ELSE NULL END),
-                            error = (CASE WHEN code = $3 THEN error ELSE NULL END),
-                            schema = (CASE WHEN code = $3 THEN schema ELSE NULL END)
+                            version = (CASE WHEN code = COALESCE($3, code)
+                                            THEN version ELSE version + 1 END),
+                            name = COALESCE($1, name),
+                            description = COALESCE($2, description),
+                            code = COALESCE($3, code),
+                            status = (CASE WHEN code = COALESCE($3, code)
+                                           THEN status ELSE NULL END),
+                            error = (CASE WHEN code = COALESCE($3, code)
+                                          THEN error ELSE NULL END),
+                            schema = (CASE WHEN code = COALESCE($3, code)
+                                           THEN schema ELSE NULL END)
+                    FROM (SELECT version AS old_version FROM program
+                          WHERE id = $4 AND tenant_id = $5) y
                     WHERE id = $4 AND tenant_id = $5
-                    RETURNING version
-                ",
-                    )
-                    .await?;
+                    RETURNING version as new_version, y.old_version
+                "#,
+            )
+            .await?;
 
-                manager
-                    .query_opt(
-                        &stmt,
-                        &[
-                            &program_name,
-                            &program_description,
-                            &code,
-                            &program_id.0,
-                            &tenant_id.0,
-                        ],
-                    )
-                    .await
-                    .map_err(ProjectDB::maybe_unique_violation)?
-            }
-            _ => {
-                let manager = self.pool.get().await?;
-                let stmt = manager
-                    .prepare_cached(
-                        "UPDATE program SET name = $1, description = $2 WHERE id = $3 AND tenant_id = $4 RETURNING version",
-                    )
-                    .await?;
-                manager
-                    .query_opt(
-                        &stmt,
-                        &[
-                            &program_name,
-                            &program_description,
-                            &program_id.0,
-                            &tenant_id.0,
-                        ],
-                    )
-                    .await
-                    .map_err(ProjectDB::maybe_unique_violation)?
-            }
-        };
-
+        let row = txn
+            .query_opt(
+                &stmt,
+                &[
+                    &program_name,
+                    &program_description,
+                    &program_code,
+                    &program_id.0,
+                    &tenant_id.0,
+                ],
+            )
+            .await
+            .map_err(ProjectDB::maybe_unique_violation)?;
         if let Some(row) = row {
-            Ok(Version(row.get(0)))
+            let new_version = Version(row.get(0));
+            let old_version = Version(row.get(1));
+            if guard.is_some_and(|v| v.0 != old_version.0) {
+                txn.rollback().await?;
+                return Err(DBError::OutdatedProgramVersion {
+                    latest_version: Version(old_version.0),
+                });
+            } else {
+                txn.commit().await?;
+                Ok(new_version)
+            }
         } else {
+            txn.commit().await?;
             Err(DBError::UnknownProgram { program_id })
         }
     }

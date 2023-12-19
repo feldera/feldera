@@ -298,9 +298,10 @@ async fn update_program() {
         .update_program(
             tenant_id,
             program_id,
-            "test2",
-            "different desc",
+            &Some("test2".to_string()),
+            &Some("different desc".to_string()),
             &Some("create table t2(c2 integer);".to_string()),
+            None,
         )
         .await;
     let descr = handle
@@ -317,9 +318,10 @@ async fn update_program() {
         .update_program(
             tenant_id,
             program_id,
-            "updated_test1",
-            "some new description",
+            &Some("updated_test1".to_string()),
+            &Some("some new description".to_string()),
             &None,
+            None,
         )
         .await;
     let results = handle.db.list_programs(tenant_id, false).await.unwrap();
@@ -821,9 +823,10 @@ async fn versioning() {
         .update_program(
             tenant_id,
             program_id,
-            "test1",
-            "program desc",
+            &None,
+            &None,
             &Some("only schema matters--this isn't compiled2".to_string()),
+            None,
         )
         .await
         .unwrap();
@@ -1170,7 +1173,14 @@ enum StorageAction {
         String,
         String,
     ),
-    UpdateProgram(TenantId, ProgramId, String, String, Option<String>),
+    UpdateProgram(
+        TenantId,
+        ProgramId,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<Version>,
+    ),
     GetProgramIfExists(TenantId, ProgramId, bool),
     LookupProgram(TenantId, String, bool),
     SetProgramForCompilation(TenantId, ProgramId, Version, ProgramStatus),
@@ -1459,14 +1469,14 @@ fn db_impl_behaves_like_model() {
                                     handle.db.new_program(tenant_id, id, &name, &description, &code).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdateProgram(tenant_id, program_id, name, description, code) => {
+                            StorageAction::UpdateProgram(tenant_id, program_id, name, description, code, guard) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_program(tenant_id, program_id, &name, &description, &code)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, guard)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_program(tenant_id, program_id, &name, &description, &code)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, guard)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -1824,9 +1834,10 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         program_id: super::ProgramId,
-        program_name: &str,
-        program_description: &str,
+        program_name: &Option<String>,
+        program_description: &Option<String>,
         program_code: &Option<String>,
+        guard: Option<Version>,
     ) -> DBResult<super::Version> {
         let mut s = self.lock().await;
         let (program_descr, _) = s
@@ -1839,10 +1850,13 @@ impl Storage for Mutex<DbModel> {
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1 .0.clone())
-            .any(|p| p.name == program_name && p.program_id != program_id)
+            .any(|p| {
+                program_name.as_ref().is_some_and(|n| *n == p.name) && p.program_id != program_id
+            })
         {
             return Err(DBError::DuplicateName);
         }
+
         // This is an artifact of the test code. In the database,
         // pipelines reference programs by their IDs, and program_queries use
         // a join to turn IDs into names to produce a PipelineDescr.
@@ -1856,12 +1870,24 @@ impl Storage for Mutex<DbModel> {
                 }
             }
         });
+
+        let (program, _) = s.programs.get(&(tenant_id, program_id)).unwrap();
+        if guard.is_some_and(|g| g.0 != program.version.0) {
+            return Err(DBError::OutdatedProgramVersion {
+                latest_version: program.version,
+            });
+        }
+
         s.programs
             .get_mut(&(tenant_id, program_id))
             .map(|(p, _e)| {
                 let cur_code = p.code.clone().unwrap();
-                p.name = program_name.to_owned();
-                p.description = program_description.to_owned();
+                if let Some(name) = program_name {
+                    p.name = name.to_owned();
+                }
+                if let Some(desc) = program_description {
+                    p.description = desc.to_owned();
+                }
                 if let Some(code) = program_code {
                     if *code != cur_code {
                         p.code = program_code.to_owned();

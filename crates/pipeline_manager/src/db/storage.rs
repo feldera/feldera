@@ -126,9 +126,10 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-        program_name: &str,
-        program_description: &str,
+        program_name: &Option<String>,
+        program_description: &Option<String>,
         program_code: &Option<String>,
+        guard: Option<Version>,
     ) -> Result<Version, DBError>;
 
     /// Retrieve program descriptor.

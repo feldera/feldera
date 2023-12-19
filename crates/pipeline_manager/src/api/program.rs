@@ -81,13 +81,16 @@ pub(crate) struct NewProgramResponse {
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct UpdateProgramRequest {
     /// New name for the program.
-    name: String,
+    name: Option<String>,
     /// New description for the program.
     #[serde(default)]
-    description: String,
+    description: Option<String>,
     /// New SQL code for the program or `None` to keep existing program
     /// code unmodified.
     code: Option<String>,
+    /// A version guard: update the program only if the program version
+    /// matches the supplied value.
+    guard: Option<Version>,
 }
 
 /// Response to a program update request.
@@ -288,6 +291,7 @@ async fn update_program(
             &body.name,
             &body.description,
             &body.code,
+            body.guard,
         )
         .await?;
     info!(
