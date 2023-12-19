@@ -11,7 +11,7 @@ import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
-import { Field, NeighborhoodQuery, OpenAPI, Relation } from '$lib/services/manager'
+import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -99,16 +99,22 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
       return
     }
     const controller = new AbortController()
-    const url = new URL(
-      OpenAPI.BASE +
-        '/v0' +
-        '/pipelines/' +
-        pipeline.descriptor.pipeline_id +
-        '/egress/' +
-        name +
-        '?format=csv&query=neighborhood&mode=watch'
-    )
-    updateTable(url, neighborhood, setRows, setLoading, relation, controller).then(
+    updateTable(
+      [
+        pipeline.descriptor.pipeline_id,
+        name,
+        'csv',
+        OutputQuery.NEIGHBORHOOD,
+        EgressMode.WATCH,
+        undefined,
+        undefined,
+        neighborhood
+      ],
+      setRows,
+      setLoading,
+      relation,
+      controller
+    ).then(
       () => {
         // nothing to do here, the tableUpdater will update the table
       },
@@ -143,16 +149,13 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
       return
     }
     const controller = new AbortController()
-    const url = new URL(
-      OpenAPI.BASE +
-        '/v0' +
-        '/pipelines/' +
-        pipeline.descriptor.pipeline_id +
-        '/egress/' +
-        name +
-        '?format=csv&query=quantiles&mode=snapshot'
-    )
-    quantileLoader(url, setQuantiles, relation, controller).then(
+
+    quantileLoader(
+      [pipeline.descriptor.pipeline_id, name, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
+      setQuantiles,
+      relation,
+      controller
+    ).then(
       () => {
         // nothing to do here, the tableUpdater will update the table
       },

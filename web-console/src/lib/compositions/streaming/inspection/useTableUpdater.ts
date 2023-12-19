@@ -5,7 +5,10 @@
 
 import { readLineFromStream } from '$lib/functions/common/stream'
 import { csvLineToRow, Row } from '$lib/functions/ddl'
-import { NeighborhoodQuery, Relation } from '$lib/services/manager'
+import { getUrl, httpOutputOptions } from '$lib/services/HttpInputOutputService'
+import { HttpInputOutputService, OpenAPI, Relation } from '$lib/services/manager'
+import { getHeaders } from '$lib/services/manager/core/request'
+import { Arguments } from '$lib/types/common/function'
 import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo, useState } from 'react'
 import JSONbig from 'true-json-bigint'
@@ -79,8 +82,7 @@ export function useTableUpdater() {
   const [{ rowsCallback, pause, resume }, setState] = useState(resumed({ rowsCallback: () => new Map() }))
   const readStream = useCallback(
     async (
-      url: URL,
-      requestedNeighborhood: NeighborhoodQuery,
+      egressParams: Arguments<typeof HttpInputOutputService.httpOutput>,
       setRows: Dispatch<SetStateAction<Row[]>>,
       setLoading: Dispatch<SetStateAction<boolean>>,
       relation: Relation,
@@ -88,12 +90,16 @@ export function useTableUpdater() {
     ) => {
       // We try and fetch one more row than requested,
       // this helps to detect if this is the last page.
+      // TODO:
+      //    The following uses some of the code generated from OpenAPI to enable request authentication when it is configured
+      //    This needs to be eventually refactored away, probably in favor of HttpInputOutputService.httpOutput(...egressParams)
+      const options = httpOutputOptions(...egressParams)
+      const url = await getUrl(OpenAPI, options)
+      const headers = await getHeaders(OpenAPI, options)
       const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSONbig.stringify(requestedNeighborhood),
+        method: options.method,
+        headers,
+        body: JSONbig.stringify(options.body),
         signal: controller.signal
       }).catch(error => {
         return Promise.reject(error)
