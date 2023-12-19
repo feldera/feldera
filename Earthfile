@@ -605,6 +605,34 @@ integration-tests:
         RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
     END
 
+ui-playwright-container:
+    FROM +install-deps
+    COPY web-console .
+    WORKDIR web-console
+    RUN yarn install
+    RUN yarn playwright install
+    RUN yarn playwright install-deps
+    ENV CI=true
+    ENV PLAYWRIGHT_API_ORIGIN=http://pipeline-manager:8080
+    ENV PLAYWRIGHT_APP_ORIGIN=http://pipeline-manager:8080
+    ENV DISPLAY=
+    ENTRYPOINT ["yarn", "playwright", "test"]
+    SAVE IMAGE uitest:latest
+
+ui-playwright-tests:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/.env .
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --pull postgres \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --compose docker-compose.yml \
+                --service db \
+                --service pipeline-manager \
+                --load uitest:latest=+ui-playwright-container
+        RUN sleep 5 && docker run --env-file .env --network default_default uitest:latest
+    END
+
 benchmark:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
@@ -631,4 +659,5 @@ all-tests:
     BUILD +test-debezium
     BUILD +test-snowflake
     BUILD +integration-tests
+    BUILD +ui-playwright-tests
 

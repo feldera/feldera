@@ -91,3 +91,5 @@ jobs:
 
       - name: Run CI
         run: earthly --verbose -P --ci +all-tests
+        env:
+          NEXT_PUBLIC_MUIX_PRO_KEY: ${{ secrets.muix_license }}

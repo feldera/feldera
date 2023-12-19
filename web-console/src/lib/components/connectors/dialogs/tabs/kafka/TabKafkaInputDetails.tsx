@@ -26,7 +26,6 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
             'data-testid': 'input-server-hostname'
           }}
         />
-
         <Grid item xs={12}>
           <SelectElement
             name='config.auto_offset_reset'
