@@ -22,45 +22,6 @@ pub(crate) trait Storage {
         with_code: bool,
     ) -> Result<Vec<ProgramDescr>, DBError>;
 
-    /// Queue program for compilation by setting its status to
-    /// [`ProgramStatus::Pending`] and schema to null.
-    ///
-    /// Change program status to [`ProgramStatus::Pending`].
-    async fn prepare_program_for_compilation(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
-    ) -> Result<(), DBError> {
-        let descr = self.get_program_by_id(tenant_id, program_id, false).await?;
-        if descr.version != expected_version {
-            return Err(DBError::OutdatedProgramVersion {
-                latest_version: descr.version,
-            });
-        }
-        // Do nothing if the program:
-        // * is already pending (we don't want to bump its `status_since` field, which
-        //   would move it to the end of the queue),
-        // * if compilation is already in progress,
-        // * or if the program has already been compiled
-        if descr.status == ProgramStatus::Pending
-            || descr.status.is_compiling()
-            || descr.status == ProgramStatus::Success
-        {
-            return Ok(());
-        }
-
-        self.set_program_for_compilation(
-            tenant_id,
-            program_id,
-            expected_version,
-            ProgramStatus::Pending,
-        )
-        .await?;
-
-        Ok(())
-    }
-
     /// Update program schema.
     ///
     /// # Note
@@ -89,13 +50,9 @@ pub(crate) trait Storage {
     /// Update program status after a version check.
     ///
     /// Updates program status to `status` if the current program version in the
-    /// database matches `expected_version`.
-    ///
-    /// # Note
-    /// This intentionally does not throw an error if there is a program version
-    /// mismatch and instead does just not update. It's used by the compiler to
-    /// update status and in case there is a newer version it is expected that
-    /// the compiler just picks up and runs the next job.
+    /// database matches `expected_version`. Setting the status to
+    /// `ProgramStatus::Pending` resets the schema and is used to queue the
+    /// program for compilation.
     async fn set_program_status_guarded(
         &self,
         tenant_id: TenantId,
@@ -114,23 +71,6 @@ pub(crate) trait Storage {
             Some(expected_version),
         )
         .await?;
-        Ok(())
-    }
-
-    /// Update program status.
-    ///
-    /// # Note
-    /// - Doesn't check that the program exists.
-    /// - Resets schema to null.
-    async fn set_program_for_compilation(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        version: Version,
-        status: ProgramStatus,
-    ) -> Result<(), DBError> {
-        self.set_program_status_guarded(tenant_id, program_id, version, status)
-            .await?;
         Ok(())
     }
 

@@ -460,12 +460,12 @@ async fn project_pending() {
 
     handle
         .db
-        .set_program_for_compilation(tenant_id, uid2, v2, ProgramStatus::Pending)
+        .set_program_status_guarded(tenant_id, uid2, v2, ProgramStatus::Pending)
         .await
         .unwrap();
     handle
         .db
-        .set_program_for_compilation(tenant_id, uid1, v1, ProgramStatus::Pending)
+        .set_program_status_guarded(tenant_id, uid1, v1, ProgramStatus::Pending)
         .await
         .unwrap();
     let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
@@ -499,7 +499,7 @@ async fn update_status() {
     assert_eq!(ProgramStatus::None, desc.status);
     handle
         .db
-        .set_program_for_compilation(
+        .set_program_status_guarded(
             tenant_id,
             program_id,
             desc.version,
@@ -1198,7 +1198,6 @@ enum StorageAction {
     ),
     GetProgramById(TenantId, ProgramId, bool),
     GetProgramByName(TenantId, String, bool),
-    SetProgramForCompilation(TenantId, ProgramId, Version, ProgramStatus),
     SetProgramStatusGuarded(TenantId, ProgramId, Version, ProgramStatus),
     SetProgramSchema(TenantId, ProgramId, ProgramSchema),
     DeleteProgram(TenantId, ProgramId),
@@ -1506,14 +1505,6 @@ fn db_impl_behaves_like_model() {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.get_program_by_name(tenant_id, &name, with_code).await;
                                 let impl_response = handle.db.get_program_by_name(tenant_id, &name, with_code).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::SetProgramForCompilation(tenant_id, program_id, version, status) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response =
-                                    model.set_program_for_compilation(tenant_id, program_id, version, status.clone()).await;
-                                let impl_response =
-                                    handle.db.set_program_for_compilation(tenant_id, program_id, version, status.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetProgramStatusGuarded(tenant_id, program_id, version, status) => {
