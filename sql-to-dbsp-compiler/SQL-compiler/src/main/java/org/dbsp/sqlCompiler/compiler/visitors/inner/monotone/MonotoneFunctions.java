@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.DeclarationValue;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.RepeatedExpressions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.TranslateVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -16,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -25,10 +27,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Logger;
 
-import javax.annotation.Nullable;
+import java.util.LinkedHashMap;
 
 /**
  * Given a function (ClosureExpression) and a set of almost monotone columns
@@ -54,7 +57,7 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
     final ResolveReferences resolver;
     /** True iff the closure we analyze has a parameter of the form
      * (&k, &v).  Otherwise, the parameter is of the form &k. */
-    final boolean pairOfReferences;
+    final boolean indexedSet;
     /** Operator where the analyzed closure originates from.
      * Only used for debugging. */
     final DBSPOperator operator;
@@ -62,13 +65,23 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
     public MonotoneFunctions(IErrorReporter reporter,
                              DBSPOperator operator,
                              ValueProjection inputProjection,
-                             boolean pairOfReferences) {
+                             boolean indexedSet) {
         super(reporter);
         this.operator = operator;
         this.inputProjection = inputProjection;
-        this.pairOfReferences = pairOfReferences;
+        this.indexedSet = indexedSet;
         this.variables = new DeclarationValue<>();
         this.resolver = new ResolveReferences(reporter, false);
+    }
+
+    public DBSPType extractParameterType(DBSPType projectedType) {
+        if (this.indexedSet) {
+            DBSPTypeRawTuple tuple = projectedType.to(DBSPTypeRawTuple.class);
+            assert tuple.size() == 2: "Expected a two-tuple";
+            return new DBSPTypeRawTuple(tuple.getFieldType(0).ref(), tuple.getFieldType(1).ref());
+        } else {
+            return projectedType.ref();
+        }
     }
 
     @Override
@@ -84,15 +97,35 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
 
         DBSPType paramType = param.getType();
         DBSPType inputProjectionType = this.inputProjection.getType();
-        assert inputProjectionType.ref().sameType(paramType) :
-          "Expected same type " + inputProjectionType + " and " + paramType;
+        DBSPType adjustedParameterType = this.extractParameterType(inputProjectionType);
+        assert adjustedParameterType.sameType(paramType) :
+          "Expected same type " + adjustedParameterType + " and " + paramType;
 
-        DBSPType projectedType = this.inputProjection.getProjectedType();
+        DBSPType projectedType = this.inputProjection.getProjectionResultType();
         DBSPParameter projectedParameterRef = new DBSPParameter(param.getName(), projectedType.ref());
         DBSPParameter projectedParameter = new DBSPParameter(param.getName(), projectedType);
-        MonotoneValue monotoneParam = this.inputProjection.createInput(projectedParameter.asVariable());
-        this.variables.put(param, monotoneParam);
+        MonotoneValue parameterValue = this.inputProjection.createInput(projectedParameter.asVariable());
+        if (this.indexedSet) {
+            // Functions that iterate over IndexedZSets have the signature: |t: (&key, &value)| body.
+            // Here we convert a parameterValue of the form (key, value) into one of the form (&key, &value).
+            MonotoneTuple tuple = parameterValue.to(MonotoneTuple.class);
+            MonotoneValue field0 = tuple.field(0);
+            MonotoneValue field1 = tuple.field(1);
+            LinkedHashMap<Integer, MonotoneValue> fields = new LinkedHashMap<>();
+            if (field0 != null)
+                fields.put(0, field0.ref());
+            if (field1 != null)
+                fields.put(1, field1.ref());
+            DBSPType adjustedType = this.extractParameterType(tuple.getType());
+            parameterValue = new MonotoneTuple(adjustedType.to(DBSPTypeTupleBase.class), fields);
+        } else {
+            // Functions that iterate over ZSets have the signature |t: &value| body.
+            // Here we convert a parameterValue of the form value into one of the form &value.
+            parameterValue = parameterValue.ref();
+        }
+        this.variables.put(param, parameterValue);
         this.push(expression);
+        new RepeatedExpressions(this.errorReporter, true).apply(expression.body);
         expression.body.accept(this);
         this.pop(expression);
         MonotoneValue bodyValue = this.maybeGet(expression.body);
@@ -110,7 +143,7 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
     public void postorder(DBSPVariablePath var) {
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         MonotoneValue value = this.variables.get(declaration);
-        this.maybeSet(var, value);  // may overwrite
+        this.maybeSet(var, value);
     }
 
     @Override
@@ -121,6 +154,15 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
         MonotoneTuple tuple = value.to(MonotoneTuple.class);
         value = tuple.field(expression.fieldNo);
         this.maybeSet(expression, value);
+    }
+
+    @Override
+    public void postorder(DBSPDerefExpression expression) {
+        MonotoneValue value = this.maybeGet(expression.expression);
+        if (value == null)
+            return;
+        MonotoneRef ref = value.to(MonotoneRef.class);
+        this.set(expression, ref.source);
     }
 
     @Override

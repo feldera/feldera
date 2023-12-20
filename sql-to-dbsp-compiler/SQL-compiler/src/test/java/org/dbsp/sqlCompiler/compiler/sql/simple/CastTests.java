@@ -27,10 +27,15 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -68,6 +73,12 @@ public class CastTests extends BaseSQLTests {
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
         this.addRustTestCase(query, compiler, circuit, streams);
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6168")
+    public void testTinyInt() {
+        String query = "SELECT CAST(256 AS TINYINT)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression()));
     }
 
     @Test

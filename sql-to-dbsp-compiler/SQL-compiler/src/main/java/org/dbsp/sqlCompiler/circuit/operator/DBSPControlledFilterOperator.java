@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -49,10 +50,13 @@ public class DBSPControlledFilterOperator extends DBSPOperator {
                     new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.GTE, left, right);
             return new DBSPBinaryExpression(CalciteObject.EMPTY,
                     new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AND, compare, comparison);
-        }
-        DBSPTypeTupleBase tuple = leftType.to(DBSPTypeTupleBase.class);
-        for (int i = 0; i < tuple.size(); i++) {
-            compare = compareRecursive(compare, left.field(i), right.field(i));
+        } else if (leftType.is(DBSPTypeRef.class)) {
+            return compareRecursive(compare, left.deref(), right.deref());
+        } else {
+            DBSPTypeTupleBase tuple = leftType.to(DBSPTypeTupleBase.class);
+            for (int i = 0; i < tuple.size(); i++) {
+                compare = compareRecursive(compare, left.field(i), right.field(i));
+            }
         }
         return compare;
     }
@@ -76,22 +80,23 @@ public class DBSPControlledFilterOperator extends DBSPOperator {
     public static DBSPControlledFilterOperator create(
             CalciteObject node, DBSPOperator data, ValueProjection dataProjection, DBSPOperator control) {
         DBSPType controlType = control.getType();
-        DBSPType leftSliceType = dataProjection.getProjectedType();
+        DBSPType leftSliceType = dataProjection.getProjectionResultType();
         assert leftSliceType.sameType(controlType):
                 "Projection type does not match control type " + leftSliceType + "/" + controlType;
 
         DBSPType rowType = data.getOutputRowType();
-        DBSPVariablePath dataArg = new DBSPVariablePath("d", rowType.ref());
+        DBSPVariablePath dataArg = new DBSPVariablePath("d", rowType);
         DBSPParameter param;
         if (rowType.is(DBSPTypeRawTuple.class)) {
             DBSPTypeRawTuple raw = rowType.to(DBSPTypeRawTuple.class);
             param = new DBSPParameter(dataArg.variable,
                     new DBSPTypeRawTuple(raw.tupFields[0].ref(), raw.tupFields[1].ref()));
         } else {
-            param = dataArg.asParameter();
+            param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
         }
+        DBSPExpression projection = dataProjection.project(dataArg);
+
         DBSPVariablePath controlArg = new DBSPVariablePath("c", controlType.ref());
-        DBSPExpression projection = dataProjection.project(dataArg.deref());
         DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(projection, controlArg.deref());
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPControlledFilterOperator(node, closure, data, control);

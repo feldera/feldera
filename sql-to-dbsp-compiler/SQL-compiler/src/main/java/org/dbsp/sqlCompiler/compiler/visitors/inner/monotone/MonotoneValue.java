@@ -29,6 +29,10 @@ public abstract class MonotoneValue implements IHasId, ICastable {
         return this.getExpression().getType();
     }
 
+    public MonotoneValue ref() {
+        return new MonotoneRef(this);
+    }
+
     /** Expression which, when read, gives the value of this monotone value */
     public abstract DBSPExpression getExpression();
 

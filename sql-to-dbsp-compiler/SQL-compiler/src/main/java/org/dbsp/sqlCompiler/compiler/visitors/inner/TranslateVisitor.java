@@ -24,7 +24,7 @@ public class TranslateVisitor<T> extends InnerVisitor {
             this.node = new HashMap<>();
         }
 
-        public void put(IDBSPInnerNode node, T translation) {
+        public void putNew(IDBSPInnerNode node, T translation) {
             Utilities.putNew(this.translation, node.getId(), translation);
             Utilities.putNew(this.node, node.getId(), node);
         }
@@ -62,7 +62,7 @@ public class TranslateVisitor<T> extends InnerVisitor {
     }
 
     public void set(IDBSPInnerNode node, T translation) {
-       this.translationMap.put(node, translation);
+       this.translationMap.putNew(node, translation);
     }
 
     public T get(IDBSPInnerNode node) {
@@ -76,7 +76,7 @@ public class TranslateVisitor<T> extends InnerVisitor {
 
     public void maybeSet(IDBSPInnerNode node, @Nullable T translation) {
         if (translation != null)
-            this.translationMap.put(node, translation);
+            this.translationMap.putNew(node, translation);
     }
 
     protected T analyze(IDBSPInnerNode node) {

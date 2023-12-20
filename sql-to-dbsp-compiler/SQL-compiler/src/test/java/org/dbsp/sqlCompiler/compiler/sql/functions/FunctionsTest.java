@@ -1,15 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.functions;
 
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Test;
 
 public class FunctionsTest extends SqlIoTest {
-    @Override
-    public void prepareData(DBSPCompiler compiler) {
-        compiler.compileStatements("");
-    }
-
     @Test
     public void testLeft() {
         this.q("SELECT LEFT('string', 1);\n" +
