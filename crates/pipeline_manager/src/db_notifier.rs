@@ -307,7 +307,6 @@ mod test {
                     &None,
                     &None,
                     &None,
-                    &None,
                     None,
                 )
                 .await;

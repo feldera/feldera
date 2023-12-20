@@ -293,7 +293,6 @@ async fn update_program(
             &body.code,
             &None,
             &None,
-            &None,
             body.guard,
         )
         .await?;
