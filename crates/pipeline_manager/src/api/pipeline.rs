@@ -263,7 +263,7 @@ pub(crate) async fn pipeline_deployed(
         .db
         .lock()
         .await
-        .get_last_committed_pipeline_revision(*tenant_id, pipeline_id)
+        .get_current_pipeline_revision(*tenant_id, pipeline_id)
         .await
     {
         Ok(revision) => Some(revision),

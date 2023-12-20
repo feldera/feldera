@@ -1700,8 +1700,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetCommittedPipeline(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_last_committed_pipeline_revision(tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.get_last_committed_pipeline_revision(tenant_id, pipeline_id).await;
+                                let model_response = model.get_current_pipeline_revision(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_current_pipeline_revision(tenant_id, pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::NewService(tenant_id, id, name, description, config) => {
@@ -2129,7 +2129,7 @@ impl Storage for Mutex<DbModel> {
         }
     }
 
-    async fn get_last_committed_pipeline_revision(
+    async fn get_current_pipeline_revision(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
@@ -2138,7 +2138,8 @@ impl Storage for Mutex<DbModel> {
         let _p = s
             .pipelines
             .get(&(tenant_id, pipeline_id))
-            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+            // .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+            .ok_or(DBError::NoRevisionAvailable { pipeline_id })?;
         let history = s
             .history
             .get(&(tenant_id, pipeline_id))

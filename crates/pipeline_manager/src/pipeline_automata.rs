@@ -166,7 +166,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             | (PipelineStatus::Shutdown, PipelineStatus::Paused) => {
                 let db = self.db.lock().await;
                 let revision = db
-                    .get_last_committed_pipeline_revision(self.tenant_id, self.pipeline_id)
+                    .get_current_pipeline_revision(self.tenant_id, self.pipeline_id)
                     .await?;
                 db.update_pipeline_runtime_state(self.tenant_id, self.pipeline_id, &pipeline)
                     .await?;

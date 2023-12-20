@@ -1283,174 +1283,92 @@ impl Storage for ProjectDB {
         }
     }
 
-    /// Version the current pipeline object and all state reachable from it.
-    ///
-    /// We store the last revision number in the pipeline object itself.
+    /// Resolve all references and deploy a new pipeline
     async fn create_pipeline_revision(
         &self,
-        revision: Uuid,
+        deployment_id: Uuid,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<Revision, DBError> {
-        let mut client = self.pool.get().await?;
-        let txn = client.transaction().await?;
+        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        // TODO: turn all these calls into a transaction
+        let program_name = pipeline
+            .descriptor
+            .program_name
+            .as_ref()
+            .ok_or(DBError::ProgramNotSet)?;
+        let program = self
+            .get_program_by_name(tenant_id, program_name, false)
+            .await?;
+        let connectors = self
+            .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
+            .await?;
+        PipelineRevision::validate(&pipeline.descriptor, &connectors, &program)?;
+        let pipeline_revision = PipelineRevision::new(
+            Revision(deployment_id),
+            pipeline.descriptor,
+            connectors,
+            program,
+        );
 
-        // Finds the revision number
-        let find_revision_number = txn
+        let pipeline_config = serde_json::to_string(&pipeline_revision).unwrap();
+        let client = self.pool.get().await?;
+        let check_revision = client
             .prepare_cached(
-                "SELECT last_revision FROM pipeline WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+                "SELECT config FROM deployed_pipeline WHERE pipeline_id = $1 AND tenant_id = $2",
             )
             .await?;
-        // Takes a diff between the pipeline definition and its corresponding revision
-        let compute_revision_current_diff = txn
-            .prepare_cached(
-                "WITH ph_entry AS (
-                    SELECT progh.code, ch.config, ach.name, ach.config, ach.is_input, ph.config
-                                        FROM pipeline_history ph
-                                        INNER JOIN program_history progh ON ph.program_id = progh.id AND progh.revision = $2
-                                        LEFT OUTER JOIN attached_connector_history ach ON ach.pipeline_id = ph.id AND ach.revision = $2
-                                        LEFT OUTER JOIN connector_history ch ON ach.connector_id = ch.id AND ch.revision = $2
-                                        WHERE ph.id = $1 AND ph.revision = $2
-                ),
-                p_entry AS (
-                    SELECT prog.code, c.config, ac.name, ac.config, ac.is_input, p.config
-                                        FROM pipeline p
-                                        INNER JOIN program prog ON p.program_id = prog.id
-                                        LEFT OUTER JOIN attached_connector ac ON ac.pipeline_id = p.id
-                                        LEFT OUTER JOIN connector c ON ac.connector_id = c.id
-                                        WHERE p.id = $1
-                ),
-                diff_1 AS (
-                    SELECT * FROM ph_entry EXCEPT SELECT * FROM p_entry
-                ),
-                diff_2 AS (
-                    SELECT * FROM p_entry EXCEPT SELECT * FROM ph_entry
-                )
-                SELECT COUNT(*) FROM (SELECT * FROM diff_1 UNION ALL SELECT * FROM diff_2) as x"
-            )
-            .await?;
-        let insert_program_history = txn
-            .prepare_cached(
-                "INSERT INTO program_history SELECT $1 as revision, * FROM program p WHERE id = $2",
-            )
-            .await?;
-        let insert_pipeline_history = txn
-            .prepare_cached(
-                "INSERT INTO pipeline_history SELECT $1 as revision, * FROM pipeline p WHERE id = $2",
-            )
-            .await?;
-        let insert_connector_history = txn
-            .prepare_cached(
-                "INSERT INTO connector_history SELECT $1 as revision, c.* FROM connector c, attached_connector ac WHERE ac.pipeline_id = $2 AND ac.connector_id = c.id",
-            )
-            .await?;
-        let insert_attached_connector_history = txn
-            .prepare_cached(
-                "INSERT INTO attached_connector_history SELECT $1 as revision, * FROM attached_connector ac WHERE ac.pipeline_id = $2",
-            )
-            .await?;
-        let update_revision = txn
-            .prepare_cached(
-                "UPDATE pipeline SET last_revision = $1 WHERE id = $2 AND tenant_id = $3",
-            )
+        let row: Option<Row> = client
+            .query_opt(&check_revision, &[&pipeline_id.0, &tenant_id.0])
             .await?;
 
-        let revision_data = txn
-            .query_opt(&find_revision_number, &[&pipeline_id.0, &tenant_id.0])
-            .await?;
-        let prev_revision = revision_data.and_then(|row: Row| row.get::<_, Option<Uuid>>(0));
-
-        // Check if we actually changed something before writing a new revision
-        //
-        // Note: What fields are checked is ultimately determined by whatever is
-        // used by the pipeline configuration, e.g., what the `start` function
-        // uses in `runner.rs` to write the config/metadata:
-        if prev_revision.is_some() {
-            let change = txn
-                .query_one(
-                    &compute_revision_current_diff,
-                    &[&pipeline_id.0, &prev_revision],
-                )
-                .await?;
-
-            let nothing_changed = change.get::<_, i64>(0) == 0;
-            if nothing_changed {
+        if let Some(row) = row {
+            let current_revision: String = row.get(0);
+            if pipeline_config == current_revision {
                 return Err(DBError::RevisionNotChanged);
             }
         }
-
-        // TODO: Ideally these queries happen in the same transaction `txn`.
-        // Need to revise the API a bit to optionally pass in a transaction
-        // object for this to work seamlessly. Also probably the program row
-        // should be locked with FOR UPDATE while reading to prevent the
-        // compiler from resetting the status field.
-        let (_pipeline, program, _connectors) =
-            self.pipeline_is_committable(tenant_id, pipeline_id).await?;
-
-        // Copy all pipeline data to history tables
-        //
-        // TODO(performance): In theory the following inserts could all run in
-        // parallel with async but I couldn't figure out how to make it work
-        // with the args :/
-        txn.execute(&insert_program_history, &[&revision, &program.program_id.0])
+        let stmt = client
+            .prepare_cached("INSERT INTO deployed_pipeline (id, pipeline_id, tenant_id, config) VALUES ($1, $2, $3, $4)
+                             ON CONFLICT ON CONSTRAINT unique_pipeline_id 
+                             DO UPDATE SET id = EXCLUDED.id, config = EXCLUDED.config")
             .await?;
-        txn.execute(&insert_pipeline_history, &[&revision, &pipeline_id.0])
+        client
+            .execute(
+                &stmt,
+                &[
+                    &deployment_id,
+                    &pipeline_id.0,
+                    &tenant_id.0,
+                    &pipeline_config,
+                ],
+            )
             .await?;
-        txn.execute(&insert_connector_history, &[&revision, &pipeline_id.0])
-            .await?;
-        txn.execute(
-            &insert_attached_connector_history,
-            &[&revision, &pipeline_id.0],
-        )
-        .await?;
-
-        // Update the revision of the pipeline object
-        txn.execute(&update_revision, &[&revision, &pipeline_id.0, &tenant_id.0])
-            .await?;
-
-        txn.commit().await?;
-
-        Ok(Revision(revision))
+        Ok(Revision(deployment_id))
     }
 
-    async fn get_last_committed_pipeline_revision(
+    async fn get_current_pipeline_revision(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineRevision, DBError> {
         let manager = self.pool.get().await?;
         let stmt = manager
-            .prepare_cached("SELECT last_revision FROM pipeline WHERE id = $1 AND tenant_id = $2")
+            .prepare_cached(
+                "SELECT config FROM deployed_pipeline WHERE pipeline_id = $1 AND tenant_id = $2",
+            )
             .await?;
         let row: Option<Row> = manager
             .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
             .await?;
 
         if let Some(row) = row {
-            let revision = Revision(
-                row.get::<_, Option<Uuid>>(0)
-                    .ok_or(DBError::NoRevisionAvailable { pipeline_id })?,
-            );
-            let pipeline = self
-                .get_committed_pipeline_by_id(tenant_id, pipeline_id, revision)
-                .await?;
-            // expect() is ok here - we don't allow to commit something without a program
-            let program_name = pipeline
-                .program_name
-                .as_ref()
-                .expect("pre-condition: pipeline has a program");
-            let program = self
-                .get_committed_program_by_name(tenant_id, program_name, revision)
-                .await?;
-            let connectors = self
-                .get_committed_connectors_by_id(tenant_id, pipeline_id, revision)
-                .await?;
-
-            Ok(PipelineRevision::new(
-                revision, pipeline, connectors, program,
-            ))
+            let config: String = row.get(0);
+            let pipeline_revision = serde_json::from_str(&config).unwrap();
+            Ok(pipeline_revision)
         } else {
-            Err(DBError::UnknownPipeline { pipeline_id })
+            // Err(DBError::UnknownPipeline { pipeline_id })
+            Err(DBError::NoRevisionAvailable { pipeline_id })
         }
     }
 
@@ -2736,122 +2654,6 @@ impl ProjectDB {
             .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
             .await?;
         PipelineRevision::generate_pipeline_config(&pipeline, &connectors)
-    }
-
-    async fn get_committed_program_by_name(
-        &self,
-        tenant_id: TenantId,
-        program_name: &str,
-        revision: Revision,
-    ) -> Result<ProgramDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT
-                id, name, description, version, status, error, schema, code
-                FROM program_history WHERE tenant_id = $1 AND  name = $2 AND revision = $3",
-            )
-            .await?;
-        let row = manager
-            .query_opt(&stmt, &[&tenant_id.0, &program_name, &revision.0])
-            .await?;
-
-        if let Some(row) = row {
-            let program_id: ProgramId = ProgramId(row.get(0));
-            let name: String = row.get(1);
-            let description: String = row.get(2);
-            let version: Version = Version(row.get(3));
-            let status: String = row.get(4);
-            let error: Option<String> = row.get(5);
-            let schema: Option<ProgramSchema> = row
-                .get::<_, Option<String>>(6)
-                .map(|s| serde_json::from_str(&s))
-                .transpose()
-                .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
-            let status = ProgramStatus::from_columns(&status, error)?;
-            let code = row.get(7);
-            Ok(ProgramDescr {
-                program_id,
-                name,
-                description,
-                version,
-                status,
-                schema,
-                code,
-            })
-        } else {
-            Err(DBError::UnknownProgramName {
-                program_name: program_name.to_string(),
-            })
-        }
-    }
-
-    async fn get_committed_pipeline_by_id(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        revision: Revision,
-    ) -> Result<PipelineDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
-                COALESCE(json_agg(json_build_object('name', ach.name,
-                                                    'connector_name', ch.name,
-                                                    'config', ach.config,
-                                                    'is_input', is_input))
-                                FILTER (WHERE ach.name IS NOT NULL),
-                        '[]')
-                FROM pipeline_history p
-                LEFT JOIN program_history prog on p.program_id = prog.id AND prog.revision = $3
-                LEFT JOIN attached_connector_history ach on p.id = ach.pipeline_id AND ach.revision = $3
-                LEFT JOIN connector_history ch on ach.connector_id = ch.id
-                WHERE p.id = $1 AND p.tenant_id = $2 AND p.revision = $3
-                GROUP BY p.id, p.version, p.name, p.description, p.config, p.program_id, prog.name
-                ")
-            .await?;
-        let row = manager
-            .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0, &revision.0])
-            .await?
-            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
-
-        self.row_to_pipeline_descr(&row).await
-    }
-
-    async fn get_committed_connectors_by_id(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        revision: Revision,
-    ) -> Result<Vec<ConnectorDescr>, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT ch.id, ch.name, ch.description, ch.config
-            FROM connector_history ch, attached_connector_history ach
-            WHERE ach.pipeline_id = $1 AND ach.connector_id = ch.id AND ch.tenant_id = $2 AND ch.revision = $3")
-            .await?;
-
-        let rows = manager
-            .query(&stmt, &[&pipeline_id.0, &tenant_id.0, &revision.0])
-            .await?;
-
-        Ok(rows
-            .iter()
-            .map(|row| {
-                let connector_id = ConnectorId(row.get(0));
-                let name = row.get(1);
-                let description = row.get(2);
-                let config = ConnectorConfig::from_yaml_str(row.get(3));
-
-                ConnectorDescr {
-                    connector_id,
-                    name,
-                    description,
-                    config,
-                }
-            })
-            .collect::<Vec<ConnectorDescr>>())
     }
 
     /// Retrieve all connectors referenced by a pipeline.

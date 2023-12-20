@@ -140,9 +140,10 @@ pub(crate) trait Storage {
     /// if there are no pending programs in the DB.
     async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError>;
 
-    /// Version the configuration for a pipeline.
+    /// Create a pipeline revision, which is an immutable and complete configuration
+    /// for running a pipeline.
     ///
-    /// Returns the revision number for that snapshot.
+    /// Returns the revision ID for the pipeline.
     async fn create_pipeline_revision(
         &self,
         new_revision_id: Uuid,
@@ -150,9 +151,8 @@ pub(crate) trait Storage {
         pipeline_id: PipelineId,
     ) -> Result<Revision, DBError>;
 
-    /// Retrieves the current revision for a pipeline (including all immutable
-    /// state needed to run it).
-    async fn get_last_committed_pipeline_revision(
+    /// Retrieves the current revision for a pipeline
+    async fn get_current_pipeline_revision(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
