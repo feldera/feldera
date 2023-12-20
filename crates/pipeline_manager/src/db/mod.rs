@@ -161,17 +161,14 @@ impl Display for Revision {
 /// one of `"sql_error"` or `"rust_error"`.
 impl ProgramStatus {
     /// Decode `ProgramStatus` from the values of `error` and `status` columns.
-    fn from_columns(
-        status_string: Option<&str>,
-        error_string: Option<String>,
-    ) -> Result<Self, DBError> {
+    fn from_columns(status_string: &str, error_string: Option<String>) -> Result<Self, DBError> {
         match status_string {
-            None => Ok(Self::None),
-            Some("success") => Ok(Self::Success),
-            Some("pending") => Ok(Self::Pending),
-            Some("compiling_sql") => Ok(Self::CompilingSql),
-            Some("compiling_rust") => Ok(Self::CompilingRust),
-            Some("sql_error") => {
+            "none" => Ok(Self::None),
+            "success" => Ok(Self::Success),
+            "pending" => Ok(Self::Pending),
+            "compiling_sql" => Ok(Self::CompilingSql),
+            "compiling_rust" => Ok(Self::CompilingRust),
+            "sql_error" => {
                 let error = error_string.unwrap_or_default();
                 if let Ok(messages) = serde_json::from_str(&error) {
                     Ok(Self::SqlError(messages))
@@ -180,14 +177,14 @@ impl ProgramStatus {
                     Ok(Self::SystemError(error))
                 }
             }
-            Some("rust_error") => Ok(Self::RustError(error_string.unwrap_or_default())),
-            Some("system_error") => Ok(Self::SystemError(error_string.unwrap_or_default())),
-            Some(status) => Err(DBError::invalid_status(status.to_string())),
+            "rust_error" => Ok(Self::RustError(error_string.unwrap_or_default())),
+            "system_error" => Ok(Self::SystemError(error_string.unwrap_or_default())),
+            status => Err(DBError::invalid_status(status.to_string())),
         }
     }
     fn to_columns(&self) -> (Option<String>, Option<String>) {
         match self {
-            ProgramStatus::None => (None, None),
+            ProgramStatus::None => (Some("none".to_string()), None),
             ProgramStatus::Success => (Some("success".to_string()), None),
             ProgramStatus::Pending => (Some("pending".to_string()), None),
             ProgramStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
@@ -920,9 +917,9 @@ impl Storage for ProjectDB {
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let status: Option<String> = row.get(4);
+            let status: String = row.get(4);
             let error: Option<String> = row.get(5);
-            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
+            let status = ProgramStatus::from_columns(&status, error)?;
             let schema: Option<ProgramSchema> = row
                 .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
@@ -953,10 +950,11 @@ impl Storage for ProjectDB {
     ) -> Result<(ProgramId, Version), DBError> {
         debug!("new_program {program_name} {program_description} {program_code}");
         let manager = self.pool.get().await?;
+        let (status, error) = ProgramStatus::None.to_columns();
         let stmt = manager
             .prepare_cached(
                 "INSERT INTO program (id, version, tenant_id, name, description, code, schema, status, error, status_since)
-                        VALUES($1, 1, $2, $3, $4, $5, NULL, NULL, NULL, now());",
+                        VALUES($1, 1, $2, $3, $4, $5, NULL, $6, $7, now());",
             )
             .await?;
         manager
@@ -968,6 +966,8 @@ impl Storage for ProjectDB {
                     &program_name,
                     &program_description,
                     &program_code,
+                    &status,
+                    &error,
                 ],
             )
             .await
@@ -979,7 +979,7 @@ impl Storage for ProjectDB {
         Ok((ProgramId(id), Version(1)))
     }
 
-    /// Optionally update the program name, description and/or code. This call
+    /// Optionally update different fields of a program. This call
     /// also accepts an optional version to do guarded updates to the code.
     async fn update_program(
         &self,
@@ -988,9 +988,8 @@ impl Storage for ProjectDB {
         program_name: &Option<String>,
         program_description: &Option<String>,
         program_code: &Option<String>,
-        status: &Option<String>,
-        error: &Option<String>,
-        schema: &Option<String>,
+        status: &Option<ProgramStatus>,
+        schema: &Option<ProgramSchema>,
         guard: Option<Version>,
     ) -> Result<Version, DBError> {
         let mut manager = self.pool.get().await?;
@@ -1023,9 +1022,10 @@ impl Storage for ProjectDB {
                             description = COALESCE($4, description),
                             code = COALESCE($5, code),
                             version = $6,
-                            status = (CASE WHEN version = $6 THEN COALESCE($7, status) ELSE NULL END),
+                            status = (CASE WHEN version = $6 THEN COALESCE($7, status) ELSE 'none' END),
                             error = (CASE WHEN version = $6 THEN COALESCE($8, error) ELSE NULL END),
-                            schema = (CASE WHEN version = $6 THEN COALESCE($9, schema) ELSE NULL END)
+                            schema = (CASE WHEN version = $6 THEN COALESCE($9, schema) ELSE NULL END),
+                            status_since = (CASE WHEN $10 THEN now() ELSE status_since END)
                     WHERE tenant_id = $1 AND id = $2
                     RETURNING version
                 "#,
@@ -1037,6 +1037,18 @@ impl Storage for ProjectDB {
         } else {
             latest_version.0
         };
+        let status_change = !has_code_changed && (status.is_some() || schema.is_some());
+        let schema = if let Some(s) = schema {
+            Some(serde_json::to_string(&s).map_err(|e| {
+                DBError::invalid_data(format!(
+                    "Error serializing program schema '{schema:?}'.\nError: {e}"
+                ))
+            })?)
+        } else {
+            None
+        };
+        let status = status.as_ref().map(|s| s.to_columns()); // split into (status, error) Strings
+        println!("{status:?} {status_change:?} {new_version:?}");
         let row = txn
             .query_opt(
                 &stmt,
@@ -1047,9 +1059,10 @@ impl Storage for ProjectDB {
                     &program_description,
                     &program_code,
                     &new_version,
-                    &status,
+                    &status.as_ref().map(|s| s.0.clone()),
+                    &status.as_ref().map(|s| s.1.clone()),
                     &schema,
-                    &error,
+                    &status_change,
                 ],
             )
             .await
@@ -1066,12 +1079,12 @@ impl Storage for ProjectDB {
     /// Retrieve program descriptor.
     ///
     /// Returns `None` if `program_id` is not found in the database.
-    async fn get_program_if_exists(
+    async fn get_program_by_id(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
         with_code: bool,
-    ) -> Result<Option<ProgramDescr>, DBError> {
+    ) -> Result<ProgramDescr, DBError> {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
@@ -1088,7 +1101,7 @@ impl Storage for ProjectDB {
             let name: String = row.get(0);
             let description: String = row.get(1);
             let version: Version = Version(row.get(2));
-            let status: Option<String> = row.get(3);
+            let status: String = row.get(3);
             let error: Option<String> = row.get(4);
             let schema: Option<ProgramSchema> = row
                 .get::<_, Option<String>>(5)
@@ -1097,8 +1110,8 @@ impl Storage for ProjectDB {
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
             let code: Option<String> = row.get(6);
 
-            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-            Ok(Some(ProgramDescr {
+            let status = ProgramStatus::from_columns(&status, error)?;
+            Ok(ProgramDescr {
                 program_id,
                 name,
                 description,
@@ -1106,19 +1119,19 @@ impl Storage for ProjectDB {
                 status,
                 schema,
                 code,
-            }))
+            })
         } else {
-            Ok(None)
+            Err(DBError::UnknownProgram { program_id })
         }
     }
 
     /// Lookup program by name.
-    async fn lookup_program(
+    async fn get_program_by_name(
         &self,
         tenant_id: TenantId,
         program_name: &str,
         with_code: bool,
-    ) -> Result<Option<ProgramDescr>, DBError> {
+    ) -> Result<ProgramDescr, DBError> {
         let manager = self.pool.get().await?;
         let stmt = manager
             .prepare_cached(
@@ -1135,7 +1148,7 @@ impl Storage for ProjectDB {
             let program_id: ProgramId = ProgramId(row.get(0));
             let description: String = row.get(1);
             let version: Version = Version(row.get(2));
-            let status: Option<String> = row.get(3);
+            let status: String = row.get(3);
             let error: Option<String> = row.get(4);
             let schema: Option<ProgramSchema> = row
                 .get::<_, Option<String>>(5)
@@ -1144,8 +1157,8 @@ impl Storage for ProjectDB {
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
             let code: Option<String> = row.get(7);
 
-            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
-            Ok(Some(ProgramDescr {
+            let status = ProgramStatus::from_columns(&status, error)?;
+            Ok(ProgramDescr {
                 program_id,
                 name: program_name.to_string(),
                 description,
@@ -1153,9 +1166,11 @@ impl Storage for ProjectDB {
                 status,
                 schema,
                 code,
-            }))
+            })
         } else {
-            Ok(None)
+            Err(DBError::UnknownProgramName {
+                program_name: program_name.to_string(),
+            })
         }
     }
 
@@ -1191,70 +1206,6 @@ impl Storage for ProjectDB {
                     &tenant_id.0,
                 ],
             )
-            .await?;
-
-        Ok(())
-    }
-
-    async fn set_program_status_guarded(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
-        status: ProgramStatus,
-    ) -> Result<(), DBError> {
-        let (status, error) = status.to_columns();
-        let manager = self.pool.get().await?;
-        // We could perform the guard in the WHERE clause, but that does not
-        // tell us whether the ID existed or not.
-        // Instead, we use a case statement for the guard.
-        let stmt = manager
-            .prepare_cached(
-                "UPDATE program SET
-                 status = (CASE WHEN version = $4 THEN $1 ELSE status END),
-                 error = (CASE WHEN version = $4 THEN $2 ELSE error END),
-                 status_since = (CASE WHEN version = $4 THEN now()
-                                 ELSE status_since END)
-                 WHERE id = $3 AND tenant_id = $5 RETURNING id",
-            )
-            .await?;
-
-        let row = manager
-            .query_opt(
-                &stmt,
-                &[
-                    &status,
-                    &error,
-                    &program_id.0,
-                    &expected_version.0,
-                    &tenant_id.0,
-                ],
-            )
-            .await?;
-        if row.is_none() {
-            Err(DBError::UnknownProgram { program_id })
-        } else {
-            Ok(())
-        }
-    }
-
-    async fn set_program_schema(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        schema: ProgramSchema,
-    ) -> Result<(), DBError> {
-        let schema = serde_json::to_string(&schema).map_err(|e| {
-            DBError::invalid_data(format!(
-                "Error serializing program schema '{schema:?}'.\nError: {e}"
-            ))
-        })?;
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached("UPDATE program SET schema = $1 WHERE id = $2 AND tenant_id = $3")
-            .await?;
-        manager
-            .execute(&stmt, &[&schema, &program_id.0, &tenant_id.0])
             .await?;
 
         Ok(())
@@ -1297,9 +1248,9 @@ impl Storage for ProjectDB {
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let status: Option<String> = row.get(4);
+            let status: String = row.get(4);
             let error: Option<String> = row.get(5);
-            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
+            let status = ProgramStatus::from_columns(&status, error)?;
             let schema: Option<ProgramSchema> = row
                 .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
@@ -2840,14 +2791,14 @@ impl ProjectDB {
             let name: String = row.get(1);
             let description: String = row.get(2);
             let version: Version = Version(row.get(3));
-            let status: Option<String> = row.get(4);
+            let status: String = row.get(4);
             let error: Option<String> = row.get(5);
             let schema: Option<ProgramSchema> = row
                 .get::<_, Option<String>>(6)
                 .map(|s| serde_json::from_str(&s))
                 .transpose()
                 .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
-            let status = ProgramStatus::from_columns(status.as_deref(), error)?;
+            let status = ProgramStatus::from_columns(&status, error)?;
             let code = row.get(7);
             Ok(ProgramDescr {
                 program_id,
