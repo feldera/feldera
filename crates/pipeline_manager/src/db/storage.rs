@@ -117,6 +117,23 @@ pub(crate) trait Storage {
         Ok(())
     }
 
+    /// Update program status.
+    ///
+    /// # Note
+    /// - Doesn't check that the program exists.
+    /// - Resets schema to null.
+    async fn set_program_for_compilation(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+        version: Version,
+        status: ProgramStatus,
+    ) -> Result<(), DBError> {
+        self.set_program_status_guarded(tenant_id, program_id, version, status)
+            .await?;
+        Ok(())
+    }
+
     /// Create a new program.
     async fn new_program(
         &self,
@@ -159,19 +176,6 @@ pub(crate) trait Storage {
         program_name: &str,
         with_code: bool,
     ) -> Result<ProgramDescr, DBError>;
-
-    /// Update program status.
-    ///
-    /// # Note
-    /// - Doesn't check that the program exists.
-    /// - Resets schema to null.
-    async fn set_program_for_compilation(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        version: Version,
-        status: ProgramStatus,
-    ) -> Result<(), DBError>;
 
     /// Delete program from the database.
     ///

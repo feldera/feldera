@@ -1024,8 +1024,10 @@ impl Storage for ProjectDB {
                             version = $6,
                             status = (CASE WHEN version = $6 THEN COALESCE($7, status) ELSE 'none' END),
                             error = (CASE WHEN version = $6 THEN COALESCE($8, error) ELSE NULL END),
-                            schema = (CASE WHEN version = $6 THEN COALESCE($9, schema) ELSE NULL END),
-                            status_since = (CASE WHEN $10 THEN now() ELSE status_since END)
+                            status_since = (CASE WHEN $10 THEN now() ELSE status_since END),
+                            schema = (CASE WHEN $11 THEN NULL
+                                           WHEN version = $6 THEN COALESCE($9, schema)
+                                           ELSE NULL END)
                     WHERE tenant_id = $1 AND id = $2
                     RETURNING version
                 "#,
@@ -1038,7 +1040,12 @@ impl Storage for ProjectDB {
             latest_version.0
         };
         let status_change = !has_code_changed && (status.is_some() || schema.is_some());
-        let schema = if let Some(s) = schema {
+        let reset_schema = status
+            .as_ref()
+            .is_some_and(|s| *s == ProgramStatus::Pending);
+        let schema = if reset_schema {
+            None
+        } else if let Some(s) = schema {
             Some(serde_json::to_string(&s).map_err(|e| {
                 DBError::invalid_data(format!(
                     "Error serializing program schema '{schema:?}'.\nError: {e}"
@@ -1048,7 +1055,6 @@ impl Storage for ProjectDB {
             None
         };
         let status = status.as_ref().map(|s| s.to_columns()); // split into (status, error) Strings
-        println!("{status:?} {status_change:?} {new_version:?}");
         let row = txn
             .query_opt(
                 &stmt,
@@ -1063,6 +1069,7 @@ impl Storage for ProjectDB {
                     &status.as_ref().map(|s| s.1.clone()),
                     &schema,
                     &status_change,
+                    &reset_schema,
                 ],
             )
             .await
@@ -1172,43 +1179,6 @@ impl Storage for ProjectDB {
                 program_name: program_name.to_string(),
             })
         }
-    }
-
-    async fn set_program_for_compilation(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
-        status: ProgramStatus,
-    ) -> Result<(), DBError> {
-        let (status, error) = status.to_columns();
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "UPDATE program SET
-                 status = (CASE WHEN version = $4 THEN $1 ELSE status END),
-                 error = (CASE WHEN version = $4 THEN $2 ELSE error END),
-                 status_since = (CASE WHEN version = $4 THEN now()
-                                 ELSE status_since END),
-                 schema = (CASE WHEN version = $4 THEN NULL ELSE schema END)
-                 WHERE id = $3 AND tenant_id = $5",
-            )
-            .await?;
-
-        manager
-            .execute(
-                &stmt,
-                &[
-                    &status,
-                    &error,
-                    &program_id.0,
-                    &expected_version.0,
-                    &tenant_id.0,
-                ],
-            )
-            .await?;
-
-        Ok(())
     }
 
     async fn delete_program(

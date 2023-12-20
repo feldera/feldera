@@ -1910,6 +1910,11 @@ impl Storage for Mutex<DbModel> {
                 }
                 if let Some(status) = status {
                     p.status = status.clone();
+                    // Reset schema when program status is set to Pending,
+                    // this is used to signal the compiler
+                    if p.status == ProgramStatus::Pending {
+                        p.schema = None;
+                    }
                 }
                 // If the code is updated, it overrides the schema and status
                 // changes to the equivalent of NULL.
@@ -1964,25 +1969,6 @@ impl Storage for Mutex<DbModel> {
             .ok_or(DBError::UnknownProgramName {
                 program_name: program_name.to_string(),
             })?)
-    }
-
-    async fn set_program_for_compilation(
-        &self,
-        tenant_id: TenantId,
-        program_id: super::ProgramId,
-        expected_version: super::Version,
-        status: ProgramStatus,
-    ) -> DBResult<()> {
-        let mut s = self.lock().await;
-        let _r = s.programs.get_mut(&(tenant_id, program_id)).map(|(p, t)| {
-            if p.version == expected_version {
-                p.status = status;
-                *t = SystemTime::now();
-                p.schema = None;
-            }
-        });
-
-        Ok(())
     }
 
     async fn delete_program(
