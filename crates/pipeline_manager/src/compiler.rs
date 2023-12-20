@@ -702,7 +702,7 @@ impl Compiler {
                     "Program {} does not have a local artifact despite being in the {:?} state. Removing binary references to the program and re-queuing it for compilation.",
                     program.program_id, program.status
                 );
-                db.set_program_for_compilation(
+                db.set_program_status_guarded(
                     tenant_id,
                     program.program_id,
                     program.version,
@@ -1125,7 +1125,7 @@ mod test {
         // Now set the program to be queued for compilation
         db.lock()
             .await
-            .set_program_for_compilation(tid, pid, vid, super::ProgramStatus::Pending)
+            .set_program_status_guarded(tid, pid, vid, super::ProgramStatus::Pending)
             .await
             .unwrap();
         super::Compiler::reconcile_local_state(&conf, &db)

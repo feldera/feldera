@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    api::{examples, parse_uuid_param},
+    api::{examples, parse_uuid_param, ProgramStatus},
     auth::TenantId,
     db::{storage::Storage, DBError, ProgramDescr, ProgramId, Version},
 };
@@ -339,16 +339,34 @@ async fn compile_program(
     body: web::Json<CompileProgramRequest>,
 ) -> Result<HttpResponse, ManagerError> {
     let program_id = ProgramId(parse_uuid_param(&request, "program_id")?);
+    let descr = state
+        .db
+        .lock()
+        .await
+        .get_program_by_id(*tenant_id, program_id, false)
+        .await?;
+    if descr.version != body.version {
+        return Err(DBError::OutdatedProgramVersion {
+            latest_version: descr.version,
+        }
+        .into());
+    }
+    // Do nothing if the program:
+    // * is already Pending (we don't want to requeue it for compilation),
+    // * if compilation is already in progress,
+    // * or if the program has already been compiled
+    if descr.status == ProgramStatus::Pending
+        || descr.status.is_compiling()
+        || descr.status == ProgramStatus::Success
+    {
+        return Ok(HttpResponse::Accepted().finish());
+    }
     state
         .db
         .lock()
         .await
-        .prepare_program_for_compilation(*tenant_id, program_id, body.version)
+        .set_program_status_guarded(*tenant_id, program_id, body.version, ProgramStatus::Pending)
         .await?;
-    info!(
-        "Compilation request accepted for program {program_id} version {} (tenant:{})",
-        body.version, *tenant_id
-    );
     Ok(HttpResponse::Accepted().finish())
 }
 
