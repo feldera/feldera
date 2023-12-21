@@ -11,6 +11,7 @@ use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::{Relation, ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use deadpool_postgres::Transaction;
 use openssl::sha::{self};
 use pipeline_types::config::{
     ConnectorConfig, MysqlConfig, ResourceConfig, RuntimeConfig, ServiceConfig,
@@ -372,13 +373,13 @@ async fn program_queries() {
     assert_eq!("test1", desc.name);
     let desc = handle
         .db
-        .get_program_by_name(tenant_id, "test1", false)
+        .get_program_by_name(tenant_id, "test1", false, None)
         .await
         .unwrap();
     assert_eq!("test1", desc.name);
     let desc = handle
         .db
-        .get_program_by_name(tenant_id, "test2", false)
+        .get_program_by_name(tenant_id, "test2", false, None)
         .await;
     assert!(desc.is_err());
 }
@@ -1503,8 +1504,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetProgramByName(tenant_id, name, with_code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_program_by_name(tenant_id, &name, with_code).await;
-                                let impl_response = handle.db.get_program_by_name(tenant_id, &name, with_code).await;
+                                let model_response = model.get_program_by_name(tenant_id, &name, with_code, None).await;
+                                let impl_response = handle.db.get_program_by_name(tenant_id, &name, with_code, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetProgramStatusGuarded(tenant_id, program_id, version, status) => {
@@ -1558,8 +1559,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetPipelineDescrById(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_pipeline_descr_by_id(tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.get_pipeline_descr_by_id(tenant_id, pipeline_id).await;
+                                let model_response = model.get_pipeline_descr_by_id(tenant_id, pipeline_id, None).await;
+                                let impl_response = handle.db.get_pipeline_descr_by_id(tenant_id, pipeline_id, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetPipelineDescrByName(tenant_id, name) => {
@@ -1946,6 +1947,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         program_name: &str,
         with_code: bool,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<ProgramDescr> {
         let s = self.lock().await;
         Ok(s.programs
@@ -2370,6 +2372,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_id: super::PipelineId,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<super::PipelineDescr> {
         self.get_pipeline_by_id(tenant_id, pipeline_id)
             .await

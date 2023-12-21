@@ -1138,18 +1138,22 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         program_name: &str,
         with_code: bool,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ProgramDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT id, description, version, status, error, schema, tenant_id,
+        let query = "SELECT id, description, version, status, error, schema, tenant_id,
                  CASE WHEN $3 IS TRUE THEN code ELSE null END
-                 FROM program WHERE name = $1 AND tenant_id = $2",
-            )
-            .await?;
-        let row = manager
-            .query_opt(&stmt, &[&program_name, &tenant_id.0, &with_code])
-            .await?;
+                 FROM program WHERE name = $1 AND tenant_id = $2";
+        let row = if let Some(txn) = txn {
+            let stmt = txn.prepare_cached(query).await?;
+            txn.query_opt(&stmt, &[&program_name, &tenant_id.0, &with_code])
+                .await?
+        } else {
+            let manager = self.pool.get().await?;
+            let stmt = manager.prepare_cached(query).await?;
+            manager
+                .query_opt(&stmt, &[&program_name, &tenant_id.0, &with_code])
+                .await?
+        };
 
         if let Some(row) = row {
             let program_id: ProgramId = ProgramId(row.get(0));
@@ -1290,35 +1294,32 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<Revision, DBError> {
-        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
-        // TODO: turn all these calls into a transaction
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let pipeline = self
+            .get_pipeline_descr_by_id(tenant_id, pipeline_id, Some(&txn))
+            .await?;
         let program_name = pipeline
-            .descriptor
             .program_name
             .as_ref()
             .ok_or(DBError::ProgramNotSet)?;
         let program = self
-            .get_program_by_name(tenant_id, program_name, false)
+            .get_program_by_name(tenant_id, program_name, false, Some(&txn))
             .await?;
         let connectors = self
-            .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
+            .get_connectors_for_pipeline_id(tenant_id, pipeline_id, Some(&txn))
             .await?;
-        PipelineRevision::validate(&pipeline.descriptor, &connectors, &program)?;
-        let pipeline_revision = PipelineRevision::new(
-            Revision(deployment_id),
-            pipeline.descriptor,
-            connectors,
-            program,
-        );
+        PipelineRevision::validate(&pipeline, &connectors, &program)?;
+        let pipeline_revision =
+            PipelineRevision::new(Revision(deployment_id), pipeline, connectors, program);
 
         let pipeline_config = serde_json::to_string(&pipeline_revision).unwrap();
-        let client = self.pool.get().await?;
-        let check_revision = client
+        let check_revision = txn
             .prepare_cached(
                 "SELECT config FROM deployed_pipeline WHERE pipeline_id = $1 AND tenant_id = $2",
             )
             .await?;
-        let row: Option<Row> = client
+        let row: Option<Row> = txn
             .query_opt(&check_revision, &[&pipeline_id.0, &tenant_id.0])
             .await?;
 
@@ -1328,22 +1329,22 @@ impl Storage for ProjectDB {
                 return Err(DBError::RevisionNotChanged);
             }
         }
-        let stmt = client
+        let stmt = txn
             .prepare_cached("INSERT INTO deployed_pipeline (id, pipeline_id, tenant_id, config) VALUES ($1, $2, $3, $4)
                              ON CONFLICT ON CONSTRAINT unique_pipeline_id 
                              DO UPDATE SET id = EXCLUDED.id, config = EXCLUDED.config")
             .await?;
-        client
-            .execute(
-                &stmt,
-                &[
-                    &deployment_id,
-                    &pipeline_id.0,
-                    &tenant_id.0,
-                    &pipeline_config,
-                ],
-            )
-            .await?;
+        txn.execute(
+            &stmt,
+            &[
+                &deployment_id,
+                &pipeline_id.0,
+                &tenant_id.0,
+                &pipeline_config,
+            ],
+        )
+        .await?;
+        txn.commit().await?;
         Ok(Revision(deployment_id))
     }
 
@@ -1445,11 +1446,10 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<PipelineDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
+        let query =
+            "SELECT p.id, p.version, p.name as cname, p.description, p.config, program.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_name', c.name,
                                                     'config', ac.config,
@@ -1462,14 +1462,21 @@ impl Storage for ProjectDB {
                 LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.id = $1 AND p.tenant_id = $2
                 GROUP BY p.id, program.name
-                ",
-            )
-            .await?;
+                ";
+        let row = if let Some(txn) = txn {
+            let stmt = txn.prepare_cached(query).await?;
+            txn.query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
+                .await?
+                .ok_or(DBError::UnknownPipeline { pipeline_id })?
+        } else {
+            let manager = self.pool.get().await?;
+            let stmt = manager.prepare_cached(query).await?;
 
-        let row = manager
-            .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
-            .await?
-            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
+            manager
+                .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
+                .await?
+                .ok_or(DBError::UnknownPipeline { pipeline_id })?
+        };
 
         self.row_to_pipeline_descr(&row).await
     }
@@ -2624,19 +2631,22 @@ impl ProjectDB {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(PipelineDescr, ProgramDescr, Vec<ConnectorDescr>), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
         let pipeline = self
-            .get_pipeline_descr_by_id(tenant_id, pipeline_id)
+            .get_pipeline_descr_by_id(tenant_id, pipeline_id, Some(&txn))
             .await?;
         let program_name = pipeline
             .program_name
             .as_ref()
             .ok_or(DBError::ProgramNotSet)?;
         let program = self
-            .get_program_by_name(tenant_id, program_name, true)
+            .get_program_by_name(tenant_id, program_name, true, Some(&txn))
             .await?;
         let connectors = self
-            .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
+            .get_connectors_for_pipeline_id(tenant_id, pipeline_id, Some(&txn))
             .await?;
+        txn.commit().await?;
         // Check that this configuration forms a valid snapshot
         PipelineRevision::validate(&pipeline, &connectors, &program)?;
         Ok((pipeline, program, connectors))
@@ -2648,10 +2658,10 @@ impl ProjectDB {
         pipeline_id: PipelineId,
     ) -> Result<PipelineConfig, DBError> {
         let pipeline = self
-            .get_pipeline_descr_by_id(tenant_id, pipeline_id)
+            .get_pipeline_descr_by_id(tenant_id, pipeline_id, None)
             .await?;
         let connectors: Vec<ConnectorDescr> = self
-            .get_connectors_for_pipeline_id(tenant_id, pipeline_id)
+            .get_connectors_for_pipeline_id(tenant_id, pipeline_id, None)
             .await?;
         PipelineRevision::generate_pipeline_config(&pipeline, &connectors)
     }
@@ -2661,21 +2671,23 @@ impl ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<Vec<ConnectorDescr>, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT c.id, c.name, c.description, c.config
+        let query = "SELECT c.id, c.name, c.description, c.config
             FROM connector c, attached_connector ac
             WHERE ac.pipeline_id = $1
             AND ac.connector_id = c.id
-            AND c.tenant_id = $2",
-            )
-            .await?;
-
-        let rows = manager
-            .query(&stmt, &[&pipeline_id.0, &tenant_id.0])
-            .await?;
+            AND c.tenant_id = $2";
+        let rows = if let Some(txn) = txn {
+            let stmt = txn.prepare_cached(query).await?;
+            txn.query(&stmt, &[&pipeline_id.0, &tenant_id.0]).await?
+        } else {
+            let manager = self.pool.get().await?;
+            let stmt = manager.prepare_cached(query).await?;
+            manager
+                .query(&stmt, &[&pipeline_id.0, &tenant_id.0])
+                .await?
+        };
 
         Ok(rows
             .iter()
