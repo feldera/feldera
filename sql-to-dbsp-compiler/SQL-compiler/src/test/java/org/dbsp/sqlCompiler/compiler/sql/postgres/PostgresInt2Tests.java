@@ -8,7 +8,7 @@ import org.junit.Test;
 public class PostgresInt2Tests extends SqlIoTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {
-        String create_table = "CREATE TABLE INT2_TBL(f1 int2)";
+        String createTable = "CREATE TABLE INT2_TBL(f1 int2)";
 
         String insert = "INSERT INTO INT2_TBL(f1) VALUES\n" +
                 "  (0),\n" +
@@ -17,7 +17,7 @@ public class PostgresInt2Tests extends SqlIoTest {
                 "  (32767),\n" +
                 "  (-32767);";
 
-        compiler.compileStatement(create_table);
+        compiler.compileStatement(createTable);
         compiler.compileStatements(insert);
     }
 
@@ -369,11 +369,13 @@ public class PostgresInt2Tests extends SqlIoTest {
 
     @Test @Ignore
     public void testINT2MINOverflowError() {
+        String error = "INT2 out of range";
+
         // This fails in Postgres, but we get: `-32768`
-        this.shouldFail("SELECT (-32768)::int2 * (-1)::int2", "INT2 out of range");
+        this.shouldFail("SELECT (-32768)::int2 * (-1)::int2", error);
 
         // This panics in run time
-        this.shouldFail("SELECT (-32768)::int2 / (-1)::int2", "INT2 out of range");
+        this.shouldFail("SELECT (-32768)::int2 / (-1)::int2", error);
     }
 
     @Test @Ignore("underscores not supported yet")
