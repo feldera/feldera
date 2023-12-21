@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.CompilerMain;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -15,16 +16,31 @@ import java.io.IOException;
  * Parser tests that are expected to fail.
  */
 public class NegativeParserTests extends BaseSQLTests {
+    @Override
+    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
+        CompilerOptions options = super.testOptions(incremental, optimize);
+        options.languageOptions.throwOnError = false;
+        return options;
+    }
+
     @Test
     public void validateKey() {
-        String ddl =    "create table git_commit (\n" +
+        String ddl = "create table git_commit (\n" +
                 "    git_commit_id bigint not null,\n" +
                 "    PRIMARY KEY (unknown)\n" +
                 ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "does not correspond to a column");
+    }
+
+    @Test
+    public void testDuplicateTable() {
+        String ddl = "CREATE TABLE T(T INT);\n" +
+                "CREATE TABLE T(T INT);\n";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(ddl);
+        TestUtil.assertMessagesContain(compiler.messages, "Duplicate declaration");
     }
 
     @Test
@@ -34,7 +50,6 @@ public class NegativeParserTests extends BaseSQLTests {
                 "    PRIMARY KEY (git_commit_id)\n" +
                 ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "in table with another PRIMARY KEY constraint");
     }
@@ -45,7 +60,6 @@ public class NegativeParserTests extends BaseSQLTests {
                 "    id BIGINT DEFAULT NULL DEFAULT 1\n" +
                 ");";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "Column ID already has a default value");
     }
@@ -55,7 +69,6 @@ public class NegativeParserTests extends BaseSQLTests {
         String ddl = "create table git_commit (\n" +
                 "    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "Column GIT_COMMIT_ID already declared a primary key");
     }
@@ -67,7 +80,6 @@ public class NegativeParserTests extends BaseSQLTests {
                 "    PRIMARY KEY (git_commit_id, git_commit_id)\n" +
                 ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "already declared as key");
     }
@@ -79,7 +91,6 @@ public class NegativeParserTests extends BaseSQLTests {
                 "    PRIMARY KEY ()\n" +
                 ")";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "Error parsing SQL");
     }
@@ -89,7 +100,6 @@ public class NegativeParserTests extends BaseSQLTests {
         // TODO: this test may become invalid once we add support, so we need
         // here some truly invalid SQL.
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements("create table PART_ORDER (\n" +
                 "    id bigint,\n" +
                 "    part bigint,\n" +
@@ -122,7 +132,6 @@ public class NegativeParserTests extends BaseSQLTests {
     public void testTypeErrorMessage() {
         // TODO: this test may become invalid once we add support for ROW types
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements("CREATE VIEW V AS SELECT ROW(2, 2);\n");
         TestUtil.assertMessagesContain(compiler.messages, "error: Not yet implemented: ROW");
     }
@@ -131,7 +140,6 @@ public class NegativeParserTests extends BaseSQLTests {
     public void duplicateColumnTest() {
         DBSPCompiler compiler = this.testCompiler();
         // allow multiple errors to be reported
-        compiler.options.languageOptions.throwOnError = false;
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT" +
                 ", COL1 DOUBLE" +
@@ -144,7 +152,6 @@ public class NegativeParserTests extends BaseSQLTests {
     public void testRejectFloatType() {
         String statement = "CREATE TABLE T(c1 FLOAT)";
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatement(statement);
         Assert.assertTrue(compiler.hasErrors());
         TestUtil.assertMessagesContain(compiler.messages, "Do not use");

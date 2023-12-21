@@ -263,6 +263,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 FrontEndStatement fe = this.frontend.compile(
                         node.toString(), node, comment, this.inputTables, this.outputViews);
+                if (fe == null)
+                    // error during compilation
+                    continue;
                 this.midend.compile(fe);
             }
         } catch (SqlParseException e) {

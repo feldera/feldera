@@ -29,8 +29,11 @@ import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 import org.apache.calcite.sql.SqlIdentifier;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -41,11 +44,13 @@ import java.util.Map;
 public class Catalog extends AbstractSchema {
     public final String schemaName;
     private final Map<String, Table> tableMap;
+    private final Map<String, FrontEndStatement> definition;
     private final Multimap<String, Function> functionMap;
 
     public Catalog(String schemaName) {
         this.schemaName = schemaName;
         this.tableMap = new HashMap<>();
+        this.definition = new HashMap<>();
         this.functionMap = ArrayListMultimap.create();
     }
 
@@ -55,8 +60,18 @@ public class Catalog extends AbstractSchema {
         return identifier.getSimple();
     }
 
-    public void addTable(String name, Table table) {
+    public boolean addTable(String name, Table table, IErrorReporter reporter, FrontEndStatement statement) {
+        if (this.tableMap.containsKey(name)) {
+            reporter.reportError(statement.getPosition(), false, "Duplicate declaration",
+                    Utilities.singleQuote(name) + " already defined");
+            FrontEndStatement previous = this.definition.get(name);
+            reporter.reportError(previous.getPosition(), false, "Duplicate declaration",
+                    "Location of previous definition");
+            return false;
+        }
         this.tableMap.put(name, table);
+        this.definition.put(name, statement);
+        return true;
     }
 
     public void addFunction(String name, Function function) { this.functionMap.put(name, function); }

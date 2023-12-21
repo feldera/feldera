@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler;
 
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
 import java.io.BufferedReader;
@@ -37,6 +38,6 @@ public class TestUtil {
         if (text.contains(contents))
             return;
         System.out.println(text);
-        Assert.fail();
+        Assert.fail("Expected message to contain " + Utilities.singleQuote(contents));
     }
 }
