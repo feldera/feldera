@@ -1087,7 +1087,7 @@ mod test {
         let programdesc = db
             .lock()
             .await
-            .get_program_by_name(tenant_id, pname, false)
+            .get_program_by_name(tenant_id, pname, false, None)
             .await
             .unwrap();
         assert_eq!(ProgramStatus::Pending, programdesc.status);

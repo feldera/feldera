@@ -143,7 +143,7 @@ pub(crate) async fn get_programs(
             .db
             .lock()
             .await
-            .get_program_by_name(*tenant_id, &name, with_code)
+            .get_program_by_name(*tenant_id, &name, with_code, None)
             .await?;
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))

@@ -7,6 +7,7 @@ use crate::api::ProgramStatus;
 use crate::auth::TenantId;
 use crate::db::{ServiceDescr, ServiceId};
 use async_trait::async_trait;
+use deadpool_postgres::Transaction;
 use pipeline_types::config::{ConnectorConfig, RuntimeConfig, ServiceConfig};
 use uuid::Uuid;
 
@@ -115,6 +116,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         program_name: &str,
         with_code: bool,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ProgramDescr, DBError>;
 
     /// Delete program from the database.
@@ -140,8 +142,8 @@ pub(crate) trait Storage {
     /// if there are no pending programs in the DB.
     async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError>;
 
-    /// Create a pipeline revision, which is an immutable and complete configuration
-    /// for running a pipeline.
+    /// Create a pipeline revision, which is an immutable and complete
+    /// configuration for running a pipeline.
     ///
     /// Returns the revision ID for the pipeline.
     async fn create_pipeline_revision(
@@ -213,6 +215,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<PipelineDescr, DBError>;
 
     async fn get_pipeline_by_id(
