@@ -72,7 +72,9 @@ public class TableContents implements ICompilerComponent {
         return Utilities.getExists(this.tableContents, tableName);
     }
 
-    public void execute(FrontEndStatement statement) {
+    /** "Execute" a DDL statement.
+     * @return True on success. */
+    public boolean execute(FrontEndStatement statement) {
         if (statement.is(CreateTableStatement.class)) {
             CreateTableStatement create = statement.to(CreateTableStatement.class);
             Utilities.putNew(this.tableCreation, create.relationName, create);
@@ -88,6 +90,7 @@ public class TableContents implements ICompilerComponent {
             if (this.tableContents != null)
                 this.tableContents.remove(drop.tableName);
         }
+        return true;
     }
 
     public CreateTableStatement getTableDefinition(String tableName) {

@@ -1056,7 +1056,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 SqlOperator operator = agg.getOperator();
                 if (operator instanceof SqlRankFunction) {
                     SqlRankFunction rank = (SqlRankFunction) operator;
-                    // Aggregate functions seem always to be at th end.
+                    // Aggregate functions seem always to be at the end.
                     // The window always seems to collect all fields.
                     int rankIndex = inputRowType.size();
                     RelNode parent = this.getParent();
@@ -1377,7 +1377,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return o;
         } else if (statement.is(CreateTableStatement.class) ||
                 statement.is(DropTableStatement.class)) {
-            this.tableContents.execute(statement);
+            boolean success = this.tableContents.execute(statement);
+            if (!success)
+                return null;
             CreateTableStatement create = statement.as(CreateTableStatement.class);
             if (create != null) {
                 // We create an input for the circuit.

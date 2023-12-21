@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.sql.SqlNode;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.ICastable;
 
@@ -51,4 +51,6 @@ public abstract class FrontEndStatement implements ICastable {
     public CalciteObject getCalciteObject() {
         return CalciteObject.create(this.node);
     }
+
+    public SourcePositionRange getPosition() { return new SourcePositionRange(this.node.getParserPosition()); }
 }
