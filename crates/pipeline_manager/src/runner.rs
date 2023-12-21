@@ -375,7 +375,7 @@ impl RunnerApi {
     ) -> Result<(), ManagerError> {
         // Make sure we create a revision by updating to latest config state
         match db
-            .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+            .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
             .await
         {
             Ok(_revision) => Ok(()),

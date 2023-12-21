@@ -142,19 +142,19 @@ pub(crate) trait Storage {
     /// if there are no pending programs in the DB.
     async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError>;
 
-    /// Create a pipeline revision, which is an immutable and complete
+    /// Create a pipeline deployment, which is an immutable and complete
     /// configuration for running a pipeline.
     ///
-    /// Returns the revision ID for the pipeline.
-    async fn create_pipeline_revision(
+    /// Returns the deployment ID for the pipeline.
+    async fn create_pipeline_deployment(
         &self,
-        new_revision_id: Uuid,
+        deployment_id: Uuid,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<Revision, DBError>;
 
-    /// Retrieves the current revision for a pipeline
-    async fn get_current_pipeline_revision(
+    /// Retrieves the deployment for a pipeline, if created
+    async fn get_pipeline_deployment(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
@@ -187,13 +187,6 @@ pub(crate) trait Storage {
         config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
     ) -> Result<Version, DBError>;
-
-    /// Delete config.
-    async fn delete_config(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<(), DBError>;
 
     /// Get input/output status for an attached connector.
     async fn attached_connector_is_input(
