@@ -263,7 +263,7 @@ pub(crate) async fn pipeline_deployed(
         .db
         .lock()
         .await
-        .get_current_pipeline_revision(*tenant_id, pipeline_id)
+        .get_pipeline_deployment(*tenant_id, pipeline_id)
         .await
     {
         Ok(revision) => Some(revision),
@@ -442,7 +442,7 @@ pub(crate) async fn pipeline_validate(
 
     let db = state.db.lock().await;
     Ok(db
-        .pipeline_is_committable(*tenant_id, pipeline_id)
+        .is_pipeline_deployable(*tenant_id, pipeline_id)
         .await
         .map(|_| HttpResponse::Ok().json("Pipeline successfully validated."))?)
 }

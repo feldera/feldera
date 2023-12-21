@@ -166,7 +166,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             | (PipelineStatus::Shutdown, PipelineStatus::Paused) => {
                 let db = self.db.lock().await;
                 let revision = db
-                    .get_current_pipeline_revision(self.tenant_id, self.pipeline_id)
+                    .get_pipeline_deployment(self.tenant_id, self.pipeline_id)
                     .await?;
                 db.update_pipeline_runtime_state(self.tenant_id, self.pipeline_id, &pipeline)
                     .await?;
@@ -773,7 +773,7 @@ mod test {
         let _ = conn
             .lock()
             .await
-            .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+            .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
             .await
             .unwrap();
         let _ = conn

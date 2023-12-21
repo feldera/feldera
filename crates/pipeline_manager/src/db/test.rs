@@ -650,7 +650,7 @@ async fn commit_check(handle: &DbHandle, tenant_id: TenantId, pipeline_id: Pipel
     let new_revision_id = Uuid::now_v7();
     let r = handle
         .db
-        .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
+        .create_pipeline_deployment(new_revision_id, tenant_id, pipeline_id)
         .await
         .unwrap();
     assert_eq!(r.0, new_revision_id);
@@ -658,7 +658,7 @@ async fn commit_check(handle: &DbHandle, tenant_id: TenantId, pipeline_id: Pipel
     // We get an error the 2nd time since nothing changed
     let e = handle
         .db
-        .create_pipeline_revision(new_revision_id, tenant_id, pipeline_id)
+        .create_pipeline_deployment(new_revision_id, tenant_id, pipeline_id)
         .await
         .unwrap_err();
     match e {
@@ -904,7 +904,7 @@ async fn versioning() {
     // This doesn't work because the connectors reference (now invalid) tables:
     assert!(handle
         .db
-        .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+        .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
         .await
         .is_err());
     ac1.is_input = true;
@@ -932,7 +932,7 @@ async fn versioning() {
     // This doesn't work because the ac2 still references a wrong table
     assert!(handle
         .db
-        .create_pipeline_revision(Uuid::now_v7(), tenant_id, pipeline_id)
+        .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
         .await
         .is_err());
     // Let's fix ac2
@@ -1695,14 +1695,14 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::CreatePipelineRevision(new_revision_id, tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.create_pipeline_revision(new_revision_id, tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.create_pipeline_revision(new_revision_id, tenant_id, pipeline_id).await;
+                                let model_response = model.create_pipeline_deployment(new_revision_id, tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.create_pipeline_deployment(new_revision_id, tenant_id, pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetCommittedPipeline(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_current_pipeline_revision(tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.get_current_pipeline_revision(tenant_id, pipeline_id).await;
+                                let model_response = model.get_pipeline_deployment(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_deployment(tenant_id, pipeline_id).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::NewService(tenant_id, id, name, description, config) => {
@@ -1889,7 +1889,7 @@ impl Storage for Mutex<DbModel> {
 
         s.programs
             .get_mut(&(tenant_id, program_id))
-            .map(|(p, _e)| {
+            .map(|(p, e)| {
                 let cur_code = p.code.clone().unwrap();
                 if let Some(name) = program_name {
                     p.name = name.to_owned();
@@ -1907,6 +1907,7 @@ impl Storage for Mutex<DbModel> {
                     if p.status == ProgramStatus::Pending {
                         p.schema = None;
                     }
+                    *e = SystemTime::now();
                 }
                 // If the code is updated, it overrides the schema and status
                 // changes to the equivalent of NULL.
@@ -2033,7 +2034,7 @@ impl Storage for Mutex<DbModel> {
             .unwrap_or(Ok(None))
     }
 
-    async fn create_pipeline_revision(
+    async fn create_pipeline_deployment(
         &self,
         new_revision_id: Uuid,
         tenant_id: TenantId,
@@ -2131,7 +2132,7 @@ impl Storage for Mutex<DbModel> {
         }
     }
 
-    async fn get_current_pipeline_revision(
+    async fn get_pipeline_deployment(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
@@ -2317,19 +2318,6 @@ impl Storage for Mutex<DbModel> {
         c.version = c.version.increment();
         c.config = config.clone().unwrap_or(c.config.clone());
         Ok(c.version)
-    }
-
-    async fn delete_config(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: super::PipelineId,
-    ) -> DBResult<()> {
-        let mut s = self.lock().await;
-        s.pipelines
-            .remove(&(tenant_id, pipeline_id))
-            .ok_or(DBError::UnknownPipeline { pipeline_id })?;
-
-        Ok(())
     }
 
     async fn attached_connector_is_input(
