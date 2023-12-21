@@ -78,19 +78,6 @@ impl Display for PipelineId {
         self.0.fmt(f)
     }
 }
-
-/// Unique connector id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct ConnectorId(#[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid);
-impl Display for ConnectorId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 /// Unique attached connector id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -99,6 +86,7 @@ impl Display for ConnectorId {
 pub(crate) struct AttachedConnectorId(
     #[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid,
 );
+
 impl Display for AttachedConnectorId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -638,15 +626,6 @@ pub(crate) struct AttachedConnector {
     pub relation_name: String,
 }
 
-/// Connector descriptor.
-#[derive(Deserialize, Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
-pub(crate) struct ConnectorDescr {
-    pub connector_id: ConnectorId,
-    pub name: String,
-    pub description: String,
-    pub config: ConnectorConfig,
-}
-
 /// Service descriptor.
 #[derive(Deserialize, Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ServiceDescr {
@@ -714,6 +693,7 @@ fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, DBError> {
 }
 
 // Re-exports
+// Program
 mod program;
 pub(crate) use self::program::ColumnType;
 pub(crate) use self::program::Field;
@@ -721,6 +701,11 @@ pub(crate) use self::program::ProgramDescr;
 pub use self::program::ProgramId;
 pub(crate) use self::program::ProgramSchema;
 pub(crate) use self::program::Relation;
+
+// Connectors
+mod connector;
+pub(crate) use self::connector::ConnectorDescr;
+pub use self::connector::ConnectorId;
 
 // The goal for these methods is to avoid multiple DB interactions as much as
 // possible and if not, use transactions
@@ -1452,45 +1437,11 @@ impl Storage for ProjectDB {
         description: &str,
         config: &ConnectorConfig,
     ) -> Result<ConnectorId, DBError> {
-        debug!("new_connector {name} {description} {config:?}");
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached("INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)")
-            .await?;
-        manager
-            .execute(
-                &stmt,
-                &[&id, &name, &description, &config.to_yaml(), &tenant_id.0],
-            )
-            .await
-            .map_err(ProjectDB::maybe_unique_violation)
-            .map_err(|e| {
-                ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None)
-            })?;
-        Ok(ConnectorId(id))
+        Ok(connector::new_connector(self, tenant_id, id, name, description, config).await?)
     }
 
     async fn list_connectors(&self, tenant_id: TenantId) -> Result<Vec<ConnectorDescr>, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT id, name, description, config FROM connector WHERE tenant_id = $1",
-            )
-            .await?;
-        let rows = manager.query(&stmt, &[&tenant_id.0]).await?;
-
-        let mut result = Vec::with_capacity(rows.len());
-
-        for row in rows {
-            result.push(ConnectorDescr {
-                connector_id: ConnectorId(row.get(0)),
-                name: row.get(1),
-                description: row.get(2),
-                config: ConnectorConfig::from_yaml_str(row.get(3)),
-            });
-        }
-
-        Ok(result)
+        Ok(connector::list_connectors(self, tenant_id).await?)
     }
 
     async fn get_connector_by_name(
@@ -1498,28 +1449,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         name: String,
     ) -> Result<ConnectorDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT id, description, config FROM connector WHERE name = $1 AND tenant_id = $2",
-            )
-            .await?;
-        let row = manager.query_opt(&stmt, &[&name, &tenant_id.0]).await?;
-
-        if let Some(row) = row {
-            let connector_id: ConnectorId = ConnectorId(row.get(0));
-            let description: String = row.get(1);
-            let config = ConnectorConfig::from_yaml_str(row.get(2));
-
-            Ok(ConnectorDescr {
-                connector_id,
-                name,
-                description,
-                config,
-            })
-        } else {
-            Err(DBError::UnknownName { name })
-        }
+        Ok(connector::get_connector_by_name(self, tenant_id, name).await?)
     }
 
     async fn get_connector_by_id(
@@ -1527,32 +1457,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         connector_id: ConnectorId,
     ) -> Result<ConnectorDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT name, description, config FROM connector WHERE id = $1 AND tenant_id = $2",
-            )
-            .await?;
-
-        let row = manager
-            .query_opt(&stmt, &[&connector_id.0, &tenant_id.0])
-            .await?;
-
-        if let Some(row) = row {
-            let name: String = row.get(0);
-            let description: String = row.get(1);
-            let config: String = row.get(2);
-            let config = ConnectorConfig::from_yaml_str(&config);
-
-            Ok(ConnectorDescr {
-                connector_id,
-                name,
-                description,
-                config,
-            })
-        } else {
-            Err(DBError::UnknownConnector { connector_id })
-        }
+        Ok(connector::get_connector_by_id(self, tenant_id, connector_id).await?)
     }
 
     async fn update_connector(
@@ -1563,29 +1468,15 @@ impl Storage for ProjectDB {
         description: &str,
         config: &Option<ConnectorConfig>,
     ) -> Result<(), DBError> {
-        let descr = self.get_connector_by_id(tenant_id, connector_id).await?;
-        let config = config.clone().unwrap_or(descr.config);
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4",
-            )
-            .await?;
-
-        manager
-            .execute(
-                &stmt,
-                &[
-                    &connector_name,
-                    &description,
-                    &config.to_yaml(),
-                    &connector_id.0,
-                ],
-            )
-            .await
-            .map_err(Self::maybe_unique_violation)?;
-
-        Ok(())
+        Ok(connector::update_connector(
+            self,
+            tenant_id,
+            connector_id,
+            connector_name,
+            description,
+            config,
+        )
+        .await?)
     }
 
     async fn delete_connector(
@@ -1593,19 +1484,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         connector_id: ConnectorId,
     ) -> Result<(), DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached("DELETE FROM connector WHERE id = $1 AND tenant_id = $2")
-            .await?;
-        let res = manager
-            .execute(&stmt, &[&connector_id.0, &tenant_id.0])
-            .await?;
-
-        if res > 0 {
-            Ok(())
-        } else {
-            Err(DBError::UnknownConnector { connector_id })
-        }
+        Ok(connector::delete_connector(self, tenant_id, connector_id).await?)
     }
 
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {
