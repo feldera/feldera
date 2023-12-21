@@ -35,7 +35,7 @@ public abstract class ValueProjection implements ICastable, IHasId {
         return this.id + ": " + this.type.toString();
     }
 
-    public abstract DBSPType getProjectedType();
+    public abstract DBSPType getProjectionResultType();
 
     /** Create the value of an input parameter.  The projected expression
      * is a field of a parameter.  The type of the parameter is the projectedType. */

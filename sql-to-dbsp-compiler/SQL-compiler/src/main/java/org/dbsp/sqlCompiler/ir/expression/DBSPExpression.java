@@ -62,7 +62,7 @@ public abstract class DBSPExpression
         return new DBSPDerefExpression(this);
     }
 
-    public DBSPExpression borrow() {
+    public DBSPBorrowExpression borrow() {
         return new DBSPBorrowExpression(this);
     }
 

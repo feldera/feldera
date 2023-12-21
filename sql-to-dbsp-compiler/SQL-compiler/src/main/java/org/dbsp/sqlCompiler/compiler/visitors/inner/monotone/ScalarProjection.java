@@ -18,7 +18,7 @@ public class ScalarProjection extends ValueProjection {
     }
 
     @Override
-    public DBSPType getProjectedType() {
+    public DBSPType getProjectionResultType() {
         return this.type;
     }
 

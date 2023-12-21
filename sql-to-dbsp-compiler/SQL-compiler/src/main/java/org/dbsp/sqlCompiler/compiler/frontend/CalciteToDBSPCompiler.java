@@ -1109,9 +1109,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             // Map each row to an expression of the form: |t| (partition, (order, (*t).clone()))
             List<Integer> partitionKeys = group.keys.toList();
-            List<DBSPExpression> expressions = Linq.map(partitionKeys, inputRowRefVar.deref()::field);
+            List<DBSPExpression> expressions = Linq.map(partitionKeys,
+                    inputRowRefVar.deepCopy().deref()::field);
             DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
-            DBSPExpression orderAndRow = new DBSPRawTupleExpression(orderField, inputRowRefVar.deref().applyClone());
+            DBSPExpression orderAndRow = new DBSPRawTupleExpression(
+                    orderField, inputRowRefVar.deepCopy().deref().applyClone());
             DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, orderAndRow);
             DBSPClosureExpression mapClo = mapExpr.closure(inputRowRefVar.asParameter());
             DBSPOperator mapIndex = new DBSPMapIndexOperator(node, mapClo,
@@ -1145,7 +1147,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     partition.applyCloneIfNeeded(),
                     orderField.applyCloneIfNeeded());
             DBSPExpression indexedInput = new DBSPRawTupleExpression(
-                    partAndOrder, previousRowRefVar.deref().applyClone());
+                    partAndOrder, previousRowRefVar.deepCopy().deref().applyClone());
             DBSPExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
             DBSPOperator indexInput = new DBSPIndexOperator(node, partAndOrderClo,
                     this.makeIndexedZSet(partAndOrder.getType(), previousRowRefVar.getType().deref()),

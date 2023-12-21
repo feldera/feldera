@@ -38,10 +38,10 @@ public class TupleProjection extends ValueProjection {
     }
 
     @Override
-    public DBSPType getProjectedType() {
+    public DBSPType getProjectionResultType() {
         List<DBSPType> fields = new ArrayList<>();
         for (Map.Entry<Integer, ValueProjection> column: this.columns.entrySet()) {
-            DBSPType type = column.getValue().getProjectedType();
+            DBSPType type = column.getValue().getProjectionResultType();
             fields.add(type);
         }
         return this.type.to(DBSPTypeTupleBase.class).makeType(fields);
@@ -49,8 +49,8 @@ public class TupleProjection extends ValueProjection {
 
     @Override
     public MonotoneValue createInput(DBSPExpression expression) {
-        assert expression.getType().sameType(this.getProjectedType()):
-            "Types differ " + expression.getType() + " and " + this.getProjectedType();
+        assert expression.getType().sameType(this.getProjectionResultType()):
+            "Types differ " + expression.getType() + " and " + this.getProjectionResultType();
         LinkedHashMap<Integer, MonotoneValue> fields = new LinkedHashMap<>();
         int index = 0;
         for (Map.Entry<Integer, ValueProjection> entry: this.columns.entrySet()) {

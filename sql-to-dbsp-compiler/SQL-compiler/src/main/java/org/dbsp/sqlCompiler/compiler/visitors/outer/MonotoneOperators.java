@@ -74,15 +74,20 @@ public class MonotoneOperators extends CircuitVisitor {
 
     MonotoneValue identity(DBSPOperator operator, ValueProjection projection, boolean pairOfReferences) {
         DBSPType varType = projection.getType();
+        DBSPExpression body;
+        DBSPVariablePath var;
         if (pairOfReferences) {
             DBSPTypeRawTuple rawTuple = varType.to(DBSPTypeRawTuple.class);
             assert rawTuple.size() == 2: "Expected a pair, got " + varType;
             varType = new DBSPTypeRawTuple(rawTuple.tupFields[0].ref(), rawTuple.tupFields[1].ref());
+            var = new DBSPVariablePath("t", varType);
+            body = new DBSPRawTupleExpression(var.field(0).deref(), var.deepCopy().field(1).deref());
         } else {
             varType = varType.ref();
+            var = new DBSPVariablePath("t", varType);
+            body = var.deref();
         }
-        DBSPVariablePath var = new DBSPVariablePath("t", varType);
-        DBSPClosureExpression closure = var.closure(var.asParameter());
+        DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneFunctions analyzer = new MonotoneFunctions(
                 this.errorReporter, operator, projection, pairOfReferences);
         return Objects.requireNonNull(analyzer.applyAnalysis(closure));
@@ -91,17 +96,18 @@ public class MonotoneOperators extends CircuitVisitor {
     @Override
     public void postorder(DBSPSourceMultisetOperator node) {
         int index = 0;
-        LinkedHashMap<Integer, ValueProjection> result = new LinkedHashMap<>();
+        LinkedHashMap<Integer, ValueProjection> columns = new LinkedHashMap<>();
         for (InputColumnMetadata metadata: node.metadata.getColumns()) {
             if (metadata.lateness != null)
-                result.put(index, new ScalarProjection(metadata.type));
+                columns.put(index, new ScalarProjection(metadata.type));
             index++;
         }
-        if (result.isEmpty())
+        if (columns.isEmpty())
             return;
         ValueProjection projection = new TupleProjection(
-                node.getOutputZSetElementType().to(DBSPTypeTuple.class), result);
-        this.set(node, this.identity(node, projection, false));
+                node.getOutputZSetElementType().to(DBSPTypeTuple.class), columns);
+        MonotoneValue result = this.identity(node, projection, false);
+        this.set(node, result);
     }
 
     @Override
@@ -140,7 +146,8 @@ public class MonotoneOperators extends CircuitVisitor {
         pairs.put(0, keyProjection);
         pairs.put(1, valueProjection);
         ValueProjection pairProjection = new TupleProjection(rowType, pairs);
-        this.set(node, this.identity(node, pairProjection, true));
+        MonotoneValue result = this.identity(node, pairProjection, true);
+        this.set(node, result);
     }
 
     void identity(DBSPUnaryOperator node) {
@@ -247,12 +254,11 @@ public class MonotoneOperators extends CircuitVisitor {
 
         assert tuple0.getType().sameType(outputValueType.tupFields[0]) :
                 "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0];
-
         DBSPTypeRawTuple varType = projection.getType().to(DBSPTypeRawTuple.class);
         assert varType.size() == 2 : "Expected a pair, got " + varType;
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = new DBSPVariablePath("t", varType);
-        DBSPExpression body = new DBSPRawTupleExpression(var.field(0), new DBSPTupleExpression());
+        DBSPExpression body = new DBSPRawTupleExpression(var.field(0).deref(), new DBSPTupleExpression());
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneFunctions analyzer = new MonotoneFunctions(
                 this.errorReporter, node, projection, true);

@@ -56,6 +56,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.io.*;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -535,10 +536,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             DBSPCompiler compiler,
             List<DBSPFunction> inputFunctions,
             List<ProgramAndTester> functions
-    ) throws FileNotFoundException, UnsupportedEncodingException {
+    ) throws IOException {
         String genFileName = Main.testFileName + ".rs";
         String testFilePath = Main.rustDirectory + "/" + genFileName;
-        PrintStream stream = new PrintStream(testFilePath, "UTF-8");
+        PrintStream stream = new PrintStream(testFilePath, StandardCharsets.UTF_8);
         RustFileWriter rust = new RustFileWriter(compiler, stream);
 
         for (DBSPFunction function : inputFunctions)

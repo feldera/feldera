@@ -54,7 +54,7 @@ public class CircuitOptimizer implements ICompilerComponent {
             final boolean debug = false;
 
             if (debug)
-                ToDotVisitor.toDot(compiler, "original.jpg", false, "jpg", circuit);
+                ToDotVisitor.toDot(compiler, "original.jpg", true, "jpg", circuit);
             ExpandOperators expander = new ExpandOperators(this.compiler, 1);
             Repeat repeat = new Repeat(this.compiler, expander);
             DBSPCircuit expanded = repeat.apply(circuit);

@@ -542,7 +542,8 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
      IIndentStream writeComments(DBSPOperator operator) {
-        return this.writeComments(operator.getClass().getSimpleName() + " " + operator.id +
+        return this.writeComments(operator.getClass().getSimpleName() +
+                " " + operator.getIdString() +
                 (operator.comment != null ? "\n" + operator.comment : ""));
     }
 
