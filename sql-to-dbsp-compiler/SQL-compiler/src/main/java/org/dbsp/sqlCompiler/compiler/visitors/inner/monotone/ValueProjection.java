@@ -32,7 +32,7 @@ public abstract class ValueProjection implements ICastable, IHasId {
 
     @Override
     public String toString() {
-        return this.id + ": " + this.type.toString();
+        return this.id + ": " + this.type;
     }
 
     public abstract DBSPType getProjectionResultType();

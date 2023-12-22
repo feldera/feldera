@@ -4,14 +4,11 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneOperators;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.util.Logger;
 import org.junit.Test;
 
 /** Tests that exercise streaming features. */
@@ -25,10 +22,11 @@ public class StreamingTests extends BaseSQLTests {
 
     @Test
     public void latenessTest() {
-        String ddl = "CREATE TABLE series (\n" +
-                "        distance DOUBLE PRECISION,\n" +
-                "        pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES\n" +
-                ")";
+        String ddl = """
+                CREATE TABLE series (
+                        distance DOUBLE PRECISION,
+                        pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
+                )""";
         String query =
                 "SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)";
         DBSPCompiler compiler = testCompiler();

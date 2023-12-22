@@ -7,7 +7,6 @@ import net.hydromatic.sqllogictest.TestStatistics;
 
 import javax.annotation.Nullable;
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Paths;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -55,5 +54,5 @@ public abstract class TestBatch {
     }
 
     /** Run the batch.  Return 'true' if we have to stop execution immediately. */
-    abstract boolean run(TestStatistics statistics) throws NoSuchAlgorithmException;
+    abstract boolean run(TestStatistics statistics);
 }

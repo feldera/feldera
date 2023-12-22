@@ -19,7 +19,7 @@ public class SelectOperator<Weight> extends UnaryOperator<Weight> {
 
     @Override
     public void step() {
-        BaseCollection input = this.getInputValue();
+        BaseCollection<Weight> input = this.getInputValue();
         ZSet<SqlTuple, Weight> inputZset = input.to(ZSet.class);
         this.nextOutput = inputZset.map(this.tupleTransform);
     }

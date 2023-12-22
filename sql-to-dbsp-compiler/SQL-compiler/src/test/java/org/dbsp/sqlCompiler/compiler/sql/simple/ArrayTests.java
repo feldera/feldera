@@ -57,10 +57,11 @@ public class ArrayTests extends BaseSQLTests {
 
     @Test
     public void testArray() {
-        String ddl = "CREATE TABLE ARR_TABLE (\n"
-                + "ID INTEGER,\n"
-                + "VALS INTEGER ARRAY,\n"
-                + "VALVALS VARCHAR(10) ARRAY)";
+        String ddl = """
+                CREATE TABLE ARR_TABLE (
+                ID INTEGER,
+                VALS INTEGER ARRAY,
+                VALVALS VARCHAR(10) ARRAY)""";
         String query = "SELECT *, CARDINALITY(VALS), ARRAY[ID, 5], VALS[1] FROM ARR_TABLE";
         this.testQuery(ddl, query);
     }

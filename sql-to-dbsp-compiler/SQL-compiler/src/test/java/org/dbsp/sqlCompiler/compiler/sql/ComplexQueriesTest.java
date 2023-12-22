@@ -43,30 +43,31 @@ import org.junit.Test;
 public class ComplexQueriesTest extends BaseSQLTests {
     @Test @Ignore("OVER requires only integers")
     public void testDateDiff() {
-        String sql = "create table PART_ORDER (\n" +
-                "    id bigint,\n" +
-                "    part bigint,\n" +
-                "    customer bigint,\n" +
-                "    target_date date\n" +
-                ");\n" +
-                "\n" +
-                "create table FULFILLMENT (\n" +
-                "    part_order bigint,\n" +
-                "    fulfillment_date date not null\n" +
-                ");\n" +
-                "\n" +
-                "create view FLAGGED_ORDER as\n" +
-                "select\n" +
-                "    part_order.customer,\n" +
-                "    AVG(DATEDIFF(day, part_order.target_date, fulfillment.fulfillment_date))\n" +
-                "    OVER (PARTITION BY part_order.customer\n" +
-                "          ORDER BY fulfillment.fulfillment_date\n" +
-                "          RANGE BETWEEN INTERVAL 90 days PRECEDING and CURRENT ROW) as avg_delay\n" +
-                "from\n" +
-                "    part_order\n" +
-                "    join\n" +
-                "    fulfillment\n" +
-                "    on part_order.id = fulfillment.part_order";
+        String sql = """
+                create table PART_ORDER (
+                    id bigint,
+                    part bigint,
+                    customer bigint,
+                    target_date date
+                );
+
+                create table FULFILLMENT (
+                    part_order bigint,
+                    fulfillment_date date not null
+                );
+
+                create view FLAGGED_ORDER as
+                select
+                    part_order.customer,
+                    AVG(DATEDIFF(day, part_order.target_date, fulfillment.fulfillment_date))
+                    OVER (PARTITION BY part_order.customer
+                          ORDER BY fulfillment.fulfillment_date
+                          RANGE BETWEEN INTERVAL 90 days PRECEDING and CURRENT ROW) as avg_delay
+                from
+                    part_order
+                    join
+                    fulfillment
+                    on part_order.id = fulfillment.part_order""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         Assert.assertFalse(compiler.hasErrors());
@@ -88,24 +89,26 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void smallTaxiTest() {
-        String ddl = "CREATE TABLE green_tripdata\n" +
-                "(\n" +
-                "  lpep_pickup_datetime TIMESTAMP NOT NULL,\n" +
-                "  lpep_dropoff_datetime TIMESTAMP NOT NULL,\n" +
-                "  pickup_location_id BIGINT NOT NULL,\n" +
-                "  dropoff_location_id BIGINT NOT NULL,\n" +
-                "  trip_distance DOUBLE PRECISION,\n" +
-                "  fare_amount DOUBLE PRECISION \n" +
-                ")";
+        String ddl = """
+                CREATE TABLE green_tripdata
+                (
+                  lpep_pickup_datetime TIMESTAMP NOT NULL,
+                  lpep_dropoff_datetime TIMESTAMP NOT NULL,
+                  pickup_location_id BIGINT NOT NULL,
+                  dropoff_location_id BIGINT NOT NULL,
+                  trip_distance DOUBLE PRECISION,
+                  fare_amount DOUBLE PRECISION\s
+                )""";
         String query =
-                "SELECT\n" +
-                        "*,\n" +
-                        "COUNT(*) OVER(\n" +
-                        "   PARTITION BY  pickup_location_id\n" +
-                        "   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) ) \n" +
-                        "   -- 1 hour is 3600  seconds\n" +
-                        "   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip\n" +
-                        "FROM green_tripdata";
+                """
+                        SELECT
+                        *,
+                        COUNT(*) OVER(
+                           PARTITION BY  pickup_location_id
+                           ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )\s
+                           -- 1 hour is 3600  seconds
+                           RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip
+                        FROM green_tripdata""";
         DBSPCompiler compiler = this.testCompiler();
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatement(ddl);
@@ -116,17 +119,18 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void testProducts() {
-        String script = "-- create a table\n" +
-                "CREATE TABLE Products (\n" +
-                "    ProductName VARCHAR NOT NULL,\n" +
-                "    Price INT NOT NULL);\n" +
-                "-- statements separated by semicolons\n" +
-                "-- create a view\n" +
-                "CREATE VIEW \"Products Above Average Price\" AS\n" +
-                "SELECT ProductName, Price\n" +
-                "FROM Products\n" +
-                "WHERE Price > (SELECT AVG(Price) FROM Products)\n" +
-                "-- no semicolon at end ";
+        String script = """
+                -- create a table
+                CREATE TABLE Products (
+                    ProductName VARCHAR NOT NULL,
+                    Price INT NOT NULL);
+                -- statements separated by semicolons
+                -- create a view
+                CREATE VIEW "Products Above Average Price" AS
+                SELECT ProductName, Price
+                FROM Products
+                WHERE Price > (SELECT AVG(Price) FROM Products)
+                -- no semicolon at end\s""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(script);
     }
@@ -135,73 +139,73 @@ public class ComplexQueriesTest extends BaseSQLTests {
     public void demographicsTest() {
         // TODO: LAG is disabled
         String script =
-                "CREATE TABLE demographics (\n" +
-                "    cc_num FLOAT64 NOT NULL,\n" +
-                "    first STRING,\n" +
-                "    gender STRING,\n" +
-                "    street STRING,\n" +
-                "    city STRING,\n" +
-                "    state STRING,\n" +
-                "    zip INTEGER,\n" +
-                "    lat FLOAT64,\n" +
-                "    long FLOAT64,\n" +
-                "    city_pop INTEGER,\n" +
-                "    job STRING,\n" +
-                "    dob STRING\n" +
-                ");\n" +
-                "\n" +
-                "CREATE TABLE transactions (\n" +
-                "    trans_date_trans_time TIMESTAMP NOT NULL,\n" +
-                "    cc_num FLOAT64 NOT NULL,\n" +
-                "    merchant STRING,\n" +
-                "    category STRING,\n" +
-                "    amt FLOAT64,\n" +
-                "    trans_num STRING,\n" +
-                "    unix_time INTEGER NOT NULL,\n" +
-                "    merch_lat FLOAT64 NOT NULL,\n" +
-                "    merch_long FLOAT64 NOT NULL,\n" +
-                "    is_fraud INTEGER\n" +
-                ");\n" +
-                "\n" +
-                "CREATE VIEW features as\n" +
-                "    SELECT\n" +
-                "        DAYOFWEEK(trans_date_trans_time) AS d,\n" +
-                "        TIMESTAMPDIFF(YEAR, trans_date_trans_time, CAST(dob as TIMESTAMP)) AS age,\n" +
-                "        ST_DISTANCE(ST_POINT(long,lat), ST_POINT(merch_long,merch_lat)) AS distance,\n" +
-                "        -- TIMESTAMPDIFF(MINUTE, trans_date_trans_time, last_txn_date) AS trans_diff,\n" +
-                "        AVG(amt) OVER(\n" +
-                "            PARTITION BY   CAST(cc_num AS NUMERIC)\n" +
-                "            ORDER BY unix_time\n" +
-                "            -- 1 week is 604800  seconds\n" +
-                "            RANGE BETWEEN 604800  PRECEDING AND 1 PRECEDING) AS\n" +
-                "        avg_spend_pw,\n" +
-                "        AVG(amt) OVER(\n" +
-                "            PARTITION BY  CAST(cc_num AS NUMERIC)\n" +
-                "            ORDER BY unix_time\n" +
-                "            -- 1 month(30 days) is 2592000 seconds\n" +
-                "            RANGE BETWEEN 2592000 PRECEDING AND 1 PRECEDING) AS\n" +
-                "        avg_spend_pm,\n" +
-                "        COUNT(*) OVER(\n" +
-                "            PARTITION BY  CAST(cc_num AS NUMERIC)\n" +
-                "            ORDER BY unix_time\n" +
-                "            -- 1 day is 86400  seconds\n" +
-                "            RANGE BETWEEN 86400  PRECEDING AND 1 PRECEDING ) AS\n" +
-                "        trans_freq_24,\n" +
-                "        category,\n" +
-                "        amt,\n" +
-                "        state,\n" +
-                "        job,\n" +
-                "        unix_time,\n" +
-                "        city_pop,\n" +
-                "        merchant,\n" +
-                "        is_fraud\n" +
-                "    FROM (\n" +
-                "        SELECT t1.*, t2.*\n" +
-                "               -- , LAG(trans_date_trans_time, 1) OVER " +
-                "               -- (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date\n" +
-                "        FROM  transactions AS t1\n" +
-                "        LEFT JOIN  demographics AS t2\n" +
-                "        ON t1.cc_num = t2.cc_num);";
+                """
+                        CREATE TABLE demographics (
+                            cc_num FLOAT64 NOT NULL,
+                            first STRING,
+                            gender STRING,
+                            street STRING,
+                            city STRING,
+                            state STRING,
+                            zip INTEGER,
+                            lat FLOAT64,
+                            long FLOAT64,
+                            city_pop INTEGER,
+                            job STRING,
+                            dob STRING
+                        );
+
+                        CREATE TABLE transactions (
+                            trans_date_trans_time TIMESTAMP NOT NULL,
+                            cc_num FLOAT64 NOT NULL,
+                            merchant STRING,
+                            category STRING,
+                            amt FLOAT64,
+                            trans_num STRING,
+                            unix_time INTEGER NOT NULL,
+                            merch_lat FLOAT64 NOT NULL,
+                            merch_long FLOAT64 NOT NULL,
+                            is_fraud INTEGER
+                        );
+
+                        CREATE VIEW features as
+                            SELECT
+                                DAYOFWEEK(trans_date_trans_time) AS d,
+                                TIMESTAMPDIFF(YEAR, trans_date_trans_time, CAST(dob as TIMESTAMP)) AS age,
+                                ST_DISTANCE(ST_POINT(long,lat), ST_POINT(merch_long,merch_lat)) AS distance,
+                                -- TIMESTAMPDIFF(MINUTE, trans_date_trans_time, last_txn_date) AS trans_diff,
+                                AVG(amt) OVER(
+                                    PARTITION BY   CAST(cc_num AS NUMERIC)
+                                    ORDER BY unix_time
+                                    -- 1 week is 604800  seconds
+                                    RANGE BETWEEN 604800  PRECEDING AND 1 PRECEDING) AS
+                                avg_spend_pw,
+                                AVG(amt) OVER(
+                                    PARTITION BY  CAST(cc_num AS NUMERIC)
+                                    ORDER BY unix_time
+                                    -- 1 month(30 days) is 2592000 seconds
+                                    RANGE BETWEEN 2592000 PRECEDING AND 1 PRECEDING) AS
+                                avg_spend_pm,
+                                COUNT(*) OVER(
+                                    PARTITION BY  CAST(cc_num AS NUMERIC)
+                                    ORDER BY unix_time
+                                    -- 1 day is 86400  seconds
+                                    RANGE BETWEEN 86400  PRECEDING AND 1 PRECEDING ) AS
+                                trans_freq_24,
+                                category,
+                                amt,
+                                state,
+                                job,
+                                unix_time,
+                                city_pop,
+                                merchant,
+                                is_fraud
+                            FROM (
+                                SELECT t1.*, t2.*
+                                       -- , LAG(trans_date_trans_time, 1) OVER                -- (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date
+                                FROM  transactions AS t1
+                                LEFT JOIN  demographics AS t2
+                                ON t1.cc_num = t2.cc_num);""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(script);
         DBSPZSetLiteral.Contents[] inputs = new DBSPZSetLiteral.Contents[] {
@@ -250,36 +254,37 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void taxiTest() {
-        String ddl = "CREATE TABLE green_tripdata\n" +
-                "(\n" +
-                "        lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,\n" +
-                "        lpep_dropoff_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,\n" +
-                "        pickup_location_id BIGINT NOT NULL,\n" +
-                "        dropoff_location_id BIGINT NOT NULL,\n" +
-                "        trip_distance DOUBLE PRECISION,\n" +
-                "        fare_amount DOUBLE PRECISION \n" +
-                ")";
+        String ddl = """
+                CREATE TABLE green_tripdata
+                (
+                        lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
+                        lpep_dropoff_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
+                        pickup_location_id BIGINT NOT NULL,
+                        dropoff_location_id BIGINT NOT NULL,
+                        trip_distance DOUBLE PRECISION,
+                        fare_amount DOUBLE PRECISION\s
+                )""";
         String query =
-                "SELECT\n" +
-                        "*,\n" +
-                        "COUNT(*) OVER(\n" +
-                        "   PARTITION BY  pickup_location_id\n" +
-                        "   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) ) \n" +
-                        "   -- 1 hour is 3600  seconds\n" +
-                        "   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,\n" +
-                        "AVG(fare_amount) OVER(\n" +
-                        "   PARTITION BY  pickup_location_id\n" +
-                        "   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) ) \n" +
-                        "   -- 1 hour is 3600  seconds\n" +
-                        "   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,\n" +
-                        "COUNT(*) OVER(\n" +
-                        "   PARTITION BY  dropoff_location_id\n" +
-                        "   ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) ) \n" +
-                        "   -- 0.5 hour is 1800  seconds\n" +
-                        "   RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,\n" +
-                        "case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5 " +
-                        "     then 1 else 0 end as dropoff_is_weekend\n" +
-                        "FROM green_tripdata";
+                """
+                        SELECT
+                        *,
+                        COUNT(*) OVER(
+                           PARTITION BY  pickup_location_id
+                           ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )\s
+                           -- 1 hour is 3600  seconds
+                           RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,
+                        AVG(fare_amount) OVER(
+                           PARTITION BY  pickup_location_id
+                           ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )\s
+                           -- 1 hour is 3600  seconds
+                           RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,
+                        COUNT(*) OVER(
+                           PARTITION BY  dropoff_location_id
+                           ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) )\s
+                           -- 0.5 hour is 1800  seconds
+                           RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,
+                        case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5      then 1 else 0 end as dropoff_is_weekend
+                        FROM green_tripdata""";
         DBSPCompiler compiler = testCompiler();
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatement(ddl);
@@ -291,70 +296,73 @@ public class ComplexQueriesTest extends BaseSQLTests {
     @Test
     public void fraudDetectionTest() {
         // fraudDetection-352718.cc_data.demo_
-        String ddl0 = "CREATE TABLE demographics (\n" +
-                " cc_num FLOAT64 NOT NULL,\n" +
-                " first STRING,\n" +
-                " gender STRING,\n" +
-                " street STRING,\n" +
-                " city STRING,\n" +
-                " state STRING,\n" +
-                " zip INTEGER,\n" +
-                " lat FLOAT64,\n" +
-                " long FLOAT64,\n" +
-                " city_pop INTEGER,\n" +
-                " job STRING,\n" +
-                " dob DATE\n" +
-                ")";
-        String ddl1 = "CREATE TABLE transactions (\n" +
-                " trans_date_trans_time TIMESTAMP NOT NULL,\n" +
-                " cc_num FLOAT64,\n" +
-                " merchant STRING,\n" +
-                " category STRING,\n" +
-                " amt FLOAT64,\n" +
-                " trans_num STRING,\n" +
-                " unix_time INTEGER NOT NULL,\n" +
-                " merch_lat FLOAT64,\n" +
-                " merch_long FLOAT64,\n" +
-                " is_fraud INTEGER\n" +
-                ")";
-        String query = "SELECT\n" +
-                "    DAYOFWEEK(trans_date_trans_time) AS d,\n" +
-                "    TIMESTAMPDIFF(YEAR, trans_date_trans_time, CAST(dob as TIMESTAMP)) AS age,\n" +
-                "    ST_DISTANCE(ST_POINT(long,lat), ST_POINT(merch_long,merch_lat)) AS distance,\n" +
-                "    -- TIMESTAMPDIFF(MINUTE, trans_date_trans_time, last_txn_date) AS trans_diff,\n" +
-                "    AVG(amt) OVER(\n" +
-                "                PARTITION BY   CAST(cc_num AS NUMERIC)\n" +
-                "                ORDER BY unix_time\n" +
-                "                -- 1 week is 604800  seconds\n" +
-                "                RANGE BETWEEN 604800  PRECEDING AND 1 PRECEDING) AS\n" +
-                "avg_spend_pw,\n" +
-                "      AVG(amt) OVER(\n" +
-                "                PARTITION BY  CAST(cc_num AS NUMERIC)\n" +
-                "                ORDER BY unix_time\n" +
-                "                -- 1 month(30 days) is 2592000 seconds\n" +
-                "                RANGE BETWEEN 2592000 PRECEDING AND 1 PRECEDING) AS\n" +
-                "avg_spend_pm,\n" +
-                "    COUNT(*) OVER(\n" +
-                "                PARTITION BY  CAST(cc_num AS NUMERIC)\n" +
-                "                ORDER BY unix_time\n" +
-                "                -- 1 day is 86400  seconds\n" +
-                "                RANGE BETWEEN 86400  PRECEDING AND 1 PRECEDING ) AS\n" +
-                "trans_freq_24,\n" +
-                "  category,\n" +
-                "    amt,\n" +
-                "    state,\n" +
-                "    job,\n" +
-                "    unix_time,\n" +
-                "    city_pop,\n" +
-                "    merchant,\n" +
-                "    is_fraud\n" +
-                "  FROM (\n" +
-                "          SELECT t1.*, t2.*\n" +
-                "          --,    LAG(trans_date_trans_time, 1) OVER (PARTITION BY t1.cc_num\n" +
-                "          -- ORDER BY trans_date_trans_time ASC) AS last_txn_date\n" +
-                "          FROM  transactions AS t1\n" +
-                "          LEFT JOIN  demographics AS t2\n" +
-                "          ON t1.cc_num =t2.cc_num)";
+        String ddl0 = """
+                CREATE TABLE demographics (
+                 cc_num FLOAT64 NOT NULL,
+                 first STRING,
+                 gender STRING,
+                 street STRING,
+                 city STRING,
+                 state STRING,
+                 zip INTEGER,
+                 lat FLOAT64,
+                 long FLOAT64,
+                 city_pop INTEGER,
+                 job STRING,
+                 dob DATE
+                )""";
+        String ddl1 = """
+                CREATE TABLE transactions (
+                 trans_date_trans_time TIMESTAMP NOT NULL,
+                 cc_num FLOAT64,
+                 merchant STRING,
+                 category STRING,
+                 amt FLOAT64,
+                 trans_num STRING,
+                 unix_time INTEGER NOT NULL,
+                 merch_lat FLOAT64,
+                 merch_long FLOAT64,
+                 is_fraud INTEGER
+                )""";
+        String query = """
+                SELECT
+                    DAYOFWEEK(trans_date_trans_time) AS d,
+                    TIMESTAMPDIFF(YEAR, trans_date_trans_time, CAST(dob as TIMESTAMP)) AS age,
+                    ST_DISTANCE(ST_POINT(long,lat), ST_POINT(merch_long,merch_lat)) AS distance,
+                    -- TIMESTAMPDIFF(MINUTE, trans_date_trans_time, last_txn_date) AS trans_diff,
+                    AVG(amt) OVER(
+                                PARTITION BY   CAST(cc_num AS NUMERIC)
+                                ORDER BY unix_time
+                                -- 1 week is 604800  seconds
+                                RANGE BETWEEN 604800  PRECEDING AND 1 PRECEDING) AS
+                avg_spend_pw,
+                      AVG(amt) OVER(
+                                PARTITION BY  CAST(cc_num AS NUMERIC)
+                                ORDER BY unix_time
+                                -- 1 month(30 days) is 2592000 seconds
+                                RANGE BETWEEN 2592000 PRECEDING AND 1 PRECEDING) AS
+                avg_spend_pm,
+                    COUNT(*) OVER(
+                                PARTITION BY  CAST(cc_num AS NUMERIC)
+                                ORDER BY unix_time
+                                -- 1 day is 86400  seconds
+                                RANGE BETWEEN 86400  PRECEDING AND 1 PRECEDING ) AS
+                trans_freq_24,
+                  category,
+                    amt,
+                    state,
+                    job,
+                    unix_time,
+                    city_pop,
+                    merchant,
+                    is_fraud
+                  FROM (
+                          SELECT t1.*, t2.*
+                          --,    LAG(trans_date_trans_time, 1) OVER (PARTITION BY t1.cc_num
+                          -- ORDER BY trans_date_trans_time ASC) AS last_txn_date
+                          FROM  transactions AS t1
+                          LEFT JOIN  demographics AS t2
+                          ON t1.cc_num =t2.cc_num)""";
         DBSPCompiler compiler = testCompiler();
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatement(ddl0);

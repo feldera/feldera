@@ -75,84 +75,90 @@ public class RustFileWriter implements ICompilerComponent {
      * Preamble used for all compilations.
      */
     static final String commonPreamble =
-            "// Automatically-generated file\n" +
-            "#![allow(dead_code)]\n" +
-            "#![allow(non_snake_case)]\n" +
-            "#![allow(unused_imports)]\n" +
-            "#![allow(unused_parens)]\n" +
-            "#![allow(unused_variables)]\n" +
-            "#![allow(unused_mut)]\n\n" +
-            "#![allow(non_camel_case_types)]\n\n" +
-            "#[cfg(test)]\n" +
-            "use hashing::*;\n";  // comparison functions
+            """
+                    // Automatically-generated file
+                    #![allow(dead_code)]
+                    #![allow(non_snake_case)]
+                    #![allow(unused_imports)]
+                    #![allow(unused_parens)]
+                    #![allow(unused_variables)]
+                    #![allow(unused_mut)]
+
+                    #![allow(non_camel_case_types)]
+
+                    #[cfg(test)]
+                    use hashing::*;
+                    """;  // comparison functions
 
     /**
      * Preamble used when generating Rust code.
      */
     @SuppressWarnings("SpellCheckingInspection")
     static final String rustPreamble =
-            "use paste::paste;\n" +
-            "use derive_more::{Add,Sub,Neg,From,Into,AddAssign};\n" +
-            "use dbsp::{\n" +
-            "    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,\n" +
-            "         UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,\n" +
-            "         AddAssignByRef,\n" +
-            "    },\n" +
-            "    circuit::{Circuit, Stream},\n" +
-            "    operator::{\n" +
-            "        Generator,\n" +
-            "        FilterMap,\n" +
-            "        Fold,\n" +
-            "        time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},\n" +
-            "        MaxSemigroup,\n" +
-            "        MinSemigroup,\n" +
-            "        CmpFunc,\n" +
-            "    },\n" +
-            "    trace::ord::{OrdIndexedZSet, OrdZSet},\n" +
-            "    zset,\n" +
-            "    indexed_zset,\n" +
-            "    DBWeight,\n" +
-            "    DBData,\n" +
-            "    DBSPHandle,\n" +
-            "    Error as DBSPError,\n" +
-            "    Runtime,\n" +
-            "    NumEntries,\n" +
-            "};\n" +
-            "use dbsp_adapters::{deserialize_table_record, serialize_table_record, Catalog};\n" +
-            "use size_of::*;\n" +
-            "use ::serde::{Deserialize,Serialize};\n" +
-            "use compare::{Compare, Extract};\n" +
-            "use std::{\n" +
-            "    convert::identity,\n" +
-            "    ops::{Add, Neg, AddAssign},\n" +
-            "    fmt::{Debug, Formatter, Result as FmtResult},\n" +
-            "    cell::RefCell,\n" +
-            "    path::Path,\n" +
-            "    rc::Rc,\n" +
-            "    marker::PhantomData,\n" +
-            "    str::FromStr,\n" +
-            "};\n" +
-            "use core::cmp::Ordering;\n" +
-            "use rust_decimal::Decimal;\n" +
-            "use tuple::declare_tuples;\n" +
-            "use tuple::{count_items,measure_items};\n" +
-            "use sqllib::{\n" +
-            "    *,\n" +
-            "    casts::*,\n" +
-            "    binary::*,\n" +
-            "    geopoint::*,\n" +
-            "    timestamp::*,\n" +
-            "    interval::*,\n" +
-            "    string::*,\n" +
-            "    operators::*,\n" +
-            "    aggregates::*,\n" +
-            "};\n" +
-            "#[cfg(test)]\n" +
-            "use sqlvalue::*;\n" +
-            "#[cfg(test)]\n" +
-            "use readers::*;\n" +
-            "#[cfg(test)]\n" +
-            "use sqlx::{AnyConnection, any::AnyRow, Row};\n";
+            """
+                    use paste::paste;
+                    use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
+                    use dbsp::{
+                        algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
+                             UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
+                             AddAssignByRef,
+                        },
+                        circuit::{Circuit, Stream},
+                        operator::{
+                            Generator,
+                            FilterMap,
+                            Fold,
+                            time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
+                            MaxSemigroup,
+                            MinSemigroup,
+                            CmpFunc,
+                        },
+                        trace::ord::{OrdIndexedZSet, OrdZSet},
+                        zset,
+                        indexed_zset,
+                        DBWeight,
+                        DBData,
+                        DBSPHandle,
+                        Error as DBSPError,
+                        Runtime,
+                        NumEntries,
+                    };
+                    use dbsp_adapters::{deserialize_table_record, serialize_table_record, Catalog};
+                    use size_of::*;
+                    use ::serde::{Deserialize,Serialize};
+                    use compare::{Compare, Extract};
+                    use std::{
+                        convert::identity,
+                        ops::{Add, Neg, AddAssign},
+                        fmt::{Debug, Formatter, Result as FmtResult},
+                        cell::RefCell,
+                        path::Path,
+                        rc::Rc,
+                        marker::PhantomData,
+                        str::FromStr,
+                    };
+                    use core::cmp::Ordering;
+                    use rust_decimal::Decimal;
+                    use tuple::declare_tuples;
+                    use tuple::{count_items,measure_items};
+                    use sqllib::{
+                        *,
+                        casts::*,
+                        binary::*,
+                        geopoint::*,
+                        timestamp::*,
+                        interval::*,
+                        string::*,
+                        operators::*,
+                        aggregates::*,
+                    };
+                    #[cfg(test)]
+                    use sqlvalue::*;
+                    #[cfg(test)]
+                    use readers::*;
+                    #[cfg(test)]
+                    use sqlx::{AnyConnection, any::AnyRow, Row};
+                    """;
 
     final DBSPCompiler compiler;
 

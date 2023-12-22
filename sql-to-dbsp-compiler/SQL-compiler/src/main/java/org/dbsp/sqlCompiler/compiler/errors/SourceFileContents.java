@@ -58,10 +58,8 @@ public class SourceFileContents {
             result.append(lineNo(startLine))
                     .append(line)
                     .append(SourceFileContents.newline());
-            for (int i = 0; i < startCol + 6; i++)
-                result.append(" ");
-            for (int i = startCol; i < endCol; i++)
-                result.append("^");
+            result.append(" ".repeat(startCol + 6));
+            result.append("^".repeat(endCol - startCol));
             result.append(SourceFileContents.newline());
         } else {
             if (endLine - startLine < 5) {

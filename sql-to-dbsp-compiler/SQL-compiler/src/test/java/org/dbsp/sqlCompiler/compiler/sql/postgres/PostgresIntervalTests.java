@@ -7,11 +7,11 @@ import org.junit.Test;
 public class PostgresIntervalTests extends SqlIoTest {
     @Test
     public void testCalciteExamples() {
-        this.q("SELECT INTERVAL '1-5' YEAR TO MONTH, " +
-                        "INTERVAL '45' DAY, INTERVAL '1 2:34:56.789' DAY TO SECOND;\n" +
-                "i0 | i1 | i2\n" +
-                "------------\n" +
-                "1 year 5 months | 45 days | 1 day 02:34:56.789");
+        this.q("""
+                SELECT INTERVAL '1-5' YEAR TO MONTH, INTERVAL '45' DAY, INTERVAL '1 2:34:56.789' DAY TO SECOND;
+                i0 | i1 | i2
+                ------------
+                1 year 5 months | 45 days | 1 day 02:34:56.789""");
     }
 
     @Test
@@ -19,35 +19,37 @@ public class PostgresIntervalTests extends SqlIoTest {
         // Had to add the symbolic intervals by hand in many places
         // Postgres allows individual signs on fragments, the
         // standard doesn't
-        this.qs("SELECT INTERVAL '01:00' HOUR TO MINUTE AS \"One hour\";\n" +
-                " One hour \n" +
-                "----------\n" +
-                " 01:00:00\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT INTERVAL '+02:00' HOUR TO MINUTE AS \"Two hours\";\n" +
-                " Two hours \n" +
-                "-----------\n" +
-                " 02:00:00\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT INTERVAL '-08:00' HOUR TO MINUTE AS \"Eight hours\";\n" +
-                " Eight hours \n" +
-                "-------------\n" +
-                " -08:00:00\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT INTERVAL '-1 02:03' DAYS TO MINUTE AS \"26 hours ago...\";\n" +
-                "  26 hours ago...  \n" +
-                "-------------------\n" +
-                " -1 days 02:03:00\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT INTERVAL '-1 02:03' DAYS TO MINUTES AS \"26 hours ago...\";\n" +
-                "  26 hours ago...  \n" +
-                "-------------------\n" +
-                " -1 days 02:03:00\n" +
-                "(1 row)\n");
+        this.qs("""
+                SELECT INTERVAL '01:00' HOUR TO MINUTE AS "One hour";
+                 One hour\s
+                ----------
+                 01:00:00
+                (1 row)
+
+                SELECT INTERVAL '+02:00' HOUR TO MINUTE AS "Two hours";
+                 Two hours\s
+                -----------
+                 02:00:00
+                (1 row)
+
+                SELECT INTERVAL '-08:00' HOUR TO MINUTE AS "Eight hours";
+                 Eight hours\s
+                -------------
+                 -08:00:00
+                (1 row)
+
+                SELECT INTERVAL '-1 02:03' DAYS TO MINUTE AS "26 hours ago...";
+                  26 hours ago... \s
+                -------------------
+                 -1 days 02:03:00
+                (1 row)
+
+                SELECT INTERVAL '-1 02:03' DAYS TO MINUTES AS "26 hours ago...";
+                  26 hours ago... \s
+                -------------------
+                 -1 days 02:03:00
+                (1 row)
+                """);
                 // Not supported by Calcite
                 //"SELECT INTERVAL '1.5' WEEKS AS \"Ten days twelve hours\";\n" +
                 //" Ten days twelve hours \n" +

@@ -157,10 +157,12 @@ public class SimulatorTests {
     }
 
     public static ZSet<Person, Integer> getPersons() {
-        String data = "name,age\n" +
-                "Billy,28\n" +
-                "Barbara,36\n" +
-                "John,12\n";
+        String data = """
+                name,age
+                Billy,28
+                Barbara,36
+                John,12
+                """;
         return fromCSV(data, Person.class);
     }
 
@@ -180,9 +182,11 @@ public class SimulatorTests {
     public void testWhere() {
         ZSet<Person, Integer> input = getPersons();
         ZSet<Person, Integer> adults = input.filter(p -> p.age >= 18);
-        ZSet<Person, Integer> expected = fromCSV("name,age\n" +
-                "Billy,28\n" +
-                "Barbara,36\n", Person.class);
+        ZSet<Person, Integer> expected = fromCSV("""
+                name,age
+                Billy,28
+                Barbara,36
+                """, Person.class);
         Assert.assertTrue(expected.equals(adults));
     }
 
@@ -231,8 +235,10 @@ public class SimulatorTests {
         ZSet<Person, Integer> input = getPersons();
         ZSet<Person, Integer> adults = input.filter(p -> p.age >= 18);
         ZSet<Person, Integer> children = input.except(adults);
-        ZSet<Person, Integer> expected = fromCSV("name,age\n" +
-                "John,12\n", Person.class);
+        ZSet<Person, Integer> expected = fromCSV("""
+                name,age
+                John,12
+                """, Person.class);
         Assert.assertTrue(expected.equals(children));
     }
 
@@ -271,11 +277,13 @@ public class SimulatorTests {
     }
 
     ZSet<Address, Integer> getAddress() {
-        return fromCSV("name,city\n" +
-                "Billy,San Francisco\n" +
-                "Barbara,Seattle\n" +
-                "John,New York\n" +
-                "Tom,Miami\n", Address.class);
+        return fromCSV("""
+                name,city
+                Billy,San Francisco
+                Barbara,Seattle
+                John,New York
+                Tom,Miami
+                """, Address.class);
     }
 
     @JsonPropertyOrder({"name", "address"})
@@ -377,10 +385,11 @@ public class SimulatorTests {
         IndexedZSet<String, Address, Integer> addressIndex = address.filter(a -> a.name != null).index(a -> a.name);
         IndexedZSet<String, PersonAddressAge, Integer> join = personIndex.join(addressIndex, (p, a) -> new PersonAddressAge(p.name, p.age, a.city));
         ZSet<PersonAddressAge, Integer> result = join.deindex();
-        ZSet<PersonAddressAge, Integer> expected = fromCSV("name,age,city\n" +
-                "Barbara,36,Seattle\n" +
-                "Billy,28,\"San Francisco\"\n" +
-                "John,12,\"New York\"", PersonAddressAge.class);
+        ZSet<PersonAddressAge, Integer> expected = fromCSV("""
+                name,age,city
+                Barbara,36,Seattle
+                Billy,28,"San Francisco"
+                John,12,"New York\"""", PersonAddressAge.class);
         Assert.assertTrue(expected.equals(result));
     }
 

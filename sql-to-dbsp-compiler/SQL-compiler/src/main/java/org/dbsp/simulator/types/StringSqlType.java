@@ -9,8 +9,4 @@ public class StringSqlType extends SqlTypeBase {
         super(SqlTypeName.VARCHAR);
     }
 
-    @Override
-    public int getPrecision() {
-        return this.precision;
-    }
 }

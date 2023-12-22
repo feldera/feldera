@@ -1015,6 +1015,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         RexNode left = node.operands.get(0);
         RexNode right = node.operands.get(1);
         switch (node.getKind()) {
+            case EQUALS: {
+                // Treat 'a == 1' like 'a <= 1'.
+                // This works because the smallest legal limit is 1.
+                int leftLimit = limitValue(left, variableIndex, right, true);
+                int rightLimit = limitValue(left, variableIndex, right, true);
+                if (leftLimit == 1 || rightLimit == 1)
+                    return 1;
+            }
             case LESS_THAN:
                 return limitValue(left, variableIndex, right, false);
             case LESS_THAN_OR_EQUAL:

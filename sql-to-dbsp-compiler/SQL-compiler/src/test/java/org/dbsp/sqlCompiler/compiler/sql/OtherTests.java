@@ -74,6 +74,7 @@ import javax.imageio.ImageIO;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -90,14 +91,15 @@ import java.util.Set;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 public class OtherTests extends BaseSQLTests implements IWritesLogs {
-    static final String ddl = "CREATE TABLE T (\n" +
-            "COL1 INT NOT NULL\n" +
-            ", COL2 DOUBLE NOT NULL\n" +
-            ", COL3 BOOLEAN NOT NULL\n" +
-            ", COL4 VARCHAR NOT NULL\n" +
-            ", COL5 INT\n" +
-            ", COL6 DOUBLE\n" +
-            ")";
+    static final String ddl = """
+            CREATE TABLE T (
+            COL1 INT NOT NULL
+            , COL2 DOUBLE NOT NULL
+            , COL3 BOOLEAN NOT NULL
+            , COL4 VARCHAR NOT NULL
+            , COL5 INT
+            , COL6 DOUBLE
+            )""";
 
     private DBSPCompiler compileDef() {
         DBSPCompiler compiler = this.testCompiler();
@@ -129,17 +131,19 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         compiler.compileStatement(query);
         DBSPCircuit circuit = getCircuit(compiler);
         String str = circuit.toString();
-        String expected = "Circuit circuit0 {\n" +
-                "    // DBSPSourceMultisetOperator 53\n" +
-                "    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)\n" +
-                "    let T = T();\n" +
-                "    // DBSPMapOperator 76\n" +
-                "    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new(((*t).2), )));\n" +
-                "    // CREATE VIEW `V` AS\n" +
-                "    // SELECT `T`.`COL3`\n" +
-                "    // FROM `T`\n" +
-                "    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream0;\n" +
-                "}\n";
+        String expected = """
+                Circuit circuit0 {
+                    // DBSPSourceMultisetOperator 53
+                    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
+                    let T = T();
+                    // DBSPMapOperator 76
+                    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new(((*t).2), )));
+                    // CREATE VIEW `V` AS
+                    // SELECT `T`.`COL3`
+                    // FROM `T`
+                    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream0;
+                }
+                """;
         Assert.assertEquals(expected, str);
     }
 
@@ -301,7 +305,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 new DBSPTypeVoid(), body, Linq.list("#[test]"));
 
-        PrintStream outputStream = new PrintStream(BaseSQLTests.testFilePath, "UTF-8");
+        PrintStream outputStream = new PrintStream(BaseSQLTests.testFilePath, StandardCharsets.UTF_8);
         RustFileWriter writer = new RustFileWriter(compiler, outputStream);
         writer.add(tester);
         writer.writeAndClose();
@@ -311,27 +315,25 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void testWith() throws IOException, InterruptedException {
         String statement =
-                "create table VENDOR (\n" +
-                        "    id bigint not null primary key,\n" +
-                        "    name varchar,\n" +
-                        "    address varchar\n" +
-                        ");\n" +
-                        "\n" +
-                        "create table PART (\n" +
-                        "    id bigint not null primary key,\n" +
-                        "    name varchar\n" +
-                        ");\n" +
-                        "\n" +
-                        "create table PRICE (\n" +
-                        "    part bigint not null,\n" +
-                        "    vendor bigint not null,\n" +
-                        "    price decimal\n" +
-                        ");\n" +
-                        "\n" +
-                        "create view LOW_PRICE AS " +
-                        "with LOW_PRICE_CTE AS (" +
-                        "  select part, MIN(price) as price from PRICE group by part" +
-                        ") select * FROM LOW_PRICE_CTE";
+                """
+                        create table VENDOR (
+                            id bigint not null primary key,
+                            name varchar,
+                            address varchar
+                        );
+
+                        create table PART (
+                            id bigint not null primary key,
+                            name varchar
+                        );
+
+                        create table PRICE (
+                            part bigint not null,
+                            vendor bigint not null,
+                            price decimal
+                        );
+
+                        create view LOW_PRICE AS with LOW_PRICE_CTE AS (  select part, MIN(price) as price from PRICE group by part) select * FROM LOW_PRICE_CTE""";
         File file = createInputScript(statement);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         if (messages.errorCount() > 0)
@@ -460,11 +462,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void testDefaultColumnValueCompiler() throws IOException, InterruptedException {
         String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL DEFAULT 0\n" +
-                        ", COL2 DOUBLE DEFAULT 0.0\n" +
-                        ", COL3 VARCHAR DEFAULT NULL\n" +
-                        ")",
+                """
+CREATE TABLE T (
+COL1 INT NOT NULL DEFAULT 0
+, COL2 DOUBLE DEFAULT 0.0
+, COL3 VARCHAR DEFAULT NULL
+)""",
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = createInputScript(statements);

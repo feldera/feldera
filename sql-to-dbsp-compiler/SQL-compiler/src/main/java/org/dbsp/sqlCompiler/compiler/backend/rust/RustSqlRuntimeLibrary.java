@@ -144,7 +144,7 @@ public class RustSqlRuntimeLibrary {
             DBSPType ltype, @Nullable DBSPType rtype) {
         if (ltype.is(DBSPTypeAny.class) || (rtype != null && rtype.is(DBSPTypeAny.class)))
             throw new InternalCompilerError("Unexpected type _ for operand of " + opcode, ltype);
-        HashMap<String, DBSPOpcode> map = null;
+        HashMap<String, DBSPOpcode> map;
         boolean anyNull = ltype.mayBeNull || (rtype != null && rtype.mayBeNull);
         String suffixReturn = "";  // suffix based on the return type
 
@@ -206,7 +206,7 @@ public class RustSqlRuntimeLibrary {
             if (opcode.equals(inMap)) {
                 return new FunctionDescription(
                         k + "_" + tsuffixl + suffixl + "_" + tsuffixr + suffixr + suffixReturn,
-                        returnType);
+                        Objects.requireNonNull(returnType));
             }
         }
         throw new UnimplementedException("Could not find `" + opcode + "` for type " + ltype);

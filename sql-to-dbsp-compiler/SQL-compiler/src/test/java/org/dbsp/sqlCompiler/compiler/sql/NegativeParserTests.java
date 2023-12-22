@@ -25,10 +25,11 @@ public class NegativeParserTests extends BaseSQLTests {
 
     @Test
     public void validateKey() {
-        String ddl = "create table git_commit (\n" +
-                "    git_commit_id bigint not null,\n" +
-                "    PRIMARY KEY (unknown)\n" +
-                ")";
+        String ddl = """
+                create table git_commit (
+                    git_commit_id bigint not null,
+                    PRIMARY KEY (unknown)
+                )""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "does not correspond to a column");
@@ -36,8 +37,10 @@ public class NegativeParserTests extends BaseSQLTests {
 
     @Test
     public void testDuplicateTable() {
-        String ddl = "CREATE TABLE T(T INT);\n" +
-                "CREATE TABLE T(T INT);\n";
+        String ddl = """
+                CREATE TABLE T(T INT);
+                CREATE TABLE T(T INT);
+                """;
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "Duplicate declaration");
@@ -45,20 +48,22 @@ public class NegativeParserTests extends BaseSQLTests {
 
     @Test
     public void duplicatedKey() {
-        String ddl =    "create table git_commit (\n" +
-                "    git_commit_id bigint not null PRIMARY KEY,\n" +
-                "    PRIMARY KEY (git_commit_id)\n" +
-                ")";
+        String ddl = """
+                create table git_commit (
+                    git_commit_id bigint not null PRIMARY KEY,
+                    PRIMARY KEY (git_commit_id)
+                )""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "in table with another PRIMARY KEY constraint");
     }
 
     @Test
-    public void doubleDefaultTest() throws SqlParseException {
-        String ddl = "CREATE TABLE productvariant_t (\n" +
-                "    id BIGINT DEFAULT NULL DEFAULT 1\n" +
-                ");";
+    public void doubleDefaultTest() {
+        String ddl = """
+                CREATE TABLE productvariant_t (
+                    id BIGINT DEFAULT NULL DEFAULT 1
+                );""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "Column ID already has a default value");
@@ -75,10 +80,11 @@ public class NegativeParserTests extends BaseSQLTests {
 
     @Test
     public void duplicatedKey0() {
-        String ddl = "create table git_commit (\n" +
-                "    git_commit_id bigint not null,\n" +
-                "    PRIMARY KEY (git_commit_id, git_commit_id)\n" +
-                ")";
+        String ddl = """
+                create table git_commit (
+                    git_commit_id bigint not null,
+                    PRIMARY KEY (git_commit_id, git_commit_id)
+                )""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "already declared as key");
@@ -86,10 +92,11 @@ public class NegativeParserTests extends BaseSQLTests {
 
     @Test
     public void emptyPrimaryKey() {
-        String ddl = "create table git_commit (\n" +
-                "    git_commit_id bigint not null,\n" +
-                "    PRIMARY KEY ()\n" +
-                ")";
+        String ddl = """
+                create table git_commit (
+                    git_commit_id bigint not null,
+                    PRIMARY KEY ()
+                )""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "Error parsing SQL");
@@ -100,30 +107,32 @@ public class NegativeParserTests extends BaseSQLTests {
         // TODO: this test may become invalid once we add support, so we need
         // here some truly invalid SQL.
         DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements("create table PART_ORDER (\n" +
-                "    id bigint,\n" +
-                "    part bigint,\n" +
-                "    customer bigint,\n" +
-                "    target_date date\n" +
-                ");\n" +
-                "\n" +
-                "create table FULFILLMENT (\n" +
-                "    part_order bigint,\n" +
-                "    fulfillment_date date\n" +
-                ");\n" +
-                "\n" +
-                "create view FLAGGED_ORDER as\n" +
-                "select\n" +
-                "    part_order.customer,\n" +
-                "    AVG(DATEDIFF(day, part_order.target_date, fulfillment.fulfillment_date))\n" +
-                "    OVER (PARTITION BY part_order.customer\n" +
-                "          ORDER BY fulfillment.fulfillment_date\n" +
-                "          RANGE BETWEEN INTERVAL 90 days PRECEDING and CURRENT ROW) as avg_delay\n" +
-                "from\n" +
-                "    part_order\n" +
-                "    join\n" +
-                "    fulfillment\n" +
-                "    on part_order.id = fulfillment.part_order;\n");
+        compiler.compileStatements("""
+                create table PART_ORDER (
+                    id bigint,
+                    part bigint,
+                    customer bigint,
+                    target_date date
+                );
+
+                create table FULFILLMENT (
+                    part_order bigint,
+                    fulfillment_date date
+                );
+
+                create view FLAGGED_ORDER as
+                select
+                    part_order.customer,
+                    AVG(DATEDIFF(day, part_order.target_date, fulfillment.fulfillment_date))
+                    OVER (PARTITION BY part_order.customer
+                          ORDER BY fulfillment.fulfillment_date
+                          RANGE BETWEEN INTERVAL 90 days PRECEDING and CURRENT ROW) as avg_delay
+                from
+                    part_order
+                    join
+                    fulfillment
+                    on part_order.id = fulfillment.part_order;
+                """);
         TestUtil.assertMessagesContain(compiler.messages, 
                 "Not yet implemented: OVER currently does not support sorting on nullable column");
     }
@@ -209,9 +218,10 @@ public class NegativeParserTests extends BaseSQLTests {
 
     @Test
     public void warningTest() throws IOException {
-        String statements = "CREATE TABLE T (COL1 INT);\n" +
-                "CREATE TABLE S (COL1 INT);\n" +
-                "CREATE VIEW V AS SELECT * FROM S";
+        String statements = """
+                CREATE TABLE T (COL1 INT);
+                CREATE TABLE S (COL1 INT);
+                CREATE VIEW V AS SELECT * FROM S""";
         File file = createInputScript(statements);
         CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null");
         Assert.assertEquals(messages.exitCode, 0);
