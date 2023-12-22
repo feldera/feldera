@@ -115,6 +115,73 @@ public class TopKTests extends SqlIoTest {
     }
 
     @Test
+    public void issue1184() {
+        String sql = "CREATE TABLE event_t (\n" +
+                "id BIGINT NOT NULL PRIMARY KEY,\n" +
+                "site_id BIGINT NOT NULL,\n" +
+                "event_type_id BIGINT NOT NULL,\n" +
+                "event_date BIGINT NOT NULL, -- epoch\n" +
+                "event_clear_date BIGINT -- epoch\n" +
+                ");\n" +
+                "\n" +
+                "CREATE VIEW EVENT_DURATION_V AS\n" +
+                "SELECT (event_date - event_clear_date) AS duration\n" +
+                ",      event_type_id\n" +
+                ",      site_id\n" +
+                "FROM   event_t\n" +
+                "WHERE  event_clear_date IS NOT NULL\n" +
+                ";\n" +
+                "\n" +
+                "CREATE VIEW TOP_EVENT_DURATIONS_V AS\n" +
+                "SELECT duration\n" +
+                ",      event_type_id\n" +
+                "FROM   (SELECT duration\n" +
+                "        ,      event_type_id\n" +
+                "        ,      ROW_NUMBER() OVER (PARTITION BY event_type_id\n" +
+                "                                  ORDER BY duration DESC) AS rnum\n" +
+                "        FROM   EVENT_DURATION_V)\n" +
+                "WHERE   rnum = 1\n" +
+                "ORDER BY 1 DESC\n" +
+                ";";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        Assert.assertEquals(0, compiler.messages.errorCount());
+    }
+
+    @Test
+    public void issue1185() {
+        String sql = "CREATE TABLE event_t (\n" +
+                "id BIGINT NOT NULL PRIMARY KEY,\n" +
+                "site_id BIGINT NOT NULL,\n" +
+                "event_type_id BIGINT NOT NULL,\n" +
+                "event_date BIGINT NOT NULL, -- epoch\n" +
+                "event_clear_date BIGINT -- epoch\n" +
+                ");\n" +
+                "\n" +
+                "CREATE VIEW EVENT_DURATION_V AS\n" +
+                "SELECT (event_date - event_clear_date) AS duration\n" +
+                ",      event_type_id\n" +
+                ",      site_id\n" +
+                "FROM   event_t\n" +
+                "WHERE  event_clear_date IS NOT NULL\n" +
+                ";\n" +
+                "\n" +
+                "CREATE VIEW TOP_EVENT_DURATIONS_V AS\n" +
+                "SELECT duration\n" +
+                ",      site_id\n" +
+                "FROM   (SELECT duration\n" +
+                "        ,      site_id\n" +
+                "        ,      ROW_NUMBER() OVER (PARTITION BY site_id\n" +
+                "                                  ORDER BY duration ASC) AS rnum\n" +
+                "        FROM   EVENT_DURATION_V)\n" +
+                "WHERE   rnum = 1\n" +
+                ";";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        Assert.assertEquals(0, compiler.messages.errorCount());
+    }
+
+    @Test
     public void issue1175() {
         String sql = "CREATE TABLE event_t (\n" +
                 "id BIGINT NOT NULL PRIMARY KEY,\n" +
