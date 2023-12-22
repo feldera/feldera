@@ -220,18 +220,16 @@ public class PostgresInt2Tests extends SqlIoTest {
     @Test
     public void testBadSelect() {
         this.shouldFail("SELECT * FROM INT2_TBL AS s (a, b)", "List of column aliases must have same degree as table; table has 1 columns ('F1'), whereas alias list has 2 columns");
-
     }
 
-    // We round differently than Postgres
-    // R: ("-1.5", -2)x1  L: ("-1.5", -1)x1
-    // R: ("-0.5", 0)x1   L: ("-0.5", 0)x1
-    // R: ("1.5", 2)x1    L: ("1.5", 1)x1
-    @Test @Ignore("fails because we round differently than Postgres")
+    // We round down to zero
+    @Test
     public void testFloatRound() {
         this.q(
                 "SELECT x, x::int2 AS int2_value " +
-                        "FROM (VALUES (-2.5::float8)," +
+                        "FROM (VALUES " +
+                        "             (-2.9::float8)," +
+                        "             (-2.5::float8)," +
                         "             (-1.5::float8)," +
                         "             (-0.5::float8)," +
                         "             (0.0::float8)," +
@@ -240,28 +238,25 @@ public class PostgresInt2Tests extends SqlIoTest {
                         "             (2.5::float8)) t(x);\n" +
                         "  x   | int2_value \n" +
                         "------+------------\n" +
+                        " -2.9 |         -2\n" +
                         " -2.5 |         -2\n" +
-                        " -1.5 |         -2\n" +
+                        " -1.5 |         -1\n" +
                         " -0.5 |          0\n" +
                         "    0 |          0\n" +
                         "  0.5 |          0\n" +
-                        "  1.5 |          2\n" +
+                        "  1.5 |          1\n" +
                         "  2.5 |          2"
         );
     }
 
-    // Fails because we round differently than Postgres
-    // R: (-2.5, -3)x1  L: (-2.5, -2)x1
-    // R: (-1.5, -2)x1  L: (-1.5, -1)x1
-    // R: (-0.5, -1)x1  L: (-0.5, 0)x1
-    // R: (0.5, 1)x1    L: (0.5, 0)x1
-    // R: (1.5, 2)x1    L: (1.5, 1)x1
-    // R: (2.5, 3)x1    L: (2.5, 2)x1
-    @Test @Ignore("fails because we round differently than Postgres")
+    // We round down to zero
+    @Test
     public void testNumericRound() {
         this.q(
                 "SELECT x, x::int2 AS int2_value " +
-                        "FROM (VALUES (-2.5::numeric)," +
+                        "FROM (VALUES " +
+                        "             (-2.9::numeric)," +
+                        "             (-2.5::numeric)," +
                         "             (-1.5::numeric)," +
                         "             (-0.5::numeric)," +
                         "             (0.0::numeric)," +
@@ -270,59 +265,19 @@ public class PostgresInt2Tests extends SqlIoTest {
                         "             (2.5::numeric)) t(x);\n" +
                         "  x   | int2_value \n" +
                         "------+------------\n" +
-                        " -2.5 |         -3\n" +
-                        " -1.5 |         -2\n" +
-                        " -0.5 |         -1\n" +
+                        " -2.9 |         -2\n" +
+                        " -2.5 |         -2\n" +
+                        " -1.5 |         -1\n" +
+                        " -0.5 |         -0\n" +
                         "  0.0 |          0\n" +
-                        "  0.5 |          1\n" +
-                        "  1.5 |          2\n" +
-                        "  2.5 |          3"
-        );
-    }
-
-    @Test @Ignore("non decimals not suppported yet")
-    public void testNonDecimals() {
-        this.qs(
-                "SELECT '0b100101'::INT2 as x;\n" +
-                        " x \n" +
-                        "---\n" +
-                        " 37\n" +
-                        "(1 row)\n" +
-                        "\n" +
-                        "SELECT '0o273'::INT2;\n" +
-                        " x \n" +
-                        "---\n" +
-                        " 187\n" +
-                        "(1 row)\n" +
-                        "\n" +
-                        "SELECT '0x42F'::INT2;\n" +
-                        " x \n" +
-                        "---\n" +
-                        " 1071\n" +
-                        "(1 row)\n" +
-                        "\n"
-        );
-    }
-
-    @Test @Ignore("unimplemented operator")
-    public void testLeftShift() {
-        this.qs(
-        "SELECT (-1::INT2 << 15)::TEXT;\n" +
-                "  text  \n" +
-                "--------\n" +
-                " -32768\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT ((-1::int2<<15)+1::int2)::text;\n" +
-                "  text  \n" +
-                "--------\n" +
-                " -32767\n" +
-                "(1 row)"
+                        "  0.5 |          0\n" +
+                        "  1.5 |          1\n" +
+                        "  2.5 |          2"
         );
     }
 
     // Ignored because this fails in Postgres but here we get:
-    @Test @Ignore
+    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
     public void testSelectOverflow() {
         String error_message = "INT2 out of range";
         // We get:
@@ -357,7 +312,7 @@ public class PostgresInt2Tests extends SqlIoTest {
     //  |
     //2 | println!("{}", -32768i16 % -1i16);
     //  |                ^^^^^^^^^^^^^^^^^ overflow in signed remainder (dividing MIN by -1)
-    @Test @Ignore
+    @Test @Ignore("Modulo edge case integer overflow: https://github.com/feldera/feldera/issues/1187")
     public void testINT2MINOverflow() {
         this.q(
                 "SELECT (-32768)::int2 % (-1)::int2 as x;\n" +
@@ -367,7 +322,7 @@ public class PostgresInt2Tests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore
+    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
     public void testINT2MINOverflowError() {
         String error = "INT2 out of range";
 
@@ -376,22 +331,5 @@ public class PostgresInt2Tests extends SqlIoTest {
 
         // This panics in run time
         this.shouldFail("SELECT (-32768)::int2 / (-1)::int2", error);
-    }
-
-    @Test @Ignore("underscores not supported yet")
-    public void testUnderscores() {
-        this.qs(
-                "SELECT '1_000'::INT2;\n" +
-                        " int2 \n" +
-                        "------\n" +
-                        " 1000\n" +
-                        "(1 row)\n" +
-                        "\n" +
-                        "SELECT '1_2_3'::INT2;\n" +
-                        " int2 \n" +
-                        "------\n" +
-                        "  123\n" +
-                        "(1 row)"
-        );
     }
 }
