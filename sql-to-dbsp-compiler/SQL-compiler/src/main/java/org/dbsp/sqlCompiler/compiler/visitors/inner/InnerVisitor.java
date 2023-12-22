@@ -201,15 +201,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public VisitDecision preorder(DBSPConstItem node) {
-        return this.preorder((DBSPItem) node);
+        return this.preorder(node.to(DBSPItem.class));
     }
 
     public VisitDecision preorder(DBSPFunctionItem node) {
-        return this.preorder((DBSPItem) node);
+        return this.preorder(node.to(DBSPItem.class));
     }
 
     public VisitDecision preorder(DBSPStructItem node) {
-        return this.preorder((DBSPItem) node);
+        return this.preorder(node.to(DBSPItem.class));
     }
 
     // Various
@@ -219,7 +219,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public VisitDecision preorder(DBSPSimplePathSegment node) {
-        return this.preorder((DBSPPathSegment) node);
+        return this.preorder(node.to(DBSPPathSegment.class));
     }
 
     // Types
@@ -229,11 +229,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public VisitDecision preorder(DBSPTypeReal node) {
-        return this.preorder((DBSPTypeFP) node);
+        return this.preorder(node.to(DBSPTypeFP.class));
     }
 
     public VisitDecision preorder(DBSPTypeDouble node) {
-        return this.preorder((DBSPTypeFP) node);
+        return this.preorder(node.to(DBSPTypeFP.class));
     }
 
     public VisitDecision preorder(DBSPTypeISize node) {
@@ -261,11 +261,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public VisitDecision preorder(DBSPTypeRawTuple node) {
-        return this.preorder((DBSPTypeTupleBase) node);
+        return this.preorder(node.to(DBSPTypeTupleBase.class));
     }
 
     public VisitDecision preorder(DBSPTypeTuple node) {
-        return this.preorder((DBSPTypeTupleBase) node);
+        return this.preorder(node.to(DBSPTypeTupleBase.class));
     }
 
     public VisitDecision preorder(DBSPTypeStr node) {
@@ -339,7 +339,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     // Patterns
 
     public VisitDecision preorder(DBSPIdentifierPattern node) {
-        return this.preorder((DBSPPattern) node);
+        return this.preorder(node.to(DBSPPattern.class));
     }
 
     // Expressions
@@ -433,11 +433,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public VisitDecision preorder(DBSPTupleExpression node) {
-        return this.preorder((DBSPBaseTupleExpression) node);
+        return this.preorder(node.to(DBSPBaseTupleExpression.class));
     }
 
     public VisitDecision preorder(DBSPRawTupleExpression node) {
-        return this.preorder((DBSPBaseTupleExpression) node);
+        return this.preorder(node.to(DBSPBaseTupleExpression.class));
     }
 
     public VisitDecision preorder(DBSPFieldExpression node) {
@@ -639,7 +639,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPTypeGeoPoint node) {
-        this.postorder((DBSPTypeGeo) node);
+        this.postorder(node.to(DBSPTypeGeo.class));
     }
 
     public void postorder(DBSPFunction node) {
@@ -665,15 +665,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPConstItem node) {
-        this.postorder((DBSPItem) node);
+        this.postorder(node.to(DBSPItem.class));
     }
 
     public void postorder(DBSPFunctionItem node) {
-        this.postorder((DBSPItem) node);
+        this.postorder(node.to(DBSPItem.class));
     }
 
     public void postorder(DBSPStructItem node) {
-        this.postorder((DBSPItem) node);
+        this.postorder(node.to(DBSPItem.class));
     }
 
     public void postorder(DBSPExpressionStatement node) {
@@ -695,7 +695,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPSimplePathSegment node) {
-        this.postorder((DBSPPathSegment) node);
+        this.postorder(node.to(DBSPPathSegment.class));
     }
 
     // Types
@@ -705,11 +705,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPTypeReal node) {
-        this.postorder((DBSPTypeFP) node);
+        this.postorder(node.to(DBSPTypeFP.class));
     }
 
     public void postorder(DBSPTypeDouble node) {
-        this.postorder((DBSPTypeFP) node);
+        this.postorder(node.to(DBSPTypeFP.class));
     }
 
     public void postorder(DBSPTypeISize node) {
@@ -741,11 +741,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPTypeTuple node) {
-        this.postorder((DBSPTypeTupleBase) node);
+        this.postorder(node.to(DBSPTypeTupleBase.class));
     }
 
     public void postorder(DBSPTypeRawTuple node) {
-        this.postorder((DBSPTypeTupleBase) node);
+        this.postorder(node.to(DBSPTypeTupleBase.class));
     }
 
     public void postorder(DBSPTypeTimestamp node) {
@@ -815,7 +815,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     // Patterns
 
     public void postorder(DBSPIdentifierPattern node) {
-        this.postorder((DBSPPattern) node);
+        this.postorder(node.to(DBSPPattern.class));
     }
 
     // Expressions
@@ -909,11 +909,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPTupleExpression node) {
-        this.postorder((DBSPBaseTupleExpression) node);
+        this.postorder(node.to(DBSPBaseTupleExpression.class));
     }
 
     public void postorder(DBSPRawTupleExpression node) {
-        this.postorder((DBSPBaseTupleExpression) node);
+        this.postorder(node.to(DBSPBaseTupleExpression.class));
     }
 
     public void postorder(DBSPFieldExpression node) {

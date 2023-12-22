@@ -20,32 +20,38 @@ public class PostgresBoolTests extends SqlIoTest {
                         // "INSERT INTO BOOLTBL2 (f1) VALUES (bool 'false');\n" +
                         // "INSERT INTO BOOLTBL2 (f1) VALUES (bool 'False');\n" +
                         // "INSERT INTO BOOLTBL2 (f1) VALUES (bool 'FALSE');" +
-                        "CREATE TABLE BOOLTBL3 (d text, b bool, o int);\n" +
-                        "INSERT INTO BOOLTBL3 (d, b, o) VALUES ('true', true, 1);\n" +
-                        "INSERT INTO BOOLTBL3 (d, b, o) VALUES ('false', false, 2);\n" +
-                        "INSERT INTO BOOLTBL3 (d, b, o) VALUES ('null', null, 3);\n" +
-                        "CREATE TABLE booltbl4(isfalse bool, istrue bool, isnul bool);\n" +
-                        "INSERT INTO booltbl4 VALUES (false, true, null);\n"
+                """
+                        CREATE TABLE BOOLTBL3 (d text, b bool, o int);
+                        INSERT INTO BOOLTBL3 (d, b, o) VALUES ('true', true, 1);
+                        INSERT INTO BOOLTBL3 (d, b, o) VALUES ('false', false, 2);
+                        INSERT INTO BOOLTBL3 (d, b, o) VALUES ('null', null, 3);
+                        CREATE TABLE booltbl4(isfalse bool, istrue bool, isnul bool);
+                        INSERT INTO booltbl4 VALUES (false, true, null);
+                        """
         );
     }
 
     @Test
     public void testOne() {
-        this.q("SELECT 1 as 'one';\n" + " one \n" +
-                "-----\n" +
-                "   1");
+        this.q("""
+                SELECT 1 as 'one';
+                 one\s
+                -----
+                   1""");
     }
 
     @Test
     public void testFalse() {
-        this.q("SELECT true AS true;\n" +
-                " true \n" +
-                "------\n" +
-                " t");
-        this.q("SELECT false AS false;\n" +
-                " false \n" +
-                "-------\n" +
-                " f");
+        this.q("""
+                SELECT true AS true;
+                 true\s
+                ------
+                 t""");
+        this.q("""
+                SELECT false AS false;
+                 false\s
+                -------
+                 f""");
     }
 
     // SELECT bool 't' as 'true'
@@ -76,134 +82,136 @@ public class PostgresBoolTests extends SqlIoTest {
 
     @Test
     public void testIs() {
-        this.q("SELECT\n" +
-                "    d,\n" +
-                "    b IS TRUE AS istrue,\n" +
-                "    b IS NOT TRUE AS isnottrue,\n" +
-                "    b IS FALSE AS isfalse,\n" +
-                "    b IS NOT FALSE AS isnotfalse,\n" +
-                "    b IS UNKNOWN AS isunknown,\n" +
-                "    b IS NOT UNKNOWN AS isnotunknown\n" +
-                "FROM booltbl3;\n" +
-                "   d   | istrue | isnottrue | isfalse | isnotfalse | isunknown | isnotunknown \n" +
-                "-------+--------+-----------+---------+------------+-----------+--------------\n" +
-                " true|   t      | f         | f       | t          | f         | t\n" +
-                " false|  f      | t         | t       | f          | f         | t\n" +
-                " null|   f      | t         | f       | t          | t         | f");
+        this.q("""
+                SELECT
+                    d,
+                    b IS TRUE AS istrue,
+                    b IS NOT TRUE AS isnottrue,
+                    b IS FALSE AS isfalse,
+                    b IS NOT FALSE AS isnotfalse,
+                    b IS UNKNOWN AS isunknown,
+                    b IS NOT UNKNOWN AS isnotunknown
+                FROM booltbl3;
+                   d   | istrue | isnottrue | isfalse | isnotfalse | isunknown | isnotunknown\s
+                -------+--------+-----------+---------+------------+-----------+--------------
+                 true|   t      | f         | f       | t          | f         | t
+                 false|  f      | t         | t       | f          | f         | t
+                 null|   f      | t         | f       | t          | t         | f""");
     }
 
     @Test
     public void testShortcut() {
         // This is not from Postgres
-        this.q("SELECT v0, v1, v0 OR v1 FROM " +
-                "(SELECT b AS v0 FROM BOOLTBL3) CROSS JOIN (SELECT b as v1 FROM BOOLTBL3);\n" +
-                " v0 | v1 | v0 OR v1 \n" +
-                "--------------------\n" +
-                " t  | t  | t\n" +
-                " t  | f  | t\n" +
-                " f  | t  | t\n" +
-                " f  | f  | f\n" +
-                "null| t  | t\n" +
-                "null| f  |null\n" +
-                " t  |null| t\n" +
-                " f  |null|null\n" +
-                "null|null|null");
-        this.q("SELECT v0, v1, v0 AND v1 FROM " +
-                "(SELECT b AS v0 FROM BOOLTBL3) CROSS JOIN (SELECT b as v1 FROM BOOLTBL3);\n" +
-                " v0 | v1 | v0 AND v1 \n" +
-                "--------------------\n" +
-                " t  | t  | t\n" +
-                " t  | f  | f\n" +
-                " f  | t  | f\n" +
-                " f  | f  | f\n" +
-                "null| t  |null\n" +
-                "null| f  | f\n" +
-                " t  |null|null\n" +
-                " f  |null| f\n" +
-                "null|null|null");
-        this.q("SELECT v0, NOT v0 FROM " +
-                "(SELECT b AS v0 FROM BOOLTBL3);\n" +
-                " v0 | NOT v0 \n" +
-                "---------------\n" +
-                " t  | f\n" +
-                " f  | t\n" +
-                "null|null");
+        this.q("""
+                SELECT v0, v1, v0 OR v1 FROM (SELECT b AS v0 FROM BOOLTBL3) CROSS JOIN (SELECT b as v1 FROM BOOLTBL3);
+                 v0 | v1 | v0 OR v1\s
+                --------------------
+                 t  | t  | t
+                 t  | f  | t
+                 f  | t  | t
+                 f  | f  | f
+                null| t  | t
+                null| f  |null
+                 t  |null| t
+                 f  |null|null
+                null|null|null""");
+        this.q("""
+                SELECT v0, v1, v0 AND v1 FROM (SELECT b AS v0 FROM BOOLTBL3) CROSS JOIN (SELECT b as v1 FROM BOOLTBL3);
+                 v0 | v1 | v0 AND v1\s
+                --------------------
+                 t  | t  | t
+                 t  | f  | f
+                 f  | t  | f
+                 f  | f  | f
+                null| t  |null
+                null| f  | f
+                 t  |null|null
+                 f  |null| f
+                null|null|null""");
+        this.q("""
+                SELECT v0, NOT v0 FROM (SELECT b AS v0 FROM BOOLTBL3);
+                 v0 | NOT v0\s
+                ---------------
+                 t  | f
+                 f  | t
+                null|null""");
     }
 
     @Test
     public void testBool() {
-        this.qs("SELECT istrue AND isnul AND istrue FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                "null\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT istrue AND istrue AND isnul FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                "null\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT isnul AND istrue AND istrue FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                "null\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT isfalse AND isnul AND istrue FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                " f\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT istrue AND isfalse AND isnul FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                " f\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT isnul AND istrue AND isfalse FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                " f\n" +
-                "(1 row)\n" +
-                "\n" +
-                "-- OR expression need to return null if there's any nulls and none\n" +
-                "-- of the value is true\n" +
-                "SELECT isfalse OR isnul OR isfalse FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                "null\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT isfalse OR isfalse OR isnul FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                "null\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT isnul OR isfalse OR isfalse FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                "null\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT isfalse OR isnul OR istrue FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                " t\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT istrue OR isfalse OR isnul FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                " t\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT isnul OR istrue OR isfalse FROM booltbl4;\n" +
-                " ?column? \n" +
-                "----------\n" +
-                " t\n" +
-                "(1 row)");
+        this.qs("""
+                SELECT istrue AND isnul AND istrue FROM booltbl4;
+                 ?column?\s
+                ----------
+                null
+                (1 row)
+
+                SELECT istrue AND istrue AND isnul FROM booltbl4;
+                 ?column?\s
+                ----------
+                null
+                (1 row)
+
+                SELECT isnul AND istrue AND istrue FROM booltbl4;
+                 ?column?\s
+                ----------
+                null
+                (1 row)
+
+                SELECT isfalse AND isnul AND istrue FROM booltbl4;
+                 ?column?\s
+                ----------
+                 f
+                (1 row)
+
+                SELECT istrue AND isfalse AND isnul FROM booltbl4;
+                 ?column?\s
+                ----------
+                 f
+                (1 row)
+
+                SELECT isnul AND istrue AND isfalse FROM booltbl4;
+                 ?column?\s
+                ----------
+                 f
+                (1 row)
+
+                -- OR expression need to return null if there's any nulls and none
+                -- of the value is true
+                SELECT isfalse OR isnul OR isfalse FROM booltbl4;
+                 ?column?\s
+                ----------
+                null
+                (1 row)
+
+                SELECT isfalse OR isfalse OR isnul FROM booltbl4;
+                 ?column?\s
+                ----------
+                null
+                (1 row)
+
+                SELECT isnul OR isfalse OR isfalse FROM booltbl4;
+                 ?column?\s
+                ----------
+                null
+                (1 row)
+
+                SELECT isfalse OR isnul OR istrue FROM booltbl4;
+                 ?column?\s
+                ----------
+                 t
+                (1 row)
+
+                SELECT istrue OR isfalse OR isnul FROM booltbl4;
+                 ?column?\s
+                ----------
+                 t
+                (1 row)
+
+                SELECT isnul OR istrue OR isfalse FROM booltbl4;
+                 ?column?\s
+                ----------
+                 t
+                (1 row)""");
     }
 }

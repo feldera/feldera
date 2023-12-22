@@ -11,91 +11,94 @@ public class PostgresTimeTests extends SqlIoTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {
         // Calcite format is much stricter.  Converted to the right format
-        compiler.compileStatements("CREATE TABLE TIME_TBL (f1 time(2));\n" +
-                "INSERT INTO TIME_TBL VALUES ('00:00:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('01:00:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('02:03:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('11:59:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('12:00:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('12:01:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('23:59:00');\n" +
-                "INSERT INTO TIME_TBL VALUES ('23:59:59.99');\n" +
-                "INSERT INTO TIME_TBL VALUES ('15:36:39');\n" +
-                "INSERT INTO TIME_TBL VALUES ('15:36:39');");
+        compiler.compileStatements("""
+                CREATE TABLE TIME_TBL (f1 time(2));
+                INSERT INTO TIME_TBL VALUES ('00:00:00');
+                INSERT INTO TIME_TBL VALUES ('01:00:00');
+                INSERT INTO TIME_TBL VALUES ('02:03:00');
+                INSERT INTO TIME_TBL VALUES ('11:59:00');
+                INSERT INTO TIME_TBL VALUES ('12:00:00');
+                INSERT INTO TIME_TBL VALUES ('12:01:00');
+                INSERT INTO TIME_TBL VALUES ('23:59:00');
+                INSERT INTO TIME_TBL VALUES ('23:59:59.99');
+                INSERT INTO TIME_TBL VALUES ('15:36:39');
+                INSERT INTO TIME_TBL VALUES ('15:36:39');""");
     }
 
     @Test
     public void testTime() {
-        this.qs("SELECT f1 AS \"Time\" FROM TIME_TBL;\n" +
-                "    Time     \n" +
-                "-------------\n" +
-                " 00:00:00\n" +
-                " 01:00:00\n" +
-                " 02:03:00\n" +
-                " 11:59:00\n" +
-                " 12:00:00\n" +
-                " 12:01:00\n" +
-                " 23:59:00\n" +
-                " 23:59:59.99\n" +
-                " 15:36:39\n" +
-                " 15:36:39\n" +
-                "(10 rows)\n" +
-                "\n" +
-                "SELECT f1 AS \"Three\" FROM TIME_TBL WHERE f1 < '05:06:07';\n" +
-                "  Three   \n" +
-                "----------\n" +
-                " 00:00:00\n" +
-                " 01:00:00\n" +
-                " 02:03:00\n" +
-                "(3 rows)\n" +
-                "\n" +
-                "SELECT f1 AS \"Five\" FROM TIME_TBL WHERE f1 > '05:06:07';\n" +
-                "    Five     \n" +
-                "-------------\n" +
-                " 11:59:00\n" +
-                " 12:00:00\n" +
-                " 12:01:00\n" +
-                " 23:59:00\n" +
-                " 23:59:59.99\n" +
-                " 15:36:39\n" +
-                " 15:36:39\n" +
-                "(7 rows)\n" +
-                "\n" +
-                "SELECT f1 AS \"None\" FROM TIME_TBL WHERE f1 < '00:00:00';\n" +
-                " None \n" +
-                "------\n" +
-                "(0 rows)\n" +
-                "\n" +
-                "SELECT f1 AS \"Eight\" FROM TIME_TBL WHERE f1 >= '00:00:00';\n" +
-                "    Eight    \n" +
-                "-------------\n" +
-                " 00:00:00\n" +
-                " 01:00:00\n" +
-                " 02:03:00\n" +
-                " 11:59:00\n" +
-                " 12:00:00\n" +
-                " 12:01:00\n" +
-                " 23:59:00\n" +
-                " 23:59:59.99\n" +
-                " 15:36:39\n" +
-                " 15:36:39\n" +
-                "(10 rows)");
+        this.qs("""
+                SELECT f1 AS "Time" FROM TIME_TBL;
+                    Time    \s
+                -------------
+                 00:00:00
+                 01:00:00
+                 02:03:00
+                 11:59:00
+                 12:00:00
+                 12:01:00
+                 23:59:00
+                 23:59:59.99
+                 15:36:39
+                 15:36:39
+                (10 rows)
+
+                SELECT f1 AS "Three" FROM TIME_TBL WHERE f1 < '05:06:07';
+                  Three  \s
+                ----------
+                 00:00:00
+                 01:00:00
+                 02:03:00
+                (3 rows)
+
+                SELECT f1 AS "Five" FROM TIME_TBL WHERE f1 > '05:06:07';
+                    Five    \s
+                -------------
+                 11:59:00
+                 12:00:00
+                 12:01:00
+                 23:59:00
+                 23:59:59.99
+                 15:36:39
+                 15:36:39
+                (7 rows)
+
+                SELECT f1 AS "None" FROM TIME_TBL WHERE f1 < '00:00:00';
+                 None\s
+                ------
+                (0 rows)
+
+                SELECT f1 AS "Eight" FROM TIME_TBL WHERE f1 >= '00:00:00';
+                    Eight   \s
+                -------------
+                 00:00:00
+                 01:00:00
+                 02:03:00
+                 11:59:00
+                 12:00:00
+                 12:01:00
+                 23:59:00
+                 23:59:59.99
+                 15:36:39
+                 15:36:39
+                (10 rows)""");
     }
 
     @Test
     public void testConstants() {
-        this.qs("-- Check edge cases\n" +
-                "SELECT '23:59:59.999999'::time;\n" +
-                "      time       \n" +
-                "-----------------\n" +
-                " 23:59:59.999999\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT '23:59:59.9999999'::time;  -- rounds up\n" +
-                "   time   \n" +
-                "----------\n" +
-                " 23:59:59.9999999\n" +
-                "(1 row)");
+        this.qs("""
+                -- Check edge cases
+                SELECT '23:59:59.999999'::time;
+                      time      \s
+                -----------------
+                 23:59:59.999999
+                (1 row)
+
+                SELECT '23:59:59.9999999'::time;  -- rounds up
+                   time  \s
+                ----------
+                 23:59:59.9999999
+                (1 row)""");
     }
 
     @Test
@@ -119,10 +122,11 @@ public class PostgresTimeTests extends SqlIoTest {
 
     @Test @Ignore("Bug in Calcite https://issues.apache.org/jira/browse/CALCITE-5919")
     public void testMicrosecond() {
-        this.q("SELECT EXTRACT(MICROSECOND FROM TIME '13:30:25.575401');\n" +
-                " extract  \n" +
-                "----------\n" +
-                " 25575401");
+        this.q("""
+                SELECT EXTRACT(MICROSECOND FROM TIME '13:30:25.575401');
+                 extract \s
+                ----------
+                 25575401""");
     }
 
     @Test
@@ -165,27 +169,27 @@ public class PostgresTimeTests extends SqlIoTest {
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6030")
     public void testDatePart() {
-        this.qs("SELECT date_part(microsecond, TIME '13:30:25.575401');\n" +
-                " date_part \n" +
-                "-----------\n" +
-                "  25575401\n" +
-                "(1 row)" +
-                "\n" +
-                "SELECT date_part('millisecond', TIME '13:30:25.575401');\n" +
-                " date_part \n" +
-                "-----------\n" +
-                " 25575.401\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT date_part('second',      TIME '13:30:25.575401');\n" +
-                " date_part \n" +
-                "-----------\n" +
-                " 25.575401\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT date_part('epoch',       TIME '13:30:25.575401');\n" +
-                "  date_part   \n" +
-                "--------------\n" +
-                " 48625.575401");
+        this.qs("""
+                SELECT date_part(microsecond, TIME '13:30:25.575401');
+                 date_part\s
+                -----------
+                  25575401
+                (1 row)
+                SELECT date_part('millisecond', TIME '13:30:25.575401');
+                 date_part\s
+                -----------
+                 25575.401
+                (1 row)
+
+                SELECT date_part('second',      TIME '13:30:25.575401');
+                 date_part\s
+                -----------
+                 25.575401
+                (1 row)
+
+                SELECT date_part('epoch',       TIME '13:30:25.575401');
+                  date_part  \s
+                --------------
+                 48625.575401""");
     }
 }

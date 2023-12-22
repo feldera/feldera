@@ -6,49 +6,57 @@ import org.junit.Test;
 public class FunctionsTest extends SqlIoTest {
     @Test
     public void testLeft() {
-        this.q("SELECT LEFT('string', 1);\n" +
-                "result\n" +
-                "---------\n" +
-                " s");
-        this.q("SELECT LEFT('string', 0);\n" +
-                "result\n" +
-                "---------\n" +
-                " ");
-        this.q("SELECT LEFT('string', 100);\n" +
-                "result\n" +
-                "---------\n" +
-                " string");
-        this.q("SELECT LEFT('string', -2);\n" +
-                "result\n" +
-                "---------\n" +
-                " ");
+        this.q("""
+                SELECT LEFT('string', 1);
+                result
+                ---------
+                 s""");
+        this.q("""
+                SELECT LEFT('string', 0);
+                result
+                ---------
+                \s""");
+        this.q("""
+                SELECT LEFT('string', 100);
+                result
+                ---------
+                 string""");
+        this.q("""
+                SELECT LEFT('string', -2);
+                result
+                ---------
+                \s""");
     }
 
     @Test
     public void testLeftNull() {
-        this.q("SELECT LEFT(NULL, 100);\n" +
-                "result\n" +
-                "---------\n" +
-                "NULL");
+        this.q("""
+                SELECT LEFT(NULL, 100);
+                result
+                ---------
+                NULL""");
     }
 
     @Test
     public void testConcat() {
-        this.q("SELECT CONCAT('string', 1);\n" +
-                "result\n" +
-                "---------\n" +
-                " string1");
-        this.q("SELECT CONCAT('string', 1, true);\n" +
-                "result\n" +
-                "---------\n" +
-                " string1TRUE");
+        this.q("""
+                SELECT CONCAT('string', 1);
+                result
+                ---------
+                 string1""");
+        this.q("""
+                SELECT CONCAT('string', 1, true);
+                result
+                ---------
+                 string1TRUE""");
     }
 
     @Test
     public void testCoalesce() {
-        this.q("SELECT COALESCE(NULL, 5);\n" +
-                "result\n" +
-                "------\n" +
-                "5");
+        this.q("""
+                SELECT COALESCE(NULL, 5);
+                result
+                ------
+                5""");
     }
 }

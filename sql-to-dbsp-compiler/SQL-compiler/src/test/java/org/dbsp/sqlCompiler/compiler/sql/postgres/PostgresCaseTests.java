@@ -8,277 +8,281 @@ import org.junit.Test;
 public class PostgresCaseTests extends SqlIoTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {
-        compiler.compileStatements("CREATE TABLE CASE_TBL (\n" +
-                "  i integer,\n" +
-                "  f double precision\n" +
-                ");\n" +
-                "CREATE TABLE CASE2_TBL (\n" +
-                "  i integer,\n" +
-                "  j integer\n" +
-                ");\n" +
-                "INSERT INTO CASE_TBL VALUES (1, 10.1);\n" +
-                "INSERT INTO CASE_TBL VALUES (2, 20.2);\n" +
-                "INSERT INTO CASE_TBL VALUES (3, -30.3);\n" +
-                "INSERT INTO CASE_TBL VALUES (4, NULL);\n" +
-                "INSERT INTO CASE2_TBL VALUES (1, -1);\n" +
-                "INSERT INTO CASE2_TBL VALUES (2, -2);\n" +
-                "INSERT INTO CASE2_TBL VALUES (3, -3);\n" +
-                "INSERT INTO CASE2_TBL VALUES (2, -4);\n" +
-                "INSERT INTO CASE2_TBL VALUES (1, NULL);\n" +
-                "INSERT INTO CASE2_TBL VALUES (NULL, -6);\n");
+        compiler.compileStatements("""
+                CREATE TABLE CASE_TBL (
+                  i integer,
+                  f double precision
+                );
+                CREATE TABLE CASE2_TBL (
+                  i integer,
+                  j integer
+                );
+                INSERT INTO CASE_TBL VALUES (1, 10.1);
+                INSERT INTO CASE_TBL VALUES (2, 20.2);
+                INSERT INTO CASE_TBL VALUES (3, -30.3);
+                INSERT INTO CASE_TBL VALUES (4, NULL);
+                INSERT INTO CASE2_TBL VALUES (1, -1);
+                INSERT INTO CASE2_TBL VALUES (2, -2);
+                INSERT INTO CASE2_TBL VALUES (3, -3);
+                INSERT INTO CASE2_TBL VALUES (2, -4);
+                INSERT INTO CASE2_TBL VALUES (1, NULL);
+                INSERT INTO CASE2_TBL VALUES (NULL, -6);
+                """);
     }
 
     @Test
     public void testCase() {
-        this.qs("SELECT '3' AS \"One\",\n" +
-                "  CASE\n" +
-                "    WHEN 1 < 2 THEN 3\n" +
-                "  END AS \"Simple WHEN\";\n" +
-                " One | Simple WHEN \n" +
-                "-----+-------------\n" +
-                " 3|           3\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT '<NULL>' AS \"One\",\n" +
-                "  CASE\n" +
-                "    WHEN 1 > 2 THEN 3\n" +
-                "  END AS \"Simple default\";\n" +
-                "  One   | Simple default \n" +
-                "--------+----------------\n" +
-                " <NULL>|               \n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT '3' AS \"One\",\n" +
-                "  CASE\n" +
-                "    WHEN 1 < 2 THEN 3\n" +
-                "    ELSE 4\n" +
-                "  END AS \"Simple ELSE\";\n" +
-                " One | Simple ELSE \n" +
-                "-----+-------------\n" +
-                " 3|           3\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT '4' AS \"One\",\n" +
-                "  CASE\n" +
-                "    WHEN 1 > 2 THEN 3\n" +
-                "    ELSE 4\n" +
-                "  END AS \"ELSE default\";\n" +
-                " One | ELSE default \n" +
-                "-----+--------------\n" +
-                " 4|            4\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT '6' AS \"One\",\n" +
-                "  CASE\n" +
-                "    WHEN 1 > 2 THEN 3\n" +
-                "    WHEN 4 < 5 THEN 6\n" +
-                "    ELSE 7\n" +
-                "  END AS \"Two WHEN with default\";\n" +
-                " One | Two WHEN with default \n" +
-                "-----+-----------------------\n" +
-                " 6|                     6\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT '7' AS \"None\",\n" +
-                "   CASE WHEN 2 < 0 THEN 1\n" +
-                "   END AS \"NULL on no matches\";\n" +
-                " None | NULL on no matches \n" +
-                "------+--------------------\n" +
-                " 7|                   \n" +
-                "(1 row)\n" +
-                "\n" +
-                "-- Constant-expression folding shouldn't evaluate unreachable subexpressions\n" +
-                "SELECT CASE WHEN 1=0 THEN 1/0 WHEN 1=1 THEN 1 ELSE 2/0 END;\n" +
-                " case \n" +
-                "------\n" +
-                "    1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT CASE 1 WHEN 0 THEN 1/0 WHEN 1 THEN 1 ELSE 2/0 END;\n" +
-                " case \n" +
-                "------\n" +
-                "    1\n" +
-                "(1 row)");
+        this.qs("""
+                SELECT '3' AS "One",
+                  CASE
+                    WHEN 1 < 2 THEN 3
+                  END AS "Simple WHEN";
+                 One | Simple WHEN\s
+                -----+-------------
+                 3|           3
+                (1 row)
+
+                SELECT '<NULL>' AS "One",
+                  CASE
+                    WHEN 1 > 2 THEN 3
+                  END AS "Simple default";
+                  One   | Simple default\s
+                --------+----------------
+                 <NULL>|              \s
+                (1 row)
+
+                SELECT '3' AS "One",
+                  CASE
+                    WHEN 1 < 2 THEN 3
+                    ELSE 4
+                  END AS "Simple ELSE";
+                 One | Simple ELSE\s
+                -----+-------------
+                 3|           3
+                (1 row)
+
+                SELECT '4' AS "One",
+                  CASE
+                    WHEN 1 > 2 THEN 3
+                    ELSE 4
+                  END AS "ELSE default";
+                 One | ELSE default\s
+                -----+--------------
+                 4|            4
+                (1 row)
+
+                SELECT '6' AS "One",
+                  CASE
+                    WHEN 1 > 2 THEN 3
+                    WHEN 4 < 5 THEN 6
+                    ELSE 7
+                  END AS "Two WHEN with default";
+                 One | Two WHEN with default\s
+                -----+-----------------------
+                 6|                     6
+                (1 row)
+
+                SELECT '7' AS "None",
+                   CASE WHEN 2 < 0 THEN 1
+                   END AS "NULL on no matches";
+                 None | NULL on no matches\s
+                ------+--------------------
+                 7|                  \s
+                (1 row)
+
+                -- Constant-expression folding shouldn't evaluate unreachable subexpressions
+                SELECT CASE WHEN 1=0 THEN 1/0 WHEN 1=1 THEN 1 ELSE 2/0 END;
+                 case\s
+                ------
+                    1
+                (1 row)
+
+                SELECT CASE 1 WHEN 0 THEN 1/0 WHEN 1 THEN 1 ELSE 2/0 END;
+                 case\s
+                ------
+                    1
+                (1 row)""");
     }
 
     @Test
     public void testCases2() {
         // changed error to null output
         this.qs(
-                "SELECT CASE WHEN i > 100 THEN 1/0 ELSE 0 END FROM case_tbl;\n" +
-                "case\n" +
-                "------\n" +
-                "0\n" +
-                "0\n" +
-                "0\n" +
-                "0\n" +
-                "(3 rows)\n" +
-                "\n" +
-                "-- Test for cases involving untyped literals in test expression\n" +
-                "SELECT CASE 'a' WHEN 'a' THEN 1 ELSE 2 END;\n" +
-                " case \n" +
-                "------\n" +
-                "    1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "--\n" +
-                "-- Examples of targets involving tables\n" +
-                "--\n" +
-                "SELECT\n" +
-                "  CASE\n" +
-                "    WHEN i >= 3 THEN i\n" +
-                "  END AS \">= 3 or Null\"\n" +
-                "  FROM CASE_TBL;\n" +
-                " >= 3 or Null \n" +
-                "--------------\n" +
-                "             \n" +
-                "             \n" +
-                "            3\n" +
-                "            4\n" +
-                "(4 rows)\n" +
-                "\n" +
-                "SELECT\n" +
-                "  CASE WHEN i >= 3 THEN (i + i)\n" +
-                "       ELSE i\n" +
-                "  END AS \"Simplest Math\"\n" +
-                "  FROM CASE_TBL;\n" +
-                " Simplest Math \n" +
-                "---------------\n" +
-                "             1\n" +
-                "             2\n" +
-                "             6\n" +
-                "             8\n" +
-                "(4 rows)\n" +
-                "\n" +
-                "SELECT i AS \"Value\",\n" +
-                "  CASE WHEN (i < 0) THEN 'small'\n" +
-                "       WHEN (i = 0) THEN 'zero'\n" +
-                "       WHEN (i = 1) THEN 'one'\n" +
-                "       WHEN (i = 2) THEN 'two'\n" +
-                "       ELSE 'big'\n" +
-                "  END AS \"Category\"\n" +
-                "  FROM CASE_TBL;\n" +
-                " Value | Category \n" +
-                "-------+----------\n" +
-                "     1 | one\n" +
-                "     2 | two\n" +
-                "     3 | big\n" +
-                "     4 | big\n" +
-                "(4 rows)\n" +
-                "\n" +
-                "SELECT\n" +
-                "  CASE WHEN ((i < 0) or (i < 0)) THEN 'small'\n" +
-                "       WHEN ((i = 0) or (i = 0)) THEN 'zero'\n" +
-                "       WHEN ((i = 1) or (i = 1)) THEN 'one'\n" +
-                "       WHEN ((i = 2) or (i = 2)) THEN 'two'\n" +
-                "       ELSE 'big'\n" +
-                "  END AS \"Category\"\n" +
-                "  FROM CASE_TBL;\n" +
-                " Category \n" +
-                "----------\n" +
-                " one\n" +
-                " two\n" +
-                " big\n" +
-                " big\n" +
-                "(4 rows)\n" +
-                "\n" +
-                "--\n" +
-                "-- Examples of qualifications involving tables\n" +
-                "--\n" +
-                "--\n" +
-                "-- NULLIF() and COALESCE()\n" +
-                "-- Shorthand forms for typical CASE constructs\n" +
-                "--  defined in the SQL standard.\n" +
-                "--\n" +
-                "SELECT * FROM CASE_TBL WHERE COALESCE(f,i) = 4;\n" +
-                " i | f \n" +
-                "---+---\n" +
-                " 4 |  \n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT * FROM CASE_TBL WHERE NULLIF(f,i) = 2;\n" +
-                " i | f \n" +
-                "---+---\n" +
-                "(0 rows)\n" +
-                "\n" +
-                "SELECT COALESCE(a.f, b.i, b.j)\n" +
-                "  FROM CASE_TBL a, CASE2_TBL b;\n" +
-                " coalesce \n" +
-                "----------\n" +
-                "     10.1\n" +
-                "     20.2\n" +
-                "    -30.3\n" +
-                "        1\n" +
-                "     10.1\n" +
-                "     20.2\n" +
-                "    -30.3\n" +
-                "        2\n" +
-                "     10.1\n" +
-                "     20.2\n" +
-                "    -30.3\n" +
-                "        3\n" +
-                "     10.1\n" +
-                "     20.2\n" +
-                "    -30.3\n" +
-                "        2\n" +
-                "     10.1\n" +
-                "     20.2\n" +
-                "    -30.3\n" +
-                "        1\n" +
-                "     10.1\n" +
-                "     20.2\n" +
-                "    -30.3\n" +
-                "       -6\n" +
-                "(24 rows)\n" +
-                "\n" +
-                "SELECT *\n" +
-                "  FROM CASE_TBL a, CASE2_TBL b\n" +
-                "  WHERE COALESCE(a.f, b.i, b.j) = 2;\n" +
-                " i | f | i | j  \n" +
-                "---+---+---+----\n" +
-                " 4 |   | 2 | -2\n" +
-                " 4 |   | 2 | -4\n" +
-                "(2 rows)\n" +
-                "\n" +
-                "SELECT NULLIF(a.i,b.i) AS \"NULLIF(a.i,b.i)\",\n" +
-                "  NULLIF(b.i, 4) AS \"NULLIF(b.i,4)\"\n" +
-                "  FROM CASE_TBL a, CASE2_TBL b;\n" +
-                " NULLIF(a.i,b.i) | NULLIF(b.i,4) \n" +
-                "-----------------+---------------\n" +
-                "                 |             1\n" +
-                "               2 |             1\n" +
-                "               3 |             1\n" +
-                "               4 |             1\n" +
-                "               1 |             2\n" +
-                "                 |             2\n" +
-                "               3 |             2\n" +
-                "               4 |             2\n" +
-                "               1 |             3\n" +
-                "               2 |             3\n" +
-                "                 |             3\n" +
-                "               4 |             3\n" +
-                "               1 |             2\n" +
-                "                 |             2\n" +
-                "               3 |             2\n" +
-                "               4 |             2\n" +
-                "                 |             1\n" +
-                "               2 |             1\n" +
-                "               3 |             1\n" +
-                "               4 |             1\n" +
-                "               1 |              \n" +
-                "               2 |              \n" +
-                "               3 |              \n" +
-                "               4 |              \n" +
-                "(24 rows)\n" +
-                "\n" +
-                "SELECT *\n" +
-                "  FROM CASE_TBL a, CASE2_TBL b\n" +
-                "  WHERE COALESCE(f,b.i) = 2;\n" +
-                " i | f | i | j  \n" +
-                "---+---+---+----\n" +
-                " 4 |   | 2 | -2\n" +
-                " 4 |   | 2 | -4\n" +
-                "(2 rows)");
+                """
+                        SELECT CASE WHEN i > 100 THEN 1/0 ELSE 0 END FROM case_tbl;
+                        case
+                        ------
+                        0
+                        0
+                        0
+                        0
+                        (3 rows)
+
+                        -- Test for cases involving untyped literals in test expression
+                        SELECT CASE 'a' WHEN 'a' THEN 1 ELSE 2 END;
+                         case\s
+                        ------
+                            1
+                        (1 row)
+
+                        --
+                        -- Examples of targets involving tables
+                        --
+                        SELECT
+                          CASE
+                            WHEN i >= 3 THEN i
+                          END AS ">= 3 or Null"
+                          FROM CASE_TBL;
+                         >= 3 or Null\s
+                        --------------
+                                    \s
+                                    \s
+                                    3
+                                    4
+                        (4 rows)
+
+                        SELECT
+                          CASE WHEN i >= 3 THEN (i + i)
+                               ELSE i
+                          END AS "Simplest Math"
+                          FROM CASE_TBL;
+                         Simplest Math\s
+                        ---------------
+                                     1
+                                     2
+                                     6
+                                     8
+                        (4 rows)
+
+                        SELECT i AS "Value",
+                          CASE WHEN (i < 0) THEN 'small'
+                               WHEN (i = 0) THEN 'zero'
+                               WHEN (i = 1) THEN 'one'
+                               WHEN (i = 2) THEN 'two'
+                               ELSE 'big'
+                          END AS "Category"
+                          FROM CASE_TBL;
+                         Value | Category\s
+                        -------+----------
+                             1 | one
+                             2 | two
+                             3 | big
+                             4 | big
+                        (4 rows)
+
+                        SELECT
+                          CASE WHEN ((i < 0) or (i < 0)) THEN 'small'
+                               WHEN ((i = 0) or (i = 0)) THEN 'zero'
+                               WHEN ((i = 1) or (i = 1)) THEN 'one'
+                               WHEN ((i = 2) or (i = 2)) THEN 'two'
+                               ELSE 'big'
+                          END AS "Category"
+                          FROM CASE_TBL;
+                         Category\s
+                        ----------
+                         one
+                         two
+                         big
+                         big
+                        (4 rows)
+
+                        --
+                        -- Examples of qualifications involving tables
+                        --
+                        --
+                        -- NULLIF() and COALESCE()
+                        -- Shorthand forms for typical CASE constructs
+                        --  defined in the SQL standard.
+                        --
+                        SELECT * FROM CASE_TBL WHERE COALESCE(f,i) = 4;
+                         i | f\s
+                        ---+---
+                         4 | \s
+                        (1 row)
+
+                        SELECT * FROM CASE_TBL WHERE NULLIF(f,i) = 2;
+                         i | f\s
+                        ---+---
+                        (0 rows)
+
+                        SELECT COALESCE(a.f, b.i, b.j)
+                          FROM CASE_TBL a, CASE2_TBL b;
+                         coalesce\s
+                        ----------
+                             10.1
+                             20.2
+                            -30.3
+                                1
+                             10.1
+                             20.2
+                            -30.3
+                                2
+                             10.1
+                             20.2
+                            -30.3
+                                3
+                             10.1
+                             20.2
+                            -30.3
+                                2
+                             10.1
+                             20.2
+                            -30.3
+                                1
+                             10.1
+                             20.2
+                            -30.3
+                               -6
+                        (24 rows)
+
+                        SELECT *
+                          FROM CASE_TBL a, CASE2_TBL b
+                          WHERE COALESCE(a.f, b.i, b.j) = 2;
+                         i | f | i | j \s
+                        ---+---+---+----
+                         4 |   | 2 | -2
+                         4 |   | 2 | -4
+                        (2 rows)
+
+                        SELECT NULLIF(a.i,b.i) AS "NULLIF(a.i,b.i)",
+                          NULLIF(b.i, 4) AS "NULLIF(b.i,4)"
+                          FROM CASE_TBL a, CASE2_TBL b;
+                         NULLIF(a.i,b.i) | NULLIF(b.i,4)\s
+                        -----------------+---------------
+                                         |             1
+                                       2 |             1
+                                       3 |             1
+                                       4 |             1
+                                       1 |             2
+                                         |             2
+                                       3 |             2
+                                       4 |             2
+                                       1 |             3
+                                       2 |             3
+                                         |             3
+                                       4 |             3
+                                       1 |             2
+                                         |             2
+                                       3 |             2
+                                       4 |             2
+                                         |             1
+                                       2 |             1
+                                       3 |             1
+                                       4 |             1
+                                       1 |             \s
+                                       2 |             \s
+                                       3 |             \s
+                                       4 |             \s
+                        (24 rows)
+
+                        SELECT *
+                          FROM CASE_TBL a, CASE2_TBL b
+                          WHERE COALESCE(f,b.i) = 2;
+                         i | f | i | j \s
+                        ---+---+---+----
+                         4 |   | 2 | -2
+                         4 |   | 2 | -4
+                        (2 rows)""");
     }
 
     // Skipped a bunch of explain and create function and create domain tests.

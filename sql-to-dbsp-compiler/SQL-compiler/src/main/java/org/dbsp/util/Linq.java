@@ -118,9 +118,9 @@ public class Linq {
     }
 
     public static @Nullable <T> T first(T[] data, Predicate<T> test) {
-        for (int i=0; i < data.length; i++)
-            if (test.test(data[i]))
-                return data[i];
+        for (T datum : data)
+            if (test.test(datum))
+                return datum;
         return null;
     }
 

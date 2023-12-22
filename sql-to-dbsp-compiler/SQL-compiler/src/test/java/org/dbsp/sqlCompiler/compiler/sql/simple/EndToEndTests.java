@@ -341,10 +341,11 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void correlatedAggregate() {
-        String query = "SELECT Sum(r.COL1 * r.COL5) FROM T r\n" +
-                "WHERE\n" +
-                "0.5 * (SELECT Sum(r1.COL5) FROM T r1) =\n" +
-                "(SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)";
+        String query = """
+                SELECT Sum(r.COL1 * r.COL5) FROM T r
+                WHERE
+                0.5 * (SELECT Sum(r1.COL5) FROM T r1) =
+                (SELECT Sum(r2.COL5) FROM T r2 WHERE r2.COL1 = r.COL1)""";
         this.testAggregate(query,
                 new DBSPZSetLiteral.Contents(
                         new DBSPTupleExpression(DBSPLiteral.none(
@@ -442,10 +443,10 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void testSumCountFilter() {
-        String query = "SELECT T.COL3, " +
-                "COUNT(*) FILTER (WHERE T.COL1 > 20),\n" +
-                "SUM(T.COL1) FILTER (WHERE T.COL1 > 20)\n" +
-                "FROM T GROUP BY T.COL3";
+        String query = """
+                SELECT T.COL3, COUNT(*) FILTER (WHERE T.COL1 > 20),
+                SUM(T.COL1) FILTER (WHERE T.COL1 > 20)
+                FROM T GROUP BY T.COL3""";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
@@ -460,10 +461,11 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test @Ignore("JSON_OBJECT not yet implemented")
     public void jsonTest() {
-        String query = "select JSON_OBJECT(\n" +
-                "    KEY 'level1' \n" +
-                "    VALUE(T.COL1)) \n" +
-                "from T";
+        String query = """
+                select JSON_OBJECT(
+                    KEY 'level1'\s
+                    VALUE(T.COL1))\s
+                from T""";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPStringLiteral(""))));
     }

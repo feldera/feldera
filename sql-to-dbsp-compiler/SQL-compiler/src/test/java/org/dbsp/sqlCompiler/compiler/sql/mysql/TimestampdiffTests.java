@@ -8,224 +8,227 @@ public class TimestampdiffTests extends SqlIoTest {
     // https://github.com/mysql/mysql-server/blob/ea1efa9822d81044b726aab20c857d5e1b7e046a/mysql-test/r/func_time.result#L715
     @Test
     public void testDateDiff() {
-        this.qs("select timestampdiff(MONTH, DATE '2001-02-01', DATE '2001-05-01') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                " 3\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(YEAR, DATE '2002-05-01', DATE '2001-01-01') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                " -1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(QUARTER, DATE '2002-05-01', DATE '2001-01-01') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                " -5\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(MONTH, DATE '2000-03-28', DATE '2000-02-29') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                " 0\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(MONTH, DATE '1991-03-28', DATE '2000-02-29') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                " 107\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(SQL_TSI_WEEK, DATE '2001-02-01', DATE '2001-05-01') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                "12\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(SQL_TSI_HOUR, DATE '2001-02-01', DATE '2001-05-01') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                "2136\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(SQL_TSI_DAY, DATE '2001-02-01', DATE '2001-05-01') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                "89\n" +
-                "(1 row)");
+        this.qs("""
+                select timestampdiff(MONTH, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                 3
+                (1 row)
+
+                select timestampdiff(YEAR, DATE '2002-05-01', DATE '2001-01-01') as a;
+                a
+                -----
+                 -1
+                (1 row)
+
+                select timestampdiff(QUARTER, DATE '2002-05-01', DATE '2001-01-01') as a;
+                a
+                -----
+                 -5
+                (1 row)
+
+                select timestampdiff(MONTH, DATE '2000-03-28', DATE '2000-02-29') as a;
+                a
+                -----
+                 0
+                (1 row)
+
+                select timestampdiff(MONTH, DATE '1991-03-28', DATE '2000-02-29') as a;
+                a
+                -----
+                 107
+                (1 row)
+
+                select timestampdiff(SQL_TSI_WEEK, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                12
+                (1 row)
+
+                select timestampdiff(SQL_TSI_HOUR, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                2136
+                (1 row)
+
+                select timestampdiff(SQL_TSI_DAY, DATE '2001-02-01', DATE '2001-05-01') as a;
+                a
+                -----
+                89
+                (1 row)""");
     }
     
     @Test
     public void testDateDayDiff() {
-        this.qs("select timestampdiff(SQL_TSI_DAY, DATE '1986-02-01', DATE '1986-03-01') as a1,\n" +
-                "timestampdiff(SQL_TSI_DAY, DATE '1900-02-01', DATE '1900-03-01') as a2,\n" +
-                "timestampdiff(SQL_TSI_DAY, DATE '1996-02-01', DATE '1996-03-01') as a3,\n" +
-                "timestampdiff(SQL_TSI_DAY, DATE '2000-02-01', DATE '2000-03-01') as a4;\n" +
-                " a1 | a2 | a3 | a4\n" +
-                "-----\n" +
-                " 28 | 28 | 29 | 29\n" +
-                "(1 row)");
+        this.qs("""
+                select timestampdiff(SQL_TSI_DAY, DATE '1986-02-01', DATE '1986-03-01') as a1,
+                timestampdiff(SQL_TSI_DAY, DATE '1900-02-01', DATE '1900-03-01') as a2,
+                timestampdiff(SQL_TSI_DAY, DATE '1996-02-01', DATE '1996-03-01') as a3,
+                timestampdiff(SQL_TSI_DAY, DATE '2000-02-01', DATE '2000-03-01') as a4;
+                 a1 | a2 | a3 | a4
+                -----
+                 28 | 28 | 29 | 29
+                (1 row)""");
     }
 
     @Test
     public void testTimestampDiff() {
-        this.qs("select timestampdiff(SQL_TSI_MINUTE, TIMESTAMP '2001-02-01 12:59:59', TIMESTAMP '2001-05-01 12:58:59') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                "128159\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(SQL_TSI_SECOND, TIMESTAMP '2001-02-01 12:59:59', TIMESTAMP '2001-05-01 12:58:58') as a;\n" +
-                "a\n" +
-                "-----\n" +
-                "7689539\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:27');\n" +
-                "TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:27')\n" +
-                "-----\n" +
-                "0\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:28');\n" +
-                "TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:28')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:29');\n" +
-                "TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:29')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:27');\n" +
-                "TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:27')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:28');\n" +
-                "TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:28')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:29');\n" +
-                "TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:29')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:27');\n" +
-                "TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:27')\n" +
-                "-----\n" +
-                "0\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:28');\n" +
-                "TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:28')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:29');\n" +
-                "TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:29')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:27');\n" +
-                "TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:27')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:28');\n" +
-                "TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:28')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:29');\n" +
-                "TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:29')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:27');\n" +
-                "TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:27')\n" +
-                "-----\n" +
-                "0\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:28');\n" +
-                "TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:28')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:29');\n" +
-                "TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:29')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:27');\n" +
-                "TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:27')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:28');\n" +
-                "TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:28')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:29');\n" +
-                "TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:29')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:27');\n" +
-                "TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:27')\n" +
-                "-----\n" +
-                "0\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:28');\n" +
-                "TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:28')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:29');\n" +
-                "TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:29')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:27');\n" +
-                "TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:27')\n" +
-                "-----\n" +
-                "1\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:28');\n" +
-                "TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:28')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:29');\n" +
-                "TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:29')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)");
+        this.qs("""
+                select timestampdiff(SQL_TSI_MINUTE, TIMESTAMP '2001-02-01 12:59:59', TIMESTAMP '2001-05-01 12:58:59') as a;
+                a
+                -----
+                128159
+                (1 row)
+
+                select timestampdiff(SQL_TSI_SECOND, TIMESTAMP '2001-02-01 12:59:59', TIMESTAMP '2001-05-01 12:58:58') as a;
+                a
+                -----
+                7689539
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:27');
+                TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:27')
+                -----
+                0
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:28');
+                TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:28')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:29');
+                TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-11 14:30:29')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:27');
+                TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:27')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:28');
+                TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:28')
+                -----
+                2
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:29');
+                TIMESTAMPDIFF(day, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-12 14:30:29')
+                -----
+                2
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:27');
+                TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:27')
+                -----
+                0
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:28');
+                TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:28')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:29');
+                TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-17 14:30:29')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:27');
+                TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:27')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:28');
+                TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:28')
+                -----
+                2
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:29');
+                TIMESTAMPDIFF(week, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-01-24 14:30:29')
+                -----
+                2
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:27');
+                TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:27')
+                -----
+                0
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:28');
+                TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:28')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:29');
+                TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-02-10 14:30:29')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:27');
+                TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:27')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:28');
+                TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:28')
+                -----
+                2
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:29');
+                TIMESTAMPDIFF(month, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2006-03-10 14:30:29')
+                -----
+                2
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:27');
+                TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:27')
+                -----
+                0
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:28');
+                TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:28')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:29');
+                TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2007-01-10 14:30:29')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:27');
+                TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:27')
+                -----
+                1
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:28');
+                TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:28')
+                -----
+                2
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:29');
+                TIMESTAMPDIFF(year, TIMESTAMP '2006-01-10 14:30:28', TIMESTAMP '2008-01-10 14:30:29')
+                -----
+                2
+                (1 row)""");
     }
 
     @Test

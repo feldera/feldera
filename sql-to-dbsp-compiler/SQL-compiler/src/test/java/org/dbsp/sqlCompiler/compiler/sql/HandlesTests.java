@@ -19,7 +19,7 @@ public class HandlesTests extends BaseSQLTests {
     }
 
     @Test
-    public void testSanitizeNames() throws IOException, InterruptedException {
+    public void testSanitizeNames() {
         String statements = "create table t1(\n" +
                 "c1 integer,\n" +
                 "\"col\" boolean,\n" +
@@ -40,171 +40,170 @@ public class HandlesTests extends BaseSQLTests {
     }
 
     @Test
-    public void docTest() throws IOException, InterruptedException {
+    public void docTest() {
         // The example given in the documentation
-        String statements = "-- define Person table\n" +
-                "CREATE TABLE Person\n" +
-                "(\n" +
-                "    name    VARCHAR,\n" +
-                "    age     INT,\n" +
-                "    present BOOLEAN\n" +
-                ");\n" +
-                "CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;";
+        String statements = """
+                -- define Person table
+                CREATE TABLE Person
+                (
+                    name    VARCHAR,
+                    age     INT,
+                    present BOOLEAN
+                );
+                CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(statements);
         this.addRustTestCase("docTest", compiler, getCircuit(compiler));
     }
 
     @Test
-    public void testComplex() throws IOException, InterruptedException {
+    public void testComplex() {
         Logger.INSTANCE.setLoggingLevel(CircuitCloneVisitor.class, 2);
-        String statements = "-- Git repository.\n" +
-                "create table repository (\n" +
-                "    repository_id bigint not null primary key,\n" +
-                "    type varchar not null,\n" +
-                "    url varchar not null,\n" +
-                "    name varchar not null\n" +
-                ");\n" +
-                "\n" +
-                "-- Commit inside a Git repo.\n" +
-                "create table git_commit (\n" +
-                "    git_commit_id bigint not null,\n" +
-                "    repository_id bigint not null,\n" +
-                "    commit_id varchar not null,\n" +
-                "    commit_date timestamp not null,\n" +
-                "    commit_owner varchar not null\n" +
-                ");\n" +
-                "\n" +
-                "-- CI pipeline.\n" +
-                "create table pipeline (\n" +
-                "    pipeline_id bigint not null,\n" +
-                "    name varchar not null,\n" +
-                "    create_date timestamp not null,\n" +
-                "    createdby_user_id bigint not null,\n" +
-                "    update_date timestamp,\n" +
-                "    updatedby_user_id bigint\n" +
-                ");\n" +
-                "\n" +
-                "\n" +
-                "-- Git commits used by each pipeline.\n" +
-                "create table pipeline_sources (\n" +
-                "    git_commit_id bigint not null,\n" +
-                "    pipeline_id bigint not null\n" +
-                ");\n" +
-                "\n" +
-                "-- Binary artifact created by a CI pipeline.\n" +
-                "create table artifact (\n" +
-                "    artifact_id bigint not null,\n" +
-                "    artifact_uri varchar not null,\n" +
-                "    path varchar not null,\n" +
-                "    create_date timestamp not null,\n" +
-                "    createdby_user_id bigint not null,\n" +
-                "    update_date timestamp,\n" +
-                "    updatedby_user_id bigint,\n" +
-                "    checksum varchar not null,\n" +
-                "    checksum_type varchar not null,\n" +
-                "    artifact_size_in_bytes bigint not null,\n" +
-                "    artifact_type varchar not null,\n" +
-                "    builtby_pipeline_id bigint not null,\n" +
-                "    parent_artifact_id bigint\n" +
-                ");\n" +
-                "\n" +
-                "-- Vulnerabilities discovered in source code.\n" +
-                "create table vulnerability (\n" +
-                "    vulnerability_id bigint not null,\n" +
-                "    discovery_date timestamp not null,\n" +
-                "    discovered_by varchar not null,\n" +
-                "    discovered_in bigint not null /*git_commit_id*/,\n" +
-                "    update_date timestamp,\n" +
-                "    updatedby_user_id bigint,\n" +
-                "    checksum varchar not null,\n" +
-                "    checksum_type varchar not null,\n" +
-                "    vulnerability_reference_id varchar not null,\n" +
-                "    severity varchar,\n" +
-                "    priority varchar\n" +
-                ");\n" +
-                "\n" +
-                "-- Deployed k8s objects.\n" +
-                "create table k8sobject (\n" +
-                "    k8sobject_id bigint not null,\n" +
-                "    create_date timestamp not null,\n" +
-                "    createdby_user_id bigint not null,\n" +
-                "    update_date timestamp,\n" +
-                "    updatedby_user_id bigint,\n" +
-                "    checksum varchar not null,\n" +
-                "    checksum_type varchar not null,\n" +
-                "    deployed_id bigint not null /*k8scluster_id*/,\n" +
-                "    deployment_type varchar not null,\n" +
-                "    k8snamespace varchar not null\n" +
-                ");\n" +
-                "\n" +
-                "-- Binary artifacts used to construct k8s objects.\n" +
-                "create table k8sartifact (\n" +
-                "    artifact_id bigint not null,\n" +
-                "    k8sobject_id bigint not null\n" +
-                ");\n" +
-                "\n" +
-                "-- K8s clusters.\n" +
-                "create table k8scluster (\n" +
-                "    k8scluster_id bigint not null,\n" +
-                "    k8s_uri varchar not null,\n" +
-                "    path varchar not null,\n" +
-                "    name varchar not null,\n" +
-                "    k8s_serivce_provider varchar not null\n" +
-                ");\n" +
-                "\n" +
-                "-- Vulnerabilities that affect each pipeline.\n" +
-                "create view pipeline_vulnerability (\n" +
-                "    pipeline_id,\n" +
-                "    vulnerability_id\n" +
-                ") as\n" +
-                "    SELECT pipeline_sources.pipeline_id as pipeline_id, " +
-                "vulnerability.vulnerability_id as vulnerability_id FROM\n" +
-                "    pipeline_sources\n" +
-                "    INNER JOIN\n" +
-                "    vulnerability\n" +
-                "    ON pipeline_sources.git_commit_id = vulnerability.discovered_in;\n" +
-                "\n" +
-                "-- Vulnerabilities that could propagate to each artifact.\n" +
-                "create view artifact_vulnerability (\n" +
-                "    artifact_id,\n" +
-                "    vulnerability_id\n" +
-                ") as\n" +
-                "    SELECT artifact.artifact_id as artifact_id, " +
-                "pipeline_vulnerability.vulnerability_id as vulnerability_id FROM\n" +
-                "    artifact\n" +
-                "    INNER JOIN\n" +
-                "    pipeline_vulnerability\n" +
-                "    ON artifact.builtby_pipeline_id = pipeline_vulnerability.pipeline_id;\n" +
-                "\n" +
-                "-- Vulnerabilities in the artifact or any of its children.\n" +
-                "create view transitive_vulnerability(\n" +
-                "    artifact_id,\n" +
-                "    via_artifact_id,\n" +
-                "    vulnerability_id\n" +
-                ") as\n" +
-                "    SELECT artifact_id, artifact_id as via_artifact_id, " +
-                "vulnerability_id from artifact_vulnerability\n" +
-                "    UNION\n" +
-                "    (\n" +
-                "        SELECT\n" +
-                "            artifact.parent_artifact_id as artifact_id,\n" +
-                "            artifact.artifact_id as via_artifact_id,\n" +
-                "            artifact_vulnerability.vulnerability_id as vulnerability_id FROM\n" +
-                "        artifact\n" +
-                "        INNER JOIN\n" +
-                "        artifact_vulnerability\n" +
-                "        ON artifact.artifact_id = artifact_vulnerability.artifact_id\n" +
-                "        WHERE artifact.parent_artifact_id IS NOT NULL\n" +
-                "    );\n" +
-                "\n" +
-                "-- create view k8sobject_vulnerability ();\n" +
-                "\n" +
-                "-- create view k8scluster_vulnerability ();\n" +
-                "\n" +
-                "-- Number of vulnerabilities.\n" +
-                "-- Most severe vulnerability.\n" +
-                "-- create view k8scluster_vulnerability_stats ();";
+        String statements = """
+                -- Git repository.
+                create table repository (
+                    repository_id bigint not null primary key,
+                    type varchar not null,
+                    url varchar not null,
+                    name varchar not null
+                );
+
+                -- Commit inside a Git repo.
+                create table git_commit (
+                    git_commit_id bigint not null,
+                    repository_id bigint not null,
+                    commit_id varchar not null,
+                    commit_date timestamp not null,
+                    commit_owner varchar not null
+                );
+
+                -- CI pipeline.
+                create table pipeline (
+                    pipeline_id bigint not null,
+                    name varchar not null,
+                    create_date timestamp not null,
+                    createdby_user_id bigint not null,
+                    update_date timestamp,
+                    updatedby_user_id bigint
+                );
+
+
+                -- Git commits used by each pipeline.
+                create table pipeline_sources (
+                    git_commit_id bigint not null,
+                    pipeline_id bigint not null
+                );
+
+                -- Binary artifact created by a CI pipeline.
+                create table artifact (
+                    artifact_id bigint not null,
+                    artifact_uri varchar not null,
+                    path varchar not null,
+                    create_date timestamp not null,
+                    createdby_user_id bigint not null,
+                    update_date timestamp,
+                    updatedby_user_id bigint,
+                    checksum varchar not null,
+                    checksum_type varchar not null,
+                    artifact_size_in_bytes bigint not null,
+                    artifact_type varchar not null,
+                    builtby_pipeline_id bigint not null,
+                    parent_artifact_id bigint
+                );
+
+                -- Vulnerabilities discovered in source code.
+                create table vulnerability (
+                    vulnerability_id bigint not null,
+                    discovery_date timestamp not null,
+                    discovered_by varchar not null,
+                    discovered_in bigint not null /*git_commit_id*/,
+                    update_date timestamp,
+                    updatedby_user_id bigint,
+                    checksum varchar not null,
+                    checksum_type varchar not null,
+                    vulnerability_reference_id varchar not null,
+                    severity varchar,
+                    priority varchar
+                );
+
+                -- Deployed k8s objects.
+                create table k8sobject (
+                    k8sobject_id bigint not null,
+                    create_date timestamp not null,
+                    createdby_user_id bigint not null,
+                    update_date timestamp,
+                    updatedby_user_id bigint,
+                    checksum varchar not null,
+                    checksum_type varchar not null,
+                    deployed_id bigint not null /*k8scluster_id*/,
+                    deployment_type varchar not null,
+                    k8snamespace varchar not null
+                );
+
+                -- Binary artifacts used to construct k8s objects.
+                create table k8sartifact (
+                    artifact_id bigint not null,
+                    k8sobject_id bigint not null
+                );
+
+                -- K8s clusters.
+                create table k8scluster (
+                    k8scluster_id bigint not null,
+                    k8s_uri varchar not null,
+                    path varchar not null,
+                    name varchar not null,
+                    k8s_serivce_provider varchar not null
+                );
+
+                -- Vulnerabilities that affect each pipeline.
+                create view pipeline_vulnerability (
+                    pipeline_id,
+                    vulnerability_id
+                ) as
+                    SELECT pipeline_sources.pipeline_id as pipeline_id, vulnerability.vulnerability_id as vulnerability_id FROM
+                    pipeline_sources
+                    INNER JOIN
+                    vulnerability
+                    ON pipeline_sources.git_commit_id = vulnerability.discovered_in;
+
+                -- Vulnerabilities that could propagate to each artifact.
+                create view artifact_vulnerability (
+                    artifact_id,
+                    vulnerability_id
+                ) as
+                    SELECT artifact.artifact_id as artifact_id, pipeline_vulnerability.vulnerability_id as vulnerability_id FROM
+                    artifact
+                    INNER JOIN
+                    pipeline_vulnerability
+                    ON artifact.builtby_pipeline_id = pipeline_vulnerability.pipeline_id;
+
+                -- Vulnerabilities in the artifact or any of its children.
+                create view transitive_vulnerability(
+                    artifact_id,
+                    via_artifact_id,
+                    vulnerability_id
+                ) as
+                    SELECT artifact_id, artifact_id as via_artifact_id, vulnerability_id from artifact_vulnerability
+                    UNION
+                    (
+                        SELECT
+                            artifact.parent_artifact_id as artifact_id,
+                            artifact.artifact_id as via_artifact_id,
+                            artifact_vulnerability.vulnerability_id as vulnerability_id FROM
+                        artifact
+                        INNER JOIN
+                        artifact_vulnerability
+                        ON artifact.artifact_id = artifact_vulnerability.artifact_id
+                        WHERE artifact.parent_artifact_id IS NOT NULL
+                    );
+
+                -- create view k8sobject_vulnerability ();
+
+                -- create view k8scluster_vulnerability ();
+
+                -- Number of vulnerabilities.
+                -- Most severe vulnerability.
+                -- create view k8scluster_vulnerability_stats ();""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
         this.addRustTestCase("docTest", compiler, getCircuit(compiler));

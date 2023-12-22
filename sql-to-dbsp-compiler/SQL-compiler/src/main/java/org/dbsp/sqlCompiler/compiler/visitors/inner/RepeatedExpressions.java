@@ -21,7 +21,7 @@ public class RepeatedExpressions extends InnerVisitor {
     private final Set<Long> visited;
     @Nullable
     private IDBSPInnerNode duplicate;
-    private List<IDBSPInnerNode> duplicateContext = new ArrayList<>();
+    private final List<IDBSPInnerNode> duplicateContext = new ArrayList<>();
 
     public RepeatedExpressions(IErrorReporter reporter, boolean expressions) {
         super(reporter);
@@ -60,7 +60,7 @@ public class RepeatedExpressions extends InnerVisitor {
         if (this.duplicate != null) {
             StringBuilder builder = new StringBuilder();
             builder.append("Expression ")
-                    .append(this.root.toString())
+                    .append(this.root)
                     .append(" ")
                     .append(this.root.getId())
                     .append(" contains multiple instances of ")

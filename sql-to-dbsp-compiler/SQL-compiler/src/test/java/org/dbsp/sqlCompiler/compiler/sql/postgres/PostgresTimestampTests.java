@@ -327,11 +327,12 @@ public class PostgresTimestampTests extends SqlIoTest {
     public void testEq() {
         // SELECT d1 FROM TIMESTAMP_TBL
         //   WHERE d1 = timestamp without time zone '1997-01-02';
-        this.q("SELECT d1 FROM TIMESTAMP_TBL\n" +
-                "   WHERE d1 = timestamp '1997-01-02';\n" +
-                "             d1              \n" +
-                "-----------------------------\n" +
-                "Thu Jan 02 00:00:00 1997");
+        this.q("""
+                SELECT d1 FROM TIMESTAMP_TBL
+                   WHERE d1 = timestamp '1997-01-02';
+                             d1             \s
+                -----------------------------
+                Thu Jan 02 00:00:00 1997""");
     }
 
     @Test
@@ -568,10 +569,11 @@ public class PostgresTimestampTests extends SqlIoTest {
         // SELECT date_trunc( 'week', timestamp '2004-02-29 15:44:17.71393' ) AS week_trunc;
         // Postgres gives a different result from Calcite!
         // This day was a Sunday.  Postgres returns 2004-02-23, the previous Monday.
-        this.q("SELECT FLOOR(timestamp '2004-02-29 15:44:17.71393' TO WEEK) AS week_trunc;\n" +
-                "        week_trunc        \n" +
-                "--------------------------\n" +
-                " Mon Feb 29 00:00:00 2004");
+        this.q("""
+                SELECT FLOOR(timestamp '2004-02-29 15:44:17.71393' TO WEEK) AS week_trunc;
+                        week_trunc       \s
+                --------------------------
+                 Mon Feb 29 00:00:00 2004""");
     }
 
     // DATE_BIN not supported by Calcite.
@@ -597,10 +599,11 @@ public class PostgresTimestampTests extends SqlIoTest {
         //  FROM TIMESTAMP_TBL
         //  WHERE d1 BETWEEN timestamp without time zone '1902-01-01'
         //   AND timestamp without time zone '2038-01-01';
-        String query = "SELECT TIMESTAMPDIFF(SECOND, d1, timestamp '1997-01-02') AS diff\n" +
-                "  FROM TIMESTAMP_TBL\n" +
-                "  WHERE d1 BETWEEN timestamp '1902-01-01'\n" +
-                "   AND timestamp '2038-01-01'";
+        String query = """
+                SELECT TIMESTAMPDIFF(SECOND, d1, timestamp '1997-01-02') AS diff
+                  FROM TIMESTAMP_TBL
+                  WHERE d1 BETWEEN timestamp '1902-01-01'
+                   AND timestamp '2038-01-01'""";
         String[] data = {
             "9863 days ago",
             "39 days 17 hours 32 mins 1 sec",
@@ -1247,10 +1250,11 @@ public class PostgresTimestampTests extends SqlIoTest {
     @Test
     public void testLargeYear() {
         // Timestamp out of range to be represented using milliseconds
-        this.q("SELECT extract(epoch from TIMESTAMP '5000-01-01 00:00:00');\n" +
-                "epoch\n" +
-                "---------\n" +
-                "95617584000");
+        this.q("""
+                SELECT extract(epoch from TIMESTAMP '5000-01-01 00:00:00');
+                epoch
+                ---------
+                95617584000""");
     }
 
     //-- TO_CHAR()
