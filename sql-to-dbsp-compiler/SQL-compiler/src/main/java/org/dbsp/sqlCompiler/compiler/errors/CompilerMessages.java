@@ -116,8 +116,8 @@ public class CompilerMessages {
         }
     }
 
-    public void reportError(SourcePositionRange range, boolean warning,
-                            String errorType, String message) {
+    public void reportProblem(SourcePositionRange range, boolean warning,
+                              String errorType, String message) {
         Error msg = new Error(range, warning, errorType, message);
         this.reportError(msg);
     }

@@ -76,26 +76,26 @@ public class RustFileWriter implements ICompilerComponent {
      */
     static final String commonPreamble =
             """
-                    // Automatically-generated file
-                    #![allow(dead_code)]
-                    #![allow(non_snake_case)]
-                    #![allow(unused_imports)]
-                    #![allow(unused_parens)]
-                    #![allow(unused_variables)]
-                    #![allow(unused_mut)]
+            // Automatically-generated file
+            #![allow(dead_code)]
+            #![allow(non_snake_case)]
+            #![allow(unused_imports)]
+            #![allow(unused_parens)]
+            #![allow(unused_variables)]
+            #![allow(unused_mut)]
+            #![allow(unconditional_panic)]
 
-                    #![allow(non_camel_case_types)]
+            #![allow(non_camel_case_types)]
 
-                    #[cfg(test)]
-                    use hashing::*;
-                    """;  // comparison functions
+            #[cfg(test)]
+            use hashing::*;
+            """;  // comparison functions
 
     /**
      * Preamble used when generating Rust code.
      */
     @SuppressWarnings("SpellCheckingInspection")
-    static final String rustPreamble =
-            """
+    static final String rustPreamble = """
                     use paste::paste;
                     use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
                     use dbsp::{
@@ -358,6 +358,7 @@ public class RustFileWriter implements ICompilerComponent {
                     str = ToRustVisitor.toRustString(this.getCompiler(), outer);
             }
             this.outputStream.println(str);
+            this.outputStream.println();
         }
     }
 

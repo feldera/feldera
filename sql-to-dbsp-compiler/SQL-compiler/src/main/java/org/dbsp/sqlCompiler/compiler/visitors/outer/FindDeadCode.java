@@ -111,7 +111,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public void endVisit() {
         for (DBSPOperator source: this.getCircuit().circuit.inputOperators) {
             if (!this.reachable.contains(source) && this.warn && !this.keepAllSources)
-                this.errorReporter.reportError(source.getSourcePosition(), true,
+                this.errorReporter.reportWarning(source.getSourcePosition(),
                         "Unused", "Table " + Utilities.singleQuote(source.outputName) +
                                 " is not used");
         }

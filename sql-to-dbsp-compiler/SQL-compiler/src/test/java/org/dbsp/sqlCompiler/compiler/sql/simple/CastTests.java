@@ -82,6 +82,13 @@ public class CastTests extends BaseSQLTests {
     }
 
     @Test
+    public void castFail() {
+        this.runtimeFail("SELECT CAST('blah' AS DECIMAL)",
+                "Invalid decimal: unknown character",
+                this.getEmptyIOPair());
+    }
+
+    @Test
     public void intAndString() {
         String query = "SELECT '1' + 2";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -93,6 +100,12 @@ public class CastTests extends BaseSQLTests {
         String query = "SELECT T.COL1 + T.COL3 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPI32Literal(100110))));
+    }
+
+    @Test
+    public void castNull() {
+        String query = "SELECT CAST(NULL AS INTEGER)";
+        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI32Literal())));
     }
 
     @Test

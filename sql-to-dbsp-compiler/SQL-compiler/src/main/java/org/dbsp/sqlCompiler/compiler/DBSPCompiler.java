@@ -179,11 +179,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      * @param errorType  A short string that categorizes the error type.
      * @param message    Error message.
      */
-    public void reportError(SourcePositionRange range, boolean warning,
-                            String errorType, String message) {
+    public void reportProblem(SourcePositionRange range, boolean warning,
+                              String errorType, String message) {
         if (warning)
             this.hasWarnings = true;
-        this.messages.reportError(range, warning, errorType, message);
+        this.messages.reportProblem(range, warning, errorType, message);
         if (!warning && this.options.languageOptions.throwOnError) {
             System.err.println(this.messages);
             throw new CompilationError("Error during compilation");
@@ -249,9 +249,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 SqlOperatorTable newTable = SqlOperatorTables.of(functions);
                 this.frontend.addOperatorTable(newTable);
                 if (this.options.ioOptions.udfs.isEmpty()) {
-                    this.getCompiler().reportError(
+                    this.getCompiler().reportWarning(
                             SourcePositionRange.INVALID,
-                            true, "No UDFs",
+                            "No UDFs",
                             "Program contains `CREATE FUNCTION` statements but the compiler" +
                                     " was invoked without the `-udf` flag");
                 }

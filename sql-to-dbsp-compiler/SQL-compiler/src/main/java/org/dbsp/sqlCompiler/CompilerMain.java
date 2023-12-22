@@ -117,7 +117,7 @@ public class CompilerMain {
             InputStream input = this.getInputFile(this.options.ioOptions.inputFile);
             compiler.setEntireInput(this.options.ioOptions.inputFile, input);
         } catch (IOException e) {
-            compiler.reportError(SourcePositionRange.INVALID, false,
+            compiler.reportError(SourcePositionRange.INVALID,
                     "Error reading file", e.getMessage());
             return compiler.messages;
         }
@@ -135,7 +135,7 @@ public class CompilerMain {
                 outputStream.println(ios.toPrettyString());
                 outputStream.close();
             } catch (IOException e) {
-                compiler.reportError(SourcePositionRange.INVALID, false,
+                compiler.reportError(SourcePositionRange.INVALID,
                         "Error writing to file", e.getMessage());
                 return compiler.messages;
             }
@@ -148,7 +148,7 @@ public class CompilerMain {
                             : null);
         if (dotFormat != null) {
             if (this.options.ioOptions.outputFile.isEmpty()) {
-                compiler.reportError(SourcePositionRange.INVALID, false, "Invalid output",
+                compiler.reportError(SourcePositionRange.INVALID, "Invalid output",
                         "Must specify an output file when outputting jpeg or png");
                 return compiler.messages;
             }
@@ -164,7 +164,7 @@ public class CompilerMain {
             stream.close();
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
-                    false, "Error writing to file", e.getMessage());
+                    "Error writing to file", e.getMessage());
             return compiler.messages;
         }
 
@@ -172,7 +172,7 @@ public class CompilerMain {
             if (!this.options.ioOptions.udfs.isEmpty()) {
                 String outputFileName = this.options.ioOptions.outputFile;
                 if (outputFileName.isEmpty()) {
-                    compiler.reportError(SourcePositionRange.INVALID, false,
+                    compiler.reportError(SourcePositionRange.INVALID,
                             "No output file", "`-udf` option requires specifying an output file");
                     return compiler.messages;
                 }
@@ -184,7 +184,7 @@ public class CompilerMain {
             }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
-                    false, "Error copying UDF file", e.getMessage());
+                    "Error copying UDF file", e.getMessage());
             return compiler.messages;
         }
 

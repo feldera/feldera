@@ -258,10 +258,8 @@ pub fn cast_to_decimal_fN(value: Option<F32>, precision: u32, scale: i32) -> Dec
 
 #[inline]
 pub fn cast_to_decimal_s(value: String, precision: u32, scale: i32) -> Decimal {
-    let result = match value.trim().parse().ok() {
-        None => Decimal::zero(),
-        Some(x) => x,
-    };
+    let result = value.trim().parse().unwrap();
+    println!("{}", result);
     cast_to_decimal_decimal(result, precision, scale)
 }
 
@@ -269,10 +267,7 @@ pub fn cast_to_decimal_s(value: String, precision: u32, scale: i32) -> Decimal {
 pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: i32) -> Decimal {
     let result = match value {
         None => Decimal::zero(),
-        Some(x) => match x.trim().parse().ok() {
-            None => Decimal::zero(),
-            Some(x) => x,
-        },
+        Some(x) => x.trim().parse().unwrap(),
     };
     cast_to_decimal_decimal(result, precision, scale)
 }

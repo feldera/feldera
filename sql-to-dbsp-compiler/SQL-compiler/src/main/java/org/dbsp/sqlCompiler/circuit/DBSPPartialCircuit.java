@@ -82,9 +82,9 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
                 .newline();
         if (this.operatorDeclarations.containsKey(operator.outputName)) {
             DBSPOperator previous = this.operatorDeclarations.get(operator.outputName);
-            this.errorReporter.reportError(operator.getSourcePosition(), false, "Duplicate definition",
+            this.errorReporter.reportError(operator.getSourcePosition(), "Duplicate definition",
                     "Stream " + operator.outputName + " already defined");
-            this.errorReporter.reportError(previous.getSourcePosition(), false, "Duplicate definition",
+            this.errorReporter.reportError(previous.getSourcePosition(), "Duplicate definition",
                     "This is the previous definition");
             return;
         }
