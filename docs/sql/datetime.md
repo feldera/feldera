@@ -42,6 +42,9 @@ are not allowed.
 Date literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
 
+If the string does not have the expected format the resulting literal
+is interpreted as `NULL`.
+
 ### Date operations
 
 The following operations are available on dates:
@@ -78,6 +81,9 @@ For dates it always returns 0, since dates have no time component.
 Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
+Casting a string to a `DATE` produces the result `NULL` if the string
+does not have the format of a date literal.
+
 ## Times
 
 A time represents the time of day, a value between 0 and 24 hours
@@ -102,6 +108,9 @@ minutes between 0 and 59, and the seconds between 0 and 59.  Exactly
 two digits must be used for hours, minuts, and seconds.  Spaces are
 not allowed between quotes.
 
+If the string does not have the expected format the resulting literal
+is interpreted as `NULL`.
+
 ### Time operations
 
 `EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit from
@@ -120,6 +129,9 @@ timestamp)`.
 Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
+Casting a string to a `TIME` produces the result `NULL` if the string
+does not have the format of a time literal.
+
 ## Timestamps
 
 The `TIMESTAMP` data type represents values composed of a `DATE` and a
@@ -137,6 +149,9 @@ fractional part is optional.  Trailing spaces are not allowed.
 
 Timestamp literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
+
+If the string does not have the expected format the resulting literal
+is interpreted as `NULL`.
 
 The following operations are available on timestamps:
 
@@ -173,6 +188,9 @@ The result is a 32-bit integer.  `DATEDIFF` is a synonym for
 `TIMESTAMPDIFF`.  One month is considered elapsed when the calendar
 month has increased and the calendar day and time is greater than or equal
 to the start. Weeks, quarters, and years follow from that.
+
+Casting a string to a `TIMESTAMP` produces the result `NULL` if the
+string does not have the format of a timestamp literal.
 
 ## Time intervals
 
@@ -214,6 +232,9 @@ the following combinations are supported:
 A leading negative sign applies to all fields; for example the
 negative sign in the interval literal `INTERVAL '-1 2:03:04' DAYS TO
 SECONDS` applies to both the days and hour/minute/second parts.
+
+If the interval does not have an adequate format the resulting literal
+is interpreted as `NULL`.
 
 ## Other date/time/timestamp/time interval operations
 

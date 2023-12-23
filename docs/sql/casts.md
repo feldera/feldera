@@ -28,3 +28,11 @@ Conversions from decimal and floating point types to integer types
 always truncate the decimal digits (round towards zero).  For example,
 `CAST(2.9 AS INTEGER)` returns 2, while `CAST(-2.9 AS INTEGER)`
 returns -2.
+
+Casts of strings to numeric types produce a runtime error when the
+string cannot be interpreted as a number.
+
+Casts of strings to `DATE`, `TIME`, `TIMESTAMP` produce the result
+`NULL` when the string does not have the correct format.
+
+Casting a `NULL` value to any type produces a `NULL` result.

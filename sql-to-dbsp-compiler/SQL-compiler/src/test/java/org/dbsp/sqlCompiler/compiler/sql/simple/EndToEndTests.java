@@ -699,23 +699,6 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
-    public void decimalParseFail() {
-        String query = "SELECT CAST('blah' AS DECIMAL)";
-        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, DBSPTypeDecimal.MAX_SCALE, false), new BigDecimal(0)))));
-    }
-
-    @Test
-    public void divZero() {
-        String query = "SELECT 'zero' / 0";
-        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, DBSPTypeDecimal.MAX_SCALE, true),
-                                null))));
-    }
-
-    @Test
     public void divIntTest() {
         String query = "SELECT T.COL5 / T.COL5 FROM T";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
@@ -735,10 +718,8 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divZero0() {
         String query = "SELECT 'Infinity' / 0";
-        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, DBSPTypeDecimal.MAX_SCALE, true),
-                                null))));
+        this.runtimeFail(query, "Invalid decimal: unknown character",
+               this.getEmptyIOPair());
     }
 
     @Test

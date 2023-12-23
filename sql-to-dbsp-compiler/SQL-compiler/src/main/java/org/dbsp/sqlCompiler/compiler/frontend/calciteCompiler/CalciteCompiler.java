@@ -244,12 +244,12 @@ public class CalciteCompiler implements IWritesLogs {
                 if (relDataType.getSqlTypeName() == SqlTypeName.DECIMAL) {
                     if (basic.getPrecision() < basic.getScale()) {
                         SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
-                        this.reporter.reportError(position, false,
+                        this.reporter.reportError(position,
                                 "Illegal type", "DECIMAL type must have scale <= precision");
                     }
                 } else if (relDataType.getSqlTypeName() == SqlTypeName.FLOAT) {
                     SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
-                    this.reporter.reportError(position, false,
+                    this.reporter.reportError(position,
                             "Illegal type", "Do not use the FLOAT type, please use REAL or DOUBLE");
                 }
             }
@@ -616,9 +616,9 @@ public class CalciteCompiler implements IWritesLogs {
         for (SqlNode col: Objects.requireNonNull(list)) {
             if (col instanceof SqlKeyConstraint) {
                 if (key != null) {
-                    this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()), false,
+                    this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()),
                             "Duplicate key", "PRIMARY KEY already declared");
-                    this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()), false,
+                    this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()),
                             "Duplicate key", "Previous declaration");
                     break;
                 }
@@ -638,11 +638,11 @@ public class CalciteCompiler implements IWritesLogs {
                     SqlIdentifier identifier = (SqlIdentifier) keyColumn;
                     String name = identifier.getSimple();
                     if (primaryKeys.containsKey(name)) {
-                        this.errorReporter.reportError(new SourcePositionRange(identifier.getParserPosition()), false,
+                        this.errorReporter.reportError(new SourcePositionRange(identifier.getParserPosition()),
                                 "Duplicate key column", "Column " + Utilities.singleQuote(name) +
                                 " already declared as key");
                         this.errorReporter.reportError(new SourcePositionRange(primaryKeys.get(name).getParserPosition()),
-                                false, "Duplicate key column", "Previous declaration");
+                                "Duplicate key column", "Previous declaration");
                     }
                     primaryKeys.put(name, identifier);
                 }
@@ -665,11 +665,11 @@ public class CalciteCompiler implements IWritesLogs {
                 name = cd.name;
                 typeSpec = cd.dataType;
                 if (cd.primaryKey && key != null) {
-                    this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()), false,
+                    this.errorReporter.reportError(new SourcePositionRange(col.getParserPosition()),
                             "Duplicate key",
                             "Column " + Utilities.singleQuote(name.getSimple()) +
                                     " declared PRIMARY KEY in table with another PRIMARY KEY constraint");
-                    this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()), false,
+                    this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()),
                             "Duplicate key", "PRIMARY KEYS declared as constraint");
                 }
                 boolean declaredPrimary = primaryKeys.containsKey(name.getSimple());
@@ -701,10 +701,10 @@ public class CalciteCompiler implements IWritesLogs {
             SqlNode previousColumn = columnDefinition.get(colName);
             if (previousColumn != null) {
                 this.errorReporter.reportError(new SourcePositionRange(name.getParserPosition()),
-                        false, "Duplicate name", "Column with name " +
+                        "Duplicate name", "Column with name " +
                                 Utilities.singleQuote(colName) + " already defined");
                 this.errorReporter.reportError(new SourcePositionRange(previousColumn.getParserPosition()),
-                        false, "Duplicate name",
+                        "Duplicate name",
                         "Previous definition");
             } else {
                 columnDefinition.put(colName, col);
@@ -720,7 +720,7 @@ public class CalciteCompiler implements IWritesLogs {
 
         if (!primaryKeys.isEmpty()) {
             for (SqlIdentifier s: primaryKeys.values()) {
-                this.errorReporter.reportError(new SourcePositionRange(s.getParserPosition()), false,
+                this.errorReporter.reportError(new SourcePositionRange(s.getParserPosition()),
                         "No such column", "Key field " + Utilities.singleQuote(s.toString()) +
                                 " does not correspond to a column");
             }
@@ -737,7 +737,7 @@ public class CalciteCompiler implements IWritesLogs {
         RelDataType rowType = relRoot.rel.getRowType();
         if (columnNames != null && columnNames.size() != relRoot.fields.size()) {
             this.errorReporter.reportError(
-                    new SourcePositionRange(objectName.getParserPosition()), false,
+                    new SourcePositionRange(objectName.getParserPosition()),
                     "Column count mismatch",
                     (view ? "View " : " Table ") + objectName.getSimple() +
                             " specifies " + columnNames.size() + " columns " +
@@ -763,14 +763,14 @@ public class CalciteCompiler implements IWritesLogs {
                 if (colByName.containsKey(specifiedName)) {
                     if (!this.options.languageOptions.lenient) {
                         this.errorReporter.reportError(
-                                new SourcePositionRange(objectName.getParserPosition()), false,
+                                new SourcePositionRange(objectName.getParserPosition()),
                                 "Duplicate column",
                                 (view ? "View " : "Table ") + objectName.getSimple() +
                                         " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +
                                         "You can allow this behavior using the --lenient compiler flag");
                     } else {
-                        this.errorReporter.reportError(
-                                new SourcePositionRange(objectName.getParserPosition()), true,
+                        this.errorReporter.reportWarning(
+                                new SourcePositionRange(objectName.getParserPosition()),
                                 "Duplicate column",
                                 (view ? "View " : "Table ") + objectName.getSimple() +
                                         " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +

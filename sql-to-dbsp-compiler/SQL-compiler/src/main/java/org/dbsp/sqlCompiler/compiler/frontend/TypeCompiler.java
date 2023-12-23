@@ -106,7 +106,7 @@ public class TypeCompiler implements ICompilerComponent {
                     int scale = dt.getScale();
                     if (precision > DBSPTypeDecimal.MAX_PRECISION) {
                         // This would sure benefit from source position information, but we don't have any!
-                        compiler.reportError(SourcePositionRange.INVALID, true, "Out of bounds",
+                        compiler.reportWarning(SourcePositionRange.INVALID, "Out of bounds",
                                 "DECIMAL value precision " + precision +
                                         " is larger than the maximum supported precision; truncating to " +
                                         DBSPTypeDecimal.MAX_PRECISION
@@ -114,7 +114,7 @@ public class TypeCompiler implements ICompilerComponent {
                         precision = DBSPTypeDecimal.MAX_PRECISION;
                     }
                     if (scale > DBSPTypeDecimal.MAX_SCALE) {
-                        compiler.reportError(SourcePositionRange.INVALID, true, "Out of bounds",
+                        compiler.reportWarning(SourcePositionRange.INVALID, "Out of bounds",
                                 "DECIMAL value scale " + scale +
                                         " is larger than the maximum supported scale; truncating to " +
                                         DBSPTypeDecimal.MAX_SCALE

@@ -10,6 +10,9 @@ The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
 (modulus).
 
+Casting a string to an integer type will produce a runtime error if the
+string cannot be interpreted as a number.
+
 Division or modulus by zero return `NULL`.
 
 ## Predefined functions on integer values

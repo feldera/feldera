@@ -29,6 +29,16 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void issue1180() {
+        this.q("""
+                SELECT '1_000'::INT4;
+                 int2\s
+                ------
+                 0"""
+        );
+    }
+
+    @Test
     public void testLeftNull() {
         this.q("""
                 SELECT LEFT(NULL, 100);

@@ -62,10 +62,10 @@ public class Catalog extends AbstractSchema {
 
     public boolean addTable(String name, Table table, IErrorReporter reporter, FrontEndStatement statement) {
         if (this.tableMap.containsKey(name)) {
-            reporter.reportError(statement.getPosition(), false, "Duplicate declaration",
+            reporter.reportError(statement.getPosition(), "Duplicate declaration",
                     Utilities.singleQuote(name) + " already defined");
             FrontEndStatement previous = this.definition.get(name);
-            reporter.reportError(previous.getPosition(), false, "Duplicate declaration",
+            reporter.reportError(previous.getPosition(), "Duplicate declaration",
                     "Location of previous definition");
             return false;
         }

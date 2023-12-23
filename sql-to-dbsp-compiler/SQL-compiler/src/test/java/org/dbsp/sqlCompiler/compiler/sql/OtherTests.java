@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
@@ -145,6 +146,16 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 }
                 """;
         Assert.assertEquals(expected, str);
+    }
+
+    @Test
+    public void testIntCastWarning() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        String query = "CREATE VIEW V AS SELECT '1_000'::INT4";
+        compiler.compileStatement(query);
+        getCircuit(compiler);  // invokes optimizer
+        TestUtil.assertMessagesContain(compiler.messages, "String '1_000' cannot be interpreted as a number");
     }
 
     // Test the ability to redirect logging streams.

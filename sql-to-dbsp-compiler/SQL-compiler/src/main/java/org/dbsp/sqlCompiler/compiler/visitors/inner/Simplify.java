@@ -132,6 +132,9 @@ public class Simplify extends InnerRewriteVisitor {
                         LocalDate.parse(str.value, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
                     } catch (DateTimeParseException ex) {
+                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a date",
+                                " String " + Utilities.singleQuote(str.value) +
+                                        " cannot be interpreted as a date, value used is `NULL`");
                         result = DBSPLiteral.none(type);
                     }
                 } else if (type.is(DBSPTypeTime.class)) {
@@ -139,6 +142,9 @@ public class Simplify extends InnerRewriteVisitor {
                         TimeString ts = new TimeString(str.value);
                         result = new DBSPTimeLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException ex) {
+                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                " String " + Utilities.singleQuote(str.value) +
+                                        " cannot be interpreted as a time, value used is 'NULL'");
                         result = DBSPLiteral.none(type);
                     }
                 } else if (type.is(DBSPTypeDecimal.class)) {
@@ -148,7 +154,9 @@ public class Simplify extends InnerRewriteVisitor {
                         result = new DBSPDecimalLiteral(type, value);
                     } catch (NumberFormatException ex) {
                         // on parse error return 0.
-                        result = new DBSPDecimalLiteral(type, BigDecimal.ZERO);
+                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                " String " + Utilities.singleQuote(str.value) +
+                                        " cannot be interpreted as a DECIMAL");
                     }
                 } else if (type.is(DBSPTypeString.class)) {
                     DBSPTypeString typeString = type.to(DBSPTypeString.class);
@@ -169,31 +177,56 @@ public class Simplify extends InnerRewriteVisitor {
                 } else
                     if (type.is(DBSPTypeInteger.class)) {
                     DBSPTypeInteger ti = type.to(DBSPTypeInteger.class);
-                    try {
-                        switch (ti.getWidth()) {
-                            case 8: {
-                                byte value = Byte.parseByte(str.value);
+                    switch (ti.getWidth()) {
+                        case 8: {
+                            byte value;
+                            try {
+                                value = Byte.parseByte(str.value);
                                 result = new DBSPI8Literal(lit.getNode(), type, value);
-                                break;
+                            } catch (NumberFormatException ex) {
+                                // SQL semantics: parsing failures return 0
+                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                        " String " + Utilities.singleQuote(str.value) +
+                                                " cannot be interpreted as a number");
                             }
-                            case 16: {
-                                short value = Short.parseShort(str.value);
-                                result = new DBSPI16Literal(lit.getNode(), type, value);
-                                break;
-                            }
-                            case 32: {
-                                int value = Integer.parseInt(str.value);
-                                result = new DBSPI32Literal(lit.getNode(), type, value);
-                                break;
-                            }
-                            case 64: {
-                                long value = Long.parseLong(str.value);
-                                result = new DBSPI64Literal(lit.getNode(), type, value);
-                                break;
-                            }
+                            break;
                         }
-                    } catch (NumberFormatException ex) {
-                        result = DBSPLiteral.none(type);
+                        case 16: {
+                            short value;
+                            try {
+                                value = Short.parseShort(str.value);
+                                result = new DBSPI16Literal(lit.getNode(), type, value);
+                            } catch (NumberFormatException ex) {
+                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                        " String " + Utilities.singleQuote(str.value) +
+                                                " cannot be interpreted as a number");
+                            }
+                            break;
+                        }
+                        case 32: {
+                            int value;
+                            try {
+                                value = Integer.parseInt(str.value);
+                                result = new DBSPI32Literal(lit.getNode(), type, value);
+                            } catch (NumberFormatException ex) {
+                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                        " String " + Utilities.singleQuote(str.value) +
+                                                " cannot be interpreted as a number");
+                            }
+                            break;
+                        }
+                        case 64: {
+                            long value;
+                            try {
+                                value = Long.parseLong(str.value);
+                                result = new DBSPI64Literal(lit.getNode(), type, value);
+                            } catch (Exception ex) {
+                                this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
+                                        " String " + Utilities.singleQuote(str.value) +
+                                                " cannot be interpreted as a number");
+                            }
+                            break;
+                        }
                     }
                 }
             } else if (lit.is(DBSPI32Literal.class)) {
@@ -217,6 +250,9 @@ public class Simplify extends InnerRewriteVisitor {
                 }
             }
         }
+        assert expression.getType().mayBeNull == result.getType().mayBeNull :
+                "Nullability of " + expression + " has changed " +
+                " from " + expression.getType() + " to " + result.getType();
         this.map(expression, result);
         return VisitDecision.STOP;
     }

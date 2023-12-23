@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
@@ -143,7 +144,14 @@ public class BaseSQLTests {
     protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
         compiler.messages.show(System.err);
         compiler.messages.clear();
-        TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, streams);
+        TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, null, streams);
+        testsToRun.add(test);
+    }
+
+    protected void addFailingRustTestCase(String name, String message, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
+        compiler.messages.show(System.err);
+        compiler.messages.clear();
+        TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, message, streams);
         testsToRun.add(test);
     }
 
@@ -175,5 +183,18 @@ public class BaseSQLTests {
         compiler.optimize();
         String name = "circuit" + testsToRun.size();
         return compiler.getFinalCircuit(name);
+    }
+
+    protected InputOutputPair getEmptyIOPair() {
+        return new InputOutputPair(new DBSPZSetLiteral.Contents[0],
+                new DBSPZSetLiteral.Contents[0]);
+    }
+
+    protected void runtimeFail(String query, String message, InputOutputPair... data) {
+        query = "CREATE VIEW V AS " + query;
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatement(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        this.addFailingRustTestCase(query, message, compiler, circuit, data);
     }
 }

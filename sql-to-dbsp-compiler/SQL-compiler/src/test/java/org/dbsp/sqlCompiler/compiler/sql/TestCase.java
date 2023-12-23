@@ -29,7 +29,9 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.Linq;
 import org.dbsp.util.TableValue;
+import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,35 +40,30 @@ import java.util.List;
  * Represents a test case that will be executed.
  */
 class TestCase {
-    /**
-     * Name of the test case.
-     */
+    /** Name of the test case. */
     public final String name;
-    /**
-     * Name of the Java test that is being run.
-     */
+    /** Name of the Java test that is being run. */
     public final String javaTestName;
-    /**
-     * Compiler used to compile the test case.
-     * Used for code generation.
-     */
+    /** Compiler used to compile the test case.
+     * Used for code generation. */
     public final DBSPCompiler compiler;
-    /**
-     * Circuit that is being tested.
-     */
+    /** Circuit that is being tested. */
     public final DBSPCircuit circuit;
-    /**
-     * Supplied input and expected corresponding outputs for the circuit.
-     */
+    /** Supplied inputs and expected corresponding outputs for the circuit. */
     public final InputOutputPair[] data;
+    /** Non-null if the test is supposed to panic.  In that case this
+     * contains the expected panic message. */
+    @Nullable
+    public final String message;
 
     TestCase(String name, String javaTestName, DBSPCompiler compiler,
-             DBSPCircuit circuit, InputOutputPair... data) {
+             DBSPCircuit circuit, String message, InputOutputPair... data) {
         this.name = name;
         this.javaTestName = javaTestName;
         this.circuit = circuit;
         this.data = data;
         this.compiler = compiler;
+        this.message = message;
     }
 
     /**
@@ -165,7 +162,11 @@ class TestCase {
             pair++;
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
+        List<String> annotations = new ArrayList<>();
+        annotations.add("#[test]");
+        if (this.message != null)
+            annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
         return new DBSPFunction("test" + testNumber, new ArrayList<>(),
-                new DBSPTypeVoid(), body, Linq.list("#[test]"));
+                new DBSPTypeVoid(), body, annotations);
     }
 }
