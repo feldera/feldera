@@ -1199,12 +1199,12 @@ macro_rules! cast_to_i {
 
             #[inline]
             pub fn [< cast_to_ $result_type _s >](value: String) -> $result_type {
-                value.trim().parse().unwrap_or(0)
+                value.trim().parse().unwrap()
             }
 
             #[inline]
             pub fn [<cast_to_ $result_type _sN >](value: Option<String>) -> $result_type {
-                value.unwrap().trim().parse().unwrap_or(0)
+                value.unwrap().trim().parse().unwrap()
             }
 
             // From other integers
