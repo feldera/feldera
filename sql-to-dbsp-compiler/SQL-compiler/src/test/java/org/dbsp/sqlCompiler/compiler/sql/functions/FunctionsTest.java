@@ -39,6 +39,40 @@ public class FunctionsTest extends SqlIoTest {
         this.runtimeFail("select '9223372036854775808'::int64", "ParseIntError", this.getEmptyIOPair());
     }
 
+    // this is an edge case for negative integer modulo
+    // Rust's default modulo operator currently panics on
+    // INT::MIN % -1 instead of just returning 0
+    @Test
+    public void issue1187modulo() {
+        this.qs(
+                """
+                        SELECT (-128)::tinyint % (-1)::tinyint as x;
+                        x
+                        ---
+                         0
+                        (1 row)
+                        
+                        SELECT (-32768)::int2 % (-1)::int2 as x;
+                        x
+                        ---
+                         0
+                        (1 row)
+                        
+                        SELECT (-2147483648)::int4 % (-1)::int4 as x;
+                        x
+                        ---
+                         0
+                        (1 row)
+                        
+                        SELECT (-9223372036854775808)::int64 % (-1)::int64 as x;
+                        x
+                        ---
+                         0
+                        (1 row)
+                        """
+        );
+    }
+
     @Test
     public void issue1209() {
         this.qf("SELECT '-32768'::int2 % 0::int2", "attempt to calculate the remainder with a divisor of zero");

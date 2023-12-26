@@ -10,6 +10,9 @@ The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
 (modulus).
 
+The modulo operator treats modulo by -1 (`x % -1`) as a special
+edge case, and returns 0 for it.
+
 Casting a string to an integer type will produce a runtime error if the
 string cannot be interpreted as a number.
 
