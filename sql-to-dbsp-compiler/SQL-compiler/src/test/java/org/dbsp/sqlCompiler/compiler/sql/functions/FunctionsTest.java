@@ -30,12 +30,13 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void issue1180() {
-        this.q("""
-                SELECT '1_000'::INT4;
-                 int2\s
-                ------
-                 0"""
-        );
+        this.runtimeFail("SELECT '1_000'::INT4", "ParseIntError", this.getEmptyIOPair());
+    }
+
+    @Test
+    public void issue1192() {
+        this.runtimeFail("select '-9223372036854775809'::int64", "ParseIntError", this.getEmptyIOPair());
+        this.runtimeFail("select '9223372036854775808'::int64", "ParseIntError", this.getEmptyIOPair());
     }
 
     @Test
