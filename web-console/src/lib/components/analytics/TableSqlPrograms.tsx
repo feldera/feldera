@@ -180,7 +180,11 @@ const TableSqlPrograms = () => {
     ApiError,
     { program_id: ProgramId; request: UpdateProgramRequest }
   >({
-    mutationFn: args => ProgramsService.updateProgram(args.program_id, args.request)
+    mutationFn: args => ProgramsService.updateProgram(args.program_id, args.request),
+    onSettled: () => {
+      invalidateQuery(queryClient, PipelineManagerQuery.programs())
+      invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
+    }
   })
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     mutation.mutate(

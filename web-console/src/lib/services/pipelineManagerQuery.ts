@@ -155,7 +155,7 @@ const getPipelineCache = (queryClient: QueryClient, pipelineId: PipelineId) => {
     getQueryData(queryClient, PipelineManagerQuery.pipelines(), { predicate: cacheValid })?.find(
       p => p.descriptor.pipeline_id === pipelineId
     ) ?? getQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), { predicate: cacheValid })
-  invariant(data)
+  invariant(data, 'getPipelineCache')
   return data
 }
 
