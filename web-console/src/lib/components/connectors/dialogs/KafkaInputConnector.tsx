@@ -246,8 +246,8 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                           active={activeTab === 'detailsTab'}
                           icon={<IconFile />}
                         />
-                        data-testid='button-tab-name'
                       }
+                      data-testid='button-tab-name'
                     />
                     <Tab
                       disableRipple
