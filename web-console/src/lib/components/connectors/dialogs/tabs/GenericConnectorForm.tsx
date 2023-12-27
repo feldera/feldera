@@ -31,6 +31,9 @@ export const GenericEditorForm = (props: {
           placeholder={PLACEHOLDER_VALUES['connector_name']}
           aria-describedby='validation-name'
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-datasource-name'
+          }}
         />
       </Grid>
       <Grid item sm={8} xs={12}>
@@ -43,6 +46,9 @@ export const GenericEditorForm = (props: {
           placeholder={PLACEHOLDER_VALUES['connector_description']}
           aria-describedby='validation-description'
           disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-datasource-description'
+          }}
         />
       </Grid>
       <Grid item sm={12} xs={12}>
@@ -173,6 +179,7 @@ const JSONConfigEditor = (props: {
       {...{
         value: props.configToText(configText)
       }}
+      data-testid='input-config'
     />
   )
 }
