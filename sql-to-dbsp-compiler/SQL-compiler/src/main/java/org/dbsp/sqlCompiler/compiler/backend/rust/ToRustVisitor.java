@@ -220,19 +220,41 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.getName())
                 .append(": ");
         streamType.accept(this.innerVisitor);
-        boolean isZset = operator.getType().is(DBSPTypeZSet.class);
         this.builder.append(" = ")
-                .append(operator.inputs.get(0).getName())
-                .append(".apply2(&")
+                .append(operator.inputs.get(0).getName());
+
+        boolean isZset = operator.getType().is(DBSPTypeZSet.class);
+        this.builder.append(".apply2(&")
                 .append(operator.inputs.get(1).getName())
-                .append(", |d, v| ");
+                .append(", ");
+        this.builder.append("|d, c| ");
         if (isZset)
             this.builder.append("zset_");
         else
             this.builder.append("indexed_zset_");
-        this.builder.append("filter_comparator(d, v, ");
+        this.builder.append("filter_comparator(d, c, ");
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append("));");
+        this.builder.append(")");
+        this.builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getName());
+        this.builder.append(" = ")
+                .append(operator.inputs.get(0).getName());
+
+        this.builder.append(".")
+                .append(operator.operation)
+                .append("(&")
+                .append(operator.inputs.get(1).getName())
+                .append(", ");
+        operator.getFunction().accept(this.innerVisitor);
+        this.builder.append(");");
         return VisitDecision.STOP;
     }
 
@@ -249,6 +271,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".")
                 .append(operator.operation)
                 .append("(");
+        // This part is different from a standard operator.
         operator.init.accept(this.innerVisitor);
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);

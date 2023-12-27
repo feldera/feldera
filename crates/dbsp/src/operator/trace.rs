@@ -382,14 +382,14 @@ where
     where
         B: Batch<Time = ()>,
         TS: DBData,
-        RK: Fn(&TS, &B::Key) -> bool + Clone + 'static,
+        RK: Fn(&B::Key, &TS) -> bool + Clone + 'static,
     {
         let (trace, bounds) = self.integrate_trace_inner();
 
         bounds_stream.inspect(move |ts| {
             let ts = ts.clone();
             let retain_key_func = retain_key_func.clone();
-            bounds.set_key_filter(Box::new(move |key| retain_key_func(&ts, key)));
+            bounds.set_key_filter(Box::new(move |key| retain_key_func(key, &ts)));
         });
 
         trace
@@ -407,14 +407,14 @@ where
     where
         B: Batch<Time = ()>,
         TS: DBData,
-        RV: Fn(&TS, &B::Val) -> bool + Clone + 'static,
+        RV: Fn(&B::Val, &TS) -> bool + Clone + 'static,
     {
         let (trace, bounds) = self.integrate_trace_inner();
 
         bounds_stream.inspect(move |ts| {
             let ts = ts.clone();
             let retain_value = retain_value.clone();
-            bounds.set_val_filter(Box::new(move |val| retain_value(&ts, val)));
+            bounds.set_val_filter(Box::new(move |val| retain_value(val, &ts)));
         });
 
         trace
@@ -954,7 +954,7 @@ mod test {
                     );
 
                 let _trace = stream.integrate_trace();
-                let retain_keys = stream.integrate_trace_retain_keys(&watermark, |ts, key| *key >= ts.0 - 100);
+                let retain_keys = stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0 - 100);
                 retain_keys.apply(|trace| {
                     //println!("retain_keys: {}bytes", trace.size_of().total_bytes());
                     assert!(trace.size_of().total_bytes() < 15000);
@@ -963,7 +963,7 @@ mod test {
                 let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
 
                 let _trace2 = stream2.integrate_trace();
-                let retain_vals = stream2.integrate_trace_retain_values(&watermark, |ts, val| *val >= ts.1 - 1000);
+                let retain_vals = stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1 - 1000);
 
                 retain_vals.apply(|trace| {
                     //println!("retain_vals: {}bytes", trace.size_of().total_bytes());

@@ -27,7 +27,7 @@ public class DBSPSourceMultisetOperator extends DBSPSourceTableOperator {
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
             InputTableMetadata metadata, String name) {
-        super(node, sourceName, outputType, originalRowType, comment, metadata, name);
+        super(node, sourceName, outputType, originalRowType, true, comment, metadata, name);
     }
 
     @Override

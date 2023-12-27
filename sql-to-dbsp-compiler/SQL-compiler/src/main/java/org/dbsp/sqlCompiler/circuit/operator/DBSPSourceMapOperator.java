@@ -37,7 +37,7 @@ public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
             CalciteObject node, CalciteObject sourceName, List<Integer> keyFields,
             DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
             InputTableMetadata metadata, String name) {
-        super(node, sourceName, outputType, originalRowType, comment, metadata, name);
+        super(node, sourceName, outputType, originalRowType, false, comment, metadata, name);
         this.keyFields = keyFields;
     }
 

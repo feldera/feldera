@@ -1346,7 +1346,7 @@ mod test {
     fn set_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<usize, bool>> {
         let (stream, handle) = circuit.add_input_set::<usize, isize>();
         let watermark = stream.waterline(|| 0, |k, ()| *k, |k1, k2| max(*k1, *k2));
-        stream.integrate_trace_retain_keys(&watermark, |ts, k| *k >= ts.saturating_sub(10));
+        stream.integrate_trace_retain_keys(&watermark, |k, ts| *k >= ts.saturating_sub(10));
 
         let mut expected_batches = output_set_updates().into_iter();
 
@@ -1461,7 +1461,7 @@ mod test {
             |k, v| (*k, *v),
             |ts1, ts2| (max(ts1.0, ts2.0), max(ts1.1, ts2.1)),
         );
-        stream.integrate_trace_retain_values(&watermark, |ts, v| *v >= ts.1.saturating_sub(10));
+        stream.integrate_trace_retain_values(&watermark, |v, ts| *v >= ts.1.saturating_sub(10));
 
         let mut expected_batches = output_map_updates().into_iter();
 
