@@ -268,30 +268,12 @@ public class PostgresInt2Tests extends SqlIoTest {
         );
     }
 
-    // Ignored because this fails in Postgres but here we get:
-    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
+    @Test
     public void testSelectOverflow() {
-        String error_message = "INT2 out of range";
-        // We get:
-        // L: (Some(-32767), Some(2))x1 --> wraps around
-        // L: (Some(-1234), Some(-2468))x1
-        // L: (Some(0), Some(0))x1
-        // L: (Some(1234), Some(2468))x1
-        // L: (Some(32767), Some(-2))x1 --> wraps around
-        // Taken from: https://github.com/postgres/postgres/blob/c161ab74f76af8e0f3c6b349438525ad9575683b/src/test/regress/expected/int2.out#L202C1-L203C30
-        this.runtimeFail("SELECT i.f1, i.f1 * 2::INT2 AS x FROM INT2_TBL i", error_message, this.getEmptyIOPair());
-
-        // We get:
-        // L: (Some(-32767), Some(-32765))x1
-        // L: (Some(-1234), Some(-1232))x1
-        // L: (Some(0), Some(2))x1
-        // L: (Some(1234), Some(1236))x1
-        // L: (Some(32767), Some(-32767))x1 --> wraps around
-        // https://github.com/postgres/postgres/blob/c161ab74f76af8e0f3c6b349438525ad9575683b/src/test/regress/expected/int2.out#L223
-        this.runtimeFail( "SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT2_TBL i", error_message, this.getEmptyIOPair());
-
-        // Similarly,
-        this.runtimeFail("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT2_TBL i;", error_message, this.getEmptyIOPair());
+        String err = "arithmetic overflow";
+        this.runtimeFail("SELECT i.f1, i.f1 * 2::INT2 AS x FROM INT2_TBL i", err);
+        this.runtimeFail( "SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT2_TBL i", err);
+        this.runtimeFail("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT2_TBL i", err);
     }
 
     // This passes for the Calcite version but fails for the run time version
@@ -307,10 +289,12 @@ public class PostgresInt2Tests extends SqlIoTest {
     }
 
     @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
-    public void testINT2MINOverflowError() {
-        // This fails in Postgres, but we get: `-32768`
-        this.runtimeFail("SELECT (-32768)::int2 * (-1)::int2", "attempt to multiply with overflow", this.getEmptyIOPair());
+    public void testINT2MINOverflowErrorMul() {
+        this.runtimeFail("SELECT (-32768)::int2 * (-1)::int2", "arithmetic overflow");
+    }
 
-        this.runtimeFail("SELECT (-32768)::int2 / (-1)::int2", "attempt to divide with overflow", this.getEmptyIOPair());
+    @Test
+    public void testINT2MINOverflowErrorDiv() {
+        this.runtimeFail("SELECT (-32768)::int2 / (-1)::int2", "overflow");
     }
 }

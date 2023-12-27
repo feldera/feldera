@@ -541,33 +541,79 @@ public class PostgresInt8Tests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
+    @Test
     public void testSelectOverflow() {
-        // This should error and overflow, but we get:
-        // L: (Some(123), Some(456), Some(56088))x1
-        // L: (Some(123), Some(4567890123456789), Some(561850485185185047))x1
-        // L: (Some(4567890123456789), Some(-4567890123456789), Some(-4868582358072306617))x1 --> should've errored
-        // L: (Some(4567890123456789), Some(123), Some(561850485185185047))x1
-        // L: (Some(4567890123456789), Some(4567890123456789), Some(4868582358072306617))x1 --> should've errored
-        this.runtimeFail("SELECT q1, q2, q1 * q2 AS multiply FROM INT8_TBL", "out of range", this.getEmptyIOPair());
+        String queryAndOutput = """
+                SELECT q1, q2, q1 * q2 AS multiply FROM INT8_TBL;
+                 q1 | q2 | multiply
+                ----|----|----------""";
+        this.runtimeFail(queryAndOutput, "overflow");
     }
 
     @Test
     public void testOutOfRangeCast() {
-        this.runtimeFail("select '-9223372036854775809'::int64", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("select '9223372036854775808'::int64", "Overflow", this.getEmptyIOPair());
+        String msg = "Overflow";
 
-        this.runtimeFail("SELECT CAST('4567890123456789' AS int4)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('4567890123456789' AS int2)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('+4567890123456789' AS int4)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('+4567890123456789' AS int2)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('-4567890123456789' AS int4)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('-4567890123456789' AS int2)", "Overflow", this.getEmptyIOPair());
+        this.runtimeFail("""
+            select '-9223372036854775809'::int64;
+             int64
+            -------""",
+            msg
+        );
+
+        this.runtimeFail("""
+            select '9223372036854775808'::int64;
+             int64
+            -------""",
+            msg
+        );
+
+        this.runtimeFail("""
+            select '4567890123456789'::int4;
+             int4
+            -------""",
+            msg
+        );
+
+        this.runtimeFail("""
+            select '4567890123456789'::int2;
+             int2
+            -------""",
+            msg
+        );
+
+        this.runtimeFail("""
+            select '+4567890123456789'::int4;
+             int4
+            -------""",
+            msg
+        );
+
+        this.runtimeFail("""
+            select '+4567890123456789'::int2;
+             int2
+            -------""",
+            msg
+        );
+
+        this.runtimeFail("""
+            select '-4567890123456789'::int4;
+             int4
+            -------""",
+            msg
+        );
+
+        this.runtimeFail("""
+            select '-4567890123456789'::int2;
+             int2
+            -------""",
+            msg
+        );
     }
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/1199")
     public void issue1199() {
-        this.runtimeFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "Overflow", this.getEmptyIOPair());
+        this.runtimeFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "Overflow");
     }
 
     @Test @Ignore("Modulo edge case integer overflow: https://github.com/feldera/feldera/issues/1195")
@@ -583,13 +629,18 @@ public class PostgresInt8Tests extends SqlIoTest {
         );
     }
 
+    // These fail due to Calcite Integer wrapping during Multiplication
     @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
-    public void testINT64MINOverflowError() {
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int64", "attempt to multiply with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int64", "attempt to divide with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int4", "attempt to multiply with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int4", "attempt to divide with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int2", "attempt to multiply with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int2", "attempt to divide with overflow", this.getEmptyIOPair());
+    public void testINT64MINOverflowErrorMul() {
+        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int64", "overflow");
+        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int4", "overflow");
+        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int2", "overflow");
+    }
+
+    @Test
+    public void testINT64MINOverflowErrorDiv() {
+        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int64", "overflow");
+        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int4", "overflow");
+        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int2", "overflow");
     }
 }

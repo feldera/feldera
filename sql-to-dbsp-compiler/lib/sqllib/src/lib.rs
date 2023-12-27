@@ -7,6 +7,7 @@ pub mod geopoint;
 pub mod interval;
 pub mod operators;
 pub mod source;
+pub mod sql_arithmetic;
 pub mod string;
 pub mod timestamp;
 

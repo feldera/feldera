@@ -1,12 +1,12 @@
 use dbsp::algebra::{F32, F64};
 use num::PrimInt;
+use num_traits::CheckedAdd;
 
 use crate::{
     for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
-    for_all_numeric_operator, some_existing_operator, some_operator,
+    for_all_numeric_operator, some_existing_operator, some_operator, sql_arithmetic::SQLArithmetic,
 };
 
-use core::ops::{Add, Mul, Sub};
 use rust_decimal::Decimal;
 
 #[inline(always)]
@@ -86,9 +86,9 @@ for_all_compare!(gte, bool);
 #[inline(always)]
 fn plus<T>(left: T, right: T) -> T
 where
-    T: Add<Output = T>,
+    T: SQLArithmetic,
 {
-    left + right
+    left.plus(&right)
 }
 
 for_all_numeric_operator!(plus);
@@ -96,9 +96,9 @@ for_all_numeric_operator!(plus);
 #[inline(always)]
 fn minus<T>(left: T, right: T) -> T
 where
-    T: Sub<Output = T>,
+    T: SQLArithmetic,
 {
-    left - right
+    left.minus(&right)
 }
 
 for_all_numeric_operator!(minus);
@@ -116,9 +116,9 @@ for_all_int_operator!(modulo);
 #[inline(always)]
 fn times<T>(left: T, right: T) -> T
 where
-    T: Mul<Output = T>,
+    T: SQLArithmetic,
 {
-    left * right
+    left.mul(&right)
 }
 
 for_all_numeric_operator!(times);

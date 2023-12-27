@@ -284,58 +284,15 @@ public class PostgresInt4Tests extends SqlIoTest {
         );
     }
 
-    // Check PostgresInt2Tests::testSelectOverflow for details
-    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
+    @Test
     public void testSelectOverflow() {
         String error = "overflow";
-
-        // We get:
-        // L: (Some(-2147483647), Some(2))x1 --> wraps around
-        // L: (Some(-123456), Some(-246912))x1
-        // L: (Some(0), Some(0))x1
-        // L: (Some(123456), Some(246912))x1
-        // L: (Some(2147483647), Some(-2))x1 --> wraps around
-        this.runtimeFail("SELECT i.f1, i.f1 * '2'::INT2 AS x FROM INT4_TBL i", error, this.getEmptyIOPair());
-
-        // We get:
-        // L: (Some(-2147483647), Some(2))x1 --> wraps around
-        // L: (Some(-123456), Some(-246912))x1
-        // L: (Some(0), Some(0))x1
-        // L: (Some(123456), Some(246912))x1
-        // L: (Some(2147483647), Some(-2))x1 --> wraps around
-        this.runtimeFail("SELECT i.f1, i.f1 * '2'::INT4 AS x FROM INT4_TBL i", error, this.getEmptyIOPair());
-
-        // We get:
-        // L: (Some(-2147483647), Some(-2147483645))x1
-        // L: (Some(-123456), Some(-123454))x1
-        // L: (Some(0), Some(2))x1
-        // L: (Some(123456), Some(123458))x1
-        // L: (Some(2147483647), Some(-2147483647))x1 --> wraps around
-        this.runtimeFail("SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT4_TBL i", error, this.getEmptyIOPair());
-
-        // We get:
-        // L: (Some(-2147483647), Some(-2147483645))x1
-        // L: (Some(-123456), Some(-123454))x1
-        // L: (Some(0), Some(2))x1
-        // L: (Some(123456), Some(123458))x1
-        // L: (Some(2147483647), Some(-2147483647))x1 --> wraps around
-        this.runtimeFail("SELECT i.f1, i.f1 + '2'::INT4 AS x FROM INT4_TBL i", error, this.getEmptyIOPair());
-
-        // We get:
-        // L: (Some(-2147483647), Some(2147483647))x1 --> wraps around
-        // L: (Some(-123456), Some(-123458))x1
-        // L: (Some(0), Some(-2))x1
-        // L: (Some(123456), Some(123454))x1
-        // L: (Some(2147483647), Some(2147483645))x1
-        this.runtimeFail("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT4_TBL i", error, this.getEmptyIOPair());
-
-        // We get:
-        // L: (Some(-2147483647), Some(2147483647))x1 --> wraps around
-        // L: (Some(-123456), Some(-123458))x1
-        // L: (Some(0), Some(-2))x1
-        // L: (Some(123456), Some(123454))x1
-        // L: (Some(2147483647), Some(2147483645))x1
-        this.runtimeFail("SELECT i.f1, i.f1 - '2'::INT4 AS x FROM INT4_TBL i", error, this.getEmptyIOPair());
+        this.runtimeFail("SELECT i.f1, i.f1 * '2'::INT2 AS x FROM INT4_TBL i", error);
+        this.runtimeFail("SELECT i.f1, i.f1 * '2'::INT4 AS x FROM INT4_TBL i", error);
+        this.runtimeFail("SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT4_TBL i", error);
+        this.runtimeFail("SELECT i.f1, i.f1 + '2'::INT4 AS x FROM INT4_TBL i", error);
+        this.runtimeFail("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT4_TBL i", error);
+        this.runtimeFail("SELECT i.f1, i.f1 - '2'::INT4 AS x FROM INT4_TBL i", error);
     }
 
     // This passes for the Calcite version but fails for the run time version
@@ -351,10 +308,15 @@ public class PostgresInt4Tests extends SqlIoTest {
         );
     }
 
+    // Fails for the Calcite optimized version
     @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
-    public void testINT4MINOverflowError() {
-        this.runtimeFail("SELECT (-2147483648)::int4 * (-1)::int2", "attempt to multiply with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-2147483648)::int4 / (-1)::int2", "attempt to divide with overflow", this.getEmptyIOPair());
+    public void testINT4MINOverflowErrorMul() {
+        this.runtimeFail("SELECT (-2147483648)::int4 * (-1)::int2", "overflow");
+    }
+
+    @Test
+    public void testINT4MINOverflowErrorDiv() {
+        this.runtimeFail("SELECT (-2147483648)::int4 / (-1)::int2", "overflow");
     }
 
     @Test

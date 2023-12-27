@@ -540,6 +540,43 @@ public abstract class SqlIoTest extends BaseSQLTests {
         this.addRustTestCase(query, compiler, circuit, streams);
     }
 
+    // Unsure what to do with `data`
+    // We already create an InputOutputPair from the preparedInputs and the expected result
+    private void runtimeFailInner(boolean optimize, String query, String expected, String message, InputOutputPair... _data) {
+        DBSPCompiler compiler = this.testCompiler(optimize);
+        this.prepareData(compiler);
+        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        if (!compiler.options.languageOptions.throwOnError)
+            compiler.throwIfErrorsOccurred();
+        compiler.optimize();
+        DBSPCircuit circuit = getCircuit(compiler);
+        DBSPType outputType = circuit.getOutputType(0);
+        DBSPZSetLiteral.Contents result = this.parseTable(expected, outputType);
+        InputOutputPair streams = new InputOutputPair(
+                this.getPreparedInputs(compiler),
+                new DBSPZSetLiteral.Contents[] { result }
+        );
+
+        this.addFailingRustTestCase(query, message, compiler, circuit, streams);
+    }
+
+    @Override
+    protected void runtimeFail(String queryAndOutput, String message, InputOutputPair... data) {
+        int semicolon = queryAndOutput.indexOf(';');
+        String query;
+        String expected;
+        if (semicolon > 0) {
+            query = queryAndOutput.substring(0, semicolon);
+            expected = queryAndOutput.substring(semicolon + 1);
+        } else {
+            query = queryAndOutput;
+            expected = "------";
+        }
+
+        this.runtimeFailInner(true, query, expected, message, data);
+        this.runtimeFailInner(false, query, expected, message, data);
+    }
+
     /**
      * Test a query followed by the expected output.
      * The query ends at the semicolon.
