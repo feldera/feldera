@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -49,6 +50,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * The keys in this map can be both operators from this circuit and from
      * the expanded circuit. */
     public final Map<DBSPOperator, DBSPOperator> bound;
+
+    static final boolean useControlledFilters = false;
 
     public InsertLimiters(IErrorReporter reporter,
                           DBSPCircuit expandedCircuit,
@@ -118,10 +121,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         MonotoneValue monotoneValue = this.expansionMonotoneValues.get(ae.integrator);
         ValueProjection projection = monotoneValue.getProjection();
-        DBSPControlledFilterOperator filter =
-                DBSPControlledFilterOperator.create(aggregator.getNode(), source, projection, limiter);
-        this.addOperator(filter);
-        DBSPOperator filteredAggregator = aggregator.withInputs(Linq.list(filter), false);
+        DBSPOperator filteredAggregator;
+        if (useControlledFilters) {
+            DBSPControlledFilterOperator filter =
+                    DBSPControlledFilterOperator.create(aggregator.getNode(), source, projection, limiter);
+            this.addOperator(filter);
+            filteredAggregator = aggregator.withInputs(Linq.list(filter), false);
+        } else {
+            filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        }
 
         // We use the input 1, coming from the integrator
         DBSPOperator limiter2 = this.addBounds(ae.aggregator, 1);
@@ -134,11 +142,25 @@ public class InsertLimiters extends CircuitCloneVisitor {
         MonotoneValue monotoneValue2 = this.expansionMonotoneValues.get(ae.aggregator);
         ValueProjection projection2 = monotoneValue2.getProjection();
         // A second controlled filter for the output of the aggregator
-        DBSPControlledFilterOperator filter2 = DBSPControlledFilterOperator.create(
-                aggregator.getNode(), filteredAggregator, projection2, limiter2);
+        if (useControlledFilters) {
+            DBSPOperator filter2 = DBSPControlledFilterOperator.create(
+                    aggregator.getNode(), filteredAggregator, projection2, limiter2);
+            Utilities.putNew(this.bound, aggregator, filter2);
+            this.map(aggregator, filter2);
+        } else {
+            // The before and after filters are actually identical for now.
+            DBSPIntegrateTraceRetainKeysOperator before = DBSPIntegrateTraceRetainKeysOperator.create(
+                    aggregator.getNode(), source, projection2, limiter2);
+            this.addOperator(before);
+            // output of 'before' is never used
 
-        Utilities.putNew(this.bound, aggregator, filter2);
-        this.map(aggregator, filter2);
+            DBSPIntegrateTraceRetainKeysOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
+                    aggregator.getNode(), filteredAggregator, projection2, limiter2);
+            this.addOperator(after);
+            // output of 'after'' is never used
+
+            this.map(aggregator, filteredAggregator, false);
+        }
     }
 
     @Override
@@ -175,8 +197,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // The waterline operator will compute the *minimum legal value* of all the
         // inputs that have a lateness attached.  The output signature contains only
-        // the columns that have lateness.  We could split this into 2 operators,
-        // one to compute the projection and the other one to perform the subtraction.
+        // the columns that have lateness.
         this.addOperator(operator);
         DBSPTupleExpression zero = new DBSPTupleExpression(zeros, false);
         DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);

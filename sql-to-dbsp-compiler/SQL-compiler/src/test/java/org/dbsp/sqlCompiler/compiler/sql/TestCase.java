@@ -57,7 +57,7 @@ class TestCase {
     public final String message;
 
     TestCase(String name, String javaTestName, DBSPCompiler compiler,
-             DBSPCircuit circuit, String message, InputOutputPair... data) {
+             DBSPCircuit circuit, @Nullable String message, InputOutputPair... data) {
         this.name = name;
         this.javaTestName = javaTestName;
         this.circuit = circuit;

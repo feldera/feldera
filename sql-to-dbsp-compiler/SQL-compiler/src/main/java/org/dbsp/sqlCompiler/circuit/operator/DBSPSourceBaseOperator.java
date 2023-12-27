@@ -37,15 +37,16 @@ public abstract class DBSPSourceBaseOperator extends DBSPOperator {
      * Create a DBSP operator that is a source to the dataflow graph.
      * @param node        Calcite node for the statement creating the table
      *                    that this node is created from.
+     * @param isMultiset  True if the source data can be a multiset.
      * @param outputType  Type of table.
      * @param comment     A comment describing the operator.
      * @param name        The name of the table that this operator is created from.
      */
     public DBSPSourceBaseOperator(
             CalciteObject node,
-            DBSPType outputType, @Nullable String comment,
+            DBSPType outputType, boolean isMultiset, @Nullable String comment,
             String name) {
-        super(node, "source " + name, null, outputType, false, comment, name);
+        super(node, "source " + name, null, outputType, isMultiset, comment, name);
     }
 
     @Override

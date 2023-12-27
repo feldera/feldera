@@ -63,7 +63,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
         DBSPOperator input = this.mapped(operator.input());
         DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, operator.comment);
+                operator.getNode(), operator.outputType, operator.input().isMultiset, operator.comment);
         this.addOperator(delayOutput);
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), input, delayOutput);
         this.map(operator, sum);
@@ -81,7 +81,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
         DBSPOperator input = this.mapped(operator.input());
         DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, operator.comment);
+                operator.getNode(), operator.outputType, operator.input().isMultiset, operator.comment);
         this.addOperator(delayOutput);
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), input, delayOutput);
         this.addOperator(sum);
@@ -167,7 +167,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), input);
         this.addOperator(integral);
         DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, operator.comment);
+                operator.getNode(), operator.outputType, false, operator.comment);
         this.addOperator(delayOutput);
         DBSPOperator result = new DBSPPartitionedRadixTreeAggregateOperator(
                 operator.getNode(), operator.function, operator.aggregate, input, integral, delayOutput);
@@ -193,7 +193,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.addOperator(prta);
 
         DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, operator.comment);
+                operator.getNode(), operator.outputType, false, operator.comment);
         this.addOperator(delayOutput);
 
         DBSPPartitionedRollingAggregateOperator ra = new DBSPPartitionedRollingAggregateOperator(operator.getNode(),
@@ -220,7 +220,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
         DBSPOperator input = this.mapped(operator.input());
         DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, operator.comment);
+                operator.getNode(), operator.outputType, false, operator.comment);
         this.addOperator(delayOutput);
 
         DBSPUpsertOperator upsert = new DBSPUpsertOperator(operator.getNode(), input, delayOutput);

@@ -51,7 +51,7 @@ public class CircuitOptimizer implements ICompilerComponent {
     @SuppressWarnings("ConstantValue")
     CircuitTransform monotonicity() {
         return circuit -> {
-            final boolean debug = false;
+            final boolean debug = true;
 
             if (debug)
                 ToDotVisitor.toDot(compiler, "original.jpg", true, "jpg", circuit);

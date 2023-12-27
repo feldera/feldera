@@ -240,11 +240,17 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPOperator.class));
     }
 
-    public VisitDecision preorder(DBSPSourceBaseOperator node) { return this.preorder(node.to(DBSPOperator.class)); }
+    public VisitDecision preorder(DBSPSourceBaseOperator node) {
+        return this.preorder(node.to(DBSPOperator.class));
+    }
 
-    public VisitDecision preorder(DBSPDelayOutputOperator node) { return this.preorder(node.to(DBSPSourceBaseOperator.class)); }
+    public VisitDecision preorder(DBSPDelayOutputOperator node) {
+        return this.preorder(node.to(DBSPSourceBaseOperator.class));
+    }
 
-    public VisitDecision preorder(DBSPSourceTableOperator node) { return this.preorder(node.to(DBSPSourceBaseOperator.class)); }
+    public VisitDecision preorder(DBSPSourceTableOperator node) {
+        return this.preorder(node.to(DBSPSourceBaseOperator.class));
+    }
 
     public VisitDecision preorder(DBSPSourceMultisetOperator node) {
         return this.preorder(node.to(DBSPSourceTableOperator.class));
@@ -267,6 +273,10 @@ public abstract class CircuitVisitor
     }
 
     public VisitDecision preorder(DBSPControlledFilterOperator node) {
+        return this.preorder(node.to(DBSPOperator.class));
+    }
+
+    public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator node) {
         return this.preorder(node.to(DBSPOperator.class));
     }
 
@@ -441,6 +451,10 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPControlledFilterOperator node) {
+        this.postorder(node.to(DBSPOperator.class));
+    }
+
+    public void postorder(DBSPIntegrateTraceRetainKeysOperator node) {
         this.postorder(node.to(DBSPOperator.class));
     }
 
