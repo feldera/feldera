@@ -103,7 +103,7 @@ const JSONConfigEditor = (props: {
       }
     })
     monaco.editor.setModelMarkers(editorRef.current.getModel()!, 'config-errors', errorMarkers)
-  }, [errors, editorRef])
+  }, [errors, editorRef, monaco.MarkerSeverity.Error, monaco.editor])
   function handleEditorDidMount(editor: editor.IStandaloneCodeEditor, monaco: Monaco) {
     editorRef.current = editor
     // Only process input when we have finished typing

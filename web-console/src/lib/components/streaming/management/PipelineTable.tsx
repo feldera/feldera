@@ -574,31 +574,39 @@ export default function PipelineTable() {
 }
 
 const usePipelineStatus = (params: { row: Pipeline }) => {
+  const { data: pipelines } = useQuery({
+    ...PipelineManagerQuery.pipelines()
+  })
   const pipeline = params.row.descriptor
   const curProgramQuery = useQuery({
     ...PipelineManagerQuery.programs(),
     enabled: pipeline.program_name !== null,
     refetchInterval: 2000
   })
-  const { data: pipelines } = useQuery({
-    ...PipelineManagerQuery.pipelines()
-  })
 
-  const programStatus =
-    pipeline.program_name === null
-      ? ('NoProgram' as const)
-      : curProgramQuery.isPending || curProgramQuery.isError
-        ? ('NotReady' as const)
-        : (programData => {
-            invariant(programData, 'Program data should be available')
-            return match(programData.status)
-              .with('Success', () => 'Ready' as const)
-              .with('CompilingRust', () => 'CompilingRust' as const)
-              .with('None', 'CompilingSql', () => 'NotReady' as const)
-              .with('Pending', () => 'Pending' as const)
-              .otherwise(() => 'Error' as const)
-          })(curProgramQuery.data.find(p => p.name === pipeline.program_name))
+  const programStatus = (() => {
+    if (pipeline.program_name === null) {
+      return 'NoProgram' as const
+    }
+    if (curProgramQuery.isPending || curProgramQuery.isError) {
+      return 'NotReady' as const
+    }
+    // Corresponding programData may not be found by name if a program name was changed,
+    // and pipelines() and program() queries did not update simultaneously.
+    // In that case, 'NoProgram' status will be shortly shown until all queries update to reflect the change.
+    const programData = curProgramQuery.data.find(p => p.name === pipeline.program_name)
+    if (!programData) {
+      return 'NoProgram' as const
+    }
+    return match(programData.status)
+      .with('Success', () => 'Ready' as const)
+      .with('CompilingRust', () => 'CompilingRust' as const)
+      .with('None', 'CompilingSql', () => 'NotReady' as const)
+      .with('Pending', () => 'Pending' as const)
+      .otherwise(() => 'Error' as const)
+  })()
 
+  // Row's pipeline will not be found within pipelines() query if it was just deleted
   const currentStatus =
     pipelines?.find(p => p.descriptor.pipeline_id === pipeline.pipeline_id)?.state.current_status ??
     PipelineStatus.UNKNOWN

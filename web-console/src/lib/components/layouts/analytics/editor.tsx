@@ -351,6 +351,7 @@ const useCompileProjectIfChanged = (
     isError,
     state,
     project.program_id,
+    project.name,
     project.version,
     project.status,
     lastCompiledVersion,
@@ -420,6 +421,7 @@ const usePollCompilationStatus = (
     project.status,
     project.version,
     project.program_id,
+    project.name,
     setLastCompiledVersion,
     setProject,
     queryClient
