@@ -159,7 +159,10 @@ pub fn cast_to_Date_Date(value: Date) -> Date {
     value
 }
 
-some_polymorphic_function1!(cast_to_Date, Date, Date, Date);
+#[inline]
+pub fn cast_to_Date_DateN(value: Option<Date>) -> Date {
+    value.unwrap()
+}
 
 #[inline]
 pub fn cast_to_DateN_Date(value: Date) -> Option<Date> {

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -206,6 +207,11 @@ public class MonotoneOperators extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPIntegrateOperator node) {
+        this.identity(node);
+    }
+
+    @Override
+    public void postorder(DBSPDelayedIntegralOperator node) {
         this.identity(node);
     }
 

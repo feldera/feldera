@@ -32,7 +32,7 @@ import java.util.Objects;
  * that takes an input element and a scalar; when the function returns 'true'
  * the input element makes it to the output. */
 public class DBSPControlledFilterOperator extends DBSPOperator {
-    protected DBSPControlledFilterOperator(
+    public DBSPControlledFilterOperator(
             CalciteObject node, DBSPExpression expression,
             DBSPOperator data, DBSPOperator control) {
         super(node, "controlled_filter", expression, data.getType(), data.isMultiset);

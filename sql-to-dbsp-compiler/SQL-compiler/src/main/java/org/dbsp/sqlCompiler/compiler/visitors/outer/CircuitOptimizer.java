@@ -110,6 +110,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         passes.add(new RemoveDeindexOperator(reporter));
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
+        passes.add(new Simplify(reporter).circuitRewriter());
         return new Passes(reporter, passes);
     }
 

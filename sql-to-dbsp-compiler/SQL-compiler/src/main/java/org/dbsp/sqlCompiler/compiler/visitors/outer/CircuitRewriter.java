@@ -53,7 +53,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     public DBSPExpression transform(DBSPExpression expression) {
-        return this.transform.apply(expression).to(DBSPExpression.class);
+        IDBSPInnerNode result = this.transform.apply(expression);
+        return result.to(DBSPExpression.class);
     }
 
     @Nullable public DBSPExpression transformN(@Nullable DBSPExpression expression) {
@@ -216,6 +217,36 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPJoinOperator(operator.getNode(),
                     outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
+                    sources.get(0), sources.get(1));
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPControlledFilterOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || Linq.different(sources, operator.inputs)
+                || function != operator.getFunction()) {
+            result = new DBSPControlledFilterOperator(operator.getNode(), function,
+                    sources.get(0), sources.get(1));
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || Linq.different(sources, operator.inputs)
+                || function != operator.getFunction()) {
+            result = new DBSPIntegrateTraceRetainKeysOperator(operator.getNode(), function,
                     sources.get(0), sources.get(1));
         }
         this.map(operator, result);

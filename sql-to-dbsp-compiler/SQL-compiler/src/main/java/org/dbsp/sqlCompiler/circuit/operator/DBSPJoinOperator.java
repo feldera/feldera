@@ -34,9 +34,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Corresponds to a DBSP join operator, which may include multiple integrators.
- */
+/** Corresponds to a DBSP join operator, which may include multiple integrators. */
 public class DBSPJoinOperator extends DBSPOperator {
     public DBSPJoinOperator(
             CalciteObject node, DBSPTypeZSet outputType,
