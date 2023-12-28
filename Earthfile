@@ -1,4 +1,4 @@
-VERSION 0.7
+VERSION --try 0.7
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install --yes sudo
@@ -99,6 +99,7 @@ build-webui:
     COPY web-console/next.config.js ./web-console/next.config.js
     COPY web-console/next.d.ts ./web-console/next.d.ts
     COPY web-console/tsconfig.json ./web-console/tsconfig.json
+    COPY web-console/.env ./web-console/.env
 
     RUN cd web-console && yarn format:check
     RUN cd web-console && yarn build
@@ -542,13 +543,13 @@ test-docker-compose-stable:
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --pull ghcr.io/feldera/demo-container:0.6.0
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo && \
-            # This should run the latest version of the code and in the process, trigger a migration. 
+            # This should run the latest version of the code and in the process, trigger a migration.
             COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" FELDERA_VERSION=latest RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml up -d db pipeline-manager redpanda && \
             sleep 10 && \
             # Exercise a few simple workflows in the API
             curl http://localhost:8080/v0/programs &&  \
             curl http://localhost:8080/v0/pipelines &&  \
-            curl http://localhost:8080/v0/connectors 
+            curl http://localhost:8080/v0/connectors
     END
 
 test-debezium:
@@ -608,29 +609,46 @@ integration-tests:
 ui-playwright-container:
     FROM +install-deps
     COPY web-console .
+    COPY deploy/docker-compose.yml .
+    COPY deploy/.env .
     WORKDIR web-console
     RUN yarn install
     RUN yarn playwright install
     RUN yarn playwright install-deps
     ENV CI=true
-    ENV PLAYWRIGHT_API_ORIGIN=http://pipeline-manager:8080
-    ENV PLAYWRIGHT_APP_ORIGIN=http://pipeline-manager:8080
+    ENV PLAYWRIGHT_API_ORIGIN=http://localhost:8080/
+    ENV PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/
     ENV DISPLAY=
-    ENTRYPOINT ["yarn", "playwright", "test"]
-    SAVE IMAGE uitest:latest
+
+    # Install docker compose - earthly can do this automatically, but it installs an older version
+    ENV DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+    RUN mkdir -p $DOCKER_CONFIG/cli-plugins
+    RUN curl -SL https://github.com/docker/compose/releases/download/v2.24.0-birthday.10/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+    RUN chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+
+    # Install zip to prepare test artifacts for export
+    RUN apt-get install -y zip
 
 ui-playwright-tests:
-    FROM earthly/dind:alpine
-    COPY deploy/docker-compose.yml .
-    COPY deploy/.env .
+    FROM +ui-playwright-container
+
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --compose docker-compose.yml \
-                --service db \
-                --service pipeline-manager \
-                --load uitest:latest=+ui-playwright-container
-        RUN sleep 5 && docker run --env-file .env --network default_default uitest:latest
+
+    TRY
+        WITH DOCKER --pull postgres \
+                    --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                    --compose ../docker-compose.yml \
+                    --service db \
+                    --service pipeline-manager
+            RUN if yarn playwright test; then exit_code=0; else exit_code=$?; fi \
+                && cd /dbsp \
+                && zip -r playwright-report.zip playwright-report \
+                && zip -r test-results.zip test-results \
+                && exit $exit_code
+        END
+    FINALLY
+        SAVE ARTIFACT --if-exists playwright-report.zip AS LOCAL ./playwright-artifacts/
+        SAVE ARTIFACT --if-exists test-results.zip      AS LOCAL ./playwright-artifacts/
     END
 
 benchmark:

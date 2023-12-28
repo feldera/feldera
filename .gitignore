@@ -56,3 +56,6 @@ __pycache__
 
 # clone of the benchmark repo
 gh-pages
+
+# Playwright
+playwright-artifacts/

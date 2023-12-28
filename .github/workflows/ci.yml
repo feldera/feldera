@@ -93,3 +93,12 @@ jobs:
         run: earthly --verbose -P --ci +all-tests
         env:
           NEXT_PUBLIC_MUIX_PRO_KEY: ${{ secrets.muix_license }}
+
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-artifacts
+          path: playwright-artifacts/
+          retention-days: 10
+      - name: Remove test artifacts from the CI machine
+        run: rm -f playwright-artifacts/*
