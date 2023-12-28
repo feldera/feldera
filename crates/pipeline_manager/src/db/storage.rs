@@ -22,91 +22,55 @@ pub(crate) trait Storage {
         with_code: bool,
     ) -> Result<Vec<ProgramDescr>, DBError>;
 
-    /// Retrieve program descriptor.
+    /// Update program schema.
     ///
-    /// Returns a `DBError:UnknownProgram` error if `program_id` is not found in
-    /// the database.
-    async fn get_program_by_id(
+    /// # Note
+    /// This should be called after the SQL compilation succeeded, e.g., in the
+    /// same transaction that sets status to  [`ProgramStatus::CompilingRust`].
+    async fn set_program_schema(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-        with_code: bool,
-    ) -> Result<ProgramDescr, DBError> {
-        self.get_program_if_exists(tenant_id, program_id, with_code)
-            .await?
-            .ok_or(DBError::UnknownProgram { program_id })
-    }
-
-    /// Retrieve program descriptor.
-    ///
-    /// Returns a `DBError:UnknownName` error if `name` is not found in
-    /// the database.
-    async fn get_program_by_name(
-        &self,
-        tenant_id: TenantId,
-        name: &str,
-        with_code: bool,
-    ) -> Result<ProgramDescr, DBError> {
-        self.lookup_program(tenant_id, name, with_code)
-            .await?
-            .ok_or_else(|| DBError::UnknownName { name: name.into() })
-    }
-
-    /// Validate program version and retrieve program descriptor.
-    ///
-    /// Returns `DBError::UnknownProgram` if `program_id` is not found in the
-    /// database. Returns `DBError::OutdatedProgramVersion` if the current
-    /// program version differs from `expected_version`.
-    async fn get_program_guarded(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
-    ) -> Result<ProgramDescr, DBError> {
-        let descr = self.get_program_by_id(tenant_id, program_id, false).await?;
-        if descr.version != expected_version {
-            return Err(DBError::OutdatedProgramVersion {
-                latest_version: descr.version,
-            });
-        }
-
-        Ok(descr)
-    }
-
-    /// Queue program for compilation by setting its status to
-    /// [`ProgramStatus::Pending`] and schema to null.
-    ///
-    /// Change program status to [`ProgramStatus::Pending`].
-    async fn prepare_program_for_compilation(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
+        schema: ProgramSchema,
     ) -> Result<(), DBError> {
-        let descr = self
-            .get_program_guarded(tenant_id, program_id, expected_version)
-            .await?;
-
-        // Do nothing if the program:
-        // * is already pending (we don't want to bump its `status_since` field, which
-        //   would move it to the end of the queue),
-        // * if compilation is already in progress,
-        // * or if the program has already been compiled
-        if descr.status == ProgramStatus::Pending
-            || descr.status.is_compiling()
-            || descr.status == ProgramStatus::Success
-        {
-            return Ok(());
-        }
-
-        self.set_program_for_compilation(
+        self.update_program(
             tenant_id,
             program_id,
-            expected_version,
-            ProgramStatus::Pending,
+            &None,
+            &None,
+            &None,
+            &None,
+            &Some(schema),
+            None,
         )
         .await?;
+        Ok(())
+    }
 
+    /// Update program status after a version check.
+    ///
+    /// Updates program status to `status` if the current program version in the
+    /// database matches `expected_version`. Setting the status to
+    /// `ProgramStatus::Pending` resets the schema and is used to queue the
+    /// program for compilation.
+    async fn set_program_status_guarded(
+        &self,
+        tenant_id: TenantId,
+        program_id: ProgramId,
+        expected_version: Version,
+        status: ProgramStatus,
+    ) -> Result<(), DBError> {
+        self.update_program(
+            tenant_id,
+            program_id,
+            &None,
+            &None,
+            &None,
+            &Some(status),
+            &None,
+            Some(expected_version),
+        )
+        .await?;
         Ok(())
     }
 
@@ -122,75 +86,36 @@ pub(crate) trait Storage {
 
     /// Update program name, description and, optionally, code.
     /// XXX: Description should be optional too
+    #[allow(clippy::too_many_arguments)]
     async fn update_program(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
-        program_name: &str,
-        program_description: &str,
+        program_name: &Option<String>,
+        program_description: &Option<String>,
         program_code: &Option<String>,
+        status: &Option<ProgramStatus>,
+        schema: &Option<ProgramSchema>,
+        guard: Option<Version>,
     ) -> Result<Version, DBError>;
 
     /// Retrieve program descriptor.
     ///
     /// Returns `None` if `program_id` is not found in the database.
-    async fn get_program_if_exists(
+    async fn get_program_by_id(
         &self,
         tenant_id: TenantId,
         program_id: ProgramId,
         with_code: bool,
-    ) -> Result<Option<ProgramDescr>, DBError>;
+    ) -> Result<ProgramDescr, DBError>;
 
     /// Lookup program by name.
-    async fn lookup_program(
+    async fn get_program_by_name(
         &self,
         tenant_id: TenantId,
         program_name: &str,
         with_code: bool,
-    ) -> Result<Option<ProgramDescr>, DBError>;
-
-    /// Update program status.
-    ///
-    /// # Note
-    /// - Doesn't check that the program exists.
-    /// - Resets schema to null.
-    async fn set_program_for_compilation(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        version: Version,
-        status: ProgramStatus,
-    ) -> Result<(), DBError>;
-
-    /// Update program status after a version check.
-    ///
-    /// Updates program status to `status` if the current program version in the
-    /// database matches `expected_version`.
-    ///
-    /// # Note
-    /// This intentionally does not throw an error if there is a program version
-    /// mismatch and instead does just not update. It's used by the compiler to
-    /// update status and in case there is a newer version it is expected that
-    /// the compiler just picks up and runs the next job.
-    async fn set_program_status_guarded(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
-        status: ProgramStatus,
-    ) -> Result<(), DBError>;
-
-    /// Update program schema.
-    ///
-    /// # Note
-    /// This should be called after the SQL compilation succeeded, e.g., in the
-    /// same transaction that sets status to  [`ProgramStatus::CompilingRust`].
-    async fn set_program_schema(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        schema: ProgramSchema,
-    ) -> Result<(), DBError>;
+    ) -> Result<ProgramDescr, DBError>;
 
     /// Delete program from the database.
     ///

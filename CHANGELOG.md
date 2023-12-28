@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - WebConsole: group.id Kafka connector configuration field is now optional
 - pipeline-manager: reference programs and connectors by name when creating pipelines (#1143)
+- pipeline-manager: update-program should allow any field to be updated (#1191)
 
 ### Added
 - SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
