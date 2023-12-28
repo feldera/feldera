@@ -69,6 +69,102 @@ public class FunctionsTest extends SqlIoTest {
                         ---
                          0
                         (1 row)
+                        
+                        SELECT (8)::tinyint % (3)::tinyint as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (8)::int2 % (3)::int2 as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (8)::int4 % (3)::int4 as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (8)::int64 % (3)::int64 as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (8)::tinyint % (-3)::tinyint as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (8)::int2 % (-3)::int2 as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (8)::int4 % (-3)::int4 as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (8)::int64 % (-3)::int64 as x;
+                        x
+                        ---
+                         2
+                        (1 row)
+                        
+                        SELECT (-8)::tinyint % (3)::tinyint as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
+                        
+                        SELECT (-8)::int2 % (3)::int2 as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
+                        
+                        SELECT (-8)::int4 % (3)::int4 as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
+                        
+                        SELECT (-8)::int64 % (3)::int64 as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
+                        
+                        SELECT (-8)::tinyint % (-3)::tinyint as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
+                        
+                        SELECT (-8)::int2 % (-3)::int2 as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
+                        
+                        SELECT (-8)::int4 % (-3)::int4 as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
+                        
+                        SELECT (-8)::int64 % (-3)::int64 as x;
+                        x
+                        ---
+                         -2
+                        (1 row)
                         """
         );
     }
@@ -80,6 +176,13 @@ public class FunctionsTest extends SqlIoTest {
         this.qf("SELECT '-32768'::int2 / 0::int2", "attempt to divide by zero", true);
 
         this.qf("SELECT '-32768'::int2 / 0::int2", "attempt to divide by zero", false);
+    }
+
+    @Test
+    public void issue1187divisorZero() {
+        this.runtimeFail("SELECT 8 % 0", "attempt to calculate the remainder with a divisor of zero", this.getEmptyIOPair());
+
+        this.shouldWarn("SELECT 8 % 0", "Modulus by constant zero value as divisor.");
     }
 
     @Test

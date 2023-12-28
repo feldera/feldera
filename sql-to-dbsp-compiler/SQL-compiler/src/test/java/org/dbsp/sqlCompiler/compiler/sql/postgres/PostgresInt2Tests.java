@@ -294,8 +294,7 @@ public class PostgresInt2Tests extends SqlIoTest {
         this.runtimeFail("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT2_TBL i;", error_message, this.getEmptyIOPair());
     }
 
-    // This passes for the Calcite version but fails for the run time version
-    @Test @Ignore("Modulo edge case integer overflow: https://github.com/feldera/feldera/issues/1195")
+    @Test
     public void testINT2MINOverflow() {
         this.q(
                 """

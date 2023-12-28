@@ -60,6 +60,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Base class that offers support for running SQL tests described as
@@ -576,6 +577,22 @@ public abstract class SqlIoTest extends BaseSQLTests {
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
         Assert.assertTrue(message.contains(messageFragment));
+    }
+
+    /**
+     * Run a query that is expected to give a warning at compile time.
+     * @param query             Query to run.
+     * @param messageFragment   This fragment should appear in the warning message.
+     */
+    public void shouldWarn(String query, String messageFragment) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        this.prepareData(compiler);
+        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        compiler.optimize();
+        Assert.assertTrue(compiler.hasWarnings);
+        String warnings = compiler.messages.messages.stream().filter(error -> error.warning).toList().toString();
+        Assert.assertTrue(warnings.contains(messageFragment));
     }
 
     /**
