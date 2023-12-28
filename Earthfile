@@ -529,15 +529,26 @@ test-docker-compose:
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
     END
 
+# Test whether the stable container image runs with our Docker compose file
+# and whether we can migrate from the last stable version to the latest version
 test-docker-compose-stable:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     ENV FELDERA_VERSION=0.6.0
+    RUN apk --no-cache add curl
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --pull ghcr.io/feldera/pipeline-manager:0.6.0 \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --pull ghcr.io/feldera/demo-container:0.6.0
-        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo && \
+            # This should run the latest version of the code and in the process, trigger a migration. 
+            COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" FELDERA_VERSION=latest RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml up -d db pipeline-manager redpanda && \
+            sleep 10 && \
+            # Exercise a few simple workflows in the API
+            curl http://localhost:8080/v0/programs &&  \
+            curl http://localhost:8080/v0/pipelines &&  \
+            curl http://localhost:8080/v0/connectors 
     END
 
 test-debezium:
@@ -616,6 +627,7 @@ all-tests:
     BUILD +python-bindings-checker
     BUILD +test-sql
     BUILD +test-docker-compose
+    BUILD +test-docker-compose-stable
     BUILD +test-debezium
     BUILD +test-snowflake
     BUILD +integration-tests
