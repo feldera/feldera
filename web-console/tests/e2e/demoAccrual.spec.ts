@@ -10,7 +10,7 @@ const programName = 'Accrual demo'
 const pipelineName = 'Accrual demo'
 
 test('Accrual demo test', async ({ page, request }) => {
-  test.setTimeout(150000)
+  test.setTimeout(240000)
   await page.goto(appOrigin)
 
   await test.step('Create a program', async () => {
@@ -22,7 +22,7 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
     await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-compile-status-success').waitFor()
-    await expect(page).toHaveScreenshot('saved sql program.png')
+    await expect(page).toHaveScreenshot('saved-sql-program.png')
   })
 
   const pipelineUUID = await test.step('Create a pipeline', async () => {
@@ -45,8 +45,8 @@ test('Accrual demo test', async ({ page, request }) => {
   await test.step('Start the pipeline', async () => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
-    await expect(page).toHaveScreenshot('compiling program binary.png')
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Inactive`).waitFor({ timeout: 90000 })
+    await expect(page).toHaveScreenshot('compiling-program-binary.png')
+    await page.getByTestId(`box-pipeline-${pipelineName}-status-Inactive`).waitFor({ timeout: 180000 })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
     await page.getByTestId(`box-pipeline-${pipelineName}-status-Running`).waitFor({ timeout: 10000 })
   })

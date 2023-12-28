@@ -1,0 +1,3 @@
+[submodule "web-console/playwright-snapshots"]
+	path = web-console/playwright-snapshots
+	url = https://github.com/feldera/playwright-snapshots.git
