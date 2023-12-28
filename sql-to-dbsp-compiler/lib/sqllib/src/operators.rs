@@ -6,7 +6,7 @@ use crate::{
     for_all_numeric_operator, some_existing_operator, some_operator,
 };
 
-use core::ops::{Add, Mul, Sub};
+use core::ops::{Add, Div, Mul, Sub};
 use rust_decimal::Decimal;
 
 #[inline(always)]
@@ -177,138 +177,15 @@ where
 
 for_all_int_operator!(bxor);
 
-/* div for integers is implemented manually, since it does not follow the
-pattern: the base function already returns an Option */
 #[inline(always)]
-pub fn div_i16_i16(left: i16, right: i16) -> Option<i16> {
-    match right {
-        0 => None,
-        _ => Some(left / right),
-    }
+fn div<T>(left: T, right: T) -> T
+where
+    T: Div<Output = T>,
+{
+    left / right
 }
 
-#[inline(always)]
-pub fn div_i32_i32(left: i32, right: i32) -> Option<i32> {
-    match right {
-        0 => None,
-        _ => Some(left / right),
-    }
-}
-
-#[inline(always)]
-pub fn div_i64_i64(left: i64, right: i64) -> Option<i64> {
-    match right {
-        0 => None,
-        _ => Some(left / right),
-    }
-}
-
-#[inline(always)]
-pub fn div_i16N_i16(left: Option<i16>, right: i16) -> Option<i16> {
-    let left = left?;
-    div_i16_i16(left, right)
-}
-
-#[inline(always)]
-pub fn div_i32N_i32(left: Option<i32>, right: i32) -> Option<i32> {
-    let left = left?;
-    div_i32_i32(left, right)
-}
-
-#[inline(always)]
-pub fn div_i64N_i64(left: Option<i64>, right: i64) -> Option<i64> {
-    let left = left?;
-    div_i64_i64(left, right)
-}
-
-#[inline(always)]
-pub fn div_i16_i16N(left: i16, right: Option<i16>) -> Option<i16> {
-    let right = right?;
-    div_i16_i16(left, right)
-}
-
-#[inline(always)]
-pub fn div_i32_i32N(left: i32, right: Option<i32>) -> Option<i32> {
-    let right = right?;
-    div_i32_i32(left, right)
-}
-
-#[inline(always)]
-pub fn div_i64_i64N(left: i64, right: Option<i64>) -> Option<i64> {
-    let right = right?;
-    div_i64_i64(left, right)
-}
-
-#[inline(always)]
-pub fn div_i16N_i16N(left: Option<i16>, right: Option<i16>) -> Option<i16> {
-    let left = left?;
-    let right = right?;
-    div_i16_i16(left, right)
-}
-
-#[inline(always)]
-pub fn div_i32N_i32N(left: Option<i32>, right: Option<i32>) -> Option<i32> {
-    let left = left?;
-    let right = right?;
-    div_i32_i32(left, right)
-}
-
-#[inline(always)]
-pub fn div_i64N_i64N(left: Option<i64>, right: Option<i64>) -> Option<i64> {
-    let left = left?;
-    let right = right?;
-    div_i64_i64(left, right)
-}
-
-// TODO: does div F32 need to return Option?
-
-#[inline(always)]
-pub fn div_f_f(left: F32, right: F32) -> Option<F32> {
-    Some(F32::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    right.map(|right| F32::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    left.map(|left| F32::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(left), Some(right)) => Some(F32::new(left.into_inner() / right.into_inner())),
-    }
-}
-
-#[inline(always)]
-pub fn div_d_d(left: F64, right: F64) -> Option<F64> {
-    Some(F64::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    right.map(|right| F64::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    left.map(|left| F64::new(left.into_inner() / right.into_inner()))
-}
-
-#[inline(always)]
-pub fn div_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(left), Some(right)) => Some(F64::new(left.into_inner() / right.into_inner())),
-    }
-}
+for_all_numeric_operator!(div);
 
 pub fn plus_u_u(left: usize, right: usize) -> usize {
     left + right

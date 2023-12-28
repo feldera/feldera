@@ -13,7 +13,7 @@ unary and binary), `*` (multiplication), `/` (division), `%`
 Casting a string to an integer type will produce a runtime error if the
 string cannot be interpreted as a number.
 
-Division or modulus by zero return `NULL`.
+Division or modulus by zero cause a runtime error.
 
 ## Predefined functions on integer values
 

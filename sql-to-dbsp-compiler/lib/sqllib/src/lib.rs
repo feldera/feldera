@@ -732,41 +732,6 @@ where
     left.map(|x| truncate_decimal(x, right))
 }
 
-#[inline(always)]
-pub fn div_decimal_decimal(left: Decimal, right: Decimal) -> Option<Decimal> {
-    if right.is_zero() {
-        None
-    } else {
-        Some(left / right)
-    }
-}
-
-#[inline(always)]
-pub fn div_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    let left = left?;
-    div_decimal_decimal(left, right)
-}
-
-#[inline(always)]
-pub fn div_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    let right = right?;
-    div_decimal_decimal(left, right)
-}
-
-#[inline(always)]
-pub fn div_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    let left = left?;
-    let right = right?;
-    div_decimal_decimal(left, right)
-}
-
-#[inline(always)]
-pub fn modulo_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left % right
-}
-
-some_polymorphic_function2!(modulo, decimal, Decimal, decimal, Decimal, Decimal);
-
 pub fn element<T>(array: Vec<T>) -> Option<T>
 where
     T: Copy,

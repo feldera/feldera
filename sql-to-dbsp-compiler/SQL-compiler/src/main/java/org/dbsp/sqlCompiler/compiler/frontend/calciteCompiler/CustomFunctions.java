@@ -10,14 +10,12 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperandCountRange;
 import org.apache.calcite.sql.SqlOperator;
-import org.apache.calcite.sql.SqlOperatorBinding;
 import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
 import org.apache.calcite.sql.type.SqlOperandCountRanges;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlOperandTypeInference;
-import org.apache.calcite.sql.type.SqlReturnTypeInference;
 import org.apache.calcite.sql.type.SqlSingleOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -41,7 +39,6 @@ public class CustomFunctions {
     private final HashMap<String, ExternalFunction> udf;
 
     public CustomFunctions() {
-        this.initial.add(new SqlDivisionFunction());
         this.initial.add(new RlikeFunction());
         this.initial.add(new WriteLogFunction());
         this.udf = new HashMap<>();
@@ -80,47 +77,6 @@ public class CustomFunctions {
 
         @Override
         public boolean isDeterministic() {
-            return false;
-        }
-    }
-
-    static class SqlDivisionFunction extends SqlFunction {
-        // Custom implementation of type inference DIVISION for our division operator.
-        static final SqlReturnTypeInference divResultInference = new SqlReturnTypeInference() {
-            @Override
-            public @org.checkerframework.checker.nullness.qual.Nullable
-            RelDataType inferReturnType(SqlOperatorBinding opBinding) {
-                // Default policy for division.
-                RelDataType result = ReturnTypes.QUOTIENT_NULLABLE.inferReturnType(opBinding);
-                List<RelDataType> opTypes = opBinding.collectOperandTypes();
-                // If all operands are integer or decimal, result is nullable
-                // otherwise it's not.
-                boolean nullable = true;
-                for (RelDataType type: opTypes) {
-                    if (SqlTypeName.APPROX_TYPES.contains(type.getSqlTypeName())) {
-                        nullable = false;
-                        break;
-                    }
-                }
-                if (nullable)
-                    result = opBinding.getTypeFactory().createTypeWithNullability(result, true);
-                return result;
-            }
-        };
-
-        public SqlDivisionFunction() {
-            super("DIVISION",
-                    SqlKind.OTHER_FUNCTION,
-                    divResultInference,
-                    null,
-                    OperandTypes.NUMERIC_NUMERIC,
-                    SqlFunctionCategory.NUMERIC);
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            // TODO: change this when we learn how to constant-fold in the RexToLixTranslator
-            // https://issues.apache.org/jira/browse/CALCITE-3394 may give a solution
             return false;
         }
     }

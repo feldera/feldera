@@ -25,7 +25,7 @@ The legal operations are ``+`` (plus, unary and binary), ``-`` (minus,
 unary and binary), ``*`` (multiplication), ``/`` (division), ``%``
 (modulus).
 
-Division or modulus by zero return ``NULL``.
+Division or modulus by zero cause a runtime error.
 
 Casting a string to a decimal value will produce the value ``0`` when
 parsing fails.

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - WebConsole: Add ability to edit connector configuration as JSON
+- SQL: Preliminary support for computations with bounded memory on unbounded
+  streams ([#1197](https://github.com/feldera/feldera/pull/1197))
+
+### Fixed
+- SQL: Changed semantics of division to match SQL standard
+  ([#1201](https://github.com/feldera/feldera/pull/1201))
 
 ## [0.6.0] - 2023-12-19
 
