@@ -177,9 +177,6 @@ public class RustSqlRuntimeLibrary {
 
         if (opcode.isComparison())
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false).setMayBeNull(anyNull);
-        if (opcode.equals(DBSPOpcode.DIV))
-            // Always, for division by 0
-            returnType = returnType.setMayBeNull(true);
         if (opcode == DBSPOpcode.IS_TRUE || opcode == DBSPOpcode.IS_NOT_TRUE ||
                 opcode == DBSPOpcode.IS_FALSE || opcode == DBSPOpcode.IS_NOT_FALSE ||
                 opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT)
@@ -199,6 +196,7 @@ public class RustSqlRuntimeLibrary {
             tsuffixl = ltype.to(DBSPTypeBaseType.class).shortName();
             tsuffixr = (rtype == null) ? "" : rtype.to(DBSPTypeBaseType.class).shortName();
         }
+        //noinspection ConstantValue
         if (map == null)
             throw new UnimplementedException(opcode.toString());
         for (String k: map.keySet()) {

@@ -55,14 +55,11 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.runtime.MapEntry;
 import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
-import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlExplainFormat;
 import org.apache.calcite.sql.SqlExplainLevel;
 import org.apache.calcite.sql.SqlFunction;
-import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlKind;
@@ -71,7 +68,6 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlTypeNameSpec;
-import org.apache.calcite.sql.SqlUnresolvedFunction;
 import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
@@ -82,7 +78,6 @@ import org.apache.calcite.sql.fun.SqlLibrary;
 import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
-import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlOperatorTables;
@@ -150,7 +145,6 @@ public class CalciteCompiler implements IWritesLogs {
     public final RelOptCluster cluster;
     public final RelDataTypeFactory typeFactory;
     private final SqlToRelConverter.Config converterConfig;
-    private final RewriteDivision astRewriter;
     /** Perform additional type validation in top of the Calcite rules. */
     @Nullable
     private SqlValidator validator;
@@ -164,34 +158,6 @@ public class CalciteCompiler implements IWritesLogs {
     boolean generateOutputForNextView = true;
     private final SchemaPlus rootSchema;
     private final CustomFunctions customFunctions;
-
-    /**
-     * This class rewrites instances of the division operator in the SQL AST
-     * into calls to a user-defined function DIVISION.  We do this
-     * because we don't like how Calcite infers result types for division,
-     * and we want to supply our own rules. */
-    public static class RewriteDivision extends SqlShuttle {
-        @Override
-        public SqlNode visit(SqlCall call) {
-            SqlNode node = Objects.requireNonNull(super.visit(call));
-            if (node instanceof SqlCall &&
-                    node.getKind() == SqlKind.DIVIDE) {
-                SqlCall rewrittenCall = (SqlCall)node;
-                return new SqlBasicCall(
-                        new SqlUnresolvedFunction(
-                                new SqlIdentifier("DIVISION", SqlParserPos.ZERO),
-                                null,
-                                null,
-                                null,
-                                null,
-                                SqlFunctionCategory.USER_DEFINED_FUNCTION),
-                        rewrittenCall.getOperandList(),
-                        rewrittenCall.getParserPosition()
-                );
-            }
-            return node;
-        }
-    }
 
     public CustomFunctions getCustomFunctions() {
         return this.customFunctions;
@@ -259,7 +225,6 @@ public class CalciteCompiler implements IWritesLogs {
 
     // Adapted from https://www.querifylabs.com/blog/assembling-a-query-optimizer-with-apache-calcite
     public CalciteCompiler(CompilerOptions options, IErrorReporter errorReporter) {
-        this.astRewriter = new RewriteDivision();
         this.options = options;
         this.errorReporter = errorReporter;
         this.customFunctions = new CustomFunctions();
@@ -866,10 +831,6 @@ public class CalciteCompiler implements IWritesLogs {
                     throw new UnsupportedException("OR REPLACE not supported", object);
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append(query.toString())
-                        .newline();
-                query = query.accept(this.astRewriter);
-                Logger.INSTANCE.belowLevel(this, 2)
-                        .append(Objects.requireNonNull(query).toString())
                         .newline();
                 RelRoot relRoot = converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createColumnsMetadata(CalciteObject.create(node),

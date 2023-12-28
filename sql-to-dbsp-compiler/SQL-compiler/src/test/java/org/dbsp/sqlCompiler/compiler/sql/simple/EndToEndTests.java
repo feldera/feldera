@@ -243,13 +243,6 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral.Contents(lit, lit));
     }
 
-    @Test @Ignore("Fails with overflow.  What should the result be?")
-    public void testOverflow() {
-        String query = "SELECT " + Integer.MIN_VALUE + "/ -1";
-        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI32Literal(0, true)));
-        this.testQuery(query, result);
-    }
-
     @Test
     public void testArray() {
         String query = "SELECT ELEMENT(ARRAY [2])";
@@ -710,24 +703,19 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divZeroTest() {
         String query = "SELECT 1 / 0";
-        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
+        this.runtimeFail(query, "attempt to divide by zero", this.getEmptyIOPair());
     }
 
     @Test
     public void divZero0() {
         String query = "SELECT 'Infinity' / 0";
-        this.runtimeFail(query, "Invalid decimal: unknown character",
-               this.getEmptyIOPair());
+        this.runtimeFail(query, "InvalidDigit", this.getEmptyIOPair());
     }
 
     @Test
     public void nestedDivTest() {
         String query = "SELECT 2 / (1 / 0)";
-        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
+        this.runtimeFail(query, "attempt to divide by zero", this.getEmptyIOPair());
     }
 
     @Test
@@ -735,15 +723,6 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT x'012345ab'";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPBinaryLiteral(new byte[]{ 0x01, 0x23, 0x45, (byte)0xAB }))));
-    }
-
-    @Test
-    public void customDivisionTest() {
-        // Use a custom division operator.
-        String query = "SELECT DIVISION(1, 0)";
-        this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
     }
 
     @Test
@@ -854,7 +833,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT 34 / SUM (1) FROM T GROUP BY COL1";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                  new DBSPTupleExpression(
-                        new DBSPI32Literal(17, true))));
+                        new DBSPI32Literal(17))));
     }
 
     @Test
@@ -873,7 +852,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT 34 / AVG (1) FROM T GROUP BY COL1";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                  new DBSPTupleExpression(
-                        new DBSPI32Literal(34, true))));
+                        new DBSPI32Literal(34))));
     }
 
     @Test
@@ -881,7 +860,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT 34 / SUM (1), 20 / SUM(2) FROM T GROUP BY COL1";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                  new DBSPTupleExpression(
-                        new DBSPI32Literal(17, true), new DBSPI32Literal(5, true))));
+                        new DBSPI32Literal(17), new DBSPI32Literal(5))));
     }
 
     @Test

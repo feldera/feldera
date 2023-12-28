@@ -521,8 +521,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case TIMES:
                 return makeBinaryExpression(node, type, DBSPOpcode.MUL, ops);
             case DIVIDE:
-                // We enforce that the type of the result of division is always nullable
-                type = type.setMayBeNull(true);
                 return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
             case MOD:
                 return makeBinaryExpression(node, type, DBSPOpcode.MOD, ops);

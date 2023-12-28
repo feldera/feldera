@@ -58,11 +58,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (0,0,'0');\n" +
                 "INSERT INTO num_exp_sub VALUES (0,0,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (0,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,0,NULL);\n" +  // No NaN
+                //"INSERT INTO num_exp_div VALUES (0,0,NaN);\n" +  // No NaN
                 "INSERT INTO num_exp_add VALUES (0,1,'0');\n" +
                 "INSERT INTO num_exp_sub VALUES (0,1,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (0,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (0,1,NULL);\n" +  // No NaN
+                "INSERT INTO num_exp_div VALUES (0,1,'0');\n" +
                 "INSERT INTO num_exp_add VALUES (0,2,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (0,2,'34338492.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (0,2,'0');\n" +
@@ -98,11 +98,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (1,0,'0');\n" +
                 "INSERT INTO num_exp_sub VALUES (1,0,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (1,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,0,NULL);\n" + // In postgres this is NaN
+                //"INSERT INTO num_exp_div VALUES (1,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (1,1,'0');\n" +
                 "INSERT INTO num_exp_sub VALUES (1,1,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (1,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (1,1,NULL);\n" + // In postgres this is NaN
+                "INSERT INTO num_exp_div VALUES (1,1,'0');\n" +
                 "INSERT INTO num_exp_add VALUES (1,2,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (1,2,'34338492.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (1,2,'0');\n" +
@@ -138,11 +138,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (2,0,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,0,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (2,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (2,0,NULL);\n" +  // No NaN
+                //"INSERT INTO num_exp_div VALUES (2,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (2,1,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,1,'-34338492.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (2,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (2,1,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_div VALUES (2,1,2);\n" +
                 "INSERT INTO num_exp_add VALUES (2,2,'-68676984.430794094');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,2,'0');\n" +
                 "INSERT INTO num_exp_mul VALUES (2,2,'1179132047626883.596862135856320209');\n" +
@@ -178,11 +178,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (3,0,'4.31');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,0,'4.31');\n" +
                 "INSERT INTO num_exp_mul VALUES (3,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (3,0,NULL);\n" + // No NaN for numeric
+                //"INSERT INTO num_exp_div VALUES (3,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (3,1,'4.31');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,1,'4.31');\n" +
                 "INSERT INTO num_exp_mul VALUES (3,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (3,1,Null);\n" +  // No NaN for numeric
+                "INSERT INTO num_exp_div VALUES (3,1,'3');\n" +
                 "INSERT INTO num_exp_add VALUES (3,2,'-34338487.905397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,2,'34338496.525397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (3,2,'-147998901.44836127257');\n" +
@@ -218,11 +218,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (4,0,'7799461.4119');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,0,'7799461.4119');\n" +
                 "INSERT INTO num_exp_mul VALUES (4,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (4,0,NULL);\n" + // No NaN for numeric
+                //"INSERT INTO num_exp_div VALUES (4,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (4,1,'7799461.4119');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,1,'7799461.4119');\n" +
                 "INSERT INTO num_exp_mul VALUES (4,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (4,1,NULL);\n" +  // No NaN for numeric
+                "INSERT INTO num_exp_div VALUES (4,1,'4');\n" +
                 "INSERT INTO num_exp_add VALUES (4,2,'-26539030.803497047');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,2,'42137953.627297047');\n" +
                 "INSERT INTO num_exp_mul VALUES (4,2,'-267821744976817.8111137106593');\n" +
@@ -258,11 +258,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (5,0,'16397.038491');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,0,'16397.038491');\n" +
                 "INSERT INTO num_exp_mul VALUES (5,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (5,0,NULL);\n" + // No NaN
+                //"INSERT INTO num_exp_div VALUES (5,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (5,1,'16397.038491');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,1,'16397.038491');\n" +
                 "INSERT INTO num_exp_mul VALUES (5,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (5,1,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_div VALUES (5,1,'5');\n" +
                 "INSERT INTO num_exp_add VALUES (5,2,'-34322095.176906047');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,2,'34354889.253888047');\n" +
                 "INSERT INTO num_exp_mul VALUES (5,2,'-563049578578.769242506736077');\n" +
@@ -298,11 +298,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (6,0,'93901.57763026');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,0,'93901.57763026');\n" +
                 "INSERT INTO num_exp_mul VALUES (6,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (6,0,NULL);\n" + // No NaN
+                //"INSERT INTO num_exp_div VALUES (6,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (6,1,'93901.57763026');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,1,'93901.57763026');\n" +
                 "INSERT INTO num_exp_mul VALUES (6,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (6,1,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_div VALUES (6,1,'6');\n" +
                 "INSERT INTO num_exp_add VALUES (6,2,'-34244590.637766787');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,2,'34432393.793027307');\n" +
                 "INSERT INTO num_exp_mul VALUES (6,2,'-3224438592470.18449811926184222');\n" +
@@ -338,11 +338,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (7,0,'-83028485');\n" +
                 "INSERT INTO num_exp_sub VALUES (7,0,'-83028485');\n" +
                 "INSERT INTO num_exp_mul VALUES (7,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (7,0,NULL);\n" + // No NaN
+                //"INSERT INTO num_exp_div VALUES (7,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (7,1,'-83028485');\n" +
                 "INSERT INTO num_exp_sub VALUES (7,1,'-83028485');\n" +
                 "INSERT INTO num_exp_mul VALUES (7,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (7,1,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_div VALUES (7,1,'7');\n" +
                 "INSERT INTO num_exp_add VALUES (7,2,'-117366977.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (7,2,'-48689992.784602953');\n" +
                 "INSERT INTO num_exp_mul VALUES (7,2,'2851072985828710.485883795');\n" +
@@ -378,11 +378,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (8,0,'74881');\n" +
                 "INSERT INTO num_exp_sub VALUES (8,0,'74881');\n" +
                 "INSERT INTO num_exp_mul VALUES (8,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (8,0,NULL);\n" + // No NaN
+                //"INSERT INTO num_exp_div VALUES (8,0,NaN);\n" +
                 "INSERT INTO num_exp_add VALUES (8,1,'74881');\n" +
                 "INSERT INTO num_exp_sub VALUES (8,1,'74881');\n" +
                 "INSERT INTO num_exp_mul VALUES (8,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (8,1,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_div VALUES (8,1,'8');\n" +
                 "INSERT INTO num_exp_add VALUES (8,2,'-34263611.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (8,2,'34413373.215397047');\n" +
                 "INSERT INTO num_exp_mul VALUES (8,2,'-2571300635581.146276407');\n" +
@@ -418,11 +418,11 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_add VALUES (9,0,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,0,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_mul VALUES (9,0,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (9,0,NULL);\n" + // No NaN
+                //"INSERT INTO num_exp_div VALUES (9,0,NaN);\n" + // No NaN
                 "INSERT INTO num_exp_add VALUES (9,1,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,1,'-24926804.045047420');\n" +
                 "INSERT INTO num_exp_mul VALUES (9,1,'0');\n" +
-                "INSERT INTO num_exp_div VALUES (9,1,NULL);\n" + // No NaN
+                "INSERT INTO num_exp_div VALUES (9,1,'9');\n" +
                 "INSERT INTO num_exp_add VALUES (9,2,'-59265296.260444467');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,2,'9411688.170349627');\n" +
                 "INSERT INTO num_exp_mul VALUES (9,2,'855948866655588.453741509242968740');\n" +
@@ -617,7 +617,8 @@ public class PostgresNumericTests extends SqlIoTest {
     public void testDivision() {
         String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(t1.val / t2.val AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
-                "    FROM num_data t1, num_data t2";
+                "    FROM num_data t1, num_data t2\n" +
+                "    WHERE t2.val != 0";
         String last = """
                 CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, t2.expected
                     FROM num_result t1, num_exp_div t2
@@ -630,7 +631,8 @@ public class PostgresNumericTests extends SqlIoTest {
     public void testDivisionRound() {
         String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(round(t1.val / t2.val, 10) AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
-                "    FROM num_data t1, num_data t2";
+                "    FROM num_data t1, num_data t2\n" +
+                "    WHERE t2.val != 0";
         String last = """
                 CREATE VIEW E AS SELECT t1.id1, t1.id2, t1.results, round(t2.expected, 10)
                     FROM num_result t1, num_exp_div t2

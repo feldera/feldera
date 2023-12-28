@@ -418,6 +418,17 @@ public class Simplify extends InnerRewriteVisitor {
                     result = right;
                 }
             }
+        } else if (expression.operation.equals(DBSPOpcode.DIV)) {
+            if (right.is(DBSPLiteral.class)) {
+                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                IsNumericType iRightType = rightType.to(IsNumericType.class);
+                if (iRightType.isOne(rightLit)) {
+                    result = left;
+                } else if (iRightType.isZero(rightLit)) {
+                    this.errorReporter.reportWarning(expression.getSourcePosition(), "Division by zero",
+                            " Division by constant zero value.");
+                } 
+            }
         }
         this.map(expression, result.cast(expression.getType()));
         return VisitDecision.STOP;
