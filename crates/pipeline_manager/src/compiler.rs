@@ -702,7 +702,7 @@ impl Compiler {
                     "Program {} does not have a local artifact despite being in the {:?} state. Removing binary references to the program and re-queuing it for compilation.",
                     program.program_id, program.status
                 );
-                db.set_program_for_compilation(
+                db.set_program_status_guarded(
                     tenant_id,
                     program.program_id,
                     program.version,
@@ -732,13 +732,17 @@ impl Compiler {
                     if let Some(job) = &job {
                         // Program was deleted, updated or the user changed its status
                         // to cancelled -- abort compilation.
-                        let descr = db.lock().await.get_program_if_exists(job.tenant_id, job.program_id, false).await?;
-                        if let Some(descr) = descr {
-                            if descr.version != job.version || !descr.status.is_compiling() {
-                                cancel = true;
+                        let descr = db.lock().await.get_program_by_id(job.tenant_id, job.program_id, false).await;
+                        match descr {
+                            Ok(descr) => {
+                                if descr.version != job.version || !descr.status.is_compiling() {
+                                    cancel = true;
+                                }
+                            },
+                            Err(DBError::UnknownProgram { .. }) => {
+                                cancel = true
                             }
-                        } else {
-                            cancel = true;
+                            Err(e) => {return Err(e.into())}
                         }
                     }
                     if cancel {
@@ -843,15 +847,8 @@ impl Compiler {
                     let db = db.lock().await;
                     if let Some((tenant_id, program_id, version)) = db.next_job().await? {
                         trace!("Next program in the queue: '{program_id}', version '{version}'");
-                        let program = db
-                            .get_program_if_exists(tenant_id, program_id, true)
-                            .await?;
-                        Some((
-                            tenant_id,
-                            program_id,
-                            version,
-                            program.unwrap().code.unwrap(),
-                        ))
+                        let program = db.get_program_by_id(tenant_id, program_id, true).await?;
+                        Some((tenant_id, program_id, version, program.code.unwrap()))
                     } else {
                         None
                     }
@@ -1128,7 +1125,7 @@ mod test {
         // Now set the program to be queued for compilation
         db.lock()
             .await
-            .set_program_for_compilation(tid, pid, vid, super::ProgramStatus::Pending)
+            .set_program_status_guarded(tid, pid, vid, super::ProgramStatus::Pending)
             .await
             .unwrap();
         super::Compiler::reconcile_local_state(&conf, &db)
