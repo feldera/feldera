@@ -1879,13 +1879,17 @@ impl Storage for Mutex<DbModel> {
         // The test code here however represents pipelines using a PipelineDescr,
         // so we have to manually propagate program name updates to all pipelines
         // that were referencing it.
-        s.pipelines.iter_mut().for_each(|(_, p)| {
-            if let Some(ref name) = p.descriptor.program_name {
-                if *name == program_descr.clone().name {
-                    p.descriptor.program_name = program_name.clone();
+        if program_name.is_some() {
+            s.pipelines.iter_mut().for_each(|((tid, _), p)| {
+                // Find pipeline descriptors with attached programs, and check if it is
+                // referring to the program whose name we're updating
+                if let Some(ref name) = p.descriptor.program_name {
+                    if *tid == tenant_id && *name == program_descr.clone().name {
+                        p.descriptor.program_name = program_name.clone();
+                    }
                 }
-            }
-        });
+            });
+        }
 
         s.programs
             .get_mut(&(tenant_id, program_id))
