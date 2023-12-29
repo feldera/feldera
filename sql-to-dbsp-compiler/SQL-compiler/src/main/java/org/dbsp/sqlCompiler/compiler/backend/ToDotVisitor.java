@@ -137,6 +137,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             case "waterline_monotonic": return " style=filled fillcolor=lightgreen";
             case "controlled_filter": return " style=filled fillcolor=cyan";
             case "apply": return " style=filled fillcolor=yellow";
+            case "integrate_trace_retain_keys":
+            case "integrate_trace_retain_values":
+                return " style=filled fillcolor=pink";
             default: return "";
         }
     }

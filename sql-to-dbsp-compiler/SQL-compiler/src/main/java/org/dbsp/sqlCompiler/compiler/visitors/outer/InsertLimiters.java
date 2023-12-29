@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -16,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneValue;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ValueProjection;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -164,6 +166,46 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPJoinOperator join) {
+        DBSPOperator left = this.mapped(join.inputs.get(0));
+        DBSPOperator right = this.mapped(join.inputs.get(1));
+        OperatorExpansion expanded = this.expandedInto.get(join);
+        if (expanded == null) {
+            super.postorder(join);
+            return;
+        }
+
+        JoinExpansion je = expanded.to(JoinExpansion.class);
+        DBSPOperator leftLimiter = this.addBounds(je.left, 0);
+        DBSPOperator rightLimiter = this.addBounds(je.right, 0);
+        if (leftLimiter == null && rightLimiter == null) {
+            super.postorder(join);
+            return;
+        }
+
+        DBSPOperator result = join.withInputs(Linq.list(left, right), false);
+        if (leftLimiter != null) {
+            MonotoneValue monotoneValue = this.expansionMonotoneValues.get(je.left);
+            ValueProjection projection = monotoneValue.getProjection();
+            // Yes, the limit of the left input is applied to the right one.
+            DBSPIntegrateTraceRetainKeysOperator r = DBSPIntegrateTraceRetainKeysOperator.create(
+                    join.getNode(), right, projection, leftLimiter);
+            this.addOperator(r);
+        }
+
+        if (rightLimiter != null) {
+            MonotoneValue monotoneValue = this.expansionMonotoneValues.get(je.right);
+            ValueProjection projection = monotoneValue.getProjection();
+            // Yes, the limit of the right input is applied to the left one.
+            DBSPIntegrateTraceRetainKeysOperator l = DBSPIntegrateTraceRetainKeysOperator.create(
+                    join.getNode(), left, projection, rightLimiter);
+            this.addOperator(l);
+        }
+
+        this.map(join, result, true);
+    }
+
+    @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
         MonotoneValue monotoneValue = this.expansionMonotoneValues.get(operator);
         if (monotoneValue == null) {
@@ -205,10 +247,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                 operator.getNode(), zero.closure(), min.closure(t.asParameter()), outputType, operator);
         this.addOperator(waterline);
-
-        DBSPControlledFilterOperator filter = DBSPControlledFilterOperator.create(
-                operator.getNode(), operator, monotoneValue.getProjection(), waterline);
         Utilities.putNew(this.bound, operator, waterline);
-        this.map(operator, filter);
+
+        if (true || useControlledFilters) {
+            // TODO: the alternate path does not work yet.  Needs https://github.com/feldera/feldera/issues/1204
+            DBSPControlledFilterOperator filter = DBSPControlledFilterOperator.create(
+                    operator.getNode(), operator, monotoneValue.getProjection(), waterline);
+            this.map(operator, filter);
+        } else {
+            ValueProjection projection = monotoneValue.getProjection();
+            DBSPIntegrateTraceRetainKeysOperator it = DBSPIntegrateTraceRetainKeysOperator.create(
+                    operator.getNode(), operator, projection, waterline);
+            this.addOperator(it);
+            this.map(operator, operator, false);
+        }
     }
 }

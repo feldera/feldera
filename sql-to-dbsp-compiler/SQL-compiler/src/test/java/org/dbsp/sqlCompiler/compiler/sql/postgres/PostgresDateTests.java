@@ -94,7 +94,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testLt() {
         this.q("""
                 SELECT f1 FROM DATE_TBL WHERE f1 < '2000-01-01';
-                 f1      \s
+                 f1      
                 ---------------
                  04-09-1957
                  06-13-1957
@@ -1008,39 +1008,39 @@ public class PostgresDateTests extends SqlIoTest {
         // Incremented DOW column
         // Added null row
         this.q("""
-                        SELECT f1 as "date",
-                            EXTRACT(YEAR from f1) AS 'year',
-                            EXTRACT(month from f1) AS 'month',
-                            EXTRACT(day from f1) AS 'day',
-                            EXTRACT(quarter from f1) AS 'quarter',
-                            EXTRACT(decade from f1) AS 'decade',
-                            EXTRACT(century from f1) AS 'century',
-                            EXTRACT(millennium from f1) AS 'millennium',
-                            EXTRACT(isoyear from f1) AS 'isoyear',
-                            EXTRACT(week from f1) AS 'week',
-                            EXTRACT(dow from f1) AS 'dow',
-                            EXTRACT(isodow from f1) AS 'isodow',
-                            EXTRACT(doy from f1) AS 'doy',
-                            EXTRACT(epoch from f1) AS 'epoch'
-                            FROM DATE_TBL;
-                             date      | year  | month | day | quarter | decade | century | millennium | isoyear | week | dow | isodow | doy |     epoch    \s
-                        ---------------+-------+-------+-----+---------+--------+---------+------------+---------+------+-----+--------+-----+---------------
-                         04-09-1957    |  1957 |     4 |   9 |       2 |    195 |      20 |          2 |    1957 |   15 |   3 |      2 |  99 |    -401760000
-                         06-13-1957    |  1957 |     6 |  13 |       2 |    195 |      20 |          2 |    1957 |   24 |   5 |      4 | 164 |    -396144000
-                         02-28-1996    |  1996 |     2 |  28 |       1 |    199 |      20 |          2 |    1996 |    9 |   4 |      3 |  59 |     825465600
-                         02-29-1996    |  1996 |     2 |  29 |       1 |    199 |      20 |          2 |    1996 |    9 |   5 |      4 |  60 |     825552000
-                         03-01-1996    |  1996 |     3 |   1 |       1 |    199 |      20 |          2 |    1996 |    9 |   6 |      5 |  61 |     825638400
-                         03-02-1996    |  1996 |     3 |   2 |       1 |    199 |      20 |          2 |    1996 |    9 |   7 |      6 |  62 |     825724800
-                         02-28-1997    |  1997 |     2 |  28 |       1 |    199 |      20 |          2 |    1997 |    9 |   6 |      5 |  59 |     857088000
-                         03-01-1997    |  1997 |     3 |   1 |       1 |    199 |      20 |          2 |    1997 |    9 |   7 |      6 |  60 |     857174400
-                         03-02-1997    |  1997 |     3 |   2 |       1 |    199 |      20 |          2 |    1997 |    9 |   1 |      7 |  61 |     857260800
-                         04-01-2000    |  2000 |     4 |   1 |       2 |    200 |      20 |          2 |    2000 |   13 |   7 |      6 |  92 |     954547200
-                         04-02-2000    |  2000 |     4 |   2 |       2 |    200 |      20 |          2 |    2000 |   13 |   1 |      7 |  93 |     954633600
-                         04-03-2000    |  2000 |     4 |   3 |       2 |    200 |      20 |          2 |    2000 |   14 |   2 |      1 |  94 |     954720000
-                         04-08-2038    |  2038 |     4 |   8 |       2 |    203 |      21 |          3 |    2038 |   14 |   5 |      4 |  98 |    2154297600
-                         04-09-2039    |  2039 |     4 |   9 |       2 |    203 |      21 |          3 |    2039 |   14 |   7 |      6 |  99 |    2185920000
-                         04-10-2040    |  2040 |     4 |  10 |       2 |    204 |      21 |          3 |    2040 |   15 |   3 |      2 | 101 |    2217628800
-                                       |       |       |     |         |        |         |            |         |      |     |        |     |              \s"""
+                SELECT f1 as "date",
+                    EXTRACT(YEAR from f1) AS 'year',
+                    EXTRACT(month from f1) AS 'month',
+                    EXTRACT(day from f1) AS 'day',
+                    EXTRACT(quarter from f1) AS 'quarter',
+                    EXTRACT(decade from f1) AS 'decade',
+                    EXTRACT(century from f1) AS 'century',
+                    EXTRACT(millennium from f1) AS 'millennium',
+                    EXTRACT(isoyear from f1) AS 'isoyear',
+                    EXTRACT(week from f1) AS 'week',
+                    EXTRACT(dow from f1) AS 'dow',
+                    EXTRACT(isodow from f1) AS 'isodow',
+                    EXTRACT(doy from f1) AS 'doy',
+                    EXTRACT(epoch from f1) AS 'epoch'
+                    FROM DATE_TBL;
+                     date      | year  | month | day | quarter | decade | century | millennium | isoyear | week | dow | isodow | doy |     epoch    
+                ---------------+-------+-------+-----+---------+--------+---------+------------+---------+------+-----+--------+-----+---------------
+                 04-09-1957    |  1957 |     4 |   9 |       2 |    195 |      20 |          2 |    1957 |   15 |   3 |      2 |  99 |    -401760000
+                 06-13-1957    |  1957 |     6 |  13 |       2 |    195 |      20 |          2 |    1957 |   24 |   5 |      4 | 164 |    -396144000
+                 02-28-1996    |  1996 |     2 |  28 |       1 |    199 |      20 |          2 |    1996 |    9 |   4 |      3 |  59 |     825465600
+                 02-29-1996    |  1996 |     2 |  29 |       1 |    199 |      20 |          2 |    1996 |    9 |   5 |      4 |  60 |     825552000
+                 03-01-1996    |  1996 |     3 |   1 |       1 |    199 |      20 |          2 |    1996 |    9 |   6 |      5 |  61 |     825638400
+                 03-02-1996    |  1996 |     3 |   2 |       1 |    199 |      20 |          2 |    1996 |    9 |   7 |      6 |  62 |     825724800
+                 02-28-1997    |  1997 |     2 |  28 |       1 |    199 |      20 |          2 |    1997 |    9 |   6 |      5 |  59 |     857088000
+                 03-01-1997    |  1997 |     3 |   1 |       1 |    199 |      20 |          2 |    1997 |    9 |   7 |      6 |  60 |     857174400
+                 03-02-1997    |  1997 |     3 |   2 |       1 |    199 |      20 |          2 |    1997 |    9 |   1 |      7 |  61 |     857260800
+                 04-01-2000    |  2000 |     4 |   1 |       2 |    200 |      20 |          2 |    2000 |   13 |   7 |      6 |  92 |     954547200
+                 04-02-2000    |  2000 |     4 |   2 |       2 |    200 |      20 |          2 |    2000 |   13 |   1 |      7 |  93 |     954633600
+                 04-03-2000    |  2000 |     4 |   3 |       2 |    200 |      20 |          2 |    2000 |   14 |   2 |      1 |  94 |     954720000
+                 04-08-2038    |  2038 |     4 |   8 |       2 |    203 |      21 |          3 |    2038 |   14 |   5 |      4 |  98 |    2154297600
+                 04-09-2039    |  2039 |     4 |   9 |       2 |    203 |      21 |          3 |    2039 |   14 |   7 |      6 |  99 |    2185920000
+                 04-10-2040    |  2040 |     4 |  10 |       2 |    204 |      21 |          3 |    2040 |   15 |   3 |      2 | 101 |    2217628800
+                               |       |       |     |         |        |         |            |         |      |     |        |     |              \s"""
                 //" 04-10-2040 BC | -2040 |     4 |  10 |       2 |   -204 |     -21 |         -3 |   -2040 |   15 |   2 |      1 | 100 | -126503251200"
                 );
     }
@@ -1049,7 +1049,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testEpoch() {
         this.q("""
                 SELECT EXTRACT(EPOCH FROM DATE '1970-01-01');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1058,7 +1058,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testCentury() {
         this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '0001-01-01');
-                 extract\s
+                 extract
                 ---------
                        1""");
     }
@@ -1067,7 +1067,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testCentury1() {
         this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '1900-12-31');
-                 extract\s
+                 extract
                 ---------
                       19""");
     }
@@ -1076,7 +1076,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testCentury2() {
         this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '1901-01-01');
-                 extract\s
+                 extract
                 ---------
                       20""");
     }
@@ -1085,7 +1085,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testCentury3() {
         this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '2000-12-31');
-                 extract\s
+                 extract
                 ---------
                       20""");
     }
@@ -1094,7 +1094,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testCentury4() {
         this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '2001-01-01');
-                 extract\s
+                 extract
                 ---------
                       21""");
     }
@@ -1103,7 +1103,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMillennium() {
         this.q("""
                 SELECT EXTRACT(MILLENNIUM FROM DATE '0001-01-01');
-                 extract\s
+                 extract
                 ---------
                        1""");
     }
@@ -1112,7 +1112,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMillennium1() {
         this.q("""
                 SELECT EXTRACT(MILLENNIUM FROM DATE '1000-12-31');
-                 extract\s
+                 extract
                 ---------
                        1""");
     }
@@ -1121,7 +1121,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMillennium2() {
         this.q("""
                 SELECT EXTRACT(MILLENNIUM FROM DATE '2000-12-31');
-                 extract\s
+                 extract
                 ---------
                        2""");
     }
@@ -1133,7 +1133,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMillennium3() {
         this.q("""
                 SELECT EXTRACT(MILLENNIUM FROM DATE '2001-01-01');
-                 extract\s
+                 extract
                 ---------
                        3""");
     }
@@ -1142,19 +1142,19 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDecade() {
         this.qs("""
                 SELECT EXTRACT(DECADE FROM DATE '1994-12-25');
-                 extract\s
+                 extract
                 ---------
                      199
                 (1 row)
 
                 SELECT EXTRACT(DECADE FROM DATE '0010-01-01');
-                 extract\s
+                 extract
                 ---------
                        1
                 (1 row)
 
                 SELECT EXTRACT(DECADE FROM DATE '0009-12-31');
-                 extract\s
+                 extract
                 ---------
                        0
                 (1 row)""");
@@ -1164,7 +1164,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMicroseconds() {
         this.q("""
                 SELECT EXTRACT(MICROSECOND FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1185,7 +1185,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMilliseconds() {
         this.q("""
                 SELECT EXTRACT(MILLISECOND FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1194,7 +1194,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testSeconds() {
         this.q("""
                 SELECT EXTRACT(SECOND FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1203,7 +1203,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testSeconds0() {
         this.q("""
                 SELECT SECOND(DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1212,7 +1212,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMinutes() {
         this.q("""
                 SELECT EXTRACT(MINUTE FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1221,7 +1221,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMinutes1() {
         this.q("""
                 SELECT MINUTE(DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1230,7 +1230,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testHour() {
         this.q("""
                 SELECT EXTRACT(HOUR FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1239,7 +1239,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testHour1() {
         this.q("""
                 SELECT HOUR(DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        0""");
     }
@@ -1248,7 +1248,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDay() {
         this.q("""
                 SELECT EXTRACT(DAY FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        11""");
     }
@@ -1257,7 +1257,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDay1() {
         this.q("""
                 SELECT DAYOFMONTH(DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        11""");
     }
@@ -1266,7 +1266,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMonth() {
         this.q("""
                 SELECT EXTRACT(MONTH FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        8""");
     }
@@ -1275,7 +1275,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMonth1() {
         this.q("""
                 SELECT MONTH(DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                        8""");
     }
@@ -1284,7 +1284,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testYear() {
         this.q("""
                 SELECT EXTRACT(YEAR FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      2020""");
     }
@@ -1293,7 +1293,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testYear1() {
         this.q("""
                 SELECT YEAR(DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      2020""");
     }
@@ -1302,7 +1302,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDecade5() {
         this.q("""
                 SELECT EXTRACT(DECADE FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      202""");
     }
@@ -1311,7 +1311,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testCentury5() {
         this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      21""");
     }
@@ -1320,7 +1320,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testMillennium5() {
         this.q("""
                 SELECT EXTRACT(MILLENNIUM FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      3""");
     }
@@ -1329,7 +1329,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testIsoYear() {
         this.q("""
                 SELECT EXTRACT(ISOYEAR FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      2020""");
     }
@@ -1338,7 +1338,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testQuarter() {
         this.q("""
                 SELECT EXTRACT(QUARTER FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      3""");
     }
@@ -1347,7 +1347,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testWeek() {
         this.q("""
                 SELECT EXTRACT(WEEK FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      33""");
     }
@@ -1356,7 +1356,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDow() {
         this.q("""
                 SELECT EXTRACT(DOW FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      3""");
     }
@@ -1365,7 +1365,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDow2() {
         this.q("""
                 SELECT DAYOFWEEK(DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      3""");
     }
@@ -1379,7 +1379,7 @@ public class PostgresDateTests extends SqlIoTest {
         // Sunday
         this.q("""
                 SELECT EXTRACT(DOW FROM DATE '2020-08-16');
-                 extract\s
+                 extract
                 ---------
                      1""");
     }
@@ -1388,7 +1388,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testIsoDow() {
         this.q("""
                 SELECT EXTRACT(ISODOW FROM DATE '2020-08-16');
-                 extract\s
+                 extract
                 ---------
                      7""");
     }
@@ -1397,7 +1397,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDoy() {
         this.q("""
                 SELECT EXTRACT(DOY FROM DATE '2020-08-11');
-                 extract\s
+                 extract
                 ---------
                      224""");
     }

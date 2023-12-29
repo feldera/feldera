@@ -17,7 +17,7 @@ public class PivotTests extends SqlIoTest {
                 CourseName varchar,
                 CourseCategory varchar,
                 Price int
-                );\s
+                );
 
                 Insert into GG  values('C', 'PROGRAMMING', 5000);
                 Insert into GG  values('JAVA', 'PROGRAMMING', 6000);
@@ -40,7 +40,7 @@ public class PivotTests extends SqlIoTest {
     public void testGroupby() {
         this.q("""
                 SELECT CourseName, Sum(Price)
-                FROM GG\s
+                FROM GG
                 GROUP BY CourseName;
                 CourseName | Price
                 -----------------
@@ -54,9 +54,9 @@ public class PivotTests extends SqlIoTest {
     public void testGGPivot() {
         this.q("""
                 SELECT CourseName, "PG", "IV"
-                FROM GG\s
+                FROM GG
                 PIVOT (
-                  SUM(Price) FOR CourseCategory IN (         'PROGRAMMING' AS PG,          'INTERVIEWPREPARATION' AS IV)\s
+                  SUM(Price) FOR CourseCategory IN (         'PROGRAMMING' AS PG,          'INTERVIEWPREPARATION' AS IV)
                 ) AS PivotTable;
                 CourseName | PG | IV
                 -----------------
@@ -105,11 +105,11 @@ public class PivotTests extends SqlIoTest {
                 SELECT year, type, SUM(count) FROM FURNITURE GROUP BY year, type;
                 year | type  | sum
                 -----------------
-                2020 | chair| 4\s
-                2021 | table| 3\s
-                2021 | chair| 4\s
-                2023 | desk| 1\s
-                2023 | table| 2\s""");
+                2020 | chair| 4
+                2021 | table| 3
+                2021 | chair| 4
+                2023 | desk| 1
+                2023 | table| 2""");
         this.q("""
                 SELECT * FROM FURNITURE
                 PIVOT (
@@ -118,8 +118,8 @@ public class PivotTests extends SqlIoTest {
                 );
                 year | desks | tables | chairs
                 ------------------------------
-                2020 |       |        |    4 \s
-                2021 |       |     3  |    4 \s
+                2020 |       |        |    4
+                2021 |       |     3  |    4
                 2023 |     1 |     2  |      \s""");
     }
 }

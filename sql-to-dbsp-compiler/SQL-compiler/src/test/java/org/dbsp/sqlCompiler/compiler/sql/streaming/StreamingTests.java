@@ -89,4 +89,27 @@ public class StreamingTests extends BaseSQLTests {
                 addSub);
         this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
     }
+
+    @Test
+    public void testJoin() {
+        String ddl = """
+            CREATE TABLE series (
+                    metadata VARCHAR,
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
+            );
+            
+            CREATE TABLE shift(
+                    person VARCHAR,
+                    on_call DATE
+            );
+            """;
+        String query =
+                "SELECT metadata, person FROM series JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call";
+        DBSPCompiler compiler = testCompiler();
+        query = "CREATE VIEW V AS (" + query + ")";
+        compiler.compileStatements(ddl);
+        compiler.compileStatement(query);
+        InputOutputPair[] data = new InputOutputPair[0];
+        this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
+    }
 }

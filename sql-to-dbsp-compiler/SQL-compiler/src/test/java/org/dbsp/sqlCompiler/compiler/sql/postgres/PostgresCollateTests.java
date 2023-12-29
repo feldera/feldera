@@ -25,7 +25,7 @@ public class PostgresCollateTests extends SqlIoTest {
     public void testUpperLower() {
         this.q("""
                 SELECT a, lower(x), lower(y), upper(x), upper(y), initcap(x), initcap(y) FROM collate_test10;
-                 a | lower | lower | upper | upper | initcap | initcap\s
+                 a | lower | lower | upper | upper | initcap | initcap
                 ---+-------+-------+-------+-------+---------+---------
                  1 | hij| hij| HIJ| HIJ| Hij| Hij
                  2 | hij| hij| HIJ| HIJ| Hij| Hij""");

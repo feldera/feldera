@@ -74,10 +74,8 @@ public class DBSPBlockExpression extends DBSPExpression {
     public IIndentStream toString(IIndentStream builder) {
         builder.append("{")
                 .increase()
-                .joinI(System.lineSeparator(), this.contents);
+                .intercalateI(";" + System.lineSeparator(), this.contents);
         if (this.lastExpression != null) {
-            if (!this.contents.isEmpty())
-                builder.newline();
             builder.append(this.lastExpression);
         }
         return builder.newline()

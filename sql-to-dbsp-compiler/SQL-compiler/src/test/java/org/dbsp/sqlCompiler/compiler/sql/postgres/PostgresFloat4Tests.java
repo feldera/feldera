@@ -74,39 +74,39 @@ public class PostgresFloat4Tests extends SqlIoTest {
     public void testSpecialValues() {
         this.q("""
                 SELECT 'NaN'::float4;
-                 float4\s
+                 float4
                 --------
                     NaN""");
         this.q("""
                 SELECT 'nan'::float4;
-                 float4\s
+                 float4
                 --------
                     NaN""");
         this.q("""
                 SELECT 'NaN'::float4;
-                 float4\s
+                 float4
                 --------
                     NaN""");
         // Postgres is *not* case-sensitive, but we are.
         // Tests were modified to use proper spelling,
         this.q("""
                 SELECT '  Infinity'::float4;
-                  float4 \s
+                  float4 
                 ----------
                  Infinity""");
         this.q("""
                 SELECT '-Infinity'::float4;
-                  float4  \s
+                  float4  
                 -----------
                  -Infinity""");
         this.q("""
                 SELECT '  inf  '::float4;
-                  float4 \s
+                  float4 
                 ----------
                  Infinity""");
         this.q("""
                 SELECT '-inf'::float4;
-                  float4  \s
+                  float4  
                 -----------
                  -Infinity""");
     }
@@ -115,22 +115,22 @@ public class PostgresFloat4Tests extends SqlIoTest {
     public void testSpecialArithmetic() {
         this.q("""
                 SELECT 'Infinity'::float4 / 'Infinity'::float4;
-                 ?column?\s
+                 ?column?
                 ----------
                       NaN""");
         this.q("""
                 SELECT '42'::float4 / 'Infinity'::float4;
-                 ?column?\s
+                 ?column?
                 ----------
                         0""");
         this.q("""
                 SELECT 'nan'::float4 / 'nan'::float4;
-                 ?column?\s
+                 ?column?
                 ----------
                       NaN""");
         this.q("""
                 SELECT 'nan'::float4 / '0'::float4;
-                 ?column?\s
+                 ?column?
                 ----------
                       NaN""");
     }
@@ -139,7 +139,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
     public void testFPTable() {
         this.q("""
                 SELECT * FROM FLOAT4_TBL;
-                      f1      \s
+                      f1      
                 ---------------
                              0
                         1004.3
@@ -152,7 +152,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
     public void testComp() {
         this.qs("""
                 SELECT f.* FROM FLOAT4_TBL f WHERE f.f1 <> '1004.3';
-                      f1      \s
+                      f1      
                 ---------------
                              0
                         -34.84
@@ -161,13 +161,13 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 (4 rows)
 
                 SELECT f.* FROM FLOAT4_TBL f WHERE f.f1 = '1004.3';
-                   f1  \s
+                   f1  
                 --------
                  1004.3
                 (1 row)
 
                 SELECT f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
-                      f1      \s
+                      f1      
                 ---------------
                              0
                         -34.84
@@ -175,7 +175,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 (3 rows)
 
                 SELECT f.* FROM FLOAT4_TBL f WHERE  f.f1 < '1004.3';
-                      f1      \s
+                      f1      
                 ---------------
                              0
                         -34.84
@@ -183,7 +183,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 (3 rows)
 
                 SELECT f.* FROM FLOAT4_TBL f WHERE '1004.3' >= f.f1;
-                      f1      \s
+                      f1      
                 ---------------
                              0
                         1004.3
@@ -192,7 +192,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 (4 rows)
 
                 SELECT f.* FROM FLOAT4_TBL f WHERE  f.f1 <= '1004.3';
-                      f1      \s
+                      f1      
                 ---------------
                              0
                         1004.3
@@ -257,13 +257,13 @@ public class PostgresFloat4Tests extends SqlIoTest {
         this.q("""
                 -- test edge-case coercions to integer
                 SELECT CAST(CAST('32767.4' AS REAL) AS SMALLINT);
-                 int2 \s
+                 int2 
                 -------
                  32767""");
         this.q("""
                 -- test edge-case coercions to integer
                 SELECT '32767.4'::float4::int2;
-                 int2 \s
+                 int2 
                 -------
                  32767""");
     }
@@ -274,14 +274,14 @@ public class PostgresFloat4Tests extends SqlIoTest {
     public void testCbrt() {
         this.q("""
                 SELECT cbrt(null);
-                 cbrt\s
+                 cbrt
                 ------
                 NULL"""
         );
 
         this.q("""
                 SELECT f.f1, cbrt(f.f1) AS cbrt_f1 FROM FLOAT4_TBL f;
-                          f1          |       cbrt_f1       \s
+                          f1          |       cbrt_f1       
                 ----------------------+----------------------
                                     0 |                    0
                                1004.3 |    10.01431279725316

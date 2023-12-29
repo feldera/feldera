@@ -233,9 +233,9 @@ public class TopKTests extends SqlIoTest {
                 FROM cte;
                  DocumentID | Status | DateCreated | rn
                 ---------------------------------------
-                 1          | S1| 2011-09-02       | 1\s
-                 2          | S3| 2011-08-01       | 2\s
-                 3          | S1| 2011-08-02       | 3\s
+                 1          | S1| 2011-09-02       | 1
+                 2          | S3| 2011-08-01       | 2
+                 3          | S1| 2011-08-02       | 3
                 (3 rows)""", false);
     }
 }

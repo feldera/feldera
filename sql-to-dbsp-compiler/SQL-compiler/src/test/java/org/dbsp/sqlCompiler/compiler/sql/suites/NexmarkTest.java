@@ -403,7 +403,7 @@ ON mod(B.auction, 10000) = S.key""",
 -- CREATE FUNCTION count_char AS 'com.github.nexmark.flink.udf.CountChar';
 
 CREATE VIEW Q14 AS
-SELECT\s
+SELECT
     auction,
     bidder,
     0.908 * price as price,

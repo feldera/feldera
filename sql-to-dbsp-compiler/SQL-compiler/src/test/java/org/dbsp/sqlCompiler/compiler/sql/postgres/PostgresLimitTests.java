@@ -48,7 +48,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 > 50
                         ORDER BY unique1 LIMIT 2;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                       51 |      76 | ZBAAAA
                       52 |     985 | ACAAAA
@@ -57,7 +57,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 > 60
                         ORDER BY unique1 LIMIT 5;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                       61 |     560 | JCAAAA
                       62 |     633 | KCAAAA
@@ -69,7 +69,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 > 60 AND unique1 < 63
                         ORDER BY unique1 LIMIT 5;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                       61 |     560 | JCAAAA
                       62 |     633 | KCAAAA
@@ -82,7 +82,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 > 100
                         ORDER BY unique1 LIMIT 3 OFFSET 20;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                      121 |     700 | REAAAA
                      122 |     519 | SEAAAA
@@ -92,14 +92,14 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 < 50
                         ORDER BY unique1 DESC LIMIT 8 OFFSET 99;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                 (0 rows)
 
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 < 50
                         ORDER BY unique1 DESC LIMIT 20 OFFSET 39;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                       10 |     520 | KAAAAA
                        9 |      49 | JAAAAA
@@ -117,7 +117,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek
                         ORDER BY unique1 OFFSET 990;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                      990 |     369 | CMAAAA
                      991 |     426 | DMAAAA
@@ -134,7 +134,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek
                         ORDER BY unique1 OFFSET 990 LIMIT 5;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                      990 |     369 | CMAAAA
                      991 |     426 | DMAAAA
@@ -146,7 +146,7 @@ public class PostgresLimitTests extends SqlIoTest {
                 SELECT unique1, unique2, stringu1
                         FROM onek
                         ORDER BY unique1 LIMIT 5 OFFSET 900;
-                 unique1 | unique2 | stringu1\s
+                 unique1 | unique2 | stringu1
                 ---------+---------+----------
                      900 |     913 | QIAAAA
                      901 |     931 | RIAAAA

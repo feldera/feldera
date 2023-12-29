@@ -37,7 +37,7 @@ public class PostgresCaseTests extends SqlIoTest {
                   CASE
                     WHEN 1 < 2 THEN 3
                   END AS "Simple WHEN";
-                 One | Simple WHEN\s
+                 One | Simple WHEN
                 -----+-------------
                  3|           3
                 (1 row)
@@ -46,7 +46,7 @@ public class PostgresCaseTests extends SqlIoTest {
                   CASE
                     WHEN 1 > 2 THEN 3
                   END AS "Simple default";
-                  One   | Simple default\s
+                  One   | Simple default
                 --------+----------------
                  <NULL>|              \s
                 (1 row)
@@ -56,7 +56,7 @@ public class PostgresCaseTests extends SqlIoTest {
                     WHEN 1 < 2 THEN 3
                     ELSE 4
                   END AS "Simple ELSE";
-                 One | Simple ELSE\s
+                 One | Simple ELSE
                 -----+-------------
                  3|           3
                 (1 row)
@@ -66,7 +66,7 @@ public class PostgresCaseTests extends SqlIoTest {
                     WHEN 1 > 2 THEN 3
                     ELSE 4
                   END AS "ELSE default";
-                 One | ELSE default\s
+                 One | ELSE default
                 -----+--------------
                  4|            4
                 (1 row)
@@ -77,7 +77,7 @@ public class PostgresCaseTests extends SqlIoTest {
                     WHEN 4 < 5 THEN 6
                     ELSE 7
                   END AS "Two WHEN with default";
-                 One | Two WHEN with default\s
+                 One | Two WHEN with default
                 -----+-----------------------
                  6|                     6
                 (1 row)
@@ -85,20 +85,20 @@ public class PostgresCaseTests extends SqlIoTest {
                 SELECT '7' AS "None",
                    CASE WHEN 2 < 0 THEN 1
                    END AS "NULL on no matches";
-                 None | NULL on no matches\s
+                 None | NULL on no matches
                 ------+--------------------
                  7|                  \s
                 (1 row)
 
                 -- Constant-expression folding shouldn't evaluate unreachable subexpressions
                 SELECT CASE WHEN 1=0 THEN 1/0 WHEN 1=1 THEN 1 ELSE 2/0 END;
-                 case\s
+                 case
                 ------
                     1
                 (1 row)
 
                 SELECT CASE 1 WHEN 0 THEN 1/0 WHEN 1 THEN 1 ELSE 2/0 END;
-                 case\s
+                 case
                 ------
                     1
                 (1 row)""");
@@ -120,7 +120,7 @@ public class PostgresCaseTests extends SqlIoTest {
 
                         -- Test for cases involving untyped literals in test expression
                         SELECT CASE 'a' WHEN 'a' THEN 1 ELSE 2 END;
-                         case\s
+                         case
                         ------
                             1
                         (1 row)
@@ -133,7 +133,7 @@ public class PostgresCaseTests extends SqlIoTest {
                             WHEN i >= 3 THEN i
                           END AS ">= 3 or Null"
                           FROM CASE_TBL;
-                         >= 3 or Null\s
+                         >= 3 or Null
                         --------------
                                     \s
                                     \s
@@ -146,7 +146,7 @@ public class PostgresCaseTests extends SqlIoTest {
                                ELSE i
                           END AS "Simplest Math"
                           FROM CASE_TBL;
-                         Simplest Math\s
+                         Simplest Math
                         ---------------
                                      1
                                      2
@@ -162,7 +162,7 @@ public class PostgresCaseTests extends SqlIoTest {
                                ELSE 'big'
                           END AS "Category"
                           FROM CASE_TBL;
-                         Value | Category\s
+                         Value | Category
                         -------+----------
                              1 | one
                              2 | two
@@ -178,7 +178,7 @@ public class PostgresCaseTests extends SqlIoTest {
                                ELSE 'big'
                           END AS "Category"
                           FROM CASE_TBL;
-                         Category\s
+                         Category
                         ----------
                          one
                          two
@@ -195,19 +195,19 @@ public class PostgresCaseTests extends SqlIoTest {
                         --  defined in the SQL standard.
                         --
                         SELECT * FROM CASE_TBL WHERE COALESCE(f,i) = 4;
-                         i | f\s
+                         i | f
                         ---+---
                          4 | \s
                         (1 row)
 
                         SELECT * FROM CASE_TBL WHERE NULLIF(f,i) = 2;
-                         i | f\s
+                         i | f
                         ---+---
                         (0 rows)
 
                         SELECT COALESCE(a.f, b.i, b.j)
                           FROM CASE_TBL a, CASE2_TBL b;
-                         coalesce\s
+                         coalesce
                         ----------
                              10.1
                              20.2
@@ -238,7 +238,7 @@ public class PostgresCaseTests extends SqlIoTest {
                         SELECT *
                           FROM CASE_TBL a, CASE2_TBL b
                           WHERE COALESCE(a.f, b.i, b.j) = 2;
-                         i | f | i | j \s
+                         i | f | i | j 
                         ---+---+---+----
                          4 |   | 2 | -2
                          4 |   | 2 | -4
@@ -247,7 +247,7 @@ public class PostgresCaseTests extends SqlIoTest {
                         SELECT NULLIF(a.i,b.i) AS "NULLIF(a.i,b.i)",
                           NULLIF(b.i, 4) AS "NULLIF(b.i,4)"
                           FROM CASE_TBL a, CASE2_TBL b;
-                         NULLIF(a.i,b.i) | NULLIF(b.i,4)\s
+                         NULLIF(a.i,b.i) | NULLIF(b.i,4)
                         -----------------+---------------
                                          |             1
                                        2 |             1
@@ -278,7 +278,7 @@ public class PostgresCaseTests extends SqlIoTest {
                         SELECT *
                           FROM CASE_TBL a, CASE2_TBL b
                           WHERE COALESCE(f,b.i) = 2;
-                         i | f | i | j \s
+                         i | f | i | j 
                         ---+---+---+----
                          4 |   | 2 | -2
                          4 |   | 2 | -4
