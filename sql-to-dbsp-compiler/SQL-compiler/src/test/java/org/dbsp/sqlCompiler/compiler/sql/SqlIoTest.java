@@ -56,6 +56,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -612,5 +613,38 @@ public abstract class SqlIoTest extends BaseSQLTests {
 
     public void qs(String queriesWithOutputs) {
         this.qs(queriesWithOutputs, true);
+    }
+
+    /**
+     * Test the query for run time failure.
+     * @param query         The query to run.
+     * @param panicMessage  The fragment of string that should appear in the panic message.
+     * @param optimize      Boolean that indicates if the query should be compiled with optimizations.
+     */
+    public void qf(String query, String panicMessage, boolean optimize) {
+        DBSPCompiler compiler = this.testCompiler(optimize);
+        this.prepareData(compiler);
+        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        if (!compiler.options.languageOptions.throwOnError)
+            compiler.throwIfErrorsOccurred();
+        compiler.optimize();
+        DBSPCircuit circuit = getCircuit(compiler);
+        DBSPType outputType = circuit.getOutputType(0);
+        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(Collections.emptyMap(), outputType);
+        InputOutputPair streams = new InputOutputPair(
+                this.getPreparedInputs(compiler),
+                new DBSPZSetLiteral.Contents[]{ result }
+        );
+        this.addFailingRustTestCase(query, panicMessage, compiler, circuit, streams);
+    }
+
+    /**
+     * Test the query for run time failure with and without optimizations enabled.
+     * @param query         The query to run.
+     * @param panicMessage  The fragment of string that should appear in the panic message.
+     */
+    public void qf(String query, String panicMessage) {
+        this.qf(query, panicMessage, true);
+        this.qf(query, panicMessage, false);
     }
 }

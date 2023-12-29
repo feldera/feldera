@@ -40,6 +40,15 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void issue1209() {
+        this.qf("SELECT '-32768'::int2 % 0::int2", "attempt to calculate the remainder with a divisor of zero");
+
+        this.qf("SELECT '-32768'::int2 / 0::int2", "attempt to divide by zero", true);
+
+        this.qf("SELECT '-32768'::int2 / 0::int2", "attempt to divide by zero", false);
+    }
+
+    @Test
     public void testLeftNull() {
         this.q("""
                 SELECT LEFT(NULL, 100);
