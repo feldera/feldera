@@ -59,3 +59,4 @@ gh-pages
 
 # Playwright
 playwright-artifacts/
+playwright-snapshots/
