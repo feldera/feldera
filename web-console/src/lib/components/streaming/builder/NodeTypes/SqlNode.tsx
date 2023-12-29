@@ -46,10 +46,8 @@ function SqlTableNode(props: { name: string }) {
           </Avatar>
         }
       />
-      {/* The table- prefix is important for the isValidConnection logic and webui-tester
-          The className is used by webui-tester */}
+      {/* The table- prefix is important for the isValidConnection logic */}
       <Handle
-        className='tableHandle'
         id={'table-' + props.name}
         type='target'
         position={Position.Left}

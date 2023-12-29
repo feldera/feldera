@@ -352,17 +352,15 @@ const PipelineBuilderPage = (props: {
           {name}
         </Link>
       </BreadcrumbsHeader>
-      <Grid container spacing={6} className='match-height' id='pipeline-builder-content' sx={{ pl: 6, pt: 6 }}>
+      <Grid container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
         <Grid item xs={12}>
-          {/* id referenced by webui-tester */}
           <Card>
             <CardContent>
               <Metadata errors={{}} />
             </CardContent>
             <CardContent>
               <Grid item xs={12}>
-                {/* id referenced by webui-tester */}
-                <SaveIndicator id='save-indicator' getLabel={stateToSaveLabel} state={saveState} />
+                <SaveIndicator getLabel={stateToSaveLabel} state={saveState} />
               </Grid>
             </CardContent>
           </Card>

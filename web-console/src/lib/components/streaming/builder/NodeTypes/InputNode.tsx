@@ -90,9 +90,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           <IconX fontSize={20} />
         </IconButton>
       </Box>
-      {/* The .inputHandle is referenced by webui-tester */}
       <Handle
-        className='inputHandle'
         type='source'
         position={Position.Right}
         isConnectable={true}

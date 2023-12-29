@@ -25,7 +25,6 @@ const ConnectorCreateGrid = () => {
   const [hash, setHash] = useHashPart()
   const showOnHash = showOnHashPart([hash, setHash])
 
-  // id is referenced by webui-tester
   return (
     <>
       <BreadcrumbsHeader>
@@ -36,7 +35,7 @@ const ConnectorCreateGrid = () => {
           Create
         </Link>
       </BreadcrumbsHeader>
-      <Grid id='connector-creator-content' container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
+      <Grid container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
         <GridItems xs={12} sm={6} md={4}>
           <AddConnectorCard
             icon={connectorTypeToLogo(ConnectorType.URL)}
@@ -64,7 +63,6 @@ const ConnectorCreateGrid = () => {
             data-testid='box-connector-snowflake'
           />
           <AddConnectorCard
-            id='generic-connector'
             icon={connectorTypeToLogo(ConnectorType.UNKNOWN)}
             title='Configure a generic connector'
             addInput={{ href: '#generic' }}

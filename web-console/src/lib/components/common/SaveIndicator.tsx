@@ -54,7 +54,6 @@ const SaveIndicator = (props: {
         sx={{ mr: 2 }}
         icon={stateToIcon(props.state)}
         data-testid={stateToTestId(props.state)}
-        id={props.id}
       />
     </Tooltip>
   )

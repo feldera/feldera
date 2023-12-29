@@ -8,10 +8,7 @@ const deleteRows = async (page: Page, regex: RegExp) => {
       // Wait for atleast one row, if timed out - no rows left
       await page.getByTestId(regex).waitFor({ timeout: 2000 })
     } catch {}
-    const buttonDelete = await page
-      .getByTestId(regex)
-      .first()
-      .getByTestId('button-delete')
+    const buttonDelete = await page.getByTestId(regex).first().getByTestId('button-delete')
     if (!(await buttonDelete.isVisible())) {
       // Exit if no more rows left
       break

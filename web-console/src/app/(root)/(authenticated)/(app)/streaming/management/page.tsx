@@ -15,8 +15,7 @@ const PipelineManagement = () => {
           Pipelines
         </Link>
       </BreadcrumbsHeader>
-      {/* id referenced by webui-tester */}
-      <Box id='pipeline-management-content'>
+      <Box>
         <ErrorBoundary FallbackComponent={ErrorOverlay}>
           <PipelineTable />
         </ErrorBoundary>

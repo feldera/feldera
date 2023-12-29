@@ -14,7 +14,6 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
           name='config.format_name'
           label='Data Format'
           size='small'
-          id='format_name'
           options={[
             {
               id: 'json',

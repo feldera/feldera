@@ -82,9 +82,7 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           <IconX fontSize={20} />
         </IconButton>
       </Box>
-      {/* The .outputHandle is referenced by webui-tester */}
       <Handle
-        className='outputHandle'
         type='target'
         position={Position.Left}
         isConnectable={true}

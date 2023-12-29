@@ -31,9 +31,9 @@ const MissingSchemaDialog = (props: {
         }
       }}
     >
-      <DialogTitle id='alert-dialog-title'>Missing Schema?</DialogTitle>
+      <DialogTitle>Missing Schema?</DialogTitle>
       <DialogContent>
-        <DialogContentText id='alert-dialog-description'>
+        <DialogContentText>
           We didn't find the schema for the program of the config you are trying to load. Either the program has not
           been compiled yet or the compilation had errors. Continue to the program editor to resolve the issue.
         </DialogContentText>

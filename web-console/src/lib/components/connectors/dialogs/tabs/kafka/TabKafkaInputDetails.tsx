@@ -31,7 +31,6 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
             name='config.auto_offset_reset'
             label='auto.offset.reset'
             size='small'
-            id='reset'
             options={[
               {
                 id: 'earliest',
@@ -89,12 +88,7 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
                 }}
                 data-testid='input-wrapper-topics'
                 renderInput={params => (
-                  <TextField
-                    {...params}
-                    inputRef={ref}
-                    label='topics'
-                    placeholder='Add topic, press Enter to add…'
-                  />
+                  <TextField {...params} inputRef={ref} label='topics' placeholder='Add topic, press Enter to add…' />
                 )}
               />
             )}
@@ -102,9 +96,7 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
           />
           {(e =>
             e ? (
-              <FormHelperText sx={{ color: 'error.main' }} id='validation-topics'>
-                {e.message}
-              </FormHelperText>
+              <FormHelperText sx={{ color: 'error.main' }}>{e.message}</FormHelperText>
             ) : (
               <FormHelperText>A list of Kafka topics to consume from.</FormHelperText>
             ))(ctx.getFieldState('config.topics').error)}

@@ -22,7 +22,7 @@ export const AddConnectorCard = (props: {
 }) => {
   const theme = useTheme()
   return (
-    <Card id={props.id} data-testid={props['data-testid']}>
+    <Card data-testid={props['data-testid']}>
       <CardContent sx={{ textAlign: 'center' }}>
         {typeof props.icon === 'string' ? (
           <Image
