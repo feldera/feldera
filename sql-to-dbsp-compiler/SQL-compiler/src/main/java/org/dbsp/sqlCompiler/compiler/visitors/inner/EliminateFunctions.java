@@ -62,8 +62,9 @@ public class EliminateFunctions extends InnerRewriteVisitor {
                 //                          tuple.clone()) }
                 assert arguments.length == 2: "Expected 2 arguments for dump function";
                 Function<DBSPExpression, DBSPExpressionStatement> makePrint = stringArgument ->
-                    new DBSPExpressionStatement(
-                        new DBSPApplyExpression(expression.getNode(), "print", new DBSPTypeVoid(), stringArgument));
+                        new DBSPApplyExpression(
+                                expression.getNode(), "print", new DBSPTypeVoid(), stringArgument)
+                                .toStatement();
                 List<DBSPStatement> block = new ArrayList<>();
                 block.add(makePrint.apply(arguments[0]));
                 block.add(makePrint.apply(new DBSPStringLiteral(": (")));
@@ -73,7 +74,7 @@ public class EliminateFunctions extends InnerRewriteVisitor {
                     DBSPExpression format = new DBSPStringLiteral("%%,");
                     DBSPExpression writeLog = new DBSPApplyExpression(
                             expression.getNode(), "writelog", fieldI.type, format, fieldI);
-                    block.add(new DBSPExpressionStatement(writeLog));
+                    block.add(writeLog.toStatement());
                 }
                 block.add(makePrint.apply(new DBSPStringLiteral(")\n")));
                 result = new DBSPBlockExpression(block, arguments[1].applyCloneIfNeeded());

@@ -876,7 +876,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPForExpression node) {
         this.builder.append("for ");
-        node.pattern.accept(this);
+        node.variable.accept(this);
         this.builder.append(" in ");
         node.iterated.accept(this);
         this.builder.append(" ");
@@ -1049,7 +1049,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeStruct.Field field) {
-        this.builder.append(field.sanitizedName)
+        this.builder.append("r#")
+                .append(field.sanitizedName)
                 .append(": ");
         field.type.accept(this);
         return VisitDecision.STOP;
@@ -1059,7 +1060,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPStructItem item) {
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq)]")
                 .newline();
-        builder.append("struct ")
+        builder.append("struct r#")
                     .append(item.type.sanitizedName)
                 .append(" {")
                 .increase();
@@ -1077,7 +1078,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeStruct type) {
         // A *reference* to a struct type is just the type name.
-        this.builder.append(type.sanitizedName);
+        this.builder.append("r#")
+                .append(type.sanitizedName);
         return VisitDecision.STOP;
     }
 

@@ -12,6 +12,6 @@ public class SanitizeNames extends Passes {
         super(reporter);
         Set<String> identifiers = new HashSet<>();
         super.add(new CollectIdentifiers(reporter, identifiers).getCircuitVisitor());
-        super.add(new SanitizeStructNames(reporter, new FreshName(identifiers), true));
+        super.add(new SanitizeStructNames(reporter, new FreshName(identifiers)));
     }
 }

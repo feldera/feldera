@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.FreshName;
-import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,30 +12,23 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Generates new names for structs and struct fields that
- * are not legal Rust identifiers.
- */
+/** Generates new names for structs and struct fields that
+ * are not legal Rust identifiers.  Notice that some Rust identifiers
+ * cannot be used as names, e.g., 'None'.  So we always prefix the names
+ * with a string that makes them legal identifiers. */
 public class SanitizeStructNames extends InnerRewriteVisitor {
     protected FreshName nameGenerator;
     protected final Map<String, String> remapped;
-    /**
-     * If true force new names.
-     */
-    protected final boolean force;
 
-    public SanitizeStructNames(IErrorReporter reporter, FreshName nameGenerator, boolean force) {
+    public SanitizeStructNames(IErrorReporter reporter, FreshName nameGenerator) {
         super(reporter);
         this.nameGenerator = nameGenerator;
         this.remapped = new HashMap<>();
-        this.force = force;
     }
 
-    String sanitizeName(String name, String prefix, boolean reuse, boolean force) {
+    String sanitizeName(String name, String prefix, boolean reuse) {
         if (reuse && this.remapped.containsKey(name))
             return this.remapped.get(name);
-        if (!force && Utilities.isLegalRustIdentifier(name))
-            return name;
         String result = nameGenerator.freshName(prefix);
         if (reuse)
             this.remapped.put(name, result);
@@ -47,7 +39,7 @@ public class SanitizeStructNames extends InnerRewriteVisitor {
     public VisitDecision preorder(DBSPTypeStruct.Field field) {
         this.push(field);
         DBSPType type = this.transform(field.type);
-        String sanitizedName = this.sanitizeName(field.name, "field", false, false);
+        String sanitizedName = this.sanitizeName(field.name, "field", false);
         DBSPTypeStruct.Field result = new DBSPTypeStruct.Field(
                 field.getNode(), field.name, sanitizedName, type, field.nameIsQuoted);
         this.pop(field);
@@ -68,7 +60,7 @@ public class SanitizeStructNames extends InnerRewriteVisitor {
         }
         this.pop(type);
         this.nameGenerator = save;
-        String sanitizedName = this.sanitizeName(type.name, "TABLE", true, this.force);
+        String sanitizedName = this.sanitizeName(type.name, "TABLE", true);
         DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, sanitizedName, fields);
         this.map(type, result);
         return VisitDecision.STOP;

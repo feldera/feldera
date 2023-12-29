@@ -3,11 +3,13 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -16,20 +18,19 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
-import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.Linq;
 import org.dbsp.util.TableValue;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -77,16 +78,16 @@ class TestCase {
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
-        boolean handles = this.compiler.options.ioOptions.emitHandles;
-        DBSPExpression[] circuitArguments = new DBSPExpression[0];
-        if (handles) {
-            circuitArguments = new DBSPExpression[1];
-            circuitArguments[0] = new DBSPUSizeLiteral(1);
-        }
-        DBSPLetStatement circuit = new DBSPLetStatement("circuit",
-                new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault(), circuitArguments),
+        boolean useCatalog = this.compiler.options.ioOptions.emitCatalog;
+        DBSPExpression[] circuitArguments = new DBSPExpression[1];
+        circuitArguments[0] = new DBSPUSizeLiteral(1);  // workers
+        DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
+                new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).unwrap(),
                 true);
-        list.add(circuit);
+        list.add(cas);
+        DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
+        list.add(streams);
+
         Simplify simplify = new Simplify(new StderrErrorReporter());
         int pair = 0;
         for (InputOutputPair pairs : this.data) {
@@ -104,20 +105,32 @@ class TestCase {
             list.add(new DBSPFunctionItem(inputFunction));
             DBSPLetStatement in = new DBSPLetStatement(functionName, inputFunction.call());
             list.add(in);
-            DBSPExpression[] arguments = new DBSPExpression[inputs.length];
-            for (int i = 0; i < inputs.length; i++)
-                arguments[i] = in.getVarReference().field(i);
 
-            DBSPLetStatement out = new DBSPLetStatement("output",
-                    circuit.getVarReference().call(arguments));
-            list.add(out);
+            if (useCatalog)
+                throw new UnimplementedException();
+
+            for (int i = 0; i < inputs.length; i++) {
+                String function;
+                if (inputs[i].getType().is(DBSPTypeZSet.class))
+                    function = "append_to_collection_handle";
+                else
+                    function = "append_to_upsert_handle";
+                list.add(new DBSPApplyExpression(function, DBSPTypeAny.getDefault(),
+                        in.getVarReference().field(i).borrow(), streams.getVarReference().field(i).applyClone())
+                        .toStatement());
+            }
+            DBSPLetStatement step =
+                    new DBSPLetStatement("_", new DBSPApplyMethodExpression(
+                    "step", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).unwrap());
+            list.add(step);
+
             for (int i = 0; i < pairs.outputs.length; i++) {
                 String message = System.lineSeparator() +
                         "mvn test -Dtest=" + this.javaTestName +
                         System.lineSeparator() + this.name;
 
                 DBSPType rowType = outputs[i].data.getElementType();
-                boolean found = false;
+                boolean foundFp = false;
                 DBSPExpression[] converted = null;
                 DBSPVariablePath var = null;
                 if (rowType.is(DBSPTypeTuple.class)) {
@@ -129,19 +142,20 @@ class TestCase {
                         DBSPType fieldType = tuple.getFieldType(index);
                         if (fieldType.is(DBSPTypeFP.class)) {
                             converted[index] = var.deref().field(index).cast(DBSPTypeString.varchar(fieldType.mayBeNull));
-                            found = true;
+                            foundFp = true;
                         } else {
                             converted[index] = var.deref().field(index).applyCloneIfNeeded();
                         }
                     }
                 } else {
-                    // TODO: handle Vec<> values
+                    // TODO: handle Vec<> values with FP values inside.
+                    // Currently we don't have any tests with this case.
                 }
 
                 DBSPExpression expected = outputs[i];
-                DBSPExpression actual = out.getVarReference().field(i);
-
-                if (found) {
+                DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
+                        streams.getVarReference().field(pairs.inputs.length + i).applyClone());
+                if (foundFp) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
                     DBSPExpression converter = convertedValue.closure(var.asParameter());
                     DBSPVariablePath converterVar = new DBSPVariablePath("converter", DBSPTypeAny.getDefault());
@@ -150,13 +164,13 @@ class TestCase {
                     actual = new DBSPApplyExpression("zset_map", convertedValue.getType(), actual.borrow(), converterVar);
                 }
 
-                DBSPStatement compare = new DBSPExpressionStatement(
+                DBSPStatement compare =
                         new DBSPApplyExpression("assert!", new DBSPTypeVoid(),
                                 new DBSPApplyExpression("must_equal",
                                         new DBSPTypeBool(CalciteObject.EMPTY, false),
                                         actual.borrow(),
                                         expected.borrow()),
-                                new DBSPStrLiteral(message, false, true)));
+                                new DBSPStrLiteral(message, false, true)).toStatement();
                 list.add(compare);
             }
             pair++;
@@ -165,7 +179,9 @@ class TestCase {
         List<String> annotations = new ArrayList<>();
         annotations.add("#[test]");
         if (this.message != null)
-            annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
+            // TODO: https://github.com/feldera/feldera/issues/1208
+            // annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
+            annotations.add("#[should_panic]");
         return new DBSPFunction("test" + testNumber, new ArrayList<>(),
                 new DBSPTypeVoid(), body, annotations);
     }

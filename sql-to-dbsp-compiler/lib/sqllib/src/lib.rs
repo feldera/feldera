@@ -20,7 +20,9 @@ pub use timestamp::Timestamp;
 
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
-use dbsp::{DBData, DBWeight, OrdIndexedZSet, OrdZSet};
+use dbsp::{
+    CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OrdZSet, OutputHandle, UpsertHandle,
+};
 use num::{Signed, ToPrimitive};
 use num_traits::Zero;
 use rust_decimal::{Decimal, MathematicalOps};
@@ -1088,4 +1090,46 @@ where
         cursor.step_key();
     }
     builder.done()
+}
+
+pub fn append_to_upsert_handle<K, W>(data: &OrdZSet<K, W>, handle: UpsertHandle<K, bool>)
+where
+    K: DBData,
+    W: DBWeight + ZRingValue,
+{
+    let mut cursor = data.cursor();
+    while cursor.key_valid() {
+        let mut w = cursor.weight();
+        let mut insert = true;
+        if !w.ge0() {
+            insert = false;
+            w = w.neg();
+        }
+        while !w.le0() {
+            let key = cursor.key();
+            handle.push(key.clone(), insert);
+            w = w.add(W::neg(W::one()));
+        }
+        cursor.step_key();
+    }
+}
+
+pub fn append_to_collection_handle<K, W>(data: &OrdZSet<K, W>, handle: CollectionHandle<K, W>)
+where
+    K: DBData,
+    W: DBWeight + ZRingValue,
+{
+    let mut cursor = data.cursor();
+    while cursor.key_valid() {
+        handle.push(cursor.key().clone(), cursor.weight());
+        cursor.step_key();
+    }
+}
+
+pub fn read_output_handle<K, W>(handle: OutputHandle<OrdZSet<K, W>>) -> OrdZSet<K, W>
+where
+    K: DBData,
+    W: DBWeight,
+{
+    handle.consolidate()
 }
