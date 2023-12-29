@@ -64,7 +64,6 @@ const MetadataForm = (props: { errors: FormError; project: ProgramDescr; setProj
       <Grid item xs={4}>
         <FormControl fullWidth>
           <TextField
-            id='program-name' // Referenced by webui-tester
             fullWidth
             type='text'
             label='Name'
@@ -77,16 +76,13 @@ const MetadataForm = (props: { errors: FormError; project: ProgramDescr; setProj
             }}
           />
           {props.errors.name && (
-            <FormHelperText sx={{ color: 'error.main' }} id='validation-schema-first-name'>
-              {props.errors.name.message}
-            </FormHelperText>
+            <FormHelperText sx={{ color: 'error.main' }}>{props.errors.name.message}</FormHelperText>
           )}
         </FormControl>
       </Grid>
       <Grid item xs={8}>
         <TextField
           fullWidth
-          id='program-description' // Referenced by webui-tester
           type='Description'
           label='Description'
           placeholder={PLACEHOLDER_VALUES['program_description']}
@@ -116,7 +112,6 @@ const stateToEditorLabel = (state: SaveIndicatorState): string =>
       return 'Saving …'
     })
     .with('isUpToDate' as const, () => {
-      // If you change this string, adjust the webui-tester too
       return 'Saved'
     })
     .exhaustive()
@@ -521,13 +516,11 @@ const Editors = (props: { programName: string | null }) => {
         </CardContent>
         <CardContent>
           <Grid item xs={12}>
-            {/* ids referenced by webui-tester */}
-            <SaveIndicator id='save-indicator' getLabel={stateToEditorLabel} state={state} />
-            <CompileIndicator id='compile-indicator' state={project.status} />
+            <SaveIndicator getLabel={stateToEditorLabel} state={state} />
+            <CompileIndicator state={project.status} />
           </Grid>
         </CardContent>
-        {/* id referenced by webui-tester */}
-        <CardContent id='editor-content'>
+        <CardContent>
           <Editor
             height='60vh'
             theme={vscodeTheme}

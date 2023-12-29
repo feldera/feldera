@@ -111,12 +111,11 @@ const Navigation = (props: Props) => {
               })}
         >
           {beforeVerticalNavMenuContent ? beforeVerticalNavMenuContent(props) : null}
-          {/* Navigation Menu; if you remove or change the id="navgation", also change the selenium tests */}
           <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             {userVerticalNavMenuContent ? (
               userVerticalNavMenuContent(props)
             ) : (
-              <List id='navigation' className='nav-items' sx={{ transition: 'padding .25s ease', pr: 4.5 }}>
+              <List sx={{ transition: 'padding .25s ease', pr: 4.5 }}>
                 <VerticalNavItems
                   groupActive={groupActive}
                   setGroupActive={setGroupActive}

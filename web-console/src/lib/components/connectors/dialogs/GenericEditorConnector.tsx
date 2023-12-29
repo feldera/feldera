@@ -74,12 +74,11 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
       onClose={() => props.setShow(false)}
       TransitionComponent={Transition}
     >
-      {/* id is referenced by webui-tester */}
       <FormContainer
         resolver={valibotResolver(schema)}
         values={curValues}
         defaultValues={defaultValues}
-        FormProps={{ id: 'generic-connector-form' }}
+        FormProps={{}}
         onSuccess={onSubmit}
       >
         <DialogContent sx={{ pb: 8, px: { xs: 8, sm: 15 }, pt: { xs: 8, sm: 12.5 }, position: 'relative' }}>

@@ -324,8 +324,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           <PipelineMemoryGraph metrics={metrics.global} />
         </Grid>
         <Grid item xs={12}>
-          {/* className referenced by webui-tester */}
-          <Paper className='inputStats'>
+          <Paper>
             <DataGridPro
               autoHeight
               getRowId={(row: ConnectorData) => row.relation.name}
@@ -339,8 +338,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         </Grid>
 
         <Grid item xs={12}>
-          {/* className referenced by webui-tester */}
-          <Paper className='outputStats'>
+          <Paper>
             <DataGridPro
               autoHeight
               getRowId={(row: ConnectorData) => row.relation.name}
@@ -360,11 +358,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
 }
 
 // Only show the details tab button if this pipeline has a revision
-function CustomDetailPanelToggle(props: Pick<GridRenderCellParams, 'id' | 'value' | 'row'>) {
-  const { value: isExpanded, row: row } = props
+function CustomDetailPanelToggle({ value: isExpanded, row: row }: Pick<GridRenderCellParams, 'value' | 'row'>) {
   const [hasRevision, setHasRevision] = useState<boolean>(false)
 
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.row.descriptor.pipeline_id))
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.pipeline_id))
   useEffect(() => {
     if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
       setHasRevision(true)
@@ -425,7 +422,7 @@ export default function PipelineTable() {
   const columns: GridColDef[] = [
     {
       ...GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
-      renderCell: params => <CustomDetailPanelToggle id={params.id} value={params.value} row={params.row} />
+      renderCell: params => <CustomDetailPanelToggle value={params.value} row={params.row} />
     },
     {
       field: 'name',
@@ -506,14 +503,7 @@ export default function PipelineTable() {
   }
 
   const btnAdd = (
-    <Button
-      variant='contained'
-      size='small'
-      href='/streaming/builder/'
-      id='btn-add-pipeline'
-      data-testid='button-add-pipeline'
-      key='0'
-    >
+    <Button variant='contained' size='small' href='/streaming/builder/' data-testid='button-add-pipeline' key='0'>
       Add pipeline
     </Button>
   )

@@ -34,7 +34,6 @@ const Metadata = (props: { errors: FormError }) => {
         <FormControl fullWidth>
           <TextField
             fullWidth
-            id='pipeline-name' // referenced by webui-tester
             type='text'
             label='Name'
             placeholder={PLACEHOLDER_VALUES['pipeline_name']}
@@ -44,16 +43,13 @@ const Metadata = (props: { errors: FormError }) => {
             inputProps={{ 'data-testid': 'input-pipeline-name' }}
           />
           {props.errors.name && (
-            <FormHelperText sx={{ color: 'error.main' }} id='validation-schema-first-name'>
-              {props.errors.name.message}
-            </FormHelperText>
+            <FormHelperText sx={{ color: 'error.main' }}>{props.errors.name.message}</FormHelperText>
           )}
         </FormControl>
       </Grid>
       <Grid item xs={8}>
         <TextField
           fullWidth
-          id='pipeline-description' // referenced by webui-tester
           type='Description'
           label='Description'
           placeholder={PLACEHOLDER_VALUES['pipeline_description']}

@@ -38,7 +38,6 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
         </Typography>
 
         <Autocomplete
-          id='sql-program-select' // referenced by webui-tester
           z-index={20}
           onInputChange={onProgramSelected}
           disableCloseOnSelect

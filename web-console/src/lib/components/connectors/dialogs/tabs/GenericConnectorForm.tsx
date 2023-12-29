@@ -27,7 +27,6 @@ export const GenericEditorForm = (props: {
           label={props.direction === Direction.OUTPUT ? 'Data Sink Name' : 'Data Source Name'}
           size='small'
           fullWidth
-          id='connector-name' // referenced by webui-tester
           placeholder={PLACEHOLDER_VALUES['connector_name']}
           aria-describedby='validation-name'
           disabled={props.disabled}
@@ -42,7 +41,6 @@ export const GenericEditorForm = (props: {
           label='Description'
           size='small'
           fullWidth
-          id='connector-description' // referenced by webui-tester
           placeholder={PLACEHOLDER_VALUES['connector_description']}
           aria-describedby='validation-description'
           disabled={props.disabled}
