@@ -87,17 +87,13 @@ const TabKafkaInputDetails = (props: { disabled?: boolean }) => {
                     '& .MuiChip-label': { textTransform: 'none' }
                   }
                 }}
+                data-testid='input-wrapper-topics'
                 renderInput={params => (
                   <TextField
                     {...params}
                     inputRef={ref}
                     label='topics'
                     placeholder='Add topic, press Enter to add…'
-                    InputProps={
-                      {
-                        'data-testid': 'input-wrapper-topics'
-                      } as any
-                    }
                   />
                 )}
               />
