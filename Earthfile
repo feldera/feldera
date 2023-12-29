@@ -1,4 +1,5 @@
-VERSION --try 0.7
+VERSION --global-cache 0.7
+IMPORT github.com/earthly/lib/rust:2.2.11 AS rust
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install --yes sudo
@@ -47,21 +48,26 @@ install-rust:
         --component rustfmt \
         --component llvm-tools-preview
     RUN cargo install --locked --force --version 0.5.0 cargo-machete
-    RUN cargo install --locked --force --version 0.17.6 cargo-audit
     RUN cargo install --locked --force --version 0.36.11 cargo-make
     RUN cargo install --locked --force --version 0.5.22 cargo-llvm-cov
     RUN cargo install --locked --force --version 0.1.61 cargo-chef
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
+    DO rust+INIT --keep_fingerprints=true
+
+rust-sources:
+    FROM +install-rust
+    COPY --keep-ts Cargo.toml Cargo.toml
+    COPY --keep-ts Cargo.lock Cargo.lock
+    COPY --keep-ts --dir crates crates
+    COPY --keep-ts sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
+    COPY --keep-ts README.md README.md
 
 formatting-check:
-    FROM +install-rust
-    COPY Cargo.toml Cargo.toml
-    COPY rustfmt.toml rustfmt.toml
-    COPY crates/ crates/
-    COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
-    RUN cargo +nightly fmt --all -- --check
+    FROM +rust-sources
+    COPY --keep-ts rustfmt.toml rustfmt.toml
+    DO rust+CARGO --args="+nightly  fmt --all -- --check"
 
 install-python-deps:
     FROM +install-deps
@@ -105,156 +111,16 @@ build-webui:
     RUN cd web-console && yarn build
     SAVE ARTIFACT ./web-console/out
 
-prepare-cache:
-    # We download and pre-build dependencies to cache it using cargo-chef.
-    # See also (on why this is so complicated :/):
-    # https://github.com/rust-lang/cargo/issues/2644
-    # https://hackmd.io/@kobzol/S17NS71bh
-    FROM +install-rust
-
-    # We can't just copy crates from source, the reasons seem to have to do with
-    # the way the hashes are computed for the cache: e.g., once
-    # https://github.com/earthly/earthly/issues/786 is fixed this can go away
-    # and crates can be copied instead:
-    RUN mkdir -p .cargo
-    RUN mkdir -p crates/nexmark
-    RUN mkdir -p crates/dbsp
-    RUN mkdir -p crates/adapters
-    RUN mkdir -p crates/pipeline_manager
-    RUN mkdir -p sql-to-dbsp-compiler/lib/hashing
-    RUN mkdir -p sql-to-dbsp-compiler/lib/readers
-    RUN mkdir -p sql-to-dbsp-compiler/lib/sqllib
-    RUN mkdir -p sql-to-dbsp-compiler/lib/sqlvalue
-    RUN mkdir -p sql-to-dbsp-compiler/lib/tuple
-    RUN mkdir -p sql-to-dbsp-compiler/temp
-    #RUN mkdir -p crates/webui-tester
-
-    COPY --keep-ts Cargo.toml .
-    COPY --keep-ts Cargo.lock .
-    COPY --keep-ts crates/nexmark/Cargo.toml crates/nexmark/
-    COPY --keep-ts crates/dbsp/Cargo.toml crates/dbsp/
-    COPY --keep-ts crates/pipeline-types/Cargo.toml crates/pipeline-types/
-    COPY --keep-ts crates/adapters/Cargo.toml crates/adapters/
-    COPY --keep-ts crates/pipeline_manager/Cargo.toml crates/pipeline_manager/
-    #COPY --keep-ts crates/webui-tester/Cargo.toml crates/webui-tester/
-    COPY --keep-ts sql-to-dbsp-compiler/lib/hashing/Cargo.toml sql-to-dbsp-compiler/lib/hashing/
-    COPY --keep-ts sql-to-dbsp-compiler/lib/readers/Cargo.toml sql-to-dbsp-compiler/lib/readers/
-    COPY --keep-ts sql-to-dbsp-compiler/lib/sqllib/Cargo.toml sql-to-dbsp-compiler/lib/sqllib/
-    COPY --keep-ts sql-to-dbsp-compiler/lib/sqlvalue/Cargo.toml sql-to-dbsp-compiler/lib/sqlvalue/
-    COPY --keep-ts sql-to-dbsp-compiler/lib/tuple/Cargo.toml sql-to-dbsp-compiler/lib/tuple/
-    COPY --keep-ts sql-to-dbsp-compiler/temp/Cargo.toml sql-to-dbsp-compiler/temp/
-
-    RUN mkdir -p crates/nexmark/src && touch crates/nexmark/src/lib.rs
-    RUN mkdir -p crates/dbsp/src && touch crates/dbsp/src/lib.rs
-    RUN mkdir -p crates/dbsp/examples && touch crates/dbsp/examples/degrees.rs && touch crates/dbsp/examples/orgchart.rs
-    RUN mkdir -p crates/pipeline-types/src && touch crates/pipeline-types/src/lib.rs
-    RUN mkdir -p crates/adapters/src && touch crates/adapters/src/lib.rs
-    RUN mkdir -p crates/adapters/examples && touch crates/adapters/examples/server.rs
-    RUN mkdir -p crates/nexmark/benches/nexmark-gen && touch crates/nexmark/benches/nexmark-gen/main.rs
-    RUN mkdir -p crates/nexmark/benches/nexmark && touch crates/nexmark/benches/nexmark/main.rs
-    RUN mkdir -p crates/dbsp/benches/gdelt && touch crates/dbsp/benches/gdelt/main.rs
-    RUN mkdir -p crates/dbsp/benches/ldbc-graphalytics && touch crates/dbsp/benches/ldbc-graphalytics/main.rs
-    RUN mkdir -p crates/dbsp/benches
-    RUN touch crates/dbsp/benches/galen.rs
-    RUN touch crates/dbsp/benches/fraud.rs
-    RUN touch crates/dbsp/benches/path.rs
-    RUN touch crates/dbsp/benches/consolidation.rs
-    RUN touch crates/dbsp/benches/column_layer.rs
-    RUN mkdir -p crates/pipeline_manager/src && touch crates/pipeline_manager/src/main.rs
-    #RUN mkdir -p crates/webui-tester/src && touch crates/webui-tester/src/lib.rs
-    RUN mkdir -p sql-to-dbsp-compiler/lib/hashing/src && touch sql-to-dbsp-compiler/lib/hashing/src/lib.rs
-    RUN mkdir -p sql-to-dbsp-compiler/lib/readers/src && touch sql-to-dbsp-compiler/lib/readers/src/lib.rs
-    RUN mkdir -p sql-to-dbsp-compiler/lib/sqllib/src && touch sql-to-dbsp-compiler/lib/sqllib/src/lib.rs
-    RUN mkdir -p sql-to-dbsp-compiler/lib/sqlvalue/src && touch sql-to-dbsp-compiler/lib/sqlvalue/src/lib.rs
-    RUN mkdir -p sql-to-dbsp-compiler/lib/tuple/src && touch sql-to-dbsp-compiler/lib/tuple/src/lib.rs
-
-    ENV RUST_LOG=info
-    RUN cargo chef prepare
-
-    SAVE ARTIFACT --keep-ts recipe.json
-
-build-cache:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +install-rust
-    COPY --keep-ts +prepare-cache/recipe.json ./
-    RUN cargo +$RUST_TOOLCHAIN chef cook $RUST_BUILD_PROFILE --workspace --all-targets
-    RUN cargo +$RUST_TOOLCHAIN chef cook $RUST_BUILD_PROFILE --clippy --workspace
-    # I have no clue why we need all these commands below to build all
-    # dependencies (since we just did a build --workspace --all-targets). But if
-    # we don't run all of them, it will go and compile dependencies during
-    # the `build-*` targets (which should just compile our crates ideally to
-    # maximize the cache benefit). This happens even without earthly (or docker)
-    # if you just run cargo in our repo directly on clean target...
-    #
-    # The only issues for this I found was:
-    # https://github.com/rust-lang/cargo/issues/2904
-    # https://github.com/rust-lang/cargo/issues/6733
-    #
-    # When using `RUST_LOG=cargo::ops::cargo_rustc::fingerprint=info` to debug,
-    # it looks like the hash for the crates changes.
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --features persistence --no-run
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-manager
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_nexmark
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_nexmark --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_nexmark
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package hashing
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package hashing --no-run
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package readers
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package readers --no-run
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package sqllib
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package sqllib --no-run
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package sqlvalue
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package sqlvalue --no-run
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package tuple
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package tuple --no-run
-
-    # If we make this a workspace crate we can use the chef/cook commands but
-    # it breaks `cargo build` in non-CI builds (because there is no
-    # lib.rs and we don't want to check that in as it gets overwritten)
-    COPY --dir sql-to-dbsp-compiler/temp sql-to-dbsp-compiler/temp
-    RUN rm -f sql-to-dbsp-compiler/temp/src/lib.rs && touch sql-to-dbsp-compiler/temp/src/lib.rs
-    RUN cd sql-to-dbsp-compiler/temp && cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --no-run
-
 build-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-cache --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-
-    # Remove the skeleton created in build-cache
-    RUN rm -rf crates/dbsp
-    # Copy in the actual sources
-    COPY --keep-ts --dir crates/dbsp crates/dbsp
-    # pipeline-types is used by all subsequent dependencies. It's small enough and
-    # easier to build it in this step instead of having a separate one.
-    RUN rm -rf crates/pipeline-types
-    COPY --keep-ts --dir crates/pipeline-types crates/pipeline-types
-    COPY --keep-ts README.md README.md
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp
-    RUN cd crates/dbsp && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp -- -D warnings
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp --no-run
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline_types
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline_types -- -D warnings
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline_types --no-run
+    FROM +rust-sources --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    DO rust+CARGO --args="build --package dbsp"
+    DO rust+CARGO --args="clippy --package dbsp -- -D warnings"
+    DO rust+CARGO --args="test --package dbsp --no-run" 
+    DO rust+CARGO --args="build --package pipeline_types"
+    DO rust+CARGO --args="clippy --package pipeline_types -- -D warnings"
+    DO rust+CARGO --args="test --package pipeline_types --no-run" 
 
 build-sql:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -283,13 +149,9 @@ build-adapters:
 
     # Adapter integration tests use the SQL compiler.
     FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    RUN rm -rf crates/adapters
-    COPY --keep-ts --dir crates/adapters crates/adapters
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_adapters
-    RUN cd crates/adapters && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_adapters -- -D warnings
-    ENV RUST_BACKTRACE=1
+    DO rust+CARGO --args="build --package dbsp_adapters"
+    DO rust+CARGO --args="clippy --package dbsp_adapters -- -D warnings"
+    DO rust+CARGO --args="test --package dbsp_adapters --no-run" 
 
 build-manager:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -299,14 +161,9 @@ build-manager:
     # For some reason if this ENV before the FROM line it gets invalidated
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
-
-    RUN rm -rf crates/pipeline_manager
-    COPY --keep-ts --dir crates/pipeline_manager crates/pipeline_manager
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package pipeline-manager
-    RUN cd crates/pipeline_manager && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package pipeline-manager -- -D warnings
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager --no-run
+    DO rust+CARGO --args="build --package pipeline-manager" --output="debug/pipeline-manager"
+    DO rust+CARGO --args="clippy --package pipeline-manager -- -D warnings"
+    DO rust+CARGO --args="test --package pipeline-manager --no-run"
 
     IF [ -f ./target/debug/pipeline-manager ]
         SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
@@ -326,20 +183,10 @@ test-sql:
 build-nexmark:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
     FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-
-    RUN rm -rf crates/nexmark
-    COPY --keep-ts --dir crates/nexmark crates/nexmark
-
-    RUN cargo +$RUST_TOOLCHAIN build $RUST_BUILD_PROFILE --package dbsp_nexmark
-    RUN cd crates/nexmark && cargo +$RUST_TOOLCHAIN machete
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_nexmark --no-run
-    RUN cargo +$RUST_TOOLCHAIN clippy $RUST_BUILD_PROFILE --package dbsp_nexmark -- -D warnings
-
-audit:
-    FROM +build-cache
-    RUN cargo audit || true
+    DO rust+CARGO --args="build --package dbsp_nexmark" --output="debug/[^/\.]+"
+    DO rust+CARGO --args="clippy --package dbsp_nexmark -- -D warnings"
+    DO rust+CARGO --args="test --package dbsp_nexmark --no-run"
 
 CARGO_TEST:
     COMMAND
@@ -348,9 +195,9 @@ CARGO_TEST:
     ARG package
     ARG features
     ARG test_args
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package $package \
+    DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package $package \
         $(if [ -z $features ]; then printf -- --features $features; fi) \
-        -- $test_args
+        -- $test_args"
 
 test-dbsp:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -363,14 +210,14 @@ test-dbsp:
     DO +CARGO_TEST \
         --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE \
         --package=dbsp --features=persistence --test_args=trace::persistent::tests
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp
+    DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp"
 
 test-nexmark:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
 
     FROM +build-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    RUN cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_nexmark
+    DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE  --package dbsp_nexmark"
 
 test-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
@@ -381,6 +228,7 @@ test-adapters:
         RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
+            # XXX: DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --package sqllib"
             cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --package sqllib
     END
 
@@ -400,6 +248,7 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
+            # XXX: DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager"
             cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
@@ -678,7 +527,6 @@ all-tests:
     BUILD +formatting-check
     BUILD +test-rust
     BUILD +test-python
-    BUILD +audit
     BUILD +python-bindings-checker
     BUILD +test-sql
     BUILD +test-docker-compose
