@@ -456,8 +456,8 @@ public class EndToEndTests extends BaseSQLTests {
     public void jsonTest() {
         String query = """
                 select JSON_OBJECT(
-                    KEY 'level1'\s
-                    VALUE(T.COL1))\s
+                    KEY 'level1'
+                    VALUE(T.COL1))
                 from T""";
         this.testQuery(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(new DBSPStringLiteral(""))));

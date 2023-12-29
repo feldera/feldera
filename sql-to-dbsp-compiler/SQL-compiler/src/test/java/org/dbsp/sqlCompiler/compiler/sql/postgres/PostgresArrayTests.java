@@ -83,37 +83,37 @@ public class PostgresArrayTests extends SqlIoTest {
         // In Calcite array_to_string requires all arguments to be strings
         this.qs("""
                 select array_to_string(NULL::TEXT ARRAY, ',') IS NULL;
-                 ?column?\s
+                 ?column?
                 ----------
                  t
                 (1 row)
 
                 select array_to_string(ARRAY()::TEXT ARRAY, ',');
-                 array_to_string\s
+                 array_to_string
                 -----------------
                 \s
                 (1 row)
 
                 select array_to_string(array['1','2','3','4',NULL,'6'], ',');
-                 array_to_string\s
+                 array_to_string
                 -----------------
                  1,2,3,4,6
                 (1 row)
 
                 select array_to_string(array['1','2','3','4',NULL,'6'], ',', '*');
-                 array_to_string\s
+                 array_to_string
                 -----------------
                  1,2,3,4,*,6
                 (1 row)
 
                 select array_to_string(array['1','2','3','4',NULL,'6'], NULL);
-                 array_to_string\s
+                 array_to_string
                 -----------------
                 NULL
                 (1 row)
 
                 select array_to_string(split('1|2|3', '|'), '|');
-                 array_to_string\s
+                 array_to_string
                 -----------------
                  1|2|3
                 (1 row)

@@ -68,7 +68,7 @@ public class PostgresStringTests extends SqlIoTest {
         // I have modified +000061 to just 0061
         this.q("""
                 SELECT U&'d\\0061t\\0061' AS U&"d\\0061t\\0061";
-                 data\s
+                 data
                 ------
                  data""");
     }
@@ -78,7 +78,7 @@ public class PostgresStringTests extends SqlIoTest {
         this.q(
                 """
                         SELECT U&'d!0061t!0061' UESCAPE '!' AS U&"d*0061t\\0061" UESCAPE '*';
-                         data\s
+                         data
                         ------
                          data""");
     }
@@ -87,7 +87,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void namesWithSlashTest() {
         this.q("""
                 SELECT U&'a\\\\b' AS "a\\b";
-                 a\\b\s
+                 a\\b
                 -----
                  a\\b""");
     }
@@ -96,7 +96,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void backslashWithSpacesTest() {
         this.q("""
                 SELECT U&' \\' UESCAPE '!' AS "tricky";
-                tricky\s
+                tricky
                 --------
                   \\""");
     }
@@ -113,7 +113,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testCharN() {
         this.q("""
                 SELECT CAST(f1 AS text) AS "text(char)" FROM CHAR_TBL;
-                 text(char)\s
+                 text(char)
                 ------------
                  a
                  ab
@@ -125,7 +125,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testBinary() {
         this.q("""
                 SELECT x'DeAdBeEf';
-                   bytea   \s
+                   bytea   
                 ------------
                  deadbeef""");
 
@@ -145,7 +145,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testVarcharN() {
         this.q("""
                 SELECT CAST(f1 AS text) AS "text(varchar)" FROM VARCHAR_TBL;
-                 text(varchar)\s
+                 text(varchar)
                 ------------
                  a
                  ab
@@ -157,7 +157,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testVarchar() {
         this.q("""
                 SELECT f1 AS "text(varchar)" FROM UVARCHAR_TBL;
-                 text(varchar)\s
+                 text(varchar)
                 ------------
                  a
                  ab
@@ -172,7 +172,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testTextTbl() {
         this.q("""
                 SELECT CAST(f1 AS char(10)) AS "char(text)" FROM TEXT_TBL;
-                char(text)\s
+                char(text)
                 ------------
                  doh!     \s
                  hi de ho n""");
@@ -204,7 +204,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testTextTbl2() {
         this.q("""
                 SELECT CAST(f1 AS varchar) AS "varchar(text)" FROM TEXT_TBL;
-                   varchar(text)  \s
+                   varchar(text)  
                 -------------------
                  doh!
                  hi de ho neighbor""");
@@ -214,7 +214,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testCharTbl() {
         this.q("""
                 SELECT CAST(f1 AS varchar) AS "varchar(char)" FROM CHAR_TBL;
-                 varchar(char)\s
+                 varchar(char)
                 ---------------
                  a
                  ab
@@ -226,17 +226,17 @@ public class PostgresStringTests extends SqlIoTest {
     public void testTrimConstant() {
         this.q("""
                 SELECT TRIM(BOTH FROM '  bunch o blanks  ') = 'bunch o blanks' AS "bunch o blanks";
-                 bunch o blanks\s
+                 bunch o blanks
                 ----------------
                  t""");
         this.q("""
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
-                 bunch o blanks  \s
+                 bunch o blanks  
                 ------------------
                  t""");
         this.q("""
                 SELECT TRIM(TRAILING FROM '  bunch o blanks  ') = '  bunch o blanks' AS "  bunch o blanks";
-                   bunch o blanks\s
+                   bunch o blanks
                 ------------------
                  t""");
     }
@@ -245,17 +245,17 @@ public class PostgresStringTests extends SqlIoTest {
     public void testTrim() {
         this.q("""
                 SELECT TRIM(BOTH FROM '  bunch o blanks  ') = 'bunch o blanks' AS "bunch o blanks";
-                 bunch o blanks\s
+                 bunch o blanks
                 ----------------
                  t""");
         this.q("""
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
-                 bunch o blanks  \s
+                 bunch o blanks  
                 ------------------
                  t""");
         this.q("""
                 SELECT TRIM(TRAILING FROM '  bunch o blanks  ') = '  bunch o blanks' AS "  bunch o blanks";
-                   bunch o blanks\s
+                   bunch o blanks
                 ------------------
                  t""");
     }
@@ -264,7 +264,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testTrimArg() {
         this.q("""
                 SELECT TRIM(BOTH 'x' FROM 'xxxxxsome Xsxxxxx') = 'some Xs' AS "some Xs";
-                 some Xs\s
+                 some Xs
                 ---------
                  t""");
     }
@@ -273,18 +273,18 @@ public class PostgresStringTests extends SqlIoTest {
     public void testSubstring() {
         this.q("""
                 SELECT SUBSTRING('1234567890' FROM 3) = '34567890' AS "34567890";
-                 34567890\s
+                 34567890
                 ----------
                  t""");
         this.q(
                 """
                         SELECT SUBSTRING('1234567890' FROM 4 FOR 3) = '456' AS "456";
-                         456\s
+                         456
                         -----
                          t""");
         this.q("""
                 SELECT SUBSTRING('string' FROM -10 FOR 2147483646) AS "string";
-                 string\s
+                 string
                 --------
                  string""");
     }
@@ -294,7 +294,7 @@ public class PostgresStringTests extends SqlIoTest {
         this.q(
                 """
                         SELECT SUBSTRING('string' FROM 2 FOR 2147483646) AS "tring";
-                         tring\s
+                         tring
                         -------
                          tring""");
     }
@@ -317,17 +317,17 @@ public class PostgresStringTests extends SqlIoTest {
     public void testPosition() {
         this.q("""
                 SELECT POSITION('4' IN '1234567890') = '4' AS "4";
-                 4\s
+                 4
                 ---
                  t""");
         this.q("""
                 SELECT POSITION('5' IN '1234567890') = '5' AS "5";
-                 5\s
+                 5
                 ---
                  t""");
         this.q("""
                 SELECT POSITION('A' IN '1234567890') = '0' AS "0";
-                 5\s
+                 5
                 ---
                  t""");
     }
@@ -339,22 +339,22 @@ public class PostgresStringTests extends SqlIoTest {
     public void testOverlay() {
         this.q("""
                 SELECT OVERLAY('abcdef' PLACING '45' FROM 4) AS "abc45f";
-                 abc45f\s
+                 abc45f
                 --------
                  abc45f""");
         this.q("""
                 SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5) AS "yabadaba";
-                 yabadaba\s
+                 yabadaba
                 ----------
                  yabadaba""");
         this.q("""
                 SELECT OVERLAY('yabadoo' PLACING 'daba' FROM 5 FOR 0) AS "yabadabadoo";
-                 yabadabadoo\s
+                 yabadabadoo
                 -------------
                  yabadabadoo""");
         this.q("""
                 SELECT OVERLAY('babosa' PLACING 'ubb' FROM 2 FOR 4) AS "bubba";
-                 bubba\s
+                 bubba
                 -------
                  bubba""");
     }
@@ -363,83 +363,83 @@ public class PostgresStringTests extends SqlIoTest {
     public void testRegexpReplace() {
         this.q("""
                 SELECT regexp_replace('1112223333', E'(\\\\d{3})(\\\\d{3})(\\\\d{4})', E'(\\\\1) \\\\2-\\\\3');
-                 regexp_replace\s
+                 regexp_replace
                 ----------------
                  (111) 222-3333""");
         this.q("""
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\&Y', 'g');
-                  regexp_replace  \s
+                  regexp_replace  
                 -------------------
                  fXooYbaXrrYbaXzzY""");
         this.q("""
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\\\\\Y', 'g');
-                 regexp_replace\s
+                 regexp_replace
                 ----------------
                  fX\\YbaX\\YbaX\\Y""");
         this.q("""
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\Y\\\\1Z\\\\');
-                 regexp_replace \s
+                 regexp_replace 
                 -----------------
                  fX\\YoZ\\barrbazz""");
         this.q("""
                 SELECT regexp_replace('AAA   BBB   CCC   ', E'\\\\s+', ' ', 'g');
-                 regexp_replace\s
+                 regexp_replace
                 ----------------
                  AAA BBB CCC\s""");
         this.q("""
                 SELECT regexp_replace('AAA', '^|$', 'Z', 'g');
-                 regexp_replace\s
+                 regexp_replace
                 ----------------
                  ZAAAZ""");
         this.q("""
                 SELECT regexp_replace('AAA aaa', 'A+', 'Z', 'gi');
-                 regexp_replace\s
+                 regexp_replace
                 ----------------
                  Z Z""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1);
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  X PostgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1, 2);
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  A PXstgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 0, 'i');
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  X PXstgrXSQL fXnctXXn""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'i');
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  X PostgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 2, 'i');
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  A PXstgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 3, 'i');
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  A PostgrXSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 9, 'i');
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  A PostgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 7, 0, 'i');
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  A PostgrXSQL fXnctXXn""");
         this.q("""
                 -- 'g' flag should be ignored when N is specified
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'g');
-                    regexp_replace    \s
+                    regexp_replace    
                 -----------------------
                  A PXstgreSQL function""");
     }
@@ -456,72 +456,72 @@ public class PostgresStringTests extends SqlIoTest {
     public void testLike2() {
         this.q("""
                 SELECT 'hawkeye' LIKE 'h%' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' NOT LIKE 'h%' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'hawkeye' LIKE 'H%' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'hawkeye' NOT LIKE 'H%' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' LIKE 'indio%' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'hawkeye' NOT LIKE 'indio%' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' LIKE 'h%eye' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' NOT LIKE 'h%eye' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' LIKE '_ndio' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'indio' NOT LIKE '_ndio' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' LIKE 'in__o' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'indio' NOT LIKE 'in__o' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' LIKE 'in_o' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' NOT LIKE 'in_o' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
     }
@@ -531,72 +531,72 @@ public class PostgresStringTests extends SqlIoTest {
         // This is not a postgres operator
         this.q("""
                 SELECT 'hawkeye' RLIKE 'h.*' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' NOT RLIKE 'h.*' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'hawkeye' RLIKE 'H.*' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'hawkeye' NOT RLIKE 'H.*' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' RLIKE 'indio.*' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'hawkeye' NOT RLIKE 'indio.*' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' RLIKE 'h.*eye' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' NOT RLIKE 'h.*eye' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' RLIKE '.ndio' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'indio' NOT RLIKE '.ndio' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' RLIKE 'in..o' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'indio' NOT RLIKE 'in..o' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' RLIKE 'in.o' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' NOT RLIKE 'in.o' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
     }
@@ -606,37 +606,37 @@ public class PostgresStringTests extends SqlIoTest {
         // This is not a postgres operator
         this.q("""
                 SELECT RLIKE('hawkeye', 'h.*') AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT RLIKE('hawkeye', 'H.*') AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT RLIKE('hawkeye', 'indio.*') AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT RLIKE('hawkeye', 'h.*eye') AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT RLIKE('indio', '.ndio') AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT RLIKE('indio', 'in..o') AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT RLIKE('indio', 'in.o') AS "false";
-                 false\s
+                 false
                 -------
                  f""");
     }
@@ -645,102 +645,102 @@ public class PostgresStringTests extends SqlIoTest {
     public void testLike3() {
         this.q("""
                 SELECT 'hawkeye' LIKE 'h%' ESCAPE '#' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'hawkeye' NOT LIKE 'h%' ESCAPE '#' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' LIKE 'ind_o' ESCAPE '$' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'indio' NOT LIKE 'ind_o' ESCAPE '$' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'h%' LIKE 'h#%' ESCAPE '#' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'h%' NOT LIKE 'h#%' ESCAPE '#' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'h%wkeye' LIKE 'h#%' ESCAPE '#' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'h%wkeye' NOT LIKE 'h#%' ESCAPE '#' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'h%wkeye' LIKE 'h#%%' ESCAPE '#' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'h%wkeye' NOT LIKE 'h#%%' ESCAPE '#' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'h%awkeye' NOT LIKE 'h#%a%k%e' ESCAPE '#' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'indio' LIKE '_ndio' ESCAPE '$' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'indio' NOT LIKE '_ndio' ESCAPE '$' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'i_dio' LIKE 'i$_d_o' ESCAPE '$' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'i_dio' NOT LIKE 'i$_d_o' ESCAPE '$' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'i_dio' LIKE 'i$_nd_o' ESCAPE '$' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'i_dio' NOT LIKE 'i$_nd_o' ESCAPE '$' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'i_dio' LIKE 'i$_d%o' ESCAPE '$' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'i_dio' NOT LIKE 'i$_d%o' ESCAPE '$' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
     }
@@ -750,52 +750,52 @@ public class PostgresStringTests extends SqlIoTest {
         // -- escape character same as pattern character\n"
         this.q("""
                 SELECT 'maca' LIKE 'm%aca' ESCAPE '%' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'maca' NOT LIKE 'm%aca' ESCAPE '%' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'ma%a' LIKE 'm%a%%a' ESCAPE '%' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'ma%a' NOT LIKE 'm%a%%a' ESCAPE '%' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'bear' LIKE 'b_ear' ESCAPE '_' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'bear' NOT LIKE 'b_ear' ESCAPE '_' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'be_r' LIKE 'b_e__r' ESCAPE '_' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
         this.q("""
                 SELECT 'be_r' NOT LIKE 'b_e__r' ESCAPE '_' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'be_r' LIKE '__e__r' ESCAPE '_' AS "false";
-                 false\s
+                 false
                 -------
                  f""");
         this.q("""
                 SELECT 'be_r' NOT LIKE '__e__r' ESCAPE '_' AS "true";
-                 true\s
+                 true
                 ------
                  t""");
     }
@@ -806,27 +806,27 @@ public class PostgresStringTests extends SqlIoTest {
     public void testLikeCombinations() {
         this.q("""
                 SELECT 'foo' LIKE '_%' as t, 'f' LIKE '_%' as t0, '' LIKE '_%' as f;
-                 t | t0 | f\s
+                 t | t0 | f
                 ---+----+---
                  t | t  | f""");
         this.q("""
                 SELECT 'foo' LIKE '%_' as t, 'f' LIKE '%_' as t0, '' LIKE '%_' as f;
-                 t | t0 | f\s
+                 t | t0 | f
                 ---+----+---
                  t | t  | f""");
         this.q("""
                 SELECT 'foo' LIKE '__%' as t, 'foo' LIKE '___%' as t0, 'foo' LIKE '____%' as f;
-                 t | t0 | f\s
+                 t | t0 | f
                 ---+----+---
                  t | t  | f""");
         this.q("""
                 SELECT 'foo' LIKE '%__' as t, 'foo' LIKE '%___' as t0, 'foo' LIKE '%____' as f;
-                 t | t0 | f\s
+                 t | t0 | f
                 ---+----+---
                  t | t  | f""");
         this.q("""
                 SELECT 'jack' LIKE '%____%' AS t;
-                 t\s
+                 t
                 ---
                  t""");
     }
@@ -836,27 +836,27 @@ public class PostgresStringTests extends SqlIoTest {
         // In Postgres concatenation converts to text, whereas Calcite does not.
         this.q("""
                 SELECT 'unknown' || ' and unknown' AS "Concat unknown types";
-                 Concat unknown types\s
+                 Concat unknown types
                 ----------------------
                  unknown and unknown""");
         this.q("""
                 SELECT 'text'::text || ' and unknown' AS "Concat text to unknown type";
-                 Concat text to unknown type\s
+                 Concat text to unknown type
                 -----------------------------
                  text and unknown""");
         this.q("""
                 SELECT 'characters' ::char(20) || ' and text' AS "Concat char to unknown type";
-                 Concat char to unknown type\s
+                 Concat char to unknown type
                 -----------------------------
                  characters           and text""");
         this.q("""
                 SELECT 'text'::text || ' and characters'::char(20) AS "Concat text to char";
-                 Concat text to char\s
+                 Concat text to char
                 ---------------------
                  text and characters    \s""");
         this.q("""
                 SELECT 'text'::text || ' and varchar'::varchar AS "Concat text to varchar";
-                 Concat text to varchar\s
+                 Concat text to varchar
                 ------------------------
                  text and varchar""");
     }
@@ -866,17 +866,17 @@ public class PostgresStringTests extends SqlIoTest {
         // length in postgres is equivalent to char_length
         this.q("""
                 SELECT char_length('abcdef') AS "length_6";
-                 length_6\s
+                 length_6
                 ----------
                         6""");
         this.q("""
                 SELECT character_length('abcdef') AS "length_6";
-                 length_6\s
+                 length_6
                 ----------
                         6""");
         this.q("""
                 SELECT character_length('josé') AS "length";
-                 length\s
+                 length
                 --------
                        4""");
     }
@@ -886,27 +886,27 @@ public class PostgresStringTests extends SqlIoTest {
         // No strpos in Calcite, replace with 'position' with arguments swapped
         this.q("""
                 SELECT POSITION('cd' IN 'abcdef') AS "pos_3";
-                 pos_3\s
+                 pos_3
                 -------
                      3""");
         this.q("""
                 SELECT POSITION('xy' IN 'abcdef') AS "pos_0";
-                 pos_0\s
+                 pos_0
                 -------
                      0""");
         this.q("""
                 SELECT POSITION('' IN 'abcdef') AS "pos_1";
-                 pos_1\s
+                 pos_1
                 -------
                      1""");
         this.q("""
                 SELECT POSITION('xy' IN '') AS "pos_0";
-                 pos_0\s
+                 pos_0
                 -------
                      0""");
         this.q("""
                 SELECT POSITION('' IN '') AS "pos_1";
-                 pos_1\s
+                 pos_1
                 -------
                      1""");
     }
@@ -915,17 +915,17 @@ public class PostgresStringTests extends SqlIoTest {
     public void testReplace() {
         this.q("""
                 SELECT REPLACE('abcdef', 'de', '45') AS "abc45f";
-                 abc45f\s
+                 abc45f
                 --------
                  abc45f""");
         this.q("""
                 SELECT replace('yabadabadoo', 'ba', '123') AS "ya123da123doo";
-                 ya123da123doo\s
+                 ya123da123doo
                 ---------------
                  ya123da123doo""");
         this.q("""
                 SELECT replace('yabadoo', 'bad', '') AS "yaoo";
-                 yaoo\s
+                 yaoo
                 ------
                  yaoo""");
     }
@@ -938,23 +938,23 @@ public class PostgresStringTests extends SqlIoTest {
     public void testConforming() {
         this.q("""
                 select 'a\\bcd' as f1, 'a\\b''cd' as f2, 'a\\b''''cd' as f3, 'abcd\\'   as f4, 'ab\\''cd' as f5, '\\\\' as f6;
-                  f1  |  f2   |   f3   | f4   |   f5  | f6\s
+                  f1  |  f2   |   f3   | f4   |   f5  | f6
                 ------+-------+--------+------+-------+----
                  a\\bcd| a\\b'cd| a\\b''cd| abcd\\| ab\\'cd| \\\\""");
     }
 
     // TODO: lpat, translate,
-    
+
     @Test
     public void testAscii() {
         this.q("""
                 SELECT ascii('x');
-                 ascii\s
+                 ascii
                 -------
                    120""");
         this.q("""
                 SELECT ascii('');
-                 ascii\s
+                 ascii
                 -------
                      0""");
     }
@@ -963,12 +963,12 @@ public class PostgresStringTests extends SqlIoTest {
     public void testChr() {
         this.q("""
                 SELECT chr(65);
-                 chr\s
+                 chr
                 -----
                  A""");
         this.q("""
                 SELECT chr(0);
-                 chr\s
+                 chr
                 -----
                  \0""");
     }
@@ -977,12 +977,12 @@ public class PostgresStringTests extends SqlIoTest {
     public void testRepeat() {
         this.q("""
                 SELECT repeat('Pg', 4);
-                  repeat \s
+                  repeat 
                 ----------
                  PgPgPgPg""");
         this.q("""
                 SELECT repeat('Pg', -4);
-                 repeat\s
+                 repeat
                 --------
                 \s""");
     }

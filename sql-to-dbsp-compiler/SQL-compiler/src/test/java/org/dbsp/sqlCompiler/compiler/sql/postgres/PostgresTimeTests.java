@@ -29,7 +29,7 @@ public class PostgresTimeTests extends SqlIoTest {
     public void testTime() {
         this.qs("""
                 SELECT f1 AS "Time" FROM TIME_TBL;
-                    Time    \s
+                    Time    
                 -------------
                  00:00:00
                  01:00:00
@@ -44,7 +44,7 @@ public class PostgresTimeTests extends SqlIoTest {
                 (10 rows)
 
                 SELECT f1 AS "Three" FROM TIME_TBL WHERE f1 < '05:06:07';
-                  Three  \s
+                  Three  
                 ----------
                  00:00:00
                  01:00:00
@@ -52,7 +52,7 @@ public class PostgresTimeTests extends SqlIoTest {
                 (3 rows)
 
                 SELECT f1 AS "Five" FROM TIME_TBL WHERE f1 > '05:06:07';
-                    Five    \s
+                    Five    
                 -------------
                  11:59:00
                  12:00:00
@@ -64,12 +64,12 @@ public class PostgresTimeTests extends SqlIoTest {
                 (7 rows)
 
                 SELECT f1 AS "None" FROM TIME_TBL WHERE f1 < '00:00:00';
-                 None\s
+                 None
                 ------
                 (0 rows)
 
                 SELECT f1 AS "Eight" FROM TIME_TBL WHERE f1 >= '00:00:00';
-                    Eight   \s
+                    Eight   
                 -------------
                  00:00:00
                  01:00:00
@@ -89,13 +89,13 @@ public class PostgresTimeTests extends SqlIoTest {
         this.qs("""
                 -- Check edge cases
                 SELECT '23:59:59.999999'::time;
-                      time      \s
+                      time      
                 -----------------
                  23:59:59.999999
                 (1 row)
 
                 SELECT '23:59:59.9999999'::time;  -- rounds up
-                   time  \s
+                   time  
                 ----------
                  23:59:59.9999999
                 (1 row)""");
@@ -124,7 +124,7 @@ public class PostgresTimeTests extends SqlIoTest {
     public void testMicrosecond() {
         this.q("""
                 SELECT EXTRACT(MICROSECOND FROM TIME '13:30:25.575401');
-                 extract \s
+                 extract 
                 ----------
                  25575401""");
     }
@@ -171,24 +171,24 @@ public class PostgresTimeTests extends SqlIoTest {
     public void testDatePart() {
         this.qs("""
                 SELECT date_part(microsecond, TIME '13:30:25.575401');
-                 date_part\s
+                 date_part
                 -----------
                   25575401
                 (1 row)
                 SELECT date_part('millisecond', TIME '13:30:25.575401');
-                 date_part\s
+                 date_part
                 -----------
                  25575.401
                 (1 row)
 
                 SELECT date_part('second',      TIME '13:30:25.575401');
-                 date_part\s
+                 date_part
                 -----------
                  25.575401
                 (1 row)
 
                 SELECT date_part('epoch',       TIME '13:30:25.575401');
-                  date_part  \s
+                  date_part  
                 --------------
                  48625.575401""");
     }

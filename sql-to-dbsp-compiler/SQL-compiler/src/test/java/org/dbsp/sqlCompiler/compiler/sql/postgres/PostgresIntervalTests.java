@@ -21,31 +21,31 @@ public class PostgresIntervalTests extends SqlIoTest {
         // standard doesn't
         this.qs("""
                 SELECT INTERVAL '01:00' HOUR TO MINUTE AS "One hour";
-                 One hour\s
+                 One hour
                 ----------
                  01:00:00
                 (1 row)
 
                 SELECT INTERVAL '+02:00' HOUR TO MINUTE AS "Two hours";
-                 Two hours\s
+                 Two hours
                 -----------
                  02:00:00
                 (1 row)
 
                 SELECT INTERVAL '-08:00' HOUR TO MINUTE AS "Eight hours";
-                 Eight hours\s
+                 Eight hours
                 -------------
                  -08:00:00
                 (1 row)
 
                 SELECT INTERVAL '-1 02:03' DAYS TO MINUTE AS "26 hours ago...";
-                  26 hours ago... \s
+                  26 hours ago... 
                 -------------------
                  -1 days 02:03:00
                 (1 row)
 
                 SELECT INTERVAL '-1 02:03' DAYS TO MINUTES AS "26 hours ago...";
-                  26 hours ago... \s
+                  26 hours ago... 
                 -------------------
                  -1 days 02:03:00
                 (1 row)

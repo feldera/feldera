@@ -172,7 +172,7 @@ public class Simplify extends InnerRewriteVisitor {
                         } else {
                             value = str.value.substring(0, typeString.precision);
                         }
-                        result = new DBSPStringLiteral(value, str.charset, type.mayBeNull);
+                        result = new DBSPStringLiteral(expression.getNode(), type, value, str.charset);
                     }
                 } else
                     if (type.is(DBSPTypeInteger.class)) {
