@@ -611,6 +611,15 @@ ui-playwright-container:
     COPY web-console .
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
+
+    # Pull playwright-snapshots for visual regression testing
+    # It was decided it's better to clone the snapshots repo during the build rather than have it as a submodule
+    ARG PLAYWRIGHT_SNAPSHOTS_COMMIT
+    RUN echo PLAYWRIGHT_SNAPSHOTS_COMMIT=$PLAYWRIGHT_SNAPSHOTS_COMMIT
+    GIT CLONE https://github.com/feldera/playwright-snapshots.git playwright-snapshots
+    # [ -n "..." ] syntax returns true if the string is not empty, in which case the commands after `&&` execute
+    RUN [ -n "$PLAYWRIGHT_SNAPSHOTS_COMMIT" ] && cd playwright-snapshots && git checkout $PLAYWRIGHT_SNAPSHOTS_COMMIT
+
     WORKDIR web-console
     RUN yarn install
     RUN yarn playwright install
@@ -631,7 +640,6 @@ ui-playwright-container:
 
 ui-playwright-tests:
     FROM +ui-playwright-container
-
     ENV FELDERA_VERSION=latest
 
     TRY
@@ -640,6 +648,7 @@ ui-playwright-tests:
                     --compose ../docker-compose.yml \
                     --service db \
                     --service pipeline-manager
+            # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
             RUN if yarn playwright test; then exit_code=0; else exit_code=$?; fi \
                 && cd /dbsp \
                 && zip -r playwright-report.zip playwright-report \

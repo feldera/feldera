@@ -90,9 +90,8 @@ jobs:
         run: earthly --version
 
       - name: Run CI
+        # run: earthly --verbose -P --ci --env-file-path .ci.env +all-tests
         run: earthly --verbose -P --ci +all-tests
-        env:
-          NEXT_PUBLIC_MUIX_PRO_KEY: ${{ secrets.muix_license }}
 
       - uses: actions/upload-artifact@v3
         if: always()

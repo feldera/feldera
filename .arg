@@ -1,0 +1,2 @@
+# File used by earthly
+PLAYWRIGHT_SNAPSHOTS_COMMIT=4cd8430
