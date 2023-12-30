@@ -6,14 +6,16 @@ use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use serde::Serialize;
 use std::{
+    backtrace::Backtrace,
     borrow::Cow,
     cell::{Cell, RefCell},
     error::Error as StdError,
     fmt,
     fmt::{Debug, Display, Error as FmtError, Formatter},
+    panic::{self, Location, PanicInfo},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, RwLock,
     },
     thread::{Builder, JoinHandle, LocalKey, Result as ThreadResult},
 };
@@ -23,9 +25,11 @@ use super::dbsp_handle::{IntoLayout, Layout};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
-    /// Panic in a worker thread.
+    /// One of the worker threads terminated unexpectedly.
     WorkerPanic {
-        worker: usize,
+        // Detailed panic information from all threads that
+        // reported panics.
+        panic_info: Vec<(usize, WorkerPanicInfo)>,
     },
     Terminated,
 }
@@ -42,8 +46,14 @@ impl DetailedError for Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         match self {
-            Self::WorkerPanic { worker } => {
-                write!(f, "worker thread '{worker}' panicked")
+            Self::WorkerPanic { panic_info } => {
+                writeln!(f, "One or more worker threads terminated unexpectedly")?;
+
+                for (worker, worker_panic_info) in panic_info.iter() {
+                    writeln!(f, "worker thread {worker} panicked")?;
+                    writeln!(f, "{worker_panic_info}")?;
+                }
+                Ok(())
             }
             Self::Terminated => f.write_str("circuit terminated by the user"),
         }
@@ -81,9 +91,86 @@ pub struct LocalStoreMarker;
 /// Local data store shared by all workers in a runtime.
 pub type LocalStore = TypedDashMap<LocalStoreMarker>;
 
+// Rust source code location of a panic.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PanicLocation {
+    file: String,
+    line: u32,
+    col: u32,
+}
+
+impl Display for PanicLocation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}:{}", self.file, self.line, self.col)
+    }
+}
+
+impl PanicLocation {
+    fn new(loc: &Location) -> Self {
+        Self {
+            file: loc.file().to_string(),
+            line: loc.line(),
+            col: loc.column(),
+        }
+    }
+}
+
+/// Information about a panic in a worker thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkerPanicInfo {
+    // Panic message, if any.
+    message: Option<String>,
+    // Panic location.
+    location: Option<PanicLocation>,
+    // Backtrace.
+    backtrace: String,
+}
+
+impl Display for WorkerPanicInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Some(message) = &self.message {
+            writeln!(f, "panic message: {message}")?;
+        } else {
+            writeln!(f, "panic message (none)")?;
+        }
+
+        if let Some(location) = &self.location {
+            writeln!(f, "panic location: {location}")?;
+        } else {
+            writeln!(f, "panic location: unknown")?;
+        }
+        writeln!(f, "stack trace:\n{}", self.backtrace)
+    }
+}
+
+impl WorkerPanicInfo {
+    fn new(panic_info: &PanicInfo) -> Self {
+        #[allow(clippy::manual_map)]
+        let message = if let Some(v) = panic_info.payload().downcast_ref::<String>() {
+            Some(v.clone())
+        } else if let Some(v) = panic_info.payload().downcast_ref::<&str>() {
+            Some(v.to_string())
+        } else {
+            None
+        };
+        let backtrace = Backtrace::force_capture().to_string();
+        let location = panic_info
+            .location()
+            .map(|location| PanicLocation::new(location));
+
+        Self {
+            message,
+            location,
+            backtrace,
+        }
+    }
+}
+
 struct RuntimeInner {
     layout: Layout,
     store: LocalStore,
+    // Panic info collected from failed worker threads.
+    panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
 }
 
 impl Debug for RuntimeInner {
@@ -96,11 +183,38 @@ impl Debug for RuntimeInner {
 
 impl RuntimeInner {
     fn new(layout: Layout) -> Self {
+        let local_workers = layout.local_workers().len();
+        let mut panic_info = Vec::with_capacity(local_workers);
+        for _ in 0..local_workers {
+            panic_info.push(RwLock::new(None));
+        }
+
         Self {
             layout,
             store: TypedDashMap::new(),
+            panic_info,
         }
     }
+}
+
+// Panic callback used to record worker thread panic information
+// in the runtime.
+//
+// Note: this is a global hook shared by all threads in the process.
+// It is installed when a new DBSP runtime starts, possibly overriding
+// a hook installed by another DBSP instance.  However it should work
+// correctly for threads from different DBSP runtimes or for threads
+// that don't belong to any DBSP runtime since it uses `RUNTIME`
+// thread-local variable to detect a DBSP runtime.
+fn panic_hook(panic_info: &PanicInfo<'_>, default_panic_hook: &dyn Fn(&PanicInfo<'_>)) {
+    // Call the default panic hook first.
+    default_panic_hook(panic_info);
+
+    RUNTIME.with(|runtime| {
+        if let Some(runtime) = runtime.borrow().clone() {
+            runtime.panic(panic_info)
+        }
+    })
 }
 
 /// A multithreaded runtime that hosts `N` circuits running in parallel worker
@@ -162,6 +276,22 @@ impl Runtime {
         let workers = layout.local_workers();
         let nworkers = workers.len();
         let runtime = Self(Arc::new(RuntimeInner::new(layout)));
+
+        // Install custom panic hook.
+
+        // The first call to `take_hook` should clear any custom hooks installed by
+        // other instances of the DBSP runtime.
+        let _ = panic::take_hook();
+
+        // The second call should return the default handler, which we can call
+        // from the custom hook to preserve the standard Rust behavior of printing
+        // panic info to console (using the `RUST_BACKTRACE` variable to control the
+        // output).
+        let default_panic_hook = panic::take_hook();
+
+        panic::set_hook(Box::new(move |panic_info| {
+            panic_hook(panic_info, default_panic_hook.as_ref())
+        }));
 
         let mut handles = Vec::with_capacity(nworkers);
         handles.extend(workers.map(|worker_index| {
@@ -287,6 +417,23 @@ impl Runtime {
     pub fn kill_in_progress() -> bool {
         KILL_SIGNAL.with(|signal| signal.load(Ordering::SeqCst))
     }
+
+    pub fn worker_panic_info(&self, worker: usize) -> Option<WorkerPanicInfo> {
+        if let Ok(guard) = self.inner().panic_info[worker].read() {
+            guard.clone()
+        } else {
+            None
+        }
+    }
+
+    // Record information about a worker thread panic in `panic_info`
+    fn panic(&self, panic_info: &PanicInfo) {
+        let worker_index = Self::worker_index();
+        let panic_info = WorkerPanicInfo::new(panic_info);
+        let _ = self.inner().panic_info[worker_index]
+            .write()
+            .map(|mut guard| *guard = Some(panic_info));
+    }
 }
 
 /// Per-worker controls.
@@ -345,12 +492,18 @@ impl RuntimeHandle {
     /// even if the circuit has not been fully evaluated for the current
     /// clock cycle.
     pub fn kill(self) -> ThreadResult<()> {
+        self.kill_async();
+
+        self.join()
+    }
+
+    // Signals all worker threads to exit, and returns immediately without
+    // waiting for them to exit.
+    pub fn kill_async(&self) {
         for worker in self.workers.iter() {
             worker.kill_signal.store(true, Ordering::SeqCst);
             worker.unpark();
         }
-
-        self.join()
     }
 
     /// Wait for all workers in the runtime to terminate.
@@ -365,6 +518,23 @@ impl RuntimeHandle {
             .map(|h| h.join_handle.join())
             .collect();
         results.into_iter().collect::<ThreadResult<()>>()
+    }
+
+    /// Retrieve panic info for a specific worker.
+    pub fn worker_panic_info(&self, worker: usize) -> Option<WorkerPanicInfo> {
+        self.runtime.worker_panic_info(worker)
+    }
+
+    // Retrieve panic info for all workers.
+    pub fn collect_panic_info(&self) -> Vec<(usize, WorkerPanicInfo)> {
+        let mut result = Vec::new();
+
+        for worker in 0..self.workers.len() {
+            if let Some(panic_info) = self.worker_panic_info(worker) {
+                result.push((worker, panic_info))
+            }
+        }
+        result
     }
 }
 

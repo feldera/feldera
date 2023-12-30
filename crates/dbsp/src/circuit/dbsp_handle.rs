@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use core::fmt;
-use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError};
+use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use itertools::Either;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -23,6 +23,8 @@ use std::{
 
 #[cfg(doc)]
 use crate::circuit::circuit_builder::Stream;
+
+use super::runtime::WorkerPanicInfo;
 
 /// A host for some workers in the [`Layout`] for a multi-host DBSP circuit.
 #[allow(clippy::manual_non_exhaustive)]
@@ -351,13 +353,14 @@ impl Runtime {
 
         let mut init_status = Vec::with_capacity(nworkers);
 
-        for (worker, receiver) in init_receivers.iter().enumerate() {
+        for receiver in init_receivers.iter() {
             match receiver.recv() {
                 Ok(Err(error)) => init_status.push(Some(Err(error))),
                 Ok(Ok(ret)) => init_status.push(Some(Ok(ret))),
                 Err(_) => {
+                    let panic_info = runtime.collect_panic_info();
                     init_status.push(Some(Err(DBSPError::Runtime(RuntimeError::WorkerPanic {
-                        worker,
+                        panic_info,
                     }))))
                 }
             }
@@ -431,6 +434,18 @@ impl DBSPHandle {
         self.runtime.take().unwrap().kill()
     }
 
+    fn kill_async(&mut self) {
+        self.command_senders.clear();
+        self.status_receivers.clear();
+        self.runtime.take().unwrap().kill_async()
+    }
+
+    fn collect_panic_info(&self) -> Option<Vec<(usize, WorkerPanicInfo)>> {
+        self.runtime
+            .as_ref()
+            .map(|runtime| runtime.collect_panic_info())
+    }
+
     fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DBSPError>
     where
         F: FnMut(Response),
@@ -442,18 +457,37 @@ impl DBSPHandle {
         // Send command.
         for (worker, sender) in self.command_senders.iter().enumerate() {
             if sender.send(command.clone()).is_err() {
-                let _ = self.kill_inner();
-                return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { worker }));
+                let panic_info = self.collect_panic_info().unwrap_or_default();
+
+                // Worker thread panicked. Exit without waiting for all workers to exit
+                // to avoid deadlocks due to workers waiting for each other.
+                self.kill_async();
+                return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { panic_info }));
             }
             self.runtime.as_ref().unwrap().unpark_worker(worker);
         }
 
+        // Use `Select` to wait for responses from all workers simultaneously.
+        // This way if one of the workers panics, leaving other workers waiting
+        // for it in exchange operators, we won't deadlock waiting for these
+        // workers.
+        let mut select = Select::new();
+        for receiver in self.status_receivers.iter() {
+            select.recv(receiver);
+        }
+
         // Receive responses.
-        for (worker, receiver) in self.status_receivers.iter().enumerate() {
-            match receiver.recv() {
+        for _ in 0..self.status_receivers.len() {
+            let ready = select.select();
+            let worker = ready.index();
+
+            match ready.recv(&self.status_receivers[worker]) {
                 Err(_) => {
-                    let _ = self.kill_inner();
-                    return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { worker }));
+                    // Retrieve panic info before killing the circuit.
+                    let panic_info = self.collect_panic_info().unwrap_or_default();
+                    self.kill_async();
+
+                    return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { panic_info }));
                 }
                 Ok(Err(e)) => {
                     let _ = self.kill_inner();
@@ -536,6 +570,8 @@ impl Drop for DBSPHandle {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use crate::{operator::Generator, Circuit, Error as DBSPError, Runtime, RuntimeError};
     use anyhow::anyhow;
 
@@ -561,7 +597,8 @@ mod tests {
         });
 
         if let DBSPError::Runtime(err) = res.unwrap_err() {
-            assert_eq!(err, RuntimeError::WorkerPanic { worker: 0 });
+            // println!("error: {err}");
+            assert!(matches!(err, RuntimeError::WorkerPanic { .. }));
         } else {
             panic!();
         }
@@ -596,7 +633,30 @@ mod tests {
         .unwrap();
 
         if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
-            assert_eq!(err, RuntimeError::WorkerPanic { worker: 0 });
+            // println!("error: {err}");
+            matches!(err, RuntimeError::WorkerPanic { .. });
+        } else {
+            panic!();
+        }
+    }
+
+    #[test]
+    fn test_panic_no_deadlock() {
+        let (mut handle, _) = Runtime::init_circuit(4, |circuit| {
+            circuit.add_source(Generator::new(|| {
+                if Runtime::worker_index() == 1 {
+                    panic!()
+                } else {
+                    std::thread::sleep(Duration::MAX)
+                }
+            }));
+            Ok(())
+        })
+        .unwrap();
+
+        if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
+            // println!("error: {err}");
+            matches!(err, RuntimeError::WorkerPanic { .. });
         } else {
             panic!();
         }
