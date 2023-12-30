@@ -86,7 +86,6 @@ pub(crate) trait Storage {
     ) -> Result<(ProgramId, Version), DBError>;
 
     /// Update program name, description and, optionally, code.
-    /// XXX: Description should be optional too
     #[allow(clippy::too_many_arguments)]
     async fn update_program(
         &self,
@@ -120,13 +119,7 @@ pub(crate) trait Storage {
     ) -> Result<ProgramDescr, DBError>;
 
     /// Delete program from the database.
-    ///
-    /// This will delete all program configs and pipelines.
-    async fn delete_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-    ) -> Result<(), DBError>;
+    async fn delete_program(&self, tenant_id: TenantId, program_name: &str) -> Result<(), DBError>;
 
     /// Retrieves all programs in the DB. Intended to be used by
     /// reconciliation loops.

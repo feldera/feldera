@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    api::{examples, parse_uuid_param, ProgramStatus},
+    api::{examples, parse_string_param, ProgramStatus},
     auth::TenantId,
     db::{storage::Storage, DBError, ProgramDescr, ProgramId, Version},
 };
@@ -171,27 +171,27 @@ pub(crate) async fn get_programs(
             , example = json!(examples::unknown_program())),
     ),
     params(
-        ("program_id" = Uuid, Path, description = "Unique program identifier"),
+        ("program_name" = String, Path, description = "Unique program name"),
         WithCodeQuery
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
-#[get("/programs/{program_id}")]
+#[get("/programs/{program_name}")]
 async fn get_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     query: web::Query<WithCodeQuery>,
 ) -> Result<HttpResponse, ManagerError> {
-    let program_id = ProgramId(parse_uuid_param(&req, "program_id")?);
+    let program_name = parse_string_param(&req, "program_name")?;
     let with_code = query.with_code.unwrap_or(false);
     let program = state
         .db
         .lock()
         .await
-        .get_program_by_id(*tenant_id, program_id, with_code)
+        .get_program_by_name(*tenant_id, &program_name, with_code, None)
         .await?;
 
     Ok(HttpResponse::Ok()
@@ -267,27 +267,28 @@ async fn new_program(
             , example = json!(examples::duplicate_name())),
     ),
     params(
-        ("program_id" = Uuid, Path, description = "Unique program identifier")
+        ("program_name" = String, Path, description = "Unique program name")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
-#[patch("/programs/{program_id}")]
+#[patch("/programs/{program_name}")]
 async fn update_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
     body: web::Json<UpdateProgramRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    let program_id = ProgramId(parse_uuid_param(&request, "program_id")?);
-    let version = state
-        .db
-        .lock()
-        .await
+    let program_name = parse_string_param(&request, "program_name")?;
+    let db = state.db.lock().await;
+    let program = db
+        .get_program_by_name(*tenant_id, &program_name, false, None)
+        .await?;
+    let version = db
         .update_program(
             *tenant_id,
-            program_id,
+            program.program_id,
             &body.name,
             &body.description,
             &body.code,
@@ -297,7 +298,7 @@ async fn update_program(
         )
         .await?;
     info!(
-        "Updated program {program_id} to version {version} (tenant:{})",
+        "Updated program {program_name} to version {version} (tenant:{})",
         *tenant_id
     );
 
@@ -325,25 +326,25 @@ async fn update_program(
             , example = json!(examples::outdated_program_version())),
     ),
     params(
-        ("program_id" = Uuid, Path, description = "Unique program identifier")
+        ("program_name" = String, Path, description = "Unique program name")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
-#[post("/programs/{program_id}/compile")]
+#[post("/programs/{program_name}/compile")]
 async fn compile_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
     body: web::Json<CompileProgramRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    let program_id = ProgramId(parse_uuid_param(&request, "program_id")?);
+    let program_name = parse_string_param(&request, "program_name")?;
     let descr = state
         .db
         .lock()
         .await
-        .get_program_by_id(*tenant_id, program_id, false)
+        .get_program_by_name(*tenant_id, &program_name, false, None)
         .await?;
     if descr.version != body.version {
         return Err(DBError::OutdatedProgramVersion {
@@ -365,7 +366,12 @@ async fn compile_program(
         .db
         .lock()
         .await
-        .set_program_status_guarded(*tenant_id, program_id, body.version, ProgramStatus::Pending)
+        .set_program_status_guarded(
+            *tenant_id,
+            descr.program_id,
+            body.version,
+            ProgramStatus::Pending,
+        )
         .await?;
     Ok(HttpResponse::Accepted().finish())
 }
@@ -395,24 +401,24 @@ async fn compile_program(
             , example = json!(examples::unknown_program())),
     ),
     params(
-        ("program_id" = Uuid, Path, description = "Unique program identifier")
+        ("program_name" = String, Path, description = "Unique program name")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Programs"
 )]
-#[delete("/programs/{program_id}")]
+#[delete("/programs/{program_name}")]
 async fn delete_program(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let program_id = ProgramId(parse_uuid_param(&req, "program_id")?);
+    let program_name = parse_string_param(&req, "program_name")?;
     let db = state.db.lock().await;
     let resp = db
-        .delete_program(*tenant_id, program_id)
+        .delete_program(*tenant_id, &program_name)
         .await
         .map(|_| HttpResponse::Ok().finish())?;
-    info!("Deleted program {program_id} (tenant:{})", *tenant_id);
+    info!("Deleted program {program_name} (tenant:{})", *tenant_id);
     Ok(resp)
 }
