@@ -144,21 +144,12 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
 
-        DBSPOpcode opcode;
-        switch (function.getKind()) {
-            case BIT_OR:
-
-                opcode = DBSPOpcode.AGG_OR;
-                break;
-            case BIT_AND:
-                opcode = DBSPOpcode.AGG_AND;
-                break;
-            case BIT_XOR:
-                opcode = DBSPOpcode.AGG_XOR;
-                break;
-            default:
-                throw new UnimplementedException(node);
-        }
+        DBSPOpcode opcode = switch (function.getKind()) {
+            case BIT_OR -> DBSPOpcode.AGG_OR;
+            case BIT_AND -> DBSPOpcode.AGG_AND;
+            case BIT_XOR -> DBSPOpcode.AGG_XOR;
+            default -> throw new UnimplementedException(node);
+        };
 
         // TODO: some of these are linear
         increment = this.aggregateOperation(node, opcode,
@@ -245,19 +236,17 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         CalciteObject node = CalciteObject.create(function);
         DBSPOpcode call;
-        String semigroupName;
-        switch (function.getKind()) {
-            case MIN:
+        String semigroupName = switch (function.getKind()) {
+            case MIN -> {
                 call = DBSPOpcode.AGG_MIN;
-                semigroupName = "MinSemigroup";
-                break;
-            case MAX:
+                yield "MinSemigroup";
+            }
+            case MAX -> {
                 call = DBSPOpcode.AGG_MAX;
-                semigroupName = "MaxSemigroup";
-                break;
-            default:
-                throw new UnimplementedException(node);
-        }
+                yield "MaxSemigroup";
+            }
+            default -> throw new UnimplementedException(node);
+        };
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
         DBSPExpression increment = this.aggregateOperation(

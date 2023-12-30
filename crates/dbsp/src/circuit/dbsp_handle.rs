@@ -464,6 +464,7 @@ impl DBSPHandle {
                 self.kill_async();
                 return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { panic_info }));
             }
+            self.runtime.as_ref().unwrap().unpark_worker(worker);
         }
 
         // Use `Select` to wait for responses from all workers simultaneously.

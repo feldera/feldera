@@ -90,6 +90,7 @@ public class SimulatorTests {
         }
     }
 
+    @SuppressWarnings("CanBeFinal")
     public static class Age {
         public int age;
 
@@ -190,6 +191,7 @@ public class SimulatorTests {
         Assert.assertTrue(expected.equals(adults));
     }
 
+    @SuppressWarnings("CanBeFinal")
     static final class AvgHelper {
         public int count;
         public int sum;

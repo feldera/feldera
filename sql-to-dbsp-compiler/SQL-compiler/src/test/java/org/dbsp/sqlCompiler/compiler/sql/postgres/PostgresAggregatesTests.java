@@ -56,19 +56,19 @@ public class PostgresAggregatesTests extends SqlIoTest {
                   BIT_OR(i2),
                   BIT_OR(i4),
                   BIT_OR(i8),
-                  BIT_OR(i), 
-                  BIT_OR(x), 
-                  BIT_OR(y), 
+                  BIT_OR(i),
+                  BIT_OR(x),
+                  BIT_OR(y),
                   BIT_XOR(i2),
                   BIT_XOR(i4),
                   BIT_XOR(i8),
                   BIT_XOR(i),
                   BIT_XOR(x),
-                  BIT_XOR(y) 
+                  BIT_XOR(y)
                 FROM bitwise_test;
                  1 | 1 | 1 | ? | 0 | 0100 | 7 | 7 | 7 | ? | 7 | 1101 | 5 | 5 | 5 | ? | 7 | 1101
                 ---+---+---+---+---+------+---+---+---+---+---+------+---+---+---+---+---+------
-                 1 | 1 | 1 | 1 | 0 | 04   | 7 | 7 | 7 | 3 | 7 | 0D   | 5 | 5 | 5 | 2 | 7 | 0D  
+                 1 | 1 | 1 | 1 | 0 | 04   | 7 | 7 | 7 | 3 | 7 | 0D   | 5 | 5 | 5 | 2 | 7 | 0D
                 (1 row)""");
     }
 

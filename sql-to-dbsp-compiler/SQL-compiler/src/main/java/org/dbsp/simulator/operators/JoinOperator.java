@@ -20,9 +20,9 @@ public class JoinOperator<Weight> extends BaseOperator<Weight> {
     @Override
     public void step() {
         BaseCollection<Weight> left = this.inputs[0].getOutput();
-        IndexedZSet<SqlTuple, SqlTuple, Weight> leftIndex = left.to(IndexedZSet.class);
+        IndexedZSet<SqlTuple, SqlTuple, Weight> leftIndex = (IndexedZSet<SqlTuple, SqlTuple, Weight> ) left;
         BaseCollection<Weight> right = this.inputs[1].getOutput();
-        IndexedZSet<SqlTuple, SqlTuple, Weight> rightIndex = right.to(IndexedZSet.class);
+        IndexedZSet<SqlTuple, SqlTuple, Weight> rightIndex = (IndexedZSet<SqlTuple, SqlTuple, Weight>) right;
         this.nextOutput = leftIndex.join(rightIndex, this.combiner);
     }
 }

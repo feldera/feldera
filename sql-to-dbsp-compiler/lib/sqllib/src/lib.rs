@@ -1092,7 +1092,7 @@ where
     builder.done()
 }
 
-pub fn append_to_upsert_handle<K, W>(data: &OrdZSet<K, W>, handle: UpsertHandle<K, bool>)
+pub fn append_to_upsert_handle<K, W>(data: &OrdZSet<K, W>, handle: &UpsertHandle<K, bool>)
 where
     K: DBData,
     W: DBWeight + ZRingValue,
@@ -1114,7 +1114,7 @@ where
     }
 }
 
-pub fn append_to_collection_handle<K, W>(data: &OrdZSet<K, W>, handle: CollectionHandle<K, W>)
+pub fn append_to_collection_handle<K, W>(data: &OrdZSet<K, W>, handle: &CollectionHandle<K, W>)
 where
     K: DBData,
     W: DBWeight + ZRingValue,
@@ -1126,7 +1126,7 @@ where
     }
 }
 
-pub fn read_output_handle<K, W>(handle: OutputHandle<OrdZSet<K, W>>) -> OrdZSet<K, W>
+pub fn read_output_handle<K, W>(handle: &OutputHandle<OrdZSet<K, W>>) -> OrdZSet<K, W>
 where
     K: DBData,
     W: DBWeight,

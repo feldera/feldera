@@ -125,7 +125,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testBinary() {
         this.q("""
                 SELECT x'DeAdBeEf';
-                   bytea   
+                   bytea
                 ------------
                  deadbeef""");
 
@@ -204,7 +204,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testTextTbl2() {
         this.q("""
                 SELECT CAST(f1 AS varchar) AS "varchar(text)" FROM TEXT_TBL;
-                   varchar(text)  
+                   varchar(text)
                 -------------------
                  doh!
                  hi de ho neighbor""");
@@ -231,7 +231,7 @@ public class PostgresStringTests extends SqlIoTest {
                  t""");
         this.q("""
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
-                 bunch o blanks  
+                 bunch o blanks
                 ------------------
                  t""");
         this.q("""
@@ -250,7 +250,7 @@ public class PostgresStringTests extends SqlIoTest {
                  t""");
         this.q("""
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
-                 bunch o blanks  
+                 bunch o blanks
                 ------------------
                  t""");
         this.q("""
@@ -368,7 +368,7 @@ public class PostgresStringTests extends SqlIoTest {
                  (111) 222-3333""");
         this.q("""
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\&Y', 'g');
-                  regexp_replace  
+                  regexp_replace
                 -------------------
                  fXooYbaXrrYbaXzzY""");
         this.q("""
@@ -378,7 +378,7 @@ public class PostgresStringTests extends SqlIoTest {
                  fX\\YbaX\\YbaX\\Y""");
         this.q("""
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\Y\\\\1Z\\\\');
-                 regexp_replace 
+                 regexp_replace
                 -----------------
                  fX\\YoZ\\barrbazz""");
         this.q("""
@@ -398,48 +398,48 @@ public class PostgresStringTests extends SqlIoTest {
                  Z Z""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1);
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  X PostgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1, 2);
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  A PXstgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 0, 'i');
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  X PXstgrXSQL fXnctXXn""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'i');
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  X PostgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 2, 'i');
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  A PXstgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 3, 'i');
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  A PostgrXSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 9, 'i');
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  A PostgreSQL function""");
         this.q("""
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 7, 0, 'i');
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  A PostgrXSQL fXnctXXn""");
         this.q("""
                 -- 'g' flag should be ignored when N is specified
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'g');
-                    regexp_replace    
+                    regexp_replace
                 -----------------------
                  A PXstgreSQL function""");
     }
@@ -977,7 +977,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testRepeat() {
         this.q("""
                 SELECT repeat('Pg', 4);
-                  repeat 
+                  repeat
                 ----------
                  PgPgPgPg""");
         this.q("""

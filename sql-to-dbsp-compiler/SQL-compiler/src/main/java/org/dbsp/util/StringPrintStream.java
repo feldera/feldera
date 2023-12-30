@@ -25,15 +25,14 @@ package org.dbsp.util;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
-import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 
 /**
  * A PrintStream that writes do a String.
  */
 public class StringPrintStream {
-    PrintStream stream;
-    ByteArrayOutputStream byteStream;
+    final PrintStream stream;
+    final ByteArrayOutputStream byteStream;
     boolean closed = false;
 
     public StringPrintStream() {

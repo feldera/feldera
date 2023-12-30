@@ -94,7 +94,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testLt() {
         this.q("""
                 SELECT f1 FROM DATE_TBL WHERE f1 < '2000-01-01';
-                 f1      
+                 f1
                 ---------------
                  04-09-1957
                  06-13-1957
@@ -942,7 +942,6 @@ public class PostgresDateTests extends SqlIoTest {
                                 l * 86400 * 1000, true)), DBSPExpression.class));
         result.add(new DBSPTupleExpression(DBSPLiteral.none(
                 new DBSPTypeMillisInterval(CalciteObject.EMPTY, true))));
-        DBSPCompiler compiler = testCompiler();
         this.compare(query, result, true);
     }
 
@@ -1023,7 +1022,7 @@ public class PostgresDateTests extends SqlIoTest {
                     EXTRACT(doy from f1) AS 'doy',
                     EXTRACT(epoch from f1) AS 'epoch'
                     FROM DATE_TBL;
-                     date      | year  | month | day | quarter | decade | century | millennium | isoyear | week | dow | isodow | doy |     epoch    
+                     date      | year  | month | day | quarter | decade | century | millennium | isoyear | week | dow | isodow | doy |     epoch
                 ---------------+-------+-------+-----+---------+--------+---------+------------+---------+------+-----+--------+-----+---------------
                  04-09-1957    |  1957 |     4 |   9 |       2 |    195 |      20 |          2 |    1957 |   15 |   3 |      2 |  99 |    -401760000
                  06-13-1957    |  1957 |     6 |  13 |       2 |    195 |      20 |          2 |    1957 |   24 |   5 |      4 | 164 |    -396144000

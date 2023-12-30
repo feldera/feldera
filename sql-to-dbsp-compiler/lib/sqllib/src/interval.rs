@@ -7,11 +7,11 @@
 //!   represented as days.
 
 use dbsp::num_entries_scalar;
-use dbsp_adapters::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig};
+use dbsp_adapters::{deserialize_without_context,serialize_without_context};
 use num::PrimInt;
-use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
+use serde::{Serialize, Deserialize};
 use size_of::SizeOf;
-use std::{borrow::Cow, fmt::Debug, ops::Mul};
+use std::{fmt::Debug, ops::Mul};
 
 #[derive(
     Debug,
@@ -27,7 +27,10 @@ use std::{borrow::Cow, fmt::Debug, ops::Mul};
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    Serialize,
+    Deserialize,
 )]
+#[serde(transparent)]
 pub struct ShortInterval {
     milliseconds: i64,
 }
@@ -67,52 +70,8 @@ where
     }
 }
 
-impl SerializeWithContext<SqlSerdeConfig> for ShortInterval {
-    fn serialize_with_context<S>(
-        &self,
-        serializer: S,
-        _context: &SqlSerdeConfig,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // TODO: is this the right way to serialize ShortIntervals?
-        serializer.serialize_str(&self.milliseconds.to_string())
-    }
-}
-
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ShortInterval {
-    fn deserialize_with_context<D>(
-        deserializer: D,
-        _config: &'de SqlSerdeConfig,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-        let milliseconds = str
-            .trim()
-            .parse::<i64>()
-            .map_err(|e| D::Error::custom(format!("invalid ShortInterval '{str}': {e}")))?;
-
-        Ok(Self::new(milliseconds))
-    }
-}
-
-impl<'de> Deserialize<'de> for ShortInterval {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-        let milliseconds = str
-            .trim()
-            .parse::<i64>()
-            .map_err(|e| D::Error::custom(format!("invalid ShortInterval '{str}': {e}")))?;
-
-        Ok(Self::new(milliseconds))
-    }
-}
+serialize_without_context!(ShortInterval);
+deserialize_without_context!(ShortInterval);
 
 /////////////////////////
 
@@ -130,7 +89,10 @@ impl<'de> Deserialize<'de> for ShortInterval {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    Serialize,
+    Deserialize,
 )]
+#[serde(transparent)]
 pub struct LongInterval {
     days: i32,
 }
@@ -175,49 +137,5 @@ num_entries_scalar! {
     LongInterval,
 }
 
-impl SerializeWithContext<SqlSerdeConfig> for LongInterval {
-    fn serialize_with_context<S>(
-        &self,
-        serializer: S,
-        _context: &SqlSerdeConfig,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // TODO: is this the right way to serialize ShortIntervals?
-        serializer.serialize_str(&self.days.to_string())
-    }
-}
-
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for LongInterval {
-    fn deserialize_with_context<D>(
-        deserializer: D,
-        _config: &'de SqlSerdeConfig,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-        let days = str
-            .trim()
-            .parse::<i32>()
-            .map_err(|e| D::Error::custom(format!("invalid LongInterval '{str}': {e}")))?;
-
-        Ok(Self::new(days))
-    }
-}
-
-impl<'de> Deserialize<'de> for LongInterval {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-        let days = str
-            .trim()
-            .parse::<i32>()
-            .map_err(|e| D::Error::custom(format!("invalid ShortInterval '{str}': {e}")))?;
-
-        Ok(Self::new(days))
-    }
-}
+serialize_without_context!(LongInterval);
+deserialize_without_context!(LongInterval);

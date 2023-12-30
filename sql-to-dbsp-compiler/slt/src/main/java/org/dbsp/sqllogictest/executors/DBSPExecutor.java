@@ -468,10 +468,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         for (int i = 0; i < circuit.getInputTables().size(); i++) {
             String inputI = circuit.getInputTables().get(i);
             int index = contents.getTableIndex(inputI);
-            String function = "append_to_collection_handle";
-            loopBody.add(new DBSPApplyExpression(function, DBSPTypeAny.getDefault(),
+            loopBody.add(new DBSPApplyExpression("append_to_collection_handle", DBSPTypeAny.getDefault(),
                     loopIndex.field(index).borrow(),
-                    streams.getVarReference().field(i).applyClone())
+                    streams.getVarReference().field(i).borrow())
                     .toStatement());
         }
         DBSPLetStatement step =
@@ -482,7 +481,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPLetStatement partialOutput =
                 new DBSPLetStatement("out",
                         new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
-                                streams.getVarReference().field(circuit.getInputTables().size()).applyClone()));
+                                streams.getVarReference().field(circuit.getInputTables().size()).borrow()));
         loopBody.add(partialOutput);
 
         DBSPForExpression loop = new DBSPForExpression(

@@ -124,9 +124,7 @@ public class CompilerOptions {
          * store I/O handles.  Testing code does not use the catalog. */
         public boolean emitCatalog = true;
 
-        /**
-         * Only compare fields that matter.
-         */
+        /** Only compare fields that matter. */
         public boolean same(IO io) {
             return true;
         }

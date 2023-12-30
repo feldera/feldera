@@ -116,7 +116,7 @@ class TestCase {
                 else
                     function = "append_to_upsert_handle";
                 list.add(new DBSPApplyExpression(function, DBSPTypeAny.getDefault(),
-                        in.getVarReference().field(i).borrow(), streams.getVarReference().field(i).applyClone())
+                        in.getVarReference().field(i).borrow(), streams.getVarReference().field(i).borrow())
                         .toStatement());
             }
             DBSPLetStatement step =
@@ -154,7 +154,7 @@ class TestCase {
 
                 DBSPExpression expected = outputs[i];
                 DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
-                        streams.getVarReference().field(pairs.inputs.length + i).applyClone());
+                        streams.getVarReference().field(pairs.inputs.length + i).borrow());
                 if (foundFp) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
                     DBSPExpression converter = convertedValue.closure(var.asParameter());

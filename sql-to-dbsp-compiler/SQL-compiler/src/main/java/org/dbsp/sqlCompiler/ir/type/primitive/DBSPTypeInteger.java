@@ -93,30 +93,22 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
 
     @Override
     public DBSPLiteral getMaxValue() {
-        switch (this.width) {
-            case 16:
-                return new DBSPI32Literal((int)Short.MAX_VALUE, this.mayBeNull);
-            case 32:
-                return new DBSPI32Literal(Integer.MAX_VALUE, this.mayBeNull);
-            case 64:
-                return new DBSPI64Literal(Long.MAX_VALUE, this.mayBeNull);
-            default:
-                throw new UnsupportedException(this.getNode());
-        }
+        return switch (this.width) {
+            case 16 -> new DBSPI32Literal((int) Short.MAX_VALUE, this.mayBeNull);
+            case 32 -> new DBSPI32Literal(Integer.MAX_VALUE, this.mayBeNull);
+            case 64 -> new DBSPI64Literal(Long.MAX_VALUE, this.mayBeNull);
+            default -> throw new UnsupportedException(this.getNode());
+        };
     }
 
     @Override
     public DBSPLiteral getMinValue() {
-        switch (this.width) {
-            case 16:
-                return new DBSPI32Literal((int)Short.MIN_VALUE, this.mayBeNull);
-            case 32:
-                return new DBSPI32Literal(Integer.MIN_VALUE, this.mayBeNull);
-            case 64:
-                return new DBSPI64Literal(Long.MIN_VALUE, this.mayBeNull);
-            default:
-                throw new UnsupportedException(this.getNode());
-        }
+        return switch (this.width) {
+            case 16 -> new DBSPI32Literal((int) Short.MIN_VALUE, this.mayBeNull);
+            case 32 -> new DBSPI32Literal(Integer.MIN_VALUE, this.mayBeNull);
+            case 64 -> new DBSPI64Literal(Long.MIN_VALUE, this.mayBeNull);
+            default -> throw new UnsupportedException(this.getNode());
+        };
     }
 
     @Override
