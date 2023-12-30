@@ -44,7 +44,7 @@ class DBSPProgram:
             version=self.program_version,
         )
         # Queue program for compilation.
-        compile_program.sync_detailed(client = self.api_client, program_id = self.program_id, json_body=body).unwrap("Failed to queue program for compilation")
+        compile_program.sync_detailed(client = self.api_client, program_name = self.program_name, json_body=body).unwrap("Failed to queue program for compilation")
 
         start = time.time()
         while time.time() - start < timeout:
@@ -71,7 +71,7 @@ class DBSPProgram:
         """
         response = get_program.sync_detailed(
                 client = self.api_client,
-                program_id = self.program_id).unwrap("Failed to retrieve program status")
+                program_name = self.program_name).unwrap("Failed to retrieve program status")
 
         # if api_response.body['version'] != self.program_version:
         #    raise RuntimeError(
