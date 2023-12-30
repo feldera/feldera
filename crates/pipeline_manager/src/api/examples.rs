@@ -35,7 +35,7 @@ pub(crate) fn duplicate_name() -> ErrorResponse {
 
 pub(crate) fn program_in_use_by_pipeline() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::ProgramInUseByPipeline {
-        program_id: ProgramId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
+        program_name: "unknown_name".to_string(),
     })
 }
 

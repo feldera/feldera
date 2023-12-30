@@ -56,7 +56,7 @@ pub enum DBError {
         program_name: String,
     },
     ProgramInUseByPipeline {
-        program_id: ProgramId,
+        program_name: String,
     },
     OutdatedProgramVersion {
         latest_version: Version,
@@ -340,8 +340,8 @@ impl Display for DBError {
             DBError::UnknownProgramName { program_name } => {
                 write!(f, "Unknown program name '{program_name}'")
             }
-            DBError::ProgramInUseByPipeline { program_id } => {
-                write!(f, "Program id '{program_id}' is in use by a pipeline")
+            DBError::ProgramInUseByPipeline { program_name } => {
+                write!(f, "Program name '{program_name}' is in use by a pipeline")
             }
             DBError::OutdatedProgramVersion { latest_version } => {
                 write!(

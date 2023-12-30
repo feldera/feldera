@@ -1201,7 +1201,7 @@ enum StorageAction {
     GetProgramByName(TenantId, String, bool),
     SetProgramStatusGuarded(TenantId, ProgramId, Version, ProgramStatus),
     SetProgramSchema(TenantId, ProgramId, ProgramSchema),
-    DeleteProgram(TenantId, ProgramId),
+    DeleteProgram(TenantId, String),
     AllPrograms,
     NextJob,
     NewPipeline(
@@ -1527,10 +1527,10 @@ fn db_impl_behaves_like_model() {
                                     handle.db.set_program_schema(tenant_id, program_id, schema).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteProgram(tenant_id, program_id) => {
+                            StorageAction::DeleteProgram(tenant_id, program_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.delete_program(tenant_id, program_id).await;
-                                let impl_response = handle.db.delete_program(tenant_id, program_id).await;
+                                let model_response = model.delete_program(tenant_id, &program_name).await;
+                                let impl_response = handle.db.delete_program(tenant_id, &program_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::AllPrograms => {
@@ -1969,34 +1969,37 @@ impl Storage for Mutex<DbModel> {
             })?)
     }
 
-    async fn delete_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: super::ProgramId,
-    ) -> DBResult<()> {
+    async fn delete_program(&self, tenant_id: TenantId, program_name: &str) -> DBResult<()> {
         let mut s = self.lock().await;
         // Foreign key delete:
-        let program_name = s
+        let program = &s
             .programs
-            .get(&(tenant_id, program_id))
-            .ok_or(DBError::UnknownProgram { program_id })?
-            .0
-            .name
-            .clone();
+            .iter()
+            .find(|c| c.0 .0 == tenant_id && c.1 .0.name == program_name)
+            .ok_or(DBError::UnknownProgramName {
+                program_name: program_name.to_string(),
+            })?
+            .1
+             .0;
+        let program_id = program.program_id;
 
         let found = s
             .pipelines
             .iter()
             .filter(|&c| c.0 .0 == tenant_id)
-            .any(|c| c.1.descriptor.program_name == Some(program_name.clone()));
+            .any(|c| c.1.descriptor.program_name == Some(program_name.to_string()));
 
         if found {
-            Err(DBError::ProgramInUseByPipeline { program_id })
+            Err(DBError::ProgramInUseByPipeline {
+                program_name: program_name.to_string(),
+            })
         } else {
             s.programs
                 .remove(&(tenant_id, program_id))
                 .map(|_| ())
-                .ok_or(DBError::UnknownProgram { program_id })?;
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?;
 
             Ok(())
         }
