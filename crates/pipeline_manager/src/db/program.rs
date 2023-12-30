@@ -483,25 +483,27 @@ pub(crate) async fn get_program_by_name(
 pub(crate) async fn delete_program(
     db: &ProjectDB,
     tenant_id: TenantId,
-    program_id: ProgramId,
+    program_name: &str,
 ) -> Result<(), DBError> {
     let manager = db.pool.get().await?;
     let stmt = manager
-        .prepare_cached("DELETE FROM program WHERE id = $1 AND tenant_id = $2")
+        .prepare_cached("DELETE FROM program WHERE name = $1 AND tenant_id = $2")
         .await?;
     let res = manager
-        .execute(&stmt, &[&program_id.0, &tenant_id.0])
+        .execute(&stmt, &[&program_name, &tenant_id.0])
         .await
         .map_err(|e| {
             ProjectDB::maybe_program_id_in_use_foreign_key_constraint_err(
                 e.into(),
-                Some(program_id),
+                Some(program_name),
             )
         })?;
     if res > 0 {
         Ok(())
     } else {
-        Err(DBError::UnknownProgram { program_id })
+        Err(DBError::UnknownProgramName {
+            program_name: program_name.to_string(),
+        })
     }
 }
 

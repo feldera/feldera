@@ -221,12 +221,8 @@ impl Storage for ProjectDB {
         Ok(program::get_program_by_name(self, tenant_id, program_name, with_code, txn).await?)
     }
 
-    async fn delete_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-    ) -> Result<(), DBError> {
-        Ok(program::delete_program(self, tenant_id, program_id).await?)
+    async fn delete_program(&self, tenant_id: TenantId, program_name: &str) -> Result<(), DBError> {
+        Ok(program::delete_program(self, tenant_id, program_name).await?)
     }
 
     async fn all_programs(&self) -> Result<Vec<(TenantId, ProgramDescr)>, DBError> {
@@ -900,7 +896,7 @@ impl ProjectDB {
     /// user-friendly error message.
     fn maybe_program_id_in_use_foreign_key_constraint_err(
         err: DBError,
-        program_id: Option<ProgramId>,
+        program_name: Option<&str>,
     ) -> DBError {
         if let DBError::PostgresError { error, .. } = &err {
             let db_err = error.as_db_error();
@@ -908,8 +904,10 @@ impl ProjectDB {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
                     && db_err.constraint() == Some("pipeline_program_id_tenant_id_fkey")
                 {
-                    if let Some(program_id) = program_id {
-                        return DBError::ProgramInUseByPipeline { program_id };
+                    if let Some(program_name) = program_name {
+                        return DBError::ProgramInUseByPipeline {
+                            program_name: program_name.to_string(),
+                        };
                     } else {
                         unreachable!("program_id cannot be none");
                     }

@@ -296,13 +296,14 @@ mod test {
             );
 
             // Updates
+            let updated_program_name = format!("updated_test{i}");
             let _ = conn
                 .lock()
                 .await
                 .update_program(
                     tenant_id,
                     program_id,
-                    &Some(format!("updated_test{i}")),
+                    &Some(updated_program_name.clone()),
                     &Some("some new description".to_string()),
                     &None,
                     &None,
@@ -337,7 +338,7 @@ mod test {
             // Deletes
             conn.lock()
                 .await
-                .delete_program(tenant_id, program_id)
+                .delete_program(tenant_id, &updated_program_name)
                 .await
                 .unwrap();
             conn.lock()

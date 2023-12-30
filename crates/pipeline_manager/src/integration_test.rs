@@ -218,8 +218,8 @@ impl TestConfig {
         let mut req = config.get("/v0/programs").await;
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
-            let id = program["program_id"].as_str().unwrap();
-            let req = config.delete(format!("/v0/programs/{}", id)).await;
+            let name = program["name"].as_str().unwrap();
+            let req = config.delete(format!("/v0/programs/{name}")).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
 
@@ -403,12 +403,12 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn compile(&self, program_id: &str, version: i64) {
+    async fn compile(&self, program_name: &str, version: i64) {
         let compilation_request = json!({ "version": version });
 
         let resp = self
             .post(
-                format!("/v0/programs/{program_id}/compile"),
+                format!("/v0/programs/{program_name}/compile"),
                 &compilation_request,
             )
             .await;
@@ -421,7 +421,7 @@ impl TestConfig {
             if now.elapsed().as_secs() > 200 {
                 panic!("Compilation timeout");
             }
-            let mut resp = self.get(format!("/v0/programs/{}", program_id)).await;
+            let mut resp = self.get(format!("/v0/programs/{program_name}")).await;
             let val: Value = resp.json().await.unwrap();
 
             let status = val["status"].clone();
@@ -567,9 +567,8 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-    let id = resp["program_id"].as_str().unwrap();
     let version = resp["version"].as_i64().unwrap();
-    config.compile(id, version).await;
+    config.compile("test", version).await;
 
     let pipeline_request = json!({
         "name":  "test",
@@ -617,12 +616,11 @@ async fn program_create_compile_delete() {
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-    let id = resp["program_id"].as_str().unwrap();
     let version = resp["version"].as_i64().unwrap();
-    config.compile(id, version).await;
-    let resp = config.delete(format!("/v0/programs/{}", id)).await;
+    config.compile("test", version).await;
+    let resp = config.delete(format!("/v0/programs/test")).await;
     assert_eq!(StatusCode::OK, resp.status());
-    let resp = config.get(format!("/v0/programs/{}", id).as_str()).await;
+    let resp = config.get(format!("/v0/programs/test").as_str()).await;
     assert_eq!(StatusCode::NOT_FOUND, resp.status());
 }
 
@@ -785,10 +783,8 @@ async fn program_delete_with_pipeline() {
         "description": "desc",
         "code": "create table t1(c1 integer); create view v1 as select * from t1;"
     });
-    let mut req = config.post("/v0/programs", &program_request).await;
+    let req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
-    let resp: Value = req.json().await.unwrap();
-    let program_id = resp["program_id"].as_str().unwrap();
 
     let pipeline_request = json!({
         "name":  "test",
@@ -805,10 +801,10 @@ async fn program_delete_with_pipeline() {
     assert_eq!(StatusCode::OK, req.status());
 
     // Now delete the program and check that the pipeline still exists
-    let req = config.delete(format!("/v0/programs/{program_id}")).await;
+    let req = config.delete(format!("/v0/programs/test")).await;
     assert_eq!(StatusCode::BAD_REQUEST, req.status());
 
-    let req = config.get(format!("/v0/programs/{program_id}")).await;
+    let req = config.get(format!("/v0/programs/test")).await;
     assert_eq!(StatusCode::OK, req.status());
 
     let req = config.get(format!("/v0/pipelines/{pipeline_id}")).await;
@@ -1426,7 +1422,6 @@ async fn pipeline_start_without_compiling() {
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-    let program_id = resp["program_id"].as_str().unwrap();
     let version = resp["version"].as_i64().unwrap();
 
     let pipeline_request = json!({
@@ -1444,10 +1439,7 @@ async fn pipeline_start_without_compiling() {
     // Start compiling the new program but don't wait till completion
     let compilation_request = json!({ "version": version });
     let resp = config
-        .post(
-            format!("/v0/programs/{program_id}/compile"),
-            &compilation_request,
-        )
+        .post(format!("/v0/programs/test/compile"), &compilation_request)
         .await;
     assert_eq!(StatusCode::ACCEPTED, resp.status());
 
@@ -1461,7 +1453,7 @@ async fn pipeline_start_without_compiling() {
         if now.elapsed().as_secs() > 200 {
             panic!("Compilation timeout");
         }
-        let mut resp = config.get(format!("/v0/programs/{program_id}")).await;
+        let mut resp = config.get(format!("/v0/programs/test")).await;
         let val: Value = resp.json().await.unwrap();
 
         let status = val["status"].clone();
