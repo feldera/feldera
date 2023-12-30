@@ -382,7 +382,7 @@
         ]
       }
     },
-    "/v0/connectors/{connector_id}": {
+    "/v0/connectors/{connector_name}": {
       "get": {
         "tags": [
           "Connectors"
@@ -392,13 +392,12 @@
         "operationId": "get_connector",
         "parameters": [
           {
-            "name": "connector_id",
+            "name": "connector_name",
             "in": "path",
-            "description": "Unique connector identifier",
+            "description": "Unique connector name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -447,13 +446,12 @@
         "operationId": "delete_connector",
         "parameters": [
           {
-            "name": "connector_id",
+            "name": "connector_name",
             "in": "path",
-            "description": "Unique connector identifier",
+            "description": "Unique connector name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -512,13 +510,12 @@
         "operationId": "update_connector",
         "parameters": [
           {
-            "name": "connector_id",
+            "name": "connector_name",
             "in": "path",
-            "description": "Unique connector identifier",
+            "description": "Unique connector name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -688,7 +685,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}": {
+    "/v0/pipelines/{pipeline_name}": {
       "get": {
         "tags": [
           "Pipelines"
@@ -698,13 +695,12 @@
         "operationId": "get_pipeline",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -806,13 +802,12 @@
         "operationId": "pipeline_delete",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -889,13 +884,12 @@
         "operationId": "update_pipeline",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -921,29 +915,29 @@
             }
           },
           "404": {
-            "description": "Specified pipeline or connector id does not exist.",
+            "description": "Specified pipeline or connector does not exist.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
-                  "Unknown connector ID": {
+                  "Unknown connector name": {
                     "value": {
                       "details": {
-                        "connector_id": "d764b9e2-19f2-4572-ba20-8b42641b07c4"
+                        "name": "unknown_name"
                       },
-                      "error_code": "UnknownConnector",
-                      "message": "Unknown connector id 'd764b9e2-19f2-4572-ba20-8b42641b07c4'"
+                      "error_code": "UnknownName",
+                      "message": "An entity with name unknown_name was not found"
                     }
                   },
-                  "Unknown pipeline ID": {
+                  "Unknown pipeline name": {
                     "value": {
                       "details": {
-                        "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                        "name": "unknown_name"
                       },
-                      "error_code": "UnknownPipeline",
-                      "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                      "error_code": "UnknownName",
+                      "message": "An entity with name unknown_name was not found"
                     }
                   }
                 }
@@ -958,7 +952,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}/config": {
+    "/v0/pipelines/{pipeline_name}/config": {
       "get": {
         "tags": [
           "Pipelines"
@@ -968,13 +962,12 @@
         "operationId": "get_pipeline_config",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -1014,7 +1007,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}/deployed": {
+    "/v0/pipelines/{pipeline_name}/deployed": {
       "get": {
         "tags": [
           "Pipelines"
@@ -1024,13 +1017,12 @@
         "operationId": "pipeline_deployed",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -1075,7 +1067,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}/egress/{table_name}": {
+    "/v0/pipelines/{pipeline_name}/egress/{table_name}": {
       "post": {
         "tags": [
           "HTTP input/output"
@@ -1085,13 +1077,12 @@
         "operationId": "http_output",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier.",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           },
           {
@@ -1245,7 +1236,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}/ingress/{table_name}": {
+    "/v0/pipelines/{pipeline_name}/ingress/{table_name}": {
       "post": {
         "tags": [
           "HTTP input/output"
@@ -1255,13 +1246,12 @@
         "operationId": "http_input",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier.",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           },
           {
@@ -1376,7 +1366,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}/stats": {
+    "/v0/pipelines/{pipeline_name}/stats": {
       "get": {
         "tags": [
           "Pipelines"
@@ -1386,13 +1376,12 @@
         "operationId": "pipeline_stats",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -1450,7 +1439,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}/validate": {
+    "/v0/pipelines/{pipeline_name}/validate": {
       "get": {
         "tags": [
           "Pipelines"
@@ -1460,13 +1449,12 @@
         "operationId": "pipeline_validate",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -1583,7 +1571,7 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_id}/{action}": {
+    "/v0/pipelines/{pipeline_name}/{action}": {
       "post": {
         "tags": [
           "Pipelines"
@@ -1593,13 +1581,12 @@
         "operationId": "pipeline_action",
         "parameters": [
           {
-            "name": "pipeline_id",
+            "name": "pipeline_name",
             "in": "path",
-            "description": "Unique pipeline identifier",
+            "description": "Unique pipeline name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           },
           {
@@ -1921,7 +1908,7 @@
         ]
       }
     },
-    "/v0/programs/{program_id}": {
+    "/v0/programs/{program_name}": {
       "get": {
         "tags": [
           "Programs"
@@ -1931,13 +1918,12 @@
         "operationId": "get_program",
         "parameters": [
           {
-            "name": "program_id",
+            "name": "program_name",
             "in": "path",
-            "description": "Unique program identifier",
+            "description": "Unique program name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           },
           {
@@ -1995,13 +1981,12 @@
         "operationId": "delete_program",
         "parameters": [
           {
-            "name": "program_id",
+            "name": "program_name",
             "in": "path",
-            "description": "Unique program identifier",
+            "description": "Unique program name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -2032,10 +2017,10 @@
                     "description": "Specified program id is referenced by a pipeline",
                     "value": {
                       "details": {
-                        "program_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
+                        "program_name": "unknown_name"
                       },
                       "error_code": "ProgramInUseByPipeline",
-                      "message": "Program id '67e55044-10b1-426f-9247-bb680e5fe0c8' is in use by a pipeline"
+                      "message": "Program named 'unknown_name' is in use by a pipeline"
                     }
                   }
                 }
@@ -2075,13 +2060,12 @@
         "operationId": "update_program",
         "parameters": [
           {
-            "name": "program_id",
+            "name": "program_name",
             "in": "path",
-            "description": "Unique program identifier",
+            "description": "Unique program name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -2146,7 +2130,7 @@
         ]
       }
     },
-    "/v0/programs/{program_id}/compile": {
+    "/v0/programs/{program_name}/compile": {
       "post": {
         "tags": [
           "Programs"
@@ -2156,13 +2140,12 @@
         "operationId": "compile_program",
         "parameters": [
           {
-            "name": "program_id",
+            "name": "program_name",
             "in": "path",
-            "description": "Unique program identifier",
+            "description": "Unique program name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -3572,6 +3555,7 @@
         "type": "object",
         "description": "Runtime state of the pipeine.",
         "required": [
+          "pipeline_id",
           "location",
           "desired_status",
           "current_status",
@@ -3601,6 +3585,9 @@
           "location": {
             "type": "string",
             "description": "Location where the pipeline can be reached at runtime.\ne.g., a TCP port number or a URI."
+          },
+          "pipeline_id": {
+            "$ref": "#/components/schemas/PipelineId"
           },
           "status_since": {
             "type": "string",

@@ -164,6 +164,7 @@ class PipelineRuntimeState:
             initialized, or "failed", indicating an error.
         location (str): Location where the pipeline can be reached at runtime.
             e.g., a TCP port number or a URI.
+        pipeline_id (str): Unique pipeline id.
         status_since (datetime.datetime): Time when the pipeline was assigned its current status
             of the pipeline.
         error (Union[Unset, None, ErrorResponse]): Information returned by REST API endpoints on error.
@@ -173,6 +174,7 @@ class PipelineRuntimeState:
     current_status: PipelineStatus
     desired_status: PipelineStatus
     location: str
+    pipeline_id: str
     status_since: datetime.datetime
     error: Union[Unset, None, "ErrorResponse"] = UNSET
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
@@ -185,6 +187,7 @@ class PipelineRuntimeState:
         desired_status = self.desired_status.value
 
         location = self.location
+        pipeline_id = self.pipeline_id
         status_since = self.status_since.isoformat()
 
         error: Union[Unset, None, Dict[str, Any]] = UNSET
@@ -199,6 +202,7 @@ class PipelineRuntimeState:
                 "current_status": current_status,
                 "desired_status": desired_status,
                 "location": location,
+                "pipeline_id": pipeline_id,
                 "status_since": status_since,
             }
         )
@@ -220,6 +224,8 @@ class PipelineRuntimeState:
 
         location = d.pop("location")
 
+        pipeline_id = d.pop("pipeline_id")
+
         status_since = isoparse(d.pop("status_since"))
 
         _error = d.pop("error", UNSET)
@@ -236,6 +242,7 @@ class PipelineRuntimeState:
             current_status=current_status,
             desired_status=desired_status,
             location=location,
+            pipeline_id=pipeline_id,
             status_since=status_since,
             error=error,
         )

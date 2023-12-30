@@ -12,7 +12,7 @@ from ...types import Response
 
 
 def _get_kwargs(
-    connector_id: str,
+    connector_name: str,
     *,
     json_body: UpdateConnectorRequest,
 ) -> Dict[str, Any]:
@@ -22,8 +22,8 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/v0/connectors/{connector_id}".format(
-            connector_id=connector_id,
+        "url": "/v0/connectors/{connector_name}".format(
+            connector_name=connector_name,
         ),
         "json": json_json_body,
     }
@@ -58,7 +58,7 @@ def _build_response(
 
 
 def sync_detailed(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
@@ -68,7 +68,7 @@ def sync_detailed(
      Change a connector's name, description or configuration.
 
     Args:
-        connector_id (str):
+        connector_name (str):
         json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
@@ -80,7 +80,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        connector_id=connector_id,
+        connector_name=connector_name,
         json_body=json_body,
     )
 
@@ -92,7 +92,7 @@ def sync_detailed(
 
 
 def sync(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
@@ -102,7 +102,7 @@ def sync(
      Change a connector's name, description or configuration.
 
     Args:
-        connector_id (str):
+        connector_name (str):
         json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
@@ -114,14 +114,14 @@ def sync(
     """
 
     return sync_detailed(
-        connector_id=connector_id,
+        connector_name=connector_name,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
@@ -131,7 +131,7 @@ async def asyncio_detailed(
      Change a connector's name, description or configuration.
 
     Args:
-        connector_id (str):
+        connector_name (str):
         json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
@@ -143,7 +143,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        connector_id=connector_id,
+        connector_name=connector_name,
         json_body=json_body,
     )
 
@@ -153,7 +153,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
@@ -163,7 +163,7 @@ async def asyncio(
      Change a connector's name, description or configuration.
 
     Args:
-        connector_id (str):
+        connector_name (str):
         json_body (UpdateConnectorRequest): Request to update an existing data-connector.
 
     Raises:
@@ -176,7 +176,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            connector_id=connector_id,
+            connector_name=connector_name,
             client=client,
             json_body=json_body,
         )

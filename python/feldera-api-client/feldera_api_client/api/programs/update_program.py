@@ -12,7 +12,7 @@ from ...types import Response
 
 
 def _get_kwargs(
-    program_id: str,
+    program_name: str,
     *,
     json_body: UpdateProgramRequest,
 ) -> Dict[str, Any]:
@@ -22,8 +22,8 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/v0/programs/{program_id}".format(
-            program_id=program_id,
+        "url": "/v0/programs/{program_name}".format(
+            program_name=program_name,
         ),
         "json": json_json_body,
     }
@@ -62,7 +62,7 @@ def _build_response(
 
 
 def sync_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
@@ -79,7 +79,7 @@ def sync_detailed(
     version or the compilation process.
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -91,7 +91,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
         json_body=json_body,
     )
 
@@ -103,7 +103,7 @@ def sync_detailed(
 
 
 def sync(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
@@ -120,7 +120,7 @@ def sync(
     version or the compilation process.
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -132,14 +132,14 @@ def sync(
     """
 
     return sync_detailed(
-        program_id=program_id,
+        program_name=program_name,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
@@ -156,7 +156,7 @@ async def asyncio_detailed(
     version or the compilation process.
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -168,7 +168,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
         json_body=json_body,
     )
 
@@ -178,7 +178,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateProgramRequest,
@@ -195,7 +195,7 @@ async def asyncio(
     version or the compilation process.
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (UpdateProgramRequest): Update program request.
 
     Raises:
@@ -208,7 +208,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            program_id=program_id,
+            program_name=program_name,
             client=client,
             json_body=json_body,
         )

@@ -11,7 +11,7 @@ from ...types import Response
 
 
 def _get_kwargs(
-    program_id: str,
+    program_name: str,
     *,
     json_body: CompileProgramRequest,
 ) -> Dict[str, Any]:
@@ -21,8 +21,8 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": "/v0/programs/{program_id}/compile".format(
-            program_id=program_id,
+        "url": "/v0/programs/{program_name}/compile".format(
+            program_name=program_name,
         ),
         "json": json_json_body,
     }
@@ -60,7 +60,7 @@ def _build_response(
 
 
 def sync_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: CompileProgramRequest,
@@ -74,7 +74,7 @@ def sync_detailed(
     then checking the `status` field of the program object
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -86,7 +86,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
         json_body=json_body,
     )
 
@@ -98,7 +98,7 @@ def sync_detailed(
 
 
 def sync(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: CompileProgramRequest,
@@ -112,7 +112,7 @@ def sync(
     then checking the `status` field of the program object
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -124,14 +124,14 @@ def sync(
     """
 
     return sync_detailed(
-        program_id=program_id,
+        program_name=program_name,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: CompileProgramRequest,
@@ -145,7 +145,7 @@ async def asyncio_detailed(
     then checking the `status` field of the program object
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -157,7 +157,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
         json_body=json_body,
     )
 
@@ -167,7 +167,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     json_body: CompileProgramRequest,
@@ -181,7 +181,7 @@ async def asyncio(
     then checking the `status` field of the program object
 
     Args:
-        program_id (str):
+        program_name (str):
         json_body (CompileProgramRequest): Request to queue a program for compilation.
 
     Raises:
@@ -194,7 +194,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            program_id=program_id,
+            program_name=program_name,
             client=client,
             json_body=json_body,
         )
