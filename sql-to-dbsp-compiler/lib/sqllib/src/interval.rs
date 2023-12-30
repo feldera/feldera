@@ -7,9 +7,9 @@
 //!   represented as days.
 
 use dbsp::num_entries_scalar;
-use dbsp_adapters::{deserialize_without_context,serialize_without_context};
+use dbsp_adapters::{deserialize_without_context, serialize_without_context};
 use num::PrimInt;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, ops::Mul};
 

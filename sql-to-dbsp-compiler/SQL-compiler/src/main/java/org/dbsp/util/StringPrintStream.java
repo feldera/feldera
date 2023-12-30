@@ -28,7 +28,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * A PrintStream that writes do a String.
+ * A PrintStream that writes into a String.
  */
 public class StringPrintStream {
     final PrintStream stream;
