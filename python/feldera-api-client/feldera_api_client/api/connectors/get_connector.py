@@ -11,14 +11,14 @@ from ...types import Response
 
 
 def _get_kwargs(
-    connector_id: str,
+    connector_name: str,
 ) -> Dict[str, Any]:
     pass
 
     return {
         "method": "get",
-        "url": "/v0/connectors/{connector_id}".format(
-            connector_id=connector_id,
+        "url": "/v0/connectors/{connector_name}".format(
+            connector_name=connector_name,
         ),
     }
 
@@ -52,7 +52,7 @@ def _build_response(
 
 
 def sync_detailed(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[ConnectorDescr, ErrorResponse]]:
@@ -61,7 +61,7 @@ def sync_detailed(
      Fetch a connector by ID.
 
     Args:
-        connector_id (str):
+        connector_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -72,7 +72,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        connector_id=connector_id,
+        connector_name=connector_name,
     )
 
     response = client.get_httpx_client().request(
@@ -83,7 +83,7 @@ def sync_detailed(
 
 
 def sync(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
@@ -92,7 +92,7 @@ def sync(
      Fetch a connector by ID.
 
     Args:
-        connector_id (str):
+        connector_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -103,13 +103,13 @@ def sync(
     """
 
     return sync_detailed(
-        connector_id=connector_id,
+        connector_name=connector_name,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[ConnectorDescr, ErrorResponse]]:
@@ -118,7 +118,7 @@ async def asyncio_detailed(
      Fetch a connector by ID.
 
     Args:
-        connector_id (str):
+        connector_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -129,7 +129,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        connector_id=connector_id,
+        connector_name=connector_name,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -138,7 +138,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    connector_id: str,
+    connector_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
@@ -147,7 +147,7 @@ async def asyncio(
      Fetch a connector by ID.
 
     Args:
-        connector_id (str):
+        connector_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -159,7 +159,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            connector_id=connector_id,
+            connector_name=connector_name,
             client=client,
         )
     ).parsed

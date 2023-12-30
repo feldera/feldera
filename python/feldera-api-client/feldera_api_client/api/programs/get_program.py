@@ -11,7 +11,7 @@ from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
-    program_id: str,
+    program_name: str,
     *,
     with_code: Union[Unset, None, bool] = UNSET,
 ) -> Dict[str, Any]:
@@ -24,8 +24,8 @@ def _get_kwargs(
 
     return {
         "method": "get",
-        "url": "/v0/programs/{program_id}".format(
-            program_id=program_id,
+        "url": "/v0/programs/{program_name}".format(
+            program_name=program_name,
         ),
         "params": params,
     }
@@ -60,7 +60,7 @@ def _build_response(
 
 
 def sync_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
@@ -70,7 +70,7 @@ def sync_detailed(
      Fetch a program by ID.
 
     Args:
-        program_id (str):
+        program_name (str):
         with_code (Union[Unset, None, bool]):
 
     Raises:
@@ -82,7 +82,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
         with_code=with_code,
     )
 
@@ -94,7 +94,7 @@ def sync_detailed(
 
 
 def sync(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
@@ -104,7 +104,7 @@ def sync(
      Fetch a program by ID.
 
     Args:
-        program_id (str):
+        program_name (str):
         with_code (Union[Unset, None, bool]):
 
     Raises:
@@ -116,14 +116,14 @@ def sync(
     """
 
     return sync_detailed(
-        program_id=program_id,
+        program_name=program_name,
         client=client,
         with_code=with_code,
     ).parsed
 
 
 async def asyncio_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
@@ -133,7 +133,7 @@ async def asyncio_detailed(
      Fetch a program by ID.
 
     Args:
-        program_id (str):
+        program_name (str):
         with_code (Union[Unset, None, bool]):
 
     Raises:
@@ -145,7 +145,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
         with_code=with_code,
     )
 
@@ -155,7 +155,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
@@ -165,7 +165,7 @@ async def asyncio(
      Fetch a program by ID.
 
     Args:
-        program_id (str):
+        program_name (str):
         with_code (Union[Unset, None, bool]):
 
     Raises:
@@ -178,7 +178,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            program_id=program_id,
+            program_name=program_name,
             client=client,
             with_code=with_code,
         )
