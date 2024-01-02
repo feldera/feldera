@@ -53,18 +53,6 @@ pub struct ProjectDB {
     pg_inst: Option<pg_embed::postgres::PgEmbed>,
 }
 
-/// Unique service id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct ServiceId(#[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid);
-impl Display for ServiceId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 /// Version number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -75,14 +63,6 @@ impl Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
-}
-/// Service descriptor.
-#[derive(Deserialize, Serialize, ToSchema, Debug, Clone, Eq, PartialEq)]
-pub(crate) struct ServiceDescr {
-    pub service_id: ServiceId,
-    pub name: String,
-    pub description: String,
-    pub config: ServiceConfig,
 }
 
 /// ApiKey ID.
@@ -154,6 +134,11 @@ pub use self::pipeline::PipelineRevision;
 pub(crate) use self::pipeline::PipelineRuntimeState;
 pub use self::pipeline::PipelineStatus;
 pub(crate) use self::pipeline::Revision;
+
+// Services
+mod service;
+pub(crate) use self::service::ServiceDescr;
+pub use self::service::ServiceId;
 
 // The goal for these methods is to avoid multiple DB interactions as much as
 // possible and if not, use transactions
@@ -715,45 +700,11 @@ impl Storage for ProjectDB {
         description: &str,
         config: &ServiceConfig,
     ) -> Result<ServiceId, DBError> {
-        debug!("new_service {name} {description} {config:?}");
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached("INSERT INTO service (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)")
-            .await?;
-        manager
-            .execute(
-                &stmt,
-                &[&id, &name, &description, &config.to_yaml(), &tenant_id.0],
-            )
-            .await
-            .map_err(ProjectDB::maybe_unique_violation)
-            .map_err(|e| {
-                ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None)
-            })?;
-        Ok(ServiceId(id))
+        Ok(service::new_service(self, tenant_id, id, name, description, config).await?)
     }
 
     async fn list_services(&self, tenant_id: TenantId) -> Result<Vec<ServiceDescr>, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT id, name, description, config FROM service WHERE tenant_id = $1",
-            )
-            .await?;
-        let rows = manager.query(&stmt, &[&tenant_id.0]).await?;
-
-        let mut result = Vec::with_capacity(rows.len());
-
-        for row in rows {
-            result.push(ServiceDescr {
-                service_id: ServiceId(row.get(0)),
-                name: row.get(1),
-                description: row.get(2),
-                config: ServiceConfig::from_yaml_str(row.get(3)),
-            });
-        }
-
-        Ok(result)
+        Ok(service::list_services(self, tenant_id).await?)
     }
 
     async fn get_service_by_id(
@@ -761,27 +712,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         service_id: ServiceId,
     ) -> Result<ServiceDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT name, description, config FROM service WHERE id = $1 AND tenant_id = $2",
-            )
-            .await?;
-
-        let row = manager
-            .query_opt(&stmt, &[&service_id.0, &tenant_id.0])
-            .await?;
-
-        if let Some(row) = row {
-            Ok(ServiceDescr {
-                service_id,
-                name: row.get(0),
-                description: row.get(1),
-                config: ServiceConfig::from_yaml_str(row.get(2)),
-            })
-        } else {
-            Err(DBError::UnknownService { service_id })
-        }
+        Ok(service::get_service_by_id(self, tenant_id, service_id).await?)
     }
 
     async fn get_service_by_name(
@@ -789,24 +720,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         name: String,
     ) -> Result<ServiceDescr, DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached(
-                "SELECT id, description, config FROM service WHERE name = $1 AND tenant_id = $2",
-            )
-            .await?;
-        let row = manager.query_opt(&stmt, &[&name, &tenant_id.0]).await?;
-
-        if let Some(row) = row {
-            Ok(ServiceDescr {
-                service_id: ServiceId(row.get(0)),
-                name,
-                description: row.get(1),
-                config: ServiceConfig::from_yaml_str(row.get(2)),
-            })
-        } else {
-            Err(DBError::UnknownName { name })
-        }
+        Ok(service::get_service_by_name(self, tenant_id, name).await?)
     }
 
     async fn update_service(
@@ -816,39 +730,7 @@ impl Storage for ProjectDB {
         description: &str,
         config: &Option<ServiceConfig>,
     ) -> Result<(), DBError> {
-        let manager = self.pool.get().await?;
-        let modified_rows = match config {
-            None => {
-                let stmt = manager
-                    .prepare_cached(
-                        "UPDATE service SET description = $1 WHERE id = $2 AND tenant_id = $3",
-                    )
-                    .await?;
-                manager
-                    .execute(&stmt, &[&description, &service_id.0, &tenant_id.0])
-                    .await
-                    .map_err(DBError::from)?
-            }
-            Some(config) => {
-                let stmt = manager
-                    .prepare_cached(
-                        "UPDATE service SET description = $1, config = $2 WHERE id = $3 AND tenant_id = $4",
-                    )
-                    .await?;
-                manager
-                    .execute(
-                        &stmt,
-                        &[&description, &config.to_yaml(), &service_id.0, &tenant_id.0],
-                    )
-                    .await
-                    .map_err(DBError::from)?
-            }
-        };
-        if modified_rows > 0 {
-            Ok(())
-        } else {
-            Err(DBError::UnknownService { service_id })
-        }
+        Ok(service::update_service(self, tenant_id, service_id, description, config).await?)
     }
 
     async fn delete_service(
@@ -856,19 +738,7 @@ impl Storage for ProjectDB {
         tenant_id: TenantId,
         service_id: ServiceId,
     ) -> Result<(), DBError> {
-        let manager = self.pool.get().await?;
-        let stmt = manager
-            .prepare_cached("DELETE FROM service WHERE id = $1 AND tenant_id = $2")
-            .await?;
-        let res = manager
-            .execute(&stmt, &[&service_id.0, &tenant_id.0])
-            .await?;
-
-        if res > 0 {
-            Ok(())
-        } else {
-            Err(DBError::UnknownService { service_id })
-        }
+        Ok(service::delete_service(self, tenant_id, service_id).await?)
     }
 }
 
