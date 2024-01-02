@@ -10,6 +10,36 @@ The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
 (modulus).
 
+Modulus involving negative numbers happens as follows:
+<table>
+    <caption>mod = x % y</caption>
+    <tr>
+        <th>x</th>
+        <th>y</th>
+        <th>mod</th>
+    </tr>
+    <tr>
+        <td> 8 </td>
+        <td> 3 </td>
+        <td> 2 </td>
+    </tr>
+    <tr>
+        <td>  8 </td>
+        <td> -3 </td>
+        <td>  2 </td>
+    </tr>
+    <tr>
+        <td> -8 </td>
+        <td>  3 </td>
+        <td> -2 </td>
+    </tr>
+    <tr>
+        <td> -8 </td>
+        <td> -3 </td>
+        <td> -2 </td>
+    </tr>
+</table>
+
 Casting a string to an integer type will produce a runtime error if the
 string cannot be interpreted as a number.
 

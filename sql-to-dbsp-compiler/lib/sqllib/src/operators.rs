@@ -108,6 +108,10 @@ fn modulo<T>(left: T, right: T) -> T
 where
     T: PrimInt,
 {
+    if Some(-1) == right.to_isize() {
+        return T::zero();
+    }
+
     left % right
 }
 

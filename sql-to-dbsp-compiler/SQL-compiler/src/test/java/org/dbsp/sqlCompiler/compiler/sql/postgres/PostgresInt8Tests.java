@@ -570,7 +570,7 @@ public class PostgresInt8Tests extends SqlIoTest {
         this.runtimeFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "Overflow", this.getEmptyIOPair());
     }
 
-    @Test @Ignore("Modulo edge case integer overflow: https://github.com/feldera/feldera/issues/1195")
+    @Test
     public void testINT64MINOverflow() {
         this.qs(
                 """

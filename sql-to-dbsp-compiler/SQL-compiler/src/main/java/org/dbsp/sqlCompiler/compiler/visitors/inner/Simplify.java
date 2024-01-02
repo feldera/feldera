@@ -429,6 +429,19 @@ public class Simplify extends InnerRewriteVisitor {
                             " Division by constant zero value.");
                 } 
             }
+        } else if (expression.operation.equals(DBSPOpcode.MOD)) {
+            if (right.is(DBSPLiteral.class)) {
+                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                IsNumericType iRightType = rightType.to(IsNumericType.class);
+                if (iRightType.isOne(rightLit)) {
+                    result = iRightType.getZero();
+                } else if (iRightType.isZero(rightLit)) {
+                    this.errorReporter.reportWarning(expression.getSourcePosition(),
+                        "Division by zero",
+                        " Modulus by constant zero value as divisor."
+                    );
+                }
+            }
         }
         this.map(expression, result.cast(expression.getType()));
         return VisitDecision.STOP;
