@@ -173,7 +173,7 @@ test-sql:
 
 build-nexmark:
     FROM +build-dbsp
-    DO rust+CARGO --args="build --package dbsp_nexmark" --output="debug/[^/\.]+"
+    DO rust+CARGO --args="build --package dbsp_nexmark"
     DO rust+CARGO --args="clippy --package dbsp_nexmark -- -D warnings"
     DO rust+CARGO --args="test --package dbsp_nexmark --no-run"
 
@@ -205,7 +205,6 @@ test-adapters:
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
-            # XXX: DO rust+CARGO --args="test --package dbsp_adapters --package sqllib"
             cargo test --package dbsp_adapters --package sqllib
     END
 
@@ -223,7 +222,6 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            # XXX: DO rust+CARGO --args="test --package pipeline-manager"
             cargo test --package pipeline-manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
