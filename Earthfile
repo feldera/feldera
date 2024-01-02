@@ -1,4 +1,4 @@
-VERSION --global-cache 0.7
+VERSION --global-cache --try 0.7
 IMPORT github.com/earthly/lib/rust:52e8c8a1fe7e8364b7a28eeaca3e3525cee03cf6 AS rust
 FROM ubuntu:22.04
 
@@ -112,9 +112,7 @@ build-webui:
     SAVE ARTIFACT ./web-console/out
 
 build-dbsp:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-    FROM +rust-sources --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +rust-sources
     DO rust+CARGO --args="build --package dbsp"
     DO rust+CARGO --args="clippy --package dbsp -- -D warnings"
     DO rust+CARGO --args="test --package dbsp --no-run" 
@@ -123,10 +121,7 @@ build-dbsp:
     DO rust+CARGO --args="test --package pipeline_types --no-run" 
 
 build-sql:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-dbsp
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
@@ -144,20 +139,15 @@ build-sql:
     SAVE ARTIFACT sql-to-dbsp-compiler
 
 build-adapters:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
     # Adapter integration tests use the SQL compiler.
-    FROM +build-sql --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-sql
     DO rust+CARGO --args="build --package dbsp_adapters"
     DO rust+CARGO --args="clippy --package dbsp_adapters -- -D warnings"
-    DO rust+CARGO --args="test --package dbsp_adapters --no-run" 
+    # --package sqllib is needed here because the adapter tests need it.
+    DO rust+CARGO --args="test --package dbsp_adapters --package sqllib --no-run"
 
 build-manager:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-adapters
     # For some reason if this ENV before the FROM line it gets invalidated
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
@@ -173,70 +163,50 @@ build-manager:
     END
 
 test-sql:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
     # SQL-generated code imports adapters crate.
-    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-adapters
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package --no-transfer-progress
 
 build-nexmark:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-dbsp
     DO rust+CARGO --args="build --package dbsp_nexmark" --output="debug/[^/\.]+"
     DO rust+CARGO --args="clippy --package dbsp_nexmark -- -D warnings"
     DO rust+CARGO --args="test --package dbsp_nexmark --no-run"
 
 CARGO_TEST:
     COMMAND
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
     ARG package
     ARG features
     ARG test_args
-    DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package $package \
+    DO rust+CARGO --args="test --package $package \
         $(if [ -z $features ]; then printf -- --features $features; fi) \
         -- $test_args"
 
 test-dbsp:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-dbsp
     # Limit test execution to tests in trace::persistent::tests, because
     # executing everything takes too long and (in theory) the proptests we have
     # should ensure equivalence with the DRAM trace implementation:
-    DO +CARGO_TEST \
-        --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE \
-        --package=dbsp --features=persistence --test_args=trace::persistent::tests
-    DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp"
+    DO +CARGO_TEST --package=dbsp --features=persistence --test_args=trace::persistent::tests
+    DO rust+CARGO --args="test --package dbsp"
 
 test-nexmark:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE  --package dbsp_nexmark"
+    FROM +build-nexmark
+    DO rust+CARGO --args="test  --package dbsp_nexmark"
 
 test-adapters:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-    FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-adapters
     DO rust+SET_CACHE_MOUNTS_ENV
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
-            # XXX: DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --package sqllib"
-            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --package sqllib
+            # XXX: DO rust+CARGO --args="test --package dbsp_adapters --package sqllib"
+            cargo test --package dbsp_adapters --package sqllib
     END
 
 test-manager:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-manager
     ENV PGHOST=localhost
     ENV PGUSER=postgres
     ENV PGCLIENTENCODING=UTF8
@@ -249,8 +219,8 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            # XXX: DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager"
-            cargo +$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package pipeline-manager
+            # XXX: DO rust+CARGO --args="test --package pipeline-manager"
+            cargo test --package pipeline-manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
@@ -258,10 +228,7 @@ test-manager:
     SAVE ARTIFACT test_binary
 
 python-bindings-checker:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-manager
     COPY +build-manager/pipeline-manager .
     RUN mkdir -p /root/.local/lib/python3.10
     RUN mkdir -p /root/.local/bin
@@ -281,10 +248,7 @@ python-bindings-checker:
 
 
 test-python:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-manager
     COPY +build-manager/pipeline-manager .
     RUN mkdir -p /root/.local/lib/python3.10
     RUN mkdir -p /root/.local/bin
@@ -315,13 +279,10 @@ test-python:
     END
 
 test-rust:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    BUILD +test-dbsp --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    BUILD +test-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    BUILD +test-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
-    BUILD +test-manager --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    BUILD +test-dbsp
+    BUILD +test-nexmark
+    BUILD +test-adapters
+    BUILD +test-manager
 
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
 # but by mostly repeating ourselves, we can reuse earlier Earthly stages to speed up the CI.
@@ -511,10 +472,7 @@ ui-playwright-tests:
     END
 
 benchmark:
-    ARG RUST_TOOLCHAIN=$RUST_VERSION
-    ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
-    FROM +build-nexmark --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    FROM +build-nexmark
     COPY scripts/bench.bash scripts/bench.bash
 
     RUN bash scripts/bench.bash
