@@ -421,7 +421,7 @@ impl Storage for ProjectDB {
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> Result<ConnectorDescr, DBError> {
         Ok(connector::get_connector_by_name(self, tenant_id, name).await?)
     }
@@ -456,9 +456,9 @@ impl Storage for ProjectDB {
     async fn delete_connector(
         &self,
         tenant_id: TenantId,
-        connector_id: ConnectorId,
+        connector_name: &str,
     ) -> Result<(), DBError> {
-        Ok(connector::delete_connector(self, tenant_id, connector_id).await?)
+        Ok(connector::delete_connector(self, tenant_id, connector_name).await?)
     }
 
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {

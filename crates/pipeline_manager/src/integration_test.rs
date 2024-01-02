@@ -227,8 +227,8 @@ impl TestConfig {
         let mut req = config.get("/v0/connectors").await;
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
-            let id = program["connector_id"].as_str().unwrap();
-            let req = config.delete(format!("/v0/connectors/{}", id)).await;
+            let name = program["name"].as_str().unwrap();
+            let req = config.delete(format!("/v0/connectors/{name}")).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
 

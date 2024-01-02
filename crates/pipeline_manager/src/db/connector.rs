@@ -86,7 +86,7 @@ pub(crate) async fn list_connectors(
 pub(crate) async fn get_connector_by_name(
     db: &ProjectDB,
     tenant_id: TenantId,
-    name: String,
+    name: &str,
 ) -> Result<ConnectorDescr, DBError> {
     let manager = db.pool.get().await?;
     let stmt = manager
@@ -103,12 +103,14 @@ pub(crate) async fn get_connector_by_name(
 
         Ok(ConnectorDescr {
             connector_id,
-            name,
+            name: name.to_string(),
             description,
             config,
         })
     } else {
-        Err(DBError::UnknownName { name })
+        Err(DBError::UnknownName {
+            name: name.to_string(),
+        })
     }
 }
 
@@ -181,19 +183,21 @@ pub(crate) async fn update_connector(
 pub(crate) async fn delete_connector(
     db: &ProjectDB,
     tenant_id: TenantId,
-    connector_id: ConnectorId,
+    connector_name: &str,
 ) -> Result<(), DBError> {
     let manager = db.pool.get().await?;
     let stmt = manager
-        .prepare_cached("DELETE FROM connector WHERE id = $1 AND tenant_id = $2")
+        .prepare_cached("DELETE FROM connector WHERE name = $1 AND tenant_id = $2")
         .await?;
     let res = manager
-        .execute(&stmt, &[&connector_id.0, &tenant_id.0])
+        .execute(&stmt, &[&connector_name, &tenant_id.0])
         .await?;
 
     if res > 0 {
         Ok(())
     } else {
-        Err(DBError::UnknownConnector { connector_id })
+        Err(DBError::UnknownName {
+            name: connector_name.to_string(),
+        })
     }
 }
