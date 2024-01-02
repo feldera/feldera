@@ -1252,7 +1252,7 @@ enum StorageAction {
         String,
         #[proptest(strategy = "limited_option_connector()")] Option<ConnectorConfig>,
     ),
-    DeleteConnector(TenantId, ConnectorId),
+    DeleteConnector(TenantId, String),
     NewService(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
@@ -1644,8 +1644,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetConnectorByName(tenant_id,name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_connector_by_name(tenant_id, name.clone()).await;
-                                let impl_response = handle.db.get_connector_by_name(tenant_id, name).await;
+                                let model_response = model.get_connector_by_name(tenant_id, &name).await;
+                                let impl_response = handle.db.get_connector_by_name(tenant_id, &name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::UpdateConnector(tenant_id,connector_id, name, description, config) => {
@@ -1656,10 +1656,10 @@ fn db_impl_behaves_like_model() {
                                     handle.db.update_connector(tenant_id, connector_id, &name, &description, &config).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteConnector(tenant_id,connector_id) => {
+                            StorageAction::DeleteConnector(tenant_id, connector_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.delete_connector(tenant_id, connector_id).await;
-                                let impl_response = handle.db.delete_connector(tenant_id, connector_id).await;
+                                let model_response = model.delete_connector(tenant_id, &connector_name).await;
+                                let impl_response = handle.db.delete_connector(tenant_id, &connector_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::ListApiKeys(tenant_id) => {
@@ -2516,7 +2516,7 @@ impl Storage for Mutex<DbModel> {
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> DBResult<ConnectorDescr> {
         let s = self.lock().await;
         s.connectors
@@ -2524,7 +2524,9 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|c| c.name == name)
-            .ok_or(DBError::UnknownName { name })
+            .ok_or(DBError::UnknownName {
+                name: name.to_string(),
+            })
     }
 
     async fn update_connector(
@@ -2566,20 +2568,19 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn delete_connector(
-        &self,
-        tenant_id: TenantId,
-        connector_id: super::ConnectorId,
-    ) -> DBResult<()> {
+    async fn delete_connector(&self, tenant_id: TenantId, connector_name: &str) -> DBResult<()> {
         let mut s = self.lock().await;
-        let row = s
+        let connector = s
             .connectors
-            .remove(&(tenant_id, connector_id))
-            .ok_or(DBError::UnknownConnector { connector_id })?;
+            .iter()
+            .find(|c| c.0 .0 == tenant_id && c.1.name == connector_name)
+            .ok_or(DBError::UnknownName {
+                name: connector_name.to_string(),
+            })?;
         s.pipelines.values_mut().for_each(|c| {
             c.descriptor
                 .attached_connectors
-                .retain(|c| c.name != row.name);
+                .retain(|c| c.name != connector_name);
         });
         Ok(())
     }
