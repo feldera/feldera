@@ -90,6 +90,7 @@
     "eslint-plugin-prettier": "^5.0.0",
     "eslint-plugin-react": "^7.33.1",
     "eslint-plugin-react-hooks": "^4.6.0",
+    "jwt-decode": "^4.0.0",
     "mdi-material-ui": "^7.7.0",
     "monaco-editor": "^0.44.0",
     "new-github-issue-url": "^1.0.0",

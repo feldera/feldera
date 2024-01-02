@@ -20,11 +20,10 @@ mvn -f ./sql-to-dbsp-compiler/SQL-compiler -DskipTests package
 Build and start the Pipeline Manager (that also serves the Feldera Web Console):
 
 ```bash
-RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp
+RUST_LOG=info RUST_BACKTRACE=1 cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.feldera -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.feldera --runner-working-directory ~/.feldera
 ```
-RUST_LOG=info RUST_BACKTRACE=1 AUTH_CLIENT_ID=44jttbufih62p9hh999f3irjkm AUTH_ISSUER="https://cognito-idp.us-east-1.amazonaws.com/us-east-1_gkyurqf2T" AWS_COGNITO_REGION="us-east-1" AWS_COGNITO_USER_POOL_ID="us-east-1_gkyurqf2T" cargo run --bin pipeline-manager --features pg-embed -- --api-server-working-directory ~/.dbsp -d postgres-embed --dev-mode --bind-address 0.0.0.0 --sql-compiler-home ./sql-to-dbsp-compiler --dbsp-override-path .  --compiler-working-directory ~/.dbsp --runner-working-directory ~/.dbsp --auth-provider=aws-cognito
 
-> Here, `~/.dbsp` is the directory that will host compilation artifacts of SQL Compiler that Pipeline Manager will then use. It will be created if it doesn't exist, and you can use another name for it - just replace corresponding arguments in the above command.
+> Here, `~/.feldera` is the directory that will host compilation artifacts of SQL Compiler that Pipeline Manager will then use. It will be created if it doesn't exist, and you can use another name for it - just replace corresponding arguments in the above command.
 
 > `--dbsp-override-path .` should be the path of the Feldera repository root - so update the argument if you are running from a different directory.
 
@@ -45,7 +44,7 @@ In Authenticated mode, you need to login via the Web Console using one of the su
 
 Start the Pipeline Manager in authenticated mode, substituting values from your environment:
 ```bash
-AUTH_CLIENT_ID=<client-id> AUTH_ISSUER=<issuer> <see below for additional environment variables> \ 
+AUTH_CLIENT_ID=<client-id> AUTH_ISSUER=<issuer> <see below for additional environment variables> \
  cargo run --bin pipeline-manager --features pg-embed -- --auth-provider=aws-cognito
 ```
 
@@ -68,8 +67,18 @@ Additional variables for AWS Cognito:
 - AWS_COGNITO_LOGIN_URL: URL to Cognito Hosted UI login, omitting query parameters `redirect_uri` and `state`
 - AWS_COGNITO_LOGOUT_URL: URL to Cognito Hosted UI logout, omitting query parameters `redirect_uri` and `state`
 
+Example:
+```bash
+AUTH_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx AUTH_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxx AWS_COGNITO_LOGIN_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/login\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" AWS_COGNITO_LOGOUT_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/logout\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --auth-provider aws-cognito
+```
+
 ##### Google Identity Platform
 Additional variables for Google Identity Platform: none
+
+Example:
+```bash
+AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --auth-provider google-identity
+```
 
 ## Develop on your machine
 

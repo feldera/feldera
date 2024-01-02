@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - SQL: Changed semantics of division to match SQL standard
   ([#1201](https://github.com/feldera/feldera/pull/1201))
+- WebConsole: display AWS Cognito username in user profile dropdown (#1077)
 
 ## [0.6.0] - 2023-12-19
 
