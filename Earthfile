@@ -1,5 +1,5 @@
 VERSION --global-cache 0.7
-IMPORT github.com/earthly/lib/rust:2.2.11 AS rust
+IMPORT github.com/earthly/lib/rust:52e8c8a1fe7e8364b7a28eeaca3e3525cee03cf6 AS rust
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install --yes sudo
@@ -222,10 +222,10 @@ test-nexmark:
 test-adapters:
     ARG RUST_TOOLCHAIN=$RUST_VERSION
     ARG RUST_BUILD_PROFILE=$RUST_BUILD_MODE
-
     FROM +build-adapters --RUST_TOOLCHAIN=$RUST_TOOLCHAIN --RUST_BUILD_PROFILE=$RUST_BUILD_PROFILE
+    DO rust+SET_CACHE_MOUNTS_ENV
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3
-        RUN docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+        RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
             # XXX: DO rust+CARGO --args="+$RUST_TOOLCHAIN test $RUST_BUILD_PROFILE --package dbsp_adapters --package sqllib"
@@ -242,9 +242,10 @@ test-manager:
     ENV PGCLIENTENCODING=UTF8
     ENV PGPORT=5432
     ENV RUST_LOG=error
+    DO rust+SET_CACHE_MOUNTS_ENV
     WITH DOCKER --pull postgres
         # We just put the PGDATA in /dev/shm because the docker fs seems very slow (test time goes to 2min vs. shm 40s)
-        RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
+        RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
@@ -253,7 +254,7 @@ test-manager:
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
-    RUN cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
+    RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT test_binary
 
 python-bindings-checker:
