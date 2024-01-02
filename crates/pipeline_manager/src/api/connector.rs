@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    api::{examples, parse_uuid_param},
+    api::{examples, parse_string_param},
     auth::TenantId,
     db::{storage::Storage, ConnectorId, DBError},
 };
@@ -86,7 +86,7 @@ async fn list_connectors(
                 .db
                 .lock()
                 .await
-                .get_connector_by_name(*tenant_id, name)
+                .get_connector_by_name(*tenant_id, &name)
                 .await?,
         ]
     } else {
@@ -159,34 +159,34 @@ pub(crate) struct UpdateConnectorResponse {}
             , example = json!(examples::unknown_connector())),
     ),
     params(
-        ("connector_id" = Uuid, Path, description = "Unique connector identifier")
+        ("connector_name" = String, Path, description = "Unique connector name")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]
-#[patch("/connectors/{connector_id}")]
+#[patch("/connectors/{connector_name}")]
 async fn update_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Json<UpdateConnectorRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    let connector_id = ConnectorId(parse_uuid_param(&req, "connector_id")?);
-    state
-        .db
-        .lock()
-        .await
-        .update_connector(
-            *tenant_id,
-            connector_id,
-            &body.name,
-            &body.description,
-            &body.config,
-        )
+    let connector_name = parse_string_param(&req, "connector_name")?;
+    let db = state.db.lock().await;
+    let connector = db
+        .get_connector_by_name(*tenant_id, &connector_name)
         .await?;
+    db.update_connector(
+        *tenant_id,
+        connector.connector_id,
+        &body.name,
+        &body.description,
+        &body.config,
+    )
+    .await?;
 
-    info!("Updated connector {connector_id} (tenant:{})", *tenant_id);
+    info!("Updated connector {connector_name} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&UpdateConnectorResponse {}))
@@ -206,28 +206,28 @@ async fn update_connector(
             , example = json!(examples::unknown_connector())),
     ),
     params(
-        ("connector_id" = Uuid, Path, description = "Unique connector identifier")
+        ("connector_name" = String, Path, description = "Unique connector name")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]
-#[delete("/connectors/{connector_id}")]
+#[delete("/connectors/{connector_name}")]
 async fn delete_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let connector_id = ConnectorId(parse_uuid_param(&req, "connector_id")?);
+    let connector_name = parse_string_param(&req, "connector_name")?;
 
     state
         .db
         .lock()
         .await
-        .delete_connector(*tenant_id, connector_id)
+        .delete_connector(*tenant_id, &connector_name)
         .await?;
 
-    info!("Deleted connector {connector_id} (tenant:{})", *tenant_id);
+    info!("Deleted connector {connector_name} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -241,24 +241,24 @@ async fn delete_connector(
             , example = json!(examples::invalid_uuid_param())),
     ),
     params(
-        ("connector_id" = Uuid, Path, description = "Unique connector identifier"),
+        ("connector_name" = String, Path, description = "Unique connector name")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Connectors"
 )]
-#[get("/connectors/{connector_id}")]
+#[get("/connectors/{connector_name}")]
 async fn get_connector(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let connector_id = ConnectorId(parse_uuid_param(&req, "connector_id")?);
+    let connector_name = parse_string_param(&req, "connector_name")?;
     let descr = state
         .db
         .lock()
         .await
-        .get_connector_by_id(*tenant_id, connector_id)
+        .get_connector_by_name(*tenant_id, &connector_name)
         .await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))

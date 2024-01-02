@@ -269,7 +269,7 @@ pub(crate) trait Storage {
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> Result<ConnectorDescr, DBError>;
 
     /// Update existing connector config.
@@ -290,7 +290,7 @@ pub(crate) trait Storage {
     async fn delete_connector(
         &self,
         tenant_id: TenantId,
-        connector_id: ConnectorId,
+        connector_name: &str,
     ) -> Result<(), DBError>;
 
     /// Get a list of API key names
