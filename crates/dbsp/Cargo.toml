@@ -50,10 +50,10 @@ uuid = { version = "1.1.2", features = ["v4"], optional = true }
 arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
-rust_decimal = "1.29"
+rust_decimal = { version = "1.33", features = ["rkyv", "serde", "maths"] }
 rkyv = "0.7.42"
 arcstr = { version = "1.1.4" }
-size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
+size-of = { version = "0.1.5", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float", "rust_decimal"] }
 tarpc = { version = "0.33.0", features = ["full"] }
 futures = "0.3"
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }

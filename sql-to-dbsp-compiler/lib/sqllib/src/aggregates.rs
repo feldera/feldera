@@ -3,9 +3,9 @@
 
 use crate::binary::ByteArray;
 use core::ops::Add;
+use dbsp::algebra::SQLDecimal;
 use dbsp::algebra::{F32, F64};
 use num::PrimInt;
-use rust_decimal::Decimal;
 use std::cmp::Ord;
 use std::marker::Copy;
 
@@ -99,7 +99,7 @@ macro_rules! for_all_numeric_aggregate {
         for_all_int_aggregate!($base_name, $func_name);
         some_aggregate!($base_name, $func_name, f, F32);
         some_aggregate!($base_name, $func_name, d, F64);
-        some_aggregate!($base_name, $func_name, decimal, Decimal);
+        some_aggregate!($base_name, $func_name, decimal, SQLDecimal);
     };
 }
 

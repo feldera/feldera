@@ -11,9 +11,12 @@ mod present;
 pub mod zset;
 
 pub mod arcstr;
+mod decimal;
+
 pub use self::arcstr::ArcStr;
 
 pub use checked_int::CheckedInt;
+pub use decimal::SQLDecimal;
 pub use floats::{F32, F64};
 pub use lattice::Lattice;
 pub use order::{PartialOrder, TotalOrder};
@@ -342,6 +345,15 @@ impl MulByRef<isize> for Decimal {
     }
 }
 
+impl MulByRef<isize> for SQLDecimal {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        *self * SQLDecimal::from(*w)
+    }
+}
+
 /////////// `MulByRef<i64>`
 
 impl MulByRef<i64> for i32 {
@@ -404,6 +416,14 @@ impl MulByRef<i64> for Decimal {
     #[inline]
     fn mul_by_ref(&self, w: &i64) -> Self::Output {
         *self * Decimal::from(*w)
+    }
+}
+
+impl MulByRef<i64> for SQLDecimal {
+    type Output = Self;
+
+    fn mul_by_ref(&self, other: &i64) -> Self::Output {
+        *self * SQLDecimal::from(*other)
     }
 }
 
@@ -472,6 +492,15 @@ impl MulByRef<i32> for Decimal {
     }
 }
 
+impl MulByRef<i32> for SQLDecimal {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, other: &i32) -> Self::Output {
+        *self * SQLDecimal::from(*other)
+    }
+}
+
 /////////// generic implementation for Option<t>
 
 trait OptionWeightType {}
@@ -483,6 +512,7 @@ impl OptionWeightType for f64 {}
 impl OptionWeightType for F32 {}
 impl OptionWeightType for F64 {}
 impl OptionWeightType for Decimal {}
+impl OptionWeightType for SQLDecimal {}
 
 impl<T, S> MulByRef<S> for Option<T>
 where

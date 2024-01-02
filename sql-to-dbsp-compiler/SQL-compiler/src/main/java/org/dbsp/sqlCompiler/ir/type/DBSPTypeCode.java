@@ -6,7 +6,7 @@ public enum DBSPTypeCode {
     BYTES("bytes", "ByteArray"),
     DATE("Date", "Date"),
     DATE_TZ("", ""),
-    DECIMAL("decimal", "Decimal"),
+    DECIMAL("decimal", "SQLDecimal"),
     DOUBLE("d", "F64"),
     REAL("f", "F32"),
     GEOPOINT("geopoint", "GeoPoint"),

@@ -27,7 +27,7 @@
 use std::marker::PhantomData;
 
 use dbsp::{
-    algebra::{F32, F64},
+    algebra::{SQLDecimal, F32, F64},
     operator::NeighborhoodDescr,
 };
 use rust_decimal::Decimal;
@@ -88,6 +88,7 @@ serialize_without_context!(char);
 serialize_without_context!(F32);
 serialize_without_context!(F64);
 serialize_without_context!(Decimal);
+serialize_without_context!(SQLDecimal);
 
 /// Used to pass the context to nested structures during serialization.
 // This is only public because it's used in a macro; it's not suppposed

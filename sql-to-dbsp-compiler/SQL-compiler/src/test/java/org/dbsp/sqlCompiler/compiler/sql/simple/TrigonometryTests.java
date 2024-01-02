@@ -4,6 +4,17 @@ import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Test;
 
 public class TrigonometryTests extends SqlIoTest {
+    @Test
+    public void testDecimal() {
+        this.q(
+                """
+                        SELECT 2.1::DECIMAL(7, 6);
+                         x
+                        ---
+                         2.100"""
+        );
+    }
+
     // Tested using Postgres 15.2
     @Test
     public void testSin() {

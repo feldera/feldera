@@ -1,4 +1,4 @@
-use dbsp::algebra::{F32, F64};
+use dbsp::algebra::{SQLDecimal, F32, F64};
 use num::PrimInt;
 
 use crate::{
@@ -7,7 +7,6 @@ use crate::{
 };
 
 use core::ops::{Add, Div, Mul, Sub};
-use rust_decimal::Decimal;
 
 #[inline(always)]
 pub(crate) fn eq<T>(left: T, right: T) -> bool

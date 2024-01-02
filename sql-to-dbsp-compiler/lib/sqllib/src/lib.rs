@@ -18,14 +18,13 @@ pub use timestamp::Date;
 pub use timestamp::Time;
 pub use timestamp::Timestamp;
 
-use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
+use dbsp::algebra::{SQLDecimal, Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OrdZSet, OutputHandle, UpsertHandle,
 };
 use num::{Signed, ToPrimitive};
 use num_traits::Zero;
-use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Index;
@@ -359,7 +358,7 @@ macro_rules! for_all_numeric_compare {
         for_all_int_compare!($func_name, bool);
         some_operator!($func_name, f, F32, bool);
         some_operator!($func_name, d, F64, bool);
-        some_operator!($func_name, decimal, Decimal, bool);
+        some_operator!($func_name, decimal, SQLDecimal, bool);
     };
 }
 
@@ -388,7 +387,7 @@ macro_rules! for_all_numeric_operator {
         for_all_int_operator!($func_name);
         some_operator!($func_name, f, F32, F32);
         some_operator!($func_name, d, F64, F64);
-        some_operator!($func_name, decimal, Decimal, Decimal);
+        some_operator!($func_name, decimal, SQLDecimal, SQLDecimal);
     };
 }
 
@@ -543,7 +542,7 @@ pub fn abs_d(left: F64) -> F64 {
 }
 
 #[inline(always)]
-pub fn abs_decimal(left: Decimal) -> Decimal {
+pub fn abs_decimal(left: SQLDecimal) -> SQLDecimal {
     left.abs()
 }
 
@@ -553,21 +552,21 @@ some_polymorphic_function1!(abs, i32, i32, i32);
 some_polymorphic_function1!(abs, i64, i64, i64);
 some_polymorphic_function1!(abs, f, F32, F32);
 some_polymorphic_function1!(abs, d, F64, F64);
-some_polymorphic_function1!(abs, decimal, Decimal, Decimal);
+some_polymorphic_function1!(abs, decimal, SQLDecimal, SQLDecimal);
 
 #[inline(always)]
-pub fn ln_decimal(left: Decimal) -> F64 {
+pub fn ln_decimal(left: SQLDecimal) -> F64 {
     F64::new(left.ln().to_f64().unwrap())
 }
 
-some_polymorphic_function1!(ln, decimal, Decimal, F64);
+some_polymorphic_function1!(ln, decimal, SQLDecimal, F64);
 
 #[inline(always)]
-pub fn log10_decimal(left: Decimal) -> F64 {
+pub fn log10_decimal(left: SQLDecimal) -> F64 {
     F64::new(left.log10().to_f64().unwrap())
 }
 
-some_polymorphic_function1!(log10, decimal, Decimal, F64);
+some_polymorphic_function1!(log10, decimal, SQLDecimal, F64);
 
 #[inline(always)]
 pub fn is_true_b_(left: bool) -> bool {
@@ -699,7 +698,7 @@ some_polymorphic_function2!(times, i32, i32, ShortInterval, ShortInterval, Short
 /***** decimals ***** */
 
 #[inline(always)]
-pub fn round_decimal<T>(left: Decimal, right: T) -> Decimal
+pub fn round_decimal<T>(left: SQLDecimal, right: T) -> SQLDecimal
 where
     u32: TryFrom<T>,
     <u32 as TryFrom<T>>::Error: Debug,
@@ -708,7 +707,7 @@ where
 }
 
 #[inline(always)]
-pub fn round_decimalN<T>(left: Option<Decimal>, right: T) -> Option<Decimal>
+pub fn round_decimalN<T>(left: Option<SQLDecimal>, right: T) -> Option<SQLDecimal>
 where
     u32: TryFrom<T>,
     <u32 as TryFrom<T>>::Error: Debug,
@@ -717,7 +716,7 @@ where
 }
 
 #[inline(always)]
-pub fn truncate_decimal<T>(left: Decimal, right: T) -> Decimal
+pub fn truncate_decimal<T>(left: SQLDecimal, right: T) -> SQLDecimal
 where
     u32: TryFrom<T>,
     <u32 as TryFrom<T>>::Error: Debug,
@@ -726,7 +725,7 @@ where
 }
 
 #[inline(always)]
-pub fn truncate_decimalN<T>(left: Option<Decimal>, right: T) -> Option<Decimal>
+pub fn truncate_decimalN<T>(left: Option<SQLDecimal>, right: T) -> Option<SQLDecimal>
 where
     u32: TryFrom<T>,
     <u32 as TryFrom<T>>::Error: Debug,
@@ -766,8 +765,8 @@ pub fn power_d_d(left: F64, right: F64) -> F64 {
     F64::new(left.into_inner().powf(right.into_inner()))
 }
 
-pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
-    if right == Decimal::new(5, 1) {
+pub fn power_decimal_decimal(left: SQLDecimal, right: SQLDecimal) -> F64 {
+    if right == SQLDecimal::new(5, 1) {
         // special case for sqrt, has higher precision than pow
         F64::from(left.sqrt().unwrap().to_f64().unwrap())
     } else {
@@ -775,13 +774,13 @@ pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
     }
 }
 
-some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
+some_polymorphic_function2!(power, decimal, SQLDecimal, decimal, SQLDecimal, F64);
 
-pub fn sqrt_decimal(left: Decimal) -> F64 {
+pub fn sqrt_decimal(left: SQLDecimal) -> F64 {
     F64::from(left.sqrt().unwrap().to_f64().unwrap())
 }
 
-some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
+some_polymorphic_function1!(sqrt, decimal, SQLDecimal, F64);
 
 //////////////////// floor /////////////////////
 
@@ -796,13 +795,13 @@ pub fn floor_f(value: F32) -> F32 {
 }
 
 #[inline(always)]
-pub fn floor_decimal(value: Decimal) -> Decimal {
+pub fn floor_decimal(value: SQLDecimal) -> SQLDecimal {
     value.floor()
 }
 
 some_polymorphic_function1!(floor, f, F32, F32);
 some_polymorphic_function1!(floor, d, F64, F64);
-some_polymorphic_function1!(floor, decimal, Decimal, Decimal);
+some_polymorphic_function1!(floor, decimal, SQLDecimal, SQLDecimal);
 
 //////////////////// ceil /////////////////////
 
@@ -817,13 +816,13 @@ pub fn ceil_f(value: F32) -> F32 {
 }
 
 #[inline(always)]
-pub fn ceil_decimal(value: Decimal) -> Decimal {
+pub fn ceil_decimal(value: SQLDecimal) -> SQLDecimal {
     value.ceil()
 }
 
 some_polymorphic_function1!(ceil, f, F32, F32);
 some_polymorphic_function1!(ceil, d, F64, F64);
-some_polymorphic_function1!(ceil, decimal, Decimal, Decimal);
+some_polymorphic_function1!(ceil, decimal, SQLDecimal, SQLDecimal);
 
 ///////////////////// sign //////////////////////
 
@@ -850,13 +849,13 @@ pub fn sign_f(value: F32) -> F32 {
 }
 
 #[inline(always)]
-pub fn sign_decimal(value: Decimal) -> Decimal {
+pub fn sign_decimal(value: SQLDecimal) -> SQLDecimal {
     value.signum()
 }
 
 some_polymorphic_function1!(sign, f, F32, F32);
 some_polymorphic_function1!(sign, d, F64, F64);
-some_polymorphic_function1!(sign, decimal, Decimal, Decimal);
+some_polymorphic_function1!(sign, decimal, SQLDecimal, SQLDecimal);
 
 // PI
 #[inline(always)]

@@ -46,7 +46,7 @@
 use std::{fmt, marker::PhantomData};
 
 use dbsp::{
-    algebra::{F32, F64},
+    algebra::{SQLDecimal, F32, F64},
     operator::NeighborhoodDescr,
 };
 use rust_decimal::Decimal;
@@ -108,6 +108,7 @@ deserialize_without_context!(char);
 deserialize_without_context!(F32);
 deserialize_without_context!(F64);
 deserialize_without_context!(Decimal);
+deserialize_without_context!(SQLDecimal);
 
 // Used to pass the context to nested structures using the
 // `DeserializeSeed` mechanism.  This is only public because it's

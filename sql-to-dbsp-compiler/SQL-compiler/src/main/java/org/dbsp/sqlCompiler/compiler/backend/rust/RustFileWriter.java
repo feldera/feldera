@@ -101,7 +101,7 @@ public class RustFileWriter implements ICompilerComponent {
                     use dbsp::{
                         algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
                              UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
-                             AddAssignByRef,
+                             AddAssignByRef, SQLDecimal,
                         },
                         circuit::{Circuit, Stream},
                         operator::{
