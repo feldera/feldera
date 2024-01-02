@@ -2,6 +2,7 @@
 import { GridItems } from '$lib/components/common/GridItems'
 import { useAuthStore } from '$lib/compositions/auth/useAuth'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { jwtDecode, JwtPayload } from 'jwt-decode'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { ReactNode } from 'react'
@@ -65,9 +66,14 @@ const useOnGoogleLogin = () => {
   const { setAuth } = useAuthStore()
   return (tokenResponse: CredentialResponse | TokenResponse) => {
     const bearer = 'access_token' in tokenResponse ? tokenResponse.access_token : tokenResponse.credential!
+    const jwtPayload = jwtDecode<JwtPayload & Record<string, string>>(bearer)
     setAuth({
       user: {
-        username: 'Anonymous Google User'
+        avatar: jwtPayload['picture'],
+        username: jwtPayload['name'] || 'anonymous',
+        contacts: {
+          email: jwtPayload['email']
+        }
       },
       bearer,
       // https://stackoverflow.com/a/23245957

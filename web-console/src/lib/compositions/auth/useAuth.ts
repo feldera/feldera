@@ -5,6 +5,11 @@ import { useLocalStorage } from '@mantine/hooks'
 
 export type AuthUserInfo = {
   username: string
+  avatar?: string
+  contacts: {
+    email?: string
+    phone?: string
+  }
 }
 
 export type AuthData = {

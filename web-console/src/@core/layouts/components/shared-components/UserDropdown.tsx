@@ -65,10 +65,11 @@ const UserDropdown = () => {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Avatar
-          alt='John Doe'
+          alt={'Avatar of ' + auth.user.username}
           onClick={handleDropdownOpen}
           sx={{ width: 40, height: 40 }}
           data-testid='button-avatar-menu'
+          src={auth.user.avatar}
         />
       </Badge>
       <Menu
@@ -86,10 +87,24 @@ const UserDropdown = () => {
               badgeContent={<BadgeContentSpan />}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             >
-              <Avatar alt='John Doe' sx={{ width: '2.5rem', height: '2.5rem' }} />
+              <Avatar
+                alt={'Avatar of ' + auth.user.username}
+                sx={{ width: '2.5rem', height: '2.5rem' }}
+                src={auth.user.avatar}
+              />
             </Badge>
             <Box sx={{ display: 'flex', marginLeft: 3, alignItems: 'flex-start', flexDirection: 'column' }}>
               <Typography sx={{ fontWeight: 600 }}>{auth.user.username}</Typography>
+              {!!auth.user.contacts.email && (
+                <Typography variant='body2' sx={{ fontSize: '0.8rem' }}>
+                  {auth.user.contacts.email}
+                </Typography>
+              )}
+              {!!auth.user.contacts.phone && (
+                <Typography variant='body2' sx={{ fontSize: '0.8rem' }}>
+                  {auth.user.contacts.phone}
+                </Typography>
+              )}
               <Typography variant='body2' sx={{ fontSize: '0.8rem', color: 'text.disabled' }}>
                 user
               </Typography>
@@ -118,7 +133,7 @@ const UserDropdown = () => {
         </Link>
         <Divider />
         <Link href={auth.signOutUrl} data-testid='button-signout'>
-          <MenuItem sx={{ py: 2 }} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
+          <MenuItem sx={styles} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
             <LogoutVariant />
             Logout
           </MenuItem>
