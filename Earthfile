@@ -47,10 +47,10 @@ install-rust:
         --component clippy \
         --component rustfmt \
         --component llvm-tools-preview
-    RUN cargo install --locked --force --version 0.5.0 cargo-machete
     RUN cargo install --locked --force --version 0.36.11 cargo-make
     RUN cargo install --locked --force --version 0.5.22 cargo-llvm-cov
     RUN cargo install --locked --force --version 0.1.61 cargo-chef
+    RUN cargo install --locked --force --version 0.1.45 cargo-udeps
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
@@ -67,7 +67,13 @@ rust-sources:
 formatting-check:
     FROM +rust-sources
     COPY --keep-ts rustfmt.toml rustfmt.toml
-    DO rust+CARGO --args="+nightly  fmt --all -- --check"
+    DO rust+CARGO --args="+nightly fmt --all -- --check"
+
+udeps:
+    FROM +rust-sources
+    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
+    COPY ( +build-webui/out ) ./web-console/out
+    DO rust+CARGO --args="+nightly udeps"
 
 install-python-deps:
     FROM +install-deps
@@ -484,6 +490,7 @@ benchmark:
 
 all-tests:
     BUILD +formatting-check
+    BUILD +udeps
     BUILD +test-rust
     BUILD +test-python
     BUILD +python-bindings-checker
