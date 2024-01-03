@@ -2448,8 +2448,8 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|p| p.descriptor.name == name)
-            .ok_or(DBError::UnknownName {
-                name: name.to_string(),
+            .ok_or(DBError::UnknownPipelineName {
+                pipeline_name: name.to_string(),
             })
     }
 
@@ -2541,8 +2541,8 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|c| c.name == name)
-            .ok_or(DBError::UnknownName {
-                name: name.to_string(),
+            .ok_or(DBError::UnknownConnectorName {
+                connector_name: name.to_string(),
             })
     }
 
@@ -2590,8 +2590,8 @@ impl Storage for Mutex<DbModel> {
         s.connectors
             .iter()
             .find(|c| c.0 .0 == tenant_id && c.1.name == connector_name)
-            .ok_or(DBError::UnknownName {
-                name: connector_name.to_string(),
+            .ok_or(DBError::UnknownConnectorName {
+                connector_name: connector_name.to_string(),
             })?;
         s.pipelines.values_mut().for_each(|c| {
             c.descriptor

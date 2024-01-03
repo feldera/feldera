@@ -841,8 +841,8 @@ pub(crate) async fn get_pipeline_runtime_state_by_name(
             created: convert_bigint_to_time(row.get(5))?,
         })
     } else {
-        Err(DBError::UnknownName {
-            name: pipeline_name.to_string(),
+        Err(DBError::UnknownPipelineName {
+            pipeline_name: pipeline_name.to_string(),
         })
     }
 }
@@ -876,8 +876,8 @@ pub(crate) async fn get_pipeline_descr_by_name(
         manager.query_opt(&stmt, &[&name, &tenant_id.0]).await?
     };
 
-    let row = row.ok_or(DBError::UnknownName {
-        name: name.to_string(),
+    let row = row.ok_or(DBError::UnknownPipelineName {
+        pipeline_name: name.to_string(),
     })?;
 
     row_to_pipeline_descr(&row)
@@ -913,8 +913,8 @@ pub(crate) async fn get_pipeline_by_name(
     let row = manager
         .query_opt(&stmt, &[&name, &tenant_id.0])
         .await?
-        .ok_or(DBError::UnknownName {
-            name: name.to_string(),
+        .ok_or(DBError::UnknownPipelineName {
+            pipeline_name: name.to_string(),
         })?;
 
     row_to_pipeline(&row)
@@ -1199,8 +1199,8 @@ pub(crate) async fn delete_pipeline(
     if res > 0 {
         Ok(())
     } else {
-        Err(DBError::UnknownName {
-            name: pipeline_name.to_string(),
+        Err(DBError::UnknownPipelineName {
+            pipeline_name: pipeline_name.to_string(),
         })
     }
 }
