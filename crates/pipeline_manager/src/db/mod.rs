@@ -294,26 +294,35 @@ impl Storage for ProjectDB {
         Ok(pipeline::get_pipeline_descr_by_id(self, tenant_id, pipeline_id, txn).await?)
     }
 
-    async fn get_pipeline_runtime_state(
+    async fn get_pipeline_runtime_state_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineRuntimeState, DBError> {
-        Ok(pipeline::get_pipeline_runtime_state(self, tenant_id, pipeline_id).await?)
+        Ok(pipeline::get_pipeline_runtime_state_by_id(self, tenant_id, pipeline_id).await?)
+    }
+
+    async fn get_pipeline_runtime_state_by_name(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineRuntimeState, DBError> {
+        Ok(pipeline::get_pipeline_runtime_state_by_name(self, tenant_id, pipeline_name).await?)
     }
 
     async fn get_pipeline_descr_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<PipelineDescr, DBError> {
-        Ok(pipeline::get_pipeline_descr_by_name(self, tenant_id, name).await?)
+        Ok(pipeline::get_pipeline_descr_by_name(self, tenant_id, name, txn).await?)
     }
 
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> Result<Pipeline, DBError> {
         Ok(pipeline::get_pipeline_by_name(self, tenant_id, name).await?)
     }
@@ -398,9 +407,9 @@ impl Storage for ProjectDB {
     async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<bool, DBError> {
-        Ok(pipeline::delete_pipeline(self, tenant_id, pipeline_id).await?)
+        pipeline_name: &str,
+    ) -> Result<(), DBError> {
+        Ok(pipeline::delete_pipeline(self, tenant_id, pipeline_name).await?)
     }
 
     async fn new_connector(
@@ -971,9 +980,9 @@ impl ProjectDB {
     pub(crate) async fn pipeline_config(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
     ) -> Result<PipelineConfig, DBError> {
-        pipeline::pipeline_config(self, tenant_id, pipeline_id).await
+        pipeline::pipeline_config(self, tenant_id, pipeline_name).await
     }
 
     // TODO: Should be part of the Storage trait

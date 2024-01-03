@@ -480,6 +480,9 @@ pub(crate) struct PipelineDescr {
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) struct PipelineRuntimeState {
+    /// The pipeline's ID
+    pub pipeline_id: PipelineId,
+
     /// Location where the pipeline can be reached at runtime.
     /// e.g., a TCP port number or a URI.
     pub location: String,
@@ -767,7 +770,7 @@ pub(crate) async fn get_pipeline_descr_by_id(
     row_to_pipeline_descr(&row)
 }
 
-pub(crate) async fn get_pipeline_runtime_state(
+pub(crate) async fn get_pipeline_runtime_state_by_id(
     db: &ProjectDB,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
@@ -785,18 +788,72 @@ pub(crate) async fn get_pipeline_runtime_state(
         .query_opt(&stmt, &[&pipeline_id.0, &tenant_id.0])
         .await?;
 
-    row_to_pipeline_runtime_state(pipeline_id, &row)
+    if let Some(row) = row {
+        Ok(PipelineRuntimeState {
+            pipeline_id,
+            location: row.get::<_, Option<String>>(0).unwrap_or_default(),
+            desired_status: row.get::<_, String>(1).try_into()?,
+            current_status: row.get::<_, String>(2).try_into()?,
+            status_since: convert_bigint_to_time(row.get(3))?,
+            error: row
+                .get::<_, Option<String>>(4)
+                .map(|s| deserialize_error_response(pipeline_id, &s))
+                .transpose()?,
+            created: convert_bigint_to_time(row.get(5))?,
+        })
+    } else {
+        Err(DBError::UnknownPipeline { pipeline_id })
+    }
+}
+
+pub(crate) async fn get_pipeline_runtime_state_by_name(
+    db: &ProjectDB,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+) -> Result<PipelineRuntimeState, DBError> {
+    let manager = db.pool.get().await?;
+    let stmt = manager
+        .prepare_cached(
+            "SELECT pr.location, pr.desired_status, pr.current_status, pr.status_since, pr.error, pr.created, pr.id
+                FROM pipeline_runtime_state pr
+                JOIN pipeline p
+                    ON p.id = pr.id AND p.tenant_id = pr.tenant_id
+                WHERE p.name = $1 AND p.tenant_id = $2",
+        )
+        .await?;
+
+    let row = manager
+        .query_opt(&stmt, &[&pipeline_name, &tenant_id.0])
+        .await?;
+
+    if let Some(row) = row {
+        let pipeline_id: PipelineId = PipelineId(row.get(6));
+        Ok(PipelineRuntimeState {
+            pipeline_id,
+            location: row.get::<_, Option<String>>(0).unwrap_or_default(),
+            desired_status: row.get::<_, String>(1).try_into()?,
+            current_status: row.get::<_, String>(2).try_into()?,
+            status_since: convert_bigint_to_time(row.get(3))?,
+            error: row
+                .get::<_, Option<String>>(4)
+                .map(|s| deserialize_error_response(pipeline_id, &s))
+                .transpose()?,
+            created: convert_bigint_to_time(row.get(5))?,
+        })
+    } else {
+        Err(DBError::UnknownName {
+            name: pipeline_name.to_string(),
+        })
+    }
 }
 
 pub(crate) async fn get_pipeline_descr_by_name(
     db: &ProjectDB,
     tenant_id: TenantId,
-    name: String,
+    name: &str,
+    txn: Option<&Transaction<'_>>,
 ) -> Result<PipelineDescr, DBError> {
-    let manager = db.pool.get().await?;
-    let stmt = manager
-        .prepare_cached(
-            "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
+    let query = "SELECT p.id, p.version, p.name as cname, p.description, p.config, prog.name,
                 COALESCE(json_agg(json_build_object('name', ac.name,
                                                     'connector_name', c.name,
                                                     'config', ac.config,
@@ -809,14 +866,19 @@ pub(crate) async fn get_pipeline_descr_by_name(
                 LEFT JOIN connector c on ac.connector_id = c.id
                 WHERE p.name = $1 AND p.tenant_id = $2
                 GROUP BY p.id, prog.name
-                ",
-        )
-        .await?;
+                ";
+    let row = if let Some(txn) = txn {
+        let stmt = txn.prepare_cached(query).await?;
+        txn.query_opt(&stmt, &[&name, &tenant_id.0]).await?
+    } else {
+        let manager = db.pool.get().await?;
+        let stmt = manager.prepare_cached(query).await?;
+        manager.query_opt(&stmt, &[&name, &tenant_id.0]).await?
+    };
 
-    let row = manager
-        .query_opt(&stmt, &[&name, &tenant_id.0])
-        .await?
-        .ok_or(DBError::UnknownName { name })?;
+    let row = row.ok_or(DBError::UnknownName {
+        name: name.to_string(),
+    })?;
 
     row_to_pipeline_descr(&row)
 }
@@ -824,7 +886,7 @@ pub(crate) async fn get_pipeline_descr_by_name(
 pub(crate) async fn get_pipeline_by_name(
     db: &ProjectDB,
     tenant_id: TenantId,
-    name: String,
+    name: &str,
 ) -> Result<Pipeline, DBError> {
     let manager = db.pool.get().await?;
     let stmt = manager
@@ -851,7 +913,9 @@ pub(crate) async fn get_pipeline_by_name(
     let row = manager
         .query_opt(&stmt, &[&name, &tenant_id.0])
         .await?
-        .ok_or(DBError::UnknownName { name })?;
+        .ok_or(DBError::UnknownName {
+            name: name.to_string(),
+        })?;
 
     row_to_pipeline(&row)
 }
@@ -1123,16 +1187,22 @@ pub(crate) async fn attached_connector_is_input(
 pub(crate) async fn delete_pipeline(
     db: &ProjectDB,
     tenant_id: TenantId,
-    pipeline_id: PipelineId,
-) -> Result<bool, DBError> {
+    pipeline_name: &str,
+) -> Result<(), DBError> {
     let manager = db.pool.get().await?;
     let stmt = manager
-        .prepare_cached("DELETE FROM pipeline WHERE id = $1 AND tenant_id = $2")
+        .prepare_cached("DELETE FROM pipeline WHERE name = $1 AND tenant_id = $2")
         .await?;
     let res = manager
-        .execute(&stmt, &[&pipeline_id.0, &tenant_id.0])
+        .execute(&stmt, &[&pipeline_name, &tenant_id.0])
         .await?;
-    Ok(res > 0)
+    if res > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownName {
+            name: pipeline_name.to_string(),
+        })
+    }
 }
 
 pub(crate) async fn is_pipeline_deployable(
@@ -1162,13 +1232,15 @@ pub(crate) async fn is_pipeline_deployable(
 pub(crate) async fn pipeline_config(
     db: &ProjectDB,
     tenant_id: TenantId,
-    pipeline_id: PipelineId,
+    pipeline_name: &str,
 ) -> Result<PipelineConfig, DBError> {
+    let mut client = db.pool.get().await?;
+    let txn = client.transaction().await?;
     let pipeline = db
-        .get_pipeline_descr_by_id(tenant_id, pipeline_id, None)
+        .get_pipeline_descr_by_name(tenant_id, pipeline_name, Some(&txn))
         .await?;
     let connectors: Vec<ConnectorDescr> =
-        get_connectors_for_pipeline_id(db, tenant_id, pipeline_id, None).await?;
+        get_connectors_for_pipeline_id(db, tenant_id, pipeline.pipeline_id, Some(&txn)).await?;
     PipelineRevision::generate_pipeline_config(&pipeline, &connectors)
 }
 
@@ -1266,27 +1338,6 @@ fn row_to_pipeline_descr(row: &Row) -> Result<PipelineDescr, DBError> {
     })
 }
 
-fn row_to_pipeline_runtime_state(
-    pipeline_id: PipelineId,
-    row: &Option<Row>,
-) -> Result<PipelineRuntimeState, DBError> {
-    if let Some(row) = row {
-        Ok(PipelineRuntimeState {
-            location: row.get::<_, Option<String>>(0).unwrap_or_default(),
-            desired_status: row.get::<_, String>(1).try_into()?,
-            current_status: row.get::<_, String>(2).try_into()?,
-            status_since: convert_bigint_to_time(row.get(3))?,
-            error: row
-                .get::<_, Option<String>>(4)
-                .map(|s| deserialize_error_response(pipeline_id, &s))
-                .transpose()?,
-            created: convert_bigint_to_time(row.get(5))?,
-        })
-    } else {
-        Err(DBError::UnknownPipeline { pipeline_id })
-    }
-}
-
 fn row_to_pipeline(row: &Row) -> Result<Pipeline, DBError> {
     let pipeline_id = PipelineId(row.get(0));
     let program_name = row.get::<_, Option<String>>(5);
@@ -1301,6 +1352,7 @@ fn row_to_pipeline(row: &Row) -> Result<Pipeline, DBError> {
     };
 
     let state = PipelineRuntimeState {
+        pipeline_id,
         location: row.get::<_, Option<String>>(7).unwrap_or_default(),
         desired_status: row.get::<_, String>(8).try_into()?,
         current_status: row.get::<_, String>(9).try_into()?,
