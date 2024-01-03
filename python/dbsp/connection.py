@@ -82,7 +82,7 @@ class DBSPConnection:
                 name=name, code=sql_code, description=description
             )
             program_response = update_program.sync_detailed(
-                client=self.api_client, program_id=program_id, json_body=request
+                client=self.api_client, program_name=name, json_body=request
             ).unwrap("Failed to update the program")
         else:
             # Create a new one instead
