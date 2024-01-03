@@ -470,7 +470,7 @@ impl RunnerApi {
     pub(crate) async fn forward_to_pipeline_as_stream(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
         endpoint: &str,
         req: HttpRequest,
         body: Payload,
@@ -480,8 +480,9 @@ impl RunnerApi {
             .db
             .lock()
             .await
-            .get_pipeline_runtime_state_by_id(tenant_id, pipeline_id)
+            .get_pipeline_runtime_state_by_name(tenant_id, pipeline_name)
             .await?;
+        let pipeline_id = pipeline_state.pipeline_id;
 
         match pipeline_state.current_status {
             PipelineStatus::Shutdown | PipelineStatus::Failed | PipelineStatus::Provisioning => {
