@@ -108,8 +108,8 @@ pub(crate) async fn get_connector_by_name(
             config,
         })
     } else {
-        Err(DBError::UnknownName {
-            name: name.to_string(),
+        Err(DBError::UnknownConnectorName {
+            connector_name: name.to_string(),
         })
     }
 }
@@ -196,8 +196,8 @@ pub(crate) async fn delete_connector(
     if res > 0 {
         Ok(())
     } else {
-        Err(DBError::UnknownName {
-            name: connector_name.to_string(),
+        Err(DBError::UnknownConnectorName {
+            connector_name: connector_name.to_string(),
         })
     }
 }
