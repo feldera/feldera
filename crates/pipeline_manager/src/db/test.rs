@@ -601,7 +601,7 @@ async fn update_conn_name() {
         .unwrap();
     let pipeline = handle
         .db
-        .get_pipeline_by_name(tenant_id, "1".to_string())
+        .get_pipeline_by_name(tenant_id, "1")
         .await
         .unwrap();
     assert_eq!(
@@ -1227,12 +1227,13 @@ enum StorageAction {
     ),
     UpdatePipelineRuntimeState(TenantId, PipelineId, PipelineRuntimeState),
     SetPipelineDesiredStatus(TenantId, PipelineId, PipelineStatus),
-    DeletePipeline(TenantId, PipelineId),
+    DeletePipeline(TenantId, String),
     GetPipelineById(TenantId, PipelineId),
     GetPipelineByName(TenantId, String),
     GetPipelineDescrById(TenantId, PipelineId),
     GetPipelineDescrByName(TenantId, String),
-    GetPipelineRuntimeState(TenantId, PipelineId),
+    GetPipelineRuntimeStateById(TenantId, PipelineId),
+    GetPipelineRuntimeStateByName(TenantId, String),
     ListPipelines(TenantId),
     NewConnector(
         TenantId,
@@ -1553,8 +1554,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetPipelineByName(tenant_id, name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_pipeline_by_name(tenant_id, name.clone()).await;
-                                let impl_response = handle.db.get_pipeline_by_name(tenant_id, name).await;
+                                let model_response = model.get_pipeline_by_name(tenant_id, &name).await;
+                                let impl_response = handle.db.get_pipeline_by_name(tenant_id, &name).await;
                                 compare_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::GetPipelineDescrById(tenant_id, pipeline_id) => {
@@ -1565,14 +1566,20 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetPipelineDescrByName(tenant_id, name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_pipeline_descr_by_name(tenant_id, name.clone()).await;
-                                let impl_response = handle.db.get_pipeline_descr_by_name(tenant_id, name).await;
+                                let model_response = model.get_pipeline_descr_by_name(tenant_id, &name, None).await;
+                                let impl_response = handle.db.get_pipeline_descr_by_name(tenant_id, &name, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetPipelineRuntimeState(tenant_id, pipeline_id) => {
+                            StorageAction::GetPipelineRuntimeStateById(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_pipeline_runtime_state(tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.get_pipeline_runtime_state(tenant_id, pipeline_id).await;
+                                let model_response = model.get_pipeline_runtime_state_by_id(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_runtime_state_by_id(tenant_id, pipeline_id).await;
+                                compare_pipeline_runtime_state(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineRuntimeStateByName(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_runtime_state_by_name(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.get_pipeline_runtime_state_by_name(tenant_id, &pipeline_name).await;
                                 compare_pipeline_runtime_state(i, model_response, impl_response);
                             }
                             StorageAction::ListPipelines(tenant_id,) => {
@@ -1614,10 +1621,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.set_pipeline_desired_status(tenant_id, pipeline_id, status).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeletePipeline(tenant_id,pipeline_id) => {
+                            StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.delete_pipeline(tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.delete_pipeline(tenant_id, pipeline_id).await;
+                                let model_response = model.delete_pipeline(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.delete_pipeline(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::ListConnectors(tenant_id,) => {
@@ -2231,6 +2238,7 @@ impl Storage for Mutex<DbModel> {
                     version: Version(1),
                 },
                 state: PipelineRuntimeState {
+                    pipeline_id,
                     location: "".to_string(),
                     desired_status: PipelineStatus::Shutdown,
                     current_status: PipelineStatus::Shutdown,
@@ -2336,19 +2344,15 @@ impl Storage for Mutex<DbModel> {
         todo!()
     }
 
-    async fn delete_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: super::PipelineId,
-    ) -> DBResult<bool> {
+    async fn delete_pipeline(&self, tenant_id: TenantId, pipeline_name: &str) -> DBResult<()> {
+        let pipeline = self.get_pipeline_by_name(tenant_id, pipeline_name).await?;
         let mut s = self.lock().await;
-        let _r = s.history.remove(&(tenant_id, pipeline_id));
-        // TODO: Our APIs sometimes are not consistent we return a bool here but
-        // other calls fail silently on delete/lookups
-        Ok(s.pipelines
-            .remove(&(tenant_id, pipeline_id))
-            .map(|_| true)
-            .unwrap_or(false))
+        let _r = s
+            .history
+            .remove(&(tenant_id, pipeline.descriptor.pipeline_id));
+        s.pipelines
+            .remove(&(tenant_id, pipeline.descriptor.pipeline_id));
+        Ok(())
     }
 
     async fn get_pipeline_by_id(
@@ -2374,12 +2378,22 @@ impl Storage for Mutex<DbModel> {
             .map(|p| p.descriptor)
     }
 
-    async fn get_pipeline_runtime_state(
+    async fn get_pipeline_runtime_state_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineRuntimeState, DBError> {
         self.get_pipeline_by_id(tenant_id, pipeline_id)
+            .await
+            .map(|p| p.state)
+    }
+
+    async fn get_pipeline_runtime_state_by_name(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineRuntimeState, DBError> {
+        self.get_pipeline_by_name(tenant_id, pipeline_name)
             .await
             .map(|p| p.state)
     }
@@ -2426,7 +2440,7 @@ impl Storage for Mutex<DbModel> {
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> DBResult<super::Pipeline> {
         let s = self.lock().await;
         s.pipelines
@@ -2434,15 +2448,18 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|p| p.descriptor.name == name)
-            .ok_or(DBError::UnknownName { name })
+            .ok_or(DBError::UnknownName {
+                name: name.to_string(),
+            })
     }
 
     async fn get_pipeline_descr_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<super::PipelineDescr> {
-        self.get_pipeline_by_name(tenant_id, name)
+        self.get_pipeline_by_name(tenant_id, &name)
             .await
             .map(|p| p.descriptor)
     }
@@ -2570,8 +2587,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn delete_connector(&self, tenant_id: TenantId, connector_name: &str) -> DBResult<()> {
         let mut s = self.lock().await;
-        let connector = s
-            .connectors
+        s.connectors
             .iter()
             .find(|c| c.0 .0 == tenant_id && c.1.name == connector_name)
             .ok_or(DBError::UnknownName {

@@ -311,6 +311,7 @@ mod test {
                     None,
                 )
                 .await;
+            let pipeline_name = &format!("{i}");
             let _ = conn
                 .lock()
                 .await
@@ -318,7 +319,7 @@ mod test {
                     tenant_id,
                     pipeline_id,
                     &None,
-                    &format!("{i}"),
+                    pipeline_name,
                     "some new description",
                     &None,
                     &None,
@@ -343,7 +344,7 @@ mod test {
                 .unwrap();
             conn.lock()
                 .await
-                .delete_pipeline(tenant_id, pipeline_id)
+                .delete_pipeline(tenant_id, pipeline_name)
                 .await
                 .unwrap();
 
