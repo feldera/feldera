@@ -1,5 +1,11 @@
 # User-defined functions
 
+:::caution Feature under construction
+
+This feature is still being developed and is not yet usable through Feldera's public API or Web Console.
+
+:::
+
 The SQL statement `CREATE FUNCTION` can be used to declare new
 functions whose implementation is provided separately in Rust.
 
