@@ -12,7 +12,7 @@ from ...types import Response
 
 
 def _get_kwargs(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     json_body: UpdatePipelineRequest,
 ) -> Dict[str, Any]:
@@ -22,8 +22,8 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/v0/pipelines/{pipeline_id}".format(
-            pipeline_id=pipeline_id,
+        "url": "/v0/pipelines/{pipeline_name}".format(
+            pipeline_name=pipeline_name,
         ),
         "json": json_json_body,
     }
@@ -58,7 +58,7 @@ def _build_response(
 
 
 def sync_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
@@ -69,7 +69,7 @@ def sync_detailed(
     On success, increments the pipeline's version by 1.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
@@ -81,7 +81,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         json_body=json_body,
     )
 
@@ -93,7 +93,7 @@ def sync_detailed(
 
 
 def sync(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
@@ -104,7 +104,7 @@ def sync(
     On success, increments the pipeline's version by 1.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
@@ -116,14 +116,14 @@ def sync(
     """
 
     return sync_detailed(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
@@ -134,7 +134,7 @@ async def asyncio_detailed(
     On success, increments the pipeline's version by 1.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
@@ -146,7 +146,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         json_body=json_body,
     )
 
@@ -156,7 +156,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdatePipelineRequest,
@@ -167,7 +167,7 @@ async def asyncio(
     On success, increments the pipeline's version by 1.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         json_body (UpdatePipelineRequest): Request to update an existing pipeline.
 
     Raises:
@@ -180,7 +180,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
             client=client,
             json_body=json_body,
         )

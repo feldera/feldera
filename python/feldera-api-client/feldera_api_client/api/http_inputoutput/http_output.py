@@ -14,7 +14,7 @@ from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
-    pipeline_id: str,
+    pipeline_name: str,
     table_name: str,
     *,
     json_body: Optional[NeighborhoodQuery],
@@ -51,8 +51,8 @@ def _get_kwargs(
 
     return {
         "method": "post",
-        "url": "/v0/pipelines/{pipeline_id}/egress/{table_name}".format(
-            pipeline_id=pipeline_id,
+        "url": "/v0/pipelines/{pipeline_name}/egress/{table_name}".format(
+            pipeline_name=pipeline_name,
             table_name=table_name,
         ),
         "json": json_json_body,
@@ -101,7 +101,7 @@ def _build_response(
 
 
 def sync_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     table_name: str,
     *,
     client: AuthenticatedClient,
@@ -130,7 +130,7 @@ def sync_detailed(
     parameter.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         table_name (str):
         format_ (str):
         query (Union[Unset, None, OutputQuery]): A query over an output stream.
@@ -154,7 +154,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         table_name=table_name,
         json_body=json_body,
         format_=format_,
@@ -172,7 +172,7 @@ def sync_detailed(
 
 
 def sync(
-    pipeline_id: str,
+    pipeline_name: str,
     table_name: str,
     *,
     client: AuthenticatedClient,
@@ -201,7 +201,7 @@ def sync(
     parameter.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         table_name (str):
         format_ (str):
         query (Union[Unset, None, OutputQuery]): A query over an output stream.
@@ -225,7 +225,7 @@ def sync(
     """
 
     return sync_detailed(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         table_name=table_name,
         client=client,
         json_body=json_body,
@@ -238,7 +238,7 @@ def sync(
 
 
 async def asyncio_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     table_name: str,
     *,
     client: AuthenticatedClient,
@@ -267,7 +267,7 @@ async def asyncio_detailed(
     parameter.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         table_name (str):
         format_ (str):
         query (Union[Unset, None, OutputQuery]): A query over an output stream.
@@ -291,7 +291,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         table_name=table_name,
         json_body=json_body,
         format_=format_,
@@ -307,7 +307,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    pipeline_id: str,
+    pipeline_name: str,
     table_name: str,
     *,
     client: AuthenticatedClient,
@@ -336,7 +336,7 @@ async def asyncio(
     parameter.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         table_name (str):
         format_ (str):
         query (Union[Unset, None, OutputQuery]): A query over an output stream.
@@ -361,7 +361,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
             table_name=table_name,
             client=client,
             json_body=json_body,

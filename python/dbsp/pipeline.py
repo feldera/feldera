@@ -274,7 +274,7 @@ class DBSPPipelineConfig:
                 connectors=self.attached_connectors,
             )
             response = update_pipeline.sync_detailed(
-                pipeline_id=self.pipeline_id, client=self.api_client, json_body=body
+                pipeline_name=self.name, client=self.api_client, json_body=body
             ).unwrap("Failed to update pipeline config")
             self.pipeline_version = response.version
 
@@ -289,7 +289,7 @@ class DBSPPipelineConfig:
         """
         self.save()
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action="start"
+            client=self.api_client, pipeline_name=self.name, action="start"
         ).unwrap("Failed to start pipeline")
         self.wait_for_status(PipelineStatus.RUNNING, 60.0)
 
@@ -301,7 +301,7 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action="pause"
+            client=self.api_client, pipeline_name=self.name, action="pause"
         ).unwrap("Failed to pause pipeline")
 
     def start(self):
@@ -312,7 +312,7 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action="start"
+            client=self.api_client, pipeline_name=self.name, action="start"
         ).unwrap("Failed to start pipeline")
 
     def wait(self, timeout: float = sys.maxsize):
@@ -361,7 +361,7 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
         status = get_pipeline.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id
+            client=self.api_client, pipeline_name=self.name
         ).unwrap("Failed to retrieve pipeline status")
         return status
 
@@ -391,7 +391,7 @@ class DBSPPipelineConfig:
             dbsp.DBSPServerError: If the DBSP server returns an error.
         """
         status = pipeline_stats.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id
+            client=self.api_client, pipeline_name=self.name
         ).unwrap("Failed to retrieve pipeline status")
         return status.additional_properties
 
@@ -406,7 +406,7 @@ class DBSPPipelineConfig:
         """
 
         pipeline_action.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id, action="shutdown"
+            client=self.api_client, pipeline_name=self.name, action="shutdown"
         ).unwrap("Failed to shut down the pipeline")
         self.wait_for_status(PipelineStatus.SHUTDOWN, 60.0)
 
@@ -424,7 +424,7 @@ class DBSPPipelineConfig:
         self.shutdown()
 
         pipeline_delete.sync_detailed(
-            client=self.api_client, pipeline_id=self.pipeline_id
+            client=self.api_client, pipeline_name=self.name
         ).unwrap("Failed to delete pipeline")
 
         time.sleep(1.0)
