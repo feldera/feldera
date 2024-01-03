@@ -7,9 +7,8 @@ use actix_web::{
 use log::debug;
 
 use crate::{
-    api::{examples, parse_uuid_param},
+    api::{examples, parse_string_param},
     auth::TenantId,
-    db::PipelineId,
 };
 
 use super::{ManagerError, ServerState};
@@ -61,7 +60,7 @@ use super::{ManagerError, ServerState};
             , body = ErrorResponse),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
@@ -78,18 +77,14 @@ use super::{ManagerError, ServerState};
         content_type = "text/csv",
     ),
 )]
-#[post("/pipelines/{pipeline_id}/ingress/{table_name}")]
+#[post("/pipelines/{pipeline_name}/ingress/{table_name}")]
 async fn http_input(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!("Received {req:?}");
-
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
-    debug!("Pipeline_id {:?}", pipeline_id);
-
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let table_name = match req.match_info().get("table_name") {
         None => {
             return Err(ManagerError::MissingUrlEncodedParam {
@@ -104,7 +99,7 @@ async fn http_input(
 
     state
         .runner
-        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
+        .forward_to_pipeline_as_stream(*tenant_id, &pipeline_name, &endpoint, req, body)
         .await
 }
 
@@ -155,7 +150,7 @@ async fn http_input(
             , body = ErrorResponse),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier."),
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
@@ -173,18 +168,14 @@ async fn http_input(
     security(("JSON web token (JWT) or API key" = [])),
     tag = "HTTP input/output"
 )]
-#[post("/pipelines/{pipeline_id}/egress/{table_name}")]
+#[post("/pipelines/{pipeline_name}/egress/{table_name}")]
 async fn http_output(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!("Received {req:?}");
-
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
-    debug!("Pipeline_id {:?}", pipeline_id);
-
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let table_name = match req.match_info().get("table_name") {
         None => {
             return Err(ManagerError::MissingUrlEncodedParam {
@@ -193,12 +184,9 @@ async fn http_output(
         }
         Some(table_name) => table_name,
     };
-    debug!("Table name {table_name:?}");
-
     let endpoint = format!("egress/{table_name}");
-
     state
         .runner
-        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
+        .forward_to_pipeline_as_stream(*tenant_id, &pipeline_name, &endpoint, req, body)
         .await
 }

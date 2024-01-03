@@ -1361,7 +1361,11 @@ async fn pipeline_runtime_configuration() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Get config
-    let mut resp = config.get(format!("/v0/pipelines/test/config")).await;
+    let mut resp = config
+        .get(format!(
+            "/v0/pipelines/pipeline_runtime_configuration/config"
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let resp: Value = resp.json().await.unwrap();
     let workers = resp["workers"].as_i64().unwrap();
@@ -1383,11 +1387,20 @@ async fn pipeline_runtime_configuration() {
             }
         },
     });
-    let resp = config.patch(format!("/v0/pipelines/test"), &patch).await;
+    let resp = config
+        .patch(
+            format!("/v0/pipelines/pipeline_runtime_configuration"),
+            &patch,
+        )
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Get config
-    let mut resp = config.get(format!("/v0/pipelines/test/config")).await;
+    let mut resp = config
+        .get(format!(
+            "/v0/pipelines/pipeline_runtime_configuration/config"
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let resp: Value = resp.json().await.unwrap();
     let workers = resp["workers"].as_i64().unwrap();
