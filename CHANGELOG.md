@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: Preliminary support for computations with bounded memory on unbounded
   streams ([#1197](https://github.com/feldera/feldera/pull/1197))
 
+### Changed
+- pipeline-manager: use names instead of IDs in API endpoints (#1214)
+
 ### Fixed
 - SQL: Changed semantics of division to match SQL standard
   ([#1201](https://github.com/feldera/feldera/pull/1201))
