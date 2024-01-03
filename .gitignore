@@ -46,7 +46,6 @@ ldbc_results.csv
 manager.db
 manager.pid
 cargo_workspace
-openapi.json
 
 # python
 __pycache__

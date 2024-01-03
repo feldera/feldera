@@ -127,17 +127,13 @@ build-dbsp:
 build-sql:
     FROM +build-dbsp
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
-
     COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
     COPY demo/project_demo00-SecOps/project.sql demo/project_demo00-SecOps/project.sql
     COPY demo/project_demo01-TimeSeriesEnrich/project.sql demo/project_demo01-TimeSeriesEnrich/project.sql
     COPY demo/project_demo02-FraudDetection/project.sql demo/project_demo02-FraudDetection/project.sql
     COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
     COPY demo/project_demo04-SimpleSelect/project.sql demo/project_demo04-SimpleSelect/project.sql
-
     CACHE /root/.m2
-
-    COPY sql-to-dbsp-compiler sql-to-dbsp-compiler
     RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -DskipTests --no-transfer-progress
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
     SAVE ARTIFACT sql-to-dbsp-compiler
@@ -229,7 +225,7 @@ test-manager:
     RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE cp `cargo test --features integration-test --no-run --package pipeline-manager --message-format=json | jq -r 'select(.target.kind[0] == "lib") | .executable' | grep -v null` test_binary
     SAVE ARTIFACT test_binary
 
-python-bindings-checker:
+openapi-checker:
     FROM +build-manager
     COPY +build-manager/pipeline-manager .
     RUN mkdir -p /root/.local/lib/python3.10
@@ -241,10 +237,12 @@ python-bindings-checker:
     RUN pip3 install openapi-python-client==0.15.0 && openapi-python-client --version
     COPY +build-manager/pipeline-manager .
     COPY python/feldera-api-client feldera-api-client-base
+    COPY openapi.json openapi.json-base
 
-    # This line will fail if the python bindings need to be regenerated
+    # This line will fail if the OpenAPI spec or python bindings need to be regenerated
     RUN mkdir checker
     RUN cd checker && ../pipeline-manager --dump-openapi &&  \
+        diff -bur openapi.json ../openapi.json-base && \
         openapi-python-client generate --path openapi.json --fail-on-warning && \
         diff -bur feldera-api-client ../feldera-api-client-base
 
@@ -489,7 +487,7 @@ all-tests:
     BUILD +machete
     BUILD +test-rust
     BUILD +test-python
-    BUILD +python-bindings-checker
+    BUILD +openapi-checker
     BUILD +test-sql
     BUILD +test-docker-compose
     BUILD +test-docker-compose-stable
