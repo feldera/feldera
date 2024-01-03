@@ -188,7 +188,7 @@ def make_config(project):
 def verify(dbsp_url, pipeline: DBSPPipelineConfig):
     print("Pushing PART data")
     requests.post(
-        f"{dbsp_url}/v0/pipelines/{pipeline.pipeline_id}/ingress/PART?format=json",
+        f"{dbsp_url}/v0/pipelines/{pipeline.name}/ingress/PART?format=json",
         data=r"""{"insert": {"id": 1, "name": "Flux Capacitor"}}
 {"insert": {"id": 2, "name": "Warp Core"}}
 {"insert": {"id": 3, "name": "Kyber Crystal"}}""",
@@ -196,7 +196,7 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
 
     print("Pushing VENDOR data")
     requests.post(
-        f"{dbsp_url}/v0/pipelines/{pipeline.pipeline_id}/ingress/VENDOR?format=json",
+        f"{dbsp_url}/v0/pipelines/{pipeline.name}/ingress/VENDOR?format=json",
         data=r"""{"insert": {"id": 1, "name": "Gravitech Dynamics", "address": "222 Graviton Lane"}}
 {"insert": {"id": 2, "name": "HyperDrive Innovations", "address": "456 Warp Way"}}
 {"insert": {"id": 3, "name": "DarkMatter Devices", "address": "333 Singularity Street"}}""",
@@ -204,7 +204,7 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
 
     print("Pushing PRICE data")
     requests.post(
-        f"{dbsp_url}/v0/pipelines/{pipeline.pipeline_id}/ingress/PRICE?format=json",
+        f"{dbsp_url}/v0/pipelines/{pipeline.name}/ingress/PRICE?format=json",
         data=r"""{"insert": {"part": 1, "vendor": 2, "created": "2019-05-20 13:37:03", "effective_since": "2019-05-21", "price": 10000, "f": 0.123}}
 {"insert": {"part": 2, "vendor": 1, "created": "2023-10-9 00:00:00", "effective_since": "2023-10-10", "price": 15000, "f": 12345E-2}}
 {"insert": {"part": 3, "vendor": 3, "created": "2024-01-01 11:15:00", "effective_since": "2024-01-01", "price": 9000, "f": 12345}}""",
