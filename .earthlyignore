@@ -5,7 +5,6 @@
 **/.vscode
 **/node_modules
 **/.docusaurus
-**/openapi.json
 **/.next
 **/out
 **/__pycache__

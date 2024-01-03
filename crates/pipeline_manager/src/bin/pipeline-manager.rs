@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|err| err.exit())
         .unwrap();
     if api_config.dump_openapi {
-        let openapi_json = ApiDoc::openapi().to_json()?;
+        let openapi_json = ApiDoc::openapi().to_pretty_json()?;
         tokio::fs::write("openapi.json", openapi_json.as_bytes()).await?;
         return Ok(());
     }
