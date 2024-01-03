@@ -13,7 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - pipeline-manager: fix a resource usage problem with http streaming under high load
   ([#1257](https://github.com/feldera/feldera/pull/1257))
--
+- WebConsole: Connector name change doesn't reflect in the pipeline builder (#1238)
+- WebConsole: UI sends HTTP request in an infinite loop (#1085)
+
+### Changed
+- pipeline-manager: use names instead of IDs in API endpoints (#1214)
+- WebConsole: use names instead of IDs in API endpoints (#1214)
+
 ## [0.7.0] - 2024-01-09
 
 ### Added
