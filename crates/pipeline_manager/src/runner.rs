@@ -207,21 +207,21 @@ impl RunnerApi {
     pub(crate) async fn shutdown_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
     ) -> Result<(), ManagerError> {
-        self.set_desired_status(tenant_id, pipeline_id, PipelineStatus::Shutdown)
+        self.set_desired_status(tenant_id, pipeline_name, PipelineStatus::Shutdown)
             .await?;
         Ok(())
     }
 
     /// Delete the pipeline.
     ///
-    /// Botht the desired and the actual states of the pipeline must be equal
+    /// Both the desired and the actual states of the pipeline must be equal
     /// to [`PipelineStatus::Shutdown`] or [`PipelineStatus::Failed`].
     pub(crate) async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
     ) -> Result<(), ManagerError> {
         // Make sure that the pipeline is in a `Shutdown` state.
 
@@ -229,12 +229,17 @@ impl RunnerApi {
         // another manager instance.
         let db = self.db.lock().await;
 
+        let pipeline = db.get_pipeline_by_name(tenant_id, pipeline_name).await?;
         let pipeline_state = db
-            .get_pipeline_runtime_state(tenant_id, pipeline_id)
+            .get_pipeline_runtime_state_by_id(tenant_id, pipeline.descriptor.pipeline_id)
             .await?;
-        Self::validate_desired_state_request(pipeline_id, &pipeline_state, None)?;
+        Self::validate_desired_state_request(
+            pipeline.descriptor.pipeline_id,
+            &pipeline_state,
+            None,
+        )?;
 
-        db.delete_pipeline(tenant_id, pipeline_id).await?;
+        db.delete_pipeline(tenant_id, pipeline_name).await?;
 
         // No need to do anything else since the pipeline was in the `Shutdown` state.
         // The pipeline tokio task will self-destruct when it polls pipeline
@@ -250,11 +255,10 @@ impl RunnerApi {
     pub(crate) async fn pause_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
     ) -> Result<(), ManagerError> {
-        self.set_desired_status(tenant_id, pipeline_id, PipelineStatus::Paused)
+        self.set_desired_status(tenant_id, pipeline_name, PipelineStatus::Paused)
             .await?;
-
         Ok(())
     }
 
@@ -265,11 +269,10 @@ impl RunnerApi {
     pub(crate) async fn start_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
     ) -> Result<(), ManagerError> {
-        self.set_desired_status(tenant_id, pipeline_id, PipelineStatus::Running)
+        self.set_desired_status(tenant_id, pipeline_name, PipelineStatus::Running)
             .await?;
-
         Ok(())
     }
 
@@ -335,7 +338,7 @@ impl RunnerApi {
     async fn set_desired_status(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
         new_desired_status: PipelineStatus,
     ) -> Result<(), ManagerError> {
         // TODO: this function should run in a transaction to avoid conflicts with
@@ -343,8 +346,9 @@ impl RunnerApi {
 
         let db = self.db.lock().await;
         let pipeline_state = db
-            .get_pipeline_runtime_state(tenant_id, pipeline_id)
+            .get_pipeline_runtime_state_by_name(tenant_id, pipeline_name)
             .await?;
+        let pipeline_id = pipeline_state.pipeline_id;
 
         Self::validate_desired_state_request(
             pipeline_id,
@@ -388,7 +392,7 @@ impl RunnerApi {
     pub(crate) async fn forward_to_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
         method: Method,
         endpoint: &str,
     ) -> Result<HttpResponse, ManagerError> {
@@ -396,8 +400,9 @@ impl RunnerApi {
             .db
             .lock()
             .await
-            .get_pipeline_runtime_state(tenant_id, pipeline_id)
+            .get_pipeline_runtime_state_by_name(tenant_id, pipeline_name)
             .await?;
+        let pipeline_id = pipeline_state.pipeline_id;
 
         match pipeline_state.current_status {
             PipelineStatus::Shutdown | PipelineStatus::Failed | PipelineStatus::Provisioning => {
@@ -474,7 +479,7 @@ impl RunnerApi {
             .db
             .lock()
             .await
-            .get_pipeline_runtime_state(tenant_id, pipeline_id)
+            .get_pipeline_runtime_state_by_id(tenant_id, pipeline_id)
             .await?;
 
         match pipeline_state.current_status {

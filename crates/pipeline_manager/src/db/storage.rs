@@ -189,12 +189,12 @@ pub(crate) trait Storage {
         name: &str,
     ) -> Result<bool, DBError>;
 
-    /// Delete `pipeline` from the DB.
+    /// Delete pipeline from the DB.
     async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<bool, DBError>;
+        pipeline_name: &str,
+    ) -> Result<(), DBError>;
 
     /// Retrieve pipeline for a given id.
     async fn get_pipeline_descr_by_id(
@@ -214,19 +214,26 @@ pub(crate) trait Storage {
     async fn get_pipeline_descr_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<PipelineDescr, DBError>;
 
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> Result<Pipeline, DBError>;
 
-    async fn get_pipeline_runtime_state(
+    async fn get_pipeline_runtime_state_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+    ) -> Result<PipelineRuntimeState, DBError>;
+
+    async fn get_pipeline_runtime_state_by_name(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
     ) -> Result<PipelineRuntimeState, DBError>;
 
     async fn update_pipeline_runtime_state(
