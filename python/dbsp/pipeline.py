@@ -189,7 +189,7 @@ class DBSPPipelineConfig:
             stream,
             DBSPConnector(
                 self.api_client,
-                filepath,
+                name,
                 TransportConfig(
                     name="file",
                     config=FileInputConfig.from_dict(dict({"path": filepath})),
@@ -212,7 +212,7 @@ class DBSPPipelineConfig:
             stream,
             DBSPConnector(
                 self.api_client,
-                filepath,
+                name,
                 TransportConfig(
                     name="file",
                     config=FileOutputConfig.from_dict(dict({"path": filepath})),
