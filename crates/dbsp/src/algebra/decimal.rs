@@ -21,7 +21,6 @@ mod inner_types {
 
     #[derive(
         Debug,
-        Default,
         Clone,
         Copy,
         PartialEq,
@@ -76,10 +75,15 @@ mod inner_types {
         }
     }
 
+    impl Default for Precision {
+        fn default() -> Self {
+            Precision(MAX_DECIMAL_PRECISION)
+        }
+    }
+
     // In Postgres, the scale can be between [-1000, 1000]
     #[derive(
         Debug,
-        Default,
         Clone,
         Copy,
         PartialEq,
@@ -131,6 +135,12 @@ mod inner_types {
             write!(f, "{}", self.0)
         }
     }
+
+    impl Default for Scale {
+        fn default() -> Self {
+            Self(MAX_DECIMAL_SCALE)
+        }
+    }
 }
 
 use inner_types::*;
@@ -141,7 +151,9 @@ use inner_types::*;
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct SQLDecimal {
     inner: Decimal,
+    #[cfg_attr(feature = "with-serde", serde(skip, default))]
     max_precision: Precision,
+    #[cfg_attr(feature = "with-serde", serde(skip, default))]
     max_scale: Scale,
 }
 
