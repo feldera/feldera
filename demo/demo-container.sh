@@ -13,7 +13,7 @@
 (cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile ${SECOPS_DEMO_ARGS})&
 pid1=$!
 echo pid1 $pid1
-(cd demo/project_demo06-SupplyChainTutorial && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile)&
+(cd demo/project_demo06-SupplyChainTutorial && python3 -u run.py --api-url http://pipeline-manager:8080)&
 pid2=$!
 wait $pid1
 status1=$?
