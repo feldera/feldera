@@ -148,6 +148,7 @@ use inner_types::*;
 /// A wrapper type around [`rust_decimal::Decimal`].
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, SizeOf)]
 #[cfg_attr(feature = "with-serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "with-serde", serde(transparent))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct SQLDecimal {
     inner: Decimal,
@@ -551,5 +552,56 @@ impl<'a> AddAssign<&'a SQLDecimal> for SQLDecimal {
 impl<'a> AddAssign<&'a SQLDecimal> for &'a mut SQLDecimal {
     fn add_assign(&mut self, rhs: &'a SQLDecimal) {
         self.inner += rhs.inner;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rkyv::Deserialize;
+    use std::str::FromStr;
+
+    use crate::algebra::decimal::inner_types::{Precision, Scale};
+    use rust_decimal::Decimal;
+
+    use super::SQLDecimal;
+
+    #[test]
+    fn decimal_deserialization() {
+        let json = r###"{ "price": 10000 }"###;
+
+        #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+        struct Item {
+            price: SQLDecimal,
+        }
+
+        let item: Item = serde_json::from_str(json).unwrap();
+
+        let expected = Item {
+            price: SQLDecimal {
+                inner: Decimal::from_str("10000").unwrap(),
+                max_precision: Precision::default(),
+                max_scale: Scale::default(),
+            },
+        };
+
+        assert_eq!(item, expected);
+    }
+
+    #[test]
+    fn decimal_encode_decode() {
+        for input in [
+            SQLDecimal::from_str("0.0").unwrap(),
+            SQLDecimal::from_str("10.0").unwrap(),
+            SQLDecimal::from_str("-10.0").unwrap(),
+            SQLDecimal::try_from(Decimal::MAX).unwrap(),
+            SQLDecimal::try_from(Decimal::MIN).unwrap(),
+        ]
+        .into_iter()
+        {
+            let encoded = rkyv::to_bytes::<_, 256>(&input).unwrap();
+            let archived = unsafe { rkyv::archived_root::<SQLDecimal>(&encoded[..]) };
+            let decoded: SQLDecimal = archived.deserialize(&mut rkyv::Infallible).unwrap();
+            assert_eq!(decoded, input);
+        }
     }
 }

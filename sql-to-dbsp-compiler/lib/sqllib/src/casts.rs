@@ -222,7 +222,7 @@ pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: i32) -> SQ
 }
 
 #[inline]
-pub fn cast_to_decimal_decimal(value: SQLDecimal, precision: u32, scale: i32) -> SQLDecimal {
+pub fn cast_to_decimal_decimal(value: SQLDecimal, _precision: u32, scale: i32) -> SQLDecimal {
     //value.with_prec(precision as u64).with_scale(scale as i64)
     value.rescale(scale as u32).unwrap()
 }
