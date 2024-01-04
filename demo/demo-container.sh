@@ -10,7 +10,7 @@
 # this way the user will see the two programs and pipelines straight away.
 # Make sure the script returns an error if one of the demo scripts fails.
 
-(cd demo/project_demo00-SecOps && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile ${SECOPS_DEMO_ARGS})&
+(cd demo/project_demo00-SecOps && python3 -u run.py --api-url http://pipeline-manager:8080 ${SECOPS_DEMO_ARGS})&
 pid1=$!
 echo pid1 $pid1
 (cd demo/project_demo06-SupplyChainTutorial && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile)&
