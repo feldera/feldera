@@ -25,7 +25,6 @@ import {
   ApiError,
   AttachedConnector,
   ConnectorDescr,
-  PipelineId,
   PipelineRevision,
   PipelinesService,
   Relation,
@@ -125,7 +124,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
   const { descriptor, state } = props.row
 
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(descriptor.pipeline_id))
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(descriptor.name))
   useEffect(() => {
     if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
       setInputs(getConnectorData(pipelineRevisionQuery.data, 'input'))
@@ -140,7 +139,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   ])
 
   const metrics = usePipelineMetrics({
-    pipelineId: descriptor.pipeline_id,
+    pipelineName: descriptor.name,
     status: state.current_status,
     refetchMs: 3000
   })
@@ -233,7 +232,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
             <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
               <IconButton
                 size='small'
-                href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}`}
+                href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${params.row.relation.name}`}
                 data-testid='button-inspect'
               >
                 <IconShow fontSize={20} />
@@ -243,7 +242,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               <Tooltip title='Import Data'>
                 <IconButton
                   size='small'
-                  href={`/streaming/inspection/?pipeline_id=${descriptor.pipeline_id}&relation=${params.row.relation.name}#insert`}
+                  href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${params.row.relation.name}#insert`}
                   data-testid='button-import'
                 >
                   <IconUpload fontSize={20} />
@@ -358,10 +357,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
 }
 
 // Only show the details tab button if this pipeline has a revision
-function CustomDetailPanelToggle({ value: isExpanded, row: row }: Pick<GridRenderCellParams, 'value' | 'row'>) {
+function CustomDetailPanelToggle({ value: isExpanded, row: row }: Pick<GridRenderCellParams<Pipeline>, 'value' | 'row'>) {
   const [hasRevision, setHasRevision] = useState<boolean>(false)
 
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.pipeline_id))
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.name))
   useEffect(() => {
     if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
       setHasRevision(true)
@@ -475,14 +474,14 @@ export default function PipelineTable() {
   const mutation = useMutation<
     UpdatePipelineResponse,
     ApiError,
-    { pipeline_id: PipelineId; request: UpdatePipelineRequest }
+    { pipelineName: string; request: UpdatePipelineRequest }
   >({
-    mutationFn: args => PipelinesService.updatePipeline(args.pipeline_id, args.request)
+    mutationFn: args => PipelinesService.updatePipeline(args.pipelineName, args.request)
   })
   const onUpdateRow = (newRow: Pipeline, oldRow: Pipeline) => {
     mutation.mutate(
       {
-        pipeline_id: newRow.descriptor.pipeline_id,
+        pipelineName: oldRow.descriptor.name,
         request: {
           name: newRow.descriptor.name,
           description: newRow.descriptor.description,
@@ -492,7 +491,7 @@ export default function PipelineTable() {
       {
         onError: (error: ApiError) => {
           invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
-          invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(newRow.descriptor.pipeline_id))
+          invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(oldRow.descriptor.name))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
@@ -769,7 +768,7 @@ const PipelineStatusCell = (params: GridRenderCellParams<Pipeline>) => {
           skin='light'
           color='error'
           label={status}
-          onDelete={() => shutdownPipelineClick(params.row.descriptor.pipeline_id)}
+          onDelete={() => shutdownPipelineClick(params.row.descriptor.name)}
           data-testid={testIdPrefix + status}
         />
       </Tooltip>
@@ -813,7 +812,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
         <IconButton
           className='pauseButton'
           size='small'
-          onClick={() => pausePipelineClick(pipeline.pipeline_id)}
+          onClick={() => pausePipelineClick(pipeline.name)}
           data-testid='button-pause'
         >
           <IconPauseCircle fontSize={20} />
@@ -822,7 +821,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
     ),
     start: () => (
       <Tooltip title='Start Pipeline' key='start'>
-        <IconButton size='small' onClick={() => startPipelineClick(pipeline.pipeline_id)} data-testid='button-start'>
+        <IconButton size='small' onClick={() => startPipelineClick(pipeline.name)} data-testid='button-start'>
           <IconPlayCircle fontSize={20} />
         </IconButton>
       </Tooltip>
@@ -839,7 +838,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
         <IconButton
           className='shutdownButton'
           size='small'
-          onClick={() => shutdownPipelineClick(pipeline.pipeline_id)}
+          onClick={() => shutdownPipelineClick(pipeline.name)}
           data-testid='button-shutdown'
         >
           <IconStopCircle fontSize={20} />
@@ -858,7 +857,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
         <IconButton
           className='editButton'
           size='small'
-          href={`/streaming/builder/?pipeline_id=${pipeline.pipeline_id}`}
+          href={`/streaming/builder/?pipeline_name=${pipeline.name}`}
           data-testid='button-edit'
         >
           <IconPencil fontSize={20} />
@@ -873,7 +872,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
           onClick={showDeleteDialog(
             'Delete',
             `${pipeline.name.replace(/^[Pp]ipeline\s+|\s+[Pp]ipeline$/, '') || 'unnamed'} pipeline`,
-            () => deletePipelineClick(pipeline.pipeline_id)
+            () => deletePipelineClick(pipeline.name)
           )}
           data-testid='button-delete'
         >

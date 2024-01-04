@@ -230,7 +230,7 @@ const useFetchExistingProject = (
   ])
 }
 
-// Updates the project if it has changed and we have a program_id.
+// Updates the project if it has changed and we have a programName.
 const useUpdateProjectIfChanged = (
   state: SaveIndicatorState,
   project: ProgramDescr,
@@ -244,21 +244,21 @@ const useUpdateProjectIfChanged = (
   const { mutate, isPending } = useMutation<
     UpdateProgramResponse,
     ApiError,
-    { program_id: ProgramId; update_request: UpdateProgramRequest }
+    { programName: ProgramId; update_request: UpdateProgramRequest }
   >({
-    mutationFn: (args: { program_id: ProgramId; update_request: UpdateProgramRequest }) => {
-      return ProgramsService.updateProgram(args.program_id, args.update_request)
+    mutationFn: (args: { programName: string; update_request: UpdateProgramRequest }) => {
+      return ProgramsService.updateProgram(args.programName, args.update_request)
     }
   })
   useEffect(() => {
-    if (project.program_id !== '' && state === 'isModified' && !isPending) {
+    if (project.name !== '' && state === 'isModified' && !isPending) {
       const updateRequest = {
         name: project.name,
         description: project.description,
         code: project.code
       }
       mutate(
-        { program_id: project.program_id, update_request: updateRequest },
+        { programName: project.name, update_request: updateRequest },
         {
           onSettled: () => {
             invalidateQuery(queryClient, PipelineManagerQuery.programs())
@@ -266,7 +266,7 @@ const useUpdateProjectIfChanged = (
             invalidateQuery(queryClient, PipelineManagerQuery.programStatus(project.name))
           },
           onSuccess: (data: UpdateProgramResponse) => {
-            assert(project.program_id)
+            assert(project.name)
             programQueryCacheUpdate(queryClient, project.name, updateRequest)
             setProject((prevState: ProgramDescr) => ({ ...prevState, version: data.version }))
             setState('isUpToDate')
@@ -289,9 +289,8 @@ const useUpdateProjectIfChanged = (
   }, [
     mutate,
     state,
-    project.program_id,
-    project.description,
     project.name,
+    project.description,
     project.code,
     setState,
     isPending,
@@ -316,24 +315,24 @@ const useCompileProjectIfChanged = (
   const { mutate, isPending, isError } = useMutation<
     CompileProgramRequest,
     ApiError,
-    { program_id: ProgramId; request: CompileProgramRequest }
+    { programName: string; request: CompileProgramRequest }
   >({
     mutationFn: args => {
-      return ProgramsService.compileProgram(args.program_id, args.request)
+      return ProgramsService.compileProgram(args.programName, args.request)
     }
   })
   useEffect(() => {
     if (
       !isPending &&
       state == 'isUpToDate' &&
-      project.program_id !== '' &&
+      project.name !== '' &&
       project.version > lastCompiledVersion &&
       project.status !== 'Pending' &&
       project.status !== 'CompilingSql'
     ) {
       setProject((prevState: ProgramDescr) => ({ ...prevState, status: 'Pending' }))
       mutate(
-        { program_id: project.program_id, request: { version: project.version } },
+        { programName: project.name, request: { version: project.version } },
         {
           onSettled: () => {
             invalidateQuery(queryClient, PipelineManagerQuery.programs())
@@ -351,7 +350,6 @@ const useCompileProjectIfChanged = (
     isPending,
     isError,
     state,
-    project.program_id,
     project.name,
     project.version,
     project.status,
@@ -376,7 +374,7 @@ const usePollCompilationStatus = (
         ? 1000
         : false,
     enabled:
-      project.program_id !== '' &&
+      project.name !== '' &&
       (project.status === 'None' || project.status === 'Pending' || project.status === 'CompilingSql')
   })
 
@@ -421,7 +419,6 @@ const usePollCompilationStatus = (
     compilationStatus.isError,
     project.status,
     project.version,
-    project.program_id,
     project.name,
     setLastCompiledVersion,
     setProject,

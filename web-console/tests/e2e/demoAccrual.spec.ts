@@ -36,7 +36,7 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-edit').click()
-    const pipelineUUID = page.url().match(/pipeline_id=([\w-]+)/)?.[1] as string
+    const pipelineUUID = page.url().match(/pipeline_name=([\w-]+)/)?.[1] as string
     expect(pipelineUUID).toBeTruthy()
     invariant(pipelineUUID)
     return pipelineUUID

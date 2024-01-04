@@ -93,7 +93,7 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
       .getByTestId(`box-relation-actions-PART`)
       .getByTestId(`button-import`)
       .click()
-    const pipelineUUID = page.url().match(/pipeline_id=([\w-]+)/)?.[1]
+    const pipelineUUID = page.url().match(/pipeline_name=([\w-]+)/)?.[1]
     expect(pipelineUUID).toBeTruthy()
     invariant(pipelineUUID)
 

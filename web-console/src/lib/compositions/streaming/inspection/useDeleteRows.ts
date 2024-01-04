@@ -6,7 +6,7 @@ import JSONbig from 'true-json-bigint'
 import { useMutation } from '@tanstack/react-query'
 
 type Args = [
-  pipelineId: string,
+  pipelineName: string,
   relation: string,
   force: boolean,
   rows: Partial<Record<'insert' | 'delete', Record<string, unknown>>>[],
@@ -17,9 +17,9 @@ export function useInsertDeleteRows() {
   const { pushMessage } = useStatusNotification()
 
   const { mutate: pipelineDelete, isPending } = useMutation<string, ApiError, Args>({
-    mutationFn: ([pipelineId, relation, force, rows, isArray]) => {
+    mutationFn: ([pipelineName, relation, force, rows, isArray]) => {
       return HttpInputOutputService.httpInput(
-        pipelineId,
+        pipelineName,
         relation,
         force,
         'json',
@@ -30,10 +30,10 @@ export function useInsertDeleteRows() {
   })
 
   return useCallback(
-    (...[pipelineId, relation, force, rows, isArray = false]: Args) => {
+    (...[pipelineName, relation, force, rows, isArray = false]: Args) => {
       const rowsLen = Object.keys(rows).length
       if (!isPending) {
-        pipelineDelete([pipelineId, relation, force, rows, isArray], {
+        pipelineDelete([pipelineName, relation, force, rows, isArray], {
           onSuccess: () => {
             pushMessage({
               message: `${rowsLen} ` + (rowsLen > 1 ? 'rows deleted' : 'row deleted'),

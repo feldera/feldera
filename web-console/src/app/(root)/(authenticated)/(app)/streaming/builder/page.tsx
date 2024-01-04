@@ -19,7 +19,6 @@ import {
   AttachedConnector,
   NewPipelineRequest,
   NewPipelineResponse,
-  PipelineId,
   PipelinesService,
   UpdatePipelineRequest,
   UpdatePipelineResponse
@@ -28,7 +27,7 @@ import { invalidatePipeline, PipelineManagerQuery } from '$lib/services/pipeline
 import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
 import assert from 'assert'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Dispatch, SetStateAction, useEffect, useState } from 'react'
+import { Dispatch, useEffect, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
@@ -60,9 +59,9 @@ const stateToSaveLabel = (state: SaveIndicatorState): string =>
 
 const detachConnector = (c: AttachedConnector) => ({ ...c, relation_name: '' }) as AttachedConnector
 
-const PipelineBuilderPage = (props: {
-  pipelineId: PipelineId | undefined
-  setPipelineId: Dispatch<SetStateAction<PipelineId | undefined>>
+const PipelineBuilderPage = ({pipelineName, gotoPipeline}: {
+  pipelineName?: string
+  gotoPipeline: Dispatch<string>
 }) => {
   const router = useRouter()
   const [hash, setHash] = useHashPart()
@@ -70,7 +69,6 @@ const PipelineBuilderPage = (props: {
   const queryClient = useQueryClient()
   const [missingSchemaDialog, setMissingSchemaDialog] = useState(false)
 
-  const { pipelineId, setPipelineId } = props
   const setSaveState = useBuilderState(state => state.setSaveState)
   const saveState = useBuilderState(state => state.saveState)
 
@@ -94,9 +92,9 @@ const PipelineBuilderPage = (props: {
   const { mutate: updatePipelineMutate } = useMutation<
     UpdatePipelineResponse,
     ApiError,
-    { pipeline_id: PipelineId; request: UpdatePipelineRequest }
+    { pipelineName: string; request: UpdatePipelineRequest }
   >({
-    mutationFn: args => PipelinesService.updatePipeline(args.pipeline_id, args.request)
+    mutationFn: args => PipelinesService.updatePipeline(args.pipelineName, args.request)
   })
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
@@ -106,11 +104,11 @@ const PipelineBuilderPage = (props: {
     ...PipelineManagerQuery.programs(),
     refetchInterval: 2000
   })
-  const connectorQuery = useQuery(PipelineManagerQuery.connector())
+  const connectorQuery = useQuery(PipelineManagerQuery.connectors())
   const pipelineQuery = useQuery({
-    ...PipelineManagerQuery.pipelineStatus(pipelineId!),
+    ...PipelineManagerQuery.pipelineStatus(pipelineName!),
     enabled:
-      pipelineId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
+      pipelineName !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
   })
   useEffect(() => {
     if (saveState === 'isSaving' || saveState === 'isModified' || saveState === 'isDebouncing') {
@@ -124,7 +122,7 @@ const PipelineBuilderPage = (props: {
       connectorQuery.isPending ||
       connectorQuery.isError
     )
-    if (!isReady && pipelineId === undefined) {
+    if (!isReady && pipelineName === undefined) {
       setProject(undefined)
       setSaveState('isNew')
       setName('')
@@ -137,7 +135,8 @@ const PipelineBuilderPage = (props: {
       return
     }
     const descriptor = pipelineQuery.data.descriptor
-    setPipelineId(() => descriptor.pipeline_id)
+
+    gotoPipeline(descriptor.name)
     setName(descriptor.name)
     setDescription(descriptor.description)
     setConfig(descriptor.config)
@@ -207,7 +206,7 @@ const PipelineBuilderPage = (props: {
     projectsQuery.isPending,
     projectsQuery.isError,
     projectsQuery.data,
-    setPipelineId,
+    gotoPipeline,
     setName,
     setDescription,
     setConfig,
@@ -215,7 +214,7 @@ const PipelineBuilderPage = (props: {
     setProject,
     replacePlaceholder,
     addConnector,
-    pipelineId,
+    pipelineName,
     pushMessage,
     saveState,
     setNodes
@@ -240,7 +239,7 @@ const PipelineBuilderPage = (props: {
     setSaveState('isSaving')
 
     // Create a new pipeline
-    if (pipelineId === undefined) {
+    if (pipelineName === undefined) {
       newPipelineMutate(
         {
           name,
@@ -252,10 +251,9 @@ const PipelineBuilderPage = (props: {
           onError: (error: ApiError) => {
             pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
             setSaveState('isUpToDate')
-            console.log('error', error)
           },
-          onSuccess: (data: NewPipelineResponse) => {
-            setPipelineId(data.pipeline_id)
+          onSuccess: (_data: NewPipelineResponse) => {
+            gotoPipeline(name)
             setSaveState('isUpToDate')
           }
         }
@@ -290,11 +288,11 @@ const PipelineBuilderPage = (props: {
     }
 
     updatePipelineMutate(
-      { pipeline_id: pipelineId, request: updateRequest },
+      { pipelineName, request: updateRequest },
       {
         onSettled: () => {
-          assert(pipelineId !== undefined)
-          invalidatePipeline(queryClient, pipelineId)
+          assert(pipelineName !== undefined)
+          invalidatePipeline(queryClient, pipelineName)
         },
         onError: (error: ApiError) => {
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
@@ -304,7 +302,7 @@ const PipelineBuilderPage = (props: {
           // It's important to update the query cache here because otherwise
           // sometimes the query cache will be out of date and the UI will
           // show the old connectors again after deletion.
-          setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), oldData => {
+          setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), oldData => {
             if (!oldData) {
               return oldData
             }
@@ -328,10 +326,10 @@ const PipelineBuilderPage = (props: {
     saveState,
     setModifiedWhenDebouncing,
     setSaveState,
-    setPipelineId,
+    gotoPipeline,
     updatePipelineMutate,
     newPipelineMutate,
-    pipelineId,
+    pipelineName,
     project,
     name,
     description,
@@ -348,7 +346,7 @@ const PipelineBuilderPage = (props: {
         <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
           Pipelines
         </Link>
-        <Link href={`/streaming/builder/?pipeline_id=${pipelineId}`} data-testid='button-breadcrumb-pipeline-name'>
+        <Link href={`/streaming/builder/?pipeline_name=${pipelineName}`} data-testid='button-breadcrumb-pipeline-name'>
           {name}
         </Link>
       </BreadcrumbsHeader>
@@ -371,11 +369,11 @@ const PipelineBuilderPage = (props: {
         </div>
       </Grid>
       <MissingSchemaDialog open={missingSchemaDialog} setOpen={setMissingSchemaDialog} program_name={project?.name} />
-      {(id =>
-        id && (
+      {(connectorName =>
+        connectorName && (
           <UnknownConnectorDialog
             {...showOnHash('edit/connector')}
-            connectorId={id}
+            connectorName={connectorName}
             existingTitle={name => 'Update ' + name}
             submitButton={
               <Button
@@ -390,12 +388,12 @@ const PipelineBuilderPage = (props: {
             }
           />
         ))(/edit\/connector\/([\w-]+)/.exec(hash)?.[1])}
-      {(id =>
-        id && (
+      {(connectorName =>
+        connectorName && (
           <UnknownConnectorDialog
             show={hash.startsWith('view/connector')}
             setShow={() => router.back()}
-            connectorId={id}
+            connectorName={connectorName}
             existingTitle={name => 'Inspect ' + name}
             submitButton={<></>}
             disabled={true}
@@ -406,18 +404,13 @@ const PipelineBuilderPage = (props: {
 }
 
 export default () => {
-  const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
-  const newPipelineId = useSearchParams().get('pipeline_id')
-
-  useEffect(() => {
-    if (newPipelineId) {
-      setPipelineId(newPipelineId)
-    }
-  }, [newPipelineId, setPipelineId])
+  const pipelineName = useSearchParams().get('pipeline_name') || undefined
+  const router = useRouter()
+  const gotoPipeline = (pipelineName: string) => router.push('/streaming/builder/?pipeline_name=' + pipelineName)
 
   return (
     <ReactFlowProvider>
-      <PipelineBuilderPage pipelineId={pipelineId} setPipelineId={setPipelineId} />
+      <PipelineBuilderPage pipelineName={pipelineName} gotoPipeline={gotoPipeline} />
     </ReactFlowProvider>
   )
 }

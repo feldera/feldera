@@ -56,16 +56,16 @@ export class PipelinesService {
   /**
    * Fetch a pipeline by ID.
    * Fetch a pipeline by ID.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @returns Pipeline Pipeline descriptor retrieved successfully.
    * @throws ApiError
    */
-  public static getPipeline(pipelineId: string): CancelablePromise<Pipeline> {
+  public static getPipeline(pipelineName: string): CancelablePromise<Pipeline> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}',
+      url: '/v0/pipelines/{pipeline_name}',
       path: {
-        pipeline_id: pipelineId
+        pipeline_name: pipelineName
       },
       errors: {
         404: `Specified pipeline ID does not exist.`
@@ -76,16 +76,16 @@ export class PipelinesService {
   /**
    * Delete a pipeline. The pipeline must be in the shutdown state.
    * Delete a pipeline. The pipeline must be in the shutdown state.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @returns any Pipeline successfully deleted.
    * @throws ApiError
    */
-  public static pipelineDelete(pipelineId: string): CancelablePromise<any> {
+  public static pipelineDelete(pipelineName: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/pipelines/{pipeline_id}',
+      url: '/v0/pipelines/{pipeline_name}',
       path: {
-        pipeline_id: pipelineId
+        pipeline_name: pipelineName
       },
       errors: {
         400: `Pipeline ID is invalid or pipeline is already running.`,
@@ -98,25 +98,25 @@ export class PipelinesService {
    * Change a pipeline's name, description, code, configuration, or connectors.
    * Change a pipeline's name, description, code, configuration, or connectors.
    * On success, increments the pipeline's version by 1.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @param requestBody
    * @returns UpdatePipelineResponse Pipeline successfully updated.
    * @throws ApiError
    */
   public static updatePipeline(
-    pipelineId: string,
+    pipelineName: string,
     requestBody: UpdatePipelineRequest
   ): CancelablePromise<UpdatePipelineResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/v0/pipelines/{pipeline_id}',
+      url: '/v0/pipelines/{pipeline_name}',
       path: {
-        pipeline_id: pipelineId
+        pipeline_name: pipelineName
       },
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified pipeline or connector id does not exist.`
+        404: `Specified pipeline or connector does not exist.`
       }
     })
   }
@@ -131,16 +131,16 @@ export class PipelinesService {
    * the *expanded* definition of the pipeline's configuration,
    * which comprises both the `RuntimeConfig` and the complete
    * definitions of the attached connectors.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @returns PipelineConfig Expanded pipeline configuration retrieved successfully.
    * @throws ApiError
    */
-  public static getPipelineConfig(pipelineId: string): CancelablePromise<PipelineConfig> {
+  public static getPipelineConfig(pipelineName: string): CancelablePromise<PipelineConfig> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/config',
+      url: '/v0/pipelines/{pipeline_name}/config',
       path: {
-        pipeline_id: pipelineId
+        pipeline_name: pipelineName
       },
       errors: {
         404: `Specified pipeline ID does not exist.`
@@ -151,16 +151,16 @@ export class PipelinesService {
   /**
    * Return the currently deployed version of the pipeline, if any.
    * Return the currently deployed version of the pipeline, if any.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @returns any Last deployed version of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).
    * @throws ApiError
    */
-  public static pipelineDeployed(pipelineId: string): CancelablePromise<PipelineRevision | null> {
+  public static pipelineDeployed(pipelineName: string): CancelablePromise<PipelineRevision | null> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/deployed',
+      url: '/v0/pipelines/{pipeline_name}/deployed',
       path: {
-        pipeline_id: pipelineId
+        pipeline_name: pipelineName
       },
       errors: {
         404: `Specified \`pipeline_id\` does not exist.`
@@ -171,16 +171,16 @@ export class PipelinesService {
   /**
    * Retrieve pipeline metrics and performance counters.
    * Retrieve pipeline metrics and performance counters.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @returns any Pipeline metrics retrieved successfully.
    * @throws ApiError
    */
-  public static pipelineStats(pipelineId: string): CancelablePromise<Record<string, any>> {
+  public static pipelineStats(pipelineName: string): CancelablePromise<Record<string, any>> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/stats',
+      url: '/v0/pipelines/{pipeline_name}/stats',
       path: {
-        pipeline_id: pipelineId
+        pipeline_name: pipelineName
       },
       errors: {
         400: `Specified pipeline id is not a valid uuid.`,
@@ -197,16 +197,16 @@ export class PipelinesService {
    * checking whether the pipeline references a valid compiled program,
    * whether the connectors reference valid tables/views in the program,
    * and more.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @returns string Validate a Pipeline config.
    * @throws ApiError
    */
-  public static pipelineValidate(pipelineId: string): CancelablePromise<string> {
+  public static pipelineValidate(pipelineName: string): CancelablePromise<string> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/pipelines/{pipeline_id}/validate',
+      url: '/v0/pipelines/{pipeline_name}/validate',
       path: {
-        pipeline_id: pipelineId
+        pipeline_name: pipelineName
       },
       errors: {
         400: `Invalid pipeline.`,
@@ -235,17 +235,17 @@ export class PipelinesService {
    * - 'start': Start processing data.
    * - 'pause': Pause the pipeline.
    * - 'shutdown': Terminate the execution of the pipeline.
-   * @param pipelineId Unique pipeline identifier
+   * @param pipelineName Unique pipeline name
    * @param action Pipeline action [start, pause, shutdown]
    * @returns any Request accepted.
    * @throws ApiError
    */
-  public static pipelineAction(pipelineId: string, action: string): CancelablePromise<any> {
+  public static pipelineAction(pipelineName: string, action: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/pipelines/{pipeline_id}/{action}',
+      url: '/v0/pipelines/{pipeline_name}/{action}',
       path: {
-        pipeline_id: pipelineId,
+        pipeline_name: pipelineName,
         action: action
       },
       errors: {

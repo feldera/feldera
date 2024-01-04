@@ -114,7 +114,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
   const startPipelineClick = usePipelineMutation(mutationStartPipeline)
 
   const handleStart = () => {
-    startPipelineClick(pipeline.descriptor.pipeline_id)
+    startPipelineClick(pipeline.descriptor.name)
     setShow(false)
   }
   const handleChange = (event: SyntheticEvent, newValue: string) => {
@@ -237,7 +237,7 @@ export const PipelineRevisionStatusChip = (props: Props) => {
   const [color, setColor] = useState<ThemeColor>('success')
 
   const pipelineValidateQuery = useQuery({
-    ...PipelineManagerQuery.pipelineValidate(pipeline.pipeline_id),
+    ...PipelineManagerQuery.pipelineValidate(pipeline.name),
     retry: false
   })
   useEffect(() => {
@@ -245,14 +245,14 @@ export const PipelineRevisionStatusChip = (props: Props) => {
       setValidationError(pipelineValidateQuery.error.body as ErrorResponse)
       setColor('warning')
     }
-  }, [pipeline.pipeline_id, pipelineValidateQuery])
+  }, [pipeline.name, pipelineValidateQuery])
 
-  const curPipelineConfigQuery = useQuery(PipelineManagerQuery.pipelineConfig(pipeline.pipeline_id))
+  const curPipelineConfigQuery = useQuery(PipelineManagerQuery.pipelineConfig(pipeline.name))
   const curProgramQuery = useQuery({
     ...PipelineManagerQuery.programCode(pipeline.program_name!),
     enabled: pipeline.program_name != null
   })
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.pipeline_id))
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.name))
   useEffect(() => {
     if (
       !pipelineRevisionQuery.isPending &&

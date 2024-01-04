@@ -72,10 +72,10 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       }
 
       setProject(project)
-      const pipelineId = null
-      if (pipelineId) {
+      const pipelineName = null
+      if (pipelineName) {
         // TODO: figure out if it's better to optimistically update query here?
-        setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), oldData => {
+        setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), oldData => {
           if (!oldData) {
             return oldData
           }

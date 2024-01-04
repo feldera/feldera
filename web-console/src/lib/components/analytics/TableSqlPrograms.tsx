@@ -13,7 +13,6 @@ import { invalidateQuery } from '$lib/functions/common/tanstack'
 import {
   ApiError,
   ProgramDescr,
-  ProgramId,
   ProgramsService,
   ProgramStatus,
   UpdateProgramRequest,
@@ -78,7 +77,7 @@ const TableSqlPrograms = () => {
       setTimeout(() => {
         const oldRow = rows.find(row => row.program_id === curRow.program_id)
         if (oldRow !== undefined) {
-          deleteMutation.mutate(curRow.program_id, {
+          deleteMutation.mutate(curRow.name, {
             onSuccess: () => {
               setRows(prevRows => prevRows.filter(row => row.program_id !== curRow.program_id))
             },
@@ -177,9 +176,9 @@ const TableSqlPrograms = () => {
   const mutation = useMutation<
     UpdateProgramResponse,
     ApiError,
-    { program_id: ProgramId; request: UpdateProgramRequest }
+    { programName: string; request: UpdateProgramRequest }
   >({
-    mutationFn: args => ProgramsService.updateProgram(args.program_id, args.request),
+    mutationFn: args => ProgramsService.updateProgram(args.programName, args.request),
     onSettled: () => {
       invalidateQuery(queryClient, PipelineManagerQuery.programs())
       invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
@@ -188,7 +187,7 @@ const TableSqlPrograms = () => {
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     mutation.mutate(
       {
-        program_id: newRow.program_id,
+        programName: newRow.name,
         request: { description: newRow.description, name: newRow.name }
       },
       {

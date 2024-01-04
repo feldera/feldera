@@ -137,7 +137,7 @@ const SideBarAddIo = () => {
       : undefined)(/(add_input|add_output)(\/?\w+)?/.exec(hash)?.[0].split('/'))
 
   const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]?: number }>({})
-  const { data, isPending, isError } = useQuery(PipelineManagerQuery.connector())
+  const { data, isPending, isError } = useQuery(PipelineManagerQuery.connectors())
   useEffect(() => {
     if (isPending || isError) {
       return
