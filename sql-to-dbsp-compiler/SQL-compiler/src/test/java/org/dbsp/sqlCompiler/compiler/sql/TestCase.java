@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.Linq;
 import org.dbsp.util.TableValue;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -179,9 +180,7 @@ class TestCase {
         List<String> annotations = new ArrayList<>();
         annotations.add("#[test]");
         if (this.message != null)
-            // TODO: https://github.com/feldera/feldera/issues/1208
-            // annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
-            annotations.add("#[should_panic]");
+            annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
         return new DBSPFunction("test" + testNumber, new ArrayList<>(),
                 new DBSPTypeVoid(), body, annotations);
     }
