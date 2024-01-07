@@ -18,6 +18,7 @@ import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePi
 import { usePipelineMutation } from '$lib/compositions/streaming/management/usePipelineMutation'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { useHashPart } from '$lib/compositions/useHashPart'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
@@ -28,7 +29,7 @@ import {
   mutationShutdownPipeline,
   mutationStartPipeline,
   mutationUpdatePipeline,
-  PipelineManagerQuery
+  PipelineManagerQueryKey
 } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
@@ -115,7 +116,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
   const { descriptor, state } = props.row
-
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(descriptor.name))
   useEffect(() => {
     if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
@@ -354,7 +355,7 @@ function CustomDetailPanelToggle({
   row: row
 }: Pick<GridRenderCellParams<Pipeline>, 'value' | 'row'>) {
   const [hasRevision, setHasRevision] = useState<boolean>(false)
-
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.name))
   useEffect(() => {
     if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
@@ -396,6 +397,7 @@ export default function PipelineTable() {
     page: 0
   })
 
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const pipelineQuery = useQuery({
     ...PipelineManagerQuery.pipelines(),
     refetchInterval: 2000
@@ -477,8 +479,8 @@ export default function PipelineTable() {
       },
       {
         onError: (error: ApiError) => {
-          invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
-          invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(oldRow.descriptor.name))
+          invalidateQuery(queryClient, PipelineManagerQueryKey.pipelines())
+          invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineStatus(oldRow.descriptor.name))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
@@ -586,6 +588,7 @@ export default function PipelineTable() {
 }
 
 const usePipelineStatus = (params: { row: Pipeline }) => {
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const { data: pipelines } = useQuery({
     ...PipelineManagerQuery.pipelines()
   })

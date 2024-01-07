@@ -14,7 +14,7 @@ import {
   NewConnectorResponse,
   UpdateConnectorRequest
 } from '$lib/services/manager'
-import { mutationUpdateConnector, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { mutationUpdateConnector, PipelineManagerQueryKey } from '$lib/services/pipelineManagerQuery'
 import { FieldValues, SubmitHandler } from 'react-hook-form'
 import invariant from 'tiny-invariant'
 
@@ -44,7 +44,7 @@ export const useNewConnectorRequest = <TData extends FieldValues>(
     newConnector(sourceDesc, {
       onSettled,
       onSuccess: resp => {
-        invalidateQuery(queryClient, PipelineManagerQuery.connectors())
+        invalidateQuery(queryClient, PipelineManagerQueryKey.connectors())
         pushMessage({ message: 'Connector created successfully!', key: new Date().getTime(), color: 'success' })
         onSuccess(
           {

@@ -1,11 +1,11 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { ApiError } from '$lib/services/manager'
+import { ApiError, PipelineId } from '$lib/services/manager'
 import { useCallback } from 'react'
 
 import { QueryClient, useMutation, UseMutationOptions, useQueryClient } from '@tanstack/react-query'
 
 export function usePipelineMutation(
-  mutation: (queryClient: QueryClient) => UseMutationOptions<string, ApiError, string>
+  mutation: (queryClient: QueryClient) => UseMutationOptions<string, ApiError, PipelineId>
 ) {
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()

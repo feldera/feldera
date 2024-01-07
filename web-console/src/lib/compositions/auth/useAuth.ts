@@ -14,11 +14,13 @@ export type AuthUserInfo = {
 
 export type AuthData = {
   user: AuthUserInfo
-  bearer: string
+  credentials: {
+    bearer: string
+  }
   signOutUrl: string
 }
 
-export type AuthStoreState = AuthData | 'Unauthenticated' | 'NoAuth'
+export type AuthStoreState = { Authenticated: AuthData } | 'Unauthenticated' | 'NoAuth'
 
 export const useAuthStore = () => {
   const [auth, setAuth] = useLocalStorage<AuthStoreState>({

@@ -10,10 +10,11 @@ import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnV
 import { AnyConnectorDialog } from '$lib/components/connectors/dialogs/AnyConnector'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
 import { ApiError, ConnectorDescr, ConnectorsService } from '$lib/services/manager'
-import { mutationUpdateConnector, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { mutationUpdateConnector, PipelineManagerQueryKey } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -33,6 +34,7 @@ const DataSourceTable = () => {
   const { pushMessage } = useStatusNotification()
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
+  const PipelineManagerQuery = usePipelineManagerQuery()
 
   // Query to retrieve table content
   const fetchQuery = useQuery(PipelineManagerQuery.connectors())
@@ -73,7 +75,7 @@ const DataSourceTable = () => {
         if (oldRow !== undefined) {
           deleteMutation(cur_row.name, {
             onSettled: () => {
-              invalidateQuery(queryClient, PipelineManagerQuery.connectors())
+              invalidateQuery(queryClient, PipelineManagerQueryKey.connectors())
             },
             onSuccess: () => {
               setRows(prevRows => prevRows.filter(row => row.connector_id !== cur_row.connector_id))

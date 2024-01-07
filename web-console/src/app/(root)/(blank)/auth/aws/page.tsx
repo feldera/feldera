@@ -18,16 +18,20 @@ export default () => {
       .replace('{state}', logoutUrlBase64)
 
     setAuth({
-      bearer: params['access_token'],
-      user: {
-        avatar: jwtIdPayload['picture'],
-        username: jwtIdPayload['cognito:username'] || 'anonynous',
-        contacts: {
-          email: jwtIdPayload['email'],
-          phone: jwtIdPayload['phone_number']
-        }
-      },
-      signOutUrl: logoutUrl
+      Authenticated: {
+        credentials: {
+          bearer: params['access_token']
+        },
+        user: {
+          avatar: jwtIdPayload['picture'],
+          username: jwtIdPayload['cognito:username'] || 'anonynous',
+          contacts: {
+            email: jwtIdPayload['email'],
+            phone: jwtIdPayload['phone_number']
+          }
+        },
+        signOutUrl: logoutUrl
+      }
     })
   }
   redirect('/home')

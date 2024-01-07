@@ -1,5 +1,5 @@
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { nonNull } from '$lib/functions/common/function'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import {
   ConnectorStatus,
   GlobalMetrics,
@@ -22,6 +22,7 @@ export function usePipelineMetrics(props: {
     input: new Map<string, InputConnectorMetrics>(),
     output: new Map<string, OutputConnectorMetrics>()
   })
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const pipelineStatsQuery = useQuery({
     ...PipelineManagerQuery.pipelineStats(props.pipelineName),
     enabled: props.status == PipelineStatus.RUNNING,

@@ -2,8 +2,9 @@
 // revision. If clicked, a dialog is opened that shows the changes.
 
 import { usePipelineMutation } from '$lib/compositions/streaming/management/usePipelineMutation'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { ErrorResponse } from '$lib/services/manager'
-import { mutationStartPipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { mutationStartPipeline } from '$lib/services/pipelineManagerQuery'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { Change, diffLines } from 'diff'
 import {
@@ -235,6 +236,7 @@ export const PipelineRevisionStatusChip = (props: Props) => {
   const [show, setShow] = useState<boolean>(false)
   const [validationError, setValidationError] = useState<ErrorResponse | undefined>(undefined)
   const [color, setColor] = useState<ThemeColor>('success')
+  const PipelineManagerQuery = usePipelineManagerQuery()
 
   const pipelineValidateQuery = useQuery({
     ...PipelineManagerQuery.pipelineValidate(pipeline.name),

@@ -3,7 +3,8 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { CreateApiKeyDialog } from '$lib/components/settings/CreateApiKeyDialog'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
-import { mutationDeleteApiKey, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
+import { mutationDeleteApiKey } from '$lib/services/pipelineManagerQuery'
 import IconTrashAlt from '~icons/bx/trash-alt'
 import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
 
@@ -12,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 export const ApiKeyList = () => {
   const { pushMessage } = useStatusNotification()
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const { data: apiKeys, isPending } = useQuery(PipelineManagerQuery.listApiKeys())
   const queryClient = useQueryClient()
   const { showDeleteDialog } = useDeleteDialog()

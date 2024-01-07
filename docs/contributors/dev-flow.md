@@ -69,7 +69,7 @@ Additional variables for AWS Cognito:
 
 Example:
 ```bash
-AUTH_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx AUTH_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxx AWS_COGNITO_LOGIN_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/login\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" AWS_COGNITO_LOGOUT_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/logout\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --auth-provider aws-cognito
+AUTH_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx AUTH_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxx AWS_COGNITO_LOGIN_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/login\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" AWS_COGNITO_LOGOUT_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/logout\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --dev-mode --auth-provider aws-cognito
 ```
 
 ##### Google Identity Platform
@@ -77,7 +77,7 @@ Additional variables for Google Identity Platform: none
 
 Example:
 ```bash
-AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --auth-provider google-identity
+AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --dev-mode --auth-provider google-identity
 ```
 
 ## Develop on your machine

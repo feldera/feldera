@@ -29,8 +29,9 @@ const BadgeContentSpan = styled('span')(({ theme }) => ({
 const UserDropdown = () => {
   const { copy } = useClipboard()
   const [anchorEl, setAnchorEl] = useState<Element | null>(null)
-  const { auth, setAuth } = useAuth()
-  invariant(typeof auth === 'object')
+  const { auth: _auth, setAuth } = useAuth()
+  invariant(typeof _auth === 'object' && 'Authenticated' in _auth)
+  const auth = _auth['Authenticated']
 
   const handleDropdownOpen = (event: SyntheticEvent) => {
     setAnchorEl(event.currentTarget)
@@ -111,7 +112,12 @@ const UserDropdown = () => {
             </Box>
           </Box>
           <Box>
-            <Button variant='outlined' size='small' sx={{ display: 'flex' }} onClick={() => copy(auth.bearer)}>
+            <Button
+              variant='outlined'
+              size='small'
+              sx={{ display: 'flex' }}
+              onClick={() => copy(auth.credentials.bearer)}
+            >
               <Typography variant='caption'>Copy bearer token</Typography>
             </Button>
           </Box>

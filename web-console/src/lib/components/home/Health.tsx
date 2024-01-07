@@ -2,9 +2,9 @@
 // now.
 
 import { ReportErrorButton } from '$lib/components/home/health/ReportErrorButton'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { nonNull } from '$lib/functions/common/function'
 import { ProgramDescr, ProgramsService } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { Pipeline } from '$lib/types/pipeline'
 import { match, P } from 'ts-pattern'
 import IconChevronDown from '~icons/bx/chevron-down'
@@ -172,6 +172,7 @@ const CopyButton = (props: IconButtonProps) => {
 
 const Health = () => {
   const theme = useTheme()
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const pipelinesQuery = useQuery(PipelineManagerQuery.pipelines())
   const programsQuery = useQuery(PipelineManagerQuery.programs())
 

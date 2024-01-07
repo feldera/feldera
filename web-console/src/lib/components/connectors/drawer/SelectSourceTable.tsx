@@ -2,9 +2,9 @@
 // to select from an existing list of connectors.
 
 import EntityTable from '$lib/components/common/table/EntityTable'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { connectorDescrToType } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import Link from 'next/link'
 import { Dispatch, useState } from 'react'
 import IconShow from '~icons/bx/show'
@@ -22,6 +22,7 @@ const SelectSourceTable = (props: {
   onAddClick: Dispatch<ConnectorDescr>
 }) => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const fetchQuery = useQuery(PipelineManagerQuery.connectors())
 
   const columns: GridColDef[] = [
@@ -65,16 +66,6 @@ const SelectSourceTable = (props: {
     }
   ]
 
-  const tableProps = {
-    density: 'compact' as const,
-    getRowId: (row: ConnectorDescr) => row.connector_id,
-    columnVisibilityModel: { connector_id: false },
-    columns: columns,
-    rows: rows.filter(row => {
-      return connectorDescrToType(row.config) == props.typ
-    }),
-    hideFooter: true
-  }
   return (
     <Card
       sx={{
@@ -82,7 +73,19 @@ const SelectSourceTable = (props: {
         m: 5
       }}
     >
-      <EntityTable tableProps={tableProps} setRows={setRows} fetchRows={fetchQuery} hasFilter={false} />
+      <EntityTable
+        tableProps={{
+          density: 'compact' as const,
+          getRowId: (row: ConnectorDescr) => row.connector_id,
+          columnVisibilityModel: { connector_id: false },
+          columns: columns,
+          rows: rows.filter(row => connectorDescrToType(row.config) === props.typ),
+          hideFooter: true
+        }}
+        setRows={setRows}
+        fetchRows={fetchQuery}
+        hasFilter={false}
+      />
     </Card>
   )
 }

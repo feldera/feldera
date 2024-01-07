@@ -9,9 +9,10 @@ import EntityTable from '$lib/components/common/table/EntityTable'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { ApiError, ProgramDescr, ProgramsService, ProgramStatus } from '$lib/services/manager'
-import { mutationUpdateProgram, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { mutationUpdateProgram, PipelineManagerQueryKey } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -56,6 +57,7 @@ const getStatusChip = (status: ProgramStatus) =>
 
 export const TableSqlPrograms = () => {
   const [rows, setRows] = useState<ProgramDescr[]>([])
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const fetchQuery = useQuery(PipelineManagerQuery.programs())
   const { pushMessage } = useStatusNotification()
 
@@ -76,7 +78,7 @@ export const TableSqlPrograms = () => {
             },
             onError: error => {
               pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-              invalidateQuery(queryClient, PipelineManagerQuery.programs())
+              invalidateQuery(queryClient, PipelineManagerQueryKey.programs())
             }
           })
         }
