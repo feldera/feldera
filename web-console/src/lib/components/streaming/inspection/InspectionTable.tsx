@@ -9,10 +9,10 @@ import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeade
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
 import { useCallback, useEffect, useState } from 'react'
@@ -65,6 +65,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const { updateTable, pause, resume } = useTableUpdater()
 
   const throwError = useAsyncError()
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.descriptor.name))
 
   // If a revision is loaded, find the requested relation that we want to

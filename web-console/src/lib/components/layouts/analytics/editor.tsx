@@ -5,6 +5,7 @@ import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { EntitySyncIndicator, EntitySyncIndicatorStatus } from '$lib/components/common/EntitySyncIndicator'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import CompileIndicator from '$lib/components/layouts/analytics/CompileIndicator'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
@@ -21,9 +22,9 @@ import { ProgramsService } from '$lib/services/manager/services/ProgramsService'
 import {
   mutationCompileProgram,
   mutationUpdateProgram,
-  PipelineManagerQuery,
+  PipelineManagerQueryKey,
   programQueryCacheUpdate,
-  updateProgramCacheStatus
+  programStatusCacheUpdate
 } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/navigation'
 import { Dispatch, MutableRefObject, SetStateAction, useEffect, useRef, useState } from 'react'
@@ -139,8 +140,8 @@ const useCreateProgramEffect = (
     setStatus('isSaving')
     return mutate(program, {
       onSettled: () => {
-        invalidateQuery(queryClient, PipelineManagerQuery.programs())
-        invalidateQuery(queryClient, PipelineManagerQuery.programStatus(program.name))
+        invalidateQuery(queryClient, PipelineManagerQueryKey.programs())
+        invalidateQuery(queryClient, PipelineManagerQueryKey.programStatus(program.name))
       },
       onSuccess: (_data: NewProgramResponse) => {
         if (!program.name) {
@@ -244,12 +245,12 @@ const useCompileProjectIfChangedEffect = (state: EntitySyncIndicatorStatus, proj
     ) {
       return
     }
-    updateProgramCacheStatus(queryClient, project.name, 'Pending')
+    programStatusCacheUpdate(queryClient, project.name, 'Pending')
     mutate(
       { programName: project.name, request: { version: project.version } },
       {
         onError: (error: ApiError) => {
-          updateProgramCacheStatus(queryClient, project.name, 'None')
+          programStatusCacheUpdate(queryClient, project.name, 'None')
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
         }
       }
@@ -271,6 +272,7 @@ const useCompileProjectIfChangedEffect = (state: EntitySyncIndicatorStatus, proj
 // Polls the server during compilation and checks for the status.
 const usePollCompilationStatusEffect = (project: ProgramDescr) => {
   const queryClient = useQueryClient()
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const compilationStatus = useQuery({
     ...PipelineManagerQuery.programStatus(project.name),
     refetchInterval: 1000,
@@ -284,7 +286,7 @@ const usePollCompilationStatusEffect = (project: ProgramDescr) => {
       return
     }
     if (project.status !== compilationStatus.data.status) {
-      updateProgramCacheStatus(queryClient, project.name, compilationStatus.data.status)
+      programStatusCacheUpdate(queryClient, project.name, compilationStatus.data.status)
     }
   }, [
     compilationStatus,
@@ -294,7 +296,8 @@ const usePollCompilationStatusEffect = (project: ProgramDescr) => {
     project.status,
     project.version,
     project.name,
-    queryClient
+    queryClient,
+    PipelineManagerQuery
   ])
 
   return compilationStatus
@@ -399,6 +402,7 @@ export const ProgramEditorImpl = ({
 
 export const ProgramEditor = ({ programName }: { programName: string }) => {
   const [status, setStatus] = useState<EntitySyncIndicatorStatus>(programName ? 'isLoading' : 'isNew')
+  const PipelineManagerQuery = usePipelineManagerQuery()
 
   const [formError, setFormError] = useState<FormError>({})
   const programQuery = useQuery({

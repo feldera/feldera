@@ -1,9 +1,8 @@
 'use client'
 
 import { authContext, useAuthStore } from '$lib/compositions/auth/useAuth'
-import { isEmptyObject } from '$lib/functions/common/object'
 import { OpenAPI } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { PublicPipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ReactNode } from 'react'
 import { match, P } from 'ts-pattern'
 
@@ -11,20 +10,20 @@ import { GoogleOAuthProvider } from '@react-oauth/google'
 import { useQuery } from '@tanstack/react-query'
 
 export const AuthenticationProvider = (props: { children: ReactNode }) => {
-  const { data: auth } = useQuery(PipelineManagerQuery.getAuthConfig())
+  const { data: auth } = useQuery(PublicPipelineManagerQuery.getAuthConfig())
   const { auth: authState, setAuth } = useAuthStore()
-  if (typeof authState === 'object') {
-    OpenAPI.TOKEN = authState.bearer
+  if (typeof authState === 'object' && 'Authenticated' in authState) {
+    OpenAPI.TOKEN = authState['Authenticated'].credentials.bearer
   }
   if (!auth) {
     return <></>
   }
 
-  if (!isEmptyObject(auth) && typeof authState !== 'object' && authState !== 'Unauthenticated') {
+  if (auth !== 'NoAuth' && authState === 'NoAuth') {
     setAuth('Unauthenticated')
     return <></>
   }
-  if (isEmptyObject(auth) && typeof authState !== 'object' && authState !== 'NoAuth') {
+  if (auth === 'NoAuth' && authState === 'Unauthenticated') {
     setAuth('NoAuth')
     return <></>
   }
@@ -38,7 +37,8 @@ export const AuthenticationProvider = (props: { children: ReactNode }) => {
         .with({ GoogleIdentity: P.select() }, config => {
           return <GoogleOAuthProvider clientId={config.client_id}>{props.children}</GoogleOAuthProvider>
         })
-        .otherwise(() => props.children)}
+        .with('NoAuth', () => props.children)
+        .exhaustive()}
     </authContext.Provider>
   )
 }

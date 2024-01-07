@@ -1,7 +1,7 @@
 'use client'
 import { GridItems } from '$lib/components/common/GridItems'
 import { useAuthStore } from '$lib/compositions/auth/useAuth'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { PublicPipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { jwtDecode, JwtPayload } from 'jwt-decode'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
@@ -14,9 +14,9 @@ import { CredentialResponse, GoogleLogin, TokenResponse } from '@react-oauth/goo
 import { useQuery } from '@tanstack/react-query'
 
 export default () => {
-  const { data: authConfig } = useQuery(PipelineManagerQuery.getAuthConfig())
+  const { data: authConfig } = useQuery(PublicPipelineManagerQuery.getAuthConfig())
   const { auth } = useAuthStore()
-  if (typeof auth === 'object') {
+  if (typeof auth === 'object' && 'Authenticated' in auth) {
     redirect('/home')
   }
   return (
@@ -35,9 +35,10 @@ export default () => {
               </Box>
             ))
             .with({ GoogleIdentity: P._ }, () => <GoogleLoginButton></GoogleLoginButton>)
-            .otherwise(() => {
+            .with('NoAuth', () => {
               redirect('/home')
-            })}
+            })
+            .exhaustive()}
         </GridItems>
       </Grid>
     </Box>
@@ -68,16 +69,20 @@ const useOnGoogleLogin = () => {
     const bearer = 'access_token' in tokenResponse ? tokenResponse.access_token : tokenResponse.credential!
     const jwtPayload = jwtDecode<JwtPayload & Record<string, string>>(bearer)
     setAuth({
-      user: {
-        avatar: jwtPayload['picture'],
-        username: jwtPayload['name'] || 'anonymous',
-        contacts: {
-          email: jwtPayload['email']
-        }
-      },
-      bearer,
-      // https://stackoverflow.com/a/23245957
-      signOutUrl: 'https://accounts.google.com/o/oauth2/revoke?token=' + bearer
+      Authenticated: {
+        user: {
+          avatar: jwtPayload['picture'],
+          username: jwtPayload['name'] || 'anonymous',
+          contacts: {
+            email: jwtPayload['email']
+          }
+        },
+        credentials: {
+          bearer
+        },
+        // https://stackoverflow.com/a/23245957
+        signOutUrl: 'https://accounts.google.com/o/oauth2/revoke?token=' + bearer
+      }
     })
   }
 }

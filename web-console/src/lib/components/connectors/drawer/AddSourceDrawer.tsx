@@ -8,6 +8,7 @@ import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialo
 import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
 import { useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useHashPart } from '$lib/compositions/useHashPart'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { randomString } from '$lib/functions/common/string'
 import {
   connectorDescrToType,
@@ -17,7 +18,6 @@ import {
 } from '$lib/functions/connectors'
 import { showOnHashPart } from '$lib/functions/urlHash'
 import { AttachedConnector, ConnectorDescr } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import { SVGImport } from '$lib/types/imports'
 import Image from 'next/image'
@@ -137,6 +137,7 @@ const SideBarAddIo = () => {
       : undefined)(/(add_input|add_output)(\/?\w+)?/.exec(hash)?.[0].split('/'))
 
   const [sourceCounts, setSourceCounts] = useState<{ [key in ConnectorType]?: number }>({})
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const { data, isPending, isError } = useQuery(PipelineManagerQuery.connectors())
   useEffect(() => {
     if (isPending || isError) {

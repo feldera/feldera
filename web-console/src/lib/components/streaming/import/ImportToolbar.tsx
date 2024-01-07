@@ -1,9 +1,9 @@
 import useDefaultRows from '$lib/compositions/streaming/import/useDefaultRows'
 import useGenerateRows from '$lib/compositions/streaming/import/useGenerateRows'
 import useInsertRows from '$lib/compositions/streaming/import/useInsertRows'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { Row } from '$lib/functions/ddl'
 import { PipelineRevision, Relation } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { PipelineStatus } from '$lib/types/pipeline'
 import BigNumber from 'bignumber.js'
@@ -51,6 +51,7 @@ const ImportToolbar = ({
   rows: Row[]
   children: ReactNode
 }) => {
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const { data: pipeline } = useQuery(PipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.name))
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
 

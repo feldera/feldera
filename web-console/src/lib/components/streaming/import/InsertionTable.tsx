@@ -8,9 +8,9 @@ import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnV
 import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeader'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { getDefaultValue } from '$lib/compositions/streaming/import/useDefaultRows'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { getValueFormatter, Row } from '$lib/functions/ddl'
 import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
@@ -43,6 +43,7 @@ const useInsertionTable = (props: {
   const [isPending, setLoading] = useState<boolean>(false)
   const apiRef = useGridApiRef()
 
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.name))
 
   // If a revision is loaded, find the requested relation that we want to insert

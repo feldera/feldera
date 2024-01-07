@@ -1,11 +1,13 @@
+import { assertUnion } from '$lib/functions/common/array'
 import { compose } from '$lib/functions/common/function'
-import { getQueryData, invalidateQuery, mkQuery, setQueryData } from '$lib/functions/common/tanstack'
+import { getQueryData, invalidateQuery, mkQuery, mkQueryKey, setQueryData } from '$lib/functions/common/tanstack'
 import {
   ApiError,
   ApiKeyDescr,
   ApiKeysService,
   AttachedConnector,
   AuthenticationService,
+  AuthProvider,
   CancelablePromise,
   CompileProgramRequest,
   ConnectorsService,
@@ -25,10 +27,11 @@ import {
   UpdateProgramRequest,
   UpdateProgramResponse
 } from '$lib/services/manager'
+import { Arguments } from '$lib/types/common/function'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { leftJoin } from 'array-join'
 import invariant from 'tiny-invariant'
-import { match } from 'ts-pattern'
+import { match, P } from 'ts-pattern'
 
 import { Query, QueryClient, UseMutationOptions } from '@tanstack/react-query'
 
@@ -63,62 +66,117 @@ const consolidatePipelineStatus = (newPipeline: Pipeline, oldPipeline: Pipeline 
   return { ...newPipeline, state: { ...newPipeline.state, current_status } }
 }
 
-export const PipelineManagerQuery = (({ pipelines, pipelineStatus, ...queries }) => ({
-  ...queries,
-  pipelines: () => ({
-    ...pipelines(),
-    // Avoid displaying PROVISIONING status when local status is more detailed
-    structuralSharing<T>(oldData: T | undefined, newData: T) {
-      invariant(((data: any): data is Pipeline[] | undefined => true)(oldData))
-      invariant(((data: any): data is Pipeline[] => true)(newData))
-      return leftJoin(
-        newData,
-        oldData ?? [],
-        p => p.descriptor.pipeline_id,
-        p => p.descriptor.pipeline_id,
-        consolidatePipelineStatus
-      ) as T
-    }
-  }),
-  pipelineStatus: (pipelineName: string) => ({
-    ...pipelineStatus(pipelineName),
-    structuralSharing<T>(oldData: T | undefined, newData: T) {
-      invariant(((data: any): data is Pipeline | undefined => true)(oldData))
-      invariant(((data: any): data is Pipeline => true)(newData))
-      return consolidatePipelineStatus(newData, oldData) as T
-    }
-  })
-}))(
-  mkQuery({
-    programs: () => ProgramsService.getPrograms(),
-    programCode: (programName: string) => ProgramsService.getProgram(programName, true),
-    programStatus: (programName: string) => ProgramsService.getProgram(programName, false),
-    pipelines: () =>
-      PipelinesService.listPipelines().then(ps =>
-        ps.map(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
-      ),
-    pipelineStatus: compose(PipelinesService.getPipeline, p =>
-      p.then(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
+export type PipelineManagerQueryOptions = {
+  onError?: (error: ApiError) => Promise<boolean>
+}
+
+const defaultPipelineManagerQueryOptions = {
+  onError: () => Promise.resolve(false)
+}
+
+export const PublicPipelineManagerQuery = mkQuery({
+  getAuthConfig: () =>
+    AuthenticationService.getAuthenticationConfig().then((c: AuthProvider) =>
+      match(c)
+        .with({ AwsCognito: P.select() }, config => ({
+          AwsCognito: {
+            ...config,
+            // AWS Cognito's default grant type is `code`
+            grantType: assertUnion(
+              ['token', 'code'] as const,
+              /response_type=(token|code)/.exec(config.login_url)?.[1] ?? 'code'
+            )
+          }
+        }))
+        .with({ GoogleIdentity: P.select() }, (_, value) => value)
+        .with({} as any, () => 'NoAuth' as const) // Config may be an empty record
+        .exhaustive()
+    )
+})
+
+const PipelineManagerApi = {
+  programs: () => ProgramsService.getPrograms(),
+  programCode: (programName: string) => ProgramsService.getProgram(programName, true),
+  programStatus: (programName: string) => ProgramsService.getProgram(programName, false),
+  pipelines: () =>
+    PipelinesService.listPipelines().then(ps =>
+      ps.map(p => ({
+        ...p,
+        state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) }
+      }))
     ),
-    pipelineConfig: PipelinesService.getPipelineConfig,
-    pipelineStats: PipelinesService.pipelineStats,
-    pipelineLastRevision: PipelinesService.pipelineDeployed,
-    pipelineValidate: PipelinesService.pipelineValidate,
-    connectors: () => ConnectorsService.listConnectors(),
-    connectorStatus: ConnectorsService.getConnector,
-    getAuthConfig: AuthenticationService.getAuthenticationConfig,
-    listApiKeys: ApiKeysService.listApiKeys,
-    getApiKey: ApiKeysService.getApiKey,
-    listServices: ServicesService.listServices,
-    getService: ServicesService.getService,
-    newService: ServicesService.newService
-  })
-)
+  pipelineStatus: compose(PipelinesService.getPipeline, p =>
+    p.then(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
+  ),
+  pipelineConfig: PipelinesService.getPipelineConfig,
+  pipelineStats: PipelinesService.pipelineStats,
+  pipelineLastRevision: PipelinesService.pipelineDeployed,
+  pipelineValidate: PipelinesService.pipelineValidate,
+  connectors: () => ConnectorsService.listConnectors(),
+  connectorStatus: ConnectorsService.getConnector,
+  listApiKeys: ApiKeysService.listApiKeys,
+  getApiKey: ApiKeysService.getApiKey,
+  listServices: ServicesService.listServices,
+  getService: ServicesService.getService,
+  newService: ServicesService.newService
+}
+
+export const makePipelineManagerQuery = ({
+  onError = defaultPipelineManagerQueryOptions.onError
+}: PipelineManagerQueryOptions) =>
+  (({ pipelines, pipelineStatus, ...queries }) => ({
+    ...queries,
+    pipelines: () => ({
+      ...pipelines(),
+      // Avoid displaying PROVISIONING status when local status is more detailed
+      structuralSharing<T>(oldData: T | undefined, newData: T) {
+        invariant(((data: any): data is Pipeline[] | undefined => true)(oldData))
+        invariant(((data: any): data is Pipeline[] => true)(newData))
+        return leftJoin(
+          newData,
+          oldData ?? [],
+          p => p.descriptor.pipeline_id,
+          p => p.descriptor.pipeline_id,
+          consolidatePipelineStatus
+        ) as T
+      }
+    }),
+    pipelineStatus: (pipelineName: string) => ({
+      ...pipelineStatus(pipelineName),
+      structuralSharing<T>(oldData: T | undefined, newData: T) {
+        invariant(((data: any): data is Pipeline | undefined => true)(oldData))
+        invariant(((data: any): data is Pipeline => true)(newData))
+        return consolidatePipelineStatus(newData, oldData) as T
+      }
+    })
+  }))(
+    mkQuery(PipelineManagerApi, {
+      wrapQueryFn: f =>
+        ((...args: Arguments<typeof f>) => {
+          // A single retry is performed
+          // Refactor to support arbitrary number of retries
+          return f(...args).catch(async e => {
+            if (!(e instanceof ApiError)) {
+              throw e
+            }
+            const shouldRetry = await onError(e)
+            if (!shouldRetry) {
+              throw e
+            }
+            return f(...args)
+          })
+        }) as any
+    })
+  )
+
+export type PipelineManagerQuery = ReturnType<typeof makePipelineManagerQuery>
+
+export const PipelineManagerQueryKey = mkQueryKey(PipelineManagerApi)
 
 export const mutationGenerateApiKey = (queryClient: QueryClient) => ({
   mutationFn: ApiKeysService.createApiKey,
   onSettled: () => {
-    invalidateQuery(queryClient, PipelineManagerQuery.listApiKeys())
+    invalidateQuery(queryClient, PipelineManagerQueryKey.listApiKeys())
   }
 })
 
@@ -131,16 +189,16 @@ export const mutationDeleteApiKey = (queryClient: QueryClient) =>
   ({
     mutationFn: ApiKeysService.deleteApiKey,
     onMutate: async name => {
-      await queryClient.cancelQueries(PipelineManagerQuery.listApiKeys())
-      const previous = getQueryData(queryClient, PipelineManagerQuery.listApiKeys())
-      setQueryData(queryClient, PipelineManagerQuery.listApiKeys(), old => old?.filter(key => key.name !== name))
+      await queryClient.cancelQueries(PipelineManagerQueryKey.listApiKeys())
+      const previous = getQueryData(queryClient, PipelineManagerQueryKey.listApiKeys())
+      setQueryData(queryClient, PipelineManagerQueryKey.listApiKeys(), old => old?.filter(key => key.name !== name))
       return previous
     },
     onError: (_error, _name, context) => {
-      setQueryData(queryClient, PipelineManagerQuery.listApiKeys(), context)
+      setQueryData(queryClient, PipelineManagerQueryKey.listApiKeys(), context)
     },
     onSettled: () => {
-      invalidateQuery(queryClient, PipelineManagerQuery.listApiKeys())
+      invalidateQuery(queryClient, PipelineManagerQueryKey.listApiKeys())
     }
   }) satisfies UseMutationOptions<{}, ApiError, string, ApiKeyDescr[]>
 
@@ -153,9 +211,9 @@ const cacheValid = (query: Query) => !query.isStaleByTime(10000)
 
 const getPipelineCache = (queryClient: QueryClient, pipelineName: string) => {
   const data =
-    getQueryData(queryClient, PipelineManagerQuery.pipelines(), { predicate: cacheValid })?.find(
+    getQueryData(queryClient, PipelineManagerQueryKey.pipelines(), { predicate: cacheValid })?.find(
       p => p.descriptor.name === pipelineName
-    ) ?? getQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), { predicate: cacheValid })
+    ) ?? getQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), { predicate: cacheValid })
   invariant(data, 'getPipelineCache')
   return data
 }
@@ -228,8 +286,8 @@ export const mutationDeletePipeline = (queryClient: QueryClient) =>
       return PipelinesService.pipelineDelete(pipelineName)
     },
     onSettled: (_data, _error, pipelineName) => {
-      invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
-      invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName))
+      invalidateQuery(queryClient, PipelineManagerQueryKey.pipelines())
+      invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName))
     },
     onError: (_error, _pipelineName) => {}
   }) satisfies UseMutationOptions<string, ApiError, string>
@@ -255,16 +313,16 @@ export const mutationUpdateProgram = (
             description: update_request.description ?? old.description
           }
     // Optimistic update
-    setQueryData(queryClient, PipelineManagerQuery.programCode(update_request.name ?? programName), updateCache)
-    setQueryData(queryClient, PipelineManagerQuery.programStatus(update_request.name ?? programName), updateCache)
+    setQueryData(queryClient, PipelineManagerQueryKey.programCode(update_request.name ?? programName), updateCache)
+    setQueryData(queryClient, PipelineManagerQueryKey.programStatus(update_request.name ?? programName), updateCache)
     // For temporary updates of the cache of entities with an old name after the name is changed
-    setQueryData(queryClient, PipelineManagerQuery.programCode(programName), updateCache)
-    setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), updateCache)
+    setQueryData(queryClient, PipelineManagerQueryKey.programCode(programName), updateCache)
+    setQueryData(queryClient, PipelineManagerQueryKey.programStatus(programName), updateCache)
   },
   onSuccess(_data, variables, _context) {
-    invalidateQuery(queryClient, PipelineManagerQuery.programStatus(variables.programName))
-    invalidateQuery(queryClient, PipelineManagerQuery.programCode(variables.programName))
-    invalidateQuery(queryClient, PipelineManagerQuery.programs())
+    invalidateQuery(queryClient, PipelineManagerQueryKey.programStatus(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQueryKey.programCode(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQueryKey.programs())
   }
 })
 
@@ -275,9 +333,9 @@ export const mutationCompileProgram = (
     return ProgramsService.compileProgram(args.programName, args.request)
   },
   async onSettled(_data, _error, variables, _context) {
-    invalidateQuery(queryClient, PipelineManagerQuery.programStatus(variables.programName))
-    invalidateQuery(queryClient, PipelineManagerQuery.programCode(variables.programName))
-    invalidateQuery(queryClient, PipelineManagerQuery.programs())
+    invalidateQuery(queryClient, PipelineManagerQueryKey.programStatus(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQueryKey.programCode(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQueryKey.programs())
   }
 })
 
@@ -286,8 +344,8 @@ export const mutationCreatePipeline = (
 ): UseMutationOptions<NewPipelineResponse, ApiError, NewPipelineRequest> => ({
   mutationFn: PipelinesService.newPipeline,
   onSettled: (_data, _error, variables, _context) => {
-    invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
-    invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(variables.name))
+    invalidateQuery(queryClient, PipelineManagerQueryKey.pipelines())
+    invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineStatus(variables.name))
   }
 })
 
@@ -299,7 +357,7 @@ export const mutationUpdatePipeline = (
     // a workaround because API requires 'name' and 'description' fields in an update request body
     // a workaround because when pipeline has a program we have to send program_name with each request
     // This workaround affects mutation logic in PipelineBuilder
-    const pipeline = getQueryData(queryClient, PipelineManagerQuery.pipelineStatus(args.pipelineName))
+    const pipeline = getQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(args.pipelineName))
     invariant(args.request.name ?? pipeline?.descriptor.name, 'Cannot update to an invalid name')
     return PipelinesService.updatePipeline(args.pipelineName, {
       ...args.request,
@@ -315,7 +373,7 @@ export const mutationUpdatePipeline = (
     // It's important to update the query cache here because otherwise
     // sometimes the query cache will be out of date and the UI will
     // show the old connectors again after deletion.
-    setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(variables.pipelineName), oldData => {
+    setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(variables.pipelineName), oldData => {
       if (!oldData) {
         return oldData
       }
@@ -357,21 +415,21 @@ export const mutationUpdateConnector = (
 > => ({
   mutationFn: args => ConnectorsService.updateConnector(args.connectorName, args.request),
   onSettled: (_data, _errors, variables, _context) => {
-    invalidateQuery(queryClient, PipelineManagerQuery.connectors())
-    invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(variables.connectorName))
+    invalidateQuery(queryClient, PipelineManagerQueryKey.connectors())
+    invalidateQuery(queryClient, PipelineManagerQueryKey.connectorStatus(variables.connectorName))
   }
 })
 
 export const invalidatePipeline = (queryClient: QueryClient, pipelineName: string) => {
-  invalidateQuery(queryClient, PipelineManagerQuery.pipelineLastRevision(pipelineName))
-  invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName))
-  invalidateQuery(queryClient, PipelineManagerQuery.pipelineConfig(pipelineName))
-  invalidateQuery(queryClient, PipelineManagerQuery.pipelineValidate(pipelineName))
-  invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
+  invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineLastRevision(pipelineName))
+  invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName))
+  invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineConfig(pipelineName))
+  invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineValidate(pipelineName))
+  invalidateQuery(queryClient, PipelineManagerQueryKey.pipelines())
 }
 
 // Updates just the program status in the query cache.
-export const updateProgramCacheStatus = (queryClient: QueryClient, programName: string, newStatus: ProgramStatus) => {
+export const programStatusCacheUpdate = (queryClient: QueryClient, programName: string, newStatus: ProgramStatus) => {
   const updateCache = <T extends ProgramDescr | undefined>(oldData: T) => {
     if (!oldData) {
       return oldData
@@ -381,9 +439,9 @@ export const updateProgramCacheStatus = (queryClient: QueryClient, programName: 
       status: newStatus
     }
   }
-  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), updateCache)
-  setQueryData(queryClient, PipelineManagerQuery.programCode(programName), updateCache)
-  setQueryData(queryClient, PipelineManagerQuery.programs(), oldData => {
+  setQueryData(queryClient, PipelineManagerQueryKey.programStatus(programName), updateCache)
+  setQueryData(queryClient, PipelineManagerQueryKey.programCode(programName), updateCache)
+  setQueryData(queryClient, PipelineManagerQueryKey.programs(), oldData => {
     return oldData?.map(item => {
       if (item.name !== programName) {
         return item
@@ -410,13 +468,13 @@ export const programQueryCacheUpdate = (
       code: newData.code ?? oldData.code
     }
   }
-  setQueryData(queryClient, PipelineManagerQuery.programCode(programName), updateCache)
+  setQueryData(queryClient, PipelineManagerQueryKey.programCode(programName), updateCache)
 
-  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), updateCache)
+  setQueryData(queryClient, PipelineManagerQueryKey.programStatus(programName), updateCache)
 
   setQueryData(
     queryClient,
-    PipelineManagerQuery.programs(),
+    PipelineManagerQueryKey.programs(),
     oldDatas =>
       oldDatas?.map(oldData => {
         if (oldData.name !== programName) {
@@ -441,7 +499,7 @@ const pipelineStatusQueryCacheUpdate = (
   }
   setQueryData(
     queryClient,
-    PipelineManagerQuery.pipelines(),
+    PipelineManagerQueryKey.pipelines(),
     oldDatas =>
       oldDatas?.map(oldData => {
         if (oldData.descriptor.pipeline_id !== pipelineName) {
@@ -450,7 +508,7 @@ const pipelineStatusQueryCacheUpdate = (
         return updateCache(oldData)
       })
   )
-  setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), updateCache)
+  setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), updateCache)
 }
 
 export const pipelineQueryCacheUpdate = (
@@ -476,11 +534,11 @@ export const pipelineQueryCacheUpdate = (
       }
     } satisfies Pipeline
   }
-  setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), updateCache)
+  setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), updateCache)
 
   setQueryData(
     queryClient,
-    PipelineManagerQuery.pipelines(),
+    PipelineManagerQueryKey.pipelines(),
     oldDatas =>
       oldDatas?.map(oldData => {
         if (oldData.descriptor.name !== pipelineName) {

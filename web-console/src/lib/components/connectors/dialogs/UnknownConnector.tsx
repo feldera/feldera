@@ -1,5 +1,5 @@
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { ConnectorDescr } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { Dispatch, SetStateAction } from 'react'
 
 import { useQuery } from '@tanstack/react-query'
@@ -18,6 +18,7 @@ export const UnknownConnectorDialog = ({
   disabled?: boolean
   onSuccess?: (connector: ConnectorDescr, oldConnectorName: string) => void
 }) => {
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const { data } = useQuery(PipelineManagerQuery.connectorStatus(connectorName))
   if (!data) {
     return <></>

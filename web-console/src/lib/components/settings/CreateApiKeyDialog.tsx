@@ -42,18 +42,16 @@ export const CreateApiKeyDialog = () => {
   const defaultValues: ApiKeyGeneratorSchema = {
     name: ''
   }
-  const generateApiKey = (
-    ({ mutate }) =>
-    (data: NewApiKeyRequest) =>
-      mutate(data, {
-        onSuccess(data) {
-          setGeneratedKeys(old => old.concat(data))
-        },
-        onError(e) {
-          pushMessage({ message: e.message, key: new Date().getTime(), color: 'error' })
-        }
-      })
-  )(useMutation(mutationGenerateApiKey(queryClient)))
+  const { mutate: generateApiKey } = useMutation(mutationGenerateApiKey(queryClient))
+  const onGenerateApiKey = (data: NewApiKeyRequest) =>
+    generateApiKey(data, {
+      onSuccess(data) {
+        setGeneratedKeys(old => old.concat(data))
+      },
+      onError(e) {
+        pushMessage({ message: e.message, key: new Date().getTime(), color: 'error' })
+      }
+    })
   const { copy } = useClipboard()
   const hashPart = useHashPart()
   const router = useRouter()
@@ -73,7 +71,7 @@ export const CreateApiKeyDialog = () => {
         <FormContainer
           defaultValues={defaultValues}
           resolver={valibotResolver(schema)}
-          onSuccess={data => generateApiKey(data)}
+          onSuccess={onGenerateApiKey}
           FormProps={{ 'data-testid': 'box-form-generate-api-key' } as any}
         >
           <Stack spacing={4}>

@@ -2,8 +2,8 @@
 // right now.
 
 import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { partition } from '$lib/functions/common/array'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { PipelineStatus } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 const Pipelines = () => {
   const theme = useTheme()
   const apexOptions = apexChartsOptions(theme)
+  const PipelineManagerQuery = usePipelineManagerQuery()
 
   const fetchQuery = useQuery({
     ...PipelineManagerQuery.pipelines(),

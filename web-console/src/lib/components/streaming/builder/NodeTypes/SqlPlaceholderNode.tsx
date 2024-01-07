@@ -1,8 +1,8 @@
 // The placeholder node to select a program.
 
 import useSqlPlaceholderClick from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { ProgramDescr } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import React, { memo, useEffect, useState } from 'react'
 import { NodeProps } from 'reactflow'
 
@@ -20,7 +20,7 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
       placeHolderReplace(e, program)
     }
   }
-
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const { isPending, isError, data } = useQuery(PipelineManagerQuery.programs())
   useEffect(() => {
     if (!isPending && !isError) {

@@ -13,6 +13,7 @@ import { useDeleteNode } from '$lib/compositions/streaming/builder/useDeleteNode
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
 import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
 import { useHashPart } from '$lib/compositions/useHashPart'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { partition, replaceElement } from '$lib/functions/common/array'
 import { invalidateQuery, setQueryData } from '$lib/functions/common/tanstack'
 import { showOnHashPart } from '$lib/functions/urlHash'
@@ -28,7 +29,7 @@ import {
 } from '$lib/services/manager'
 import {
   mutationCreatePipeline,
-  PipelineManagerQuery,
+  PipelineManagerQueryKey,
   updatePipelineConnectorName
 } from '$lib/services/pipelineManagerQuery'
 import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
@@ -134,6 +135,7 @@ const useRenderPipelineEffect = (
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
   const { setNodes, getNodes } = useReactFlow<IONodeData | ProgramNodeData>()
+  const PipelineManagerQuery = usePipelineManagerQuery()
   const projectsQuery = useQuery({
     ...PipelineManagerQuery.programs(),
     refetchInterval: 2000
@@ -281,10 +283,10 @@ const PipelineBuilderPage = ({
   useRenderPipelineEffect(pipeline, saveState, setMissingSchemaDialog)
 
   const onConnectorUpdateSuccess = (connector: ConnectorDescr, oldConnectorName: string) => {
-    invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.name))
+    invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineStatus(pipeline.name))
     setQueryData(
       queryClient,
-      PipelineManagerQuery.pipelineStatus(pipeline.name),
+      PipelineManagerQueryKey.pipelineStatus(pipeline.name),
       updatePipelineConnectorName(oldConnectorName, connector.name)
     )
   }
@@ -373,6 +375,7 @@ export default () => {
   const saveState = useBuilderState(s => s.saveState)
   const setSaveState = useBuilderState(s => s.setSaveState)
   const setPipelineName = useBuilderState(s => s.setPipelineName)
+  const PipelineManagerQuery = usePipelineManagerQuery()
 
   // If opening a page without queried pipelineName - set status to isNew
   useEffect(() => {
@@ -387,7 +390,7 @@ export default () => {
     if (pipelineName) {
       return
     }
-    setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), defaultPipelineData)
+    setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), defaultPipelineData)
     setSaveState('isNew')
   }, [pipelineName, queryClient, setSaveState])
 
