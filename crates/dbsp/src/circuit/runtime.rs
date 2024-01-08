@@ -4,6 +4,7 @@
 use crate::DetailedError;
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
+use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::{
     backtrace::Backtrace,
@@ -224,6 +225,21 @@ fn panic_hook(panic_info: &PanicInfo<'_>, default_panic_hook: &dyn Fn(&PanicInfo
 #[derive(Clone, Debug)]
 pub struct Runtime(Arc<RuntimeInner>);
 
+/// Stores the default Rust panic hook, so we can invoke it as part of
+/// the DBSP custom hook.
+#[allow(clippy::type_complexity)]
+static DEFAULT_PANIC_HOOK: Lazy<Box<dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send>> =
+    Lazy::new(|| {
+        // Clear any hooks installed by other libraries.
+        let _ = panic::take_hook();
+        panic::take_hook()
+    });
+
+/// Returns the default Rust panic hook.
+fn default_panic_hook() -> &'static (dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send) {
+    &*DEFAULT_PANIC_HOOK
+}
+
 impl Runtime {
     /// Create a new runtime with the specified `layout` and run user-provided
     /// closure `f` in each thread.  The closure should build a circuit and
@@ -278,19 +294,9 @@ impl Runtime {
         let runtime = Self(Arc::new(RuntimeInner::new(layout)));
 
         // Install custom panic hook.
-
-        // The first call to `take_hook` should clear any custom hooks installed by
-        // other instances of the DBSP runtime.
-        let _ = panic::take_hook();
-
-        // The second call should return the default handler, which we can call
-        // from the custom hook to preserve the standard Rust behavior of printing
-        // panic info to console (using the `RUST_BACKTRACE` variable to control the
-        // output).
-        let default_panic_hook = panic::take_hook();
-
+        let default_hook = default_panic_hook();
         panic::set_hook(Box::new(move |panic_info| {
-            panic_hook(panic_info, default_panic_hook.as_ref())
+            panic_hook(panic_info, default_hook)
         }));
 
         let mut handles = Vec::with_capacity(nworkers);

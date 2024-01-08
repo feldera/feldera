@@ -96,7 +96,7 @@ mod partitioned_tree_aggregate;
 mod tree_aggregate;
 mod updater;
 
-pub use partitioned_tree_aggregate::{PartitionedRadixTreeCursor, PartitionedRadixTreeReader};
+pub use partitioned_tree_aggregate::PartitionedRadixTreeReader;
 use updater::radix_tree_update;
 
 // We use constant radix to reduce the need to dynamically allocate a vector of
