@@ -39,13 +39,13 @@ public class PostgresIntervalTests extends SqlIoTest {
                 (1 row)
 
                 SELECT INTERVAL '-1 02:03' DAYS TO MINUTE AS "26 hours ago...";
-                  26 hours ago... 
+                  26 hours ago...
                 -------------------
                  -1 days 02:03:00
                 (1 row)
 
                 SELECT INTERVAL '-1 02:03' DAYS TO MINUTES AS "26 hours ago...";
-                  26 hours ago... 
+                  26 hours ago...
                 -------------------
                  -1 days 02:03:00
                 (1 row)

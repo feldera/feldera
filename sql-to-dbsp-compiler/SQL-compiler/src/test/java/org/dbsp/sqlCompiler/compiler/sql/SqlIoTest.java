@@ -82,7 +82,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.quiet = true;
-        options.ioOptions.emitHandles = false;
+        options.ioOptions.emitCatalog = false;
         options.languageOptions.throwOnError = true;
         options.languageOptions.optimizationLevel = optimize ? 2 : 0;
         options.languageOptions.generateInputForEveryTable = true;
@@ -330,22 +330,13 @@ public abstract class SqlIoTest extends BaseSQLTests {
             result = parseTime(trimmed, fieldType.mayBeNull);
         } else if (fieldType.is(DBSPTypeInteger.class)) {
             DBSPTypeInteger intType = fieldType.to(DBSPTypeInteger.class);
-            switch (intType.getWidth()) {
-                case 8:
-                    result = new DBSPI8Literal(Byte.parseByte(trimmed), fieldType.mayBeNull);
-                    break;
-                case 16:
-                    result = new DBSPI16Literal(Short.parseShort(trimmed), fieldType.mayBeNull);
-                    break;
-                case 32:
-                    result = new DBSPI32Literal(Integer.parseInt(trimmed), fieldType.mayBeNull);
-                    break;
-                case 64:
-                    result = new DBSPI64Literal(Long.parseLong(trimmed), fieldType.mayBeNull);
-                    break;
-                default:
-                    throw new UnimplementedException(intType);
-            }
+            result = switch (intType.getWidth()) {
+                case 8 -> new DBSPI8Literal(Byte.parseByte(trimmed), fieldType.mayBeNull);
+                case 16 -> new DBSPI16Literal(Short.parseShort(trimmed), fieldType.mayBeNull);
+                case 32 -> new DBSPI32Literal(Integer.parseInt(trimmed), fieldType.mayBeNull);
+                case 64 -> new DBSPI64Literal(Long.parseLong(trimmed), fieldType.mayBeNull);
+                default -> throw new UnimplementedException(intType);
+            };
         } else if (fieldType.is(DBSPTypeMillisInterval.class)) {
             long value = shortIntervalToMilliseconds(trimmed);
             result = new DBSPIntervalMillisLiteral(value, fieldType.mayBeNull);

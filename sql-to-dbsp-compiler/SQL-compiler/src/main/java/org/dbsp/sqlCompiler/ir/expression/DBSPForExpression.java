@@ -27,19 +27,18 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
-import org.dbsp.sqlCompiler.ir.pattern.DBSPPattern;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.util.IIndentStream;
 
 @NonCoreIR
 public class DBSPForExpression extends DBSPExpression {
-    public final DBSPPattern pattern;
+    public final DBSPVariablePath variable;
     public final DBSPExpression iterated;
     public final DBSPBlockExpression block;
 
-    public DBSPForExpression(DBSPPattern pattern, DBSPExpression iterated, DBSPBlockExpression block) {
-        super(pattern.getNode(), new DBSPTypeRawTuple());
-        this.pattern = pattern;
+    public DBSPForExpression(DBSPVariablePath variable, DBSPExpression iterated, DBSPBlockExpression block) {
+        super(iterated.getNode(), new DBSPTypeRawTuple());
+        this.variable = variable;
         this.iterated = iterated;
         this.block = block;
     }
@@ -49,7 +48,6 @@ public class DBSPForExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        this.pattern.accept(visitor);
         this.iterated.accept(visitor);
         this.block.accept(visitor);
         visitor.pop(this);
@@ -61,7 +59,7 @@ public class DBSPForExpression extends DBSPExpression {
         DBSPForExpression o = other.as(DBSPForExpression.class);
         if (o == null)
             return false;
-        return this.pattern == o.pattern &&
+        return this.variable == o.variable &&
                 this.iterated == o.iterated &&
                 this.block == o.block &&
                 this.hasSameType(o);
@@ -70,7 +68,7 @@ public class DBSPForExpression extends DBSPExpression {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("for ")
-                .append(this.pattern)
+                .append(this.variable)
                 .append(" in ")
                 .append(this.iterated)
                 .append(" ")
@@ -79,7 +77,7 @@ public class DBSPForExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPForExpression(this.pattern, this.iterated.deepCopy(),
+        return new DBSPForExpression(this.variable, this.iterated.deepCopy(),
                 this.block.deepCopy().to(DBSPBlockExpression.class));
     }
 }

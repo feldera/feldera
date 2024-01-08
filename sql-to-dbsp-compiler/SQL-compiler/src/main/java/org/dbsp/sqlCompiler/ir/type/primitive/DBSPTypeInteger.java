@@ -24,16 +24,18 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
@@ -93,30 +95,24 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
 
     @Override
     public DBSPLiteral getMaxValue() {
-        switch (this.width) {
-            case 16:
-                return new DBSPI32Literal((int)Short.MAX_VALUE, this.mayBeNull);
-            case 32:
-                return new DBSPI32Literal(Integer.MAX_VALUE, this.mayBeNull);
-            case 64:
-                return new DBSPI64Literal(Long.MAX_VALUE, this.mayBeNull);
-            default:
-                throw new UnsupportedException(this.getNode());
-        }
+        return switch (this.width) {
+            case 8 -> new DBSPI8Literal(Byte.MAX_VALUE, this.mayBeNull);
+            case 16 -> new DBSPI16Literal(Short.MAX_VALUE, this.mayBeNull);
+            case 32 -> new DBSPI32Literal(Integer.MAX_VALUE, this.mayBeNull);
+            case 64 -> new DBSPI64Literal(Long.MAX_VALUE, this.mayBeNull);
+            default -> throw new UnsupportedException(this.getNode());
+        };
     }
 
     @Override
     public DBSPLiteral getMinValue() {
-        switch (this.width) {
-            case 16:
-                return new DBSPI32Literal((int)Short.MIN_VALUE, this.mayBeNull);
-            case 32:
-                return new DBSPI32Literal(Integer.MIN_VALUE, this.mayBeNull);
-            case 64:
-                return new DBSPI64Literal(Long.MIN_VALUE, this.mayBeNull);
-            default:
-                throw new UnsupportedException(this.getNode());
-        }
+        return switch (this.width) {
+            case 8 -> new DBSPI8Literal(Byte.MIN_VALUE, this.mayBeNull);
+            case 16 -> new DBSPI16Literal(Short.MIN_VALUE, this.mayBeNull);
+            case 32 -> new DBSPI32Literal(Integer.MIN_VALUE, this.mayBeNull);
+            case 64 -> new DBSPI64Literal(Long.MIN_VALUE, this.mayBeNull);
+            default -> throw new UnsupportedException(this.getNode());
+        };
     }
 
     @Override

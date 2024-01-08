@@ -33,7 +33,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
-import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
@@ -53,7 +52,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
@@ -109,21 +107,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void toRustTest() {
-        String query = "SELECT T.COL3 FROM T";
-        query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileDef();
-        compiler.compileStatement(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        String rust = ToRustVisitor.toRustString(compiler, circuit);
-        Assert.assertNotNull(rust);
-    }
-
-    @Test
     // This is also testing the deterministic node numbering
     // The numbering of the nodes will change when the optimizations are changed.
     public void toStringTest() {
-        this.toRustTest();
+        this.testIntCastWarning();
 
         NameGen.reset();
         DBSPNode.reset();
@@ -228,9 +215,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 new DBSPApplyExpression("read_csv", data.getType(),
                         new DBSPStrLiteral(file.getAbsolutePath())));
         list.add(src);
-        list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
+        list.add(new DBSPApplyExpression(
                 "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
-                data)));
+                data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 new DBSPTypeVoid(), body, Linq.list("#[test]"));
@@ -279,9 +266,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
         DBSPLetStatement src = new DBSPLetStatement("src", readDb);
         list.add(src);
-        list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
+        list.add(new DBSPApplyExpression(
                 "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
-                data)));
+                data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 new DBSPTypeVoid(), body, Linq.list("#[test]"));
@@ -309,9 +296,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 new DBSPApplyExpression("read_csv", data.getType(),
                         new DBSPStrLiteral(file.getAbsolutePath())));
         list.add(src);
-        list.add(new DBSPExpressionStatement(new DBSPApplyExpression(
+        list.add(new DBSPApplyExpression(
                 "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
-                data)));
+                data).toStatement());
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 new DBSPTypeVoid(), body, Linq.list("#[test]"));

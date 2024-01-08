@@ -7,10 +7,11 @@
 //!   represented as days.
 
 use dbsp::num_entries_scalar;
+use dbsp_adapters::{deserialize_without_context, serialize_without_context};
 use num::PrimInt;
-use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
-use std::ops::Mul;
+use std::{fmt::Debug, ops::Mul};
 
 #[derive(
     Debug,
@@ -23,10 +24,13 @@ use std::ops::Mul;
     Ord,
     Hash,
     SizeOf,
-    Archive,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Serialize,
     Deserialize,
 )]
+#[serde(transparent)]
 pub struct ShortInterval {
     milliseconds: i64,
 }
@@ -66,6 +70,9 @@ where
     }
 }
 
+serialize_without_context!(ShortInterval);
+deserialize_without_context!(ShortInterval);
+
 /////////////////////////
 
 #[derive(
@@ -79,10 +86,13 @@ where
     Ord,
     Hash,
     SizeOf,
-    Archive,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
     Serialize,
     Deserialize,
 )]
+#[serde(transparent)]
 pub struct LongInterval {
     days: i32,
 }
@@ -126,3 +136,6 @@ num_entries_scalar! {
     ShortInterval,
     LongInterval,
 }
+
+serialize_without_context!(LongInterval);
+deserialize_without_context!(LongInterval);

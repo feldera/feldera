@@ -330,7 +330,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         this.q("""
                 SELECT d1 FROM TIMESTAMP_TBL
                    WHERE d1 = timestamp '1997-01-02';
-                             d1             
+                             d1
                 -----------------------------
                 Thu Jan 02 00:00:00 1997""");
     }
@@ -571,7 +571,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         // This day was a Sunday.  Postgres returns 2004-02-23, the previous Monday.
         this.q("""
                 SELECT FLOOR(timestamp '2004-02-29 15:44:17.71393' TO WEEK) AS week_trunc;
-                        week_trunc       
+                        week_trunc
                 --------------------------
                  Mon Feb 29 00:00:00 2004""");
     }

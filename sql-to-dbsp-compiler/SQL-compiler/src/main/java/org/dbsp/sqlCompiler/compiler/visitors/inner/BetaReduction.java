@@ -102,11 +102,6 @@ public class BetaReduction extends InnerRewriteVisitor {
         super.startVisit(node);
     }
 
-    @Override
-    public void endVisit() {
-        super.endVisit();
-    }
-
     public DBSPExpression reduce(DBSPExpression expression) {
         return this.apply(expression).to(DBSPExpression.class);
     }

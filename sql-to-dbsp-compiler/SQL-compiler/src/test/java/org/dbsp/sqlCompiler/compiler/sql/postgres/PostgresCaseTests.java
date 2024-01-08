@@ -238,7 +238,7 @@ public class PostgresCaseTests extends SqlIoTest {
                         SELECT *
                           FROM CASE_TBL a, CASE2_TBL b
                           WHERE COALESCE(a.f, b.i, b.j) = 2;
-                         i | f | i | j 
+                         i | f | i | j
                         ---+---+---+----
                          4 |   | 2 | -2
                          4 |   | 2 | -4
@@ -278,7 +278,7 @@ public class PostgresCaseTests extends SqlIoTest {
                         SELECT *
                           FROM CASE_TBL a, CASE2_TBL b
                           WHERE COALESCE(f,b.i) = 2;
-                         i | f | i | j 
+                         i | f | i | j
                         ---+---+---+----
                          4 |   | 2 | -2
                          4 |   | 2 | -4

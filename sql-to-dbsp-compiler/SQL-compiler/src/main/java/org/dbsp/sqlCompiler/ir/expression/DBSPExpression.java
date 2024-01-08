@@ -28,7 +28,9 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -68,8 +70,18 @@ public abstract class DBSPExpression
 
     /** Unwrap a Rust 'Result' type */
     public DBSPExpression unwrap() {
-        DBSPTypeResult type = this.type.to(DBSPTypeResult.class);
-        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", type.getTypeArg(0), this);
+        DBSPType resultType;
+        if (this.type.is(DBSPTypeAny.class)) {
+            resultType = this.type;
+        } else {
+            DBSPTypeResult type = this.type.to(DBSPTypeResult.class);
+            resultType = type.getTypeArg(0);
+        }
+        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", resultType, this);
+    }
+
+    public DBSPExpressionStatement toStatement() {
+        return new DBSPExpressionStatement(this);
     }
 
     public DBSPExpression borrow(boolean mutable) {

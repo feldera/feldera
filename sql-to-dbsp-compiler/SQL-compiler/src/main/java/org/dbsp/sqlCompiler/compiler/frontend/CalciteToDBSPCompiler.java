@@ -887,21 +887,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
     @Nullable DBSPOperator filterImplementation = null;
 
     public void generateNestedTopK(LogicalWindow window, Window.Group group, int limit, SqlKind kind) {
-        DBSPIndexedTopKOperator.TopKNumbering numbering;
-        switch (kind) {
-            case RANK:
-                numbering = RANK;
-                break;
-            case DENSE_RANK:
-                numbering = DENSE_RANK;
-                break;
-            case ROW_NUMBER:
-                numbering = ROW_NUMBER;
-                break;
-            default:
-                throw new UnimplementedException("Ranking function " + kind + " not yet implemented",
-                        CalciteObject.create(window));
-        }
+        DBSPIndexedTopKOperator.TopKNumbering numbering = switch (kind) {
+            case RANK -> RANK;
+            case DENSE_RANK -> DENSE_RANK;
+            case ROW_NUMBER -> ROW_NUMBER;
+            default -> throw new UnimplementedException("Ranking function " + kind + " not yet implemented",
+                    CalciteObject.create(window));
+        };
 
         // This code duplicates code from the SortNode.
         CalciteObject node = CalciteObject.create(window);
@@ -930,20 +922,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (RelFieldCollation collation : group.orderKeys.getFieldCollations()) {
             int field = collation.getFieldIndex();
             RelFieldCollation.Direction direction = collation.getDirection();
-            boolean ascending;
-            switch (direction) {
-                case ASCENDING:
-                    ascending = true;
-                    break;
-                case DESCENDING:
-                    ascending = false;
-                    break;
-                default:
-                case STRICTLY_ASCENDING:
-                case STRICTLY_DESCENDING:
-                case CLUSTERED:
-                    throw new UnimplementedException(node);
-            }
+            boolean ascending = switch (direction) {
+                case ASCENDING -> true;
+                case DESCENDING -> false;
+                default -> throw new UnimplementedException(node);
+            };
             comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
         }
 
@@ -1227,20 +1210,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (RelFieldCollation collation : sort.getCollation().getFieldCollations()) {
             int field = collation.getFieldIndex();
             RelFieldCollation.Direction direction = collation.getDirection();
-            boolean ascending;
-            switch (direction) {
-                case ASCENDING:
-                    ascending = true;
-                    break;
-                case DESCENDING:
-                    ascending = false;
-                    break;
-                default:
-                case STRICTLY_ASCENDING:
-                case STRICTLY_DESCENDING:
-                case CLUSTERED:
-                    throw new UnimplementedException(node);
-            }
+            boolean ascending = switch (direction) {
+                case ASCENDING -> true;
+                case DESCENDING -> false;
+                default -> throw new UnimplementedException(node);
+            };
             comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
         }
 

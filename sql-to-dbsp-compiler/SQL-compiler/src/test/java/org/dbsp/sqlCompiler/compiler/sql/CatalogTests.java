@@ -7,14 +7,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.util.Logger;
 import org.junit.Test;
 
-import java.io.IOException;
-
-/** Tests that emit Rust code for input and outputs with handles. */
-public class HandlesTests extends BaseSQLTests {
+/** Tests that emit Rust code using the catalog. */
+public class CatalogTests extends BaseSQLTests {
     @Override
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
         CompilerOptions result = super.testOptions(incremental, optimize);
-        result.ioOptions.emitHandles = true;
+        result.ioOptions.emitCatalog = true;
         return result;
     }
 

@@ -182,18 +182,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return DBSPLiteral.none(type);
             if (type.is(DBSPTypeInteger.class)) {
                 DBSPTypeInteger intType = type.to(DBSPTypeInteger.class);
-                switch (intType.getWidth()) {
-                    case 8:
-                        return new DBSPI8Literal(Objects.requireNonNull(literal.getValueAs(Byte.class)));
-                    case 16:
-                        return new DBSPI16Literal(Objects.requireNonNull(literal.getValueAs(Short.class)));
-                    case 32:
-                        return new DBSPI32Literal(Objects.requireNonNull(literal.getValueAs(Integer.class)));
-                    case 64:
-                        return new DBSPI64Literal(Objects.requireNonNull(literal.getValueAs(Long.class)));
-                    default:
-                        throw new UnsupportedOperationException("Unsupported integer width type " + intType.getWidth());
-                }
+                return switch (intType.getWidth()) {
+                    case 8 -> new DBSPI8Literal(Objects.requireNonNull(literal.getValueAs(Byte.class)));
+                    case 16 -> new DBSPI16Literal(Objects.requireNonNull(literal.getValueAs(Short.class)));
+                    case 32 -> new DBSPI32Literal(Objects.requireNonNull(literal.getValueAs(Integer.class)));
+                    case 64 -> new DBSPI64Literal(Objects.requireNonNull(literal.getValueAs(Long.class)));
+                    default ->
+                            throw new UnsupportedOperationException("Unsupported integer width type " + intType.getWidth());
+                };
             } else if (type.is(DBSPTypeDouble.class))
                 return new DBSPDoubleLiteral(Objects.requireNonNull(literal.getValueAs(Double.class)));
             else if (type.is(DBSPTypeReal.class))

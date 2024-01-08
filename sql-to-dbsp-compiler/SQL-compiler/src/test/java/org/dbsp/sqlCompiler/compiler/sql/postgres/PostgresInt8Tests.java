@@ -6,13 +6,11 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 /**
- * `BIGINT` and `INT64` in Feldera
- * Tests manually adopted from
+ * `BIGINT` and `INT64` tests manually adopted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/int8.out
  */
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresInt8Tests extends SqlIoTest {
-
     @Override
     public void prepareData(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT8_TBL(q1 bigint, q2 bigint)";

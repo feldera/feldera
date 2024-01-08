@@ -4,10 +4,13 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -70,12 +73,12 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                             String printFunction = type.mayBeNull ? "print_opt" : "print";
                             DBSPExpression print = new DBSPApplyExpression(
                                     expression.getNode(), printFunction, new DBSPTypeVoid(), castToStr.deepCopy().applyCloneIfNeeded());
-                            statements.add(new DBSPExpressionStatement(print));
+                            statements.add(print.toStatement());
                         }
                         if (!part.isEmpty()) {
                             DBSPExpression print = new DBSPApplyExpression(
                                     expression.getNode(), "print", new DBSPTypeVoid(), new DBSPStringLiteral(part));
-                            statements.add(new DBSPExpressionStatement(print));
+                            statements.add(print.toStatement());
                         }
                     }
                     result = new DBSPBlockExpression(statements, arguments[1].deepCopy().applyCloneIfNeeded());

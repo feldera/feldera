@@ -23,65 +23,239 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
-import org.dbsp.sqlCompiler.circuit.*;
-import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
-import org.dbsp.sqlCompiler.ir.type.*;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
-import org.dbsp.util.*;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.IndentStream;
+import org.dbsp.util.Linq;
+import org.dbsp.util.NameGen;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 
-/**
- * This visitor generate a Rust implementation of the program.
- */
+/** This visitor generates a Rust implementation of a circuit. */
 public class ToRustVisitor extends CircuitVisitor {
     protected final IndentStream builder;
-    public final InnerVisitor innerVisitor;
+    // Assemble here the list of streams that is output by the circuit
+    protected final IndentStream streams;
+    final InnerVisitor innerVisitor;
+    final boolean generateCatalog;
 
-    public ToRustVisitor(IErrorReporter reporter, IndentStream builder) {
+    /* Example output generated when 'generateCatalog' is true:
+     * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
+     *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
+     *         let mut catalog = Catalog::new();
+     *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
+     *         catalog.register_input_zset("test_input1", input, handles.0);
+     *         catalog.register_output_zset("test_output1", input);
+     *         Ok(catalog)
+     *     }).unwrap();
+     *     (circuit, catalog)
+     * }
+     */
+
+    public ToRustVisitor(IErrorReporter reporter, IndentStream builder, boolean generateCatalog) {
         super(reporter);
         this.builder = builder;
         this.innerVisitor = new ToRustInnerVisitor(reporter, builder, false);
+        this.generateCatalog = generateCatalog;
+        StringBuilder streams = new StringBuilder();
+        this.streams = new IndentStream(streams);
     }
 
-    //////////////// Operators
+    protected void generateFromTrait(DBSPTypeStruct type) {
+        DBSPTypeTuple tuple = type.toTuple();
+        this.builder.append("impl From<")
+                .append(type.sanitizedName)
+                .append("> for ");
+        tuple.accept(this.innerVisitor);
+        this.builder.append(" {")
+                .increase()
+                .append("fn from(table: r#")
+                .append(type.sanitizedName)
+                .append(") -> Self");
+        this.builder.append(" {")
+                .increase()
+                .append(tuple.getName())
+                .append("::new(");
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            this.builder.append("table.r#")
+                    .append(field.sanitizedName)
+                    .append(",");
+        }
+        this.builder.append(")").newline();
+        this.builder.decrease()
+                .append("}")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
 
-    private void genRcCell(DBSPOperator op) {
-        this.builder.append("let ")
-                .append(op.getName())
-                .append(" = Rc::new(RefCell::<");
-        op.getType().accept(this.innerVisitor);
-        this.builder.append(">::new(Default::default()));")
-                .newline();
-        this.builder.append("let ")
-                .append(op.getName())
-                .append("_external = ")
-                .append(op.getName())
-                .append(".clone();")
-                .newline();
-        if (op instanceof DBSPSourceMultisetOperator) {
-            this.builder.append("let ")
-                    .append(op.getName())
-                    .append(" = Generator::new(move || ")
-                    .append(op.getName())
-                    .append(".borrow().clone());")
+        this.builder.append("impl From<");
+        tuple.accept(this.innerVisitor);
+        this.builder.append("> for r#")
+                .append(type.sanitizedName);
+        this.builder.append(" {")
+                .increase()
+                .append("fn from(tuple: ");
+        tuple.accept(this.innerVisitor);
+        this.builder.append(") -> Self");
+        this.builder.append(" {")
+                .increase()
+                .append("Self {")
+                .increase();
+        int index = 0;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            this.builder
+                    .append("r#")
+                    .append(field.sanitizedName)
+                    .append(": tuple.")
+                    .append(index++)
+                    .append(",")
                     .newline();
         }
+        this.builder.decrease().append("}").newline();
+        this.builder.decrease()
+                .append("}")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
+    }
+
+    /**
+     * Generate calls to the Rust macros that generate serialization and deserialization code
+     * for the struct.
+     *
+     * @param tableName Table or view whose type is being described.
+     * @param type      Type of record in the table.
+     * @param metadata  Metadata for the input columns (null for an output view).
+     */
+    protected void generateRenameMacro(String tableName, DBSPTypeStruct type,
+                                      @Nullable InputTableMetadata metadata) {
+        this.builder.append("deserialize_table_record!(");
+        this.builder.append(type.sanitizedName)
+                .append("[")
+                .append(Utilities.doubleQuote(tableName))
+                .append(", ")
+                .append(type.fields.size())
+                .append("] {")
+                .increase();
+        boolean first = true;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            if (!first)
+                this.builder.append(",").newline();
+            first = false;
+            String name = field.name;
+            boolean quoted = field.nameIsQuoted;
+            InputColumnMetadata meta = null;
+            if (metadata == null) {
+                // output
+                name = name.toUpperCase();
+                quoted = false;
+            } else {
+                meta = metadata.getColumnMetadata(field.name);
+            }
+            this.builder.append("(")
+                    .append("r#")
+                    .append(field.sanitizedName)
+                    .append(", ")
+                    .append(Utilities.doubleQuote(name))
+                    .append(", ")
+                    .append(Boolean.toString(quoted))
+                    .append(", ");
+            field.type.accept(this.innerVisitor);
+            this.builder.append(", ");
+            if (meta == null || meta.defaultValue == null) {
+                this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
+            } else {
+                this.builder.append("Some(");
+                meta.defaultValue.accept(this.innerVisitor);
+                this.builder.append(")");
+            }
+            this.builder.append(")");
+        }
+        this.builder.newline()
+                .decrease()
+                .append("});")
+                .newline();
+
+        this.builder.append("serialize_table_record!(");
+        this.builder.append(type.sanitizedName)
+                .append("[")
+                .append(type.fields.size())
+                .append("]{")
+                .increase();
+        first = true;
+        for (DBSPTypeStruct.Field field: type.fields.values()) {
+            if (!first)
+                this.builder.append(",").newline();
+            first = false;
+            String name = field.name;
+            if (metadata == null) {
+                // output
+                name = name.toUpperCase(Locale.ENGLISH);
+            }
+            this.builder
+                    .append("r#")
+                    .append(field.sanitizedName)
+                    .append("[")
+                    .append(Utilities.doubleQuote(name))
+                    .append("]")
+                    .append(": ");
+            field.type.accept(this.innerVisitor);
+        }
+        this.builder.newline()
+                .decrease()
+                .append("});")
+                .newline();
     }
 
     void processNode(IDBSPNode node) {
@@ -102,16 +276,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.newline();
     }
 
-    public void generateBody(DBSPPartialCircuit circuit) {
-        this.builder.append("let root = dbsp::RootCircuit::build(|circuit| {")
-                .increase();
-        for (IDBSPNode node : circuit.getAllOperators())
-            this.processNode(node);
-        this.builder.append("Ok(())");
-        this.builder.decrease()
-                .append("})")
-                .append(".unwrap();")
-                .newline();
+    String handleName(DBSPOperator operator) {
+        return "handle" + operator.outputName;
     }
 
     @Override
@@ -124,54 +290,66 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
-        // function prototype:
-        // fn name() -> impl FnMut(T0, T1) -> (O0, O1) {
-        boolean first = true;
-        this.builder.append("() -> impl FnMut(");
-        for (DBSPOperator i : circuit.inputOperators) {
-            if (!first)
-                this.builder.append(",");
-            first = false;
-            i.getType().accept(this.innerVisitor);
+        StringBuilder b = new StringBuilder();
+        IndentStream signature = new IndentStream(b);
+        ToRustInnerVisitor inner = new ToRustInnerVisitor(this.errorReporter, signature, false);
+
+        if (this.generateCatalog) {
+            signature.append("Catalog");
+        } else {
+            signature.append("(");
+            for (DBSPOperator input: circuit.inputOperators) {
+                DBSPType type;
+                DBSPTypeZSet zset = input.outputType.as(DBSPTypeZSet.class);
+                if (zset != null) {
+                    type = new DBSPTypeUser(
+                            zset.getNode(), DBSPTypeCode.USER, "CollectionHandle", false,
+                            zset.elementType, zset.weightType);
+                } else {
+                    DBSPTypeIndexedZSet ix = input.outputType.to(DBSPTypeIndexedZSet.class);
+                    type = new DBSPTypeUser(
+                            ix.getNode(), DBSPTypeCode.USER, "UpsertHandle", false,
+                            ix.elementType, DBSPTypeBool.create(false));
+                }
+                type.accept(inner);
+                signature.append(", ");
+            }
+            for (DBSPSinkOperator output: circuit.outputOperators) {
+                DBSPType outputType = output.input().outputType;
+                signature.append("OutputHandle<");
+                outputType.accept(inner);
+                signature.append(">, ");
+            }
+            signature.append(")");
         }
-        this.builder.append(") -> ");
-        DBSPTypeRawTuple tuple = new DBSPTypeRawTuple(CalciteObject.EMPTY, Linq.map(circuit.outputOperators, DBSPOperator::getType));
-        tuple.accept(this.innerVisitor);
-        this.builder.append(" {").increase();
-        // For each input and output operator a corresponding Rc cell
-        for (DBSPOperator i : circuit.inputOperators)
-            this.genRcCell(i);
 
-        for (DBSPOperator o : circuit.outputOperators)
-            this.genRcCell(o);
-
-        // Circuit body
-        this.generateBody(circuit);
-
-        // Create the closure and return it.
-        this.builder.append("return move |")
-                .joinS(", ", Linq.map(circuit.inputOperators, DBSPOperator::getName))
-                .append("| {")
+        this.builder
+                .append("(workers: usize) -> Result<(DBSPHandle, ")
+                .append(signature.toString())
+                .append("), DBSPError> {")
+                .increase()
+                .newline()
+                .append("let (circuit, streams) = Runtime::init_circuit(workers, |circuit| {")
                 .increase();
+        if (this.generateCatalog)
+            this.builder.append("let mut catalog = Catalog::new();").newline();
 
-        for (DBSPOperator i : circuit.inputOperators)
-            builder.append("*")
-                    .append(i.getName())
-                    .append("_external.borrow_mut() = ")
-                    .append(i.getName())
-                    .append(";")
-                    .newline();
-        this.builder.append("root.0.step().unwrap();")
-                .newline()
-                .append("return ")
-                .append("(")
-                .intercalateS(", ",
-                        Linq.map(circuit.outputOperators, o -> o.getName() + "_external.borrow().clone()"))
-                .append(")")
-                .append(";")
-                .newline()
+        for (IDBSPNode node : circuit.getAllOperators())
+            this.processNode(node);
+
+        if (this.generateCatalog)
+            this.builder.append("Ok(catalog)");
+        else
+            this.builder.append("Ok((")
+                    .append(this.streams.toString())
+                    .append("))");
+        this.builder.newline()
                 .decrease()
-                .append("};")
+                .append("})?;")
+                .newline();
+
+        this.builder
+                .append("Ok((circuit, streams))")
                 .newline()
                 .decrease()
                 .append("}")
@@ -181,19 +359,100 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
+        DBSPTypeStruct type = operator.originalRowType;
+        DBSPStructItem item = new DBSPStructItem(type);
+        item.accept(this.innerVisitor);
+        this.generateFromTrait(type);
+        this.generateRenameMacro(operator.outputName, type, operator.metadata);
+
         this.writeComments(operator)
-                .append("let ")
-                .append(operator.getName())
-                .append(" = ")
-                .append("circuit.add_source(")
+                .append("let (")
                 .append(operator.outputName)
-                .append(");");
+                .append(", ")
+                .append(this.handleName(operator))
+                .append(") = circuit.add_input_zset::<");
+
+        DBSPTypeZSet zsetType = operator.getType().to(DBSPTypeZSet.class);
+        zsetType.elementType.accept(this.innerVisitor);
+        this.builder.append(", ");
+        zsetType.weightType.accept(this.innerVisitor);
+        this.builder.append(">();").newline();
+        if (this.generateCatalog) {
+            this.builder.append("catalog.register_input_zset::<_, ");
+            operator.originalRowType.accept(this.innerVisitor);
+            this.builder.append(">(")
+                    .append(Utilities.doubleQuote(operator.getName()))
+                    .append(", ")
+                    .append(operator.outputName)
+                    .append(".clone(), ")
+                    .append(this.handleName(operator))
+                    .append(");")
+                    .newline();
+        } else {
+            this.streams.append(this.handleName(operator))
+                    .append(", ");
+        }
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
-       throw new UnimplementedException();
+        DBSPTypeStruct type = operator.originalRowType;
+        // Generate struct type definition
+        DBSPStructItem item = new DBSPStructItem(type);
+        item.accept(this.innerVisitor);
+        // Traits for serialization
+        this.generateFromTrait(type);
+        // Macro for serialization
+        this.generateRenameMacro(operator.outputName, type, operator.metadata);
+        // Generate key type definition
+        item = new DBSPStructItem(operator.getKeyStructType());
+        item.accept(this.innerVisitor);
+        // Trait for serialization
+        this.generateFromTrait(operator.getKeyStructType());
+        this.generateRenameMacro(item.type.name, item.type, operator.metadata);
+
+        this.writeComments(operator)
+                .append("let (")
+                .append(operator.outputName)
+                .append(", ")
+                .append(this.handleName(operator))
+                .append(") = circuit.add_input_map::<");
+
+        DBSPTypeIndexedZSet ix = operator.getOutputIndexedZSetType();
+        ix.keyType.accept(this.innerVisitor);
+        this.builder.append(", ");
+        ix.elementType.accept(this.innerVisitor);
+        this.builder.append(", ");
+        ix.weightType.accept(this.innerVisitor);
+        this.builder.append(">();").newline();
+        if (this.generateCatalog) {
+            this.builder.append("catalog.register_input_map::<");
+            DBSPTypeStruct keyStructType = operator.getKeyStructType();
+            keyStructType.toTuple().accept(this.innerVisitor);
+            this.builder.append(", ");
+            keyStructType.accept(this.innerVisitor);
+            this.builder.append(", ");
+            operator.getOutputIndexedZSetType().elementType.accept(this.innerVisitor);
+            this.builder.append(", ");
+            operator.originalRowType.accept(this.innerVisitor);
+            this.builder.append(", ");
+            operator.getOutputIndexedZSetType().weightType.accept(this.innerVisitor);
+            this.builder.append(", _>(")
+                    .append(Utilities.doubleQuote(operator.getName()))
+                    .append(", ")
+                    .append(operator.outputName)
+                    .append(".clone(), ")
+                    .append(this.handleName((operator)))
+                    .append(", ");
+            operator.getKeyFunc().accept(this.innerVisitor);
+            this.builder.append(");")
+                    .newline();
+        } else {
+            this.streams.append(this.handleName(operator))
+                    .append(", ");
+        }
+        return VisitDecision.STOP;
     }
 
     @Override
@@ -241,7 +500,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-        DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getName());
@@ -281,14 +539,29 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
-        this.writeComments(operator)
-                .append(operator.input().getName())
-                .append(".")
-                .append(operator.operation) // inspect
-                .append("(move |m| { *")
-                .append(operator.getName())
-                .append(".borrow_mut() = ")
-                .append("m.clone() });");
+        DBSPTypeStruct type = operator.originalRowType;
+        DBSPStructItem item = new DBSPStructItem(type);
+        item.accept(this.innerVisitor);
+        this.generateFromTrait(type);
+        this.generateRenameMacro(operator.outputName, type, null);
+        if (this.generateCatalog) {
+            this.builder.append("catalog.register_output_zset::<_, ");
+            operator.originalRowType.accept(this.innerVisitor);
+            this.builder.append(">(")
+                    .append(Utilities.doubleQuote(operator.getName()))
+                    .append(", ")
+                    .append(operator.input().getName())
+                    .append(".clone());")
+                    .newline();
+        } else {
+            this.builder.append("let ")
+                    .append(this.handleName(operator))
+                    .append(" = ")
+                    .append(operator.input().getName())
+                    .append(".output();").newline();
+            this.streams.append(this.handleName(operator))
+                    .append(", ");
+        }
         return VisitDecision.STOP;
     }
 
@@ -440,17 +713,11 @@ public class ToRustVisitor extends CircuitVisitor {
 
         String streamOperation = "topk_custom_order";
         if (operator.outputProducer != null) {
-            switch (operator.numbering) {
-                case ROW_NUMBER:
-                    streamOperation = "topk_row_number_custom_order";
-                    break;
-                case RANK:
-                    streamOperation = "topk_rank_custom_order";
-                    break;
-                case DENSE_RANK:
-                    streamOperation = "topk_dense_rank_custom_order";
-                    break;
-            }
+            streamOperation = switch (operator.numbering) {
+                case ROW_NUMBER -> "topk_row_number_custom_order";
+                case RANK -> "topk_rank_custom_order";
+                case DENSE_RANK -> "topk_dense_rank_custom_order";
+            };
         }
 
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
@@ -602,13 +869,11 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    public static String toRustString(IErrorReporter reporter, IDBSPOuterNode node) {
+    public static String toRustString(IErrorReporter reporter, DBSPCircuit node, boolean useCatalog) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        LowerCircuitVisitor lower = new LowerCircuitVisitor(reporter);
-        node = lower.apply(node.to(DBSPCircuit.class));
-        ToRustVisitor visitor = new ToRustVisitor(reporter, stream);
-        node.accept(visitor);
+        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, useCatalog);
+        visitor.apply(node);
         return builder.toString();
     }
 }

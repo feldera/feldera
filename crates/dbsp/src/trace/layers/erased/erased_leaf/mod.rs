@@ -4,7 +4,6 @@ mod cursor;
 
 use super::{DataVTable, DiffVTable, IntoErasedData, IntoErasedDiff};
 pub use builders::{TypedErasedLeafBuilder, UnorderedTypedLayerBuilder};
-pub use consumer::{TypedLayerConsumer, TypedLayerValues};
 pub use cursor::TypedLayerCursor;
 
 use crate::{

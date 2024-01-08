@@ -4,14 +4,25 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
-import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
-import org.dbsp.sqlCompiler.ir.type.*;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqllogictest.Main;
 import org.dbsp.util.Linq;
@@ -21,14 +32,18 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /**
  * Helper class for the DbspJdbcExecutor.
  * Generate on demand the input functions.
- * We do this so we can build the circuit first in a deterministic
+ * We do this so that we can build the circuit first in a deterministic
  * way for debugging.
  */
 class InputFunctionGenerator {
@@ -147,21 +162,19 @@ class InputFunctionGenerator {
                         "map", DBSPTypeAny.getDefault(), iter, lambda);
                 DBSPExpression expr = new DBSPApplyMethodExpression(
                         "extend", new DBSPTypeVoid(), vec, map);
-                DBSPStatement statement = new DBSPExpressionStatement(expr);
-                statements.add(statement);
+                statements.add(expr.toStatement());
             }
             if (inputType.tupFields.length == 0) {
                 // This case will cause no invocation of the circuit, but we need
                 // at least one.
                 DBSPExpression expr = new DBSPApplyMethodExpression(
                         "push", new DBSPTypeVoid(), vec, new DBSPRawTupleExpression());
-                DBSPStatement statement = new DBSPExpressionStatement(expr);
-                statements.add(statement);
+                statements.add(expr.toStatement());
             }
         } else {
             DBSPExpression expr = new DBSPApplyMethodExpression(
                     "push", new DBSPTypeVoid(), vec, input.getVarReference());
-            DBSPStatement statement = new DBSPExpressionStatement(expr);
+            DBSPStatement statement = expr.toStatement();
             statements.add(statement);
         }
         DBSPBlockExpression block = new DBSPBlockExpression(statements, vec);

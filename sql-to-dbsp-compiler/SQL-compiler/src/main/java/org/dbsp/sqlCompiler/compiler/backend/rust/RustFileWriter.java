@@ -122,6 +122,7 @@ public class RustFileWriter implements ICompilerComponent {
                         Error as DBSPError,
                         Runtime,
                         NumEntries,
+                        CollectionHandle, UpsertHandle, OutputHandle,
                     };
                     use dbsp_adapters::{deserialize_table_record, serialize_table_record, Catalog};
                     use size_of::*;
@@ -352,10 +353,8 @@ public class RustFileWriter implements ICompilerComponent {
                 str = ToRustInnerVisitor.toRustString(this.compiler, inner, false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                if (this.compiler.options.ioOptions.emitHandles)
-                    str = ToRustHandleVisitor.toRustString(this.compiler, outer, outer.name);
-                else
-                    str = ToRustVisitor.toRustString(this.getCompiler(), outer);
+                str = ToRustVisitor.toRustString(
+                        this.getCompiler(), outer, this.compiler.options.ioOptions.emitCatalog);
             }
             this.outputStream.println(str);
             this.outputStream.println();

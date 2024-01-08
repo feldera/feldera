@@ -8,7 +8,6 @@ import net.hydromatic.sqllogictest.TestStatistics;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.nio.file.Paths;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 

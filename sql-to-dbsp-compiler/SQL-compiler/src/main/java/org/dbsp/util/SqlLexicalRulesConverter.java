@@ -41,16 +41,12 @@ public class SqlLexicalRulesConverter implements IStringConverter<Lex> {
 
     @Override
     public Lex convert(String s) {
-        switch (s.toLowerCase()) {
-            case "mysql":
-                return Lex.MYSQL;
-            case "oracle":
-                return Lex.ORACLE;
-            case "big_query":
-                return Lex.BIG_QUERY;
-            default:
-                throw new ParameterException("Illegal value " + Utilities.singleQuote(s)
-                        + " for SQL lexical rules; legal values are: " + legalDialects);
-        }
+        return switch (s.toLowerCase()) {
+            case "mysql" -> Lex.MYSQL;
+            case "oracle" -> Lex.ORACLE;
+            case "big_query" -> Lex.BIG_QUERY;
+            default -> throw new ParameterException("Illegal value " + Utilities.singleQuote(s)
+                                                    + " for SQL lexical rules; legal values are: " + legalDialects);
+        };
     }
 }

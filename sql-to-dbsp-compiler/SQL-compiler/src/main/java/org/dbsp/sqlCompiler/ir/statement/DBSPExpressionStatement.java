@@ -62,6 +62,6 @@ public class DBSPExpressionStatement extends DBSPStatement {
 
     @Override
     public DBSPStatement deepCopy() {
-        return new DBSPExpressionStatement(this.expression.deepCopy());
+        return this.expression.deepCopy().toStatement();
     }
 }

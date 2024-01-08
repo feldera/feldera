@@ -540,7 +540,7 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPTupleExpression(new DBSPI32Literal(0))));
     }
 
-    @Test
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1207")
     public void geoPointTest() {
         String query = "SELECT ST_POINT(0, 0)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
