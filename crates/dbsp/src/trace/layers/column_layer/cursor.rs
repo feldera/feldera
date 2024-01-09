@@ -88,7 +88,7 @@ where
     where
         Self: 'k;
 
-    type ValueStorage = ();
+    type ValueCursor = ();
 
     fn keys(&self) -> usize {
         self.bounds.1 - self.bounds.0
