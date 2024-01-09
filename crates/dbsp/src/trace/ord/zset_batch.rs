@@ -345,7 +345,7 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug, SizeOf)]
+#[derive(Debug, SizeOf, Clone)]
 pub struct OrdZSetCursor<'s, K, R>
 where
     K: DBData,

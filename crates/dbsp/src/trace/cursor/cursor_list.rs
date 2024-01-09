@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 /// The `CursorList` tracks the indices of cursors with the minimum key, and the
 /// the indices of cursors with the minimum key and minimum value. It performs
 /// no clever management of these sets otherwise.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CursorList<K, V, T, R, C: Cursor<K, V, T, R>> {
     cursors: Vec<C>,
     current_key: Vec<usize>,

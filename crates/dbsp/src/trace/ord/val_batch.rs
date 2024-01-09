@@ -384,7 +384,7 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug, SizeOf)]
+#[derive(Debug, SizeOf, Clone)]
 pub struct OrdValCursor<'s, K, V, T, R, O = usize>
 where
     K: DBData,
