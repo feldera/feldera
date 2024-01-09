@@ -62,6 +62,9 @@ tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
 log = "0.4.20"
 paste = "1"
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
+feldera-storage = { path = "../feldera-storage" }
+tempfile = "3.8.1"
+ouroboros = "0.18.1"
 
 [dev-dependencies]
 csv = "1.2.2"

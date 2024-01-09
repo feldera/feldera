@@ -11,6 +11,8 @@ pub mod erased;
 pub mod ordered;
 pub mod ordered_leaf;
 pub mod unordered;
+
+pub mod file;
 // pub mod hashed;
 // pub mod weighted;
 
@@ -226,7 +228,7 @@ pub trait Cursor<'s> {
     fn keys(&self) -> usize;
 
     /// Reveals the current item.
-    fn item<'a>(&'a self) -> Self::Item<'a>;
+    fn item(&self) -> Self::Item<'_>;
 
     /// Returns cursor over values associted with the current key.
     fn values(&self) -> Self::ValueCursor;
