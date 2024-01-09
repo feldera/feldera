@@ -346,10 +346,6 @@ where
         unimplemented!()
     }
 
-    fn seek_key(&mut self, _key: &TS) {
-        unimplemented!()
-    }
-
     fn seek_key_with<P>(&mut self, _predicate: P)
     where
         P: Fn(&TS) -> bool + Clone,
@@ -361,10 +357,6 @@ where
     where
         P: Fn(&TS) -> bool + Clone,
     {
-        unimplemented!()
-    }
-
-    fn seek_key_reverse(&mut self, _key: &TS) {
         unimplemented!()
     }
 

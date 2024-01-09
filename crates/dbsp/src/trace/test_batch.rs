@@ -696,27 +696,19 @@ where
         todo!()
     }
 
-    fn seek_key(&mut self, key: &K) {
-        while self.index < self.data.len() && &self.data[self.index].0 .0 < key {
-            self.index += 1;
-        }
-    }
-
-    fn seek_key_with<P>(&mut self, _predicate: P)
+    fn seek_key_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool + Clone,
     {
-        todo!()
+        while self.index < self.data.len() && !predicate(&self.data[self.index].0 .0) {
+            self.index += 1;
+        }
     }
 
     fn seek_key_with_reverse<P>(&mut self, _predicate: P)
     where
         P: Fn(&K) -> bool + Clone,
     {
-        todo!()
-    }
-
-    fn seek_key_reverse(&mut self, _key: &K) {
         todo!()
     }
 

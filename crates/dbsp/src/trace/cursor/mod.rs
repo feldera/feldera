@@ -195,7 +195,12 @@ pub trait Cursor<K, V, T, R> {
     ///
     /// This has no effect if the cursor is already positioned past `key`, so it
     /// might be desirable to call [`rewind_keys`](Self::rewind_keys) first.
-    fn seek_key(&mut self, key: &K);
+    fn seek_key(&mut self, key: &K)
+    where
+        K: PartialOrd,
+    {
+        self.seek_key_with(|k| k >= key)
+    }
 
     /// Advances the cursor to the first key that satisfies `predicate`.
     /// Assumes that `predicate` remains true once it turns true.
@@ -212,7 +217,12 @@ pub trait Cursor<K, V, T, R> {
     /// Moves the cursor backward to the specified key.  If `key` itself is not
     /// present, moves backward to the first key less than `key`; if there is no
     /// such key, the cursor becomes invalid.
-    fn seek_key_reverse(&mut self, key: &K);
+    fn seek_key_reverse(&mut self, key: &K)
+    where
+        K: PartialOrd,
+    {
+        self.seek_key_with_reverse(|k| k <= key)
+    }
 
     /// Advances the cursor to the next value.
     fn step_val(&mut self);
@@ -284,7 +294,7 @@ pub trait Cursor<K, V, T, R> {
     /// Advance the cursor to the specified `(key, value)` pair.
     fn seek_keyval(&mut self, key: &K, val: &V)
     where
-        K: PartialEq,
+        K: PartialEq + PartialOrd,
     {
         if self.get_key() != Some(key) {
             self.seek_key(key);
@@ -302,7 +312,7 @@ pub trait Cursor<K, V, T, R> {
     /// Moves the cursor back to the specified `(key, value)` pair.
     fn seek_keyval_reverse(&mut self, key: &K, val: &V)
     where
-        K: PartialEq,
+        K: PartialEq + PartialOrd,
     {
         if self.get_key() != Some(key) {
             self.seek_key_reverse(key);
