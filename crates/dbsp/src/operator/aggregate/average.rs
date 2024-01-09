@@ -4,9 +4,8 @@ use crate::{
         ZRingValue,
     },
     circuit::WithClock,
-    trace::layers::{column_layer::ColumnLayer, ordered::OrderedLayer},
-    utils::VecExt,
-    Circuit, DBData, DBTimestamp, DBWeight, OrdIndexedZSet, Stream,
+    operator::filter_map::FilterMap,
+    Circuit, DBData, DBTimestamp, OrdIndexedZSet, Stream,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -215,14 +214,15 @@ where
         Z: IndexedZSet,
         Z::R: ZRingValue,
         Avg<A, Z::R>: MulByRef<Z::R, Output = Avg<A, Z::R>>,
-        A: DBData + From<Z::R> + Div<Output = A> + GroupValue,
+        A: DBData + From<Z::R> + Div<Z::R, Output = A> + GroupValue,
         F: Fn(&Z::Val) -> A + Clone + 'static,
     {
         let aggregate = self.aggregate_linear(move |val| Avg::new(f(val), Z::R::one()));
 
         // We're the only possible consumer of the aggregated stream so we can use an
         // owned consumer to skip any cloning
-        let average = aggregate.apply_owned_named("ApplyAverage", apply_average);
+        let average =
+            aggregate.map_index(|(k, avg)| (k.clone(), avg.sum.clone() / avg.count.clone()));
 
         // Note: Currently `.aggregate_linear()` is always sharded, but we just do this
         // check so that we don't get any unpleasant surprises if that ever changes
@@ -232,91 +232,11 @@ where
     }
 }
 
-/// The gist of what we're doing here is this:
-///
-/// - We receive an owned `OrdIndexedZSet` so we can do whatever we want with it
-/// - `OrdIndexedZSet` consists of four discrete vectors of values, a `Vec<K>`
-///   of keys, a `Vec<usize>` of value offsets, a `Vec<Avg<A>>` of average
-///   aggregates and a `Vec<isize>` of differences
-/// - Of these only one vector needs to be changed in *any* way: The
-///   `Vec<Avg<A>>` needs to be transformed into a `Vec<A>`
-/// - So following this fact, the other three vectors never need to be touched
-/// - Ergo, we simply reuse those three untouched vectors in our output
-///   `OrdIndexedZSet`, requiring us to do the minimum of work: dividing all of
-///   our sums by all of our counts within the `Vec<Avg<A>>` to produce our
-///   output `Vec<A>`
-///
-/// Note that unfortunately we can't reuse the `Vec<Avg<A>>`'s allocation here
-/// since an `Avg<A>` will never have the same size as an `A` due to `Avg<A>`
-/// containing an extra `isize` field
-fn apply_average<K, A, R, W>(aggregate: OrdIndexedZSet<K, Avg<A, R>, W>) -> OrdIndexedZSet<K, A, W>
-where
-    K: Ord,
-    A: DBData + From<R> + Div<Output = A>,
-    R: DBData + ZRingValue,
-    W: DBWeight,
-{
-    // Break the given `OrdIndexedZSet` into its components
-    let OrderedLayer {
-        keys,
-        offs,
-        vals,
-        lower_bound,
-    } = aggregate.layer;
-    let (aggregates, diffs, lower_bound_avg) = vals.into_parts();
-
-    // Average out the aggregated values
-    // TODO: If we stored `Avg<A>` as two columns (one of `sum: A` and one of
-    // `count: isize`) we could even reuse the `sum` vec by doing the division in
-    // place (and we even could do it with simd depending on `A`'s type)
-    let mut averages = Vec::with_capacity(aggregates.len());
-    for avg in aggregates {
-        // TODO: This can technically use an unchecked division (or an
-        // `assume(count != 0)` call since `.div_unchecked()` is unstable) since `count`
-        // should never be zero since zeroed elements are removed from zsets
-        debug_assert!(!avg.count().is_zero());
-
-        // Safety: We allocated the correct capacity for `aggregate_values`
-        unsafe { averages.push_unchecked(avg.compute_avg().unwrap()) };
-    }
-
-    // Safety: `averages.len() == diffs.len()`
-    let averages = unsafe { ColumnLayer::from_parts(averages, diffs, lower_bound_avg) };
-
-    // Create a new `OrdIndexedZSet` from our components, notably this doesn't touch
-    // `keys`, `offs` or `diffs` which means we don't allocate new vectors for them
-    // or even touch their memory
-    OrdIndexedZSet {
-        // Safety: `keys.len() + 1 == offs.len()`
-        layer: unsafe { OrderedLayer::from_parts(keys, offs, averages, lower_bound) },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rkyv::Deserialize;
 
-    use crate::{
-        indexed_zset,
-        operator::aggregate::average::{apply_average, Avg},
-    };
-
-    #[test]
-    fn apply_average_smoke() {
-        let input = indexed_zset! {
-            0 => { Avg::new(1000, 10) => 1 },
-            1 => { Avg::new(1, 1) => -12 },
-            1000 => { Avg::new(200, 20) => 544 },
-        };
-        let expected = indexed_zset! {
-            0 => { 100 => 1 },
-            1 => { 1 => -12 },
-            1000 => { 10 => 544 },
-        };
-
-        let output = apply_average(input);
-        assert_eq!(output, expected);
-    }
+    use crate::operator::aggregate::average::Avg;
 
     #[test]
     fn avg_decode_encode() {
