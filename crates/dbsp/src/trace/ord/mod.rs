@@ -1,4 +1,4 @@
-//! Trace and batch implementations based on sorted ranges.
+//! "Standard" trace and batch implementations.
 //!
 //! The types and type aliases in this module start with one of:
 //!
@@ -22,14 +22,11 @@
 //! Likewise, `OrdIndexedZSet` and `OrdZSet` are less general than `OrdVal` and
 //! `OrdKey` respectively, but are more light-weight.
 
-pub mod indexed_zset_batch;
-pub mod key_batch;
-pub mod val_batch;
-pub mod zset_batch;
-
 mod merge_batcher;
 
-pub use indexed_zset_batch::OrdIndexedZSet;
-pub use key_batch::OrdKeyBatch;
-pub use val_batch::OrdValBatch;
-pub use zset_batch::OrdZSet;
+pub mod vec;
+
+pub use vec::VecIndexedZSet as OrdIndexedZSet;
+pub use vec::VecKeyBatch as OrdKeyBatch;
+pub use vec::VecValBatch as OrdValBatch;
+pub use vec::VecZSet as OrdZSet;

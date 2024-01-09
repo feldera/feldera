@@ -27,7 +27,7 @@ use std::{
 
 /// An immutable collection of `(key, weight)` pairs without timing information.
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf, Archive, Serialize, Deserialize)]
-pub struct OrdZSet<K, R>
+pub struct VecZSet<K, R>
 where
     K: 'static,
     R: 'static,
@@ -36,7 +36,7 @@ where
     pub layer: ColumnLayer<K, R>,
 }
 
-impl<K, R> OrdZSet<K, R> {
+impl<K, R> VecZSet<K, R> {
     #[inline]
     pub fn len(&self) -> usize {
         self.layer.len()
@@ -72,7 +72,7 @@ impl<K, R> OrdZSet<K, R> {
     }
 }
 
-impl<K, R> Display for OrdZSet<K, R>
+impl<K, R> Display for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -86,19 +86,19 @@ where
     }
 }
 
-impl<K, R> From<ColumnLayer<K, R>> for OrdZSet<K, R> {
+impl<K, R> From<ColumnLayer<K, R>> for VecZSet<K, R> {
     fn from(layer: ColumnLayer<K, R>) -> Self {
         Self { layer }
     }
 }
 
-impl<K, R> From<ColumnLayer<K, R>> for Rc<OrdZSet<K, R>> {
+impl<K, R> From<ColumnLayer<K, R>> for Rc<VecZSet<K, R>> {
     fn from(layer: ColumnLayer<K, R>) -> Self {
         Rc::new(From::from(layer))
     }
 }
 
-impl<K, R> NumEntries for OrdZSet<K, R>
+impl<K, R> NumEntries for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -114,7 +114,7 @@ where
     }
 }
 
-impl<K, R> Default for OrdZSet<K, R> {
+impl<K, R> Default for VecZSet<K, R> {
     fn default() -> Self {
         Self {
             layer: ColumnLayer::empty(),
@@ -122,7 +122,7 @@ impl<K, R> Default for OrdZSet<K, R> {
     }
 }
 
-impl<K, R> NegByRef for OrdZSet<K, R>
+impl<K, R> NegByRef for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight + NegByRef,
@@ -134,7 +134,7 @@ where
     }
 }
 
-impl<K, R> Neg for OrdZSet<K, R>
+impl<K, R> Neg for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight + Neg<Output = R>,
@@ -149,7 +149,7 @@ where
 }
 
 // TODO: by-value merge
-impl<K, R> Add<Self> for OrdZSet<K, R>
+impl<K, R> Add<Self> for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -163,7 +163,7 @@ where
     }
 }
 
-impl<K, R> AddAssign<Self> for OrdZSet<K, R>
+impl<K, R> AddAssign<Self> for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -173,7 +173,7 @@ where
     }
 }
 
-impl<K, R> AddAssignByRef for OrdZSet<K, R>
+impl<K, R> AddAssignByRef for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -183,7 +183,7 @@ where
     }
 }
 
-impl<K, R> AddByRef for OrdZSet<K, R>
+impl<K, R> AddByRef for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -195,7 +195,7 @@ where
     }
 }
 
-impl<K, R> BatchReader for OrdZSet<K, R>
+impl<K, R> BatchReader for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -204,12 +204,12 @@ where
     type Val = ();
     type Time = ();
     type R = R;
-    type Cursor<'s> = OrdZSetCursor<'s, K, R>;
-    type Consumer = OrdZSetConsumer<K, R>;
+    type Cursor<'s> = VecZSetCursor<'s, K, R>;
+    type Consumer = VecZSetConsumer<K, R>;
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
-        OrdZSetCursor {
+        VecZSetCursor {
             valid: true,
             cursor: self.layer.cursor(),
         }
@@ -217,7 +217,7 @@ where
 
     #[inline]
     fn consumer(self) -> Self::Consumer {
-        OrdZSetConsumer {
+        VecZSetConsumer {
             consumer: ColumnLayerConsumer::from(self.layer),
         }
     }
@@ -254,15 +254,15 @@ where
     }
 }
 
-impl<K, R> Batch for OrdZSet<K, R>
+impl<K, R> Batch for VecZSet<K, R>
 where
     K: DBData,
     R: DBWeight,
 {
     type Item = K;
     type Batcher = MergeBatcher<K, (), R, Self>;
-    type Builder = OrdZSetBuilder<K, R>;
-    type Merger = OrdZSetMerger<K, R>;
+    type Builder = VecZSetBuilder<K, R>;
+    type Merger = VecZSetMerger<K, R>;
 
     fn item_from(key: K, _val: ()) -> Self::Item {
         key
@@ -273,7 +273,7 @@ where
     }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdZSetMerger::new_merger(self, other)
+        VecZSetMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -287,7 +287,7 @@ where
 
 /// State for an in-progress merge.
 #[derive(SizeOf)]
-pub struct OrdZSetMerger<K, R>
+pub struct VecZSetMerger<K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -296,13 +296,13 @@ where
     result: <ColumnLayer<K, R> as Trie>::MergeBuilder,
 }
 
-impl<K, R> Merger<K, (), (), R, OrdZSet<K, R>> for OrdZSetMerger<K, R>
+impl<K, R> Merger<K, (), (), R, VecZSet<K, R>> for VecZSetMerger<K, R>
 where
     Self: SizeOf,
     K: DBData,
     R: DBWeight,
 {
-    fn new_merger(batch1: &OrdZSet<K, R>, batch2: &OrdZSet<K, R>) -> Self {
+    fn new_merger(batch1: &VecZSet<K, R>, batch2: &VecZSet<K, R>) -> Self {
         Self {
             result: <<ColumnLayer<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
                 &batch1.layer,
@@ -311,16 +311,16 @@ where
         }
     }
 
-    fn done(self) -> OrdZSet<K, R> {
-        OrdZSet {
+    fn done(self) -> VecZSet<K, R> {
+        VecZSet {
             layer: self.result.done(),
         }
     }
 
     fn work(
         &mut self,
-        source1: &OrdZSet<K, R>,
-        source2: &OrdZSet<K, R>,
+        source1: &VecZSet<K, R>,
+        source2: &VecZSet<K, R>,
         key_filter: &Option<Filter<K>>,
         _value_filter: &Option<Filter<()>>,
         fuel: &mut isize,
@@ -346,7 +346,7 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf, Clone)]
-pub struct OrdZSetCursor<'s, K, R>
+pub struct VecZSetCursor<'s, K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -355,7 +355,7 @@ where
     cursor: ColumnLayerCursor<'s, K, R>,
 }
 
-impl<'s, K, R> Cursor<K, (), (), R> for OrdZSetCursor<'s, K, R>
+impl<'s, K, R> Cursor<K, (), (), R> for VecZSetCursor<'s, K, R>
 where
     K: DBData,
     R: DBWeight,
@@ -486,7 +486,7 @@ where
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
-pub struct OrdZSetBuilder<K, R>
+pub struct VecZSetBuilder<K, R>
 where
     K: Ord,
     R: DBWeight,
@@ -494,7 +494,7 @@ where
     builder: ColumnLayerBuilder<K, R>,
 }
 
-impl<K, R> Builder<K, (), R, OrdZSet<K, R>> for OrdZSetBuilder<K, R>
+impl<K, R> Builder<K, (), R, VecZSet<K, R>> for VecZSetBuilder<K, R>
 where
     Self: SizeOf,
     K: DBData,
@@ -525,15 +525,15 @@ where
     }
 
     #[inline(never)]
-    fn done(self) -> OrdZSet<K, R> {
-        OrdZSet {
+    fn done(self) -> VecZSet<K, R> {
+        VecZSet {
             layer: self.builder.done(),
         }
     }
 }
 
 #[derive(Debug, SizeOf)]
-pub struct OrdZSetConsumer<K, R>
+pub struct VecZSetConsumer<K, R>
 where
     K: 'static,
     R: 'static,
@@ -541,8 +541,8 @@ where
     consumer: ColumnLayerConsumer<K, R>,
 }
 
-impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
-    type ValueConsumer<'a> = OrdZSetValueConsumer<'a, K, R>
+impl<K, R> Consumer<K, (), R, ()> for VecZSetConsumer<K, R> {
+    type ValueConsumer<'a> = VecZSetValueConsumer<'a, K, R>
     where
         Self: 'a;
 
@@ -556,7 +556,7 @@ impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
 
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, values) = self.consumer.next_key();
-        (key, OrdZSetValueConsumer { values })
+        (key, VecZSetValueConsumer { values })
     }
 
     fn seek_key(&mut self, key: &K)
@@ -568,7 +568,7 @@ impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
 }
 
 #[derive(Debug)]
-pub struct OrdZSetValueConsumer<'a, K, R>
+pub struct VecZSetValueConsumer<'a, K, R>
 where
     K: 'static,
     R: 'static,
@@ -576,7 +576,7 @@ where
     values: ColumnLayerValues<'a, K, R>,
 }
 
-impl<'a, K, R> ValueConsumer<'a, (), R, ()> for OrdZSetValueConsumer<'a, K, R> {
+impl<'a, K, R> ValueConsumer<'a, (), R, ()> for VecZSetValueConsumer<'a, K, R> {
     fn value_valid(&self) -> bool {
         self.values.value_valid()
     }
