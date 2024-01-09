@@ -123,6 +123,9 @@ build-dbsp:
     DO rust+CARGO --args="build --package pipeline_types"
     DO rust+CARGO --args="clippy --package pipeline_types -- -D warnings"
     DO rust+CARGO --args="test --package pipeline_types --no-run" 
+    DO rust+CARGO --args="build --package feldera-storage"
+    DO rust+CARGO --args="clippy --package feldera-storage -- -D warnings"
+    DO rust+CARGO --args="test --package feldera-storage --no-run"
 
 build-sql:
     FROM +build-dbsp
@@ -189,6 +192,7 @@ test-dbsp:
     # should ensure equivalence with the DRAM trace implementation:
     DO +CARGO_TEST --package=dbsp --features=persistence --test_args=trace::persistent::tests
     DO rust+CARGO --args="test --package dbsp"
+    DO rust+CARGO --args="test --package feldera-storage"
 
 test-nexmark:
     FROM +build-nexmark
@@ -299,6 +303,7 @@ build-pipeline-manager-container:
     COPY crates/dbsp database-stream-processor/crates/dbsp
     COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
     COPY crates/adapters database-stream-processor/crates/adapters
+    COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
     COPY README.md database-stream-processor/README.md
 
     # Then copy over the required SQL compiler files

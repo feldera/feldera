@@ -24,6 +24,7 @@
 
 mod merge_batcher;
 
+pub mod file;
 pub mod vec;
 
 pub use vec::VecIndexedZSet as OrdIndexedZSet;

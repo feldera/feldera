@@ -1,0 +1,21 @@
+[package]
+name = "feldera-storage"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rkyv = { version = "0.7.42", default-features = false, features = ["std", "size_64", "validation"] }
+binrw = "0.13.3"
+crc32c = "0.6.4"
+thiserror = "1.0.50"
+num-derive = "0.4.1"
+num-traits = "0.2.17"
+tempfile = "3.9.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.6"
+
+[dev-dependencies]
+rand = "0.8.5"
