@@ -30,7 +30,7 @@ type Layers<K, V, R, O> = OrderedLayer<K, ColumnLayer<V, R>, O>;
 
 /// An immutable collection of update tuples.
 #[derive(Debug, Clone, Eq, PartialEq, SizeOf, Archive, Serialize, Deserialize)]
-pub struct OrdIndexedZSet<K, V, R, O = usize>
+pub struct VecIndexedZSet<K, V, R, O = usize>
 where
     K: Ord + 'static,
     V: Ord + 'static,
@@ -42,7 +42,7 @@ where
     pub layer: Layers<K, V, R, O>,
 }
 
-impl<K, V, R, O> Display for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> Display for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -59,7 +59,7 @@ where
     }
 }
 
-impl<K, V, R, O> Default for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> Default for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -72,7 +72,7 @@ where
     }
 }
 
-impl<K, V, R, O> From<Layers<K, V, R, O>> for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> From<Layers<K, V, R, O>> for VecIndexedZSet<K, V, R, O>
 where
     K: Ord,
     V: Ord,
@@ -85,7 +85,7 @@ where
     }
 }
 
-impl<K, V, R, O> From<Layers<K, V, R, O>> for Rc<OrdIndexedZSet<K, V, R, O>>
+impl<K, V, R, O> From<Layers<K, V, R, O>> for Rc<VecIndexedZSet<K, V, R, O>>
 where
     K: Ord,
     V: Ord,
@@ -98,7 +98,7 @@ where
     }
 }
 
-impl<K, V, R, O> NumEntries for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> NumEntries for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -118,7 +118,7 @@ where
     }
 }
 
-impl<K, V, R, O> NegByRef for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> NegByRef for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -133,7 +133,7 @@ where
     }
 }
 
-impl<K, V, R, O> Neg for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> Neg for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -151,7 +151,7 @@ where
 }
 
 // TODO: by-value merge
-impl<K, V, R, O> Add<Self> for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> Add<Self> for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -168,7 +168,7 @@ where
     }
 }
 
-impl<K, V, R, O> AddAssign<Self> for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> AddAssign<Self> for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -181,7 +181,7 @@ where
     }
 }
 
-impl<K, V, R, O> AddAssignByRef for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> AddAssignByRef for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -194,7 +194,7 @@ where
     }
 }
 
-impl<K, V, R, O> AddByRef for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> AddByRef for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -209,7 +209,7 @@ where
     }
 }
 
-impl<K, V, R, O> BatchReader for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> BatchReader for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -220,22 +220,22 @@ where
     type Val = V;
     type Time = ();
     type R = R;
-    type Cursor<'s> = OrdIndexedZSetCursor<'s, K, V, R, O>
+    type Cursor<'s> = VecIndexedZSetCursor<'s, K, V, R, O>
     where
         V: 's,
         O: 's;
-    type Consumer = OrdIndexedZSetConsumer<K, V, R, O>;
+    type Consumer = VecIndexedZSetConsumer<K, V, R, O>;
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
-        OrdIndexedZSetCursor {
+        VecIndexedZSetCursor {
             cursor: self.layer.cursor(),
         }
     }
 
     #[inline]
     fn consumer(self) -> Self::Consumer {
-        OrdIndexedZSetConsumer {
+        VecIndexedZSetConsumer {
             consumer: OrderedLayerConsumer::from(self.layer),
         }
     }
@@ -272,7 +272,7 @@ where
     }
 }
 
-impl<K, V, R, O> Batch for OrdIndexedZSet<K, V, R, O>
+impl<K, V, R, O> Batch for VecIndexedZSet<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -281,8 +281,8 @@ where
 {
     type Item = (K, V);
     type Batcher = MergeBatcher<(K, V), (), R, Self>;
-    type Builder = OrdIndexedZSetBuilder<K, V, R, O>;
-    type Merger = OrdIndexedZSetMerger<K, V, R, O>;
+    type Builder = VecIndexedZSetBuilder<K, V, R, O>;
+    type Merger = VecIndexedZSetMerger<K, V, R, O>;
 
     fn item_from(key: K, val: V) -> Self::Item {
         (key, val)
@@ -301,7 +301,7 @@ where
     }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdIndexedZSetMerger::new_merger(self, other)
+        VecIndexedZSetMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -315,7 +315,7 @@ where
 
 /// State for an in-progress merge.
 #[derive(SizeOf)]
-pub struct OrdIndexedZSetMerger<K, V, R, O>
+pub struct VecIndexedZSetMerger<K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -332,8 +332,8 @@ where
     result: <Layers<K, V, R, O> as Trie>::MergeBuilder,
 }
 
-impl<K, V, R, O> Merger<K, V, (), R, OrdIndexedZSet<K, V, R, O>>
-    for OrdIndexedZSetMerger<K, V, R, O>
+impl<K, V, R, O> Merger<K, V, (), R, VecIndexedZSet<K, V, R, O>>
+    for VecIndexedZSetMerger<K, V, R, O>
 where
     Self: SizeOf,
     K: DBData,
@@ -343,8 +343,8 @@ where
 {
     #[inline]
     fn new_merger(
-        batch1: &OrdIndexedZSet<K, V, R, O>,
-        batch2: &OrdIndexedZSet<K, V, R, O>,
+        batch1: &VecIndexedZSet<K, V, R, O>,
+        batch2: &VecIndexedZSet<K, V, R, O>,
     ) -> Self {
         Self {
             lower1: batch1.layer.lower_bound(),
@@ -359,16 +359,16 @@ where
     }
 
     #[inline]
-    fn done(self) -> OrdIndexedZSet<K, V, R, O> {
-        OrdIndexedZSet {
+    fn done(self) -> VecIndexedZSet<K, V, R, O> {
+        VecIndexedZSet {
             layer: self.result.done(),
         }
     }
 
     fn work(
         &mut self,
-        source1: &OrdIndexedZSet<K, V, R, O>,
-        source2: &OrdIndexedZSet<K, V, R, O>,
+        source1: &VecIndexedZSet<K, V, R, O>,
+        source2: &VecIndexedZSet<K, V, R, O>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
         fuel: &mut isize,
@@ -415,7 +415,7 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf, Clone)]
-pub struct OrdIndexedZSetCursor<'s, K, V, R, O>
+pub struct VecIndexedZSetCursor<'s, K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -425,7 +425,7 @@ where
     cursor: OrderedCursor<'s, K, O, ColumnLayer<V, R>>,
 }
 
-impl<'s, K, V, R, O> Cursor<K, V, (), R> for OrdIndexedZSetCursor<'s, K, V, R, O>
+impl<'s, K, V, R, O> Cursor<K, V, (), R> for VecIndexedZSetCursor<'s, K, V, R, O>
 where
     K: DBData,
     V: DBData,
@@ -552,7 +552,7 @@ type IndexBuilder<K, V, R, O> = OrderedBuilder<K, ColumnLayerBuilder<V, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
-pub struct OrdIndexedZSetBuilder<K, V, R, O>
+pub struct VecIndexedZSetBuilder<K, V, R, O>
 where
     K: Ord,
     V: Ord,
@@ -562,8 +562,8 @@ where
     builder: IndexBuilder<K, V, R, O>,
 }
 
-impl<K, V, R, O> Builder<(K, V), (), R, OrdIndexedZSet<K, V, R, O>>
-    for OrdIndexedZSetBuilder<K, V, R, O>
+impl<K, V, R, O> Builder<(K, V), (), R, VecIndexedZSet<K, V, R, O>>
+    for VecIndexedZSetBuilder<K, V, R, O>
 where
     Self: SizeOf,
     K: DBData,
@@ -596,14 +596,14 @@ where
     }
 
     #[inline(never)]
-    fn done(self) -> OrdIndexedZSet<K, V, R, O> {
-        OrdIndexedZSet {
+    fn done(self) -> VecIndexedZSet<K, V, R, O> {
+        VecIndexedZSet {
             layer: self.builder.done(),
         }
     }
 }
 
-pub struct OrdIndexedZSetConsumer<K, V, R, O>
+pub struct VecIndexedZSetConsumer<K, V, R, O>
 where
     K: 'static,
     V: 'static,
@@ -613,11 +613,11 @@ where
     consumer: OrderedLayerConsumer<K, V, R, O>,
 }
 
-impl<K, V, R, O> Consumer<K, V, R, ()> for OrdIndexedZSetConsumer<K, V, R, O>
+impl<K, V, R, O> Consumer<K, V, R, ()> for VecIndexedZSetConsumer<K, V, R, O>
 where
     O: OrdOffset,
 {
-    type ValueConsumer<'a> = OrdIndexedZSetValueConsumer<'a, K, V,  R, O>
+    type ValueConsumer<'a> = VecIndexedZSetValueConsumer<'a, K, V,  R, O>
     where
         Self: 'a;
 
@@ -631,7 +631,7 @@ where
 
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, consumer) = self.consumer.next_key();
-        (key, OrdIndexedZSetValueConsumer::new(consumer))
+        (key, VecIndexedZSetValueConsumer::new(consumer))
     }
 
     fn seek_key(&mut self, key: &K)
@@ -642,7 +642,7 @@ where
     }
 }
 
-pub struct OrdIndexedZSetValueConsumer<'a, K, V, R, O>
+pub struct VecIndexedZSetValueConsumer<'a, K, V, R, O>
 where
     V: 'static,
     R: 'static,
@@ -651,7 +651,7 @@ where
     __type: PhantomData<(K, O)>,
 }
 
-impl<'a, K, V, R, O> OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+impl<'a, K, V, R, O> VecIndexedZSetValueConsumer<'a, K, V, R, O> {
     #[inline]
     const fn new(consumer: OrderedLayerValues<'a, V, R>) -> Self {
         Self {
@@ -661,7 +661,7 @@ impl<'a, K, V, R, O> OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
     }
 }
 
-impl<'a, K, V, R, O> ValueConsumer<'a, V, R, ()> for OrdIndexedZSetValueConsumer<'a, K, V, R, O> {
+impl<'a, K, V, R, O> ValueConsumer<'a, V, R, ()> for VecIndexedZSetValueConsumer<'a, K, V, R, O> {
     fn value_valid(&self) -> bool {
         self.consumer.value_valid()
     }

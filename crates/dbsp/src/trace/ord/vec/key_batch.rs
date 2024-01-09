@@ -24,12 +24,12 @@ use std::{
     marker::PhantomData,
 };
 
-pub type OrdKeyBatchLayer<K, T, R, O> = OrderedLayer<K, ColumnLayer<T, R>, O>;
+pub type VecKeyBatchLayer<K, T, R, O> = OrderedLayer<K, ColumnLayer<T, R>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
 #[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
-pub struct OrdKeyBatch<K, T, R, O = usize>
+pub struct VecKeyBatch<K, T, R, O = usize>
 where
     K: 'static,
     T: 'static,
@@ -37,18 +37,18 @@ where
     O: 'static,
 {
     /// Where all the dataz is.
-    pub layer: OrdKeyBatchLayer<K, T, R, O>,
+    pub layer: VecKeyBatchLayer<K, T, R, O>,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
 }
 
-impl<K, T, R, O> Display for OrdKeyBatch<K, T, R, O>
+impl<K, T, R, O> Display for VecKeyBatch<K, T, R, O>
 where
     K: DBData,
     T: DBTimestamp,
     R: DBWeight,
     O: OrdOffset,
-    OrdKeyBatchLayer<K, T, R, O>: Display,
+    VecKeyBatchLayer<K, T, R, O>: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -59,14 +59,14 @@ where
     }
 }
 
-impl<K, T, R, O> NumEntries for OrdKeyBatch<K, T, R, O>
+impl<K, T, R, O> NumEntries for VecKeyBatch<K, T, R, O>
 where
     K: DBData,
     T: DBTimestamp,
     R: DBWeight,
     O: OrdOffset,
 {
-    const CONST_NUM_ENTRIES: Option<usize> = <OrdKeyBatchLayer<K, T, R, O>>::CONST_NUM_ENTRIES;
+    const CONST_NUM_ENTRIES: Option<usize> = <VecKeyBatchLayer<K, T, R, O>>::CONST_NUM_ENTRIES;
 
     #[inline]
     fn num_entries_shallow(&self) -> usize {
@@ -79,7 +79,7 @@ where
     }
 }
 
-impl<K, T, R, O> BatchReader for OrdKeyBatch<K, T, R, O>
+impl<K, T, R, O> BatchReader for VecKeyBatch<K, T, R, O>
 where
     K: DBData,
     T: DBTimestamp,
@@ -90,11 +90,11 @@ where
     type Val = ();
     type Time = T;
     type R = R;
-    type Cursor<'s> = OrdKeyCursor<'s, K, T, R, O> where O: 's;
-    type Consumer = OrdKeyConsumer<K, T, R, O>;
+    type Cursor<'s> = VecKeyCursor<'s, K, T, R, O> where O: 's;
+    type Consumer = VecKeyConsumer<K, T, R, O>;
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        OrdKeyCursor {
+        VecKeyCursor {
             valid: true,
             cursor: self.layer.cursor(),
         }
@@ -105,11 +105,11 @@ where
     }
 
     fn key_count(&self) -> usize {
-        <OrdKeyBatchLayer<K, T, R, O> as Trie>::keys(&self.layer)
+        <VecKeyBatchLayer<K, T, R, O> as Trie>::keys(&self.layer)
     }
 
     fn len(&self) -> usize {
-        <OrdKeyBatchLayer<K, T, R, O> as Trie>::tuples(&self.layer)
+        <VecKeyBatchLayer<K, T, R, O> as Trie>::tuples(&self.layer)
     }
 
     fn lower(&self) -> AntichainRef<'_, T> {
@@ -132,7 +132,7 @@ where
     }
 }
 
-impl<K, T, R, O> Batch for OrdKeyBatch<K, T, R, O>
+impl<K, T, R, O> Batch for VecKeyBatch<K, T, R, O>
 where
     K: DBData,
     T: DBTimestamp,
@@ -141,8 +141,8 @@ where
 {
     type Item = K;
     type Batcher = MergeBatcher<K, T, R, Self>;
-    type Builder = OrdKeyBuilder<K, T, R, O>;
-    type Merger = OrdKeyMerger<K, T, R, O>;
+    type Builder = VecKeyBuilder<K, T, R, O>;
+    type Merger = VecKeyMerger<K, T, R, O>;
 
     fn item_from(key: K, _val: ()) -> Self::Item {
         key
@@ -165,7 +165,7 @@ where
     }
 }
 
-impl<K, T, R, O> OrdKeyBatch<K, T, R, O>
+impl<K, T, R, O> VecKeyBatch<K, T, R, O>
 where
     K: Ord + Clone + 'static,
     T: Lattice + Ord + Clone + 'static,
@@ -235,7 +235,7 @@ where
 
 /// State for an in-progress merge.
 #[derive(SizeOf)]
-pub struct OrdKeyMerger<K, T, R, O = usize>
+pub struct VecKeyMerger<K, T, R, O = usize>
 where
     K: DBData,
     T: DBData + Lattice,
@@ -249,12 +249,12 @@ where
     lower2: usize,
     upper2: usize,
     // result that we are currently assembling.
-    result: <OrdKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder,
+    result: <VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder,
     lower: Antichain<T>,
     upper: Antichain<T>,
 }
 
-impl<K, T, R, O> Merger<K, (), T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyMerger<K, T, R, O>
+impl<K, T, R, O> Merger<K, (), T, R, VecKeyBatch<K, T, R, O>> for VecKeyMerger<K, T, R, O>
 where
     Self: SizeOf,
     K: DBData,
@@ -262,26 +262,26 @@ where
     R: DBWeight,
     O: OrdOffset,
 {
-    fn new_merger(batch1: &OrdKeyBatch<K, T, R, O>, batch2: &OrdKeyBatch<K, T, R, O>) -> Self {
+    fn new_merger(batch1: &VecKeyBatch<K, T, R, O>, batch2: &VecKeyBatch<K, T, R, O>) -> Self {
         // Leonid: we do not require batch bounds to grow monotonically.
         //assert!(batch1.upper() == batch2.lower());
 
-        OrdKeyMerger {
+        VecKeyMerger {
             lower1: batch1.layer.lower_bound(),
             upper1: batch1.layer.lower_bound() + batch1.layer.keys(),
             lower2: batch2.layer.lower_bound(),
             upper2: batch2.layer.lower_bound() + batch2.layer.keys(),
-            result: <<OrdKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
+            result: <<VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch1.upper().join(batch2.upper()),
         }
     }
 
-    fn done(self) -> OrdKeyBatch<K, T, R, O> {
+    fn done(self) -> VecKeyBatch<K, T, R, O> {
         assert!(self.lower1 == self.upper1);
         assert!(self.lower2 == self.upper2);
 
-        OrdKeyBatch {
+        VecKeyBatch {
             layer: self.result.done(),
             lower: self.lower,
             upper: self.upper,
@@ -290,8 +290,8 @@ where
 
     fn work(
         &mut self,
-        source1: &OrdKeyBatch<K, T, R, O>,
-        source2: &OrdKeyBatch<K, T, R, O>,
+        source1: &VecKeyBatch<K, T, R, O>,
+        source2: &VecKeyBatch<K, T, R, O>,
         key_filter: &Option<Filter<K>>,
         _value_filter: &Option<Filter<()>>,
         fuel: &mut isize,
@@ -315,7 +315,7 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf, Clone)]
-pub struct OrdKeyCursor<'s, K, T, R, O = usize>
+pub struct VecKeyCursor<'s, K, T, R, O = usize>
 where
     O: OrdOffset,
     K: DBData,
@@ -326,7 +326,7 @@ where
     cursor: OrderedCursor<'s, K, O, ColumnLayer<T, R>>,
 }
 
-impl<'s, K, T, R, O> Cursor<K, (), T, R> for OrdKeyCursor<'s, K, T, R, O>
+impl<'s, K, T, R, O> Cursor<K, (), T, R> for VecKeyCursor<'s, K, T, R, O>
 where
     K: DBData,
     T: DBData + Lattice + Ord + Clone,
@@ -477,11 +477,11 @@ where
     }
 }
 
-type RawOrdKeyBuilder<K, T, R, O> = OrderedBuilder<K, ColumnLayerBuilder<T, R>, O>;
+type RawVecKeyBuilder<K, T, R, O> = OrderedBuilder<K, ColumnLayerBuilder<T, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
-pub struct OrdKeyBuilder<K, T, R, O = usize>
+pub struct VecKeyBuilder<K, T, R, O = usize>
 where
     K: Ord,
     T: Ord + Lattice,
@@ -489,10 +489,10 @@ where
     O: OrdOffset,
 {
     time: T,
-    builder: RawOrdKeyBuilder<K, T, R, O>,
+    builder: RawVecKeyBuilder<K, T, R, O>,
 }
 
-impl<K, T, R, O> Builder<K, T, R, OrdKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
+impl<K, T, R, O> Builder<K, T, R, VecKeyBatch<K, T, R, O>> for VecKeyBuilder<K, T, R, O>
 where
     Self: SizeOf,
     K: DBData,
@@ -504,7 +504,7 @@ where
     fn new_builder(time: T) -> Self {
         Self {
             time,
-            builder: <RawOrdKeyBuilder<K, T, R, O> as TupleBuilder>::new(),
+            builder: <RawVecKeyBuilder<K, T, R, O> as TupleBuilder>::new(),
         }
     }
 
@@ -512,7 +512,7 @@ where
     fn with_capacity(time: T, cap: usize) -> Self {
         Self {
             time,
-            builder: <RawOrdKeyBuilder<K, T, R, O> as TupleBuilder>::with_capacity(cap),
+            builder: <RawVecKeyBuilder<K, T, R, O> as TupleBuilder>::with_capacity(cap),
         }
     }
 
@@ -527,7 +527,7 @@ where
     }
 
     #[inline(never)]
-    fn done(self) -> OrdKeyBatch<K, T, R, O> {
+    fn done(self) -> VecKeyBatch<K, T, R, O> {
         let time_next = self.time.advance(0);
         let upper = if time_next <= self.time {
             Antichain::new()
@@ -535,7 +535,7 @@ where
             Antichain::from_elem(time_next)
         };
 
-        OrdKeyBatch {
+        VecKeyBatch {
             layer: self.builder.done(),
             lower: Antichain::from_elem(self.time),
             upper,
@@ -543,7 +543,7 @@ where
     }
 }
 
-pub struct OrdKeyConsumer<K, T, R, O>
+pub struct VecKeyConsumer<K, T, R, O>
 where
     K: 'static,
     T: 'static,
@@ -553,11 +553,11 @@ where
     consumer: OrderedLayerConsumer<K, T, R, O>,
 }
 
-impl<K, T, R, O> Consumer<K, (), R, T> for OrdKeyConsumer<K, T, R, O>
+impl<K, T, R, O> Consumer<K, (), R, T> for VecKeyConsumer<K, T, R, O>
 where
     O: OrdOffset,
 {
-    type ValueConsumer<'a> = OrdKeyValueConsumer<'a, K, T, R, O>
+    type ValueConsumer<'a> = VecKeyValueConsumer<'a, K, T, R, O>
     where
         Self: 'a;
 
@@ -571,7 +571,7 @@ where
 
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, values) = self.consumer.next_key();
-        (key, OrdKeyValueConsumer::new(values))
+        (key, VecKeyValueConsumer::new(values))
     }
 
     fn seek_key(&mut self, key: &K)
@@ -582,7 +582,7 @@ where
     }
 }
 
-pub struct OrdKeyValueConsumer<'a, K, T, R, O>
+pub struct VecKeyValueConsumer<'a, K, T, R, O>
 where
     T: 'static,
     R: 'static,
@@ -591,7 +591,7 @@ where
     __type: PhantomData<(K, O)>,
 }
 
-impl<'a, K, T, R, O> OrdKeyValueConsumer<'a, K, T, R, O> {
+impl<'a, K, T, R, O> VecKeyValueConsumer<'a, K, T, R, O> {
     const fn new(consumer: OrderedLayerValues<'a, T, R>) -> Self {
         Self {
             consumer,
@@ -600,7 +600,7 @@ impl<'a, K, T, R, O> OrdKeyValueConsumer<'a, K, T, R, O> {
     }
 }
 
-impl<'a, K, T, R, O> ValueConsumer<'a, (), R, T> for OrdKeyValueConsumer<'a, K, T, R, O> {
+impl<'a, K, T, R, O> ValueConsumer<'a, (), R, T> for VecKeyValueConsumer<'a, K, T, R, O> {
     fn value_valid(&self) -> bool {
         self.consumer.value_valid()
     }
