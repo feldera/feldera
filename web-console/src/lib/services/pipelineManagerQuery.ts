@@ -7,13 +7,17 @@ import {
   ApiKeysService,
   AuthenticationService,
   CancelablePromise,
+  CompileProgramRequest,
   ConnectorsService,
   PipelinesService,
   PipelineStatus as RawPipelineStatus,
+  ProgramDescr,
+  ProgramId,
   ProgramsService,
   ProgramStatus,
   ServicesService,
-  UpdateProgramRequest
+  UpdateProgramRequest,
+  UpdateProgramResponse
 } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { leftJoin } from 'array-join'
@@ -224,6 +228,53 @@ export const mutationDeletePipeline = (queryClient: QueryClient) =>
     onError: (_error, _pipelineName) => {}
   }) satisfies UseMutationOptions<string, ApiError, string>
 
+export const mutationUpdateProgram = (
+  queryClient: QueryClient
+): UseMutationOptions<
+  UpdateProgramResponse,
+  ApiError,
+  { programName: ProgramId; update_request: UpdateProgramRequest }
+> => ({
+  mutationFn: args => {
+    return ProgramsService.updateProgram(args.programName, args.update_request)
+  },
+  onMutate: async ({ programName, update_request }) => {
+    const updateCache = <T extends UpdateProgramRequest>(old: T | undefined) =>
+      !old
+        ? undefined
+        : {
+            ...old,
+            code: update_request.code ?? old.code,
+            name: update_request.name ?? old.name,
+            description: update_request.description ?? old.description
+          }
+    // Optimistic update
+    setQueryData(queryClient, PipelineManagerQuery.programCode(update_request.name ?? programName), updateCache)
+    setQueryData(queryClient, PipelineManagerQuery.programStatus(update_request.name ?? programName), updateCache)
+    // For temporary updates of the cache of entities with an old name after the name is changed
+    setQueryData(queryClient, PipelineManagerQuery.programCode(programName), updateCache)
+    setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), updateCache)
+  },
+  onSettled(_data, _error, variables, _context) {
+    invalidateQuery(queryClient, PipelineManagerQuery.programStatus(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQuery.programCode(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQuery.programs())
+  }
+})
+
+export const mutationCompileProgram = (
+  queryClient: QueryClient
+): UseMutationOptions<CompileProgramRequest, ApiError, { programName: string; request: CompileProgramRequest }> => ({
+  mutationFn: args => {
+    return ProgramsService.compileProgram(args.programName, args.request)
+  },
+  async onSettled(_data, _error, variables, _context) {
+    invalidateQuery(queryClient, PipelineManagerQuery.programStatus(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQuery.programCode(variables.programName))
+    invalidateQuery(queryClient, PipelineManagerQuery.programs())
+  }
+})
+
 export const invalidatePipeline = (queryClient: QueryClient, pipelineName: string) => {
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineLastRevision(pipelineName))
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName))
@@ -233,8 +284,8 @@ export const invalidatePipeline = (queryClient: QueryClient, pipelineName: strin
 }
 
 // Updates just the program status in the query cache.
-export const programStatusUpdate = (queryClient: QueryClient, programName: string, newStatus: ProgramStatus) => {
-  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), oldData => {
+export const updateProgramCacheStatus = (queryClient: QueryClient, programName: string, newStatus: ProgramStatus) => {
+  const updateCache = <T extends ProgramDescr | undefined>(oldData: T) => {
     if (!oldData) {
       return oldData
     }
@@ -242,16 +293,15 @@ export const programStatusUpdate = (queryClient: QueryClient, programName: strin
       ...oldData,
       status: newStatus
     }
-  })
+  }
+  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), updateCache)
+  setQueryData(queryClient, PipelineManagerQuery.programCode(programName), updateCache)
   setQueryData(queryClient, PipelineManagerQuery.programs(), oldData => {
     return oldData?.map(item => {
       if (item.name !== programName) {
         return item
       }
-      return {
-        ...item,
-        status: newStatus
-      }
+      return updateCache(item)
     })
   })
 }
@@ -262,7 +312,7 @@ export const programQueryCacheUpdate = (
   programName: string,
   newData: UpdateProgramRequest
 ) => {
-  setQueryData(queryClient, PipelineManagerQuery.programCode(programName), oldData => {
+  const updateCache = <T extends ProgramDescr | undefined>(oldData: T) => {
     if (!oldData) {
       return oldData
     }
@@ -272,21 +322,10 @@ export const programQueryCacheUpdate = (
       description: newData.description ?? oldData.description,
       code: newData.code ?? oldData.code
     }
-  })
+  }
+  setQueryData(queryClient, PipelineManagerQuery.programCode(programName), updateCache)
 
-  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), oldData => {
-    if (!oldData) {
-      return oldData
-    }
-    return {
-      ...oldData,
-      ...{
-        name: newData.name || oldData.name,
-        description: newData.description ?? oldData.description,
-        code: newData.code ?? oldData.code
-      }
-    }
-  })
+  setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), updateCache)
 
   setQueryData(
     queryClient,
@@ -296,12 +335,7 @@ export const programQueryCacheUpdate = (
         if (oldData.name !== programName) {
           return oldData
         }
-        return {
-          ...oldData,
-          name: newData.name || oldData.name,
-          description: newData.description ?? oldData.description,
-          code: newData.code ?? oldData.code
-        }
+        return updateCache(oldData)
       })
   )
 }

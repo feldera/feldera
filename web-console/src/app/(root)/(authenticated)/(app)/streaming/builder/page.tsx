@@ -59,7 +59,10 @@ const stateToSaveLabel = (state: SaveIndicatorState): string =>
 
 const detachConnector = (c: AttachedConnector) => ({ ...c, relation_name: '' }) as AttachedConnector
 
-const PipelineBuilderPage = ({pipelineName, gotoPipeline}: {
+const PipelineBuilderPage = ({
+  pipelineName,
+  gotoPipeline
+}: {
   pipelineName?: string
   gotoPipeline: Dispatch<string>
 }) => {
@@ -108,7 +111,10 @@ const PipelineBuilderPage = ({pipelineName, gotoPipeline}: {
   const pipelineQuery = useQuery({
     ...PipelineManagerQuery.pipelineStatus(pipelineName!),
     enabled:
-      pipelineName !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
+      pipelineName !== undefined &&
+      saveState !== 'isSaving' &&
+      saveState !== 'isModified' &&
+      saveState !== 'isDebouncing'
   })
   useEffect(() => {
     if (saveState === 'isSaving' || saveState === 'isModified' || saveState === 'isDebouncing') {
@@ -240,6 +246,7 @@ const PipelineBuilderPage = ({pipelineName, gotoPipeline}: {
 
     // Create a new pipeline
     if (pipelineName === undefined) {
+      invariant(name, 'Client error: cannot create pipeline - empty name!')
       newPipelineMutate(
         {
           name,

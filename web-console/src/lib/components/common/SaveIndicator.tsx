@@ -3,8 +3,9 @@
 
 import ColoredChip from 'src/@core/components/mui/chip'
 
-import CloudDoneIcon from '@mui/icons-material/CloudDone'
-import SyncIcon from '@mui/icons-material/Sync'
+import IconCloudDone from '@mui/icons-material/CloudDone'
+import IconCloudOff from '@mui/icons-material/CloudOff'
+import IconSync from '@mui/icons-material/Sync'
 import { Tooltip } from '@mui/material'
 
 export type SaveIndicatorState = 'isNew' | 'isDebouncing' | 'isModified' | 'isSaving' | 'isUpToDate'
@@ -15,10 +16,11 @@ const stateToIcon = (state: SaveIndicatorState) => {
     case 'isDebouncing':
     case 'isSaving':
     case 'isModified':
-      return <SyncIcon />
-    case 'isNew':
+      return <IconSync />
     case 'isUpToDate':
-      return <CloudDoneIcon />
+      return <IconCloudDone />
+    case 'isNew':
+      return <IconCloudOff />
   }
 }
 

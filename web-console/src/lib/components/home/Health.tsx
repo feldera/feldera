@@ -138,7 +138,8 @@ const pipelineErrors = (p: Pipeline) =>
                   : {
                       SQL: () =>
                         ProgramsService.getProgram(programName, true).then(
-                          program => '```\n' + limitMessage(program.code, 7000, '\n...Beginning of the code...') + '\n```'
+                          program =>
+                            '```\n' + limitMessage(program.code, 7000, '\n...Beginning of the code...') + '\n```'
                         )
                     })(p.descriptor.program_name)
             }

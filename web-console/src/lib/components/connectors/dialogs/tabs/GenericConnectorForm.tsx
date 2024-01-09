@@ -1,5 +1,6 @@
 'use client'
 
+import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
 import { editor } from 'monaco-editor'
@@ -173,7 +174,7 @@ const JSONConfigEditor = (props: {
       onMount={handleEditorDidMount}
       theme={vscodeTheme}
       defaultLanguage='yaml'
-      options={{ domReadOnly: props.disabled, readOnly: props.disabled }}
+      options={isMonacoEditorDisabled(props.disabled)}
       {...{
         value: props.configToText(configText)
       }}

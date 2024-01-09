@@ -79,7 +79,7 @@ const DataSourceTable = () => {
   )
 
   // Delete a connector entry
-  const {mutate: deleteMutation} = useMutation<void, ApiError, string>({
+  const { mutate: deleteMutation } = useMutation<void, ApiError, string>({
     mutationFn: ConnectorsService.deleteConnector
   })
   const deleteSource = useCallback(

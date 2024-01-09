@@ -173,17 +173,15 @@ const TableSqlPrograms = () => {
   ]
 
   // Editing a row
-  const mutation = useMutation<
-    UpdateProgramResponse,
-    ApiError,
-    { programName: string; request: UpdateProgramRequest }
-  >({
-    mutationFn: args => ProgramsService.updateProgram(args.programName, args.request),
-    onSettled: () => {
-      invalidateQuery(queryClient, PipelineManagerQuery.programs())
-      invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
+  const mutation = useMutation<UpdateProgramResponse, ApiError, { programName: string; request: UpdateProgramRequest }>(
+    {
+      mutationFn: args => ProgramsService.updateProgram(args.programName, args.request),
+      onSettled: () => {
+        invalidateQuery(queryClient, PipelineManagerQuery.programs())
+        invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
+      }
     }
-  })
+  )
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     mutation.mutate(
       {

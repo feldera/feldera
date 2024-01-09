@@ -18,6 +18,7 @@ import {
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { Dispatch } from 'react'
 import { FieldValues, SubmitHandler } from 'react-hook-form'
+import invariant from 'tiny-invariant'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -40,6 +41,7 @@ export const useNewConnectorRequest = <TData extends FieldValues>(
       return
     }
     const sourceDesc = getRequestData(data)
+    invariant(sourceDesc.name, 'Client error: cannot create connector - empty name!')
     newConnector(sourceDesc, {
       onSuccess: resp => {
         invalidateQuery(queryClient, PipelineManagerQuery.connectors())
@@ -68,7 +70,7 @@ export const useUpdateConnectorRequest = <
 }*/ FieldValues
 >(
   onFormSubmitted: (connector: ConnectorDescr | undefined) => void,
-  getRequestData: (data: TData) => [{connectorId: ConnectorId, connectorName: string}, UpdateConnectorRequest]
+  getRequestData: (data: TData) => [{ connectorId: ConnectorId; connectorName: string }, UpdateConnectorRequest]
 ): SubmitHandler<TData> => {
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
@@ -85,7 +87,7 @@ export const useUpdateConnectorRequest = <
     if (isPending) {
       return
     }
-    const [{connectorId, connectorName}, request] = getRequestData(data)
+    const [{ connectorId, connectorName }, request] = getRequestData(data)
     updateConnector(
       { connectorName, request },
       {
@@ -130,10 +132,14 @@ export const useConnectorRequest = <T extends FieldValues, R>(
   const onSubmit =
     connector === undefined
       ? /* eslint-disable react-hooks/rules-of-hooks */
-        useNewConnectorRequest(onFormSubmitted, prepareData as ((data: T) => NewConnectorRequest))
+        useNewConnectorRequest(onFormSubmitted, prepareData as (data: T) => NewConnectorRequest)
       : /* eslint-disable react-hooks/rules-of-hooks */
-        (updateRequest => useUpdateConnectorRequest(onFormSubmitted, updateRequest))
-        ((data: T) => tuple({connectorId: connector.connector_id, connectorName: connector.name}, prepareData(data) as UpdateConnectorRequest))
+        (updateRequest => useUpdateConnectorRequest(onFormSubmitted, updateRequest))((data: T) =>
+          tuple(
+            { connectorId: connector.connector_id, connectorName: connector.name },
+            prepareData(data) as UpdateConnectorRequest
+          )
+        )
 
   return onSubmit
 }

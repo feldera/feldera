@@ -357,7 +357,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
 }
 
 // Only show the details tab button if this pipeline has a revision
-function CustomDetailPanelToggle({ value: isExpanded, row: row }: Pick<GridRenderCellParams<Pipeline>, 'value' | 'row'>) {
+function CustomDetailPanelToggle({
+  value: isExpanded,
+  row: row
+}: Pick<GridRenderCellParams<Pipeline>, 'value' | 'row'>) {
   const [hasRevision, setHasRevision] = useState<boolean>(false)
 
   const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.name))
