@@ -98,7 +98,10 @@ where
         self.cursor.step_key()
     }
 
-    fn seek_key(&mut self, key: &K) {
+    fn seek_key(&mut self, key: &K)
+    where
+        K: PartialOrd,
+    {
         self.cursor.seek_key_reverse(key)
     }
 
@@ -116,7 +119,10 @@ where
         self.cursor.seek_key_with(predicate)
     }
 
-    fn seek_key_reverse(&mut self, key: &K) {
+    fn seek_key_reverse(&mut self, key: &K)
+    where
+        K: PartialOrd,
+    {
         self.cursor.seek_key(key)
     }
 

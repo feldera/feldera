@@ -120,13 +120,6 @@ where
         }
     }
 
-    fn seek_key(&mut self, key: &K) {
-        self.cursor.seek_val_with(|Tup2(k, _)| k >= key);
-        if self.cursor.val_valid() {
-            self.key = self.cursor.val().0.clone();
-        }
-    }
-
     fn seek_key_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool + Clone,
@@ -142,13 +135,6 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         self.cursor.seek_val_with_reverse(|Tup2(k, _)| predicate(k));
-        if self.cursor.val_valid() {
-            self.key = self.cursor.val().0.clone();
-        }
-    }
-
-    fn seek_key_reverse(&mut self, key: &K) {
-        self.cursor.seek_val_with_reverse(|Tup2(k, _)| k <= key);
         if self.cursor.val_valid() {
             self.key = self.cursor.val().0.clone();
         }

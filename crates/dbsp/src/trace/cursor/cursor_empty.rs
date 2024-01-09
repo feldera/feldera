@@ -70,8 +70,6 @@ where
         panic!("")
     }
 
-    fn seek_key(&mut self, _key: &K) {}
-
     fn seek_key_with<P>(&mut self, _predicate: P)
     where
         P: Fn(&K) -> bool + Clone,
@@ -83,8 +81,6 @@ where
         P: Fn(&K) -> bool + Clone,
     {
     }
-
-    fn seek_key_reverse(&mut self, _key: &K) {}
 
     fn step_val(&mut self) {
         panic!("CursorEmpty::step_val")
