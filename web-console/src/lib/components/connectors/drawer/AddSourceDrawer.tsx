@@ -84,7 +84,7 @@ const IoSelectBox = (props: {
                   style={{
                     height: 64,
                     objectFit: 'cover',
-                    width: 'fit-content',
+                    width: '100%',
                     padding: 6,
                     fill: theme.palette.text.primary
                   }}
