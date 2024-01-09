@@ -7,7 +7,7 @@ pub mod cursor_list;
 pub mod cursor_pair;
 mod reverse;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum Direction {
     Forward,
     Backward,
