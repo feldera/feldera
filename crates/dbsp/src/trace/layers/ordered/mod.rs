@@ -1226,7 +1226,7 @@ where
     where
         Self: 'k;
 
-    type ValueStorage = L;
+    type ValueCursor = L::Cursor<'s>;
 
     #[inline]
     fn keys(&self) -> usize {

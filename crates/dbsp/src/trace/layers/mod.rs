@@ -136,7 +136,9 @@ pub trait MergeBuilder: Builder {
     fn keys(&self) -> usize;
 
     /// Copy a range of `other` into this collection.
-    fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize);
+    fn copy_range(&mut self, other: &Self::Trie, lower: usize, upper: usize) {
+        self.copy_range_retain_keys(other, lower, upper, &|_| true)
+    }
 
     /// Copy a range of `other` into this collection, only retaining
     /// entries whose keys satisfy the `filter` condition.
@@ -154,7 +156,9 @@ pub trait MergeBuilder: Builder {
         &'a mut self,
         other1: <Self::Trie as Trie>::Cursor<'a>,
         other2: <Self::Trie as Trie>::Cursor<'a>,
-    );
+    ) {
+        self.push_merge_retain_keys(other1, other2, &|_| true)
+    }
 
     /// Merges two sub-collections into one sub-collection, only
     /// retaining entries whose keys satisfy the `filter` condition.
@@ -217,15 +221,15 @@ pub trait Cursor<'s> {
     /// Key used to search the contents of the cursor.
     type Key: DBData;
 
-    type ValueStorage: Trie;
+    type ValueCursor: Cursor<'s>;
 
     fn keys(&self) -> usize;
 
     /// Reveals the current item.
-    fn item(&self) -> Self::Item<'_>;
+    fn item<'a>(&'a self) -> Self::Item<'a>;
 
     /// Returns cursor over values associted with the current key.
-    fn values(&self) -> <Self::ValueStorage as Trie>::Cursor<'s>;
+    fn values(&self) -> Self::ValueCursor;
 
     /// Advances the cursor by one element.
     fn step(&mut self);
@@ -397,7 +401,7 @@ impl<'s> Cursor<'s> for () {
     type Key = ();
     type Item<'k> = &'k ();
 
-    type ValueStorage = ();
+    type ValueCursor = ();
 
     fn keys(&self) -> usize {
         0

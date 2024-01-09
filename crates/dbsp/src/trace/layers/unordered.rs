@@ -121,7 +121,7 @@ impl<'s, K: DBData, R: DBWeight> Cursor<'s> for UnorderedCursor<'s, K, R> {
     where
         Self: 'k;
 
-    type ValueStorage = ();
+    type ValueCursor = ();
 
     fn keys(&self) -> usize {
         self.end - self.start
@@ -131,7 +131,7 @@ impl<'s, K: DBData, R: DBWeight> Cursor<'s> for UnorderedCursor<'s, K, R> {
         todo!()
     }
 
-    fn values(&self) -> <Self::ValueStorage as Trie>::Cursor<'s> {}
+    fn values(&self) -> Self::ValueCursor {}
 
     fn step(&mut self) {
         todo!()
