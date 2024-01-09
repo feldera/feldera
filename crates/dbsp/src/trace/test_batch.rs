@@ -593,6 +593,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct TestBatchCursor<K, V, T, R> {
     // All tuples in the batch flattened into a vector.
     data: Vec<((K, V, T), R)>,

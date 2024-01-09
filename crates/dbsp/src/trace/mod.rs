@@ -310,7 +310,7 @@ where
     type R: DBWeight;
 
     /// The type used to enumerate the batch's contents.
-    type Cursor<'s>: Cursor<Self::Key, Self::Val, Self::Time, Self::R>
+    type Cursor<'s>: Cursor<Self::Key, Self::Val, Self::Time, Self::R> + Clone
     where
         Self: 's;
 

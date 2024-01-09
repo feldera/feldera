@@ -443,6 +443,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct SpineCursor<'s, B: Batch + 's> {
     #[allow(clippy::type_complexity)]
     cursor: CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor<'s>>,

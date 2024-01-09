@@ -314,7 +314,7 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug, SizeOf)]
+#[derive(Debug, SizeOf, Clone)]
 pub struct OrdKeyCursor<'s, K, T, R, O = usize>
 where
     O: OrdOffset,
