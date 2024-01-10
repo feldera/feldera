@@ -2,7 +2,7 @@
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
-    patch, post,
+    patch, post, put,
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
@@ -72,7 +72,8 @@ pub(crate) struct NewProgramResponse {
     /// Id of the newly created program.
     #[schema(example = 42)]
     program_id: ProgramId,
-    /// Initial program version (this field is always set to 1).
+    /// Initial program version (this field is always set to 1 when
+    /// a program is first created).
     #[schema(example = 1)]
     version: Version,
 }
@@ -98,6 +99,29 @@ pub(crate) struct UpdateProgramRequest {
 pub(crate) struct UpdateProgramResponse {
     /// New program version.  Equals the previous version if program code
     /// doesn't change or previous version +1 if it does.
+    version: Version,
+}
+
+/// Request to create or replace a Feldera program.
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct CreateOrReplaceProgramRequest {
+    /// Program description.
+    #[schema(example = "Example description")]
+    description: String,
+    /// SQL code of the program.
+    #[schema(example = "CREATE TABLE Example(name varchar);")]
+    code: String,
+}
+
+/// Response to a new program request.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct CreateOrReplaceProgramResponse {
+    /// Id of the newly created program.
+    #[schema(example = 42)]
+    program_id: ProgramId,
+    /// Initial program version (this field is always set to 1 when
+    /// a program is first created).
+    #[schema(example = 1)]
     version: Version,
 }
 
@@ -229,6 +253,7 @@ async fn new_program(
             &request.name,
             &request.description,
             &request.code,
+            None,
         )
         .await
         .map(|(program_id, version)| {
@@ -295,6 +320,7 @@ async fn update_program(
             &None,
             &None,
             body.guard,
+            None,
         )
         .await?;
     info!(
@@ -305,6 +331,55 @@ async fn update_program(
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&UpdateProgramResponse { version }))
+}
+
+/// Create or replace a program.
+#[utoipa::path(
+    request_body = CreateOrReplaceProgramRequest,
+    responses(
+        (status = CREATED, description = "Program created successfully", body = CreateOrReplaceProgramResponse),
+        (status = OK, description = "Program updated successfully", body = CreateOrReplaceProgramResponse),
+        (status = CONFLICT
+            , description = "A program with this name already exists in the database."
+            , body = ErrorResponse
+            , example = json!(examples::duplicate_name())),
+    ),
+    params(
+        ("program_name" = String, Path, description = "Unique program name")
+    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Programs"
+)]
+#[put("/programs/{program_name}")]
+async fn create_or_replace_program(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: HttpRequest,
+    body: web::Json<CreateOrReplaceProgramRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let program_name = parse_string_param(&request, "program_name")?;
+    let (created, program_id, version) = state
+        .db
+        .lock()
+        .await
+        .create_or_replace_program(*tenant_id, &program_name, &body.description, &body.code)
+        .await?;
+    if created {
+        Ok(HttpResponse::Created()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&CreateOrReplaceProgramResponse {
+                program_id,
+                version,
+            }))
+    } else {
+        Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&CreateOrReplaceProgramResponse {
+                program_id,
+                version,
+            }))
+    }
 }
 
 /// Mark a program for compilation.

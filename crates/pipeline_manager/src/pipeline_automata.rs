@@ -726,7 +726,14 @@ mod test {
         let (program_id, version) = conn
             .lock()
             .await
-            .new_program(tenant_id, program_id, "test0", "program desc", "ignored")
+            .new_program(
+                tenant_id,
+                program_id,
+                "test0",
+                "program desc",
+                "ignored",
+                None,
+            )
             .await
             .unwrap();
         let _ = conn
@@ -766,6 +773,7 @@ mod test {
                 "2",
                 &rc,
                 &Some(vec![]),
+                None,
             )
             .await
             .unwrap();

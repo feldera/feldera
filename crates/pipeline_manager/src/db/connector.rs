@@ -1,3 +1,4 @@
+use deadpool_postgres::Transaction;
 use log::debug;
 use pipeline_types::config::ConnectorConfig;
 use uuid::Uuid;
@@ -42,19 +43,28 @@ pub(crate) async fn new_connector(
     name: &str,
     description: &str,
     config: &ConnectorConfig,
+    txn: Option<&Transaction<'_>>,
 ) -> Result<ConnectorId, DBError> {
     debug!("new_connector {name} {description} {config:?}");
-    let manager = db.pool.get().await?;
-    let stmt = manager
-            .prepare_cached("INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)")
-            .await?;
-    manager
-        .execute(
+    let query = "INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)";
+    let row = if let Some(txn) = txn {
+        let stmt = txn.prepare_cached(query).await?;
+        txn.execute(
             &stmt,
             &[&id, &name, &description, &config.to_yaml(), &tenant_id.0],
         )
         .await
-        .map_err(ProjectDB::maybe_unique_violation)
+    } else {
+        let manager = db.pool.get().await?;
+        let stmt = manager.prepare_cached(query).await?;
+        manager
+            .execute(
+                &stmt,
+                &[&id, &name, &description, &config.to_yaml(), &tenant_id.0],
+            )
+            .await
+    };
+    row.map_err(ProjectDB::maybe_unique_violation)
         .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
     Ok(ConnectorId(id))
 }
@@ -87,14 +97,17 @@ pub(crate) async fn get_connector_by_name(
     db: &ProjectDB,
     tenant_id: TenantId,
     name: &str,
+    txn: Option<&Transaction<'_>>,
 ) -> Result<ConnectorDescr, DBError> {
-    let manager = db.pool.get().await?;
-    let stmt = manager
-        .prepare_cached(
-            "SELECT id, description, config FROM connector WHERE name = $1 AND tenant_id = $2",
-        )
-        .await?;
-    let row = manager.query_opt(&stmt, &[&name, &tenant_id.0]).await?;
+    let query = "SELECT id, description, config FROM connector WHERE name = $1 AND tenant_id = $2";
+    let row = if let Some(txn) = txn {
+        let stmt = txn.prepare_cached(query).await?;
+        txn.query_opt(&stmt, &[&name, &tenant_id.0]).await?
+    } else {
+        let manager = db.pool.get().await?;
+        let stmt = manager.prepare_cached(query).await?;
+        manager.query_opt(&stmt, &[&name, &tenant_id.0]).await?
+    };
 
     if let Some(row) = row {
         let connector_id: ConnectorId = ConnectorId(row.get(0));
@@ -154,18 +167,16 @@ pub(crate) async fn update_connector(
     connector_name: &str,
     description: &str,
     config: &Option<ConnectorConfig>,
+    txn: Option<&Transaction<'_>>,
 ) -> Result<(), DBError> {
+    let query = "UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4";
+    // TODO: update the query to fetch the connector we need instead of doing this
+    // extra read
     let descr = db.get_connector_by_id(tenant_id, connector_id).await?;
     let config = config.clone().unwrap_or(descr.config);
-    let manager = db.pool.get().await?;
-    let stmt = manager
-        .prepare_cached(
-            "UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4",
-        )
-        .await?;
-
-    manager
-        .execute(
+    let row = if let Some(txn) = txn {
+        let stmt = txn.prepare_cached(query).await?;
+        txn.execute(
             &stmt,
             &[
                 &connector_name,
@@ -175,7 +186,22 @@ pub(crate) async fn update_connector(
             ],
         )
         .await
-        .map_err(ProjectDB::maybe_unique_violation)?;
+    } else {
+        let manager = db.pool.get().await?;
+        let stmt = manager.prepare_cached(query).await?;
+        manager
+            .execute(
+                &stmt,
+                &[
+                    &connector_name,
+                    &description,
+                    &config.to_yaml(),
+                    &connector_id.0,
+                ],
+            )
+            .await
+    };
+    row.map_err(ProjectDB::maybe_unique_violation)?;
 
     Ok(())
 }

@@ -116,10 +116,12 @@ request is rejected."
         program::get_program,
         program::new_program,
         program::update_program,
+        program::create_or_replace_program,
         program::compile_program,
         program::delete_program,
         pipeline::new_pipeline,
         pipeline::update_pipeline,
+        pipeline::create_or_replace_pipeline,
         pipeline::list_pipelines,
         pipeline::pipeline_stats,
         pipeline::get_pipeline,
@@ -132,6 +134,7 @@ request is rejected."
         connector::get_connector,
         connector::new_connector,
         connector::update_connector,
+        connector::create_or_replace_connector,
         connector::delete_connector,
         service::list_services,
         service::get_service,
@@ -214,15 +217,21 @@ request is rejected."
         program::NewProgramResponse,
         program::UpdateProgramRequest,
         program::UpdateProgramResponse,
+        program::CreateOrReplaceProgramRequest,
+        program::CreateOrReplaceProgramResponse,
         program::CompileProgramRequest,
         pipeline::NewPipelineRequest,
         pipeline::NewPipelineResponse,
         pipeline::UpdatePipelineRequest,
         pipeline::UpdatePipelineResponse,
+        pipeline::CreateOrReplacePipelineRequest,
+        pipeline::CreateOrReplacePipelineResponse,
         connector::NewConnectorRequest,
         connector::NewConnectorResponse,
         connector::UpdateConnectorRequest,
         connector::UpdateConnectorResponse,
+        connector::CreateOrReplaceConnectorRequest,
+        connector::CreateOrReplaceConnectorResponse,
         service::NewServiceRequest,
         service::NewServiceResponse,
         service::UpdateServiceRequest,
@@ -267,10 +276,12 @@ fn api_scope() -> Scope {
         .service(program::get_program)
         .service(program::new_program)
         .service(program::update_program)
+        .service(program::create_or_replace_program)
         .service(program::compile_program)
         .service(program::delete_program)
         .service(pipeline::new_pipeline)
         .service(pipeline::update_pipeline)
+        .service(pipeline::create_or_replace_pipeline)
         .service(pipeline::list_pipelines)
         .service(pipeline::pipeline_stats)
         .service(pipeline::get_pipeline)
@@ -283,6 +294,7 @@ fn api_scope() -> Scope {
         .service(connector::get_connector)
         .service(connector::new_connector)
         .service(connector::update_connector)
+        .service(connector::create_or_replace_connector)
         .service(connector::delete_connector)
         .service(service::list_services)
         .service(service::get_service)
