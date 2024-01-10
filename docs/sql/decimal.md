@@ -13,8 +13,7 @@ scale, both of which must be constants.
 
 The type ``NUMERIC(precision)`` is the same as ``NUMERIC(precision, 0)``.
 
-The type ``NUMERIC`` specifies no limits on either precision or scale,
-and thus will use the maximum supported values for both.
+The type ``NUMERIC`` is the same as ``NUMERIC(MAX_PRECISION, 0)``. 
 
 The maximum precision supported is 128 binary digits (38 decimal
 digits).  The maximum scale supported is 10 decimal digits.
@@ -27,7 +26,7 @@ unary and binary), ``*`` (multiplication), ``/`` (division), ``%``
 
 Division or modulus by zero cause a runtime error.
 
-Casting a string to a decimal value will produce the value ``0`` when
+Casting a string to a decimal value will produce a run time error if
 parsing fails.
 
 ## Predefined functions on Decimal Values

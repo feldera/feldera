@@ -688,7 +688,7 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT CAST('0.5' AS DECIMAL)";
         this.testConstantOutput(query, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(
-                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, DBSPTypeDecimal.MAX_SCALE, false), new BigDecimal("0.5")))));
+                        new DBSPDecimalLiteral(new DBSPTypeDecimal(CalciteObject.EMPTY, DBSPTypeDecimal.MAX_PRECISION, 0, false), new BigDecimal("0.5")))));
     }
 
     @Test

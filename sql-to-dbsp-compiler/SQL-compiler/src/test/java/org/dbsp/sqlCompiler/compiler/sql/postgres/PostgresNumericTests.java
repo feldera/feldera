@@ -41,7 +41,7 @@ import org.junit.Test;
  */
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresNumericTests extends SqlIoTest {
-    protected static final int WIDTH = 25;
+    protected static final int WIDTH = 28;
 
     @Override
     public void prepareData(DBSPCompiler compiler) {
@@ -492,7 +492,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_power_10_ln VALUES (4,'7405685069594999.07733999469386277636');\n" +
                 "INSERT INTO num_exp_power_10_ln VALUES (5,'5068226527.32127265408584640098');\n" +
                 "INSERT INTO num_exp_power_10_ln VALUES (6,'281839893606.99372343357047819067');\n" +
-                "INSERT INTO num_exp_power_10_ln VALUES (7,'1716699575118597095.42330819910640247627');\n" +
+                // "INSERT INTO num_exp_power_10_ln VALUES (7,'1716699575118597095.42330819910640247627');\n" +
                 "INSERT INTO num_exp_power_10_ln VALUES (8,'167361463828.07491320069016125952');\n" +
                 "INSERT INTO num_exp_power_10_ln VALUES (9,'107511333880052007.04141124673540337457');\n" +
                 "INSERT INTO num_data VALUES (0, '0');\n" +
@@ -777,7 +777,7 @@ public class PostgresNumericTests extends SqlIoTest {
         // Removed unsupported numeric values inf, nan, etc.
         this.q(
                 """
-                        WITH v(x) AS (VALUES('0'::numeric),(1),(-1),('4.2'::numeric))
+                        WITH v(x) AS (VALUES('0'::numeric(2, 1)),(1),(-1),('4.2'::numeric(4, 2)))
                         SELECT x1, x2,
                           x1 + x2 AS s,
                           x1 - x2 AS diff,

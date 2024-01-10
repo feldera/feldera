@@ -42,7 +42,7 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
 
     // Current implementation of Decimal supports max scale of 28.
     // https://docs.rs/rust_decimal/latest/rust_decimal/struct.Decimal.html
-    public static final int MAX_SCALE = 28;
+    public static final int MAX_SCALE = 10;
 
 
     public final int precision;

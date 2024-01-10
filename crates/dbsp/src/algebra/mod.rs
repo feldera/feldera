@@ -11,7 +11,7 @@ mod present;
 pub mod zset;
 
 pub mod arcstr;
-mod decimal;
+pub mod decimal;
 
 pub use self::arcstr::ArcStr;
 
@@ -350,7 +350,7 @@ impl MulByRef<isize> for SQLDecimal {
 
     #[inline]
     fn mul_by_ref(&self, w: &isize) -> Self::Output {
-        *self * SQLDecimal::from(*w)
+        *self * SQLDecimal::from_isize(*w, self.precision(), self.scale()).unwrap()
     }
 }
 
@@ -423,7 +423,7 @@ impl MulByRef<i64> for SQLDecimal {
     type Output = Self;
 
     fn mul_by_ref(&self, other: &i64) -> Self::Output {
-        *self * SQLDecimal::from(*other)
+        *self * SQLDecimal::from_i64(*other, self.precision(), self.scale()).unwrap()
     }
 }
 
@@ -497,7 +497,7 @@ impl MulByRef<i32> for SQLDecimal {
 
     #[inline]
     fn mul_by_ref(&self, other: &i32) -> Self::Output {
-        *self * SQLDecimal::from(*other)
+        *self * SQLDecimal::from_i32(*other, self.precision(), self.scale()).unwrap()
     }
 }
 

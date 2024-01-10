@@ -64,7 +64,7 @@ public class CastTests extends BaseSQLTests {
                 new DBSPDoubleLiteral(12.0),
                 new DBSPStringLiteral("100100"),
                 DBSPLiteral.none(tenTwo),
-                new DBSPDecimalLiteral(tenFour, new BigDecimal(100103123))));
+                new DBSPDecimalLiteral(tenFour, new BigDecimal(100103))));
     }
 
     public void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
@@ -85,6 +85,13 @@ public class CastTests extends BaseSQLTests {
     public void castFail() {
         this.runtimeFail("SELECT CAST('blah' AS DECIMAL)",
                 "Invalid decimal: unknown character",
+                this.getEmptyIOPair());
+    }
+
+    @Test
+    public void decimalOutOfRange() {
+        this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
+                "cannot store the given value (100103123) with precision (13) in the desired precision (10)",
                 this.getEmptyIOPair());
     }
 
@@ -111,6 +118,6 @@ public class CastTests extends BaseSQLTests {
     @Test
     public void castFromFPTest() {
         String query = "SELECT T.COL1 + T.COL2 + T.COL3 + T.COL5 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPDoubleLiteral(100203245.0))));
+        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPDoubleLiteral(200225.0))));
     }
 }

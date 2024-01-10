@@ -459,16 +459,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("Some(");
         String value = Objects.requireNonNull(literal.value).toPlainString();
 
-        int scale = (type.precision == DBSPTypeDecimal.MAX_PRECISION && type.scale == 0) ? DBSPTypeDecimal.MAX_SCALE : type.scale;
-
         this.builder.append("SQLDecimal::from_str_with_precision_scale(\"")
                 .append(value)
                 .append("\"")
-                .append(", ")
+                .append(", Precision::try_from(")
                 .append(type.precision)
-                .append("_u32, ")
-                .append(scale)
-                .append("_u32).unwrap()");
+                .append(").unwrap(), Scale::try_from(")
+                .append(type.scale)
+                .append(").unwrap()).unwrap()");
 
         if (type.mayBeNull)
             this.builder.append(")");

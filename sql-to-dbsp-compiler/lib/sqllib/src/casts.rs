@@ -6,9 +6,12 @@ use std::cmp::Ordering;
 
 use crate::{geopoint::*, interval::*, some_polymorphic_function1, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use dbsp::algebra::SQLDecimal;
+use dbsp::algebra::{
+    decimal::{Precision, Scale},
+    SQLDecimal,
+};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
-use num::{FromPrimitive, One, ToPrimitive, Zero};
+use num::{One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
 
 const FLOAT_DISPLAY_PRECISION: usize = 6;
@@ -202,7 +205,7 @@ pub fn cast_to_TimeN_time(value: Time) -> Option<Time> {
 /////////// cast to decimal
 
 #[inline]
-pub fn cast_to_decimal_b(value: bool, precision: u32, scale: i32) -> SQLDecimal {
+pub fn cast_to_decimal_b(value: bool, precision: u32, scale: u32) -> SQLDecimal {
     let result = if value {
         SQLDecimal::one()
     } else {
@@ -212,7 +215,7 @@ pub fn cast_to_decimal_b(value: bool, precision: u32, scale: i32) -> SQLDecimal 
 }
 
 #[inline]
-pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: i32) -> SQLDecimal {
+pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: u32) -> SQLDecimal {
     let result = if value.unwrap() {
         SQLDecimal::one()
     } else {
@@ -222,56 +225,78 @@ pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: i32) -> SQ
 }
 
 #[inline]
-pub fn cast_to_decimal_decimal(value: SQLDecimal, _precision: u32, scale: i32) -> SQLDecimal {
-    //value.with_prec(precision as u64).with_scale(scale as i64)
-    value.rescale(scale as u32).unwrap()
+pub fn cast_to_decimal_decimal(value: SQLDecimal, precision: u32, scale: u32) -> SQLDecimal {
+    value
+        .rescale(Scale::try_from(scale).unwrap())
+        .set_precision(Precision::try_from(precision).unwrap())
+        .unwrap()
 }
 
 #[inline]
 pub fn cast_to_decimal_decimalN(
     value: Option<SQLDecimal>,
     precision: u32,
-    scale: i32,
+    scale: u32,
 ) -> SQLDecimal {
     let result = value.unwrap();
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_d(value: F64, precision: u32, scale: i32) -> SQLDecimal {
-    let result = SQLDecimal::from_f64(value.into_inner()).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
+pub fn cast_to_decimal_d(value: F64, precision: u32, scale: u32) -> SQLDecimal {
+    SQLDecimal::from_f64(
+        value.into_inner(),
+        Precision::try_from(precision).unwrap(),
+        Scale::try_from(scale).unwrap(),
+    )
+    .unwrap()
 }
 
 #[inline]
-pub fn cast_to_decimal_dN(value: Option<F64>, precision: u32, scale: i32) -> SQLDecimal {
-    let result = SQLDecimal::from_f64(value.unwrap().into_inner()).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
+pub fn cast_to_decimal_dN(value: Option<F64>, precision: u32, scale: u32) -> SQLDecimal {
+    SQLDecimal::from_f64(
+        value.unwrap().into_inner(),
+        Precision::try_from(precision).unwrap(),
+        Scale::try_from(scale).unwrap(),
+    )
+    .unwrap()
 }
 
 #[inline]
-pub fn cast_to_decimal_f(value: F32, precision: u32, scale: i32) -> SQLDecimal {
-    let result = SQLDecimal::from_f32(value.into_inner()).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
+pub fn cast_to_decimal_f(value: F32, precision: u32, scale: u32) -> SQLDecimal {
+    SQLDecimal::from_f32(
+        value.into_inner(),
+        Precision::try_from(precision).unwrap(),
+        Scale::try_from(scale).unwrap(),
+    )
+    .unwrap()
 }
 
 #[inline]
-pub fn cast_to_decimal_fN(value: Option<F32>, precision: u32, scale: i32) -> SQLDecimal {
-    let result = SQLDecimal::from_f32(value.unwrap().into_inner()).unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
+pub fn cast_to_decimal_fN(value: Option<F32>, precision: u32, scale: u32) -> SQLDecimal {
+    SQLDecimal::from_f32(
+        value.unwrap().into_inner(),
+        Precision::try_from(precision).unwrap(),
+        Scale::try_from(scale).unwrap(),
+    )
+    .unwrap()
 }
 
 #[inline]
-pub fn cast_to_decimal_s(value: String, precision: u32, scale: i32) -> SQLDecimal {
-    let result = value.trim().parse().unwrap();
-    cast_to_decimal_decimal(result, precision, scale)
+pub fn cast_to_decimal_s(value: String, precision: u32, scale: u32) -> SQLDecimal {
+    SQLDecimal::from_str_with_precision_scale(
+        value.trim(),
+        Precision::try_from(precision).unwrap(),
+        Scale::try_from(scale).unwrap(),
+    )
+    .unwrap()
 }
 
 #[inline]
-pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: i32) -> SQLDecimal {
+pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: u32) -> SQLDecimal {
     let result = match value {
         None => SQLDecimal::zero(),
-        Some(x) => x.trim().parse().unwrap(),
+        Some(x) => cast_to_decimal_s(x, precision, scale),
     };
     cast_to_decimal_decimal(result, precision, scale)
 }
@@ -280,25 +305,28 @@ macro_rules! cast_to_decimal {
     ($type_name: ident, $arg_type: ty) => {
         ::paste::paste! {
             #[inline]
-            pub fn [<cast_to_decimal_ $type_name> ]( value: $arg_type, precision: u32, scale: i32 ) -> SQLDecimal {
-                let result = SQLDecimal::[<from_ $arg_type>](value).unwrap();
-                cast_to_decimal_decimal(result, precision, scale)
+            pub fn [<cast_to_decimal_ $type_name> ]( value: $arg_type, precision: u32, scale: u32 ) -> SQLDecimal {
+                SQLDecimal::[<from_ $arg_type>](
+                    value, Precision::try_from(precision).unwrap(), Scale::try_from(scale).unwrap()
+                ).unwrap()
             }
 
             #[inline]
-            pub fn [<cast_to_decimal_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: i32 ) -> SQLDecimal {
-                let result = SQLDecimal::[<from_ $arg_type>](value.unwrap()).unwrap();
-                cast_to_decimal_decimal(result, precision, scale)
+            pub fn [<cast_to_decimal_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: u32 ) -> SQLDecimal {
+                SQLDecimal::[<from_ $arg_type>](
+                    value.unwrap(), Precision::try_from(precision).unwrap(), Scale::try_from(scale).unwrap()
+                ).unwrap()
             }
 
             #[inline]
-            pub fn [<cast_to_decimalN_ $type_name> ]( value: $arg_type, precision: u32, scale: i32 ) -> Option<SQLDecimal> {
-                let result = Some(SQLDecimal::[<from_ $arg_type>](value).unwrap());
-                set_ps(result, precision, scale)
+            pub fn [<cast_to_decimalN_ $type_name> ]( value: $arg_type, precision: u32, scale: u32 ) -> Option<SQLDecimal> {
+                SQLDecimal::[<from_ $arg_type>](
+                    value, Precision::try_from(precision).ok()?, Scale::try_from(scale).ok()?
+                )
             }
 
             #[inline]
-            pub fn [<cast_to_decimalN_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: i32 ) -> Option<SQLDecimal> {
+            pub fn [<cast_to_decimalN_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: u32 ) -> Option<SQLDecimal> {
                 let value = value?;
                 [<cast_to_decimalN_ $type_name >](value, precision, scale)
             }
@@ -316,7 +344,7 @@ cast_to_decimal!(u, usize);
 /////////// cast to decimalN
 
 #[inline]
-fn set_ps(value: Option<SQLDecimal>, precision: u32, scale: i32) -> Option<SQLDecimal> {
+fn set_ps(value: Option<SQLDecimal>, precision: u32, scale: u32) -> Option<SQLDecimal> {
     value.map(|v| cast_to_decimal_decimal(v, precision, scale))
 }
 
@@ -330,7 +358,7 @@ pub fn cast_to_decimalN_nullN(
 }
 
 #[inline]
-pub fn cast_to_decimalN_b(value: bool, precision: u32, scale: i32) -> Option<SQLDecimal> {
+pub fn cast_to_decimalN_b(value: bool, precision: u32, scale: u32) -> Option<SQLDecimal> {
     let result = if value {
         Some(SQLDecimal::one())
     } else {
@@ -340,7 +368,7 @@ pub fn cast_to_decimalN_b(value: bool, precision: u32, scale: i32) -> Option<SQL
 }
 
 #[inline]
-pub fn cast_to_decimalN_bN(value: Option<bool>, precision: u32, scale: i32) -> Option<SQLDecimal> {
+pub fn cast_to_decimalN_bN(value: Option<bool>, precision: u32, scale: u32) -> Option<SQLDecimal> {
     let result = value.map(|x| {
         if x {
             SQLDecimal::one()
@@ -355,7 +383,7 @@ pub fn cast_to_decimalN_bN(value: Option<bool>, precision: u32, scale: i32) -> O
 pub fn cast_to_decimalN_decimal(
     value: SQLDecimal,
     precision: u32,
-    scale: i32,
+    scale: u32,
 ) -> Option<SQLDecimal> {
     let result = Some(value);
     set_ps(result, precision, scale)
@@ -365,64 +393,73 @@ pub fn cast_to_decimalN_decimal(
 pub fn cast_to_decimalN_decimalN(
     value: Option<SQLDecimal>,
     precision: u32,
-    scale: i32,
+    scale: u32,
 ) -> Option<SQLDecimal> {
     set_ps(value, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimalN_d(value: F64, precision: u32, scale: i32) -> Option<SQLDecimal> {
-    let result = SQLDecimal::from_f64(value.into_inner());
-    set_ps(result, precision, scale)
+pub fn cast_to_decimalN_d(value: F64, precision: u32, scale: u32) -> Option<SQLDecimal> {
+    SQLDecimal::from_f64(
+        value.into_inner(),
+        Precision::try_from(precision).ok()?,
+        Scale::try_from(scale).ok()?,
+    )
 }
 
 #[inline]
-pub fn cast_to_decimalN_dN(value: Option<F64>, precision: u32, scale: i32) -> Option<SQLDecimal> {
-    let result = match value {
+pub fn cast_to_decimalN_dN(value: Option<F64>, precision: u32, scale: u32) -> Option<SQLDecimal> {
+    match value {
         None => None,
-        Some(x) => SQLDecimal::from_f64(x.into_inner()),
-    };
-    set_ps(result, precision, scale)
+        Some(x) => SQLDecimal::from_f64(
+            x.into_inner(),
+            Precision::try_from(precision).ok()?,
+            Scale::try_from(scale).ok()?,
+        ),
+    }
 }
 
 #[inline]
-pub fn cast_to_decimalN_f(value: F32, precision: u32, scale: i32) -> Option<SQLDecimal> {
-    let result = SQLDecimal::from_f32(value.into_inner());
-    set_ps(result, precision, scale)
+pub fn cast_to_decimalN_f(value: F32, precision: u32, scale: u32) -> Option<SQLDecimal> {
+    SQLDecimal::from_f32(
+        value.into_inner(),
+        Precision::try_from(precision).ok()?,
+        Scale::try_from(scale).ok()?,
+    )
 }
 
 #[inline]
-pub fn cast_to_decimalN_fN(value: Option<F32>, precision: u32, scale: i32) -> Option<SQLDecimal> {
-    let result = match value {
+pub fn cast_to_decimalN_fN(value: Option<F32>, precision: u32, scale: u32) -> Option<SQLDecimal> {
+    match value {
         None => None,
-        Some(x) => SQLDecimal::from_f32(x.into_inner()),
-    };
-    set_ps(result, precision, scale)
+        Some(x) => SQLDecimal::from_f32(
+            x.into_inner(),
+            Precision::try_from(precision).ok()?,
+            Scale::try_from(scale).ok()?,
+        ),
+    }
 }
 
 #[inline]
-pub fn cast_to_decimalN_s(value: String, precision: u32, scale: i32) -> Option<SQLDecimal> {
-    let result = match value.trim().parse() {
-        Err(_) => Some(SQLDecimal::zero()),
-        Ok(x) => Some(x),
-    };
-    set_ps(result, precision, scale)
+pub fn cast_to_decimalN_s(value: String, precision: u32, scale: u32) -> Option<SQLDecimal> {
+    SQLDecimal::from_str_with_precision_scale(
+        &value,
+        Precision::try_from(precision).ok()?,
+        Scale::try_from(scale).ok()?,
+    )
+    .ok()
 }
 
 #[inline]
 pub fn cast_to_decimalN_sN(
     value: Option<String>,
     precision: u32,
-    scale: i32,
+    scale: u32,
 ) -> Option<SQLDecimal> {
-    let result = match value {
+    match value {
         None => None,
-        Some(x) => match x.trim().parse() {
-            Err(_) => Some(SQLDecimal::zero()),
-            Ok(y) => Some(y),
-        },
-    };
-    set_ps(result, precision, scale)
+        Some(x) => cast_to_decimalN_s(x, precision, scale),
+    }
 }
 
 /////////// cast to double

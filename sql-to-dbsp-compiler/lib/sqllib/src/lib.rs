@@ -18,12 +18,15 @@ pub use timestamp::Date;
 pub use timestamp::Time;
 pub use timestamp::Timestamp;
 
-use dbsp::algebra::{SQLDecimal, Semigroup, SemigroupValue, ZRingValue, F32, F64};
+use dbsp::algebra::{
+    decimal::{Precision, Scale},
+    SQLDecimal, Semigroup, SemigroupValue, ZRingValue, F32, F64,
+};
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OrdZSet, OutputHandle, UpsertHandle,
 };
-use num::{Signed, ToPrimitive};
+use num::Signed;
 use num_traits::Zero;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -556,14 +559,14 @@ some_polymorphic_function1!(abs, decimal, SQLDecimal, SQLDecimal);
 
 #[inline(always)]
 pub fn ln_decimal(left: SQLDecimal) -> F64 {
-    F64::new(left.ln().to_f64().unwrap())
+    left.ln().unwrap()
 }
 
 some_polymorphic_function1!(ln, decimal, SQLDecimal, F64);
 
 #[inline(always)]
 pub fn log10_decimal(left: SQLDecimal) -> F64 {
-    F64::new(left.log10().to_f64().unwrap())
+    left.log10().unwrap()
 }
 
 some_polymorphic_function1!(log10, decimal, SQLDecimal, F64);
@@ -721,7 +724,7 @@ where
     u32: TryFrom<T>,
     <u32 as TryFrom<T>>::Error: Debug,
 {
-    left.trunc_with_scale(u32::try_from(right).unwrap())
+    left.trunc_to_dp(u32::try_from(right).unwrap())
 }
 
 #[inline(always)]
@@ -766,18 +769,24 @@ pub fn power_d_d(left: F64, right: F64) -> F64 {
 }
 
 pub fn power_decimal_decimal(left: SQLDecimal, right: SQLDecimal) -> F64 {
-    if right == SQLDecimal::new(5, 1) {
+    if right
+        == SQLDecimal::new(
+            5,
+            Precision::try_from(2).unwrap(),
+            Scale::try_from(1).unwrap(),
+        )
+    {
         // special case for sqrt, has higher precision than pow
-        F64::from(left.sqrt().unwrap().to_f64().unwrap())
+        left.sqrt().unwrap()
     } else {
-        F64::from(left.powd(right).to_f64().unwrap())
+        left.powd(right).unwrap()
     }
 }
 
 some_polymorphic_function2!(power, decimal, SQLDecimal, decimal, SQLDecimal, F64);
 
 pub fn sqrt_decimal(left: SQLDecimal) -> F64 {
-    F64::from(left.sqrt().unwrap().to_f64().unwrap())
+    left.sqrt().unwrap()
 }
 
 some_polymorphic_function1!(sqrt, decimal, SQLDecimal, F64);
