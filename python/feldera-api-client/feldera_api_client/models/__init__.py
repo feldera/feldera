@@ -11,6 +11,12 @@ from .column_type import ColumnType
 from .compile_program_request import CompileProgramRequest
 from .connector_config import ConnectorConfig
 from .connector_descr import ConnectorDescr
+from .create_or_replace_connector_request import CreateOrReplaceConnectorRequest
+from .create_or_replace_connector_response import CreateOrReplaceConnectorResponse
+from .create_or_replace_pipeline_request import CreateOrReplacePipelineRequest
+from .create_or_replace_pipeline_response import CreateOrReplacePipelineResponse
+from .create_or_replace_program_request import CreateOrReplaceProgramRequest
+from .create_or_replace_program_response import CreateOrReplaceProgramResponse
 from .csv_encoder_config import CsvEncoderConfig
 from .csv_parser_config import CsvParserConfig
 from .egress_mode import EgressMode
@@ -105,6 +111,12 @@ __all__ = (
     "CompileProgramRequest",
     "ConnectorConfig",
     "ConnectorDescr",
+    "CreateOrReplaceConnectorRequest",
+    "CreateOrReplaceConnectorResponse",
+    "CreateOrReplacePipelineRequest",
+    "CreateOrReplacePipelineResponse",
+    "CreateOrReplaceProgramRequest",
+    "CreateOrReplaceProgramResponse",
     "CsvEncoderConfig",
     "CsvParserConfig",
     "EgressMode",

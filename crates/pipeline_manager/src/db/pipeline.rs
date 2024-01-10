@@ -922,7 +922,6 @@ pub(crate) async fn get_pipeline_by_name(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn new_pipeline(
-    db: &ProjectDB,
     tenant_id: TenantId,
     id: Uuid,
     program_name: &Option<String>,
@@ -930,9 +929,8 @@ pub(crate) async fn new_pipeline(
     pipeline_description: &str,
     config: &RuntimeConfig,
     connectors: &Option<Vec<AttachedConnector>>,
+    txn: &Transaction<'_>,
 ) -> Result<(PipelineId, Version), DBError> {
-    let mut client = db.pool.get().await?;
-    let txn = client.transaction().await?;
     let new_pipeline = txn
         .prepare_cached(
             "INSERT INTO pipeline (id, program_id, version, name, description, config, tenant_id) 
@@ -983,17 +981,15 @@ pub(crate) async fn new_pipeline(
     if let Some(connectors) = connectors {
         // Add the connectors.
         for ac in connectors {
-            attach_connector(tenant_id, &txn, pipeline_id, ac).await?;
+            attach_connector(tenant_id, txn, pipeline_id, ac).await?;
         }
     }
-    txn.commit().await?;
 
     Ok((pipeline_id, Version(1)))
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn update_pipeline(
-    db: &ProjectDB,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
     program_name: &Option<String>,
@@ -1001,6 +997,7 @@ pub(crate) async fn update_pipeline(
     pipeline_description: &str,
     config: &Option<RuntimeConfig>,
     connectors: &Option<Vec<AttachedConnector>>,
+    txn: &Transaction<'_>,
 ) -> Result<Version, DBError> {
     log::trace!(
         "Updating config {} {:?} {} {} {:?} {:?}",
@@ -1011,8 +1008,6 @@ pub(crate) async fn update_pipeline(
         config,
         connectors
     );
-    let mut client = db.pool.get().await?;
-    let txn = client.transaction().await?;
     let find_pipeline_id = txn
         .prepare_cached("SELECT id FROM pipeline WHERE id = $1 AND tenant_id = $2")
         .await?;
@@ -1054,7 +1049,7 @@ pub(crate) async fn update_pipeline(
 
         // Rewrite the new set of connectors.
         for ac in connectors {
-            attach_connector(tenant_id, &txn, pipeline_id, ac).await?;
+            attach_connector(tenant_id, txn, pipeline_id, ac).await?;
         }
     }
     let config = config.as_ref().map(RuntimeConfig::to_yaml);
@@ -1075,7 +1070,6 @@ pub(crate) async fn update_pipeline(
         .map_err(|e| {
             ProjectDB::maybe_program_id_not_found_foreign_key_constraint_err(e, program_id)
         })?;
-    txn.commit().await?;
     match row {
         Some(row) => Ok(Version(row.get(0))),
         None => Err(DBError::UnknownPipeline { pipeline_id }),

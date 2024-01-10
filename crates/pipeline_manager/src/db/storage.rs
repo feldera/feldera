@@ -43,6 +43,7 @@ pub(crate) trait Storage {
             &None,
             &Some(schema),
             None,
+            None,
         )
         .await?;
         Ok(())
@@ -70,6 +71,7 @@ pub(crate) trait Storage {
             &Some(status),
             &None,
             Some(expected_version),
+            None,
         )
         .await?;
         Ok(())
@@ -83,6 +85,7 @@ pub(crate) trait Storage {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(ProgramId, Version), DBError>;
 
     /// Update program name, description and, optionally, code.
@@ -97,6 +100,7 @@ pub(crate) trait Storage {
         status: &Option<ProgramStatus>,
         schema: &Option<ProgramSchema>,
         guard: Option<Version>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError>;
 
     /// Retrieve program descriptor.
@@ -164,6 +168,7 @@ pub(crate) trait Storage {
         pipeline_description: &str,
         config: &RuntimeConfig,
         connectors: &Option<Vec<AttachedConnector>>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(PipelineId, Version), DBError>;
 
     /// Update existing config.
@@ -179,6 +184,7 @@ pub(crate) trait Storage {
         pipeline_description: &str,
         config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError>;
 
     /// Get input/output status for an attached connector.
@@ -260,6 +266,7 @@ pub(crate) trait Storage {
         name: &str,
         description: &str,
         config: &ConnectorConfig,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ConnectorId, DBError>;
 
     /// Retrieve connectors list from the DB.
@@ -277,6 +284,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ConnectorDescr, DBError>;
 
     /// Update existing connector config.
@@ -289,6 +297,7 @@ pub(crate) trait Storage {
         connector_name: &str,
         description: &str,
         config: &Option<ConnectorConfig>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError>;
 
     /// Delete connector from the database.

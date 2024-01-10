@@ -1077,7 +1077,14 @@ mod test {
         let tenant_id = TenantRecord::default().id;
         db.lock()
             .await
-            .new_program(tenant_id, Uuid::now_v7(), pname, "program desc", "ignored")
+            .new_program(
+                tenant_id,
+                Uuid::now_v7(),
+                pname,
+                "program desc",
+                "ignored",
+                None,
+            )
             .await
             .unwrap()
     }

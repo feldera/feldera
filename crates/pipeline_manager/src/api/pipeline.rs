@@ -3,7 +3,7 @@ use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
     http::Method,
-    patch, post,
+    patch, post, put,
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
@@ -85,6 +85,30 @@ pub(crate) struct UpdatePipelineResponse {
     version: Version,
 }
 
+/// Request to create or replace an existing pipeline.
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CreateOrReplacePipelineRequest {
+    /// Pipeline description.
+    description: String,
+    /// Name of the program to create a pipeline for.
+    program_name: Option<String>,
+    /// Pipeline configuration parameters (e.g. number of workers).
+    /// These knobs are independent of any connector attached to the pipeline.
+    config: RuntimeConfig,
+    /// Attached connectors.
+    connectors: Option<Vec<AttachedConnector>>,
+}
+
+/// Response to a pipeline create or replace request.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct CreateOrReplacePipelineResponse {
+    /// ID of the newly created pipeline.
+    pipeline_id: PipelineId,
+    /// Initial pipeline version (this field is always set to 1).
+    version: Version,
+}
+
 fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     match req.match_info().get("action") {
         None => Err(ManagerError::MissingUrlEncodedParam { param: "action" }),
@@ -133,6 +157,7 @@ pub(crate) async fn new_pipeline(
             &request.description,
             &request.config,
             &request.connectors,
+            None,
         )
         .await?;
 
@@ -185,6 +210,7 @@ pub(crate) async fn update_pipeline(
             &body.description,
             &body.config,
             &body.connectors,
+            None,
         )
         .await?;
 
@@ -192,6 +218,62 @@ pub(crate) async fn update_pipeline(
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&UpdatePipelineResponse { version }))
+}
+
+/// Create or replace a pipeline.
+#[utoipa::path(
+    request_body = CreateOrReplaceProgramRequest,
+    responses(
+        (status = CREATED, description = "Pipeline created successfully", body = CreateOrReplaceProgramResponse),
+        (status = OK, description = "Pipeline updated successfully", body = CreateOrReplaceProgramResponse),
+        (status = CONFLICT
+            , description = "A pipeline with this name already exists in the database."
+            , body = ErrorResponse
+            , example = json!(examples::duplicate_name())),
+    ),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Pipelines"
+)]
+#[put("/pipelines/{pipeline_name}")]
+async fn create_or_replace_pipeline(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: HttpRequest,
+    body: web::Json<CreateOrReplacePipelineRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let (created, pipeline_id, version) = state
+        .db
+        .lock()
+        .await
+        .create_or_replace_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            &body.program_name,
+            &body.description,
+            &body.config,
+            &body.connectors,
+        )
+        .await?;
+    if created {
+        Ok(HttpResponse::Created()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&CreateOrReplacePipelineResponse {
+                pipeline_id,
+                version,
+            }))
+    } else {
+        Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&CreateOrReplacePipelineResponse {
+                pipeline_id,
+                version,
+            }))
+    }
 }
 
 /// Fetch pipelines, optionally filtered by name or ID.
