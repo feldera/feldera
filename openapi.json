@@ -437,6 +437,77 @@
           }
         ]
       },
+      "put": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Create or replace a connector.",
+        "description": "Create or replace a connector.",
+        "operationId": "create_or_replace_connector",
+        "parameters": [
+          {
+            "name": "connector_name",
+            "in": "path",
+            "description": "Unique connector name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrReplaceProgramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Connector updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrReplaceConnectorResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Connector created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrReplaceConnectorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A connector with this name already exists in the database.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
       "delete": {
         "tags": [
           "Connectors"
@@ -782,6 +853,77 @@
                   },
                   "error_code": "UnknownPipeline",
                   "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Create or replace a pipeline.",
+        "description": "Create or replace a pipeline.",
+        "operationId": "create_or_replace_pipeline",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrReplaceProgramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Pipeline updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Pipeline created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A pipeline with this name already exists in the database.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
                 }
               }
             }
@@ -1972,6 +2114,77 @@
           }
         ]
       },
+      "put": {
+        "tags": [
+          "Programs"
+        ],
+        "summary": "Create or replace a program.",
+        "description": "Create or replace a program.",
+        "operationId": "create_or_replace_program",
+        "parameters": [
+          {
+            "name": "program_name",
+            "in": "path",
+            "description": "Unique program name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrReplaceProgramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Program updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Program created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A program with this name already exists in the database.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
       "delete": {
         "tags": [
           "Programs"
@@ -2738,6 +2951,118 @@
         "format": "uuid",
         "description": "Unique connector id."
       },
+      "CreateOrReplaceConnectorRequest": {
+        "type": "object",
+        "description": "Request to create or replace a connector",
+        "required": [
+          "description",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ConnectorConfig"
+          },
+          "description": {
+            "type": "string",
+            "description": "New connector description."
+          }
+        }
+      },
+      "CreateOrReplaceConnectorResponse": {
+        "type": "object",
+        "description": "Response to a create or replace connector request.",
+        "required": [
+          "connector_id"
+        ],
+        "properties": {
+          "connector_id": {
+            "$ref": "#/components/schemas/ConnectorId"
+          }
+        }
+      },
+      "CreateOrReplacePipelineRequest": {
+        "type": "object",
+        "description": "Request to create or replace an existing pipeline.",
+        "required": [
+          "description",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/RuntimeConfig"
+          },
+          "connectors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttachedConnector"
+            },
+            "description": "Attached connectors.",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Pipeline description."
+          },
+          "program_name": {
+            "type": "string",
+            "description": "Name of the program to create a pipeline for.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateOrReplacePipelineResponse": {
+        "type": "object",
+        "description": "Response to a pipeline create or replace request.",
+        "required": [
+          "pipeline_id",
+          "version"
+        ],
+        "properties": {
+          "pipeline_id": {
+            "$ref": "#/components/schemas/PipelineId"
+          },
+          "version": {
+            "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
+      "CreateOrReplaceProgramRequest": {
+        "type": "object",
+        "description": "Request to create or replace a Feldera program.",
+        "required": [
+          "description",
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "SQL code of the program.",
+            "example": "CREATE TABLE Example(name varchar);"
+          },
+          "description": {
+            "type": "string",
+            "description": "Program description.",
+            "example": "Example description"
+          }
+        }
+      },
+      "CreateOrReplaceProgramResponse": {
+        "type": "object",
+        "description": "Response to a new program request.",
+        "required": [
+          "program_id",
+          "version"
+        ],
+        "properties": {
+          "program_id": {
+            "$ref": "#/components/schemas/ProgramId"
+          },
+          "version": {
+            "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
       "CsvEncoderConfig": {
         "type": "object",
         "properties": {
@@ -3303,7 +3628,7 @@
           "code": {
             "type": "string",
             "description": "SQL code of the program.",
-            "example": "CREATE TABLE Example(name varchar);"
+            "example": "CREATE TABLE example(name VARCHAR);"
           },
           "description": {
             "type": "string",
