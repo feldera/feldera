@@ -378,6 +378,14 @@ public class SimulatorTests {
         ZSet<Person, Integer> expected = fromCSV("name,age\nB,36\nJ,12\n", Person.class);
         Assert.assertTrue(expected.equals(keyAge));
     }
+
+    @Test
+    public void testDeindex() {
+        ZSet<Person, Integer> input = getPersons();
+        IndexedZSet<String, Person, Integer> personIndex = input.index(p -> p.name);
+        ZSet<Person, Integer> flattened = personIndex.deindex();
+        Assert.assertTrue(input.equals(flattened));
+    }
     
     @Test
     public void testJoin() {
