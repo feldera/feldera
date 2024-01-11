@@ -62,7 +62,7 @@ pub(crate) struct NewProgramRequest {
     #[schema(example = "Example description")]
     description: String,
     /// SQL code of the program.
-    #[schema(example = "CREATE TABLE Example(name varchar);")]
+    #[schema(example = "CREATE TABLE example(name VARCHAR);")]
     code: String,
 }
 
