@@ -22,8 +22,12 @@ public class IndexedZSet<Key, Value, Weight> extends BaseCollection<Weight> impl
         ZSet<Value, Weight> zset = this.index.getOrDefault(
                 key, new ZSet<>(this.weightType));
         if (zset.isEmpty())
+            // This is a new key
             this.index.put(key, zset);
         zset.append(value, weight);
+        if (zset.isEmpty())
+            // The group has become empty
+            this.index.remove(key);
     }
 
     public <Result, OtherValue> IndexedZSet<Key, Result, Weight> join(
