@@ -2,28 +2,25 @@ from typing import Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="NewProgramRequest")
+T = TypeVar("T", bound="CreateOrReplaceProgramRequest")
 
 
 @define
-class NewProgramRequest:
-    """Request to create a new Feldera program.
+class CreateOrReplaceProgramRequest:
+    """Request to create or replace a Feldera program.
 
     Attributes:
-        code (str): SQL code of the program. Example: CREATE TABLE example(name VARCHAR);.
+        code (str): SQL code of the program. Example: CREATE TABLE Example(name varchar);.
         description (str): Program description. Example: Example description.
-        name (str): Program name. Example: Example program.
     """
 
     code: str
     description: str
-    name: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         code = self.code
         description = self.description
-        name = self.name
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -31,7 +28,6 @@ class NewProgramRequest:
             {
                 "code": code,
                 "description": description,
-                "name": name,
             }
         )
 
@@ -44,16 +40,13 @@ class NewProgramRequest:
 
         description = d.pop("description")
 
-        name = d.pop("name")
-
-        new_program_request = cls(
+        create_or_replace_program_request = cls(
             code=code,
             description=description,
-            name=name,
         )
 
-        new_program_request.additional_properties = d
-        return new_program_request
+        create_or_replace_program_request.additional_properties = d
+        return create_or_replace_program_request
 
     @property
     def additional_keys(self) -> List[str]:

@@ -2,36 +2,32 @@ from typing import Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="NewProgramRequest")
+T = TypeVar("T", bound="CreateOrReplacePipelineResponse")
 
 
 @define
-class NewProgramRequest:
-    """Request to create a new Feldera program.
+class CreateOrReplacePipelineResponse:
+    """Response to a pipeline create or replace request.
 
     Attributes:
-        code (str): SQL code of the program. Example: CREATE TABLE example(name VARCHAR);.
-        description (str): Program description. Example: Example description.
-        name (str): Program name. Example: Example program.
+        pipeline_id (str): Unique pipeline id.
+        version (int): Version number.
     """
 
-    code: str
-    description: str
-    name: str
+    pipeline_id: str
+    version: int
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        code = self.code
-        description = self.description
-        name = self.name
+        pipeline_id = self.pipeline_id
+        version = self.version
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "code": code,
-                "description": description,
-                "name": name,
+                "pipeline_id": pipeline_id,
+                "version": version,
             }
         )
 
@@ -40,20 +36,17 @@ class NewProgramRequest:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        code = d.pop("code")
+        pipeline_id = d.pop("pipeline_id")
 
-        description = d.pop("description")
+        version = d.pop("version")
 
-        name = d.pop("name")
-
-        new_program_request = cls(
-            code=code,
-            description=description,
-            name=name,
+        create_or_replace_pipeline_response = cls(
+            pipeline_id=pipeline_id,
+            version=version,
         )
 
-        new_program_request.additional_properties = d
-        return new_program_request
+        create_or_replace_pipeline_response.additional_properties = d
+        return create_or_replace_pipeline_response
 
     @property
     def additional_keys(self) -> List[str]:

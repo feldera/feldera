@@ -1,37 +1,38 @@
-from typing import Any, Dict, List, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="NewProgramRequest")
+if TYPE_CHECKING:
+    from ..models.connector_config import ConnectorConfig
+
+
+T = TypeVar("T", bound="CreateOrReplaceConnectorRequest")
 
 
 @define
-class NewProgramRequest:
-    """Request to create a new Feldera program.
+class CreateOrReplaceConnectorRequest:
+    """Request to create or replace a connector
 
     Attributes:
-        code (str): SQL code of the program. Example: CREATE TABLE example(name VARCHAR);.
-        description (str): Program description. Example: Example description.
-        name (str): Program name. Example: Example program.
+        config (ConnectorConfig): A data connector's configuration
+        description (str): New connector description.
     """
 
-    code: str
+    config: "ConnectorConfig"
     description: str
-    name: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        code = self.code
+        config = self.config.to_dict()
+
         description = self.description
-        name = self.name
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "code": code,
+                "config": config,
                 "description": description,
-                "name": name,
             }
         )
 
@@ -39,21 +40,20 @@ class NewProgramRequest:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
+        from ..models.connector_config import ConnectorConfig
+
         d = src_dict.copy()
-        code = d.pop("code")
+        config = ConnectorConfig.from_dict(d.pop("config"))
 
         description = d.pop("description")
 
-        name = d.pop("name")
-
-        new_program_request = cls(
-            code=code,
+        create_or_replace_connector_request = cls(
+            config=config,
             description=description,
-            name=name,
         )
 
-        new_program_request.additional_properties = d
-        return new_program_request
+        create_or_replace_connector_request.additional_properties = d
+        return create_or_replace_connector_request
 
     @property
     def additional_keys(self) -> List[str]:

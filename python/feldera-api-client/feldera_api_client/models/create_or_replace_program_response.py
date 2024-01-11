@@ -2,36 +2,32 @@ from typing import Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="NewProgramRequest")
+T = TypeVar("T", bound="CreateOrReplaceProgramResponse")
 
 
 @define
-class NewProgramRequest:
-    """Request to create a new Feldera program.
+class CreateOrReplaceProgramResponse:
+    """Response to a new program request.
 
     Attributes:
-        code (str): SQL code of the program. Example: CREATE TABLE example(name VARCHAR);.
-        description (str): Program description. Example: Example description.
-        name (str): Program name. Example: Example program.
+        program_id (str): Unique program id.
+        version (int): Version number.
     """
 
-    code: str
-    description: str
-    name: str
+    program_id: str
+    version: int
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        code = self.code
-        description = self.description
-        name = self.name
+        program_id = self.program_id
+        version = self.version
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "code": code,
-                "description": description,
-                "name": name,
+                "program_id": program_id,
+                "version": version,
             }
         )
 
@@ -40,20 +36,17 @@ class NewProgramRequest:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        code = d.pop("code")
+        program_id = d.pop("program_id")
 
-        description = d.pop("description")
+        version = d.pop("version")
 
-        name = d.pop("name")
-
-        new_program_request = cls(
-            code=code,
-            description=description,
-            name=name,
+        create_or_replace_program_response = cls(
+            program_id=program_id,
+            version=version,
         )
 
-        new_program_request.additional_properties = d
-        return new_program_request
+        create_or_replace_program_response.additional_properties = d
+        return create_or_replace_program_response
 
     @property
     def additional_keys(self) -> List[str]:
