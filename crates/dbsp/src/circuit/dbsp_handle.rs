@@ -23,6 +23,7 @@ use std::{
 
 #[cfg(doc)]
 use crate::circuit::circuit_builder::Stream;
+use crate::profile::{DbspProfile, WorkerProfile};
 
 use super::runtime::WorkerPanicInfo;
 
@@ -326,7 +327,15 @@ impl Runtime {
                     }
                     Ok(Command::DumpProfile) => {
                         if status_sender
-                            .send(Ok(Response::Profile(profiler.dump_profile())))
+                            .send(Ok(Response::ProfileDump(profiler.dump_profile())))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(Command::RetrieveProfile) => {
+                        if status_sender
+                            .send(Ok(Response::Profile(profiler.profile())))
                             .is_err()
                         {
                             return;
@@ -394,11 +403,13 @@ enum Command {
     Step,
     EnableProfiler,
     DumpProfile,
+    RetrieveProfile,
 }
 
 enum Response {
     Unit,
-    Profile(String),
+    ProfileDump(String),
+    Profile(WorkerProfile),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -448,7 +459,7 @@ impl DBSPHandle {
 
     fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DBSPError>
     where
-        F: FnMut(Response),
+        F: FnMut(usize, Response),
     {
         if self.runtime.is_none() {
             return Err(DBSPError::Runtime(RuntimeError::Terminated));
@@ -493,7 +504,7 @@ impl DBSPHandle {
                     let _ = self.kill_inner();
                     return Err(DBSPError::Scheduler(e));
                 }
-                Ok(Ok(resp)) => handler(resp),
+                Ok(Ok(resp)) => handler(worker, resp),
             }
         }
 
@@ -502,7 +513,7 @@ impl DBSPHandle {
 
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DBSPError> {
-        self.broadcast_command(Command::Step, |_| {})
+        self.broadcast_command(Command::Step, |_, _| {})
     }
 
     /// Enable CPU profiler.
@@ -512,7 +523,7 @@ impl DBSPHandle {
     /// usage and other circuit metadata.  CPU profiling introduces small
     /// runtime overhead.
     pub fn enable_cpu_profiler(&mut self) -> Result<(), DBSPError> {
-        self.broadcast_command(Command::EnableProfiler, |_| {})
+        self.broadcast_command(Command::EnableProfiler, |_, _| {})
     }
 
     /// Dump profiling information to the specified directory.
@@ -525,14 +536,14 @@ impl DBSPHandle {
     /// reported.
     pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, DBSPError> {
         let elapsed = self.start_time.elapsed().as_micros();
-        let mut profiles = Vec::with_capacity(self.status_receivers.len());
+        let mut profiles = vec![Default::default(); self.status_receivers.len()];
 
         let dir_path = dir_path.as_ref().join(elapsed.to_string());
         create_dir_all(&dir_path)?;
 
-        self.broadcast_command(Command::DumpProfile, |resp| {
-            if let Response::Profile(prof) = resp {
-                profiles.push(prof);
+        self.broadcast_command(Command::DumpProfile, |worker, resp| {
+            if let Response::ProfileDump(prof) = resp {
+                profiles[worker] = prof;
             }
         })?;
 
@@ -541,6 +552,18 @@ impl DBSPHandle {
         }
 
         Ok(dir_path)
+    }
+
+    pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DBSPError> {
+        let mut profiles = vec![Default::default(); self.status_receivers.len()];
+
+        self.broadcast_command(Command::RetrieveProfile, |worker, resp| {
+            if let Response::Profile(prof) = resp {
+                profiles[worker] = prof;
+            }
+        })?;
+
+        Ok(DbspProfile::new(profiles))
     }
 
     /// Terminate the execution of the circuit, exiting all worker threads.

@@ -438,7 +438,7 @@ fn count_partitions_in_topic<C: ConsumerContext>(
     let metadata = consumer
         .fetch_metadata(Some(topic), Duration::from_secs(10))
         .with_context(|| format!("Failed to read metadata for topic {topic}"))?;
-    let Some(metadata_topic) = metadata.topics().get(0) else {
+    let Some(metadata_topic) = metadata.topics().first() else {
         // Should not happen: if `topic` doesn't exist, the server should
         // tell us that.
         bail!("Kafka server returned no results for {topic}")

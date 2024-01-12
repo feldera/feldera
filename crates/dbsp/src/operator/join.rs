@@ -1,5 +1,6 @@
 //! Relational join operator.
 
+use crate::circuit::metadata::{NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL, USED_BYTES_LABEL};
 use crate::{
     algebra::{IndexedZSet, Lattice, MulByRef, PartialOrder, ZRingValue, ZSet},
     circuit::{
@@ -699,11 +700,11 @@ where
         }
 
         meta.extend(metadata! {
-            "total size" => total_size,
+            NUM_ENTRIES_LABEL => total_size,
             "batch sizes" => batch_sizes,
-            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => bytes.distinct_allocations(),
-            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
             "left inputs" => self.stats.lhs_tuples,
             "right inputs" => self.stats.rhs_tuples,
             "computed outputs" => self.stats.output_tuples,

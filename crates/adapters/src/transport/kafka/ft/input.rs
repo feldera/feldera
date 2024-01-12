@@ -305,7 +305,7 @@ impl WorkerThread {
                 // Use a very short prefix because Linux truncates thread names
                 // after 15 bytes.
                 "dkw-{}",
-                config.data_topics.get(0).unwrap_or(&"".into())
+                config.data_topics.first().unwrap_or(&"".into())
             ))
             .spawn(move || {
                 if let Err(error) = worker_thread.run() {

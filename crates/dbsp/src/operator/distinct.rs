@@ -1,5 +1,6 @@
 //! Distinct operator.
 
+use crate::circuit::metadata::{SHARED_BYTES_LABEL, USED_BYTES_LABEL};
 use crate::{
     algebra::{AddByRef, HasOne, HasZero, IndexedZSet, Lattice, PartialOrder, Present, ZRingValue},
     circuit::{
@@ -559,9 +560,9 @@ where
 
         meta.extend(metadata! {
             "total updates" => MetaItem::bytes(size),
-            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => bytes.distinct_allocations(),
-            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
 
