@@ -1,6 +1,8 @@
+use std::ops::{Add, Div, Mul, Sub};
+
 use dbsp::algebra::{F32, F64};
 use num::PrimInt;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
 use crate::{
     for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
@@ -93,66 +95,17 @@ where
 }
 
 for_all_int_operator!(plus);
+some_operator!(plus, decimal, Decimal, Decimal);
 
-pub fn plus_f_f(left: F32, right: F32) -> F32 {
+fn fp_plus<T>(left: T, right: T) -> T
+where
+    T: Add<Output = T>,
+{
     left + right
 }
 
-pub fn plus_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    let left = left?;
-    Some(plus_f_f(left, right))
-}
-
-pub fn plus_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    let right = right?;
-    Some(plus_f_f(left, right))
-}
-
-pub fn plus_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
-    let left = left?;
-    let right = right?;
-    Some(plus_f_f(left, right))
-}
-
-pub fn plus_d_d(left: F64, right: F64) -> F64 {
-    left + right
-}
-
-pub fn plus_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    let left = left?;
-    Some(plus_d_d(left, right))
-}
-
-pub fn plus_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    let right = right?;
-    Some(plus_d_d(left, right))
-}
-
-pub fn plus_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
-    let left = left?;
-    let right = right?;
-    Some(plus_d_d(left, right))
-}
-
-pub fn plus_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left + right
-}
-
-pub fn plus_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    let left = left?;
-    Some(plus_decimal_decimal(left, right))
-}
-
-pub fn plus_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    let right = right?;
-    Some(plus_decimal_decimal(left, right))
-}
-
-pub fn plus_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    let left = left?;
-    let right = right?;
-    Some(plus_decimal_decimal(left, right))
-}
+some_operator!(fp_plus, plus, f, F32, F32);
+some_operator!(fp_plus, plus, d, F64, F64);
 
 #[inline(always)]
 fn minus<T>(left: T, right: T) -> T
@@ -164,66 +117,17 @@ where
 }
 
 for_all_int_operator!(minus);
+some_operator!(minus, decimal, Decimal, Decimal);
 
-pub fn minus_f_f(left: F32, right: F32) -> F32 {
+fn fp_minus<T>(left: T, right: T) -> T
+where
+    T: Sub<Output = T>,
+{
     left - right
 }
 
-pub fn minus_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    let left = left?;
-    Some(minus_f_f(left, right))
-}
-
-pub fn minus_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    let right = right?;
-    Some(minus_f_f(left, right))
-}
-
-pub fn minus_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
-    let left = left?;
-    let right = right?;
-    Some(minus_f_f(left, right))
-}
-
-pub fn minus_d_d(left: F64, right: F64) -> F64 {
-    left - right
-}
-
-pub fn minus_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    let left = left?;
-    Some(minus_d_d(left, right))
-}
-
-pub fn minus_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    let right = right?;
-    Some(minus_d_d(left, right))
-}
-
-pub fn minus_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
-    let left = left?;
-    let right = right?;
-    Some(minus_d_d(left, right))
-}
-
-pub fn minus_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left - right
-}
-
-pub fn minus_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    let left = left?;
-    Some(minus_decimal_decimal(left, right))
-}
-
-pub fn minus_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    let right = right?;
-    Some(minus_decimal_decimal(left, right))
-}
-
-pub fn minus_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    let left = left?;
-    let right = right?;
-    Some(minus_decimal_decimal(left, right))
-}
+some_operator!(fp_minus, minus, f, F32, F32);
+some_operator!(fp_minus, minus, d, F64, F64);
 
 #[inline(always)]
 fn modulo<T>(left: T, right: T) -> T
@@ -249,66 +153,17 @@ where
 }
 
 for_all_int_operator!(times);
+some_operator!(times, decimal, Decimal, Decimal);
 
-pub fn times_f_f(left: F32, right: F32) -> F32 {
+fn fp_times<T>(left: T, right: T) -> T
+where
+    T: Mul<Output = T>,
+{
     left * right
 }
 
-pub fn times_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    let left = left?;
-    Some(times_f_f(left, right))
-}
-
-pub fn times_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    let right = right?;
-    Some(times_f_f(left, right))
-}
-
-pub fn times_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
-    let left = left?;
-    let right = right?;
-    Some(times_f_f(left, right))
-}
-
-pub fn times_d_d(left: F64, right: F64) -> F64 {
-    left * right
-}
-
-pub fn times_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    let left = left?;
-    Some(times_d_d(left, right))
-}
-
-pub fn times_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    let right = right?;
-    Some(times_d_d(left, right))
-}
-
-pub fn times_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
-    let left = left?;
-    let right = right?;
-    Some(times_d_d(left, right))
-}
-
-pub fn times_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left * right
-}
-
-pub fn times_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    let left = left?;
-    Some(times_decimal_decimal(left, right))
-}
-
-pub fn times_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    let right = right?;
-    Some(times_decimal_decimal(left, right))
-}
-
-pub fn times_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    let left = left?;
-    let right = right?;
-    Some(times_decimal_decimal(left, right))
-}
+some_operator!(fp_times, times, f, F32, F32);
+some_operator!(fp_times, times, d, F64, F64);
 
 /*
 
@@ -367,7 +222,7 @@ for_all_int_operator!(bxor);
 #[inline(always)]
 fn div<T>(left: T, right: T) -> T
 where
-    T: CheckedDiv + PrimInt,
+    T: CheckedDiv + ToPrimitive,
 {
     let panic_message = if Some(0) == right.to_isize() {
         "attempt to divide by zero"
@@ -379,66 +234,17 @@ where
 }
 
 for_all_int_operator!(div);
+some_operator!(div, decimal, Decimal, Decimal);
 
-pub fn div_f_f(left: F32, right: F32) -> F32 {
+fn fp_div<T>(left: T, right: T) -> T
+where
+    T: Div<Output = T>,
+{
     left / right
 }
 
-pub fn div_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    let left = left?;
-    Some(div_f_f(left, right))
-}
-
-pub fn div_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    let right = right?;
-    Some(div_f_f(left, right))
-}
-
-pub fn div_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
-    let left = left?;
-    let right = right?;
-    Some(div_f_f(left, right))
-}
-
-pub fn div_d_d(left: F64, right: F64) -> F64 {
-    left / right
-}
-
-pub fn div_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    let left = left?;
-    Some(div_d_d(left, right))
-}
-
-pub fn div_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    let right = right?;
-    Some(div_d_d(left, right))
-}
-
-pub fn div_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
-    let left = left?;
-    let right = right?;
-    Some(div_d_d(left, right))
-}
-
-pub fn div_decimal_decimal(left: Decimal, right: Decimal) -> Decimal {
-    left / right
-}
-
-pub fn div_decimalN_decimal(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    let left = left?;
-    Some(div_decimal_decimal(left, right))
-}
-
-pub fn div_decimal_decimalN(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    let right = right?;
-    Some(div_decimal_decimal(left, right))
-}
-
-pub fn div_decimalN_decimalN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    let left = left?;
-    let right = right?;
-    Some(div_decimal_decimal(left, right))
-}
+some_operator!(fp_div, div, f, F32, F32);
+some_operator!(fp_div, div, d, F64, F64);
 
 pub fn plus_u_u(left: usize, right: usize) -> usize {
     left + right

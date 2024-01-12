@@ -340,6 +340,16 @@ macro_rules! some_operator {
 
             some_existing_operator!($func_name, $short_name, $arg_type, $ret_type);
         }
+    };
+    ($func_name: ident, $new_func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
+        ::paste::paste! {
+            #[inline(always)]
+            pub fn [<$new_func_name _ $short_name _ $short_name >]( arg0: $arg_type, arg1: $arg_type ) -> $ret_type {
+                $func_name(arg0, arg1)
+            }
+
+            some_existing_operator!($new_func_name, $short_name, $arg_type, $ret_type);
+        }
     }
 }
 
