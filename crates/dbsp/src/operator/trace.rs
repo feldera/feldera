@@ -1,3 +1,6 @@
+use crate::circuit::metadata::{
+    ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+};
 use crate::{
     circuit::{
         metadata::{MetaItem, OperatorMeta},
@@ -830,11 +833,11 @@ where
             .unwrap_or_default();
 
         meta.extend(metadata! {
-            "total size" => total_size,
-            "allocated bytes" => MetaItem::bytes(bytes.total_bytes()),
-            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            NUM_ENTRIES_LABEL => total_size,
+            ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
+            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => bytes.distinct_allocations(),
-            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
 

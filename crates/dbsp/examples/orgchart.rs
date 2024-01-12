@@ -120,7 +120,29 @@ fn main() -> Result<()> {
         dbsp.step().unwrap();
         println!("Changes from adjusting {employee}'s manager:");
         print_output(&output);
+
+        let profile = dbsp.retrieve_profile().unwrap();
+        println!("total used bytes: {}", profile.total_used_bytes().unwrap());
+        println!(
+            "total allocated bytes: {}",
+            profile.total_allocated_bytes().unwrap()
+        );
+        println!(
+            "total shared bytes: {}",
+            profile.total_shared_bytes().unwrap()
+        );
+        println!(
+            "num table entries: {}",
+            profile.total_relation_size().unwrap()
+        );
     }
+
+    let profile = dbsp.retrieve_profile().unwrap();
+
+    println!(
+        "used bytes profile: {:?}",
+        profile.used_bytes_profile().unwrap()
+    );
 
     dbsp.kill().unwrap();
 

@@ -247,7 +247,7 @@ impl Storage for ProjectDB {
             .await?;
         let res = manager.query(&stmt, &[]).await?;
 
-        if let Some(row) = res.get(0) {
+        if let Some(row) = res.first() {
             let program_id: ProgramId = ProgramId(row.get(0));
             let version: Version = Version(row.get(1));
             let tenant_id: TenantId = TenantId(row.get(2));

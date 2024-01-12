@@ -7,6 +7,26 @@ use std::{
     time::Duration,
 };
 
+/// Attribute that represents the total number of bytes used by a stateful
+/// operator. This includes bytes used to store the actual state, but not the
+/// excess pre-allocated capacity available inside operator's internal data
+/// structures (see [`ALLOCATED_BYTES_LABEL`]).
+pub const USED_BYTES_LABEL: &str = "used bytes";
+
+/// Attribute that represents the total number of bytes allocated by a stateful
+/// operator. This value can be larger than the number of bytes used by the
+/// operator since it includes excess pre-allocated capacity inside operator's
+/// internal data structures (see [`USED_BYTES_LABEL`]).
+pub const ALLOCATED_BYTES_LABEL: &str = "allocated bytes";
+
+/// Attribute that represents the number of shared bytes used by a stateful
+/// operator, i.e., bytes that are shared behind things like `Arc` or `Rc`.
+pub const SHARED_BYTES_LABEL: &str = "shared bytes";
+
+/// Attribute that represents the number of entries stored by a stateful
+/// operator, e.g., the number of entries in a trace.
+pub const NUM_ENTRIES_LABEL: &str = "total size";
+
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
 
@@ -32,6 +52,13 @@ impl OperatorMeta {
         Self {
             entries: Vec::with_capacity(capacity),
         }
+    }
+
+    pub fn get(&self, attribute: &str) -> Option<MetaItem> {
+        self.entries
+            .iter()
+            .find(|(label, _item)| label == attribute)
+            .map(|(_label, item)| item.clone())
     }
 }
 

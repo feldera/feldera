@@ -1,5 +1,8 @@
 //! z^-1 operator delays its input by one timestamp.
 
+use crate::circuit::metadata::{
+    ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+};
 use crate::{
     algebra::HasZero,
     circuit::{
@@ -361,12 +364,12 @@ where
         };
 
         meta.extend(metadata! {
-            "total size" => total_size,
+            NUM_ENTRIES_LABEL => total_size,
             "batch sizes" => MetaItem::Array(batch_sizes),
-            "allocated bytes" => MetaItem::bytes(total_bytes.total_bytes()),
-            "used bytes" => MetaItem::bytes(total_bytes.used_bytes()),
+            ALLOCATED_BYTES_LABEL => MetaItem::bytes(total_bytes.total_bytes()),
+            USED_BYTES_LABEL => MetaItem::bytes(total_bytes.used_bytes()),
             "allocations" => total_bytes.distinct_allocations(),
-            "shared bytes" => MetaItem::bytes(total_bytes.shared_bytes()),
+            SHARED_BYTES_LABEL => MetaItem::bytes(total_bytes.shared_bytes()),
         });
     }
 
