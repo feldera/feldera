@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 
 const Editor = () => {
   // Get the project id from the URL
-  const programName = useSearchParams().get('program_name') ?? undefined
+  const programName = useSearchParams().get('program_name') ?? ''
 
   return <ProgramEditor programName={programName} />
 }

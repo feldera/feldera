@@ -27,7 +27,6 @@ import {
 } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/navigation'
 import { Dispatch, MutableRefObject, SetStateAction, useEffect, useRef, useState } from 'react'
-import { nonNull } from 'src/lib/functions/common/function'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
@@ -53,15 +52,15 @@ const MetadataForm = (props: {
   programName: string | undefined
   errors: FormError
   program: ProgramDescr
-  setProgram: Dispatch<SetStateAction<ProgramDescr>>
+  updateProgram: Dispatch<SetStateAction<UpdateProgramRequest>>
   disabled?: boolean
 }) => {
   const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
-    props.setProgram(p => ({ ...p, name: event.target.value }))
+    props.updateProgram(p => ({ ...p, name: event.target.value }))
   }
 
   const updateDescription = (event: React.ChangeEvent<HTMLInputElement>) => {
-    props.setProgram(p => ({ ...p, description: event.target.value }))
+    props.updateProgram(p => ({ ...p, description: event.target.value }))
   }
 
   return (
@@ -125,7 +124,6 @@ const stateToEditorLabel = (state: EntitySyncIndicatorStatus) =>
 
 const useCreateProgramEffect = (
   program: ProgramDescr,
-  setProgram: Dispatch<SetStateAction<ProgramDescr>>,
   setStatus: Dispatch<SetStateAction<EntitySyncIndicatorStatus>>,
   setFormError: Dispatch<SetStateAction<FormError>>
 ) => {
@@ -144,12 +142,7 @@ const useCreateProgramEffect = (
         invalidateQuery(queryClient, PipelineManagerQuery.programs())
         invalidateQuery(queryClient, PipelineManagerQuery.programStatus(program.name))
       },
-      onSuccess: (data: NewProgramResponse) => {
-        setProgram((prevState: ProgramDescr) => ({
-          ...prevState,
-          version: data.version,
-          program_id: data.program_id
-        }))
+      onSuccess: (_data: NewProgramResponse) => {
         if (!program.name) {
           setFormError({ name: { message: 'Enter a name for the project.' } })
         }
@@ -178,6 +171,7 @@ const useCreateProgramEffect = (
 }
 
 const useUpdateProgram = (
+  programName: string,
   setStatus: Dispatch<SetStateAction<EntitySyncIndicatorStatus>>,
   setFormError: Dispatch<SetStateAction<FormError>>
 ) => {
@@ -188,7 +182,7 @@ const useUpdateProgram = (
   const { mutate, isPending } = useMutation(mutationUpdateProgram(queryClient))
 
   // Used to accumulate changes that are being debounced
-  const [updateData, setUpdateData] = useState<UpdateProgramRequest>({})
+  const [requestAggregate, setRequestAggregate] = useState<UpdateProgramRequest>({})
 
   const debouncedUpdate = useDebouncedCallback((programName: string | undefined) => {
     if (!programName) {
@@ -199,13 +193,13 @@ const useUpdateProgram = (
     }
     setStatus('isSaving')
     mutate(
-      { programName, update_request: updateData },
+      { programName, update_request: requestAggregate },
       {
         onSuccess: (_data: UpdateProgramResponse, variables) => {
-          setUpdateData({})
+          setRequestAggregate({})
           setStatus('isUpToDate')
           setFormError({})
-          router.replace(`/analytics/editor/?program_name=${variables.update_request.name}`)
+          router.replace(`/analytics/editor/?program_name=${variables.update_request.name ?? variables.programName}`)
         },
         onError: (error: ApiError) => {
           // TODO: would be good to have error codes from the API
@@ -219,24 +213,23 @@ const useUpdateProgram = (
       }
     )
   }, SAVE_DELAY)
-  return (programName: string | undefined, updateRequest: UpdateProgramRequest) => {
-    const newUpdateData = { ...updateData, ...updateRequest }
+  const mutateUpdateProgram = (programName: string, updateRequest: UpdateProgramRequest) => {
+    setRequestAggregate(updateRequest)
+    programQueryCacheUpdate(queryClient, programName, updateRequest)
     if (programName) {
       setStatus('isModified')
-      programQueryCacheUpdate(queryClient, programName, newUpdateData)
+      debouncedUpdate(programName)
     }
-    setUpdateData(newUpdateData)
-    return debouncedUpdate(programName)
+  }
+  return (programAction: SetStateAction<UpdateProgramRequest>) => {
+    const pipelineRequest = programAction instanceof Function ? programAction(requestAggregate) : programAction
+    return mutateUpdateProgram(programName, pipelineRequest)
   }
 }
 
 // Send a compile request if the project changes (e.g., we got a new version and
 // we're not already compiling)
-const useCompileProjectIfChangedEffect = (
-  state: EntitySyncIndicatorStatus,
-  project: ProgramDescr,
-  setProgram: Dispatch<SetStateAction<ProgramDescr>>
-) => {
+const useCompileProjectIfChangedEffect = (state: EntitySyncIndicatorStatus, project: ProgramDescr) => {
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
@@ -271,13 +264,12 @@ const useCompileProjectIfChangedEffect = (
     project.version,
     project.status,
     queryClient,
-    pushMessage,
-    setProgram
+    pushMessage
   ])
 }
 
 // Polls the server during compilation and checks for the status.
-const usePollCompilationStatusEffect = (project: ProgramDescr, setProgram: Dispatch<SetStateAction<ProgramDescr>>) => {
+const usePollCompilationStatusEffect = (project: ProgramDescr) => {
   const queryClient = useQueryClient()
   const compilationStatus = useQuery({
     ...PipelineManagerQuery.programStatus(project.name),
@@ -302,7 +294,6 @@ const usePollCompilationStatusEffect = (project: ProgramDescr, setProgram: Dispa
     project.status,
     project.version,
     project.name,
-    setProgram,
     queryClient
   ])
 
@@ -336,14 +327,14 @@ const useDisplayCompilerErrorsInEditor = (project: ProgramDescr, editorRef: Muta
 
 export const ProgramEditorImpl = ({
   program,
-  setProgram,
+  updateProgram,
   formError,
   setFormError,
   status,
   setStatus
 }: {
   program: ProgramDescr
-  setProgram: Dispatch<SetStateAction<ProgramDescr>>
+  updateProgram: Dispatch<SetStateAction<UpdateProgramRequest>>
   formError: FormError
   setFormError: Dispatch<SetStateAction<FormError>>
   status: EntitySyncIndicatorStatus
@@ -352,10 +343,10 @@ export const ProgramEditorImpl = ({
   const theme = useTheme()
   const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
 
-  useCreateProgramEffect(program, setProgram, setStatus, setFormError)
+  useCreateProgramEffect(program, setStatus, setFormError)
 
-  usePollCompilationStatusEffect(program, setProgram)
-  useCompileProjectIfChangedEffect(status, program, setProgram)
+  usePollCompilationStatusEffect(program)
+  useCompileProjectIfChangedEffect(status, program)
 
   // Mounting and callback for when code is edited
   // TODO: The IStandaloneCodeEditor type is not exposed in the react monaco
@@ -365,7 +356,7 @@ export const ProgramEditorImpl = ({
     editorRef.current = editor
   }
   const updateCode = (value: string | undefined) => {
-    setProgram(p => ({ ...p, code: value }))
+    updateProgram(p => ({ ...p, code: value }))
   }
   useDisplayCompilerErrorsInEditor(program, editorRef)
 
@@ -382,7 +373,7 @@ export const ProgramEditorImpl = ({
             disabled={status === 'isLoading'}
             programName={program.name}
             program={program}
-            setProgram={setProgram}
+            updateProgram={updateProgram}
             errors={formError}
           />
         </CardContent>
@@ -412,61 +403,39 @@ export const ProgramEditorImpl = ({
   )
 }
 
-export const ProgramEditor = ({ programName }: { programName?: string }) => {
+export const ProgramEditor = ({ programName }: { programName: string }) => {
   const [status, setStatus] = useState<EntitySyncIndicatorStatus>(programName ? 'isLoading' : 'isNew')
 
   const [formError, setFormError] = useState<FormError>({})
-  const [program, setProgram] = useState<ProgramDescr>({
-    program_id: programName ? '' : '',
-    name: programName || '',
-    description: '',
-    status: 'None',
-    version: 0,
-    code: ''
-  })
   const programQuery = useQuery({
     ...PipelineManagerQuery.programCode(programName!),
-    enabled: nonNull(programName)
+    enabled: !!programName,
+    initialData: {
+      name: '',
+      description: '',
+      program_id: '',
+      status: 'None',
+      version: 0
+    }
   })
-  {
-    const noProgramData = !programQuery.data
-    useEffect(() => {
-      if (noProgramData) {
-        return
-      }
-      setStatus('isUpToDate')
-    }, [noProgramData])
-  }
+  const program = programQuery.data
+  invariant(program, 'Program should be initialized with a default value')
+  // Clear loading state when program is fetched
+  useEffect(() => {
+    if (!program.program_id) {
+      return
+    }
+    setStatus('isUpToDate')
+  }, [program.program_id, setStatus])
 
-  const mutateUpdateProgram = useUpdateProgram(setStatus, setFormError)
-  const updateProgram = (descr: SetStateAction<ProgramDescr>) => {
-    const newDescr =
-      descr instanceof Function
-        ? descr(
-            programQuery.data ?? {
-              name: '',
-              description: '',
-              program_id: '',
-              status: 'None',
-              version: 0
-            }
-          )
-        : descr
-    return mutateUpdateProgram(programName, {
-      name: newDescr.name,
-      description: newDescr.description,
-      code: newDescr.code
-    })
-  }
+  const updateProgram = useUpdateProgram(programName, setStatus, setFormError)
 
   return (
     <ProgramEditorImpl
-      {...(nonNull(programName) && nonNull(programQuery.data)
-        ? {
-            program: programQuery.data!,
-            setProgram: updateProgram
-          }
-        : { program, setProgram })}
+      {...{
+        program,
+        updateProgram
+      }}
       {...{ status, setStatus, formError, setFormError }}
     ></ProgramEditorImpl>
   )
