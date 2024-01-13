@@ -21,10 +21,7 @@ export const useBuilderState = create<PipelineBuilderState>(set => ({
   pipelineName: '',
   setPipelineName: (pipelineName: string) => set({ pipelineName }),
   saveState: 'isLoading',
-  setSaveState: (saveState: EntitySyncIndicatorStatus) => {
-    console.log('set status', saveState)
-    set({ saveState })
-  },
+  setSaveState: (saveState: EntitySyncIndicatorStatus) => set({ saveState }),
   formError: {},
   setFormError: (formError: FormError) => set({ formError })
 }))

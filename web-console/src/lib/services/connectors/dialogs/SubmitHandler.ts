@@ -46,10 +46,13 @@ export const useNewConnectorRequest = <TData extends FieldValues>(
       onSuccess: resp => {
         invalidateQuery(queryClient, PipelineManagerQuery.connectors())
         pushMessage({ message: 'Connector created successfully!', key: new Date().getTime(), color: 'success' })
-        onSuccess({
-          connector_id: resp.connector_id,
-          ...sourceDesc
-        }, sourceDesc.name)
+        onSuccess(
+          {
+            connector_id: resp.connector_id,
+            ...sourceDesc
+          },
+          sourceDesc.name
+        )
       },
       onError: error => {
         pushMessage({ message: error.body.message ?? error.body, key: new Date().getTime(), color: 'error' })
@@ -88,12 +91,15 @@ export const useUpdateConnectorRequest = <
         onSettled,
         onSuccess: () => {
           pushMessage({ message: 'Connector updated successfully!', key: new Date().getTime(), color: 'success' })
-          onSuccess({
-            connector_id: connectorId,
-            name: request.name,
-            description: request.description,
-            config: request.config!
-          }, connectorName)
+          onSuccess(
+            {
+              connector_id: connectorId,
+              name: request.name,
+              description: request.description,
+              config: request.config!
+            },
+            connectorName
+          )
         },
         onError: error => {
           pushMessage({ message: error.body.message ?? error.body, key: new Date().getTime(), color: 'error' })

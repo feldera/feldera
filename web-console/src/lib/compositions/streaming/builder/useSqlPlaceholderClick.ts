@@ -7,8 +7,6 @@ import { ProgramDescr } from '$lib/services/manager'
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow } from 'reactflow'
 
-// import { useQueryClient } from '@tanstack/react-query'
-
 // Replaces the program placeholder node with a sqlProgram node
 export function useReplacePlaceholder() {
   const { getNode, setNodes } = useReactFlow()
@@ -60,7 +58,6 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
   const { getNode } = useReactFlow()
   const replacePlaceholder = useReplacePlaceholder()
   const attachedPipelineConnectors = useAttachedPipelineConnectors()
-  // const queryClient = useQueryClient()
 
   const updatePipeline = useUpdatePipeline(
     useBuilderState(s => s.pipelineName),
@@ -75,7 +72,6 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
         return
       }
       replacePlaceholder(project)
-      // savePipeline()
       updatePipeline(p => ({ ...p, program_name: project.name, connectors: attachedPipelineConnectors() }))
     },
     [getNode, id, replacePlaceholder, updatePipeline, attachedPipelineConnectors]

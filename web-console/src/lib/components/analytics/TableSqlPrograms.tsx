@@ -10,15 +10,8 @@ import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnV
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
-import {
-  ApiError,
-  ProgramDescr,
-  ProgramsService,
-  ProgramStatus,
-  UpdateProgramRequest,
-  UpdateProgramResponse
-} from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { ApiError, ProgramDescr, ProgramsService, ProgramStatus } from '$lib/services/manager'
+import { mutationUpdateProgram, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -173,25 +166,15 @@ const TableSqlPrograms = () => {
   ]
 
   // Editing a row
-  const mutation = useMutation<UpdateProgramResponse, ApiError, { programName: string; request: UpdateProgramRequest }>(
-    {
-      mutationFn: args => ProgramsService.updateProgram(args.programName, args.request),
-      onSettled: () => {
-        invalidateQuery(queryClient, PipelineManagerQuery.programs())
-        invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
-      }
-    }
-  )
+  const mutation = useMutation(mutationUpdateProgram(queryClient))
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     mutation.mutate(
       {
         programName: newRow.name,
-        request: { description: newRow.description, name: newRow.name }
+        update_request: { description: newRow.description, name: newRow.name }
       },
       {
         onError: (error: ApiError) => {
-          invalidateQuery(queryClient, PipelineManagerQuery.programs())
-          invalidateQuery(queryClient, PipelineManagerQuery.programStatus(newRow.name))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }

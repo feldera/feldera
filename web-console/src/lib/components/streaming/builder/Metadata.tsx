@@ -1,7 +1,3 @@
-// Form to edit the name and description of a config.
-
-// import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
-// import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { PipelineDescr, UpdatePipelineRequest } from '$lib/services/manager'
 import { Dispatch, SetStateAction } from 'react'
@@ -13,6 +9,11 @@ interface FormError {
   name?: { message?: string }
 }
 
+/**
+ * Form to edit the name and description of a config.
+ * @param props
+ * @returns
+ */
 const Metadata = (props: {
   errors: FormError
   pipeline: PipelineDescr
@@ -22,7 +23,6 @@ const Metadata = (props: {
   const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
     props.updatePipeline(p => ({ ...p, name: event.target.value }))
   }
-  console.log('Metadata', props.pipeline.name)
 
   const updateDescription = (event: React.ChangeEvent<HTMLInputElement>) => {
     props.updatePipeline(p => ({ ...p, description: event.target.value }))

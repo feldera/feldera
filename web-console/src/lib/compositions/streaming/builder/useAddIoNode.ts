@@ -26,7 +26,6 @@ export function useAddConnector() {
 
   const addNewConnector = useCallback(
     (connector: ConnectorDescr, ac: AttachedConnector) => {
-      // Input or Output?
       const newNodeType = ac.is_input ? 'inputNode' : 'outputNode'
       const placeholderId = ac.is_input ? 'inputPlaceholder' : 'outputPlaceholder'
       const placeholder = getNode(placeholderId)
@@ -38,7 +37,6 @@ export function useAddConnector() {
       const existingNode = getNodes().find(node => node.id === ac.name)
       const isDifferentName = existingNode && existingNode.data.connector.name !== connector.name
       if (existingNode && !isDifferentName) {
-        console.log('useAddConnector existing', existingNode, connector, existingNode.data.connector.name === connector.name)
         return
       }
 

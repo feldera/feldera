@@ -8,7 +8,6 @@ import { useAttachedPipelineConnectors } from '$lib/compositions/streaming/build
 import useAutoLayout, { useRedoLayout } from '$lib/compositions/streaming/builder/useAutoLayout'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
-// import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
 import React, { useCallback, useRef } from 'react'
 import ReactFlow, {
   Background,
@@ -68,7 +67,6 @@ const fitViewOptions = {
 
 export function PipelineGraph() {
   const { setEdges, deleteElements } = useReactFlow()
-  // const savePipeline = useDebouncedSave()
   const redoLayout = useRedoLayout()
   useAutoLayout()
   const edgeUpdateSuccessful = useRef(true)
@@ -89,7 +87,6 @@ export function PipelineGraph() {
     (oldEdge: Edge, newConnection: Connection) => {
       edgeUpdateSuccessful.current = true
       setEdges(els => updateEdge(oldEdge, newConnection, els))
-      // savePipeline()
       updatePipeline(p => ({ ...p, connectors: attachedPipelineConnectors() }))
       redoLayout()
     },
@@ -108,7 +105,6 @@ export function PipelineGraph() {
 
   // Callback when a new edge is created
   const onConnect = useCallback(() => {
-    // savePipeline()
     updatePipeline(p => ({ ...p, connectors: attachedPipelineConnectors() }))
   }, [updatePipeline, attachedPipelineConnectors])
 
@@ -119,7 +115,6 @@ export function PipelineGraph() {
         if (edgeChange.type !== 'remove') {
           return
         }
-        // savePipeline()
         updatePipeline(p => ({ ...p, connectors: attachedPipelineConnectors() }))
       })
     },

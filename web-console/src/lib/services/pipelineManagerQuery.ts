@@ -310,7 +310,6 @@ export const mutationUpdatePipeline = (
     })
   },
   onSettled: (_data, _error, variables, _context) => {
-    console.log('mutationUpdatePipeline onSettled')
     invariant(variables.pipelineName !== undefined, 'mutationUpdatePipeline: pipelineName === undefined')
     invalidatePipeline(queryClient, variables.pipelineName)
   },
@@ -318,7 +317,6 @@ export const mutationUpdatePipeline = (
     // It's important to update the query cache here because otherwise
     // sometimes the query cache will be out of date and the UI will
     // show the old connectors again after deletion.
-    console.log('mutationUpdatePipeline', variables.pipelineName, variables.request.name)
     setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(variables.pipelineName), oldData => {
       if (!oldData) {
         return oldData
@@ -340,17 +338,17 @@ export const mutationUpdatePipeline = (
 })
 
 export const updatePipelineConnectorName = (oldName: string, newName: string) => (pipeline?: Pipeline) =>
-  pipeline ? ({
-  descriptor: {
-    ...pipeline.descriptor,
-    attached_connectors: pipeline.descriptor.attached_connectors.map(c => c.connector_name === oldName
-      ? ({...c,
-        connector_name: newName
-      } satisfies AttachedConnector)
-      : c)
-  },
-  state: pipeline.state
-}) : pipeline
+  pipeline
+    ? {
+        descriptor: {
+          ...pipeline.descriptor,
+          attached_connectors: pipeline.descriptor.attached_connectors.map(c =>
+            c.connector_name === oldName ? ({ ...c, connector_name: newName } satisfies AttachedConnector) : c
+          )
+        },
+        state: pipeline.state
+      }
+    : pipeline
 
 export const mutationUpdateConnector = (
   queryClient: QueryClient
@@ -363,36 +361,10 @@ export const mutationUpdateConnector = (
   onSettled: (_data, _errors, variables, _context) => {
     invalidateQuery(queryClient, PipelineManagerQuery.connectors())
     invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(variables.connectorName))
-
-
-    const oldName = variables.connectorName
-    const newName = variables.request.name
-    console.log('mutationUpdateConnector', oldName, newName)
-    // Changing connector name may invalidate pipelines that use it.
-    if (newName && newName !== oldName) {
-      // const x = queryClient.getQueryData(PipelineManagerQuery.pipelines().queryKey)
-      // const pipelines = getQueryData(queryClient, PipelineManagerQuery.pipelines())
-      // const affected = pipelines?.filter(pipeline => pipeline.descriptor.attached_connectors.find(c => c.connector_name === newName)) ?? []
-
-      // for (const pipeline of affected) {
-      //   invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.descriptor.name))
-      // }
-      // if (affected.length) {
-      //   invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
-      // }
-
-      // setQueryData(queryClient, PipelineManagerQuery.pipelines(), pipelines?.map(updatePipelineConnectorName(oldName, newName)))
-      // for (const pipeline of affected) {
-      //   console.log('setting pipeline cache', oldName, newName)
-      //   setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.descriptor.name),
-      //     updatePipelineConnectorName(oldName, newName))
-      // }
-    }
   }
 })
 
 export const invalidatePipeline = (queryClient: QueryClient, pipelineName: string) => {
-  console.log('invalidatePipeline')
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineLastRevision(pipelineName))
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName))
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineConfig(pipelineName))
@@ -463,7 +435,6 @@ const pipelineStatusQueryCacheUpdate = (
   field: 'current_status' | 'desired_status',
   status: PipelineStatus
 ) => {
-  console.log('pipelineStatusQueryCacheUpdate', pipelineName)
   const updateCache = <T extends Pipeline | undefined>(oldData: T) => {
     if (!oldData) {
       return oldData
@@ -489,7 +460,6 @@ export const pipelineQueryCacheUpdate = (
   pipelineName: string,
   newData: UpdatePipelineRequest
 ) => {
-  console.log('pipelineQueryCacheUpdate', pipelineName, newData.name)
   const updateCache = <T extends Pipeline | undefined>(oldData: T) => {
     if (!oldData) {
       return oldData

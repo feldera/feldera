@@ -21,16 +21,7 @@ import { useHashPart } from '$lib/compositions/useHashPart'
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
-import {
-  ApiError,
-  AttachedConnector,
-  ConnectorDescr,
-  PipelineRevision,
-  PipelinesService,
-  Relation,
-  UpdatePipelineRequest,
-  UpdatePipelineResponse
-} from '$lib/services/manager'
+import { ApiError, AttachedConnector, ConnectorDescr, PipelineRevision, Relation } from '$lib/services/manager'
 import {
   mutationDeletePipeline,
   mutationPausePipeline,
@@ -475,7 +466,7 @@ export default function PipelineTable() {
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
-  const {mutate: updatePipeline} = useMutation(mutationUpdatePipeline(queryClient))
+  const { mutate: updatePipeline } = useMutation(mutationUpdatePipeline(queryClient))
   const onUpdateRow = (newRow: Pipeline, oldRow: Pipeline) => {
     updatePipeline(
       {
