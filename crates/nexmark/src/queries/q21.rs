@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{operator::FilterMap, utils::Tup5, OrdZSet, RootCircuit, Stream};
 use regex::Regex;
 
 ///
@@ -35,7 +35,7 @@ use regex::Regex;
 ///           lower(channel) in ('apple', 'google', 'facebook', 'baidu');
 /// ```
 
-type Q21Set = OrdZSet<(u64, u64, usize, String, String), isize>;
+type Q21Set = OrdZSet<Tup5<u64, u64, u64, String, String>, i64>;
 type Q21Stream = Stream<RootCircuit, Q21Set>;
 
 pub fn q21(input: NexmarkStream) -> Q21Stream {
@@ -55,7 +55,7 @@ pub fn q21(input: NexmarkStream) -> Q21Stream {
                         _ => None,
                     }),
             };
-            channel_id.map(|ch_id| (b.auction, b.bidder, b.price, b.channel.clone(), ch_id))
+            channel_id.map(|ch_id| Tup5(b.auction, b.bidder, b.price, b.channel.clone(), ch_id))
         }
         _ => None,
     })
@@ -89,10 +89,10 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, String::from("ApPlE"), String::from("0")) => 1,
-            (1, 1, 99, String::from("GooGle"), String::from("1")) => 1,
-            (1, 1, 99, String::from("FaceBook"), String::from("2")) => 1,
-            (1, 1, 99, String::from("Baidu"), String::from("3")) => 1,
+            Tup5(1, 1, 99, String::from("ApPlE"), String::from("0")) => 1,
+            Tup5(1, 1, 99, String::from("GooGle"), String::from("1")) => 1,
+            Tup5(1, 1, 99, String::from("FaceBook"), String::from("2")) => 1,
+            Tup5(1, 1, 99, String::from("Baidu"), String::from("3")) => 1,
         }],
     )]
     #[case::bids_with_unknown_channel_ids(
@@ -111,8 +111,8 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, String::from("https://example.com/?channel_id=ubuntu"), String::from("ubuntu")) => 1,
-            (1, 1, 99, String::from("https://example.com/?channel_id=cherry-pie"), String::from("cherry-pie")) => 1,
+            Tup5(1, 1, 99, String::from("https://example.com/?channel_id=ubuntu"), String::from("ubuntu")) => 1,
+            Tup5(1, 1, 99, String::from("https://example.com/?channel_id=cherry-pie"), String::from("cherry-pie")) => 1,
         }],
     )]
     fn test_q21(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q21Set>) {

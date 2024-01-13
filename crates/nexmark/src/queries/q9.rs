@@ -2,6 +2,7 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
     operator::{FilterMap, Max},
+    utils::{Tup10, Tup2, Tup4, Tup9},
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
 use rkyv::{Archive, Deserialize, Serialize};
@@ -86,7 +87,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     let auctions_by_id = input.flat_map_index(|event| match event {
         Event::Auction(a) => Some((
             a.id,
-            (
+            Tup9(
                 a.item_name.clone(),
                 a.description.clone(),
                 a.initial_bid,
@@ -103,18 +104,21 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
 
     // Select bids and index by auction id.
     let bids_by_auction = input.flat_map_index(|event| match event {
-        Event::Bid(b) => Some((b.auction, (b.bidder, b.price, b.date_time, b.extra.clone()))),
+        Event::Bid(b) => Some((
+            b.auction,
+            Tup4(b.bidder, b.price, b.date_time, b.extra.clone()),
+        )),
         _ => None,
     });
 
     type BidsAuctionsJoin = Stream<
         RootCircuit,
         OrdZSet<
-            (
-                (u64, String, String, u64, u64, u64, u64, u64, u64, String),
-                (u64, u64, u64, String),
-            ),
-            isize,
+            Tup2<
+                Tup10<u64, String, String, u64, u64, u64, u64, u64, u64, String>,
+                Tup4<u64, u64, u64, String>,
+            >,
+            i64,
         >,
     >;
 
@@ -122,7 +126,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join(
         &bids_by_auction,
         |&auction_id,
-         (
+         Tup9(
             a_item_name,
             a_description,
             a_initial_bid,
@@ -133,9 +137,9 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
             a_category,
             a_extra,
         ),
-         (b_bidder, b_price, b_date_time, b_extra)| {
-            (
-                (
+         Tup4(b_bidder, b_price, b_date_time, b_extra)| {
+            Tup2(
+                Tup10(
                     auction_id,
                     a_item_name.clone(),
                     a_description.clone(),
@@ -147,7 +151,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
                     *a_category,
                     a_extra.clone(),
                 ),
-                (*b_bidder, *b_price, *b_date_time, b_extra.clone()),
+                Tup4(*b_bidder, *b_price, *b_date_time, b_extra.clone()),
             )
         },
     );
@@ -156,8 +160,8 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     // TODO: update to use incremental version of `join_range` once implemented
     // (#137).
     let bids_for_auctions_indexed = bids_for_auctions.flat_map_index(
-        |(
-            (
+        |Tup2(
+            Tup10(
                 auction_id,
                 a_item_name,
                 a_description,
@@ -169,11 +173,11 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
                 a_category,
                 a_extra,
             ),
-            (b_bidder, b_price, b_date_time, b_extra),
+            Tup4(b_bidder, b_price, b_date_time, b_extra),
         )| {
             if b_date_time >= a_date_time && b_date_time <= a_expires {
                 Some((
-                    (
+                    Tup10(
                         *auction_id,
                         a_item_name.clone(),
                         a_description.clone(),
@@ -187,7 +191,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
                     ),
                     // Note that the price of the bid is first in the tuple here to ensure that the
                     // default lexicographic Ord of tuples does what we want below.
-                    (*b_price, *b_bidder, *b_date_time, b_extra.clone()),
+                    Tup4(*b_price, *b_bidder, *b_date_time, b_extra.clone()),
                 ))
             } else {
                 None
@@ -200,9 +204,9 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     type AuctionsWithWinningBids = Stream<
         RootCircuit,
         OrdIndexedZSet<
-            (u64, String, String, u64, u64, u64, u64, u64, u64, String),
-            (u64, u64, u64, String),
-            isize,
+            Tup10<u64, String, String, u64, u64, u64, u64, u64, u64, String>,
+            Tup4<u64, u64, u64, String>,
+            i64,
         >,
     >;
     let auctions_with_winning_bids: AuctionsWithWinningBids =
@@ -212,7 +216,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
     // into the output order.
     auctions_with_winning_bids.map(
         |(
-            (
+            Tup10(
                 auction_id,
                 a_item_name,
                 a_description,
@@ -224,7 +228,7 @@ pub fn q9(input: NexmarkStream) -> Q9Stream {
                 a_category,
                 a_extra,
             ),
-            (b_price, b_bidder, b_date_time, b_extra),
+            Tup4(b_price, b_bidder, b_date_time, b_extra),
         )| {
             Q9Output(
                 *auction_id,

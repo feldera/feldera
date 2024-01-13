@@ -1,6 +1,6 @@
 use super::{process_time, NexmarkStream};
 use crate::model::Event;
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{operator::FilterMap, utils::Tup4, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 12: Processing Time Windows (Not in original suite)
@@ -31,7 +31,7 @@ use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 /// GROUP BY B.bidder, TUMBLE(B.p_time, INTERVAL '10' SECOND);
 /// ```
 
-type Q12Stream = Stream<RootCircuit, OrdZSet<(u64, u64, u64, u64), isize>>;
+type Q12Stream = Stream<RootCircuit, OrdZSet<Tup4<u64, u64, u64, u64>, i64>>;
 const TUMBLE_SECONDS: u64 = 10;
 
 fn window_for_process_time(ptime: u64) -> (u64, u64) {
@@ -56,7 +56,9 @@ where
 
     bids_by_bidder_window
         .weighted_count()
-        .map(|(&(bidder, starttime, endtime), &count)| (bidder, count as u64, starttime, endtime))
+        .map(|(&(bidder, starttime, endtime), &count)| {
+            Tup4(bidder, count as u64, starttime, endtime)
+        })
 }
 
 pub fn q12(input: NexmarkStream) -> Q12Stream {
@@ -79,30 +81,30 @@ mod tests {
         vec![vec![(1, 1), (1, 2), (1, 99), (1, 25)], vec![(1, 16), (1, 2)]],
         vec![3_000, 4_000, 5_000, 6_000, 7_000, 8_000],
         vec![
-            zset! {(1, 4, 0, 10_000) => 1},
-            zset! { (1, 4, 0, 10_000) => -1, (1, 6, 0, 10_000) => 1},
+            zset! { Tup4(1, 4, 0, 10_000) => 1},
+            zset! { Tup4(1, 4, 0, 10_000) => -1, Tup4(1, 6, 0, 10_000) => 1},
         ],
     )]
     #[case::one_bidder_multiple_windows(
         vec![vec![(1, 99), (1, 63), (1, 2), (1, 45)], vec![(1, 29), (1, 21)]],
         vec![3_000, 4_000, 5_000, 6_000, 11_000, 12_000],
         vec![
-            zset! {(1, 4, 0, 10_000) => 1},
-            zset! {(1, 2, 10_000, 20_000) => 1},
+            zset! {Tup4(1, 4, 0, 10_000) => 1},
+            zset! {Tup4(1, 2, 10_000, 20_000) => 1},
         ],
     )]
     #[case::multiple_bidders_multiple_windows(
         vec![vec![(1, 12), (1, 102), (1, 22), (1, 79), (2, 16), (2, 81)], vec![(1, 49), (1, 77)]],
         vec![3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 11_000, 12_000],
         vec![
-            zset! {(1, 4, 0, 10_000) => 1, (2, 2, 0, 10_000) => 1},
-            zset! {(1, 2, 10_000, 20_000) => 1},
+            zset! {Tup4(1, 4, 0, 10_000) => 1, Tup4(2, 2, 0, 10_000) => 1},
+            zset! {Tup4(1, 2, 10_000, 20_000) => 1},
         ],
     )]
     fn test_q12(
         #[case] bidder_bid_batches: Vec<Vec<(u64, u64)>>,
         #[case] proc_times: Vec<u64>,
-        #[case] expected_zsets: Vec<OrdZSet<(u64, u64, u64, u64), isize>>,
+        #[case] expected_zsets: Vec<OrdZSet<Tup4<u64, u64, u64, u64>, i64>>,
     ) {
         let input_vecs = bidder_bid_batches.into_iter().map(|batch| {
             batch

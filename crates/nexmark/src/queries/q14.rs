@@ -46,13 +46,17 @@ use std::hash::Hash;
 #[derive(
     Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize,
 )]
-pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, String, usize);
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, String, u64);
 
-type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output, isize>>;
+type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output, i64>>;
 
 #[derive(
     Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub enum BidTimeType {
     Day,
     Night,
@@ -83,7 +87,7 @@ pub fn q14(input: NexmarkStream) -> Q14Stream {
                     },
                     b.date_time,
                     b.extra.clone(),
-                    b.extra.matches('c').count(),
+                    b.extra.matches('c').count() as u64,
                 ))
             } else {
                 None
@@ -110,10 +114,10 @@ mod tests {
     #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Other, 8*60*60*1000 - 1, String::new(), 0) => 1])]
     #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them.").into(), 4) => 1])]
     fn test_q14(
-        #[case] price: usize,
+        #[case] price: u64,
         #[case] date_time: u64,
         #[case] extra: &str,
-        #[case] expected_zset: OrdZSet<Q14Output, isize>,
+        #[case] expected_zset: OrdZSet<Q14Output, i64>,
     ) {
         let input_vecs = vec![vec![(
             Event::Bid(Bid {

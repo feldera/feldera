@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{operator::FilterMap, utils::Tup7, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 22: Get URL Directories (Not in original suite)
@@ -29,7 +29,7 @@ use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 ///     SPLIT_INDEX(url, '/', 5) as dir3 FROM bid;
 /// ```
 
-type Q22Set = OrdZSet<(u64, u64, usize, String, String, String, String), isize>;
+type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, String, String, String>, i64>;
 type Q22Stream = Stream<RootCircuit, Q22Set>;
 
 pub fn q22(input: NexmarkStream) -> Q22Stream {
@@ -42,7 +42,7 @@ pub fn q22(input: NexmarkStream) -> Q22Stream {
                 split.next().unwrap_or_default(),
             );
 
-            Some((
+            Some(Tup7(
                 b.auction,
                 b.bidder,
                 b.price,
@@ -76,8 +76,8 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
-            (1, 1, 99, String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"), String::from("dir1"), String::from("dir2"), String::from("dir3")) => 1,
+            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
+            Tup7(1, 1, 99, String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"), String::from("dir1"), String::from("dir2"), String::from("dir3")) => 1,
         }],
     )]
     #[case::bids_mixed_with_non_urls(
@@ -96,9 +96,9 @@ mod tests {
             }),
         ]],
         vec![zset!{
-            (1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
-            (1, 1, 99, String::from("Google"), String::from(""), String::from(""), String::from("")) => 1,
-            (1, 1, 99, String::from("https:badly.formed/dir1/dir2/dir3"), String::from("dir3"), String::from(""), String::from("")) => 1,
+            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
+            Tup7(1, 1, 99, String::from("Google"), String::from(""), String::from(""), String::from("")) => 1,
+            Tup7(1, 1, 99, String::from("https:badly.formed/dir1/dir2/dir3"), String::from("dir3"), String::from(""), String::from("")) => 1,
         }],
     )]
     fn test_q22(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q22Set>) {

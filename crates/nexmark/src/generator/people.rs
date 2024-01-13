@@ -14,26 +14,19 @@ use std::{
 
 // Keep the number of states small so that the example queries will find
 // results even with a small batch of events.
-static US_STATES: [String; 6] = [
-    String::from("AZ"),
-    String::from("CA"),
-    String::from("ID"),
-    String::from("OR"),
-    String::from("WA"),
-    String::from("WY"),
-];
+static US_STATES: [&str; 6] = ["AZ", "CA", "ID", "OR", "WA", "WY"];
 
-static US_CITIES: [String; 10] = [
-    String::from("Phoenix"),
-    String::from("Los Angeles"),
-    String::from("San Francisco"),
-    String::from("Boise"),
-    String::from("Portland"),
-    String::from("Bend"),
-    String::from("Redmond"),
-    String::from("Seattle"),
-    String::from("Kent"),
-    String::from("Cheyenne"),
+static US_CITIES: [&str; 10] = [
+    "Phoenix",
+    "Los Angeles",
+    "San Francisco",
+    "Boise",
+    "Portland",
+    "Bend",
+    "Redmond",
+    "Seattle",
+    "Kent",
+    "Cheyenne",
 ];
 
 const FIRST_NAMES: &[&str] = &[
@@ -47,7 +40,7 @@ const LAST_NAMES: &[&str] = &[
 impl<R: Rng> NexmarkGenerator<R> {
     // Generate and return a random person with next available id.
     pub fn next_person(&mut self, next_event_id: u64, timestamp: u64) -> Person {
-        let id = self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID as u64;
+        let id = self.last_base0_person_id(next_event_id) + config::FIRST_PERSON_ID;
         let name = self.next_person_name();
         let email_address = self.next_email();
         let credit_card = self.next_credit_card();
@@ -118,12 +111,12 @@ impl<R: Rng> NexmarkGenerator<R> {
 
     // Return a random US state.
     fn next_us_state(&mut self) -> String {
-        US_STATES.choose(&mut self.rng).unwrap().clone()
+        US_STATES.choose(&mut self.rng).unwrap().to_string()
     }
 
     // Return a random US city.
     fn next_us_city(&mut self) -> String {
-        US_CITIES.choose(&mut self.rng).unwrap().clone()
+        US_CITIES.choose(&mut self.rng).unwrap().to_string()
     }
 
     // Return a random person name.
@@ -133,12 +126,11 @@ impl<R: Rng> NexmarkGenerator<R> {
             FIRST_NAMES.choose(&mut self.rng).unwrap(),
             LAST_NAMES.choose(&mut self.rng).unwrap()
         )
-        .into()
     }
 
     // Return a random email address.
     fn next_email(&mut self) -> String {
-        format!("{}@{}.com", self.next_string(7), self.next_string(5)).into()
+        format!("{}@{}.com", self.next_string(7), self.next_string(5))
     }
 
     // Return a random credit card number.
@@ -150,7 +142,6 @@ impl<R: Rng> NexmarkGenerator<R> {
             &mut self.rng.gen_range(0..10_000),
             &mut self.rng.gen_range(0..10_000)
         )
-        .into()
     }
 }
 

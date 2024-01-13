@@ -19,17 +19,12 @@ const HOT_CHANNELS_RATIO: usize = 100;
 
 pub const CHANNELS_NUMBER: u32 = 10_000;
 
-static HOT_CHANNELS: [String; 4] = [
-    String::from("Google"),
-    String::from("Facebook"),
-    String::from("Baidu"),
-    String::from("Apple"),
-];
-static HOT_URLS: [String; 4] = [
-    String::from("https://www.nexmark.com/googl/item.htm?query=1"),
-    String::from("https://www.nexmark.com/meta/item.htm?query=1"),
-    String::from("https://www.nexmark.com/bidu/item.htm?query=1"),
-    String::from("https://www.nexmark.com/aapl/item.htm?query=1"),
+static HOT_CHANNELS: [&str; 4] = ["Google", "Facebook", "Baidu", "Apple"];
+static HOT_URLS: [&str; 4] = [
+    "https://www.nexmark.com/googl/item.htm?query=1",
+    "https://www.nexmark.com/meta/item.htm?query=1",
+    "https://www.nexmark.com/bidu/item.htm?query=1",
+    "https://www.nexmark.com/aapl/item.htm?query=1",
 ];
 
 const BASE_URL_PATH_LENGTH: usize = 5;
@@ -48,10 +43,10 @@ impl<R: Rng> NexmarkGenerator<R> {
                 // which uses `Integer.reverse` to get a deterministic channel_id.
                 url = match self.rng.gen_range(0..10) {
                     9 => url,
-                    _ => format!("{url}&channel_id={}", channel_number.reverse_bits()).into(),
+                    _ => format!("{url}&channel_id={}", channel_number.reverse_bits()),
                 };
 
-                (format!("channel-{channel_number}").into(), url)
+                (format!("channel-{channel_number}"), url)
             })
             .clone()
     }
@@ -67,7 +62,7 @@ impl<R: Rng> NexmarkGenerator<R> {
                 (self.last_base0_auction_id(event_id) / HOT_AUCTON_RATIO as u64)
                     * HOT_AUCTON_RATIO as u64
             }
-        } + FIRST_AUCTION_ID as u64;
+        } + FIRST_AUCTION_ID;
 
         let bidder = match self
             .rng
@@ -81,7 +76,7 @@ impl<R: Rng> NexmarkGenerator<R> {
                     * HOT_BIDDER_RATIO as u64
                     + 1
             }
-        } + FIRST_PERSON_ID as u64;
+        } + FIRST_PERSON_ID;
 
         let price = self.next_price();
 
@@ -93,7 +88,10 @@ impl<R: Rng> NexmarkGenerator<R> {
             HOT_CHANNELS_RATIO => self.get_new_channel_instance(channel_number),
             _ => {
                 let hot_index = self.rng.gen_range(0..HOT_CHANNELS.len());
-                (HOT_CHANNELS[hot_index].clone(), HOT_URLS[hot_index].clone())
+                (
+                    HOT_CHANNELS[hot_index].to_string(),
+                    HOT_URLS[hot_index].to_string(),
+                )
             }
         };
         // Original Java implementation calculates the size of the bid as
