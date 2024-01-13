@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::{Auction, Bid, Event};
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{operator::FilterMap, utils::Tup2, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 20: Expand bid with auction (Not in original suite)
@@ -47,9 +47,9 @@ use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 // WHERE A.category = 10;
 //
 
-type Q20Stream = Stream<RootCircuit, OrdZSet<(Bid, Auction), isize>>;
+type Q20Stream = Stream<RootCircuit, OrdZSet<Tup2<Bid, Auction>, i64>>;
 
-const FILTERED_CATEGORY: usize = 10;
+const FILTERED_CATEGORY: u64 = 10;
 
 pub fn q20(input: NexmarkStream) -> Q20Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
@@ -66,7 +66,7 @@ pub fn q20(input: NexmarkStream) -> Q20Stream {
     });
 
     bids_by_auction.join(&auctions_indexed, |_, bid, auction| {
-        (bid.clone(), auction.clone())
+        Tup2(bid.clone(), auction.clone())
     })
 }
 
@@ -122,11 +122,11 @@ mod tests {
             }),
         ]],
         vec![zset! {
-            (Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            (Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            (Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }, zset! {
-            (Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }])]
     #[case::auction_bids_wrong_category(
         vec![vec![
@@ -213,17 +213,17 @@ mod tests {
             }),
         ]],
         vec![zset! {
-            (Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            (Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            (Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            (Bid { auction: 2, bidder: 50, price: 50, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 10, price: 10, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 20, price: 20, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 30, price: 30, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 2, bidder: 50, price: 50, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }, zset! {
-            (Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
-            (Bid { auction: 2, bidder: 60, price: 60, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 1, bidder: 40, price: 40, ..make_bid()}, Auction { id: 1, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
+            Tup2(Bid { auction: 2, bidder: 60, price: 60, ..make_bid()}, Auction { id: 2, category: FILTERED_CATEGORY, ..make_auction() }) => 1,
         }])]
     fn test_q20(
         #[case] input_event_batches: Vec<Vec<Event>>,
-        #[case] expected_zsets: Vec<OrdZSet<(Bid, Auction), isize>>,
+        #[case] expected_zsets: Vec<OrdZSet<Tup2<Bid, Auction>, i64>>,
     ) {
         let input_vecs = input_event_batches
             .into_iter()

@@ -1,6 +1,10 @@
 use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
-use dbsp::{operator::FilterMap, OrdIndexedZSet, OrdZSet, RootCircuit, Stream};
+use dbsp::{
+    operator::FilterMap,
+    utils::{Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9},
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
+};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -68,23 +72,25 @@ use time::{
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Q15Output {
     day: String,
-    total_bids: usize,
-    rank1_bids: usize,
-    rank2_bids: usize,
-    rank3_bids: usize,
-    total_bidders: usize,
-    rank1_bidders: usize,
-    rank2_bidders: usize,
-    rank3_bidders: usize,
-    total_auctions: usize,
-    rank1_auctions: usize,
-    rank2_auctions: usize,
-    rank3_auctions: usize,
+    total_bids: u64,
+    rank1_bids: u64,
+    rank2_bids: u64,
+    rank3_bids: u64,
+    total_bidders: u64,
+    rank1_bidders: u64,
+    rank2_bidders: u64,
+    rank3_bidders: u64,
+    total_auctions: u64,
+    rank1_auctions: u64,
+    rank2_auctions: u64,
+    rank3_auctions: u64,
 }
 
-type Q15Stream = Stream<RootCircuit, OrdZSet<Q15Output, isize>>;
+type Q15Stream = Stream<RootCircuit, OrdZSet<Q15Output, i64>>;
 
 pub fn q15(input: NexmarkStream) -> Q15Stream {
     // Dug for a long time to figure out how to use the const generics
@@ -109,110 +115,114 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 .to_ordinal_date();
             //.format(iso8601_day_format)
             //.unwrap();
-            Some((day, (b.auction, b.price, b.bidder)))
+            Some(Tup2(day, Tup3(b.auction, b.price, b.bidder)))
         }
         _ => None,
     });
 
     // Partition bids based on price.
-    let rank1_bids = bids.filter(|(_day, (_auction, price, _bidder))| *price < 10_000);
-    let rank2_bids =
-        bids.filter(|(_day, (_auction, price, _bidder))| *price >= 10_000 && *price < 1_000_000);
-    let rank3_bids = bids.filter(|(_day, (_auction, price, _bidder))| *price >= 1_000_000);
+    let rank1_bids = bids.filter(|Tup2(_day, Tup3(_auction, price, _bidder))| *price < 10_000);
+    let rank2_bids = bids.filter(|Tup2(_day, Tup3(_auction, price, _bidder))| {
+        *price >= 10_000 && *price < 1_000_000
+    });
+    let rank3_bids = bids.filter(|Tup2(_day, Tup3(_auction, price, _bidder))| *price >= 1_000_000);
 
     // Compute unique bidders across all bids and for each price range.
     let distinct_bidder = bids
-        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
         .index();
     let rank1_distinct_bidder = rank1_bids
-        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
         .index();
     let rank2_distinct_bidder = rank2_bids
-        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
         .index();
     let rank3_distinct_bidder = rank3_bids
-        .map(|(day, (_auction, _price, bidder))| (*day, *bidder))
+        .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
         .index();
 
     // Compute unique auctions across all bids and for each price range.
     let distinct_auction = bids
-        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
         .index();
     let rank1_distinct_auction = rank1_bids
-        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
         .index();
     let rank2_distinct_auction = rank2_bids
-        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
         .index();
     let rank3_distinct_auction = rank3_bids
-        .map(|(day, (auction, _price, _bidder))| (*day, *auction))
+        .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
         .index();
 
     // Compute bids per day.
-    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         bids.index().weighted_count();
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank1_bids.index().weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank2_bids.index().weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank3_bids.index().weighted_count();
 
     // Count unique bidders per day.
-    let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         distinct_bidder.weighted_count();
-    let count_rank1_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank1_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank1_distinct_bidder.weighted_count();
-    let count_rank2_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank2_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank2_distinct_bidder.weighted_count();
-    let count_rank3_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank3_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank3_distinct_bidder.weighted_count();
 
     // Count unique auctions per day.
-    let count_total_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_total_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         distinct_auction.weighted_count();
-    let count_rank1_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank1_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank1_distinct_auction.weighted_count();
-    let count_rank2_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank2_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank2_distinct_auction.weighted_count();
-    let count_rank3_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, isize, _>> =
+    let count_rank3_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
         rank3_distinct_auction.weighted_count();
 
     // The following abomination simply joins all aggregates computed above into a
     // single output stream.
     count_total_bids
         .outer_join_default(&count_rank1_bids, |date, total_bids, rank1_bids| {
-            (*date, (*total_bids, *rank1_bids))
+            Tup2(*date, Tup2(*total_bids, *rank1_bids))
         })
         .index()
         .outer_join_default(
             &count_rank2_bids,
-            |date, (total_bids, rank1_bids), rank2_bids| {
-                (*date, (*total_bids, *rank1_bids, *rank2_bids))
+            |date, Tup2(total_bids, rank1_bids), rank2_bids| {
+                Tup2(*date, Tup3(*total_bids, *rank1_bids, *rank2_bids))
             },
         )
         .index()
         .outer_join_default(
             &count_rank3_bids,
-            |date, (total_bids, rank1_bids, rank2_bids), rank3_bids| {
-                (*date, (*total_bids, *rank1_bids, *rank2_bids, *rank3_bids))
+            |date, Tup3(total_bids, rank1_bids, rank2_bids), rank3_bids| {
+                Tup2(
+                    *date,
+                    Tup4(*total_bids, *rank1_bids, *rank2_bids, *rank3_bids),
+                )
             },
         )
         .index()
         .outer_join_default(
             &count_total_bidders,
-            |date, (total_bids, rank1_bids, rank2_bids, rank3_bids), total_bidders| {
-                (
+            |date, Tup4(total_bids, rank1_bids, rank2_bids, rank3_bids), total_bidders| {
+                Tup2(
                     *date,
-                    (
+                    Tup5(
                         *total_bids,
                         *rank1_bids,
                         *rank2_bids,
@@ -226,11 +236,11 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(
             &count_rank1_bidders,
             |date,
-             (total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders),
+             Tup5(total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders),
              rank1_bidders| {
-                (
+                Tup2(
                     *date,
-                    (
+                    Tup6(
                         *total_bids,
                         *rank1_bids,
                         *rank2_bids,
@@ -245,11 +255,11 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(
             &count_rank2_bidders,
             |date,
-             (total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders, rank1_bidders),
+             Tup6(total_bids, rank1_bids, rank2_bids, rank3_bids, total_bidders, rank1_bidders),
              rank2_bidders| {
-                (
+                Tup2(
                     *date,
-                    (
+                    Tup7(
                         *total_bids,
                         *rank1_bids,
                         *rank2_bids,
@@ -265,7 +275,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(
             &count_rank3_bidders,
             |date,
-             (
+             Tup7(
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -275,9 +285,9 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 rank2_bidders,
             ),
              rank3_bidders| {
-                (
+                Tup2(
                     *date,
-                    (
+                    Tup8(
                         *total_bids,
                         *rank1_bids,
                         *rank2_bids,
@@ -294,7 +304,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(
             &count_total_auctions,
             |date,
-             (
+             Tup8(
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -305,9 +315,9 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 rank3_bidders,
             ),
              total_auctions| {
-                (
+                Tup2(
                     *date,
-                    (
+                    Tup9(
                         *total_bids,
                         *rank1_bids,
                         *rank2_bids,
@@ -325,7 +335,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(
             &count_rank1_auctions,
             |date,
-             (
+             Tup9(
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -337,9 +347,9 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 total_auctions,
             ),
              rank1_auctions| {
-                (
+                Tup2(
                     *date,
-                    (
+                    Tup10(
                         *total_bids,
                         *rank1_bids,
                         *rank2_bids,
@@ -358,7 +368,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(
             &count_rank2_auctions,
             |date,
-             (
+             Tup10(
                 total_bids,
                 rank1_bids,
                 rank2_bids,
@@ -371,10 +381,10 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 rank1_auctions,
             ),
              rank2_auctions| {
-                (
+                Tup2(
                     *date,
-                    (
-                        (
+                    Tup2(
+                        Tup10(
                             *total_bids,
                             *rank1_bids,
                             *rank2_bids,
@@ -395,8 +405,8 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(
             &count_rank3_auctions,
             |date,
-             (
-                (
+             Tup2(
+                Tup10(
                     total_bids,
                     rank1_bids,
                     rank2_bids,
@@ -415,18 +425,18 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                     .unwrap()
                     .format(iso8601_day_format)
                     .unwrap(),
-                total_bids: *total_bids as usize,
-                rank1_bids: *rank1_bids as usize,
-                rank2_bids: *rank2_bids as usize,
-                rank3_bids: *rank3_bids as usize,
-                total_bidders: *total_bidders as usize,
-                rank1_bidders: *rank1_bidders as usize,
-                rank2_bidders: *rank2_bidders as usize,
-                rank3_bidders: *rank3_bidders as usize,
-                total_auctions: *total_auctions as usize,
-                rank1_auctions: *rank1_auctions as usize,
-                rank2_auctions: *rank2_auctions as usize,
-                rank3_auctions: *rank3_auctions as usize,
+                total_bids: *total_bids as u64,
+                rank1_bids: *rank1_bids as u64,
+                rank2_bids: *rank2_bids as u64,
+                rank3_bids: *rank3_bids as u64,
+                total_bidders: *total_bidders as u64,
+                rank1_bidders: *rank1_bidders as u64,
+                rank2_bidders: *rank2_bidders as u64,
+                rank3_bidders: *rank3_bidders as u64,
+                total_auctions: *total_auctions as u64,
+                rank1_auctions: *rank1_auctions as u64,
+                rank2_auctions: *rank2_auctions as u64,
+                rank3_auctions: *rank3_auctions as u64,
             },
         )
 }

@@ -194,7 +194,7 @@ impl<W, C> NexmarkSource<W, C> {
         }
     }
 
-    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource<isize, OrdZSet<Event, i64>> {
+    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource<i64, OrdZSet<Event, i64>> {
         NexmarkSource::from_next_events(create_generators_for_config::<ThreadRng>(nexmark_config))
     }
 
@@ -249,7 +249,7 @@ pub mod tests {
     pub fn make_source_with_wallclock_times(
         times: Range<u64>,
         max_events: u64,
-    ) -> NexmarkSource<isize, OrdZSet<Event, i64>> {
+    ) -> NexmarkSource<i64, OrdZSet<Event, i64>> {
         let (next_event_tx, next_event_rx) = mpsc::sync_channel(max_events as usize + 1);
         let mut generator = NexmarkGenerator::new(
             GeneratorConfig {
@@ -325,7 +325,7 @@ pub mod tests {
             ..NexmarkConfig::default()
         };
         let receiver = create_generators_for_config::<ThreadRng>(nexmark_config);
-        let source = NexmarkSource::<isize, OrdZSet<Event, i64>>::from_next_events(receiver);
+        let source = NexmarkSource::<i64, OrdZSet<Event, i64>>::from_next_events(receiver);
 
         let expected_zset_tuple = generate_expected_zset_tuples(0, 10);
 

@@ -3,6 +3,7 @@ use crate::model::{Bid, Event};
 use dbsp::{
     algebra::UnimplementedSemigroup,
     operator::{FilterMap, Fold},
+    utils::Tup2,
     OrdZSet, RootCircuit, Stream,
 };
 
@@ -32,20 +33,20 @@ use dbsp::{
 /// WHERE rank_number <= 10;
 /// ```
 
-type Q19Stream = Stream<RootCircuit, OrdZSet<Bid, isize>>;
+type Q19Stream = Stream<RootCircuit, OrdZSet<Bid, i64>>;
 
 const TOP_BIDS: usize = 10;
 
 pub fn q19(input: NexmarkStream) -> Q19Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
-        Event::Bid(b) => Some((b.auction, (b.price, b.clone()))),
+        Event::Bid(b) => Some((b.auction, Tup2(b.price, b.clone()))),
         _ => None,
     });
 
     bids_by_auction
         .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
             Vec::with_capacity(TOP_BIDS),
-            |top: &mut Vec<Bid>, (_price, bid): &(usize, Bid), _w| {
+            |top: &mut Vec<Bid>, Tup2(_price, bid): &Tup2<u64, Bid>, _w| {
                 if top.len() >= TOP_BIDS {
                     top.remove(0);
                 }
@@ -259,8 +260,8 @@ mod tests {
         ]]
     )]
     pub fn test_q19(
-        #[case] input_bid_batches: Vec<Vec<(u64, u64, usize)>>,
-        #[case] expected_zsets: Vec<OrdZSet<Bid, isize>>,
+        #[case] input_bid_batches: Vec<Vec<(u64, u64, u64)>>,
+        #[case] expected_zsets: Vec<OrdZSet<Bid, i64>>,
     ) {
         let input_vecs = input_bid_batches.into_iter().map(|batch| {
             batch

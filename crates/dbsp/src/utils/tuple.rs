@@ -180,6 +180,177 @@ impl<T1: Debug, T2: Debug, T3: Debug, T4: Debug, T5: Debug> Debug for Tup5<T1, T
     }
 }
 
+/// A six-tuple.
+#[derive(
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "T1: Archive, T2: Archive, T3: Archive, T4: Archive, T5: Archive, T6: Archive, \
+    <T1 as Archive>::Archived: Ord, \
+    <T2 as Archive>::Archived: Ord, \
+    <T3 as Archive>::Archived: Ord, \
+    <T4 as Archive>::Archived: Ord, \
+    <T5 as Archive>::Archived: Ord,\
+    <T6 as Archive>::Archived: Ord,
+"
+))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct Tup6<T1, T2, T3, T4, T5, T6>(pub T1, pub T2, pub T3, pub T4, pub T5, pub T6);
+
+impl<T1, T2, T3, T4, T5, T6> From<(T1, T2, T3, T4, T5, T6)> for Tup6<T1, T2, T3, T4, T5, T6> {
+    fn from((t1, t2, t3, t4, t5, t6): (T1, T2, T3, T4, T5, T6)) -> Self {
+        Self(t1, t2, t3, t4, t5, t6)
+    }
+}
+
+impl<T1: Debug, T2: Debug, T3: Debug, T4: Debug, T5: Debug, T6: Debug> Debug
+    for Tup6<T1, T2, T3, T4, T5, T6>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Tup6")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .field(&self.3)
+            .field(&self.4)
+            .field(&self.5)
+            .finish()
+    }
+}
+
+/// A seven-tuple.
+#[derive(
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "T1: Archive, T2: Archive, T3: Archive, T4: Archive, T5: Archive, T6: Archive, T7: Archive, \
+    <T1 as Archive>::Archived: Ord, \
+    <T2 as Archive>::Archived: Ord, \
+    <T3 as Archive>::Archived: Ord, \
+    <T4 as Archive>::Archived: Ord, \
+    <T5 as Archive>::Archived: Ord,\
+    <T6 as Archive>::Archived: Ord, \
+    <T7 as Archive>::Archived: Ord, \
+"
+))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct Tup7<T1, T2, T3, T4, T5, T6, T7>(pub T1, pub T2, pub T3, pub T4, pub T5, pub T6, pub T7);
+
+impl<T1, T2, T3, T4, T5, T6, T7> From<(T1, T2, T3, T4, T5, T6, T7)>
+    for Tup7<T1, T2, T3, T4, T5, T6, T7>
+{
+    fn from((t1, t2, t3, t4, t5, t6, t7): (T1, T2, T3, T4, T5, T6, T7)) -> Self {
+        Self(t1, t2, t3, t4, t5, t6, t7)
+    }
+}
+
+impl<T1: Debug, T2: Debug, T3: Debug, T4: Debug, T5: Debug, T6: Debug, T7: Debug> Debug
+    for Tup7<T1, T2, T3, T4, T5, T6, T7>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Tup7")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .field(&self.3)
+            .field(&self.4)
+            .field(&self.5)
+            .field(&self.6)
+            .finish()
+    }
+}
+
+/// A eight-tuple.
+#[derive(
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "T1: Archive, T2: Archive, T3: Archive, T4: Archive, T5: Archive, T6: Archive, T7: Archive, T8: Archive, \
+    <T1 as Archive>::Archived: Ord, \
+    <T2 as Archive>::Archived: Ord, \
+    <T3 as Archive>::Archived: Ord, \
+    <T4 as Archive>::Archived: Ord, \
+    <T5 as Archive>::Archived: Ord, \
+    <T6 as Archive>::Archived: Ord, \
+    <T7 as Archive>::Archived: Ord, \
+    <T8 as Archive>::Archived: Ord"
+))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct Tup8<T1, T2, T3, T4, T5, T6, T7, T8>(
+    pub T1,
+    pub T2,
+    pub T3,
+    pub T4,
+    pub T5,
+    pub T6,
+    pub T7,
+    pub T8,
+);
+
+impl<T1, T2, T3, T4, T5, T6, T7, T8> From<(T1, T2, T3, T4, T5, T6, T7, T8)>
+    for Tup8<T1, T2, T3, T4, T5, T6, T7, T8>
+{
+    fn from((t1, t2, t3, t4, t5, t6, t7, t8): (T1, T2, T3, T4, T5, T6, T7, T8)) -> Self {
+        Self(t1, t2, t3, t4, t5, t6, t7, t8)
+    }
+}
+
+impl<T1: Debug, T2: Debug, T3: Debug, T4: Debug, T5: Debug, T6: Debug, T7: Debug, T8: Debug> Debug
+    for Tup8<T1, T2, T3, T4, T5, T6, T7, T8>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Tup8")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .field(&self.3)
+            .field(&self.4)
+            .field(&self.5)
+            .field(&self.6)
+            .field(&self.7)
+            .finish()
+    }
+}
+
 /// A nine-tuple.
 #[derive(
     Clone,
@@ -253,6 +424,89 @@ impl<
             .field(&self.6)
             .field(&self.7)
             .field(&self.8)
+            .finish()
+    }
+}
+
+/// A ten-tuple.
+#[derive(
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(
+    archive = "T1: Archive, T2: Archive, T3: Archive, T4: Archive, T5: Archive, T6: Archive, T7: Archive, T8: Archive, T9: Archive, T10: Archive, \
+    <T1 as Archive>::Archived: Ord, \
+    <T2 as Archive>::Archived: Ord, \
+    <T3 as Archive>::Archived: Ord, \
+    <T4 as Archive>::Archived: Ord, \
+    <T5 as Archive>::Archived: Ord, \
+    <T6 as Archive>::Archived: Ord, \
+    <T7 as Archive>::Archived: Ord, \
+    <T8 as Archive>::Archived: Ord, \
+    <T9 as Archive>::Archived: Ord, \
+    <T10 as Archive>::Archived: Ord"
+))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>(
+    pub T1,
+    pub T2,
+    pub T3,
+    pub T4,
+    pub T5,
+    pub T6,
+    pub T7,
+    pub T8,
+    pub T9,
+    pub T10,
+);
+
+impl<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> From<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)>
+    for Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>
+{
+    fn from(
+        (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10): (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10),
+    ) -> Self {
+        Self(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10)
+    }
+}
+
+impl<
+        T1: Debug,
+        T2: Debug,
+        T3: Debug,
+        T4: Debug,
+        T5: Debug,
+        T6: Debug,
+        T7: Debug,
+        T8: Debug,
+        T9: Debug,
+        T10: Debug,
+    > Debug for Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Tup10")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .field(&self.3)
+            .field(&self.4)
+            .field(&self.5)
+            .field(&self.6)
+            .field(&self.7)
+            .field(&self.8)
+            .field(&self.9)
             .finish()
     }
 }

@@ -10,7 +10,7 @@ const MIN_STRING_LENGTH: usize = 3;
 /// Return a random string of up to `max_length`.
 pub(super) fn next_string<R: Rng>(rng: &mut R, max_length: usize) -> String {
     let len = rng.gen_range(MIN_STRING_LENGTH..=max_length);
-    String::from(Alphanumeric.sample_string(rng, len))
+    Alphanumeric.sample_string(rng, len)
 }
 
 /// Return a random string such that the current_size + string length is on
@@ -28,7 +28,7 @@ fn next_extra<R: Rng>(rng: &mut R, current_size: usize, desired_average_size: us
 
     let desired_size =
         rng.gen_range((avg_extra_size.saturating_sub(delta))..=(avg_extra_size + delta));
-    String::from(Alphanumeric.sample_string(rng, desired_size))
+    Alphanumeric.sample_string(rng, desired_size)
 }
 
 impl<R: Rng> NexmarkGenerator<R> {

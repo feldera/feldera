@@ -2213,7 +2213,6 @@ dependencies = [
  "num",
  "once_cell",
  "ordered-float",
- "paste",
  "petgraph",
  "pprof",
  "priority-queue",
@@ -5252,7 +5251,7 @@ dependencies = [
 [[package]]
 name = "rust_decimal"
 version = "1.33.1"
-source = "git+https://github.com/gz/rust-decimal.git?rev=77df097#77df097c441cd4ebef41fa879cbba271ff7d7ec7"
+source = "git+https://github.com/gz/rust-decimal.git?rev=ea85fdf#ea85fdf9b13a0e32aed2ac38eb9207d3e33ab64b"
 dependencies = [
  "arrayvec",
  "borsh",

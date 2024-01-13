@@ -32,7 +32,7 @@ use dbsp::{
 ///  WHERE rank_number <= 1;
 /// ```
 
-type Q18Stream = Stream<RootCircuit, OrdZSet<Bid, isize>>;
+type Q18Stream = Stream<RootCircuit, OrdZSet<Bid, i64>>;
 
 pub fn q18(input: NexmarkStream) -> Q18Stream {
     let bids_by_auction_bidder = input.flat_map_index(|event| match event {
@@ -373,7 +373,7 @@ mod tests {
     )]
     fn test_q18(
         #[case] input_bid_batches: Vec<Vec<Bid>>,
-        #[case] expected_zsets: Vec<OrdZSet<Bid, isize>>,
+        #[case] expected_zsets: Vec<OrdZSet<Bid, i64>>,
     ) {
         let input_vecs = input_bid_batches
             .into_iter()

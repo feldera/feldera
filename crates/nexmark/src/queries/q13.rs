@@ -1,6 +1,10 @@
 use super::{process_time, NexmarkStream};
 use crate::model::Event;
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{
+    operator::FilterMap,
+    utils::{Tup2, Tup3, Tup5, Tup7},
+    OrdZSet, RootCircuit, Stream,
+};
 
 use csv;
 use std::{
@@ -61,13 +65,13 @@ use std::{
 /// simple static file is used for this bounded side-input for the Nexmark tests
 /// and that is also what is tested here.
 
-type Q13Stream = Stream<RootCircuit, OrdZSet<(u64, u64, usize, u64, String), isize>>;
+type Q13Stream = Stream<RootCircuit, OrdZSet<Tup5<u64, u64, u64, u64, String>, i64>>;
 
-type SideInputStream = Stream<RootCircuit, OrdZSet<(usize, String, u64), isize>>;
+type SideInputStream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>, i64>>;
 
 const Q13_SIDE_INPUT_CSV: &str = "benches/nexmark/data/side_input.txt";
 
-fn read_side_input<R: Read>(reader: R) -> Result<Vec<(usize, String)>> {
+fn read_side_input<R: Read>(reader: R) -> Result<Vec<(u64, String)>> {
     let reader = BufReader::new(reader);
     let mut csv_reader = csv::ReaderBuilder::new()
         .has_headers(false)
@@ -75,12 +79,12 @@ fn read_side_input<R: Read>(reader: R) -> Result<Vec<(usize, String)>> {
     Ok(csv_reader.deserialize().map(|r| r.unwrap()).collect())
 }
 
-pub fn q13_side_input() -> Vec<((usize, String, u64), isize)> {
+pub fn q13_side_input() -> Vec<(Tup3<u64, String, u64>, i64)> {
     let p_time = process_time();
     read_side_input(File::open(Q13_SIDE_INPUT_CSV).unwrap())
         .unwrap()
         .into_iter()
-        .map(|(k, v)| ((k, v, p_time), 1))
+        .map(|(k, v)| (Tup3(k, v, p_time), 1))
         .collect()
 }
 
@@ -88,21 +92,23 @@ pub fn q13(input: NexmarkStream, side_input: SideInputStream) -> Q13Stream {
     // Index bids by the modulo value.
     let bids_by_auction_mod = input.flat_map_index(move |event| match event {
         Event::Bid(b) => Some((
-            (b.auction % 10_000) as usize,
-            (b.auction, b.bidder, b.price, b.date_time, process_time()),
+            b.auction % 10_000,
+            Tup5(b.auction, b.bidder, b.price, b.date_time, process_time()),
         )),
         _ => None,
     });
 
     // Index the side_input by the key.
-    let side_input_indexed = side_input.map_index(|(k, v, t)| (*k, (v.clone(), *t)));
+    let side_input_indexed = side_input.map_index(|Tup3(k, v, t)| (*k, Tup2(v.clone(), *t)));
 
     // Join on the key from the side input
     bids_by_auction_mod
         .join(
             &side_input_indexed,
-            |&_, &(auction, bidder, price, date_time, b_p_time), (input_value, input_p_time)| {
-                (
+            |&_,
+             &Tup5(auction, bidder, price, date_time, b_p_time),
+             Tup2(input_value, input_p_time)| {
+                Tup7(
                     auction,
                     bidder,
                     price,
@@ -114,9 +120,15 @@ pub fn q13(input: NexmarkStream, side_input: SideInputStream) -> Q13Stream {
             },
         )
         .flat_map(
-            |(auction, bidder, price, date_time, input_value, b_p_time, input_p_time)| {
+            |Tup7(auction, bidder, price, date_time, input_value, b_p_time, input_p_time)| {
                 if b_p_time >= input_p_time {
-                    Some((*auction, *bidder, *price, *date_time, input_value.clone()))
+                    Some(Tup5(
+                        *auction,
+                        *bidder,
+                        *price,
+                        *date_time,
+                        input_value.clone(),
+                    ))
                 } else {
                     None
                 }
@@ -153,11 +165,11 @@ mod tests {
         let (circuit, (input_handle, side_input_handle)) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
             let (side_stream, side_input_handle) =
-                circuit.add_input_zset::<(usize, String, u64), isize>();
+                circuit.add_input_zset::<Tup3<u64, String, u64>, i64>();
 
             let mut expected_output = vec![zset![
-                (1_005, 1, 99, 0, String::from("1005")) => 1,
-                (10_005, 1, 99, 0, String::from("5")) => 1,
+                Tup5(1_005, 1, 99, 0, String::from("1005")) => 1,
+                Tup5(10_005, 1, 99, 0, String::from("5")) => 1,
             ]]
             .into_iter();
 

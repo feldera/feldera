@@ -21,6 +21,6 @@ mod tests {
 
         let p = ng.next_price();
 
-        assert_eq!(p, 10_usize.pow(0) * 100);
+        assert_eq!(p, 10_u64.pow(0) * 100);
     }
 }

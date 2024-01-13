@@ -30,7 +30,7 @@ impl<R: Rng> NexmarkGenerator<R> {
         event_id: u64,
         timestamp: u64,
     ) -> Result<Auction> {
-        let id = self.last_base0_auction_id(event_id) + FIRST_AUCTION_ID as u64;
+        let id = self.last_base0_auction_id(event_id) + FIRST_AUCTION_ID;
 
         // Here P(auction will be for a hot seller) = 1 - 1/hot_sellers_ratio.
         let seller = match self
@@ -43,7 +43,7 @@ impl<R: Rng> NexmarkGenerator<R> {
                 (self.last_base0_person_id(event_id) / HOT_SELLER_RATIO as u64)
                     * HOT_SELLER_RATIO as u64
             }
-        } + FIRST_PERSON_ID as u64;
+        } + FIRST_PERSON_ID;
 
         let category = FIRST_CATEGORY_ID + self.rng.gen_range(0..NUM_CATEGORIES);
         let initial_bid = self.next_price();
