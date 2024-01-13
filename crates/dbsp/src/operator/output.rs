@@ -7,6 +7,7 @@ use crate::{
     trace::{Batch, Spine, Trace},
     Circuit, Runtime, Stream,
 };
+use std::fmt::Debug;
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
@@ -17,7 +18,7 @@ use typedmap::TypedMapKey;
 
 impl<T> Stream<RootCircuit, T>
 where
-    T: Clone + Send + 'static,
+    T: Debug + Clone + Send + 'static,
 {
     /// Create an output handle that makes the contents of `self` available
     /// outside the circuit.
@@ -278,7 +279,7 @@ where
 
 impl<T> SinkOperator<T> for Output<T>
 where
-    T: Clone + 'static,
+    T: Debug + Clone + 'static,
 {
     fn eval(&mut self, val: &T) {
         self.mailbox.set(Some(val.clone()));

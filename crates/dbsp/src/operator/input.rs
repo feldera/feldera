@@ -9,6 +9,7 @@ use crate::{
     trace::Batch,
     Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
 };
+use std::fmt::Debug;
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
@@ -50,7 +51,7 @@ impl RootCircuit {
     /// See [`InputHandle`] for more details.
     pub fn add_input_stream<T>(&self) -> (Stream<Self, T>, InputHandle<T>)
     where
-        T: Default + Clone + Send + 'static,
+        T: Default + Debug + Clone + Send + 'static,
     {
         let (input, input_handle) = Input::new(|x| x);
         let stream = self.add_source(input);
@@ -1022,7 +1023,7 @@ where
 
 impl<IT, OT, F> SourceOperator<OT> for Input<IT, OT, F>
 where
-    IT: Default + 'static,
+    IT: Default + Debug + 'static,
     OT: 'static,
     F: Fn(IT) -> OT + 'static,
 {
