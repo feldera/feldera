@@ -54,4 +54,4 @@ export const getQueryData = <R>(
   queryClient: QueryClient,
   query: { queryKey: readonly unknown[]; queryFn: () => Promise<R> },
   filters?: QueryFilters
-) => queryClient.getQueriesData<R>({ ...filters, queryKey: query.queryKey })[0][1]
+) => queryClient.getQueriesData<R>({ ...filters, queryKey: query.queryKey })[0]?.[1]

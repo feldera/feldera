@@ -45,6 +45,7 @@ function sortInputConnectors(nodes: Node[], edges: Edge[], tableOrder: Map<strin
   nodesWithAnEdge.sort((a, b) => {
     const aEdges = getConnectedEdges([a], edges)
     const bEdges = getConnectedEdges([b], edges)
+    console.log('nodesWithAnEdge', a, b, aEdges, bEdges)
     assert(aEdges.length === 1)
     assert(bEdges.length === 1)
     assert(aEdges[0].targetHandle && bEdges[0].targetHandle)

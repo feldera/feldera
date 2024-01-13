@@ -12,14 +12,8 @@ import { useDataGridPresentationLocalStorage } from '$lib/compositions/persisten
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
-import {
-  ApiError,
-  ConnectorDescr,
-  ConnectorsService,
-  UpdateConnectorRequest,
-  UpdateConnectorResponse
-} from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { ApiError, ConnectorDescr, ConnectorsService } from '$lib/services/manager'
+import { mutationUpdateConnector, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -44,16 +38,10 @@ const DataSourceTable = () => {
   const fetchQuery = useQuery(PipelineManagerQuery.connectors())
 
   // Update row name and description if edited in the cells:
-  const mutation = useMutation<
-    UpdateConnectorResponse,
-    ApiError,
-    { connectorName: string; request: UpdateConnectorRequest }
-  >({
-    mutationFn: args => ConnectorsService.updateConnector(args.connectorName, args.request)
-  })
+  const { mutate: updateConnector } = useMutation(mutationUpdateConnector(queryClient))
   const processRowUpdate = useCallback(
     (newRow: ConnectorDescr, oldRow: ConnectorDescr) => {
-      mutation.mutate(
+      updateConnector(
         {
           connectorName: oldRow.name,
           request: {
@@ -62,10 +50,6 @@ const DataSourceTable = () => {
           }
         },
         {
-          onSettled: () => {
-            invalidateQuery(queryClient, PipelineManagerQuery.connectors())
-            invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(newRow.name))
-          },
           onError: (error: ApiError) => {
             pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
             apiRef.current.updateRows([oldRow])
@@ -75,7 +59,7 @@ const DataSourceTable = () => {
 
       return newRow
     },
-    [apiRef, mutation, pushMessage, queryClient]
+    [apiRef, updateConnector, pushMessage]
   )
 
   // Delete a connector entry

@@ -16,10 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - pipeline-manager: use names instead of IDs in API endpoints (#1214)
+- WebConsole: use names instead of IDs in API endpoints (#1214)
 
 ### Fixed
 - SQL: Changed semantics of division to match SQL standard
   ([#1201](https://github.com/feldera/feldera/pull/1201))
+- WebConsole: Connector name change doesn't reflect in the pipeline builder (#1238)
+- WebConsole: UI sends HTTP request in an infinite loop (#1085)
 
 ## [0.6.0] - 2023-12-19
 

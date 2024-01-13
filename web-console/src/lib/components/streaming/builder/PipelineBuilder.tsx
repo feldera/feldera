@@ -4,8 +4,11 @@
 import 'reactflow/dist/style.css'
 
 import AddSourceDrawer from '$lib/components/connectors/drawer/AddSourceDrawer'
+import { useAttachedPipelineConnectors } from '$lib/compositions/streaming/builder/useAttachedPipelineConnectors'
 import useAutoLayout, { useRedoLayout } from '$lib/compositions/streaming/builder/useAutoLayout'
-import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
+import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
+import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
+// import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
 import React, { useCallback, useRef } from 'react'
 import ReactFlow, {
   Background,
@@ -63,9 +66,9 @@ const fitViewOptions = {
   padding: 0.95
 }
 
-function PipelineGraphWindow() {
+export function PipelineGraph() {
   const { setEdges, deleteElements } = useReactFlow()
-  const savePipeline = useDebouncedSave()
+  // const savePipeline = useDebouncedSave()
   const redoLayout = useRedoLayout()
   useAutoLayout()
   const edgeUpdateSuccessful = useRef(true)
@@ -74,15 +77,23 @@ function PipelineGraphWindow() {
     edgeUpdateSuccessful.current = false
   }, [])
 
+  const updatePipeline = useUpdatePipeline(
+    useBuilderState(s => s.pipelineName),
+    useBuilderState(s => s.setSaveState),
+    useBuilderState(s => s.setFormError)
+  )
+  const attachedPipelineConnectors = useAttachedPipelineConnectors()
+
   // Callback when an existing edge changes target or source
   const onEdgeUpdate = useCallback(
     (oldEdge: Edge, newConnection: Connection) => {
       edgeUpdateSuccessful.current = true
       setEdges(els => updateEdge(oldEdge, newConnection, els))
-      savePipeline()
+      // savePipeline()
+      updatePipeline(p => ({ ...p, connectors: attachedPipelineConnectors() }))
       redoLayout()
     },
-    [setEdges, savePipeline, redoLayout]
+    [setEdges, redoLayout, updatePipeline, attachedPipelineConnectors]
   )
 
   const onEdgeUpdateEnd = useCallback(
@@ -97,19 +108,22 @@ function PipelineGraphWindow() {
 
   // Callback when a new edge is created
   const onConnect = useCallback(() => {
-    savePipeline()
-  }, [savePipeline])
+    // savePipeline()
+    updatePipeline(p => ({ ...p, connectors: attachedPipelineConnectors() }))
+  }, [updatePipeline, attachedPipelineConnectors])
 
   // Callback when an edge is removed
   const onEdgeChange = useCallback(
     (edgeChanges: EdgeChange[]) => {
       edgeChanges.forEach(edgeChange => {
-        if (edgeChange.type == 'remove') {
-          savePipeline()
+        if (edgeChange.type !== 'remove') {
+          return
         }
+        // savePipeline()
+        updatePipeline(p => ({ ...p, connectors: attachedPipelineConnectors() }))
       })
     },
-    [savePipeline]
+    [updatePipeline, attachedPipelineConnectors]
   )
 
   // This should be inside WorkflowEdge but I couldn't figure out how to put
@@ -155,9 +169,3 @@ function PipelineGraphWindow() {
     </>
   )
 }
-
-function PipelineGraph() {
-  return <PipelineGraphWindow />
-}
-
-export default PipelineGraph

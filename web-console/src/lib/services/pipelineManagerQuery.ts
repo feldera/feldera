@@ -1,14 +1,16 @@
-import { replaceElement } from '$lib/functions/common/array'
 import { compose } from '$lib/functions/common/function'
 import { getQueryData, invalidateQuery, mkQuery, setQueryData } from '$lib/functions/common/tanstack'
 import {
   ApiError,
   ApiKeyDescr,
   ApiKeysService,
+  AttachedConnector,
   AuthenticationService,
   CancelablePromise,
   CompileProgramRequest,
   ConnectorsService,
+  NewPipelineRequest,
+  NewPipelineResponse,
   PipelinesService,
   PipelineStatus as RawPipelineStatus,
   ProgramDescr,
@@ -16,6 +18,10 @@ import {
   ProgramsService,
   ProgramStatus,
   ServicesService,
+  UpdateConnectorRequest,
+  UpdateConnectorResponse,
+  UpdatePipelineRequest,
+  UpdatePipelineResponse,
   UpdateProgramRequest,
   UpdateProgramResponse
 } from '$lib/services/manager'
@@ -275,6 +281,114 @@ export const mutationCompileProgram = (
   }
 })
 
+export const mutationCreatePipeline = (
+  queryClient: QueryClient
+): UseMutationOptions<NewPipelineResponse, ApiError, NewPipelineRequest> => ({
+  mutationFn: PipelinesService.newPipeline,
+  onSettled: (_data, _error, variables, _context) => {
+    invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
+    invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(variables.name))
+  }
+})
+
+export const mutationUpdatePipeline = (
+  queryClient: QueryClient
+): UseMutationOptions<UpdatePipelineResponse, ApiError, { pipelineName: string; request: UpdatePipelineRequest }> => ({
+  mutationFn: args => {
+    // TODO: leave plain call to 'PipelinesService.updatePipeline' once 'name' and 'description' fields become optional
+    // a workaround because API requires 'name' and 'description' fields in an update request body
+    // a workaround because when pipeline has a program we have to send program_name with each request
+    // This workaround affects mutation logic in PipelineBuilder
+    const pipeline = getQueryData(queryClient, PipelineManagerQuery.pipelineStatus(args.pipelineName))
+    invariant(args.request.name ?? pipeline?.descriptor.name, 'Cannot update to an invalid name')
+    return PipelinesService.updatePipeline(args.pipelineName, {
+      ...args.request,
+      name: args.request.name ?? pipeline?.descriptor.name,
+      description: args.request.description ?? pipeline?.descriptor.description,
+      program_name:
+        args.request.program_name === undefined ? pipeline?.descriptor.program_name : args.request.program_name
+    })
+  },
+  onSettled: (_data, _error, variables, _context) => {
+    invariant(variables.pipelineName !== undefined, 'mutationUpdatePipeline: pipelineName === undefined')
+    invalidatePipeline(queryClient, variables.pipelineName)
+  },
+  onSuccess: (_data, variables, _context) => {
+    // It's important to update the query cache here because otherwise
+    // sometimes the query cache will be out of date and the UI will
+    // show the old connectors again after deletion.
+    setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(variables.pipelineName), oldData => {
+      if (!oldData) {
+        return oldData
+      }
+      return {
+        state: oldData.state,
+        descriptor: {
+          name: variables.request.name ?? oldData.descriptor.name,
+          description: variables.request.description ?? oldData.descriptor.description,
+          program_name: variables.request.program_name ?? oldData.descriptor.program_name,
+          config: variables.request.config ?? oldData.descriptor.config,
+          attached_connectors: variables.request.connectors ?? oldData.descriptor.attached_connectors,
+          pipeline_id: oldData.descriptor.pipeline_id,
+          version: oldData.descriptor.version
+        }
+      }
+    })
+  }
+})
+
+export const updatePipelineConnectorName = (oldName: string, newName: string) => (pipeline?: Pipeline) =>
+  pipeline ? ({
+  descriptor: {
+    ...pipeline.descriptor,
+    attached_connectors: pipeline.descriptor.attached_connectors.map(c => c.connector_name === oldName
+      ? ({...c,
+        connector_name: newName
+      } satisfies AttachedConnector)
+      : c)
+  },
+  state: pipeline.state
+}) : pipeline
+
+export const mutationUpdateConnector = (
+  queryClient: QueryClient
+): UseMutationOptions<
+  UpdateConnectorResponse,
+  ApiError,
+  { connectorName: string; request: UpdateConnectorRequest }
+> => ({
+  mutationFn: args => ConnectorsService.updateConnector(args.connectorName, args.request),
+  onSettled: (_data, _errors, variables, _context) => {
+    invalidateQuery(queryClient, PipelineManagerQuery.connectors())
+    invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(variables.connectorName))
+
+
+    const oldName = variables.connectorName
+    const newName = variables.request.name
+    console.log('mutationUpdateConnector', oldName, newName)
+    // Changing connector name may invalidate pipelines that use it.
+    if (newName && newName !== oldName) {
+      // const x = queryClient.getQueryData(PipelineManagerQuery.pipelines().queryKey)
+      // const pipelines = getQueryData(queryClient, PipelineManagerQuery.pipelines())
+      // const affected = pipelines?.filter(pipeline => pipeline.descriptor.attached_connectors.find(c => c.connector_name === newName)) ?? []
+
+      // for (const pipeline of affected) {
+      //   invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.descriptor.name))
+      // }
+      // if (affected.length) {
+      //   invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
+      // }
+
+      // setQueryData(queryClient, PipelineManagerQuery.pipelines(), pipelines?.map(updatePipelineConnectorName(oldName, newName)))
+      // for (const pipeline of affected) {
+      //   console.log('setting pipeline cache', oldName, newName)
+      //   setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.descriptor.name),
+      //     updatePipelineConnectorName(oldName, newName))
+      // }
+    }
+  }
+})
+
 export const invalidatePipeline = (queryClient: QueryClient, pipelineName: string) => {
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineLastRevision(pipelineName))
   invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName))
@@ -346,18 +460,60 @@ const pipelineStatusQueryCacheUpdate = (
   field: 'current_status' | 'desired_status',
   status: PipelineStatus
 ) => {
-  setQueryData(queryClient, PipelineManagerQuery.pipelines(), oldData => {
-    if (!oldData) {
-      return oldData
-    }
-    return replaceElement(oldData, p =>
-      p.descriptor.pipeline_id !== pipelineName ? null : { ...p, state: { ...p.state, [field]: status } }
-    )
-  })
-  setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), oldData => {
+  const updateCache = <T extends Pipeline | undefined>(oldData: T) => {
     if (!oldData) {
       return oldData
     }
     return { ...oldData, state: { ...oldData.state, [field]: status } }
-  })
+  }
+  setQueryData(
+    queryClient,
+    PipelineManagerQuery.pipelines(),
+    oldDatas =>
+      oldDatas?.map(oldData => {
+        if (oldData.descriptor.pipeline_id !== pipelineName) {
+          return oldData
+        }
+        return updateCache(oldData)
+      })
+  )
+  setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), updateCache)
+}
+
+export const pipelineQueryCacheUpdate = (
+  queryClient: QueryClient,
+  pipelineName: string,
+  newData: UpdatePipelineRequest
+) => {
+  const updateCache = <T extends Pipeline | undefined>(oldData: T) => {
+    if (!oldData) {
+      return oldData
+    }
+    return {
+      state: oldData.state,
+      descriptor: {
+        attached_connectors:
+          newData.connectors === undefined ? oldData.descriptor.attached_connectors : newData.connectors ?? [],
+        config: newData.config === undefined ? oldData.descriptor.config : newData.config ?? {},
+        description: newData.description ?? oldData.descriptor.description,
+        name: newData.name ?? oldData.descriptor.name,
+        pipeline_id: oldData.descriptor.pipeline_id,
+        program_name: newData.program_name === undefined ? oldData.descriptor.program_name : newData.program_name,
+        version: oldData.descriptor.version
+      }
+    } satisfies Pipeline
+  }
+  setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), updateCache)
+
+  setQueryData(
+    queryClient,
+    PipelineManagerQuery.pipelines(),
+    oldDatas =>
+      oldDatas?.map(oldData => {
+        if (oldData.descriptor.name !== pipelineName) {
+          return oldData
+        }
+        return updateCache(oldData)
+      })
+  )
 }

@@ -1,18 +1,25 @@
 import { sqlPlaceholderNode } from '$lib/components/streaming/builder/PipelineBuilder'
+import { useAttachedPipelineConnectors } from '$lib/compositions/streaming/builder/useAttachedPipelineConnectors'
+import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
+import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
 import { Node, NodeProps, ReactFlowInstance, useReactFlow } from 'reactflow'
 
-import { useBuilderState } from './useBuilderState'
-import useDebouncedSave from './useDebouncedSave'
+// import useDebouncedSave from './useDebouncedSave'
 
 export const useDeleteNodeProgram = () => {
-  const savePipeline = useDebouncedSave()
-  const setProject = useBuilderState(state => state.setProject)
+  // const savePipeline = useDebouncedSave()
+  // const setProject = useBuilderState(state => state.setProject)
+  const updatePipeline = useUpdatePipeline(
+    useBuilderState(s => s.pipelineName),
+    useBuilderState(s => s.setSaveState),
+    useBuilderState(s => s.setFormError)
+  )
+  const attachedPipelineConnectors = useAttachedPipelineConnectors()
   return ({ addNodes, deleteElements, getEdges }: ReactFlowInstance, parentNode: Node) => {
-    setProject(undefined)
-
     // if we delete the program then all edges are affected
     deleteElements({ edges: getEdges() })
-    savePipeline()
+    // savePipeline()
+    updatePipeline(p => ({ ...p, program_name: null, connectors: attachedPipelineConnectors() }))
 
     // If we deleted the SQL program, add the placeholder back but at the same
     // position as the deleted node, make sure to reset the dimensions
@@ -25,9 +32,11 @@ export const useDeleteNodeProgram = () => {
 // sqlPlaceholder if we removed the program node, and drops all edges that were
 // attached to the node.
 export const useDeleteNode =
-  (onDelete: (reactFlow: ReactFlowInstance, parentNode: Node) => void) => (id: NodeProps['id']) => {
+  (onDelete: (reactFlow: ReactFlowInstance, parentNode: Node) => void) => {
     /* eslint-disable react-hooks/rules-of-hooks */
     const reactFlow = useReactFlow()
+
+    return (id: NodeProps['id']) => {
     const { getNode, deleteElements } = reactFlow
 
     const onClick = () => {
@@ -48,6 +57,7 @@ export const useDeleteNode =
       // have the delete button somewhere else.
       const timer = setTimeout(() => {
         deleteElements({ nodes: [parentNode] })
+        console.log('Deleted node', parentNode.type)
         onDelete(reactFlow, parentNode)
       }, 50)
 
@@ -56,3 +66,4 @@ export const useDeleteNode =
 
     return onClick
   }
+}

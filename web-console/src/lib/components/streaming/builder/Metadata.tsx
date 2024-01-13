@@ -1,8 +1,10 @@
 // Form to edit the name and description of a config.
 
-import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
-import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
+// import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
+// import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
+import { PipelineDescr, UpdatePipelineRequest } from '$lib/services/manager'
+import { Dispatch, SetStateAction } from 'react'
 
 import { FormControl, FormHelperText, TextField } from '@mui/material'
 import Grid from '@mui/material/Grid'
@@ -11,21 +13,18 @@ interface FormError {
   name?: { message?: string }
 }
 
-const Metadata = (props: { errors: FormError }) => {
-  const savePipeline = useDebouncedSave()
-  const setName = useBuilderState(state => state.setName)
-  const setDescription = useBuilderState(state => state.setDescription)
-  const name = useBuilderState(state => state.name)
-  const description = useBuilderState(state => state.description)
-
+const Metadata = (props: {
+  errors: FormError
+  pipeline: PipelineDescr
+  updatePipeline: Dispatch<SetStateAction<UpdatePipelineRequest>>
+  disabled?: boolean
+}) => {
   const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setName(event.target.value)
-    savePipeline()
+    props.updatePipeline(p => ({ ...p, name: event.target.value }))
   }
 
   const updateDescription = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setDescription(event.target.value)
-    savePipeline()
+    props.updatePipeline(p => ({ ...p, description: event.target.value }))
   }
 
   return (
@@ -37,10 +36,11 @@ const Metadata = (props: { errors: FormError }) => {
             type='text'
             label='Name'
             placeholder={PLACEHOLDER_VALUES['pipeline_name']}
-            value={name}
+            value={props.pipeline.name}
             error={Boolean(props.errors.name)}
             onChange={updateName}
             inputProps={{ 'data-testid': 'input-pipeline-name' }}
+            disabled={props.disabled}
           />
           {props.errors.name && (
             <FormHelperText sx={{ color: 'error.main' }}>{props.errors.name.message}</FormHelperText>
@@ -53,9 +53,10 @@ const Metadata = (props: { errors: FormError }) => {
           type='Description'
           label='Description'
           placeholder={PLACEHOLDER_VALUES['pipeline_description']}
-          value={description}
+          value={props.pipeline.description}
           onChange={updateDescription}
           inputProps={{ 'data-testid': 'input-pipeline-description' }}
+          disabled={props.disabled}
         />
       </Grid>
     </Grid>

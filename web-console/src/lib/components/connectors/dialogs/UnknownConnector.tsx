@@ -1,3 +1,4 @@
+import { ConnectorDescr } from '$lib/services/manager'
 import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { Dispatch, SetStateAction } from 'react'
 
@@ -15,6 +16,7 @@ export const UnknownConnectorDialog = ({
   existingTitle: (name: string) => string
   submitButton: JSX.Element
   disabled?: boolean
+  onSuccess?: (connector: ConnectorDescr, oldConnectorName: string) => void
 }) => {
   const { data } = useQuery(PipelineManagerQuery.connectorStatus(connectorName))
   if (!data) {

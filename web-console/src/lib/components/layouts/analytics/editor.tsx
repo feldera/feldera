@@ -123,7 +123,8 @@ const stateToEditorLabel = (state: EntitySyncIndicatorStatus) =>
     })
     .exhaustive()
 
-const useCreateProgram = (
+const useCreateProgramEffect = (
+  program: ProgramDescr,
   setProgram: Dispatch<SetStateAction<ProgramDescr>>,
   setStatus: Dispatch<SetStateAction<EntitySyncIndicatorStatus>>,
   setFormError: Dispatch<SetStateAction<FormError>>
@@ -135,7 +136,7 @@ const useCreateProgram = (
   const { mutate } = useMutation<NewProgramResponse, ApiError, NewProgramRequest>({
     mutationFn: ProgramsService.newProgram
   })
-  return (program: NewProgramRequest) => {
+  const createProgram = (program: NewProgramRequest) => {
     invariant(program.name, 'Cannot create a program with an empty name!')
     setStatus('isSaving')
     return mutate(program, {
@@ -167,6 +168,13 @@ const useCreateProgram = (
       }
     })
   }
+  const createProgramDebounced = useDebouncedCallback(() => {
+    if (!program.name || program.program_id) {
+      return
+    }
+    return createProgram({ ...program, code: program.code ?? '' })
+  }, SAVE_DELAY)
+  useEffect(() => createProgramDebounced(), [program, createProgramDebounced])
 }
 
 const useUpdateProgram = (
@@ -224,7 +232,7 @@ const useUpdateProgram = (
 
 // Send a compile request if the project changes (e.g., we got a new version and
 // we're not already compiling)
-const useCompileProjectIfChanged = (
+const useCompileProjectIfChangedEffect = (
   state: EntitySyncIndicatorStatus,
   project: ProgramDescr,
   setProgram: Dispatch<SetStateAction<ProgramDescr>>
@@ -269,7 +277,7 @@ const useCompileProjectIfChanged = (
 }
 
 // Polls the server during compilation and checks for the status.
-const usePollCompilationStatus = (project: ProgramDescr, setProgram: Dispatch<SetStateAction<ProgramDescr>>) => {
+const usePollCompilationStatusEffect = (project: ProgramDescr, setProgram: Dispatch<SetStateAction<ProgramDescr>>) => {
   const queryClient = useQueryClient()
   const compilationStatus = useQuery({
     ...PipelineManagerQuery.programStatus(project.name),
@@ -344,17 +352,10 @@ export const ProgramEditorImpl = ({
   const theme = useTheme()
   const vscodeTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs'
 
-  const createProgram = useCreateProgram(setProgram, setStatus, setFormError)
-  const createProgramDebounced = useDebouncedCallback(() => {
-    if (!program.name || program.program_id) {
-      return
-    }
-    return createProgram({ ...program, code: program.code ?? '' })
-  }, SAVE_DELAY)
-  useEffect(() => createProgramDebounced(), [program, createProgramDebounced])
+  useCreateProgramEffect(program, setProgram, setStatus, setFormError)
 
-  usePollCompilationStatus(program, setProgram)
-  useCompileProjectIfChanged(status, program, setProgram)
+  usePollCompilationStatusEffect(program, setProgram)
+  useCompileProjectIfChangedEffect(status, program, setProgram)
 
   // Mounting and callback for when code is edited
   // TODO: The IStandaloneCodeEditor type is not exposed in the react monaco
@@ -437,32 +438,33 @@ export const ProgramEditor = ({ programName }: { programName?: string }) => {
     }, [noProgramData])
   }
 
-  const updateProgram = useUpdateProgram(setStatus, setFormError)
+  const mutateUpdateProgram = useUpdateProgram(setStatus, setFormError)
+  const updateProgram = (descr: SetStateAction<ProgramDescr>) => {
+    const newDescr =
+      descr instanceof Function
+        ? descr(
+            programQuery.data ?? {
+              name: '',
+              description: '',
+              program_id: '',
+              status: 'None',
+              version: 0
+            }
+          )
+        : descr
+    return mutateUpdateProgram(programName, {
+      name: newDescr.name,
+      description: newDescr.description,
+      code: newDescr.code
+    })
+  }
 
   return (
     <ProgramEditorImpl
       {...(nonNull(programName) && nonNull(programQuery.data)
         ? {
             program: programQuery.data!,
-            setProgram: (descr: SetStateAction<ProgramDescr>) => {
-              const newDescr =
-                descr instanceof Function
-                  ? descr(
-                      programQuery.data ?? {
-                        name: '',
-                        description: '',
-                        program_id: '',
-                        status: 'None',
-                        version: 0
-                      }
-                    )
-                  : descr
-              return updateProgram(programName, {
-                name: newDescr.name,
-                description: newDescr.description,
-                code: newDescr.code
-              })
-            }
+            setProgram: updateProgram
           }
         : { program, setProgram })}
       {...{ status, setStatus, formError, setFormError }}

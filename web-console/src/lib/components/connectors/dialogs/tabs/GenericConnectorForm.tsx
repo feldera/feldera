@@ -12,7 +12,6 @@ import { Editor, Monaco, useMonaco } from '@monaco-editor/react'
 import { useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
-import TextField from '@mui/material/TextField'
 
 export const GenericEditorForm = (props: {
   disabled?: boolean
@@ -37,7 +36,7 @@ export const GenericEditorForm = (props: {
         />
       </Grid>
       <Grid item sm={8} xs={12}>
-        <TextField
+        <TextFieldElement
           name='description'
           label='Description'
           size='small'
