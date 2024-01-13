@@ -25,10 +25,11 @@ test('Accrual demo test', async ({ page, request }) => {
     await expect(page).toHaveScreenshot('saved-sql-program.png')
   })
 
-  const pipelineUUID = await test.step('Create a pipeline', async () => {
+  const pipelineNameUrlEncoded = await test.step('Create a pipeline', async () => {
     await page.getByTestId('button-vertical-nav-pipelines').click()
     await page.getByTestId('button-add-pipeline').first().click()
     await page.getByTestId('input-pipeline-name').fill(pipelineName)
+    await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('input-builder-select-program').locator('button').click()
     await page.getByTestId('box-builder-program-options').getByRole('option', { name: programName }).click()
     await page.getByTestId('box-save-saved').waitFor()
@@ -36,10 +37,10 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-edit').click()
-    const pipelineUUID = page.url().match(/pipeline_name=([\w-]+)/)?.[1] as string
-    expect(pipelineUUID).toBeTruthy()
-    invariant(pipelineUUID)
-    return pipelineUUID
+    const pipelineNameUrlEncoded = page.url().match(/pipeline_name=([\w-%]+)/)?.[1] as string
+    expect(pipelineNameUrlEncoded).toBeTruthy()
+    invariant(pipelineNameUrlEncoded)
+    return pipelineNameUrlEncoded
   })
 
   await test.step('Start the pipeline', async () => {
@@ -72,7 +73,9 @@ test('Accrual demo test', async ({ page, request }) => {
         batchSize,
         i => ({ insert: { id: i, name: faker.company.name() } }),
         data =>
-          request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/CUSTOMER_T?format=json&array=true`, { data })
+          request.post(apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/CUSTOMER_T?format=json&array=true`, {
+            data
+          })
       )
     ).map(r => r.insert)
 
@@ -84,7 +87,10 @@ test('Accrual demo test', async ({ page, request }) => {
           insert: { id: i, name: faker.company.catchPhrase(), customer_id: faker.helpers.arrayElement(customers).id }
         }),
         data =>
-          request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/WORKSPACE_T?format=json&array=true`, { data })
+          request.post(
+            apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/WORKSPACE_T?format=json&array=true`,
+            { data }
+          )
       )
     ).map(r => r.insert)
 
@@ -95,7 +101,10 @@ test('Accrual demo test', async ({ page, request }) => {
         i => ({
           insert: { id: i, name: faker.company.catchPhrase(), workspace_id: faker.helpers.arrayElement(workspaces).id }
         }),
-        data => request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/WORK_T?format=json&array=true`, { data })
+        data =>
+          request.post(apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/WORK_T?format=json&array=true`, {
+            data
+          })
       )
     ).map(r => r.insert)
 
@@ -109,7 +118,10 @@ test('Accrual demo test', async ({ page, request }) => {
           customer_id: faker.helpers.arrayElement(customers).id
         }
       }),
-      data => request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/CREDIT_T?format=json&array=true`, { data })
+      data =>
+        request.post(apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/CREDIT_T?format=json&array=true`, {
+          data
+        })
     )
 
     const users = (
@@ -117,7 +129,10 @@ test('Accrual demo test', async ({ page, request }) => {
         num.user,
         batchSize,
         i => ({ insert: { id: i, name: faker.person.firstName() } }),
-        data => request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/USER_T?format=json&array=true`, { data })
+        data =>
+          request.post(apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/USER_T?format=json&array=true`, {
+            data
+          })
       )
     ).map(r => r.insert)
 
@@ -137,7 +152,10 @@ test('Accrual demo test', async ({ page, request }) => {
           total: faker.helpers.rangeToNumber({ min: 0, max: 20 })
         }
       }),
-      data => request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/TASK_T?format=json&array=true`, { data })
+      data =>
+        request.post(apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/TASK_T?format=json&array=true`, {
+          data
+        })
     )
   })
 

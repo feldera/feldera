@@ -501,11 +501,17 @@ export default function PipelineTable() {
     defaultValue: [] as GridRowId[]
   })
   const [hash, setHash] = useHashPart()
+  const anchorPipelineId = (filteredData.length ? filteredData : rows).find(
+    pipeline => pipeline.descriptor.name === decodeURI(hash)
+  )?.descriptor.pipeline_id
 
   // Cannot initialize in useState because hash is not available during SSR
   useEffect(() => {
+    if (!anchorPipelineId) {
+      return
+    }
     setExpandedRows(expandedRows =>
-      (expandedRows.includes(hash) ? expandedRows : [...expandedRows, hash]).filter(
+      (expandedRows.includes(anchorPipelineId) ? expandedRows : [...expandedRows, anchorPipelineId]).filter(
         row =>
           data?.find(
             p =>
@@ -520,10 +526,10 @@ export default function PipelineTable() {
           )
       )
     )
-  }, [hash, setExpandedRows, data])
+  }, [anchorPipelineId, setExpandedRows, data])
 
   const updateExpandedRows = (newExpandedRows: GridRowId[]) => {
-    if (newExpandedRows.length < expandedRows.length && !newExpandedRows.includes(hash)) {
+    if (newExpandedRows.length < expandedRows.length && !newExpandedRows.includes(anchorPipelineId || '')) {
       setHash('')
     }
     setExpandedRows(newExpandedRows)
