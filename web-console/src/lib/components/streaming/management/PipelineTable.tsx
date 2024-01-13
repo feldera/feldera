@@ -36,6 +36,7 @@ import {
   mutationPausePipeline,
   mutationShutdownPipeline,
   mutationStartPipeline,
+  mutationUpdatePipeline,
   PipelineManagerQuery
 } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
@@ -474,15 +475,9 @@ export default function PipelineTable() {
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
-  const mutation = useMutation<
-    UpdatePipelineResponse,
-    ApiError,
-    { pipelineName: string; request: UpdatePipelineRequest }
-  >({
-    mutationFn: args => PipelinesService.updatePipeline(args.pipelineName, args.request)
-  })
+  const {mutate: updatePipeline} = useMutation(mutationUpdatePipeline(queryClient))
   const onUpdateRow = (newRow: Pipeline, oldRow: Pipeline) => {
-    mutation.mutate(
+    updatePipeline(
       {
         pipelineName: oldRow.descriptor.name,
         request: {

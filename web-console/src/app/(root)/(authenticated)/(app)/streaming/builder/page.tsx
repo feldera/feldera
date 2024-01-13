@@ -32,7 +32,7 @@ import {
   updatePipelineConnectorName
 } from '$lib/services/pipelineManagerQuery'
 import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
-import { PipelineStatus } from '$lib/types/pipeline'
+import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
@@ -453,10 +453,13 @@ const useRenderPipelineEffect = (
           return validConnections
         })()
 
+
+
     // { // Handle the case when the connector name was changed in popup dialog
     //   const pipelineConnectors = new Set(attachedConnectors.map(c => c.connector_name))
     //   const deprecatedConnectors = connectorsQuery.data.filter(c => !pipelineConnectors.has(c.name))
     //   // const existingNode = getNodes().find(node => node.id === ac.name)
+    //   console.log('deprecatedConnectors', deprecatedConnectors, attachedConnectors)
     //   if (deprecatedConnectors.length) {
     //     // setNodes(nodes =>
     //     //   nodes.filter(node => {
@@ -481,7 +484,7 @@ const useRenderPipelineEffect = (
     //     for (const node of deprecatedNodes) {
     //       console.log('deleting node', node)
     //       // setTimeout(() => deleteNode(node.id), 100)
-    //       deleteNode(node.id)()
+    //       // deleteNode(node.id)()
     //     }
     //   }
     // }
@@ -494,6 +497,39 @@ const useRenderPipelineEffect = (
         addConnector(connector, attached_connector)
       }
     })
+
+
+    { // Rename detached connectors when the connector name was changed in popup dialog
+      setNodes(getNodes().map(node => {
+        console.log('mapping node', node)
+        if (node.type !== 'inputNode' && node.type !== 'outputNode') {
+          return node
+        }
+        invariant(((data: any): data is {connector: ConnectorDescr} => true)(node.data))
+        invariant(node.data.connector.name, 'Connector name should be stored in the connector node')
+        const realConnector = (data => connectorsQuery.data.find(c => c.connector_id === data.connector.connector_id))(node.data)
+        if (!realConnector) {
+          return node
+        }
+        if (node.data.connector.name === realConnector.name) {
+          return node
+        }
+        console.log('renaming node', node, node.data.connector.name, realConnector.name)
+        return ({
+          ...node,
+          data: {
+            ...node.data,
+            connector: realConnector,
+            ac: {
+              ...node.data.ac,
+              connector_name: realConnector.name
+            }
+          }
+        })
+        // console.log('node result', (name => !deprecatedConnectors.find(c => c.name === name))(node.data.connector.name))
+        // return (name => deprecatedConnectors.find(c => c.name === name))(node.data.connector.name)
+      }))
+    }
   }
 
   useEffect(render, [
@@ -552,6 +588,7 @@ const PipelineBuilderPage = ({
   useRenderPipelineEffect(pipeline, saveState, setMissingSchemaDialog)
 
   const onConnectorUpdateSuccess = (connector: ConnectorDescr, oldConnectorName: string) => {
+    console.log('onConnectorUpdateSuccess')
     invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.name))
     setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.name), updatePipelineConnectorName(oldConnectorName, connector.name))
   }
@@ -624,6 +661,22 @@ const PipelineBuilderPage = ({
   )
 }
 
+const defaultPipelineData: Pipeline = {
+  descriptor: {
+    attached_connectors: [],
+    config: { workers: 8 },
+    description: '',
+    name: '',
+    pipeline_id: '',
+    program_name: '',
+    version: NaN
+  },
+  state: {
+    current_status: PipelineStatus.FAILED,
+    desired_status: PipelineStatus.FAILED
+  } as PipelineRuntimeState
+}
+
 export default () => {
   const pipelineName = useSearchParams().get('pipeline_name') || ''
   // const { pushMessage } = useStatusNotification()
@@ -644,55 +697,35 @@ export default () => {
     setSaveState('isNew')
   }, [pipelineName, setSaveState])
 
-  // Clear data when creating new pipeline
+  // Clear the data when creating new pipeline
   useEffect(() => {
     if (pipelineName) {
       return
     }
-    setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), {
-      descriptor: {
-        attached_connectors: [],
-        config: { workers: 8 },
-        description: '',
-        name: '',
-        pipeline_id: '',
-        version: NaN
-      },
-      state: {
-        current_status: PipelineStatus.FAILED,
-        desired_status: PipelineStatus.FAILED
-      } as any
-    })
+    console.log('set empty named pipeline')
+    setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), defaultPipelineData)
     setSaveState('isNew')
   }, [pipelineName, queryClient, setSaveState])
 
   const pipelineQuery = useQuery({
     ...PipelineManagerQuery.pipelineStatus(pipelineName),
-    enabled: !!pipelineName && saveState !== 'isSaving' && saveState !== 'isModified',
-    initialData: {
-      descriptor: {
-        attached_connectors: [],
-        config: { workers: 8 },
-        description: '',
-        name: '',
-        pipeline_id: '',
-        program_name: '',
-        version: -1
-      },
-      state: {} as PipelineRuntimeState
-    }
+    enabled: !!pipelineName, //&& saveState !== 'isSaving' && saveState !== 'isModified',
+    initialData: defaultPipelineData
   })
   const pipeline = pipelineQuery.data?.descriptor
   invariant(pipeline, 'Pipeline should be initialized with a default value')
+
+  useEffect(() => {
+    setPipelineName(pipeline.name)
+  }, [pipeline.name, setPipelineName])
 
   // Clear loading state when pipeline is fetched
   useEffect(() => {
     if (!pipeline.pipeline_id) {
       return
     }
-    setPipelineName(pipeline.name)
     setSaveState('isUpToDate')
-  }, [pipeline.pipeline_id, pipeline.name, setSaveState, setPipelineName])
+  }, [pipeline.pipeline_id, setSaveState])
 
   // const { mutate: updatePipeline } = useMutation(mutationUpdatePipeline(queryClient))
   const updatePipeline = useUpdatePipeline(pipelineName, setSaveState, setFormError)

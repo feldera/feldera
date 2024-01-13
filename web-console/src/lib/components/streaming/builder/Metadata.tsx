@@ -22,6 +22,7 @@ const Metadata = (props: {
   const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
     props.updatePipeline(p => ({ ...p, name: event.target.value }))
   }
+  console.log('Metadata', props.pipeline.name)
 
   const updateDescription = (event: React.ChangeEvent<HTMLInputElement>) => {
     props.updatePipeline(p => ({ ...p, description: event.target.value }))
