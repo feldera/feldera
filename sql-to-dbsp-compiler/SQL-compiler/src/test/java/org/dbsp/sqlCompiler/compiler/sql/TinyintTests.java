@@ -316,13 +316,11 @@ public class TinyintTests extends SqlIoTest {
         );
     }
 
-    // Ignored because this fails in Postgres but here we get:
-    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
+    @Test
     public void testSelectOverflow() {
-        String error_message = "TINYINT out of range";
-        this.qf("SELECT i.f1, i.f1 * 2::TINYINT AS x FROM INT_TBL i", error_message);
-        this.qf( "SELECT i.f1, i.f1 + '2'::TINYINT AS x FROM INT_TBL i", error_message);
-        this.qf("SELECT i.f1, i.f1 - '2'::TINYINT AS x FROM INT_TBL i", error_message);
+        this.qf("SELECT i.f1, i.f1 * 2::TINYINT AS x FROM INT_TBL i", "attempt to multiply with overflow");
+        this.qf( "SELECT i.f1, i.f1 + '2'::TINYINT AS x FROM INT_TBL i", "attempt to add with overflow");
+        this.qf("SELECT i.f1, i.f1 - '2'::TINYINT AS x FROM INT_TBL i", "attempt to subtract with overflow");
     }
 
     @Test
@@ -336,7 +334,7 @@ public class TinyintTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
+    @Test @Ignore("fails for Calcite optimized version")
     public void testTINYINTMINOverflowError() {
         this.qf("SELECT (-128)::tinyint * (-1)::tinyint", "attempt to multiply with overflow");
         this.qf("SELECT (-128)::tinyint / (-1)::tinyint", "attempt to divide with overflow");

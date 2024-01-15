@@ -539,15 +539,9 @@ public class PostgresInt8Tests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
+    @Test
     public void testSelectOverflow() {
-        // This should error and overflow, but we get:
-        // L: (Some(123), Some(456), Some(56088))x1
-        // L: (Some(123), Some(4567890123456789), Some(561850485185185047))x1
-        // L: (Some(4567890123456789), Some(-4567890123456789), Some(-4868582358072306617))x1 --> should've errored
-        // L: (Some(4567890123456789), Some(123), Some(561850485185185047))x1
-        // L: (Some(4567890123456789), Some(4567890123456789), Some(4868582358072306617))x1 --> should've errored
-        this.runtimeFail("SELECT q1, q2, q1 * q2 AS multiply FROM INT8_TBL", "out of range", this.getEmptyIOPair());
+        this.qf("SELECT q1, q2, q1 * q2 AS multiply FROM INT8_TBL", "overflow");
     }
 
     @Test
@@ -581,13 +575,13 @@ public class PostgresInt8Tests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("Integer wrapping: https://github.com/feldera/feldera/issues/1186")
+    @Test @Ignore("fails for Calcite optimized version")
     public void testINT64MINOverflowError() {
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int64", "attempt to multiply with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int64", "attempt to divide with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int4", "attempt to multiply with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int4", "attempt to divide with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 * (-1)::int2", "attempt to multiply with overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT (-9223372036854775808)::int64 / (-1)::int2", "attempt to divide with overflow", this.getEmptyIOPair());
+        this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int64", "attempt to multiply with overflow");
+        this.qf("SELECT (-9223372036854775808)::int64 / (-1)::int64", "attempt to divide with overflow");
+        this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int4", "attempt to multiply with overflow");
+        this.qf("SELECT (-9223372036854775808)::int64 / (-1)::int4", "attempt to divide with overflow");
+        this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int2", "attempt to multiply with overflow");
+        this.qf("SELECT (-9223372036854775808)::int64 / (-1)::int2", "attempt to divide with overflow");
     }
 }

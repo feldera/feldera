@@ -1,12 +1,14 @@
+use std::ops::{Add, Div, Mul, Sub};
+
 use dbsp::algebra::{F32, F64};
 use num::PrimInt;
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
 use crate::{
     for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
-    for_all_numeric_operator, some_existing_operator, some_operator,
+    some_existing_operator, some_operator,
 };
 
-use core::ops::{Add, Div, Mul, Sub};
 use rust_decimal::Decimal;
 
 #[inline(always)]
@@ -86,22 +88,46 @@ for_all_compare!(gte, bool);
 #[inline(always)]
 fn plus<T>(left: T, right: T) -> T
 where
+    T: CheckedAdd,
+{
+    left.checked_add(&right)
+        .expect("attempt to add with overflow")
+}
+
+for_all_int_operator!(plus);
+some_operator!(plus, decimal, Decimal, Decimal);
+
+fn fp_plus<T>(left: T, right: T) -> T
+where
     T: Add<Output = T>,
 {
     left + right
 }
 
-for_all_numeric_operator!(plus);
+some_operator!(fp_plus, plus, f, F32, F32);
+some_operator!(fp_plus, plus, d, F64, F64);
 
 #[inline(always)]
 fn minus<T>(left: T, right: T) -> T
+where
+    T: CheckedSub,
+{
+    left.checked_sub(&right)
+        .expect("attempt to subtract with overflow")
+}
+
+for_all_int_operator!(minus);
+some_operator!(minus, decimal, Decimal, Decimal);
+
+fn fp_minus<T>(left: T, right: T) -> T
 where
     T: Sub<Output = T>,
 {
     left - right
 }
 
-for_all_numeric_operator!(minus);
+some_operator!(fp_minus, minus, f, F32, F32);
+some_operator!(fp_minus, minus, d, F64, F64);
 
 #[inline(always)]
 fn modulo<T>(left: T, right: T) -> T
@@ -120,12 +146,24 @@ for_all_int_operator!(modulo);
 #[inline(always)]
 fn times<T>(left: T, right: T) -> T
 where
+    T: CheckedMul,
+{
+    left.checked_mul(&right)
+        .expect("attempt to multiply with overflow")
+}
+
+for_all_int_operator!(times);
+some_operator!(times, decimal, Decimal, Decimal);
+
+fn fp_times<T>(left: T, right: T) -> T
+where
     T: Mul<Output = T>,
 {
     left * right
 }
 
-for_all_numeric_operator!(times);
+some_operator!(fp_times, times, f, F32, F32);
+some_operator!(fp_times, times, d, F64, F64);
 
 /*
 
@@ -184,12 +222,29 @@ for_all_int_operator!(bxor);
 #[inline(always)]
 fn div<T>(left: T, right: T) -> T
 where
+    T: CheckedDiv + ToPrimitive,
+{
+    let panic_message = if Some(0) == right.to_isize() {
+        "attempt to divide by zero"
+    } else {
+        "attempt to divide with overflow"
+    };
+
+    left.checked_div(&right).expect(panic_message)
+}
+
+for_all_int_operator!(div);
+some_operator!(div, decimal, Decimal, Decimal);
+
+fn fp_div<T>(left: T, right: T) -> T
+where
     T: Div<Output = T>,
 {
     left / right
 }
 
-for_all_numeric_operator!(div);
+some_operator!(fp_div, div, f, F32, F32);
+some_operator!(fp_div, div, d, F64, F64);
 
 pub fn plus_u_u(left: usize, right: usize) -> usize {
     left + right

@@ -2,9 +2,7 @@
 
 There are four supported integer datatypes, `TINYINT` (8 bits),
 `SMALLINT` (16 bits), `INTEGER` (32 bits), and `BIGINT` (64
-bits).  These are represented as two's complement values, and
-computations on these types obey the standard two's complement
-semantics, including overflow.
+bits).
 
 The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
@@ -44,6 +42,9 @@ Casting a string to an integer type will produce a runtime error if the
 string cannot be interpreted as a number.
 
 Division or modulus by zero cause a runtime error.
+
+Operations that cause integer overflow or underflow (example: multiplication or division
+of minimum integer value by -1) produce run time errors.
 
 ## Predefined functions on integer values
 
