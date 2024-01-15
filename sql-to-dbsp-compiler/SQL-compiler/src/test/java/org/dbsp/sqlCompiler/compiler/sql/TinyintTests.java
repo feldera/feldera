@@ -318,10 +318,9 @@ public class TinyintTests extends SqlIoTest {
 
     @Test
     public void testSelectOverflow() {
-        String error_message = "overflow";
-        this.qf("SELECT i.f1, i.f1 * 2::TINYINT AS x FROM INT_TBL i", error_message);
-        this.qf( "SELECT i.f1, i.f1 + '2'::TINYINT AS x FROM INT_TBL i", error_message);
-        this.qf("SELECT i.f1, i.f1 - '2'::TINYINT AS x FROM INT_TBL i", error_message);
+        this.qf("SELECT i.f1, i.f1 * 2::TINYINT AS x FROM INT_TBL i", "attempt to multiply with overflow");
+        this.qf( "SELECT i.f1, i.f1 + '2'::TINYINT AS x FROM INT_TBL i", "attempt to add with overflow");
+        this.qf("SELECT i.f1, i.f1 - '2'::TINYINT AS x FROM INT_TBL i", "attempt to subtract with overflow");
     }
 
     @Test

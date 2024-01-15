@@ -329,6 +329,12 @@ macro_rules! some_existing_operator {
 // - f_t_tN(x: Option<T>, y: T) -> Option<U>
 // - f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>
 // The resulting functions return Some only if all arguments are 'Some'.
+//
+// Has two variants:
+// - Takes the name of the existing function, the generated functions will have
+// this prefix
+// - Takes the name of the existing function, and the prefix for the generated
+// functions
 #[macro_export]
 macro_rules! some_operator {
     ($func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
