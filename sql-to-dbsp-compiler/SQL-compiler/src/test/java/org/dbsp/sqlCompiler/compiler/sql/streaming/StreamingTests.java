@@ -4,12 +4,19 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.junit.Ignore;
 import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
 
 /** Tests that exercise streaming features. */
 public class StreamingTests extends BaseSQLTests {
@@ -20,7 +27,7 @@ public class StreamingTests extends BaseSQLTests {
         return options;
     }
 
-    @Test
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1260")
     public void latenessTest() {
         String ddl = """
                 CREATE TABLE series (
@@ -111,5 +118,55 @@ public class StreamingTests extends BaseSQLTests {
         compiler.compileStatement(query);
         InputOutputPair[] data = new InputOutputPair[0];
         this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
+    }
+
+    @Test
+    public void testAggregate() {
+        String sql = """
+                CREATE TABLE event_t (
+                    event_type_id BIGINT NOT NULL
+                );
+                                
+                -- running total of event types
+                CREATE VIEW event_type_count_v AS
+                SELECT count(DISTINCT event_type_id) as event_type_count
+                from   event_t
+                ;""";
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(sql);
+        List<InputOutputPair> data = new ArrayList<>();
+
+        DBSPTupleExpression zero = new DBSPTupleExpression(new DBSPI64Literal(0));
+        DBSPExpression one = new DBSPTupleExpression(new DBSPI64Literal(1));
+        DBSPExpression two = new DBSPTupleExpression(new DBSPI64Literal(2));
+
+        Consumer<InputOutputPair> add = data::add;
+
+        add.accept(new InputOutputPair(
+                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
+                new DBSPZSetLiteral.Contents(zero)));
+
+        add.accept(new InputOutputPair(
+                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
+                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType())));
+
+        DBSPZSetLiteral.Contents expected1 = new DBSPZSetLiteral.Contents(one);
+        expected1.add(zero, -1);
+        add.accept(new InputOutputPair(
+                new DBSPZSetLiteral.Contents(one),
+                expected1));
+
+        add.accept(new InputOutputPair(
+                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
+                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType())));
+        DBSPZSetLiteral.Contents expected3 = new DBSPZSetLiteral.Contents(two);
+        expected3.add(one, -1);
+
+        add.accept(new InputOutputPair(
+                new DBSPZSetLiteral.Contents(two),
+                expected3));
+
+        InputOutputPair[] array = data.toArray(new InputOutputPair[0]);
+        this.addRustTestCase("testAggregate", compiler, getCircuit(compiler), array);
     }
 }

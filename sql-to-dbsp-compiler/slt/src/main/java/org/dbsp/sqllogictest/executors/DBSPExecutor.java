@@ -442,7 +442,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         List<DBSPStatement> list = new ArrayList<>();
         DBSPLetStatement cas = new DBSPLetStatement("circ",
                 new DBSPApplyExpression(circuit.getNode(), circuit.name, DBSPTypeAny.getDefault(),
-                        new DBSPUSizeLiteral(1) // workers
+                        new DBSPUSizeLiteral(2) // workers
                 ).unwrap(), true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));

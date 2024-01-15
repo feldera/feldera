@@ -58,6 +58,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -864,8 +865,12 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.getName())
                 .append(" = ")
                 .append("circuit.add_source(Generator::new(|| ");
+        this.builder.append("if Runtime::worker_index() == 0 {");
         operator.function.accept(this.innerVisitor);
-        this.builder.append("));");
+        this.builder.append("} else {");
+        DBSPZSetLiteral empty = new DBSPZSetLiteral(operator.getType());
+        empty.accept(this.innerVisitor);
+        this.builder.append("}));");
         return VisitDecision.STOP;
     }
 
