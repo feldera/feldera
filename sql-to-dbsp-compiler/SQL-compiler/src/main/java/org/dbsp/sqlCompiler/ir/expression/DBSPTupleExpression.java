@@ -26,8 +26,8 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.IIndentStream;
@@ -85,6 +85,12 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
             }
         }
         return new DBSPTupleExpression(fields, false);
+    }
+
+    public DBSPTupleExpression append(DBSPExpression expression) {
+        List<DBSPExpression> fields = Linq.list(this.fields);
+        fields.add(expression);
+        return new DBSPTupleExpression(this.getNode(), fields);
     }
 
     /**

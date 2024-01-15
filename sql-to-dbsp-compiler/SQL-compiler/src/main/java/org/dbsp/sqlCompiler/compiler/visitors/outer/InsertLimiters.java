@@ -249,16 +249,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.addOperator(waterline);
         Utilities.putNew(this.bound, operator, waterline);
 
-        if (true || useControlledFilters) {
-            // TODO: the alternate path does not work yet.  Needs https://github.com/feldera/feldera/issues/1204
+        if (useControlledFilters) {
             DBSPControlledFilterOperator filter = DBSPControlledFilterOperator.create(
                     operator.getNode(), operator, monotoneValue.getProjection(), waterline);
             this.map(operator, filter);
         } else {
-            ValueProjection projection = monotoneValue.getProjection();
-            DBSPIntegrateTraceRetainKeysOperator it = DBSPIntegrateTraceRetainKeysOperator.create(
-                    operator.getNode(), operator, projection, waterline);
-            this.addOperator(it);
+            // Do not insert a DBSPIntegrateTraceRetainKeysOperator operator.
+            // There is no integrator here that we need to prune.
             this.map(operator, operator, false);
         }
     }

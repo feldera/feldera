@@ -38,6 +38,7 @@ import org.dbsp.util.ToIndentableString;
 import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Represents a (constant) ZSet described by its elements.
@@ -105,6 +106,15 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
 
         public void add(DBSPExpression expression) {
             this.add(expression, 1);
+        }
+
+        public Contents map(Function<DBSPExpression, DBSPExpression> map, DBSPType elementType) {
+            Contents result = Contents.emptyWithElementType(elementType);
+            for (Map.Entry<DBSPExpression, Long> entry: this.data.entrySet()) {
+                DBSPExpression converted = map.apply(entry.getKey());
+                result.add(converted, entry.getValue());
+            }
+            return result;
         }
 
         public void add(DBSPExpression expression, long weight) {
