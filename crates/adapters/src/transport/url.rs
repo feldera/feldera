@@ -327,6 +327,7 @@ mod test {
                         .wrap(middleware::Logger::default())
                         .service(web::resource("/test.csv").to(response))
                 })
+                .workers(1)
                 .bind(("127.0.0.1", 0))
                 .unwrap();
                 sender.send(server.addrs()[0]).unwrap();
