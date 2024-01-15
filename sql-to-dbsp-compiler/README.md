@@ -91,7 +91,7 @@ or [online](https://www.feldera.com/docs/contributors/compiler).
 
 ## Compiler architecture
 
-[A presentation](https://mihaibudiu.github.io/work/sql-compiler-architecture23.pptx)
+[A presentation](https://1drv.ms/p/s!AlywK8G1COQ_lel0fMSX1CvrRS7HYw?e=I9JPBT)
 about the internals of the compiler implementation.
 
 Compilation proceeds in several stages:
