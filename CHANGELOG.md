@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- pipeline-manager: fix a resource usage problem with http streaming under high load
+  ([#1257](https://github.com/feldera/feldera/pull/1257))
+-
 ## [0.7.0] - 2024-01-09
 
 ### Added

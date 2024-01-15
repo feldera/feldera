@@ -400,13 +400,17 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
         crate::config::AuthProviderType::GoogleIdentity => Some(crate::auth::google_auth_config()),
     };
     let server = match auth_configuration {
+        // We instantiate an awc::Client that can be used if the api-server needs to
+        // make outgoing calls. This object is not meant to have more than one instance
+        // per thread (otherwise, it causes high resource pressure on both CPU and fds).
         Some(auth_configuration) => {
             let server = HttpServer::new(move || {
                 let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-
+                let client = WebData::new(awc::Client::new());
                 App::new()
                     .app_data(state.clone())
                     .app_data(auth_configuration.clone())
+                    .app_data(client)
                     .wrap(Logger::default().exclude("/healthz"))
                     .wrap(Condition::new(
                         api_config.dev_mode,
@@ -419,8 +423,10 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
         }
         None => {
             let server = HttpServer::new(move || {
+                let client = WebData::new(awc::Client::new());
                 App::new()
                     .app_data(state.clone())
+                    .app_data(client)
                     .wrap(Logger::default().exclude("/healthz"))
                     .wrap(Condition::new(
                         api_config.dev_mode,

@@ -82,6 +82,7 @@ use super::{ManagerError, ServerState};
 async fn http_input(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    client: WebData<awc::Client>,
     req: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
@@ -104,7 +105,14 @@ async fn http_input(
 
     state
         .runner
-        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
+        .forward_to_pipeline_as_stream(
+            *tenant_id,
+            pipeline_id,
+            &endpoint,
+            req,
+            body,
+            client.as_ref(),
+        )
         .await
 }
 
@@ -177,6 +185,7 @@ async fn http_input(
 async fn http_output(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    client: WebData<awc::Client>,
     req: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
@@ -199,6 +208,13 @@ async fn http_output(
 
     state
         .runner
-        .forward_to_pipeline_as_stream(*tenant_id, pipeline_id, &endpoint, req, body)
+        .forward_to_pipeline_as_stream(
+            *tenant_id,
+            pipeline_id,
+            &endpoint,
+            req,
+            body,
+            client.as_ref(),
+        )
         .await
 }

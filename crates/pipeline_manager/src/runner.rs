@@ -469,6 +469,7 @@ impl RunnerApi {
         endpoint: &str,
         req: HttpRequest,
         body: Payload,
+        client: &awc::Client,
     ) -> Result<HttpResponse, ManagerError> {
         let pipeline_state = self
             .db
@@ -488,8 +489,6 @@ impl RunnerApi {
         // TODO: it might be better to have ?name={}, otherwise we have to
         // restrict name format
         let url = format!("http://{location}/{endpoint}?{}", req.query_string());
-
-        let client = awc::Client::new();
 
         let mut request = client.request(req.method().clone(), url);
 
