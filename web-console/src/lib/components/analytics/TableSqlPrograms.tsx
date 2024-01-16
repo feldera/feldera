@@ -54,7 +54,7 @@ const getStatusChip = (status: ProgramStatus) =>
     })
     .exhaustive()
 
-const TableSqlPrograms = () => {
+export const TableSqlPrograms = () => {
   const [rows, setRows] = useState<ProgramDescr[]>([])
   const fetchQuery = useQuery(PipelineManagerQuery.programs())
   const { pushMessage } = useStatusNotification()
@@ -166,11 +166,11 @@ const TableSqlPrograms = () => {
   ]
 
   // Editing a row
-  const mutation = useMutation(mutationUpdateProgram(queryClient))
+  const { mutate: updateProgram } = useMutation(mutationUpdateProgram(queryClient))
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
-    mutation.mutate(
+    updateProgram(
       {
-        programName: newRow.name,
+        programName: oldRow.name,
         update_request: { description: newRow.description, name: newRow.name }
       },
       {
@@ -227,5 +227,3 @@ const TableSqlPrograms = () => {
     </Card>
   )
 }
-
-export default TableSqlPrograms
