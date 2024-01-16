@@ -8,7 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
+
+### Added
+-  pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
 
 ### Fixed
 - pipeline-manager: fix a resource usage problem with http streaming under high load
@@ -17,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebConsole: UI sends HTTP request in an infinite loop (#1085)
 
 ### Changed
+- SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
 - pipeline-manager: use names instead of IDs in API endpoints (#1214)
 - WebConsole: use names instead of IDs in API endpoints (#1214)
 
