@@ -1,14 +1,11 @@
 // What happens when we select a program in the sqlPlaceholder node.
 
+import { useAttachedPipelineConnectors } from '$lib/compositions/streaming/builder/useAttachedPipelineConnectors'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
-import useDebouncedSave from '$lib/compositions/streaming/builder/useDebouncedSave'
-import { setQueryData } from '$lib/functions/common/tanstack'
+import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
 import { ProgramDescr } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { useCallback } from 'react'
 import { NodeProps, useReactFlow } from 'reactflow'
-
-import { useQueryClient } from '@tanstack/react-query'
 
 // Replaces the program placeholder node with a sqlProgram node
 export function useReplacePlaceholder() {
@@ -59,10 +56,14 @@ export function useReplacePlaceholder() {
 // convert it to a sqlProgram node.
 export function useSqlPlaceholderClick(id: NodeProps['id']) {
   const { getNode } = useReactFlow()
-  const savePipeline = useDebouncedSave()
   const replacePlaceholder = useReplacePlaceholder()
-  const setProject = useBuilderState(state => state.setProject)
-  const queryClient = useQueryClient()
+  const attachedPipelineConnectors = useAttachedPipelineConnectors()
+
+  const updatePipeline = useUpdatePipeline(
+    useBuilderState(s => s.pipelineName),
+    useBuilderState(s => s.setSaveState),
+    useBuilderState(s => s.setFormError)
+  )
 
   const onClick = useCallback(
     (_event: any, project: ProgramDescr) => {
@@ -70,22 +71,10 @@ export function useSqlPlaceholderClick(id: NodeProps['id']) {
       if (!parentNode) {
         return
       }
-
-      setProject(project)
-      const pipelineId = null
-      if (pipelineId) {
-        // TODO: figure out if it's better to optimistically update query here?
-        setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), oldData => {
-          if (!oldData) {
-            return oldData
-          }
-          return { ...oldData, descriptor: { ...oldData.descriptor, program_id: project.program_id } }
-        })
-      }
       replacePlaceholder(project)
-      savePipeline()
+      updatePipeline(p => ({ ...p, program_name: project.name, connectors: attachedPipelineConnectors() }))
     },
-    [getNode, id, queryClient, replacePlaceholder, savePipeline, setProject]
+    [getNode, id, replacePlaceholder, updatePipeline, attachedPipelineConnectors]
   )
 
   return onClick

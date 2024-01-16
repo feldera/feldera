@@ -29,7 +29,7 @@ export class HttpInputOutputService {
    * contains, among other things, a full row to execute a neighborhood search
    * around. A row can be quite large and is not appropriate as a query
    * parameter.
-   * @param pipelineId Unique pipeline identifier.
+   * @param pipelineName Unique pipeline name
    * @param tableName SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program.
    * @param format Output data format, e.g., 'csv' or 'json'.
    * @param query Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'
@@ -41,7 +41,7 @@ export class HttpInputOutputService {
    * @throws ApiError
    */
   public static httpOutput(
-    pipelineId: string,
+    pipelineName: string,
     tableName: string,
     format: string,
     query?: OutputQuery | null,
@@ -52,9 +52,9 @@ export class HttpInputOutputService {
   ): CancelablePromise<Chunk> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/pipelines/{pipeline_id}/egress/{table_name}',
+      url: '/v0/pipelines/{pipeline_name}/egress/{table_name}',
       path: {
-        pipeline_id: pipelineId,
+        pipeline_name: pipelineName,
         table_name: tableName
       },
       query: {
@@ -86,7 +86,7 @@ export class HttpInputOutputService {
    * The pipeline ingests data as it arrives without waiting for the end of
    * the request.  Successful HTTP response indicates that all data has been
    * ingested successfully.
-   * @param pipelineId Unique pipeline identifier.
+   * @param pipelineName Unique pipeline name
    * @param tableName SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program.
    * @param force When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`
    * @param format Input data format, e.g., 'csv' or 'json'.
@@ -97,7 +97,7 @@ export class HttpInputOutputService {
    * @throws ApiError
    */
   public static httpInput(
-    pipelineId: string,
+    pipelineName: string,
     tableName: string,
     force: boolean,
     format: string,
@@ -107,9 +107,9 @@ export class HttpInputOutputService {
   ): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/pipelines/{pipeline_id}/ingress/{table_name}',
+      url: '/v0/pipelines/{pipeline_name}/ingress/{table_name}',
       path: {
-        pipeline_id: pipelineId,
+        pipeline_name: pipelineName,
         table_name: tableName
       },
       query: {

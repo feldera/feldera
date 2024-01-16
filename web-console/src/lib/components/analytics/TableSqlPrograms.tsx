@@ -10,16 +10,8 @@ import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnV
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
-import {
-  ApiError,
-  ProgramDescr,
-  ProgramId,
-  ProgramsService,
-  ProgramStatus,
-  UpdateProgramRequest,
-  UpdateProgramResponse
-} from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { ApiError, ProgramDescr, ProgramsService, ProgramStatus } from '$lib/services/manager'
+import { mutationUpdateProgram, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -62,7 +54,7 @@ const getStatusChip = (status: ProgramStatus) =>
     })
     .exhaustive()
 
-const TableSqlPrograms = () => {
+export const TableSqlPrograms = () => {
   const [rows, setRows] = useState<ProgramDescr[]>([])
   const fetchQuery = useQuery(PipelineManagerQuery.programs())
   const { pushMessage } = useStatusNotification()
@@ -78,7 +70,7 @@ const TableSqlPrograms = () => {
       setTimeout(() => {
         const oldRow = rows.find(row => row.program_id === curRow.program_id)
         if (oldRow !== undefined) {
-          deleteMutation.mutate(curRow.program_id, {
+          deleteMutation.mutate(curRow.name, {
             onSuccess: () => {
               setRows(prevRows => prevRows.filter(row => row.program_id !== curRow.program_id))
             },
@@ -174,27 +166,15 @@ const TableSqlPrograms = () => {
   ]
 
   // Editing a row
-  const mutation = useMutation<
-    UpdateProgramResponse,
-    ApiError,
-    { program_id: ProgramId; request: UpdateProgramRequest }
-  >({
-    mutationFn: args => ProgramsService.updateProgram(args.program_id, args.request),
-    onSettled: () => {
-      invalidateQuery(queryClient, PipelineManagerQuery.programs())
-      invalidateQuery(queryClient, PipelineManagerQuery.pipelines())
-    }
-  })
+  const { mutate: updateProgram } = useMutation(mutationUpdateProgram(queryClient))
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
-    mutation.mutate(
+    updateProgram(
       {
-        program_id: newRow.program_id,
-        request: { description: newRow.description, name: newRow.name }
+        programName: oldRow.name,
+        update_request: { description: newRow.description, name: newRow.name }
       },
       {
         onError: (error: ApiError) => {
-          invalidateQuery(queryClient, PipelineManagerQuery.programs())
-          invalidateQuery(queryClient, PipelineManagerQuery.programStatus(newRow.name))
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
@@ -247,5 +227,3 @@ const TableSqlPrograms = () => {
     </Card>
   )
 }
-
-export default TableSqlPrograms

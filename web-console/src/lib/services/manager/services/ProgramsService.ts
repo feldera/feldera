@@ -67,7 +67,7 @@ export class ProgramsService {
   /**
    * Fetch a program by ID.
    * Fetch a program by ID.
-   * @param programId Unique program identifier
+   * @param programName Unique program name
    * @param withCode Option to include the SQL program code or not
    * in the Program objects returned by the query.
    * If false (default), the returned program object
@@ -75,12 +75,12 @@ export class ProgramsService {
    * @returns ProgramDescr Program retrieved successfully.
    * @throws ApiError
    */
-  public static getProgram(programId: string, withCode?: boolean | null): CancelablePromise<ProgramDescr> {
+  public static getProgram(programName: string, withCode?: boolean | null): CancelablePromise<ProgramDescr> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/programs/{program_id}',
+      url: '/v0/programs/{program_name}',
       path: {
-        program_id: programId
+        program_name: programName
       },
       query: {
         with_code: withCode
@@ -97,16 +97,16 @@ export class ProgramsService {
    *
    * Deletion fails if there is at least one pipeline associated with the
    * program.
-   * @param programId Unique program identifier
+   * @param programName Unique program name
    * @returns any Program successfully deleted.
    * @throws ApiError
    */
-  public static deleteProgram(programId: string): CancelablePromise<any> {
+  public static deleteProgram(programName: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/programs/{program_id}',
+      url: '/v0/programs/{program_name}',
       path: {
-        program_id: programId
+        program_name: programName
       },
       errors: {
         400: `Specified program id is referenced by a pipeline or is not a valid uuid.`,
@@ -125,20 +125,20 @@ export class ProgramsService {
    *
    * Changing only the program's name or description does not affect its
    * version or the compilation process.
-   * @param programId Unique program identifier
+   * @param programName Unique program name
    * @param requestBody
    * @returns UpdateProgramResponse Program updated successfully.
    * @throws ApiError
    */
   public static updateProgram(
-    programId: string,
+    programName: string,
     requestBody: UpdateProgramRequest
   ): CancelablePromise<UpdateProgramResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/v0/programs/{program_id}',
+      url: '/v0/programs/{program_name}',
       path: {
-        program_id: programId
+        program_name: programName
       },
       body: requestBody,
       mediaType: 'application/json',
@@ -156,17 +156,17 @@ export class ProgramsService {
    * The client can track a program's compilation status by pollling the
    * `/program/{program_id}` or `/programs` endpoints, and
    * then checking the `status` field of the program object
-   * @param programId Unique program identifier
+   * @param programName Unique program name
    * @param requestBody
    * @returns any Compilation request submitted.
    * @throws ApiError
    */
-  public static compileProgram(programId: string, requestBody: CompileProgramRequest): CancelablePromise<any> {
+  public static compileProgram(programName: string, requestBody: CompileProgramRequest): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'POST',
-      url: '/v0/programs/{program_id}/compile',
+      url: '/v0/programs/{program_name}/compile',
       path: {
-        program_id: programId
+        program_name: programName
       },
       body: requestBody,
       mediaType: 'application/json',

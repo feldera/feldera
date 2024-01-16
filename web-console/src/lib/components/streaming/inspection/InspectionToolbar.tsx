@@ -17,7 +17,7 @@ import { RowDeleteButton } from './RowDeleteButton'
 
 export const InspectionToolbar = (
   props: GridToolbarProps & {
-    pipelineId: string
+    pipelineName: string
     status: PipelineStatus
     relation: string
     isReadonly: boolean
@@ -30,14 +30,14 @@ export const InspectionToolbar = (
   const onDeleteRows = useCallback(
     (rows: Map<GridRowId, GridValidRowModel>) => {
       updateRows(
-        props.pipelineId,
+        props.pipelineName,
         props.relation,
         props.status !== PipelineStatus.RUNNING,
         Array.from(rows.values()).map(row => ({ delete: row.record }))
       )
       gridRef.current.setRowSelectionModel([])
     },
-    [props.pipelineId, props.relation, props.status, updateRows, gridRef]
+    [props.pipelineName, props.relation, props.status, updateRows, gridRef]
   )
   return (
     <GridToolbarContainer>

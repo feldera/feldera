@@ -1,5 +1,6 @@
 'use client'
 
+import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
 import { editor } from 'monaco-editor'
@@ -11,7 +12,6 @@ import { Editor, Monaco, useMonaco } from '@monaco-editor/react'
 import { useTheme } from '@mui/material'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
-import TextField from '@mui/material/TextField'
 
 export const GenericEditorForm = (props: {
   disabled?: boolean
@@ -36,7 +36,7 @@ export const GenericEditorForm = (props: {
         />
       </Grid>
       <Grid item sm={8} xs={12}>
-        <TextField
+        <TextFieldElement
           name='description'
           label='Description'
           size='small'
@@ -173,7 +173,7 @@ const JSONConfigEditor = (props: {
       onMount={handleEditorDidMount}
       theme={vscodeTheme}
       defaultLanguage='yaml'
-      options={{ domReadOnly: props.disabled, readOnly: props.disabled }}
+      options={isMonacoEditorDisabled(props.disabled)}
       {...{
         value: props.configToText(configText)
       }}

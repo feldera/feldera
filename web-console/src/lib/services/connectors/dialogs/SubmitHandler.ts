@@ -12,12 +12,11 @@ import {
   ConnectorsService,
   NewConnectorRequest,
   NewConnectorResponse,
-  UpdateConnectorRequest,
-  UpdateConnectorResponse
+  UpdateConnectorRequest
 } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
-import { Dispatch } from 'react'
+import { mutationUpdateConnector, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { FieldValues, SubmitHandler } from 'react-hook-form'
+import invariant from 'tiny-invariant'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -25,7 +24,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 //
 // Display success or error status message on completion.
 export const useNewConnectorRequest = <TData extends FieldValues>(
-  onFormSubmitted: (connector: ConnectorDescr | undefined) => void,
+  onSuccess: (connector: ConnectorDescr, oldConnectorName: string) => void,
+  onSettled: () => void,
   getRequestData: (data: TData) => NewConnectorRequest
 ): SubmitHandler<TData> => {
   const queryClient = useQueryClient()
@@ -40,18 +40,22 @@ export const useNewConnectorRequest = <TData extends FieldValues>(
       return
     }
     const sourceDesc = getRequestData(data)
+    invariant(sourceDesc.name, 'Client error: cannot create connector - empty name!')
     newConnector(sourceDesc, {
+      onSettled,
       onSuccess: resp => {
-        invalidateQuery(queryClient, PipelineManagerQuery.connector())
+        invalidateQuery(queryClient, PipelineManagerQuery.connectors())
         pushMessage({ message: 'Connector created successfully!', key: new Date().getTime(), color: 'success' })
-        onFormSubmitted({
-          connector_id: resp.connector_id,
-          ...sourceDesc
-        })
+        onSuccess(
+          {
+            connector_id: resp.connector_id,
+            ...sourceDesc
+          },
+          sourceDesc.name
+        )
       },
       onError: error => {
         pushMessage({ message: error.body.message ?? error.body, key: new Date().getTime(), color: 'error' })
-        onFormSubmitted(undefined)
       }
     })
   }
@@ -67,44 +71,38 @@ export const useUpdateConnectorRequest = <
   config: ConnectorConfig
 }*/ FieldValues
 >(
-  onFormSubmitted: (connector: ConnectorDescr | undefined) => void,
-  getRequestData: (data: TData) => [ConnectorId, UpdateConnectorRequest]
+  onSuccess: (connector: ConnectorDescr, oldConnectorName: string) => void,
+  onSettled: () => void,
+  getRequestData: (data: TData) => [{ connectorId: ConnectorId; connectorName: string }, UpdateConnectorRequest]
 ): SubmitHandler<TData> => {
   const queryClient = useQueryClient()
   const { pushMessage } = useStatusNotification()
 
-  const { mutate: updateConnector, isPending } = useMutation<
-    UpdateConnectorResponse,
-    ApiError,
-    { connector_id: ConnectorId; request: UpdateConnectorRequest }
-  >({
-    mutationFn: args => ConnectorsService.updateConnector(args.connector_id, args.request)
-  })
+  const { mutate: updateConnector, isPending } = useMutation(mutationUpdateConnector(queryClient))
 
   return (data: TData) => {
     if (isPending) {
       return
     }
-    const [connector_id, request] = getRequestData(data)
+    const [{ connectorId, connectorName }, request] = getRequestData(data)
     updateConnector(
-      { connector_id, request },
+      { connectorName, request },
       {
-        onSettled: () => {
-          invalidateQuery(queryClient, PipelineManagerQuery.connector())
-          invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(connector_id))
-        },
+        onSettled,
         onSuccess: () => {
           pushMessage({ message: 'Connector updated successfully!', key: new Date().getTime(), color: 'success' })
-          onFormSubmitted({
-            connector_id: connector_id,
-            name: request.name,
-            description: request.description,
-            config: request.config!
-          })
+          onSuccess(
+            {
+              connector_id: connectorId,
+              name: request.name,
+              description: request.description,
+              config: request.config!
+            },
+            connectorName
+          )
         },
         onError: error => {
           pushMessage({ message: error.body.message ?? error.body, key: new Date().getTime(), color: 'error' })
-          onFormSubmitted(undefined)
         }
       }
     )
@@ -114,29 +112,23 @@ export const useUpdateConnectorRequest = <
 export const useConnectorRequest = <T extends FieldValues, R>(
   connector: ConnectorDescr | undefined,
   prepareData: (t: T) => R,
-  onSuccess: Dispatch<ConnectorDescr> | undefined,
+  onSuccess: ((connector: ConnectorDescr, oldConnectorName: string) => void) | undefined,
   handleClose: () => void
 ) => {
-  const onFormSubmitted = (connector: ConnectorDescr | undefined) => {
-    handleClose()
-    if (connector !== undefined && onSuccess !== undefined) {
-      onSuccess(connector)
-    }
-  }
-
-  const newRequest = (data: T) => prepareData(data) as NewConnectorRequest
-
-  const updateRequest = (data: T) => tuple(connector!.connector_id, prepareData(data) as UpdateConnectorRequest)
-
   // error: React Hook "..." is called conditionally.
   //        React Hooks must be called in the exact same order in every component render
   // TODO: connector won't change during lifetime. Figure out how to refactor to avoid the warning
   const onSubmit =
     connector === undefined
       ? /* eslint-disable react-hooks/rules-of-hooks */
-        useNewConnectorRequest(onFormSubmitted, newRequest)
+        useNewConnectorRequest(onSuccess ?? (() => {}), handleClose, prepareData as (data: T) => NewConnectorRequest)
       : /* eslint-disable react-hooks/rules-of-hooks */
-        useUpdateConnectorRequest(onFormSubmitted, updateRequest)
+        (updateRequest => useUpdateConnectorRequest(onSuccess ?? (() => {}), handleClose, updateRequest))((data: T) =>
+          tuple(
+            { connectorId: connector.connector_id, connectorName: connector.name },
+            prepareData(data) as UpdateConnectorRequest
+          )
+        )
 
   return onSubmit
 }

@@ -4,6 +4,7 @@
 /* eslint-disable */
 
 import type { ErrorResponse } from './ErrorResponse'
+import type { PipelineId } from './PipelineId'
 import type { PipelineStatus } from './PipelineStatus'
 
 /**
@@ -22,6 +23,7 @@ export type PipelineRuntimeState = {
    * e.g., a TCP port number or a URI.
    */
   location: string
+  pipeline_id: PipelineId
   /**
    * Time when the pipeline was assigned its current status
    * of the pipeline.
