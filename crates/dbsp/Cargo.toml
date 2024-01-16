@@ -40,7 +40,7 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 impl-trait-for-tuples = "0.2"
 itertools = "0.10.5"
 textwrap = "0.15.0"
-ordered-float = { version = "3.9.1", features = ["serde", "rkyv_64"] }
+ordered-float = { version = "3.9.1", features = ["serde", "rkyv_64", ] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
 rocksdb = { version = "0.21", default-features = false, features = [
@@ -50,15 +50,17 @@ uuid = { version = "1.1.2", features = ["v4"], optional = true }
 arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
-rust_decimal = "1.29"
+# Revert after https://github.com/paupino/rust-decimal/pull/637 is merged:
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 # Go back to rkyv repo once https://github.com/rkyv/rkyv/pull/462 is merged:
 rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
 # Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
-size-of = { git = "https://github.com/gz/size-of.git", rev = "3013071", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
 tarpc = { version = "0.33.0", features = ["full"] }
 futures = "0.3"
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
 log = "0.4.20"
+paste = "1"
 
 [dev-dependencies]
 csv = "1.2.2"

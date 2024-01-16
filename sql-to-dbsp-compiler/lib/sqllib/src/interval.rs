@@ -30,6 +30,8 @@ use std::{fmt::Debug, ops::Mul};
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 #[serde(transparent)]
 pub struct ShortInterval {
     milliseconds: i64,
@@ -92,6 +94,8 @@ deserialize_without_context!(ShortInterval);
     Serialize,
     Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 #[serde(transparent)]
 pub struct LongInterval {
     days: i32,

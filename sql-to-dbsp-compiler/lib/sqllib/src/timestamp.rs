@@ -38,6 +38,8 @@ use crate::{
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Timestamp {
     // since unix epoch
     milliseconds: i64,
@@ -372,6 +374,8 @@ some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Date {
     // since unix epoch
     days: i32,
@@ -699,6 +703,8 @@ some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct Time {
     nanoseconds: u64,
 }

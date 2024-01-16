@@ -253,12 +253,16 @@
 //! The compiler will point out a problem: `Record` lacks several traits
 //! required for the record type of the "Z-sets".  We need `SizeOf` from the
 //! `size_of` crate and `Archive`, `Serialize`, and `Deserialize` from the
-//! `rkyv` crate.  We can derive all of them:
+//! `rkyv` crate. We also need some special annotations from `rkyv` with
+//! `archive_attr` and `archive` to establish relationships between serialized
+//! and deserialized types.
+//!
+//! We can derive all of them:
 //!
 //! ```
 //! use rkyv::{Archive, Serialize};
 //! use size_of::SizeOf;
-//! use chrono::NaiveDate;
+//! # use chrono::NaiveDate;
 //!
 //! #[derive(
 //!     Clone,
@@ -595,12 +599,17 @@
 //! ```ignore
 //!     let monthly_totals = subset
 //!         .index_with(|r| {
-//!             (
-//!                 (r.location.clone(), r.date.year(), r.date.month() as u8),
+//!             Tup2(
+//!                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
 //!                 r.daily_vaccinations.unwrap_or(0),
 //!             )
 //!         })
 //! ```
+//!
+//! > 💡 In DBSP we use our own Tuple types (from [`crate::utils`]) instead of
+//! Rust tuples for certain operators or data that lives in Z-sets. This is
+//! because dbsp needs to satisfy trait-bounds on the tuples that Rust
+//! tuples don't have.
 //!
 //! We need to clone the location because it is a `String` that the records
 //! incorporate by value.
@@ -726,8 +735,8 @@
 //! `vaccinations` value like this:
 //!
 //! ```ignore
-//!     let moving_averages = monthly_totals
-//!         .map_index(|((l, y, m), v)| (l.clone(), (*y as u32 * 12 + (*m as u32 - 1), *v)))
+//! let moving_averages = monthly_totals
+//!     .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
 //! ```
 //!
 //! Once we've done that, computing the moving average is easy.  Here's how we
@@ -735,7 +744,7 @@
 //! they're in the data set):
 //!
 //! ```ignore
-//!         .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
+//! .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
 //! ```
 //!
 //! [`partitioned_rolling_average`](`Stream::partitioned_rolling_average`)
@@ -751,7 +760,7 @@
 //! to strip off the `Option`:
 //!
 //! ```ignore
-//!         .map_index(|(l, (date, avg))| ((l.clone(), date / 12, date % 12 + 1), avg.unwrap()));
+//! .map_index(|(l, Tup2(date, avg))| (Tup3(l.clone(), date / 12, date % 12 + 1), avg.unwrap()));
 //! ```
 //!
 //! If we adjust the `build_circuit` return type and return value, like shown
@@ -871,9 +880,9 @@
 //! this; only the `as <type>` parts are new:
 //!
 //! ```ignore
-//!         .map_index(|(l, (date, avg))| {
+//!         .map_index(|(l, Tup2(date, avg))| {
 //!             (
-//!                 (l.clone(), (date / 12) as i32, (date % 12 + 1) as u8),
+//!                 Tup3(l.clone(), (date / 12) as i32, (date % 12 + 1) as u8),
 //!                 avg.unwrap(),
 //!             )
 //!         });
@@ -892,8 +901,8 @@
 //! one value, so it's convenient for this purpose:
 //!
 //! ```ignore
-//!     let joined = monthly_totals.join_index(&moving_averages, |(l, y, m), cur, avg| {
-//!         Some(((l.clone(), *y, *m), (*cur, *avg)))
+//!     let joined = monthly_totals.join_index(&moving_averages, |Tup3(l, y, m), cur, avg| {
+//!         Some((Tup3(l.clone(), *y, *m), (*cur, *avg)))
 //!     });
 //!  ```
 //!
@@ -928,8 +937,9 @@
 //! ) -> Result<( CollectionHandle<Record, i64>,
 //!   OutputHandle<OrdIndexedZSet<Tup3<String, i32, u8>, (i64, i64), i64>>,
 //! )> {
-//!     let (input_stream, input_handle) = circuit.add_input_zset::<Record,
-//! i64>();     // ... #     let subset = input_stream.filter(|r| {
+//!     let (input_stream, input_handle) =
+//!             circuit.add_input_zset::<Record, i64>();      
+//!     // ... #     let subset = input_stream.filter(|r| {
 //! #         r.location == "England"
 //! #             || r.location == "Northern Ireland"
 //! #             || r.location == "Scotland"
@@ -976,7 +986,7 @@
 //!     output_handle
 //!         .consolidate()
 //!         .iter()
-//!         .for_each(|((l, y, m), (cur, avg), w)| {
+//!         .for_each(|(Tup3(l, y, m), (cur, avg), w)| {
 //!             println!("{l:16} {y}-{m:02} {cur:10} {avg:10}: {w:+}")
 //!         });
 //!     Ok(())
@@ -1018,8 +1028,23 @@
 //!
 //! ```rust
 //! # use size_of::SizeOf;
-//!
-//! #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, SizeOf)]
+//! # use rkyv::{Archive, Serialize};
+//! #[derive(
+//!     Clone,
+//!     Debug,
+//!     Eq,
+//!     PartialEq,
+//!     Ord,
+//!     PartialOrd,
+//!     Hash,
+//!     SizeOf,
+//!     Archive,
+//!     Serialize,
+//!     rkyv::Deserialize,
+//!     serde::Deserialize,
+//! )]
+//! #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+//! #[archive(compare(PartialEq, PartialOrd))]
 //! struct VaxMonthly {
 //!     count: u64,
 //!     year: i32,
@@ -1033,18 +1058,18 @@
 //! [`topk_desc`](`Stream::topk_desc`):
 //!
 //! ```ignore
-//!     let most_vax = monthly_totals
-//!         .map_index(|((l, y, m), sum)| {
-//!             (
-//!                 l.clone(),
-//!                 VaxMonthly {
-//!                     count: *sum as u64,
-//!                     year: *y,
-//!                     month: *m,
-//!                 },
-//!             )
-//!         })
-//!         .topk_desc(3);
+//! let most_vax = monthly_totals
+//!     .map_index(|(Tup3(l, y, m), sum)| {
+//!         (
+//!             l.clone(),
+//!             VaxMonthly {
+//!                 count: *sum as u64,
+//!                 year: *y,
+//!                 month: *m,
+//!             },
+//!         )
+//!     })
+//!     .topk_desc(3);
 //! ```
 //!
 //! Then we just adjust `build_circuit` return type and value and print the new

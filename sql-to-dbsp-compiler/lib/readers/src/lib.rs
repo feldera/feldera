@@ -83,7 +83,7 @@ declare_tuples! {
 
 #[test]
 fn csv_test() {
-    let src = read_csv::<Tuple3<bool, Option<String>, Option<u32>>, isize>("src/test.csv");
+    let src = read_csv::<Tuple3<bool, Option<String>, Option<u32>>, i64>("src/test.csv");
     assert_eq!(
         zset!(
             Tuple3::new(true, Some(String::from("Mihai")),Some(0)) => 1,
@@ -112,12 +112,12 @@ async fn sql_test_sqlite() {
             .unwrap();
         conn.close();
     }
-    let zset = read_db::<Tuple3<i32, String, bool>, isize>(conn_str, "t1", |row: &AnyRow| {
+    let zset = read_db::<Tuple3<i32, String, bool>, i64>(conn_str, "t1", |row: &AnyRow| {
         Tuple3::new(row.get(0), row.get(1), row.get(2))
     });
     assert_eq!(
         zset!(
-            Tuple3::new(73, String::from("name1"), true) => 1isize,
+            Tuple3::new(73i32, String::from("name1"), true) => 1i64,
         ),
         zset
     );

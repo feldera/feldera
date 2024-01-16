@@ -24,6 +24,8 @@ use size_of::*;
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct GeoPoint(F64, F64);
 
 num_entries_scalar! {

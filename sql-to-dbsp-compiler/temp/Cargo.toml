@@ -9,26 +9,26 @@ publish = false
 [dependencies]
 paste = { version = "1.0.12" }
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
-dbsp = { path = "../../crates/dbsp", features = ["with-serde"], default-features = false }
-dbsp_adapters = { path = "../../crates/adapters", default-features = false }
+dbsp = { path = "../../crates/dbsp", features = ["with-serde"] }
+dbsp_adapters = { path = "../../crates/adapters" }
 tuple = { path = "../lib/tuple" }
 sqllib = { path = "../lib/sqllib" }
 sqlvalue = { path = "../lib/sqlvalue" }
 serde = { version = "1.0", features = ["derive"] }
 compare = { version = "0.1.0" }
-size-of = { version = "0.1.1" }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db" }
 geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
-rust_decimal = { version = "1.29" }
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 serde_json = { version = "1.0.89" }
 chrono = { version = "0.4.31" }
-rkyv = "0.7.42"
+rkyv = { version = "0.7", default-features = false, features = ["std", "size_64"] }
 num = "0.4.1"
 
 [dev-dependencies]
 hashing = { path = "../lib/hashing" }
 readers = { path = "../lib/readers" }
-sqlx = { version = "0.6", features = [ "runtime-async-std-native-tls", "sqlite", "any" ] }
+sqlx = { version = "0.6", features = ["runtime-async-std-native-tls", "sqlite", "any"] }
 
 [lib]
 path = "src/lib.rs"
@@ -39,3 +39,8 @@ doctest = false
 incremental = false
 # Without this in debug builds overflows cause panics
 overflow-checks = false
+
+[patch.crates-io]
+rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86" }
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db" }
