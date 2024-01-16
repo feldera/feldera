@@ -425,8 +425,7 @@ export default function PipelineTable() {
       flex: 2,
       valueGetter: params => params.row.descriptor.name,
       valueSetter: (params: GridValueSetterParams) => {
-        params.row.descriptor.name = params.value
-        return params.row
+        return { ...params.row, descriptor: { ...params.row.descriptor, name: params.value } }
       }
     },
     {
@@ -436,8 +435,7 @@ export default function PipelineTable() {
       flex: 3,
       valueGetter: params => params.row.descriptor.description,
       valueSetter: (params: GridValueSetterParams) => {
-        params.row.descriptor.description = params.value
-        return params.row
+        return { ...params.row, descriptor: { ...params.row.descriptor, description: params.value } }
       }
     },
     {

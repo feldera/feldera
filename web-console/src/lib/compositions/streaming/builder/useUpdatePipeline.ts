@@ -3,7 +3,7 @@ import useStatusNotification from '$lib/components/common/errors/useStatusNotifi
 import { UpdatePipelineRequest } from '$lib/services/manager'
 import { mutationUpdatePipeline, pipelineQueryCacheUpdate } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/navigation'
-import { Dispatch, SetStateAction, useCallback, useEffect } from 'react'
+import { Dispatch, SetStateAction, useEffect } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
 import { create } from 'zustand'
 
