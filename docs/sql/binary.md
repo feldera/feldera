@@ -45,4 +45,29 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td>Generate a `VARCHAR` string describing the value in hexadecimal</td>
     <td><code>TO_HEX(x'0abc')</code> => <code>'0ABC'</code></td>
   </tr>
+  <tr>
+    <td><code>POSITION</code>(binary1 IN binary2)</td>
+    <td>Returns the position of the first occurrence of binary1 in binary2</td>
+    <td><code>POSITION(x'20' IN x'102023')</code> => <code>2</code></td>
+  </tr>
+  <tr>
+    <td><code>OCTET_LENGTH</code>(binary)</td>
+    <td>Returns the number of bytes in the binary</td>
+    <td><code>OCTET_LENGTH(x'0abc')</code> => <code>2</code></td>
+  </tr>
+  <tr>
+    <td><code>SUBSTRING</code>(binary FROM integer)</td>
+    <td>Generate a substring of binary starting at the given point. If the start position integer is negative, the substring starts at the position 0</td>
+    <td><code>SUBSTRING(x'123456', 3)</code> => <code>x'56'</code></td>
+  </tr>
+  <tr>
+    <td><code>SUBSTRING</code>(binary FROM integer1 FOR integer2)</td>
+    <td>Generate a substring of binary starting at the given point with a given length. If the start position integer is negative, the substring starts at the position 0</td>
+    <td><code>SUBSTRING(x'1234567890', 3, 2)</code> => <code>x'5678'</code></td>
+  </tr>
+  <tr>
+    <td><code>OVERLAY</code>(binary1 PLACING binary2 FROM integer [ FOR integer2 ])</td>
+    <td>Generate a binary string that replaces substring of binary1 with binary2. If the start position integer is negative, the new string will contain binary2 in position 0</td>
+    <td><code>SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3)</code> => <code>x'12020390'</code></td>
+  </tr>
 </table>
