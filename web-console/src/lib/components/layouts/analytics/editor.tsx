@@ -153,7 +153,7 @@ const useCreateProgramEffect = (
       onError: (error: ApiError) => {
         // TODO: would be good to have error codes from the API
         if (error.message.includes('name already exists')) {
-          setFormError({ name: { message: 'This name is already used. Enter a different name.' } })
+          setFormError({ name: { message: 'This name is already in use. Enter a different name.' } })
           setStatus('isNew')
         } else {
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
@@ -204,7 +204,7 @@ const useUpdateProgram = (
         onError: (error: ApiError) => {
           // TODO: would be good to have error codes from the API
           if (error.message.includes('name already exists')) {
-            setFormError({ name: { message: 'This name already exists. Enter a different name.' } })
+            setFormError({ name: { message: 'This name is already in use. Enter a different name.' } })
             setStatus('isUpToDate')
           } else {
             pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
@@ -428,7 +428,9 @@ export const ProgramEditor = ({ programName }: { programName: string }) => {
   return (
     <>
       <BreadcrumbsHeader>
-        <Link href={`/analytics/programs`}>SQL Programs</Link>
+        <Link href={`/analytics/programs`} data-testid='button-breadcrumb-sql-programs'>
+          SQL Programs
+        </Link>
         <Link href={`/analytics/editor/?program_name=${programName}`}>{programName}</Link>
       </BreadcrumbsHeader>
       <ProgramEditorImpl

@@ -95,7 +95,7 @@ const useCreatePipelineEffect = (
       onError: (error: ApiError) => {
         // TODO: would be good to have error codes from the API
         if (error.message.includes('name already exists')) {
-          setFormError({ name: { message: 'This name is already used. Enter a different name.' } })
+          setFormError({ name: { message: 'This name is already in use. Enter a different name.' } })
           setStatus('isNew')
         } else {
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })

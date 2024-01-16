@@ -55,7 +55,7 @@ export const useUpdatePipeline = <FormError extends { name?: { message: string }
       mutation.onError?.(error, _args, context)
       // TODO: would be good to have error codes from the API
       if (error.message.includes('name already exists')) {
-        setFormError({ name: { message: 'This name already exists. Enter a different name.' } } as FormError)
+        setFormError({ name: { message: 'This name is already in use. Enter a different name.' } } as FormError)
         setStatus('isUpToDate')
       } else {
         pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
