@@ -383,11 +383,16 @@ where
         retain_key_func: RK,
     ) -> Stream<C, Spine<B>>
     where
-        B: Batch<Time = ()>,
+        B: Batch<Time = ()> + Send,
         TS: DBData,
         RK: Fn(&B::Key, &TS) -> bool + Clone + 'static,
     {
-        let (trace, bounds) = self.integrate_trace_inner();
+        // The following `shard` is important.  It makes sure that the
+        // bound is applied to the sharded version of the stream, which is what
+        // all operators that come with a retainment policy use today.
+        // If this changes in the future, we may need two versions of the operator,
+        // with and without sharding.
+        let (trace, bounds) = self.shard().integrate_trace_inner();
 
         bounds_stream.inspect(move |ts| {
             let ts = ts.clone();
@@ -408,11 +413,16 @@ where
         retain_value: RV,
     ) -> Stream<C, Spine<B>>
     where
-        B: Batch<Time = ()>,
+        B: Batch<Time = ()> + Send,
         TS: DBData,
         RV: Fn(&B::Val, &TS) -> bool + Clone + 'static,
     {
-        let (trace, bounds) = self.integrate_trace_inner();
+        // The following `shard` is important.  It makes sure that the
+        // bound is applied to the sharded version of the stream, which is what
+        // all operators that come with a retainment policy use today.
+        // If this changes in the future, we may need two versions of the operator,
+        // with and without sharding.
+        let (trace, bounds) = self.shard().integrate_trace_inner();
 
         bounds_stream.inspect(move |ts| {
             let ts = ts.clone();
