@@ -116,12 +116,12 @@ where
         <C as WithClock>::Time: DBTimestamp,
     {
         let circuit = self.circuit();
+        let stream = self.shard();
+
         circuit
             .cache_get_or_insert_with(
-                DistinctIncrementalId::new(self.origin_node_id().clone()),
+                DistinctIncrementalId::new(stream.origin_node_id().clone()),
                 || {
-                    let stream = self.shard();
-
                     circuit.region("distinct", || {
                         if circuit.root_scope() == 0 {
                             // Use an implementation optimized to work in the root scope.
