@@ -261,7 +261,7 @@ export const mutationUpdateProgram = (
     setQueryData(queryClient, PipelineManagerQuery.programCode(programName), updateCache)
     setQueryData(queryClient, PipelineManagerQuery.programStatus(programName), updateCache)
   },
-  onSettled(_data, _error, variables, _context) {
+  onSuccess(_data, variables, _context) {
     invalidateQuery(queryClient, PipelineManagerQuery.programStatus(variables.programName))
     invalidateQuery(queryClient, PipelineManagerQuery.programCode(variables.programName))
     invalidateQuery(queryClient, PipelineManagerQuery.programs())

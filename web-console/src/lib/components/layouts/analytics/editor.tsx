@@ -361,45 +361,39 @@ export const ProgramEditorImpl = ({
   useDisplayCompilerErrorsInEditor(program, editorRef)
 
   return (
-    <>
-      <BreadcrumbsHeader>
-        <Link href={`/analytics/programs`}>SQL Programs</Link>
-        <Link href={`/analytics/editor/?program_name=${program.name}`}>{program.name}</Link>
-      </BreadcrumbsHeader>
-      <Card>
-        <CardHeader title='SQL Code'></CardHeader>
-        <CardContent>
-          <MetadataForm
-            disabled={status === 'isLoading'}
-            programName={program.name}
-            program={program}
-            updateProgram={updateProgram}
-            errors={formError}
-          />
-        </CardContent>
-        <CardContent>
-          <Grid item xs={12}>
-            <EntitySyncIndicator getLabel={stateToEditorLabel} state={status} />
-            <CompileIndicator state={program.status} />
-          </Grid>
-        </CardContent>
-        <CardContent>
-          <Editor
-            height='60vh'
-            theme={vscodeTheme}
-            defaultLanguage='sql'
-            value={program.code || ''}
-            onChange={updateCode}
-            onMount={editor => handleEditorDidMount(editor)}
-            wrapperProps={{
-              'data-testid': 'box-program-code-wrapper'
-            }}
-            options={isMonacoEditorDisabled(status === 'isLoading')}
-          />
-        </CardContent>
-        <Divider sx={{ m: '0 !important' }} />
-      </Card>
-    </>
+    <Card>
+      <CardHeader title='SQL Code'></CardHeader>
+      <CardContent>
+        <MetadataForm
+          disabled={status === 'isLoading'}
+          programName={program.name}
+          program={program}
+          updateProgram={updateProgram}
+          errors={formError}
+        />
+      </CardContent>
+      <CardContent>
+        <Grid item xs={12}>
+          <EntitySyncIndicator getLabel={stateToEditorLabel} state={status} />
+          <CompileIndicator state={program.status} />
+        </Grid>
+      </CardContent>
+      <CardContent>
+        <Editor
+          height='60vh'
+          theme={vscodeTheme}
+          defaultLanguage='sql'
+          value={program.code || ''}
+          onChange={updateCode}
+          onMount={editor => handleEditorDidMount(editor)}
+          wrapperProps={{
+            'data-testid': 'box-program-code-wrapper'
+          }}
+          options={isMonacoEditorDisabled(status === 'isLoading')}
+        />
+      </CardContent>
+      <Divider sx={{ m: '0 !important' }} />
+    </Card>
   )
 }
 
@@ -416,7 +410,8 @@ export const ProgramEditor = ({ programName }: { programName: string }) => {
       program_id: '',
       status: 'None',
       version: 0
-    }
+    },
+    refetchOnWindowFocus: false
   })
   const program = programQuery.data
   invariant(program, 'Program should be initialized with a default value')
@@ -431,12 +426,18 @@ export const ProgramEditor = ({ programName }: { programName: string }) => {
   const updateProgram = useUpdateProgram(programName, setStatus, setFormError)
 
   return (
-    <ProgramEditorImpl
-      {...{
-        program,
-        updateProgram
-      }}
-      {...{ status, setStatus, formError, setFormError }}
-    ></ProgramEditorImpl>
+    <>
+      <BreadcrumbsHeader>
+        <Link href={`/analytics/programs`}>SQL Programs</Link>
+        <Link href={`/analytics/editor/?program_name=${programName}`}>{programName}</Link>
+      </BreadcrumbsHeader>
+      <ProgramEditorImpl
+        {...{
+          program,
+          updateProgram
+        }}
+        {...{ status, setStatus, formError, setFormError }}
+      ></ProgramEditorImpl>
+    </>
   )
 }
