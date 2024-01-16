@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 dbsp = { path = "../../../crates/dbsp", default-features = false }
-rust_decimal = { version = "1.29" }
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 sqllib = { path = "../sqllib" }

@@ -12,5 +12,4 @@ debug = true
 [patch.crates-io]
 rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86" }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
-#rust_decimal = { path = "../rust-decimal" }
-size-of = { git = "https://github.com/gz/size-of.git", rev = "3013071" }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db" }

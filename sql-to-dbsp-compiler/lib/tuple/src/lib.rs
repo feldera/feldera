@@ -31,12 +31,19 @@ macro_rules! declare_tuples {
         $(,)?
     ) => {
         $(
-            #[derive(Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, SizeOf, Add, Neg, AddAssign, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-            pub struct $tuple_name<$($element,)*>($(pub $element,)*);
+            paste! {
+                #[derive(Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, size_of::SizeOf, Add, Neg, AddAssign, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+                #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+                #[archive(bound(
+                    archive = $( "" $element "" ": rkyv::Archive, ")* "" $( "<" $element "" " as rkyv::Archive>::Archived: Ord, ")*
+                ))]
+                #[archive(compare(PartialEq, PartialOrd))]
+                pub struct $tuple_name<$($element,)*>($(pub $element,)*);
+            }
 
             dbsp_adapters::deserialize_without_context!($tuple_name, $($element),*);
 
-            /*
+            /*$(<$element as Archive>::Archived: Ord, )*
             Expands to:
             impl<T0, T1> Tuple2<T0, T1> {
                fn new(T0: T0, T1: T1) -> Self {
@@ -281,8 +288,8 @@ macro_rules! declare_tuples {
                  }
              }
              */
-            impl<$($element: Debug),*> Debug for $tuple_name<$($element),*> {
-                fn fmt(&self, f: &mut Formatter) -> FmtResult {
+            impl<$($element: core::fmt::Debug),*> core::fmt::Debug for $tuple_name<$($element),*> {
+                fn fmt(&self, f: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error>  {
                     let $tuple_name($($element),*) = self;
                     f.debug_tuple("")
                         $(.field(&$element))*

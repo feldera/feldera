@@ -22,6 +22,8 @@ use std::fmt::Debug;
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 pub struct ByteArray {
     data: Vec<u8>,
 }

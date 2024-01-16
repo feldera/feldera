@@ -40,7 +40,7 @@ actix-web = { version = "4.4.0", default-features = false, features = ["cookies"
 mime = "0.3.16"
 log = "0.4.20"
 # Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
-size-of = { git = "https://github.com/gz/size-of.git", rev = "3013071", features = ["time-std", "ordered-float"], optional = true }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features = ["time-std", "ordered-float"], optional = true }
 futures = { version = "0.3.28" }
 futures-util = { version = "0.3.28" }
 proptest = { version = "1.0.0", optional = true }
@@ -59,7 +59,8 @@ rustls = "0.20.8"
 lazy_static = "1.4.0"
 rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
 csv-core = "0.1.10"
-rust_decimal = "1.32.0"
+# Revert after https://github.com/paupino/rust-decimal/pull/637 is merged:
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 rand = "0.8.5"
 regex = "1.10.2"
 
@@ -70,7 +71,7 @@ psutil = "3.2.2"
 actix-test = "0.1.1"
 bstr = { version = "0.2.1", features = ["serde1"] }
 serde_json = "1.0.89"
-size-of = { git = "https://github.com/gz/size-of.git", rev = "3013071", features = ["time-std", "ordered-float"] }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features = ["time-std", "ordered-float"] }
 tempfile = "3.3.0"
 proptest = "1.0.0"
 proptest-derive = "0.3.0"

@@ -454,7 +454,16 @@ impl Compiler {
         program_id: ProgramId,
     ) -> Result<(), ManagerError> {
         let workspace_toml_code = format!(
-            "[workspace]\nmembers = [ \"{}\" ]\n",
+            "
+[workspace]
+members = [ \"{}\" ]
+resolver = \"2\"
+
+[patch.crates-io]
+rkyv = {{ git = \"https://github.com/gz/rkyv.git\", rev = \"3d3fd86\" }}
+rust_decimal = {{ git = \"https://github.com/gz/rust-decimal.git\", rev = \"ea85fdf\" }}
+size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
+",
             CompilerConfig::crate_name(program_id),
         );
         let toml_path = config.workspace_toml_path();
@@ -477,7 +486,6 @@ impl Compiler {
         let program_name = format!("name = \"{}\"", CompilerConfig::crate_name(program_id));
         let mut project_toml_code = template_toml
             .replace("name = \"temp\"", &program_name)
-            .replace(", default-features = false", "")
             .replace(
                 "[lib]\npath = \"src/lib.rs\"",
                 &format!("\n\n[[bin]]\n{program_name}\npath = \"src/main.rs\""),

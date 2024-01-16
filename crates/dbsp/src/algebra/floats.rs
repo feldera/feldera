@@ -1,5 +1,6 @@
 use crate::algebra::{HasOne, HasZero};
 use ordered_float::OrderedFloat;
+use paste::paste;
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display},
@@ -15,16 +16,17 @@ use serde::{Deserialize, Serialize};
 macro_rules! float {
     ($($outer:ident($inner:ident)),* $(,)?) => {
         $(
+            paste!{
             #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that allows using it in a DBSP stream.")]
-            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf)]
+            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
             #[repr(transparent)]
             #[size_of(skip_all)]
             #[cfg_attr(feature = "with-serde", derive(Serialize, Deserialize))]
             #[cfg_attr(feature = "with-serde", serde(transparent))]
-            #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
             #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
             #[archive(compare(PartialEq, PartialOrd))]
             pub struct $outer(OrderedFloat<$inner>);
+            }
 
             impl $outer {
                 pub const EPSILON: Self = Self::new($inner::EPSILON);

@@ -16,6 +16,41 @@ use std::fmt::{self, Debug, Formatter};
 use rkyv::Archive;
 use size_of::SizeOf;
 
+/// A one-tuple.
+#[derive(
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    SizeOf,
+    Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+#[archive(bound(archive = "T1: Archive, <T1 as Archive>::Archived: Ord"))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct Tup1<T1>(pub T1);
+
+impl<T1: Copy> Copy for Tup1<T1> {}
+
+impl<T1> From<(T1,)> for Tup1<T1> {
+    fn from((t1,): (T1,)) -> Self {
+        Self(t1)
+    }
+}
+
+impl<T1: Debug> Debug for Tup1<T1> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Tup1").field(&self.0).finish()
+    }
+}
+
 /// A two-tuple.
 #[derive(
     Clone,
