@@ -291,14 +291,6 @@ const PipelineBuilderPage = ({
 
   return (
     <>
-      <BreadcrumbsHeader>
-        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
-          Pipelines
-        </Link>
-        <Link href={`/streaming/builder/?pipeline_name=${pipeline.name}`} data-testid='button-breadcrumb-pipeline-name'>
-          {pipeline.name}
-        </Link>
-      </BreadcrumbsHeader>
       <Grid container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
         <Grid item xs={12}>
           <Card>
@@ -402,7 +394,8 @@ export default () => {
   const pipelineQuery = useQuery({
     ...PipelineManagerQuery.pipelineStatus(pipelineName),
     enabled: !!pipelineName,
-    initialData: defaultPipelineData
+    initialData: defaultPipelineData,
+    refetchOnWindowFocus: false
   })
   const pipeline = pipelineQuery.data?.descriptor
   invariant(pipeline, 'Pipeline should be initialized with a default value')
@@ -423,6 +416,14 @@ export default () => {
 
   return (
     <ReactFlowProvider>
+      <BreadcrumbsHeader>
+        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
+          Pipelines
+        </Link>
+        <Link href={`/streaming/builder/?pipeline_name=${pipelineName}`} data-testid='button-breadcrumb-pipeline-name'>
+          {pipelineName}
+        </Link>
+      </BreadcrumbsHeader>
       <PipelineBuilderPage
         {...{
           pipeline,

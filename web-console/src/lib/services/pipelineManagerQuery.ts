@@ -309,11 +309,9 @@ export const mutationUpdatePipeline = (
         args.request.program_name === undefined ? pipeline?.descriptor.program_name : args.request.program_name
     })
   },
-  onSettled: (_data, _error, variables, _context) => {
+  onSuccess: (_data, variables, _context) => {
     invariant(variables.pipelineName !== undefined, 'mutationUpdatePipeline: pipelineName === undefined')
     invalidatePipeline(queryClient, variables.pipelineName)
-  },
-  onSuccess: (_data, variables, _context) => {
     // It's important to update the query cache here because otherwise
     // sometimes the query cache will be out of date and the UI will
     // show the old connectors again after deletion.

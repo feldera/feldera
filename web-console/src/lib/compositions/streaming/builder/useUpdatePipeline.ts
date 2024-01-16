@@ -64,20 +64,17 @@ export const useUpdatePipeline = <FormError extends { name?: { message: string }
     }
   })
 
-  const update = useCallback(
-    (pipelineName: string) => {
-      if (!pipelineName) {
-        return
-      }
-      if (isPending) {
-        return
-      }
+  const update = (pipelineName: string, request: UpdatePipelineRequest) => {
+    if (!pipelineName) {
+      return
+    }
+    if (isPending) {
+      return
+    }
 
-      setStatus('isSaving')
-      updatePipeline({ pipelineName, request: requestAggregate })
-    },
-    [isPending, updatePipeline, requestAggregate, setStatus]
-  )
+    setStatus('isSaving')
+    updatePipeline({ pipelineName, request })
+  }
 
   const debouncedUpdate = useDebouncedCallback(update, SAVE_DELAY)
 
@@ -94,7 +91,7 @@ export const useUpdatePipeline = <FormError extends { name?: { message: string }
     pipelineQueryCacheUpdate(queryClient, pipelineName, updateRequest)
     if (pipelineName) {
       setStatus('isModified')
-      debouncedUpdate(pipelineName)
+      debouncedUpdate(pipelineName, updateRequest)
     }
   }
   return (pipelineAction: SetStateAction<UpdatePipelineRequest>) => {
