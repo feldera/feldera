@@ -70,6 +70,7 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     await page.getByTestId('button-vertical-nav-pipelines').click()
     await page.getByTestId('button-add-pipeline').first().click()
     await page.getByTestId('input-pipeline-name').fill(pipelineName)
+    await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('input-builder-select-program').locator('button').click()
     await page.getByTestId('box-builder-program-options').getByRole('option', { name: programName }).click()
     await page.getByTestId('box-save-saved').waitFor()
@@ -93,7 +94,7 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
       .getByTestId(`box-relation-actions-PART`)
       .getByTestId(`button-import`)
       .click()
-    const pipelineUUID = page.url().match(/pipeline_id=([\w-]+)/)?.[1]
+    const pipelineUUID = page.url().match(/pipeline_name=([\w-]+)/)?.[1]
     expect(pipelineUUID).toBeTruthy()
     invariant(pipelineUUID)
 

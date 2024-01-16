@@ -54,16 +54,16 @@ export class ConnectorsService {
   /**
    * Fetch a connector by ID.
    * Fetch a connector by ID.
-   * @param connectorId Unique connector identifier
+   * @param connectorName Unique connector name
    * @returns ConnectorDescr Connector retrieved successfully.
    * @throws ApiError
    */
-  public static getConnector(connectorId: string): CancelablePromise<ConnectorDescr> {
+  public static getConnector(connectorName: string): CancelablePromise<ConnectorDescr> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/connectors/{connector_id}',
+      url: '/v0/connectors/{connector_name}',
       path: {
-        connector_id: connectorId
+        connector_name: connectorName
       },
       errors: {
         400: `Specified connector id is not a valid uuid.`
@@ -74,16 +74,16 @@ export class ConnectorsService {
   /**
    * Delete an existing connector.
    * Delete an existing connector.
-   * @param connectorId Unique connector identifier
+   * @param connectorName Unique connector name
    * @returns any connector successfully deleted.
    * @throws ApiError
    */
-  public static deleteConnector(connectorId: string): CancelablePromise<any> {
+  public static deleteConnector(connectorName: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/connectors/{connector_id}',
+      url: '/v0/connectors/{connector_name}',
       path: {
-        connector_id: connectorId
+        connector_name: connectorName
       },
       errors: {
         400: `Specified connector id is not a valid uuid.`,
@@ -95,20 +95,20 @@ export class ConnectorsService {
   /**
    * Change a connector's name, description or configuration.
    * Change a connector's name, description or configuration.
-   * @param connectorId Unique connector identifier
+   * @param connectorName Unique connector name
    * @param requestBody
    * @returns UpdateConnectorResponse connector successfully updated.
    * @throws ApiError
    */
   public static updateConnector(
-    connectorId: string,
+    connectorName: string,
     requestBody: UpdateConnectorRequest
   ): CancelablePromise<UpdateConnectorResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/v0/connectors/{connector_id}',
+      url: '/v0/connectors/{connector_name}',
       path: {
-        connector_id: connectorId
+        connector_name: connectorName
       },
       body: requestBody,
       mediaType: 'application/json',

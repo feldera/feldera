@@ -14,7 +14,7 @@ import { alpha, useTheme } from '@mui/material/styles'
 
 export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) => {
   const metrics = usePipelineMetrics({
-    pipelineId: props.descriptor.pipeline_id,
+    pipelineName: props.descriptor.name,
     status: props.state.current_status,
     refetchMs: 3000,
     keepMs: 30000
@@ -69,7 +69,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
         >
           <Box sx={{ mr: 2, display: 'flex', flexDirection: 'column' }}>
             <Typography sx={{ mb: 0.5, fontWeight: 500 }}>
-              <Link href={'/streaming/management/#' + props.descriptor.pipeline_id}>{item.name}</Link>
+              <Link href={'/streaming/management/#' + props.descriptor.name}>{item.name}</Link>
             </Typography>
             <Typography variant='body2' sx={{ wordBreak: 'break-word', color: 'text.disabled' }}>
               {item.description}

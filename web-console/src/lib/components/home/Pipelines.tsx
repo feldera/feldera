@@ -33,7 +33,7 @@ const Pipelines = () => {
       <CardContent>
         <Stack spacing={2}>
           {active.map(p => (
-            <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.pipeline_id}></PipelineThumb>
+            <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.name}></PipelineThumb>
           ))}
         </Stack>
       </CardContent>
@@ -44,7 +44,7 @@ const Pipelines = () => {
         <AccordionDetails>
           <Stack spacing={2}>
             {inactive.map(p => (
-              <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.pipeline_id}></PipelineThumb>
+              <PipelineThumb {...p} apexOptions={apexOptions} key={p.descriptor.name}></PipelineThumb>
             ))}
           </Stack>
         </AccordionDetails>

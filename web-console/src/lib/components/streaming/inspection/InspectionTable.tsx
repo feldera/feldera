@@ -65,7 +65,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const { updateTable, pause, resume } = useTableUpdater()
 
   const throwError = useAsyncError()
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.descriptor.pipeline_id))
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.descriptor.name))
 
   // If a revision is loaded, find the requested relation that we want to
   // monitor. We use it to display the table headers etc.
@@ -101,7 +101,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     const controller = new AbortController()
     updateTable(
       [
-        pipeline.descriptor.pipeline_id,
+        pipeline.descriptor.name,
         name,
         'csv',
         OutputQuery.NEIGHBORHOOD,
@@ -151,7 +151,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     const controller = new AbortController()
 
     quantileLoader(
-      [pipeline.descriptor.pipeline_id, name, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
+      [pipeline.descriptor.name, name, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
       setQuantiles,
       relation,
       controller
@@ -300,7 +300,7 @@ const InspectionTableImpl = ({
     rowCount: false
   }
   const gridPersistence = useDataGridPresentationLocalStorage({
-    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.pipeline_id}/${relation.name}`,
+    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.name}/${relation.name}`,
     defaultColumnVisibility
   })
 
@@ -366,7 +366,7 @@ const InspectionTableImpl = ({
               delimiter: ',',
               utf8WithBom: true
             },
-            pipelineId: pipeline.descriptor.pipeline_id,
+            pipelineName: pipeline.descriptor.name,
             status: pipeline.state.current_status,
             relation: relation.name,
             isReadonly,

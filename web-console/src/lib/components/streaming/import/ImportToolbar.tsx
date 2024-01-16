@@ -51,7 +51,7 @@ const ImportToolbar = ({
   rows: Row[]
   children: ReactNode
 }) => {
-  const { data: pipeline } = useQuery(PipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.pipeline_id))
+  const { data: pipeline } = useQuery(PipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.name))
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
 
   const [settings, setSettings] = useLocalStorage<Map<string, StoredFieldSettings>>({
@@ -124,7 +124,7 @@ const ImportToolbar = ({
   const insertRows = useInsertRows()
   const handleInsertRows = useCallback(() => {
     if (relation && rows.length > 0) {
-      insertRows(pipelineRevision.pipeline.pipeline_id, relation, !isRunning, rows, setRows)
+      insertRows(pipelineRevision.pipeline.name, relation, !isRunning, rows, setRows)
     }
   }, [insertRows, pipelineRevision, isRunning, relation, rows, setRows])
 

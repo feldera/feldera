@@ -11,6 +11,7 @@ import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { useHashPart } from 'src/lib/compositions/useHashPart'
+import { nonNull } from 'src/lib/functions/common/function'
 
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
@@ -45,7 +46,7 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
               value={item.name}
               {...{
                 component: Link,
-                href: `?pipeline_id=${props.pipeline.descriptor.pipeline_id}&relation=${item.name}#${tab}`
+                href: `?pipeline_name=${props.pipeline.descriptor.name}&relation=${item.name}#${tab}`
               }}
               data-testid={`button-option-relation-${item.name}`}
             >
@@ -128,19 +129,19 @@ export default () => {
   // Parse config, view, tab arguments from router query
   const query = useSearchParams()
 
-  const pipelineId = query.get('pipeline_id')
+  const pipelineName = query.get('pipeline_name')
   const relation = query.get('relation')
 
   // Load the pipeline
   const { data: pipeline } = useQuery({
-    ...PipelineManagerQuery.pipelineStatus(pipelineId!),
-    enabled: pipelineId !== undefined
+    ...PipelineManagerQuery.pipelineStatus(pipelineName!),
+    enabled: nonNull(pipelineName)
   })
 
   // Load the last revision of the pipeline
   const { data: pipelineRevision } = useQuery({
-    ...PipelineManagerQuery.pipelineLastRevision(pipelineId!),
-    enabled: pipelineId !== undefined,
+    ...PipelineManagerQuery.pipelineLastRevision(pipelineName!),
+    enabled: pipelineName !== undefined,
     select(pipelineRevision) {
       const program = pipelineRevision?.program
       const tables = program?.schema?.inputs.map(v => v.name) || []
@@ -184,7 +185,7 @@ export default () => {
         <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
           Pipelines
         </Link>
-        <Link href={`/streaming/management/#${pipeline.descriptor.pipeline_id}`} data-testid='button-current-pipeline'>
+        <Link href={`/streaming/management/#${pipeline.descriptor.name}`} data-testid='button-current-pipeline'>
           {pipeline.descriptor.name}
         </Link>
         <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>

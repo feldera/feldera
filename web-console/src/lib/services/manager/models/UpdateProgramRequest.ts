@@ -3,6 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 
+import type { Version } from './Version'
+
 /**
  * Update program request.
  */
@@ -15,9 +17,10 @@ export type UpdateProgramRequest = {
   /**
    * New description for the program.
    */
-  description?: string
+  description?: string | null
+  guard?: Version | null
   /**
    * New name for the program.
    */
-  name: string
+  name?: string | null
 }

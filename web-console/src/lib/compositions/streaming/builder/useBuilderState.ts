@@ -1,32 +1,27 @@
 // State for the pipeline builder, contains everything we'll eventually send to
 // the server for creating a pipeline.
 
-import { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
-import { ProgramDescr, RuntimeConfig } from '$lib/services/manager'
+import { EntitySyncIndicatorStatus } from '$lib/components/common/EntitySyncIndicator'
 import { create } from 'zustand'
 
-interface PipelineBuilderState {
-  saveState: SaveIndicatorState
-  project: ProgramDescr | undefined
-  name: string
-  description: string
-  config: RuntimeConfig
-  setName: (name: string) => void
-  setDescription: (description: string) => void
-  setSaveState: (saveState: SaveIndicatorState) => void
-  setConfig: (config: RuntimeConfig) => void
-  setProject: (config: ProgramDescr | undefined) => void
+interface FormError {
+  name?: { message?: string }
+}
+
+type PipelineBuilderState = {
+  pipelineName: string // The name of pipeline currently being edited
+  setPipelineName: (pipelineName: string) => void
+  saveState: EntitySyncIndicatorStatus
+  setSaveState: (saveState: EntitySyncIndicatorStatus) => void
+  formError: FormError
+  setFormError: (formError: FormError) => void
 }
 
 export const useBuilderState = create<PipelineBuilderState>(set => ({
-  saveState: 'isUpToDate',
-  project: undefined,
-  name: '',
-  description: '',
-  config: {},
-  setName: (name: string) => set({ name }),
-  setDescription: (description: string) => set({ description }),
-  setSaveState: (saveState: SaveIndicatorState) => set({ saveState }),
-  setProject: (project: ProgramDescr | undefined) => set({ project }),
-  setConfig: (config: RuntimeConfig) => set({ config })
+  pipelineName: '',
+  setPipelineName: (pipelineName: string) => set({ pipelineName }),
+  saveState: 'isLoading',
+  setSaveState: (saveState: EntitySyncIndicatorStatus) => set({ saveState }),
+  formError: {},
+  setFormError: (formError: FormError) => set({ formError })
 }))
