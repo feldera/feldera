@@ -724,15 +724,23 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                                         node, DBSPTypeString.UNLIMITED_PRECISION, false, true)));
                         }
                         return this.compileFunction(call, node, type, ops, 1, 2);
-                    case "overlay":
-                    // case "regexp_replace":
-                        return this.compileFunction(call, node, type, ops, 3, 4);
+                    case "overlay": {
+                        // case "regexp_replace":
+                        String module_prefix = "";
+                        if (ops.get(0).type.is(DBSPTypeBinary.class)) {
+                            module_prefix = "binary::";
+                        } else {
+                            module_prefix = "string::";
+                        }
+                        return this.compileFunction(module_prefix + getCallName(call), node, type, ops, 3, 4);
+                    }
                     case "char_length":
                     case "ascii":
                     case "chr":
                     case "lower":
                     case "upper":
                     case "to_hex":
+                    case "octet_length":
                     case "initcap": {
                         return this.compileFunction(call, node, type, ops, 1);
                     }
@@ -766,7 +774,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             throw new UnimplementedException(node);
                         DBSPType baseType = ops.get(0).getType();
                         String functionName = opName + baseType.nullableSuffix();
-                        return this.compileFunction(functionName, node, type, ops, 2, 3);
+                        String module_prefix = "";
+                        if (ops.get(0).type.is(DBSPTypeBinary.class)) {
+                            module_prefix = "binary::";
+                        } else {
+                            module_prefix = "string::";
+                        }
+                        return this.compileFunction(module_prefix + functionName, node, type, ops, 2, 3);
                     }
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
@@ -791,7 +805,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             }
             case RLIKE:
             case POSITION: {
-                return this.compileFunction(call, node, type, ops, 2);
+                String module_prefix = "";
+                if (ops.get(0).type.is(DBSPTypeBinary.class)) {
+                    module_prefix = "binary::";
+                } else {
+                    module_prefix = "string::";
+                }
+                return this.compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
             }
             case ARRAY_TO_STRING: {
                 // Calcite does not enforce the type of the arguments, why?

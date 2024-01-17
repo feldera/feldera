@@ -110,4 +110,148 @@ public class VarbinaryTests extends SqlIoTest {
                 ------
                  0abc""");
     }
+
+    // Tested on Postgres
+    // While Postgres doesn't allow negative "overlay from" value, we treat it as 0
+    @Test
+    public void testOverlay() {
+        this.qs(
+                """
+                        SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3);
+                         overlay
+                        ---------
+                         12020390
+                        (1 row)
+                        
+                        SELECT overlay(x'123456'::bytea placing x'1010' from 1 for 0);
+                         overlay
+                        ---------
+                         1010123456
+                        (1 row)
+                        
+                        SELECT overlay(x'123456'::bytea placing x'1010' from 1 for 1);
+                         overlay
+                        ---------
+                         10103456
+                        (1 row)
+                        
+                        SELECT overlay(x'123456'::bytea placing x'1010' from 1 for -1);
+                         overlay
+                        ---------
+                         1010123456
+                        (1 row)
+                        
+                        SELECT overlay(x'123456'::bytea placing x'1010' from -1);
+                         overlay
+                        ---------
+                         123456
+                        (1 row)
+                        
+                        SELECT overlay(x'123456'::bytea placing x'7890' from 7);
+                         overlay
+                        ---------
+                         1234567890
+                        (1 row)
+                        
+                        """
+        );
+    }
+
+    // Tested on Postgres
+    @Test
+    public void testSubstring() {
+        this.qs(
+                """
+                        SELECT substring(x'123456', 0);
+                         substring
+                        -----------
+                         123456
+                        (1 row)
+                        
+                        SELECT substring(x'123456', 1);
+                         substring
+                        -----------
+                         123456
+                        (1 row)
+                        
+                        SELECT substring(x'123456', 3);
+                         substring
+                        -----------
+                         56
+                        (1 row)
+                        
+                        SELECT substring(x'123456', -1);
+                         substring
+                        -----------
+                         123456
+                        (1 row)
+                        
+                        SELECT substring(x'1234567890', 3, 2);
+                         substring
+                        -----------
+                         5678
+                        (1 row)
+                        
+                        SELECT substring(x'123456'::bytea from -2 for 6);
+                         substring
+                        -----------
+                         123456
+                        (1 row)
+                        """
+        );
+    }
+
+    @Test
+    public void testSubstringFail() {
+        this.qf("SELECT substring(x'123456', 3, -1)", "negative substring length not allowed");
+    }
+
+    @Test
+    public void testOctetLength() {
+        this.qs("""
+                SELECT octet_length(x'123456'::bytea);
+                 length
+                --------
+                 3
+                (1 row)
+                
+                SELECT octet_length(x'10102323'::bytea);
+                 length
+                --------
+                 4
+                (1 row)
+                
+                SELECT octet_length(x''::bytea);
+                 length
+                --------
+                 0
+                (1 row)
+                
+                SELECT octet_length(x'0abc'::bytea);
+                 length
+                --------
+                 2
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testPosition() {
+        this.qs(
+                """
+                        SELECT position(x'20' IN x'102023'::bytea);
+                         position
+                        ----------
+                         2
+                        (1 row)
+                        
+                        SELECT position(x'24' IN x'102023'::bytea);
+                         position
+                        ----------
+                         0
+                        (1 row)
+                        """
+        );
+    }
 }

@@ -10,12 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- SQL: Functions on binary string (octet_length, position, overlay, substring) ([#1264](https://github.com/feldera/feldera/pull/1264))
 -  pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
 -  Documentation: Adding a markdown page for videos (#1126)  
 
 ### Fixed
 - pipeline-manager: fix a resource usage problem with http streaming under high load
   ([#1257](https://github.com/feldera/feldera/pull/1257))
+- SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
 - WebConsole: Connector name change doesn't reflect in the pipeline builder (#1238)
 - WebConsole: UI sends HTTP request in an infinite loop (#1085)
 
