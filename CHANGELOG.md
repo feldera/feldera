@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 -  pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
+-  Documentation: Adding a markdown page for videos (#1126)  
 
 ### Fixed
 - pipeline-manager: fix a resource usage problem with http streaming under high load
