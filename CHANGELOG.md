@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SQL: Functions on binary string (octet_length, position, overlay, substring) ([#1264](https://github.com/feldera/feldera/pull/1264))
 -  pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
--  Documentation: Adding a markdown page for videos (#1126)  
+-  Documentation: Adding a markdown page for videos (#1126)
 
 ### Fixed
 - pipeline-manager: fix a resource usage problem with http streaming under high load
@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
 - pipeline-manager: use names instead of IDs in API endpoints (#1214)
-- WebConsole: use names instead of IDs in API endpoints (#1214)
+- WebConsole: use names instead of IDs as an API entity identifier (#1214)
+- WebConsole: Bearer token expiration now triggers a background token refresh or redirects to a login page (#1100)
 
 ## [0.7.0] - 2024-01-09
 
@@ -38,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: Changed semantics of division to match SQL standard
   ([#1201](https://github.com/feldera/feldera/pull/1201))
 - WebConsole: display AWS Cognito username in user profile dropdown (#1077)
-- WebConsole: Bearer token expiration now triggers a background token refresh or redirects to login page (#1100)
 
 ## [0.6.0] - 2023-12-19
 
