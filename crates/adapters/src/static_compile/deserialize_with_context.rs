@@ -48,6 +48,7 @@ use std::{fmt, marker::PhantomData};
 use dbsp::{
     algebra::{F32, F64},
     operator::NeighborhoodDescr,
+    utils::{Tup1, Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9},
 };
 use rust_decimal::Decimal;
 use serde::{
@@ -108,6 +109,16 @@ deserialize_without_context!(char);
 deserialize_without_context!(F32);
 deserialize_without_context!(F64);
 deserialize_without_context!(Decimal);
+deserialize_without_context!(Tup1, T1);
+deserialize_without_context!(Tup2, T1, T2);
+deserialize_without_context!(Tup3, T1, T2, T3);
+deserialize_without_context!(Tup4, T1, T2, T3, T4);
+deserialize_without_context!(Tup5, T1, T2, T3, T4, T5);
+deserialize_without_context!(Tup6, T1, T2, T3, T4, T5, T6);
+deserialize_without_context!(Tup7, T1, T2, T3, T4, T5, T6, T7);
+deserialize_without_context!(Tup8, T1, T2, T3, T4, T5, T6, T7, T8);
+deserialize_without_context!(Tup9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+deserialize_without_context!(Tup10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 
 // Used to pass the context to nested structures using the
 // `DeserializeSeed` mechanism.  This is only public because it's

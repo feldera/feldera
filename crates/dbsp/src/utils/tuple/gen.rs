@@ -1,15 +1,16 @@
-//! This file contains a macro which can be used to define tuples
-//! with any number of fields.  The type names are `Tuple0<>`, `Tuple1<T0>`,
-//! `Tuple2<T0, T1>`, etc.  The macro defines many traits which
-//! are useful for tuples to be used as DBSP values in Z-Sets.
-//! Rust tuples only go up to 12 fields, but we may need more.
+//! This file contains a macro which can be used to define tuples with any
+//! number of fields.  The type names are `Tuple0<>`, `Tuple1<T0>`,
+//! `Tuple2<T0, T1>`, etc.  
+//!
+//! The macro defines many traits which are useful for tuples to be used as DBSP
+//! values in Z-Sets. Rust tuples only go up to 12 fields, but we may need more.
 
 #[macro_export]
 macro_rules! count_items {
     () => { 0usize };
     ($first:ident) => { 1usize };
     ($first:ident, $($rest:ident),*) => {
-        1usize + count_items!($($rest),*)
+        1usize + $crate::count_items!($($rest),*)
     }
 }
 
@@ -18,7 +19,7 @@ macro_rules! measure_items {
     () => { 0usize };
     ($first:expr) => { $first.num_entries_deep() };
     ($first:expr, $($rest:expr),*) => {
-        $first.num_entries_deep() + measure_items!($($rest),*)
+        $first.num_entries_deep() + $crate::measure_items!($($rest),*)
     }
 }
 
@@ -31,8 +32,25 @@ macro_rules! declare_tuples {
         $(,)?
     ) => {
         $(
-            paste! {
-                #[derive(Default, Eq, Ord, Clone, Hash, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, size_of::SizeOf, Add, Neg, AddAssign, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+            paste::paste! {
+                #[derive(
+                    Default,
+                    Eq,
+                    Ord,
+                    Clone,
+                    Hash,
+                    PartialEq,
+                    PartialOrd,
+                    derive_more::Add,
+                    derive_more::Neg,
+                    derive_more::AddAssign,
+                    serde::Serialize,
+                    serde::Deserialize,
+                    size_of::SizeOf,
+                    rkyv::Archive,
+                    rkyv::Serialize,
+                    rkyv::Deserialize
+                )]
                 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
                 #[archive(bound(
                     archive = $( "" $element "" ": rkyv::Archive, ")* "" $( "<" $element "" " as rkyv::Archive>::Archived: Ord, ")*
@@ -40,8 +58,6 @@ macro_rules! declare_tuples {
                 #[archive(compare(PartialEq, PartialOrd))]
                 pub struct $tuple_name<$($element,)*>($(pub $element,)*);
             }
-
-            dbsp_adapters::deserialize_without_context!($tuple_name, $($element),*);
 
             /*$(<$element as Archive>::Archived: Ord, )*
             Expands to:
@@ -53,12 +69,13 @@ macro_rules! declare_tuples {
             */
             impl<$($element),*> $tuple_name<$($element,)*>
             {
-                fn new($($element: $element),*) -> Self {
+                #[allow(clippy::too_many_arguments)]
+                pub fn new($($element: $element),*) -> Self {
                     Self($($element),*)
                 }
             }
 
-            #[cfg(test)]
+            /*#[cfg(test)]
             impl<$($element),*> ToSqlRow for $tuple_name<$($element,)*>
             where
                 $(SqlValue: From<$element>,)*
@@ -71,15 +88,15 @@ macro_rules! declare_tuples {
                     $(result.push(SqlValue::from($element.clone()));)*
                     result
                 }
-            }
+            }*/
 
             /*
              Example generated code:
-             impl<T0, T1, W> MulByRef<W> for Tuple2<T0, T1>
+             impl<T0, T1, W> $crate::algebra::MulByRef<W> for Tuple2<T0, T1>
              where
-                 T0: MulByRef<W, Output = T0>,
-                 T1: MulByRef<W, Output = T1>,
-                 W: ZRingValue,
+                 T0: $crate::algebra::MulByRef<W, Output = T0>,
+                 T1: $crate::algebra::MulByRef<W, Output = T1>,
+                 W: $crate::algebra::ZRingValue,
              {
                  type Output = Self;
                  fn mul_by_ref(&self, other: &W) -> Self::Output {
@@ -88,11 +105,11 @@ macro_rules! declare_tuples {
                  }
              }
              */
-            impl<$($element),*, W> MulByRef<W>
+            impl<$($element),*, W> $crate::algebra::MulByRef<W>
                 for $tuple_name<$($element,)*>
             where
-                $($element: MulByRef<W, Output=$element>,)*
-                W: ZRingValue
+                $($element: $crate::algebra::MulByRef<W, Output=$element>,)*
+                W: $crate::algebra::ZRingValue
             {
                 type Output = Self;
                 fn mul_by_ref(&self, other: &W) -> Self::Output {
@@ -103,10 +120,10 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1> HasZero for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::HasZero for Tuple2<T0, T1>
              where
-                 T0: HasZero,
-                 T1: HasZero,
+                 T0: $crate::algebra::HasZero,
+                 T1: $crate::algebra::HasZero,
              {
                  fn zero() -> Self {
                      Tuple2(T0::zero(), T1::zero())
@@ -120,10 +137,10 @@ macro_rules! declare_tuples {
                  }
              }
              */
-            impl<$($element),*> HasZero
+            impl<$($element),*> $crate::algebra::HasZero
                 for $tuple_name<$($element,)*>
             where
-                $($element: HasZero,)*
+                $($element: $crate::algebra::HasZero,)*
             {
                 fn zero() -> Self {
                     $tuple_name($($element::zero(),)*)
@@ -131,17 +148,17 @@ macro_rules! declare_tuples {
                 fn is_zero(&self) -> bool {
                     let mut result = true;
                     let $tuple_name($($element),*) = self;
-                    $(result = result && $element.is_zero();)*;
+                    $(result = result && $element.is_zero();)*
                     result
                 }
             }
 
             /*
              Example generated code:
-             impl<T0, T1> AddByRef for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::AddByRef for Tuple2<T0, T1>
              where
-                 T0: AddByRef,
-                 T1: AddByRef,
+                 T0: $crate::algebra::AddByRef,
+                 T1: $crate::algebra::AddByRef,
              {
                  fn add_by_ref(&self, other: &Self) -> Self {
                      let Tuple2(T0, T1) = self;
@@ -150,24 +167,24 @@ macro_rules! declare_tuples {
                  }
              }
             */
-            impl<$($element),*> AddByRef
+            impl<$($element),*> $crate::algebra::AddByRef
                 for $tuple_name<$($element,)*>
             where
-                $($element: AddByRef,)*
+                $($element: $crate::algebra::AddByRef,)*
             {
                 fn add_by_ref(&self, other: &Self) -> Self {
                     let $tuple_name($($element),*) = self;
-                    let $tuple_name($(paste!( [<Q $element>])),*) = other;
-                    $tuple_name($($element.add_by_ref(paste!( [<Q $element>])),)*)
+                    let $tuple_name($(paste::paste!( [<Q $element>])),*) = other;
+                    $tuple_name($($element.add_by_ref(paste::paste!( [<Q $element>])),)*)
                 }
             }
 
             /*
             Example generated code:
-            impl<T0, T1> NumEntries for Tuple2<T0, T1>
+            impl<T0, T1> $crate::NumEntries for Tuple2<T0, T1>
             where
-                T0: NumEntries,
-                T1: NumEntries,
+                T0: $crate::NumEntries,
+                T1: $crate::NumEntries,
             {
                 const CONST_NUM_ENTRIES: Option<usize> = None;
                 fn num_entries_shallow(&self) -> usize {
@@ -179,29 +196,29 @@ macro_rules! declare_tuples {
                 }
             }
              */
-            impl<$($element),*> NumEntries
+            impl<$($element),*> $crate::NumEntries
                 for $tuple_name<$($element,)*>
             where
-                $($element: NumEntries,)*
+                $($element: $crate::NumEntries,)*
             {
                 const CONST_NUM_ENTRIES: Option<usize> = None;
 
                 fn num_entries_shallow(&self) -> usize {
-                    count_items!($($element),*)
+                    $crate::count_items!($($element),*)
                 }
 
                 fn num_entries_deep(&self) -> usize {
                     let $tuple_name($($element),*) = self;
-                    measure_items!($($element),*)
+                    $crate::measure_items!($($element),*)
                 }
             }
 
             /*
              Example generated code:
-             impl<T0, T1> AddAssignByRef for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::AddAssignByRef for Tuple2<T0, T1>
              where
-                 T0: AddAssignByRef,
-                 T1: AddAssignByRef,
+                 T0: $crate::algebra::AddAssignByRef,
+                 T1: $crate::algebra::AddAssignByRef,
              {
                  fn add_assign_by_ref(&mut self, other: &Self) {
                      let Tuple2(T0, T1) = self;
@@ -211,24 +228,24 @@ macro_rules! declare_tuples {
                  }
              }
              */
-            impl<$($element),*> AddAssignByRef
+            impl<$($element),*> $crate::algebra::AddAssignByRef
                 for $tuple_name<$($element,)*>
             where
-                $($element: AddAssignByRef,)*
+                $($element: $crate::algebra::AddAssignByRef,)*
             {
                 fn add_assign_by_ref(&mut self, other: &Self) {
                     let $tuple_name($($element),*) = self;
-                    let $tuple_name($(paste!( [<Q $element>])),*) = other;
-                    $($element.add_assign_by_ref(paste!(& [<Q $element>]));)*
+                    let $tuple_name($(paste::paste!( [<Q $element>])),*) = other;
+                    $($element.add_assign_by_ref(paste::paste!(& [<Q $element>]));)*
                 }
             }
 
             /*
              Example generated code:
-             impl<T0, T1> NegByRef for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::NegByRef for Tuple2<T0, T1>
              where
-                 T0: NegByRef,
-                 T1: NegByRef,
+                 T0: $crate::algebra::NegByRef,
+                 T1: $crate::algebra::NegByRef,
              {
                  fn neg_by_ref(&self) -> Self {
                      let mut result = true;
@@ -237,13 +254,12 @@ macro_rules! declare_tuples {
                  }
              }
             */
-            impl<$($element),*> NegByRef
+            impl<$($element),*> $crate::algebra::NegByRef
                 for $tuple_name<$($element,)*>
             where
-                $($element: NegByRef,)*
+                $($element: $crate::algebra::NegByRef,)*
             {
                 fn neg_by_ref(&self) -> Self {
-                    let mut result = true;
                     let $tuple_name($($element),*) = self;
                     $tuple_name($($element.neg_by_ref(),)*)
                 }
@@ -272,6 +288,7 @@ macro_rules! declare_tuples {
                  }
              }
              */
+            #[allow(clippy::from_over_into)]
             impl<$($element),*> Into<($($element,)*)> for $tuple_name<$($element,)*> {
                 fn into(self) -> ($($element,)*) {
                     let $tuple_name($($element),*) = self;
