@@ -58,7 +58,10 @@ const getStatusChip = (status: ProgramStatus) =>
 export const TableSqlPrograms = () => {
   const [rows, setRows] = useState<ProgramDescr[]>([])
   const PipelineManagerQuery = usePipelineManagerQuery()
-  const fetchQuery = useQuery(PipelineManagerQuery.programs())
+  const fetchQuery = useQuery({
+    ...PipelineManagerQuery.programs(),
+    refetchInterval: 2000
+  })
   const { pushMessage } = useStatusNotification()
 
   const apiRef = useGridApiRef()
