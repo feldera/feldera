@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
@@ -114,6 +115,7 @@ public class RustFileWriter implements ICompilerComponent {
                             CmpFunc,
                         },
                         trace::ord::{OrdIndexedZSet, OrdZSet},
+                        utils::*,
                         zset,
                         indexed_zset,
                         DBWeight,
@@ -140,8 +142,7 @@ public class RustFileWriter implements ICompilerComponent {
                     };
                     use core::cmp::Ordering;
                     use rust_decimal::Decimal;
-                    use tuple::declare_tuples;
-                    use tuple::{count_items,measure_items};
+                    use dbsp::declare_tuples;
                     use sqllib::{
                         *,
                         casts::*,
@@ -220,7 +221,8 @@ public class RustFileWriter implements ICompilerComponent {
                     .intercalate(", ", ts)
                     .join(", ", tts)
                     .append("> Semigroup")
-                    .append("<Tuple")
+                    .append("<")
+                    .append(DBSPTypeCode.TUPLE.rustName)
                     .append(i)
                     .append("<")
                     .intercalate(", ", indexes, ix -> "T" + ix)
@@ -235,20 +237,23 @@ public class RustFileWriter implements ICompilerComponent {
                     .join(",\n", indexes, ix -> "TS" + ix + ": Semigroup<T" + ix + ">")
                     .newline().decrease()
                     .append("{").increase()
-                    .append("fn combine(left: &Tuple")
+                    .append("fn combine(left: &")
+                    .append(DBSPTypeCode.TUPLE.rustName)
                     .append(i)
                     .append("<")
                     .intercalate(", ", ts)
-                    .append(">, right:&Tuple")
+                    .append(">, right:&")
+                    .append(DBSPTypeCode.TUPLE.rustName)
                     .append(i)
                     .append("<")
                     .intercalate(", ", ts)
-                    .append(">) -> Tuple")
+                    .append(">) -> ")
+                    .append(DBSPTypeCode.TUPLE.rustName)
                     .append(i)
                     .append("<")
                     .intercalate(", ", ts)
                     .append("> {").increase()
-                    .append("Tuple")
+                    .append(DBSPTypeCode.TUPLE.rustName)
                     .append(i)
                     .append("::new(").increase()
                     .join("\n", indexes, ix -> "TS" + ix + "::combine(&left." + ix + ", &right." + ix + "),")
@@ -262,9 +267,10 @@ public class RustFileWriter implements ICompilerComponent {
 
         stream.append("declare_tuples! {").increase();
         for (int i: used.tupleSizesUsed) {
-            if (i == 0)
+            if (i <= 10)
+                // These are already pre-declared
                 continue;
-            stream.append("Tuple")
+            stream.append(DBSPTypeCode.TUPLE.rustName)
                     .append(i)
                     .append("<");
             for (int j = 0; j < i; j++) {
@@ -276,6 +282,22 @@ public class RustFileWriter implements ICompilerComponent {
             stream.append(">,\n");
         }
         stream.decrease().append("}\n\n");
+
+        for (int i: used.tupleSizesUsed) {
+            if (i <= 10)
+                // These are already pre-declared
+                continue;
+            stream.append("dbsp_adapters::deserialize_without_context!(");
+            stream.append(DBSPTypeCode.TUPLE.rustName)
+                    .append(i);
+            for (int j = 0; j < i; j++) {
+                stream.append(", ");
+                stream.append("T")
+                        .append(j);
+            }
+            stream.append(");\n");
+        }
+        stream.append("\n");
     }
 
     String generatePreamble(StructuresUsed used) {

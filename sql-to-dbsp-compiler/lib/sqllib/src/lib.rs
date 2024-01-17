@@ -21,7 +21,8 @@ pub use timestamp::Timestamp;
 use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{
-    CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OrdZSet, OutputHandle, UpsertHandle,
+    utils::*, CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OrdZSet, OutputHandle,
+    UpsertHandle,
 };
 use num::{Signed, ToPrimitive};
 use num_traits::Zero;
@@ -424,13 +425,13 @@ where
 #[derive(Clone)]
 pub struct PairSemigroup<T, R, TS, RS>(PhantomData<(T, R, TS, RS)>);
 
-impl<T, R, TS, RS> Semigroup<(T, R)> for PairSemigroup<T, R, TS, RS>
+impl<T, R, TS, RS> Semigroup<Tup2<T, R>> for PairSemigroup<T, R, TS, RS>
 where
     TS: Semigroup<T>,
     RS: Semigroup<R>,
 {
-    fn combine(left: &(T, R), right: &(T, R)) -> (T, R) {
-        (
+    fn combine(left: &Tup2<T, R>, right: &Tup2<T, R>) -> Tup2<T, R> {
+        Tup2::new(
             TS::combine(&left.0, &right.0),
             RS::combine(&left.1, &right.1),
         )

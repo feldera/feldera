@@ -149,6 +149,6 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     public String getName() {
-        return "Tuple" + this.tupFields.length;
+        return this.code.rustName + this.tupFields.length;
     }
 }

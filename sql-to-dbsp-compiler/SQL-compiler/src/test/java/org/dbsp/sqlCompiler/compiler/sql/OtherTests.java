@@ -125,11 +125,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
                     let T = T();
                     // DBSPMapOperator 76
-                    let stream0: stream<OrdZSet<Tuple1<b>, Weight>> = T.map((|t: &Tuple6<i32, d, b, s, i32?, d?>| Tuple1::new(((*t).2), )));
+                    let stream0: stream<OrdZSet<Tup1<b>, Weight>> = T.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let V: stream<OrdZSet<Tuple1<b>, Weight>> = stream0;
+                    let V: stream<OrdZSet<Tup1<b>, Weight>> = stream0;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -246,7 +246,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         List<DBSPStatement> list = new ArrayList<>();
 
         String connectionString = "sqlite://" + filepath;
-        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
+        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tup type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
         DBSPExpression[] fields = EndToEndTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
@@ -400,7 +400,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             String path = subdir.getPath() + "/project.sql";
             CompilerMessages messages = CompilerMain.execute(
                     "-i", "--alltables", "-o", BaseSQLTests.testFilePath, path);
-            System.out.println(messages);
+            if (!messages.isEmpty())
+                System.out.println(messages);
             Assert.assertEquals(0, messages.errorCount());
             Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
         }

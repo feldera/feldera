@@ -8,10 +8,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 
-/**
- * Expand t.clone() for t a tuple type into
- * Tuple::new(t.0, t.1, ... ).
- */
+/** Expand t.clone() for t a tuple type into
+ * Tup::new(t.0, t.1, ... ). */
 public class ExpandClone extends InnerRewriteVisitor {
     public ExpandClone(IErrorReporter reporter) {
         super(reporter);

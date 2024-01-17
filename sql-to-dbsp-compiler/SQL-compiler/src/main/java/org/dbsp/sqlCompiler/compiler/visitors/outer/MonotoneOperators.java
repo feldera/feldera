@@ -17,8 +17,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosure;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneValue;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ScalarProjection;
@@ -26,13 +26,13 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.TupleProjection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ValueProjection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -78,11 +78,11 @@ public class MonotoneOperators extends CircuitVisitor {
         DBSPExpression body;
         DBSPVariablePath var;
         if (pairOfReferences) {
-            DBSPTypeRawTuple rawTuple = varType.to(DBSPTypeRawTuple.class);
-            assert rawTuple.size() == 2: "Expected a pair, got " + varType;
-            varType = new DBSPTypeRawTuple(rawTuple.tupFields[0].ref(), rawTuple.tupFields[1].ref());
+            DBSPTypeTuple tpl = varType.to(DBSPTypeTuple.class);
+            assert tpl.size() == 2: "Expected a pair, got " + varType;
+            varType = new DBSPTypeRawTuple(tpl.tupFields[0].ref(), tpl.tupFields[1].ref());
             var = new DBSPVariablePath("t", varType);
-            body = new DBSPRawTupleExpression(var.field(0).deref(), var.deepCopy().field(1).deref());
+            body = new DBSPTupleExpression(var.field(0).deref(), var.deepCopy().field(1).deref());
         } else {
             varType = varType.ref();
             var = new DBSPVariablePath("t", varType);
@@ -118,7 +118,7 @@ public class MonotoneOperators extends CircuitVisitor {
         LinkedHashMap<Integer, ValueProjection> keyColumns = new LinkedHashMap<>();
         LinkedHashMap<Integer, ValueProjection> valueColumns = new LinkedHashMap<>();
         DBSPTypeIndexedZSet type = node.getOutputIndexedZSetType();
-        DBSPTypeRawTuple rowType = type.getKVType();
+        DBSPTypeTupleBase rowType = type.getKVType();
         DBSPVariablePath var = new DBSPVariablePath("t", rowType);
         DBSPExpression key = var.field(0);
         DBSPExpression value = var.field(1);
@@ -256,15 +256,15 @@ public class MonotoneOperators extends CircuitVisitor {
             return;
 
         DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
-        DBSPTypeRawTuple outputValueType = ix.getKVType();
+        DBSPTypeTupleBase outputValueType = ix.getKVType();
 
         assert tuple0.getType().sameType(outputValueType.tupFields[0]) :
                 "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0];
-        DBSPTypeRawTuple varType = projection.getType().to(DBSPTypeRawTuple.class);
+        DBSPTypeTuple varType = projection.getType().to(DBSPTypeTuple.class);
         assert varType.size() == 2 : "Expected a pair, got " + varType;
-        varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
+        varType = new DBSPTypeTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = new DBSPVariablePath("t", varType);
-        DBSPExpression body = new DBSPRawTupleExpression(var.field(0).deref(), new DBSPTupleExpression());
+        DBSPExpression body = new DBSPTupleExpression(var.field(0).deref(), new DBSPTupleExpression());
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneFunctions analyzer = new MonotoneFunctions(
                 this.errorReporter, node, projection, true);

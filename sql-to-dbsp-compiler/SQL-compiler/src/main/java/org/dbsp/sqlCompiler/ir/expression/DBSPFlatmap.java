@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 import org.dbsp.util.IIndentStream;
@@ -19,10 +20,10 @@ import java.util.List;
 
 /**
  * Represents an expression of the form
- * |data| { data.field0.map(|e| { Tuple::new(data.field1, data.field2, ..., e )} ) }
+ * |data| { data.field0.map(|e| { Tup::new(data.field1, data.field2, ..., e )} ) }
  * If 'withOrdinality' is true, the output also contains indexes (1-based) of the
  * elements in the collection, i.e.:
- * |data| { data.field0.enumerate().map(|e| { Tuple::new(data.field1, data.field2, ..., e.1, cast(e.0+1) )} ) }
+ * |data| { data.field0.enumerate().map(|e| { Tup::new(data.field1, data.field2, ..., e.1, cast(e.0+1) )} ) }
  * (The last +1 is because in SQL indexes are 1-based)
  * This is used within a flatmap operation.
  * - data is a "row"
@@ -142,7 +143,8 @@ public class DBSPFlatmap extends DBSPExpression {
                 .append(this.collectionFieldIndex);
         if (this.indexType != null)
             builder.append(".enumerate()");
-        builder.append("map(|e| { Tuple")
+        builder.append("map(|e| { ")
+                .append(DBSPTypeCode.TUPLE.rustName)
                 .append(this.outputFieldIndexes.size())
                 .append("::new(");
         boolean first = true;

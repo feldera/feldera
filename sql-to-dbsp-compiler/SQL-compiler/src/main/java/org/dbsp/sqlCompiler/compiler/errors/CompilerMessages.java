@@ -172,6 +172,10 @@ public class CompilerMessages {
         return builder.toString();
     }
 
+    public boolean isEmpty() {
+        return this.messages.isEmpty();
+    }
+
     public JsonNode toJson() {
         ObjectMapper mapper = new ObjectMapper();
         ArrayNode result = mapper.createArrayNode();

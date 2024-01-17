@@ -53,7 +53,7 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
         super(node, "window_aggregate", outputType, function, aggregate, true, input, false);
         this.window = window;
         // Expect a tuple with 2 fields
-        DBSPTypeRawTuple partAndTime = outputType.keyType.to(DBSPTypeRawTuple.class);
+        DBSPTypeTuple partAndTime = outputType.keyType.to(DBSPTypeTuple.class);
         if (partAndTime.size() != 2)
             throw new InternalCompilerError("Unexpected type for Window aggregate operator " + outputType);
     }

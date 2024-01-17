@@ -780,7 +780,9 @@ public class ToRustVisitor extends CircuitVisitor {
         streamType.accept(this.innerVisitor);
         builder.append(" = " )
                 .append(tmp)
-                .append(".map_index(|(key, (ts, agg))| { ((key.clone(), *ts), agg.unwrap_or_default())});");
+                .append(".map_index(|(key, ts_agg)| { ")
+                .append("( Tup2::new(key.clone(), ts_agg.0), ts_agg.1.unwrap_or_default() )")
+                .append("});");
         return VisitDecision.STOP;
     }
 
