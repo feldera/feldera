@@ -81,7 +81,7 @@ class TestCase {
             list.add(new DBSPComment(this.name));
         boolean useCatalog = this.compiler.options.ioOptions.emitCatalog;
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
-        circuitArguments[0] = new DBSPUSizeLiteral(1);  // workers
+        circuitArguments[0] = new DBSPUSizeLiteral(2);  // workers
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
                 new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).unwrap(),
                 true);
