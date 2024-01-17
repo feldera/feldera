@@ -89,9 +89,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPSortExpression expression) {
         /*
-        move |(k, v): (&(), &Vec<Tuple<...>>, ), | -> Vec<Tuple<...>> {
+        move |(k, v): (&(), &Vec<Tup<...>>, ), | -> Vec<Tup<...>> {
             let comp = ...;    // comparator
-            let mut ec: _ = move |a: &Tuple<...>, b: &Tuple<...>, | -> _ {
+            let mut ec: _ = move |a: &Tup<...>, b: &Tup<...>, | -> _ {
                 comp.compare(a, b)
             };
             let mut v = v.clone();
@@ -922,7 +922,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("()");
         } else {
             boolean newlines = this.compact && expression.fields.length > 2;
-            this.builder.append("Tuple")
+            this.builder.append(DBSPTypeCode.TUPLE.rustName)
                     .append(expression.size())
                     .append("::new(");
             if (newlines)
@@ -1091,8 +1091,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
         if (type.mayBeNull)
             this.builder.append("Option<");
-        this.builder.append("Tuple")
-                .append(type.tupFields.length)
+        this.builder.append(type.getName())
                 .append("<");
         boolean first = true;
         for (DBSPType fType: type.tupFields) {

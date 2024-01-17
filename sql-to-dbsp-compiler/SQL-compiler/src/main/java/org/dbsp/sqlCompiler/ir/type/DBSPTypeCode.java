@@ -39,7 +39,7 @@ public enum DBSPTypeCode {
     SEMIGROUP("", ""),
     STREAM("", ""),
     STRUCT("", ""),
-    TUPLE("", ""),
+    TUPLE("", "Tup"),
     USER("", ""),
     VEC("", ""),
     ZSET("", "");

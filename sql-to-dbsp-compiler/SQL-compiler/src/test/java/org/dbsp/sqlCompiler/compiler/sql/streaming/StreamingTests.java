@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -27,7 +26,7 @@ public class StreamingTests extends BaseSQLTests {
         return options;
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1260")
+    @Test 
     public void latenessTest() {
         String ddl = """
                 CREATE TABLE series (

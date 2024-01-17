@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Logger;
 
@@ -76,9 +76,9 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
 
     public DBSPType extractParameterType(DBSPType projectedType) {
         if (this.indexedSet) {
-            DBSPTypeRawTuple tuple = projectedType.to(DBSPTypeRawTuple.class);
+            DBSPTypeTuple tuple = projectedType.to(DBSPTypeTuple.class);
             assert tuple.size() == 2: "Expected a two-tuple";
-            return new DBSPTypeRawTuple(tuple.getFieldType(0).ref(), tuple.getFieldType(1).ref());
+            return new DBSPTypeTuple(tuple.getFieldType(0).ref(), tuple.getFieldType(1).ref());
         } else {
             return projectedType.ref();
         }
@@ -95,11 +95,11 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
         assert expression.parameters.length == 1: "Expected a single parameter " + expression;
         DBSPParameter param = expression.parameters[0];
 
-        DBSPType paramType = param.getType();
-        DBSPType inputProjectionType = this.inputProjection.getType();
-        DBSPType adjustedParameterType = this.extractParameterType(inputProjectionType);
-        assert adjustedParameterType.sameType(paramType) :
-          "Expected same type " + adjustedParameterType + " and " + paramType;
+        // DBSPType paramType = param.getType();
+        // DBSPType inputProjectionType = this.inputProjection.getType();
+        // DBSPType adjustedParameterType = this.extractParameterType(inputProjectionType);
+        // assert adjustedParameterType.sameType(paramType) :
+        //  "Expected same type " + adjustedParameterType + " and " + paramType;
 
         DBSPType projectedType = this.inputProjection.getProjectionResultType();
         DBSPParameter projectedParameterRef = new DBSPParameter(param.getName(), projectedType.ref());

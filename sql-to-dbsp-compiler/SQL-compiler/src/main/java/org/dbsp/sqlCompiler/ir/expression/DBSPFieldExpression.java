@@ -32,9 +32,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
 
-/**
- * Tuple field reference expression.
- */
+/** Tuple field reference expression. */
 public class DBSPFieldExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final int fieldNo;

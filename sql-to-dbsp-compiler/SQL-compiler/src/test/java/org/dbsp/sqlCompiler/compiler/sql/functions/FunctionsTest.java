@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.functions;
 
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class FunctionsTest extends SqlIoTest {
@@ -26,6 +27,25 @@ public class FunctionsTest extends SqlIoTest {
                 result
                 ---------
                 \s""");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6210")
+    public void testSubstring2() {
+        this.qs(
+                """
+                        SELECT CAST('1234567890' AS VARBINARY) as val;
+                         val
+                        -----
+                         34567890
+                        (1 row)
+                        
+                        SELECT '1234567890'::VARBINARY as val;
+                         val
+                        -----
+                         34567890
+                        (1 row)
+                        """
+        );
     }
 
     @Test

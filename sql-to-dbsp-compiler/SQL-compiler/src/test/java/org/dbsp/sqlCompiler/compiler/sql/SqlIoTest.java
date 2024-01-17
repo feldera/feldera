@@ -60,7 +60,6 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * Base class that offers support for running SQL tests described as

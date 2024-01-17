@@ -36,7 +36,7 @@ public class TableValue {
     }
 
     public DBSPExpression generateReadDbCall(String connectionString) {
-        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
+        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tup type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
         DBSPTypeTuple tupleType = this.contents.zsetType.elementType.to(DBSPTypeTuple.class);

@@ -340,7 +340,7 @@ public class AggregateCompiler implements ICompilerComponent {
         CalciteObject node = CalciteObject.create(function);
         DBSPType aggregatedValueType = this.getAggregatedValueType();
         DBSPType i64 = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,true);
-        DBSPExpression zero = new DBSPRawTupleExpression(
+        DBSPExpression zero = new DBSPTupleExpression(
                 DBSPLiteral.none(i64), DBSPLiteral.none(i64));
         DBSPType pairType = zero.getType();
         DBSPExpression count, sum;
@@ -377,7 +377,7 @@ public class AggregateCompiler implements ICompilerComponent {
                     node, DBSPOpcode.AGG_ADD, i64,
                     sumAccumulator, weightedSum, this.filterArgument());
         }
-        DBSPExpression increment = new DBSPRawTupleExpression(sum, count);
+        DBSPExpression increment = new DBSPTupleExpression(sum, count);
 
         DBSPVariablePath a = pairType.var(this.genAccumulatorName());
         DBSPExpression divide = ExpressionCompiler.makeBinaryExpression(

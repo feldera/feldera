@@ -527,6 +527,13 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void joinFPTest() {
+        String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL2 = T2.COL6";
+        this.testQuery(query, DBSPZSetLiteral.Contents.emptyWithElementType(
+                new DBSPTypeTuple(DBSPTypeBool.create(false), DBSPTypeBool.create(false))));
+    }
+
+    @Test
     public void joinNullableTest() {
         String query = "SELECT T1.COL3, T2.COL3 AS C3 FROM T AS T1 JOIN T AS T2 ON T1.COL1 = T2.COL5";
         this.testQuery(query, DBSPZSetLiteral.Contents.emptyWithElementType(

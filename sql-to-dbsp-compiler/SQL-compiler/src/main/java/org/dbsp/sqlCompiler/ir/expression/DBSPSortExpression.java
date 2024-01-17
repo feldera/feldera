@@ -39,7 +39,7 @@ import org.dbsp.util.IIndentStream;
  * Sorting is done using a comparator.
  * The sort expression represents a closure that sorts the vector.
  * E.g., in Rust the closure has the following signature:
- * move |(k, v): (&(), &Vec<Tuple<...>>)| -> Vec<Tuple<...>>
+ * move |(k, v): (&(), &Vec<Tup<...>>)| -> Vec<Tup<...>>
  */
 public class DBSPSortExpression extends DBSPExpression {
     public final DBSPComparatorExpression comparator;
