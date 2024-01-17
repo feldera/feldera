@@ -117,6 +117,7 @@ const sidebars = {
       items: ['api/rest', 'api/json', 'api/csv', 'api/rust']
     },
     'papers',
+    'videos',
     {
       type: 'category',
       label: 'Contributing',
