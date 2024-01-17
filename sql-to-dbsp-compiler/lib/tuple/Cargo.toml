@@ -1,9 +1,0 @@
-[package]
-name = "tuple"
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-paste = "1"
-rkyv_derive = "0.7"

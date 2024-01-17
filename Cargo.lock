@@ -2184,6 +2184,7 @@ dependencies = [
  "crossbeam",
  "crossbeam-utils",
  "csv",
+ "derive_more",
  "futures",
  "hashbrown 0.14.3",
  "impl-trait-for-tuples",
@@ -4893,7 +4894,6 @@ dependencies = [
  "size-of",
  "sqlvalue",
  "sqlx",
- "tuple",
 ]
 
 [[package]]
@@ -5107,21 +5107,10 @@ dependencies = [
  "hashbrown 0.12.3",
  "ptr_meta",
  "rend",
- "rkyv_derive 0.7.43 (git+https://github.com/gz/rkyv.git?rev=3d3fd86)",
+ "rkyv_derive",
  "seahash",
  "tinyvec",
  "uuid",
-]
-
-[[package]]
-name = "rkyv_derive"
-version = "0.7.43"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5c462a1328c8e67e4d6dbad1eb0355dd43e8ab432c6e227a43657f16ade5033"
-dependencies = [
- "proc-macro2 1.0.76",
- "quote 1.0.35",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -6489,14 +6478,6 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "tuple"
-version = "0.1.0"
-dependencies = [
- "paste",
- "rkyv_derive 0.7.43 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "typedmap"
