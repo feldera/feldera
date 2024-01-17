@@ -129,6 +129,12 @@ public class VarbinaryTests extends SqlIoTest {
                          1010123456
                         (1 row)
                         
+                        SELECT overlay(x'123456'::bytea placing x'1010' from 1 for 1);
+                         overlay
+                        ---------
+                         10103456
+                        (1 row)
+                        
                         SELECT overlay(x'123456'::bytea placing x'1010' from 1 for -1);
                          overlay
                         ---------
@@ -162,6 +168,12 @@ public class VarbinaryTests extends SqlIoTest {
                          123456
                         (1 row)
                         
+                        SELECT substring(x'123456', 1);
+                         substring
+                        -----------
+                         123456
+                        (1 row)
+                        
                         SELECT substring(x'123456', 3);
                          substring
                         -----------
@@ -178,6 +190,12 @@ public class VarbinaryTests extends SqlIoTest {
                          substring
                         -----------
                          5678
+                        (1 row)
+                        
+                        SELECT substring(x'123456'::bytea from -2 for 6);
+                         substring
+                        -----------
+                         123456
                         (1 row)
                         """
         );

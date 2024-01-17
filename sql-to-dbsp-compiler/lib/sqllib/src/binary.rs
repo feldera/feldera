@@ -138,6 +138,7 @@ pub fn position__(needle: ByteArray, haystack: ByteArray) -> i32 {
 some_function2!(position, ByteArray, ByteArray, i32);
 
 pub fn substring2__(source: ByteArray, left: i32) -> ByteArray {
+    // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
     let data = source.data.into_iter().skip(start as usize).collect();
 
@@ -147,7 +148,7 @@ pub fn substring2__(source: ByteArray, left: i32) -> ByteArray {
 some_function2!(substring2, ByteArray, i32, ByteArray);
 
 pub fn substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
-    // indexing starts at 0
+    // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
     let count = usize::try_from(count).expect("negative substring length not allowed");
 

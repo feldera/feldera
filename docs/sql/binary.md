@@ -47,7 +47,7 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
   </tr>
   <tr>
     <td><code>POSITION</code>(binary1 IN binary2)</td>
-    <td>Returns the position of the first occurrence of binary1 in binary2</td>
+    <td>Returns the position of the first occurrence of binary1 in binary2. The first offset is 1. If binary1 isn't found in binary2, 0 is returned</td>
     <td><code>POSITION(x'20' IN x'102023')</code> => <code>2</code></td>
   </tr>
   <tr>
@@ -57,17 +57,22 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
   </tr>
   <tr>
     <td><code>SUBSTRING</code>(binary FROM integer)</td>
-    <td>Generate a substring of binary starting at the given point. If the start position integer is negative, the substring starts at the position 0</td>
+    <td>Generate a substring of binary starting at the given offset in bytes. The first offset is 1. If the start position integer is less than 1, it is treated as 1</td>
     <td><code>SUBSTRING(x'123456', 3)</code> => <code>x'56'</code></td>
   </tr>
   <tr>
     <td><code>SUBSTRING</code>(binary FROM integer1 FOR integer2)</td>
-    <td>Generate a substring of binary starting at the given point with a given length. If the start position integer is negative, the substring starts at the position 0</td>
-    <td><code>SUBSTRING(x'1234567890', 3, 2)</code> => <code>x'5678'</code></td>
+    <td>Generate a substring of binary starting at the given offset in bytes with the given length. The first offset is 1. If the start position integer is less than 1, it is treated as 1</td>
+    <td><code>SUBSTRING(x'1234567890' FROM 3 FOR 2)</code> => <code>x'5678'</code></td>
   </tr>
   <tr>
-    <td><code>OVERLAY</code>(binary1 PLACING binary2 FROM integer [ FOR integer2 ])</td>
-    <td>Generate a binary string that replaces substring of binary1 with binary2. If the start position integer is negative, the new string will contain binary2 in position 0</td>
+    <td><code>OVERLAY</code>(binary1 PLACING binary2 FROM integer1 [ FOR integer2 ])</td>
+    <td>
+        Generate a binary string that replaces substring of binary1 with binary2. 
+        The substring of binary1 starts at the byte specified by integer1 and extends for integer2 bytes. 
+        If integer1 is greater than the byte length of binary1, concatenation is performed. 
+        If integer2 is smaller than the byte length of binary2, the substring still gets replaced by the entirety of binary2, producing a binary string with greater byte length than binary1
+    </td>
     <td><code>SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3)</code> => <code>x'12020390'</code></td>
   </tr>
 </table>
