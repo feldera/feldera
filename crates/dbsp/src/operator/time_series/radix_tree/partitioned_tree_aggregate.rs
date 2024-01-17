@@ -149,15 +149,17 @@ where
         O: PartitionedRadixTreeBatch<TS, Agg::Accumulator, Key = Z::Key>,
         O::R: ZRingValue,
     {
+        let stream = self.shard();
+
         self.circuit()
             .cache_get_or_insert_with(
-                <PartitionedTreeAggregateId<_, _, Agg>>::new(self.origin_node_id().clone()),
+                <PartitionedTreeAggregateId<_, _, Agg>>::new(stream.origin_node_id().clone()),
                 move || {
                     let aggregator = aggregator.clone();
+                    let stream = stream.clone();
                     self.circuit()
                         .region("partitioned_tree_aggregate", move || {
                             let circuit = self.circuit();
-                            let stream = self.shard();
 
                             // We construct the following circuit.  See `RadixTreeAggregate`
                             // documentation for details.

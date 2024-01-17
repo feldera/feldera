@@ -159,6 +159,7 @@ impl Storage for ProjectDB {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(ProgramId, Version), DBError> {
         Ok(program::new_program(
             self,
@@ -167,6 +168,7 @@ impl Storage for ProjectDB {
             program_name,
             program_description,
             program_code,
+            txn,
         )
         .await?)
     }
@@ -183,19 +185,39 @@ impl Storage for ProjectDB {
         status: &Option<ProgramStatus>,
         schema: &Option<ProgramSchema>,
         guard: Option<Version>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError> {
-        Ok(program::update_program(
-            self,
-            tenant_id,
-            program_id,
-            program_name,
-            program_description,
-            program_code,
-            status,
-            schema,
-            guard,
-        )
-        .await?)
+        if let Some(t) = txn {
+            Ok(program::update_program(
+                tenant_id,
+                program_id,
+                program_name,
+                program_description,
+                program_code,
+                status,
+                schema,
+                guard,
+                t,
+            )
+            .await?)
+        } else {
+            let mut manager = self.pool.get().await?;
+            let txn_inner = manager.transaction().await?;
+            let res = program::update_program(
+                tenant_id,
+                program_id,
+                program_name,
+                program_description,
+                program_code,
+                status,
+                schema,
+                guard,
+                &txn_inner,
+            )
+            .await?;
+            txn_inner.commit().await?;
+            Ok(res)
+        }
     }
 
     /// Retrieve program descriptor.
@@ -221,12 +243,8 @@ impl Storage for ProjectDB {
         Ok(program::get_program_by_name(self, tenant_id, program_name, with_code, txn).await?)
     }
 
-    async fn delete_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-    ) -> Result<(), DBError> {
-        Ok(program::delete_program(self, tenant_id, program_id).await?)
+    async fn delete_program(&self, tenant_id: TenantId, program_name: &str) -> Result<(), DBError> {
+        Ok(program::delete_program(self, tenant_id, program_name).await?)
     }
 
     async fn all_programs(&self) -> Result<Vec<(TenantId, ProgramDescr)>, DBError> {
@@ -298,26 +316,35 @@ impl Storage for ProjectDB {
         Ok(pipeline::get_pipeline_descr_by_id(self, tenant_id, pipeline_id, txn).await?)
     }
 
-    async fn get_pipeline_runtime_state(
+    async fn get_pipeline_runtime_state_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineRuntimeState, DBError> {
-        Ok(pipeline::get_pipeline_runtime_state(self, tenant_id, pipeline_id).await?)
+        Ok(pipeline::get_pipeline_runtime_state_by_id(self, tenant_id, pipeline_id).await?)
+    }
+
+    async fn get_pipeline_runtime_state_by_name(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineRuntimeState, DBError> {
+        Ok(pipeline::get_pipeline_runtime_state_by_name(self, tenant_id, pipeline_name).await?)
     }
 
     async fn get_pipeline_descr_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<PipelineDescr, DBError> {
-        Ok(pipeline::get_pipeline_descr_by_name(self, tenant_id, name).await?)
+        Ok(pipeline::get_pipeline_descr_by_name(self, tenant_id, name, txn).await?)
     }
 
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> Result<Pipeline, DBError> {
         Ok(pipeline::get_pipeline_by_name(self, tenant_id, name).await?)
     }
@@ -331,18 +358,37 @@ impl Storage for ProjectDB {
         pipeline_description: &str,
         config: &RuntimeConfig,
         connectors: &Option<Vec<AttachedConnector>>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(PipelineId, Version), DBError> {
-        Ok(pipeline::new_pipeline(
-            self,
-            tenant_id,
-            id,
-            program_name,
-            pipeline_name,
-            pipeline_description,
-            config,
-            connectors,
-        )
-        .await?)
+        if let Some(t) = txn {
+            Ok(pipeline::new_pipeline(
+                tenant_id,
+                id,
+                program_name,
+                pipeline_name,
+                pipeline_description,
+                config,
+                connectors,
+                t,
+            )
+            .await?)
+        } else {
+            let mut client = self.pool.get().await?;
+            let txn = client.transaction().await?;
+            let res = pipeline::new_pipeline(
+                tenant_id,
+                id,
+                program_name,
+                pipeline_name,
+                pipeline_description,
+                config,
+                connectors,
+                &txn,
+            )
+            .await?;
+            txn.commit().await?;
+            Ok(res)
+        }
     }
 
     async fn update_pipeline(
@@ -354,18 +400,37 @@ impl Storage for ProjectDB {
         pipeline_description: &str,
         config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError> {
-        Ok(pipeline::update_pipeline(
-            self,
-            tenant_id,
-            pipeline_id,
-            program_name,
-            pipeline_name,
-            pipeline_description,
-            config,
-            connectors,
-        )
-        .await?)
+        if let Some(t) = txn {
+            Ok(pipeline::update_pipeline(
+                tenant_id,
+                pipeline_id,
+                program_name,
+                pipeline_name,
+                pipeline_description,
+                config,
+                connectors,
+                t,
+            )
+            .await?)
+        } else {
+            let mut client = self.pool.get().await?;
+            let txn = client.transaction().await?;
+            let res = Ok(pipeline::update_pipeline(
+                tenant_id,
+                pipeline_id,
+                program_name,
+                pipeline_name,
+                pipeline_description,
+                config,
+                connectors,
+                &txn,
+            )
+            .await?);
+            txn.commit().await?;
+            res
+        }
     }
 
     async fn update_pipeline_runtime_state(
@@ -402,9 +467,9 @@ impl Storage for ProjectDB {
     async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<bool, DBError> {
-        Ok(pipeline::delete_pipeline(self, tenant_id, pipeline_id).await?)
+        pipeline_name: &str,
+    ) -> Result<(), DBError> {
+        Ok(pipeline::delete_pipeline(self, tenant_id, pipeline_name).await?)
     }
 
     async fn new_connector(
@@ -414,8 +479,9 @@ impl Storage for ProjectDB {
         name: &str,
         description: &str,
         config: &ConnectorConfig,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ConnectorId, DBError> {
-        Ok(connector::new_connector(self, tenant_id, id, name, description, config).await?)
+        Ok(connector::new_connector(self, tenant_id, id, name, description, config, txn).await?)
     }
 
     async fn list_connectors(&self, tenant_id: TenantId) -> Result<Vec<ConnectorDescr>, DBError> {
@@ -425,9 +491,10 @@ impl Storage for ProjectDB {
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ConnectorDescr, DBError> {
-        Ok(connector::get_connector_by_name(self, tenant_id, name).await?)
+        Ok(connector::get_connector_by_name(self, tenant_id, name, txn).await?)
     }
 
     async fn get_connector_by_id(
@@ -445,6 +512,7 @@ impl Storage for ProjectDB {
         connector_name: &str,
         description: &str,
         config: &Option<ConnectorConfig>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError> {
         Ok(connector::update_connector(
             self,
@@ -453,6 +521,7 @@ impl Storage for ProjectDB {
             connector_name,
             description,
             config,
+            txn,
         )
         .await?)
     }
@@ -460,9 +529,9 @@ impl Storage for ProjectDB {
     async fn delete_connector(
         &self,
         tenant_id: TenantId,
-        connector_id: ConnectorId,
+        connector_name: &str,
     ) -> Result<(), DBError> {
-        Ok(connector::delete_connector(self, tenant_id, connector_id).await?)
+        Ok(connector::delete_connector(self, tenant_id, connector_name).await?)
     }
 
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {
@@ -900,7 +969,7 @@ impl ProjectDB {
     /// user-friendly error message.
     fn maybe_program_id_in_use_foreign_key_constraint_err(
         err: DBError,
-        program_id: Option<ProgramId>,
+        program_name: Option<&str>,
     ) -> DBError {
         if let DBError::PostgresError { error, .. } = &err {
             let db_err = error.as_db_error();
@@ -908,8 +977,10 @@ impl ProjectDB {
                 if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
                     && db_err.constraint() == Some("pipeline_program_id_tenant_id_fkey")
                 {
-                    if let Some(program_id) = program_id {
-                        return DBError::ProgramInUseByPipeline { program_id };
+                    if let Some(program_name) = program_name {
+                        return DBError::ProgramInUseByPipeline {
+                            program_name: program_name.to_string(),
+                        };
                     } else {
                         unreachable!("program_id cannot be none");
                     }
@@ -973,9 +1044,9 @@ impl ProjectDB {
     pub(crate) async fn pipeline_config(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
+        pipeline_name: &str,
     ) -> Result<PipelineConfig, DBError> {
-        pipeline::pipeline_config(self, tenant_id, pipeline_id).await
+        pipeline::pipeline_config(self, tenant_id, pipeline_name).await
     }
 
     // TODO: Should be part of the Storage trait
@@ -985,6 +1056,138 @@ impl ProjectDB {
         pipeline_id: PipelineId,
     ) -> Result<(PipelineDescr, ProgramDescr, Vec<ConnectorDescr>), DBError> {
         pipeline::is_pipeline_deployable(self, tenant_id, pipeline_id).await
+    }
+
+    pub(crate) async fn create_or_replace_program(
+        &self,
+        tenant_id: TenantId,
+        program_name: &str,
+        program_description: &str,
+        program_code: &str,
+    ) -> Result<(bool, ProgramId, Version), DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let program = self
+            .get_program_by_name(tenant_id, program_name, false, Some(&txn))
+            .await;
+        let ret = match program {
+            Ok(p) => Ok(self
+                .update_program(
+                    tenant_id,
+                    p.program_id,
+                    &Some(program_name.to_string()),
+                    &Some(program_description.to_string()),
+                    &Some(program_code.to_string()),
+                    &None,
+                    &None,
+                    None,
+                    Some(&txn),
+                )
+                .await
+                .map(|v| (false, p.program_id, v))?),
+            Err(DBError::UnknownProgramName { program_name }) => Ok(self
+                .new_program(
+                    tenant_id,
+                    Uuid::now_v7(),
+                    &program_name,
+                    program_description,
+                    program_code,
+                    Some(&txn),
+                )
+                .await
+                .map(|(p, v)| (true, p, v))?),
+            Err(e) => Err(e),
+        }?;
+        txn.commit().await?;
+        Ok(ret)
+    }
+
+    pub(crate) async fn create_or_replace_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        program_name: &Option<String>,
+        pipeline_description: &str,
+        config: &RuntimeConfig,
+        connectors: &Option<Vec<AttachedConnector>>,
+    ) -> Result<(bool, PipelineId, Version), DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let pipeline = self
+            .get_pipeline_descr_by_name(tenant_id, pipeline_name, Some(&txn))
+            .await;
+        let res = match pipeline {
+            Ok(p) => Ok(self
+                .update_pipeline(
+                    tenant_id,
+                    p.pipeline_id,
+                    program_name,
+                    pipeline_name,
+                    pipeline_description,
+                    &Some(config.clone()),
+                    connectors,
+                    Some(&txn),
+                )
+                .await
+                .map(|v| (false, p.pipeline_id, v))?),
+            Err(DBError::UnknownPipelineName { pipeline_name }) => Ok(self
+                .new_pipeline(
+                    tenant_id,
+                    Uuid::now_v7(),
+                    program_name,
+                    &pipeline_name,
+                    pipeline_description,
+                    config,
+                    connectors,
+                    Some(&txn),
+                )
+                .await
+                .map(|(p, v)| (true, p, v))?),
+            Err(e) => Err(e),
+        }?;
+        txn.commit().await?;
+        Ok(res)
+    }
+
+    pub(crate) async fn create_or_replace_connector(
+        &self,
+        tenant_id: TenantId,
+        connector_name: &str,
+        description: &str,
+        config: &ConnectorConfig,
+    ) -> Result<(bool, ConnectorId), DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let connector = self
+            .get_connector_by_name(tenant_id, connector_name, Some(&txn))
+            .await;
+        let res = match connector {
+            Ok(c) => Ok(self
+                .update_connector(
+                    tenant_id,
+                    c.connector_id,
+                    connector_name,
+                    description,
+                    &Some(config.clone()),
+                    Some(&txn),
+                )
+                .await
+                .map(|_| (false, c.connector_id))?),
+            Err(DBError::UnknownConnectorName { connector_name }) => Ok(self
+                .new_connector(
+                    tenant_id,
+                    Uuid::now_v7(),
+                    &connector_name,
+                    description,
+                    config,
+                    Some(&txn),
+                )
+                .await
+                .map(|c| (true, c))?),
+            Err(e) => Err(e),
+        }?;
+        txn.commit().await?;
+        Ok(res)
     }
 
     /// Run database migrations

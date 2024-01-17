@@ -190,6 +190,7 @@ async fn program_creation() {
             "test1",
             "program desc",
             "ignored",
+            None,
         )
         .await
         .unwrap();
@@ -248,6 +249,7 @@ async fn duplicate_program() {
             "test1",
             "program desc",
             "ignored",
+            None,
         )
         .await;
     let res = handle
@@ -258,6 +260,7 @@ async fn duplicate_program() {
             "test1",
             "program desc",
             "ignored",
+            None,
         )
         .await
         .expect_err("Expecting unique violation");
@@ -277,6 +280,7 @@ async fn program_code() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            None,
         )
         .await
         .unwrap();
@@ -305,6 +309,7 @@ async fn update_program() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            None,
         )
         .await
         .unwrap();
@@ -318,6 +323,7 @@ async fn update_program() {
             &Some("create table t2(c2 integer);".to_string()),
             &None,
             &None,
+            None,
             None,
         )
         .await;
@@ -341,6 +347,7 @@ async fn update_program() {
             &None,
             &None,
             None,
+            None,
         )
         .await;
     let results = handle.db.list_programs(tenant_id, false).await.unwrap();
@@ -362,6 +369,7 @@ async fn program_queries() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            None,
         )
         .await
         .unwrap();
@@ -396,6 +404,7 @@ async fn program_config() {
             "a",
             "b",
             &test_connector_config(),
+            None,
         )
         .await
         .unwrap();
@@ -416,6 +425,7 @@ async fn program_config() {
             "2",
             &rc,
             &Some(vec![ac.clone()]),
+            None,
         )
         .await
         .unwrap();
@@ -444,6 +454,7 @@ async fn project_pending() {
             "test1",
             "project desc",
             "ignored",
+            None,
         )
         .await
         .unwrap();
@@ -455,6 +466,7 @@ async fn project_pending() {
             "test2",
             "project desc",
             "ignored",
+            None,
         )
         .await
         .unwrap();
@@ -489,6 +501,7 @@ async fn update_status() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            None,
         )
         .await
         .unwrap();
@@ -528,6 +541,7 @@ async fn duplicate_attached_conn_name() {
             "a",
             "b",
             &test_connector_config(),
+            None,
         )
         .await
         .unwrap();
@@ -554,6 +568,7 @@ async fn duplicate_attached_conn_name() {
             "2",
             &rc,
             &Some(vec![ac, ac2]),
+            None,
         )
         .await
         .expect_err("duplicate attached connector name");
@@ -571,6 +586,7 @@ async fn update_conn_name() {
             "a",
             "b",
             &test_connector_config(),
+            None,
         )
         .await
         .unwrap();
@@ -591,17 +607,18 @@ async fn update_conn_name() {
             "2",
             &rc,
             &Some(vec![ac]),
+            None,
         )
         .await
         .unwrap();
     handle
         .db
-        .update_connector(tenant_id, connector_id, "not-a", "b", &None)
+        .update_connector(tenant_id, connector_id, "not-a", "b", &None, None)
         .await
         .unwrap();
     let pipeline = handle
         .db
-        .get_pipeline_by_name(tenant_id, "1".to_string())
+        .get_pipeline_by_name(tenant_id, "1")
         .await
         .unwrap();
     assert_eq!(
@@ -709,7 +726,7 @@ async fn versioning_no_change_no_connectors() {
 
     let (program_id, _) = handle
         .db
-        .new_program(tenant_id, Uuid::now_v7(), "", "", "")
+        .new_program(tenant_id, Uuid::now_v7(), "", "", "", None)
         .await
         .unwrap();
     handle
@@ -728,6 +745,7 @@ async fn versioning_no_change_no_connectors() {
             "",
             &rc,
             &None,
+            None,
         )
         .await
         .unwrap();
@@ -761,6 +779,7 @@ async fn versioning() {
             "test1",
             "program desc",
             "only schema matters--this isn't compiled",
+            None,
         )
         .await
         .unwrap();
@@ -794,7 +813,7 @@ async fn versioning() {
     };
     let connector_id1: ConnectorId = handle
         .db
-        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", &config1)
+        .new_connector(tenant_id, Uuid::now_v7(), "a", "b", &config1, None)
         .await
         .unwrap();
     let mut ac1 = AttachedConnector {
@@ -805,7 +824,7 @@ async fn versioning() {
     };
     handle
         .db
-        .new_connector(tenant_id, Uuid::now_v7(), "d", "e", &config2)
+        .new_connector(tenant_id, Uuid::now_v7(), "d", "e", &config2, None)
         .await
         .unwrap();
     let mut ac2 = AttachedConnector {
@@ -825,6 +844,7 @@ async fn versioning() {
             "2",
             &rc,
             &Some(vec![ac1.clone(), ac2.clone()]),
+            None,
         )
         .await
         .unwrap();
@@ -842,6 +862,7 @@ async fn versioning() {
             &Some("only schema matters--this isn't compiled2".to_string()),
             &None,
             &None,
+            None,
             None,
         )
         .await
@@ -926,6 +947,7 @@ async fn versioning() {
             "2",
             &Some(gp_config.clone()),
             &Some(vec![ac1.clone(), ac2.clone()]),
+            None,
         )
         .await
         .unwrap();
@@ -948,6 +970,7 @@ async fn versioning() {
             "2",
             &Some(gp_config.clone()),
             &Some(vec![ac1.clone(), ac2.clone()]),
+            None,
         )
         .await
         .unwrap();
@@ -963,7 +986,7 @@ async fn versioning() {
     };
     handle
         .db
-        .update_connector(tenant_id, connector_id1, "a", "b", &Some(config3))
+        .update_connector(tenant_id, connector_id1, "a", "b", &Some(config3), None)
         .await
         .unwrap();
     let r4 = commit_check(&handle, tenant_id, pipeline_id).await;
@@ -981,6 +1004,7 @@ async fn versioning() {
             "2",
             &Some(gp_config.clone()),
             &Some(vec![ac1.clone(), ac2.clone()]),
+            None,
         )
         .await
         .unwrap();
@@ -998,6 +1022,7 @@ async fn versioning() {
             "2",
             &Some(gp_config.clone()),
             &Some(vec![ac1.clone()]),
+            None,
         )
         .await
         .unwrap();
@@ -1018,6 +1043,7 @@ async fn versioning() {
                 ..gp_config
             }),
             &Some(vec![ac1.clone()]),
+            None,
         )
         .await
         .unwrap();
@@ -1201,7 +1227,7 @@ enum StorageAction {
     GetProgramByName(TenantId, String, bool),
     SetProgramStatusGuarded(TenantId, ProgramId, Version, ProgramStatus),
     SetProgramSchema(TenantId, ProgramId, ProgramSchema),
-    DeleteProgram(TenantId, ProgramId),
+    DeleteProgram(TenantId, String),
     AllPrograms,
     NextJob,
     NewPipeline(
@@ -1227,12 +1253,13 @@ enum StorageAction {
     ),
     UpdatePipelineRuntimeState(TenantId, PipelineId, PipelineRuntimeState),
     SetPipelineDesiredStatus(TenantId, PipelineId, PipelineStatus),
-    DeletePipeline(TenantId, PipelineId),
+    DeletePipeline(TenantId, String),
     GetPipelineById(TenantId, PipelineId),
     GetPipelineByName(TenantId, String),
     GetPipelineDescrById(TenantId, PipelineId),
     GetPipelineDescrByName(TenantId, String),
-    GetPipelineRuntimeState(TenantId, PipelineId),
+    GetPipelineRuntimeStateById(TenantId, PipelineId),
+    GetPipelineRuntimeStateByName(TenantId, String),
     ListPipelines(TenantId),
     NewConnector(
         TenantId,
@@ -1252,7 +1279,7 @@ enum StorageAction {
         String,
         #[proptest(strategy = "limited_option_connector()")] Option<ConnectorConfig>,
     ),
-    DeleteConnector(TenantId, ConnectorId),
+    DeleteConnector(TenantId, String),
     NewService(
         TenantId,
         #[proptest(strategy = "limited_uuid()")] Uuid,
@@ -1479,19 +1506,19 @@ fn db_impl_behaves_like_model() {
                             StorageAction::NewProgram(tenant_id, id, name, description, code) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_program(tenant_id, id, &name, &description, &code).await;
+                                    model.new_program(tenant_id, id, &name, &description, &code, None).await;
                                 let impl_response =
-                                    handle.db.new_program(tenant_id, id, &name, &description, &code).await;
+                                    handle.db.new_program(tenant_id, id, &name, &description, &code, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::UpdateProgram(tenant_id, program_id, name, description, code, guard) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, guard)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, guard, None)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, guard)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, guard, None)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -1527,10 +1554,10 @@ fn db_impl_behaves_like_model() {
                                     handle.db.set_program_schema(tenant_id, program_id, schema).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteProgram(tenant_id, program_id) => {
+                            StorageAction::DeleteProgram(tenant_id, program_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.delete_program(tenant_id, program_id).await;
-                                let impl_response = handle.db.delete_program(tenant_id, program_id).await;
+                                let model_response = model.delete_program(tenant_id, &program_name).await;
+                                let impl_response = handle.db.delete_program(tenant_id, &program_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::AllPrograms => {
@@ -1553,8 +1580,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetPipelineByName(tenant_id, name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_pipeline_by_name(tenant_id, name.clone()).await;
-                                let impl_response = handle.db.get_pipeline_by_name(tenant_id, name).await;
+                                let model_response = model.get_pipeline_by_name(tenant_id, &name).await;
+                                let impl_response = handle.db.get_pipeline_by_name(tenant_id, &name).await;
                                 compare_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::GetPipelineDescrById(tenant_id, pipeline_id) => {
@@ -1565,14 +1592,20 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetPipelineDescrByName(tenant_id, name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_pipeline_descr_by_name(tenant_id, name.clone()).await;
-                                let impl_response = handle.db.get_pipeline_descr_by_name(tenant_id, name).await;
+                                let model_response = model.get_pipeline_descr_by_name(tenant_id, &name, None).await;
+                                let impl_response = handle.db.get_pipeline_descr_by_name(tenant_id, &name, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::GetPipelineRuntimeState(tenant_id, pipeline_id) => {
+                            StorageAction::GetPipelineRuntimeStateById(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_pipeline_runtime_state(tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.get_pipeline_runtime_state(tenant_id, pipeline_id).await;
+                                let model_response = model.get_pipeline_runtime_state_by_id(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.get_pipeline_runtime_state_by_id(tenant_id, pipeline_id).await;
+                                compare_pipeline_runtime_state(i, model_response, impl_response);
+                            }
+                            StorageAction::GetPipelineRuntimeStateByName(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_runtime_state_by_name(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.get_pipeline_runtime_state_by_name(tenant_id, &pipeline_name).await;
                                 compare_pipeline_runtime_state(i, model_response, impl_response);
                             }
                             StorageAction::ListPipelines(tenant_id,) => {
@@ -1586,19 +1619,19 @@ fn db_impl_behaves_like_model() {
                             StorageAction::NewPipeline(tenant_id, id, program_name, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_pipeline(tenant_id, id, &program_name, &name, &description, &config, &connectors.clone()).await;
+                                    model.new_pipeline(tenant_id, id, &program_name, &name, &description, &config, &connectors.clone(), None).await;
                                 let impl_response =
-                                    handle.db.new_pipeline(tenant_id, id, &program_name, &name, &description, &config, &connectors).await;
+                                    handle.db.new_pipeline(tenant_id, id, &program_name, &name, &description, &config, &connectors, None).await;
                                     check_responses(i, model_response, impl_response);
                             }
                             StorageAction::UpdatePipeline(tenant_id, pipeline_id, program_name, name, description, config, connectors) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_pipeline(tenant_id, pipeline_id, &program_name, &name, &description, &config, &connectors.clone())
+                                    .update_pipeline(tenant_id, pipeline_id, &program_name, &name, &description, &config, &connectors.clone(), None)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_pipeline(tenant_id, pipeline_id, &program_name, &name, &description, &config, &connectors)
+                                    .update_pipeline(tenant_id, pipeline_id, &program_name, &name, &description, &config, &connectors, None)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -1614,10 +1647,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.set_pipeline_desired_status(tenant_id, pipeline_id, status).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeletePipeline(tenant_id,pipeline_id) => {
+                            StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.delete_pipeline(tenant_id, pipeline_id).await;
-                                let impl_response = handle.db.delete_pipeline(tenant_id, pipeline_id).await;
+                                let model_response = model.delete_pipeline(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.delete_pipeline(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::ListConnectors(tenant_id,) => {
@@ -1631,9 +1664,9 @@ fn db_impl_behaves_like_model() {
                             StorageAction::NewConnector(tenant_id, id, name, description, config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_connector(tenant_id, id, &name, &description, &config).await;
+                                    model.new_connector(tenant_id, id, &name, &description, &config, None).await;
                                 let impl_response =
-                                    handle.db.new_connector(tenant_id, id, &name, &description, &config).await;
+                                    handle.db.new_connector(tenant_id, id, &name, &description, &config, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetConnectorById(tenant_id,connector_id) => {
@@ -1644,22 +1677,22 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::GetConnectorByName(tenant_id,name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_connector_by_name(tenant_id, name.clone()).await;
-                                let impl_response = handle.db.get_connector_by_name(tenant_id, name).await;
+                                let model_response = model.get_connector_by_name(tenant_id, &name, None).await;
+                                let impl_response = handle.db.get_connector_by_name(tenant_id, &name, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::UpdateConnector(tenant_id,connector_id, name, description, config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.update_connector(tenant_id, connector_id, &name, &description, &config).await;
+                                    model.update_connector(tenant_id, connector_id, &name, &description, &config, None).await;
                                 let impl_response =
-                                    handle.db.update_connector(tenant_id, connector_id, &name, &description, &config).await;
+                                    handle.db.update_connector(tenant_id, connector_id, &name, &description, &config, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteConnector(tenant_id,connector_id) => {
+                            StorageAction::DeleteConnector(tenant_id, connector_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.delete_connector(tenant_id, connector_id).await;
-                                let impl_response = handle.db.delete_connector(tenant_id, connector_id).await;
+                                let model_response = model.delete_connector(tenant_id, &connector_name).await;
+                                let impl_response = handle.db.delete_connector(tenant_id, &connector_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::ListApiKeys(tenant_id) => {
@@ -1801,6 +1834,7 @@ impl Storage for Mutex<DbModel> {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
         if s.programs.keys().any(|k| k.1 == ProgramId(id)) {
@@ -1847,6 +1881,7 @@ impl Storage for Mutex<DbModel> {
         status: &Option<ProgramStatus>,
         schema: &Option<ProgramSchema>,
         guard: Option<Version>,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<super::Version> {
         let mut s = self.lock().await;
         let (program_descr, _) = s
@@ -1969,34 +2004,37 @@ impl Storage for Mutex<DbModel> {
             })?)
     }
 
-    async fn delete_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: super::ProgramId,
-    ) -> DBResult<()> {
+    async fn delete_program(&self, tenant_id: TenantId, program_name: &str) -> DBResult<()> {
         let mut s = self.lock().await;
         // Foreign key delete:
-        let program_name = s
+        let program = &s
             .programs
-            .get(&(tenant_id, program_id))
-            .ok_or(DBError::UnknownProgram { program_id })?
-            .0
-            .name
-            .clone();
+            .iter()
+            .find(|c| c.0 .0 == tenant_id && c.1 .0.name == program_name)
+            .ok_or(DBError::UnknownProgramName {
+                program_name: program_name.to_string(),
+            })?
+            .1
+             .0;
+        let program_id = program.program_id;
 
         let found = s
             .pipelines
             .iter()
             .filter(|&c| c.0 .0 == tenant_id)
-            .any(|c| c.1.descriptor.program_name == Some(program_name.clone()));
+            .any(|c| c.1.descriptor.program_name == Some(program_name.to_string()));
 
         if found {
-            Err(DBError::ProgramInUseByPipeline { program_id })
+            Err(DBError::ProgramInUseByPipeline {
+                program_name: program_name.to_string(),
+            })
         } else {
             s.programs
                 .remove(&(tenant_id, program_id))
                 .map(|_| ())
-                .ok_or(DBError::UnknownProgram { program_id })?;
+                .ok_or(DBError::UnknownProgramName {
+                    program_name: program_name.to_string(),
+                })?;
 
             Ok(())
         }
@@ -2164,6 +2202,7 @@ impl Storage for Mutex<DbModel> {
         config: &RuntimeConfig,
         // TODO: not clear why connectors is an option here
         connectors: &Option<Vec<AttachedConnector>>,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<(super::PipelineId, super::Version)> {
         let mut s = self.lock().await;
         let db_connectors = s.connectors.clone();
@@ -2228,6 +2267,7 @@ impl Storage for Mutex<DbModel> {
                     version: Version(1),
                 },
                 state: PipelineRuntimeState {
+                    pipeline_id,
                     location: "".to_string(),
                     desired_status: PipelineStatus::Shutdown,
                     current_status: PipelineStatus::Shutdown,
@@ -2250,6 +2290,7 @@ impl Storage for Mutex<DbModel> {
         pipeline_description: &str,
         config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<Version> {
         let mut s = self.lock().await;
         let db_connectors = s.connectors.clone();
@@ -2333,19 +2374,15 @@ impl Storage for Mutex<DbModel> {
         todo!()
     }
 
-    async fn delete_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: super::PipelineId,
-    ) -> DBResult<bool> {
+    async fn delete_pipeline(&self, tenant_id: TenantId, pipeline_name: &str) -> DBResult<()> {
+        let pipeline = self.get_pipeline_by_name(tenant_id, pipeline_name).await?;
         let mut s = self.lock().await;
-        let _r = s.history.remove(&(tenant_id, pipeline_id));
-        // TODO: Our APIs sometimes are not consistent we return a bool here but
-        // other calls fail silently on delete/lookups
-        Ok(s.pipelines
-            .remove(&(tenant_id, pipeline_id))
-            .map(|_| true)
-            .unwrap_or(false))
+        let _r = s
+            .history
+            .remove(&(tenant_id, pipeline.descriptor.pipeline_id));
+        s.pipelines
+            .remove(&(tenant_id, pipeline.descriptor.pipeline_id));
+        Ok(())
     }
 
     async fn get_pipeline_by_id(
@@ -2371,12 +2408,22 @@ impl Storage for Mutex<DbModel> {
             .map(|p| p.descriptor)
     }
 
-    async fn get_pipeline_runtime_state(
+    async fn get_pipeline_runtime_state_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<PipelineRuntimeState, DBError> {
         self.get_pipeline_by_id(tenant_id, pipeline_id)
+            .await
+            .map(|p| p.state)
+    }
+
+    async fn get_pipeline_runtime_state_by_name(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineRuntimeState, DBError> {
+        self.get_pipeline_by_name(tenant_id, pipeline_name)
             .await
             .map(|p| p.state)
     }
@@ -2423,7 +2470,7 @@ impl Storage for Mutex<DbModel> {
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> DBResult<super::Pipeline> {
         let s = self.lock().await;
         s.pipelines
@@ -2431,15 +2478,18 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|p| p.descriptor.name == name)
-            .ok_or(DBError::UnknownName { name })
+            .ok_or(DBError::UnknownPipelineName {
+                pipeline_name: name.to_string(),
+            })
     }
 
     async fn get_pipeline_descr_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<super::PipelineDescr> {
-        self.get_pipeline_by_name(tenant_id, name)
+        self.get_pipeline_by_name(tenant_id, &name)
             .await
             .map(|p| p.descriptor)
     }
@@ -2462,6 +2512,7 @@ impl Storage for Mutex<DbModel> {
         name: &str,
         description: &str,
         config: &ConnectorConfig,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<super::ConnectorId> {
         let mut s = self.lock().await;
         if s.connectors.keys().any(|k| k.1 == ConnectorId(id)) {
@@ -2513,7 +2564,8 @@ impl Storage for Mutex<DbModel> {
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<ConnectorDescr> {
         let s = self.lock().await;
         s.connectors
@@ -2521,7 +2573,9 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|c| c.name == name)
-            .ok_or(DBError::UnknownName { name })
+            .ok_or(DBError::UnknownConnectorName {
+                connector_name: name.to_string(),
+            })
     }
 
     async fn update_connector(
@@ -2531,6 +2585,7 @@ impl Storage for Mutex<DbModel> {
         connector_name: &str,
         description: &str,
         config: &Option<ConnectorConfig>,
+        _txn: Option<&Transaction<'_>>,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         // `connector_id` needs to exist
@@ -2563,20 +2618,23 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn delete_connector(
-        &self,
-        tenant_id: TenantId,
-        connector_id: super::ConnectorId,
-    ) -> DBResult<()> {
+    async fn delete_connector(&self, tenant_id: TenantId, connector_name: &str) -> DBResult<()> {
         let mut s = self.lock().await;
-        let row = s
+        let connector_id = s
             .connectors
+            .iter()
+            .find(|c| c.0 .0 == tenant_id && c.1.name == connector_name)
+            .map(|entry| entry.0 .1)
+            .ok_or(DBError::UnknownConnectorName {
+                connector_name: connector_name.to_string(),
+            })?;
+        s.connectors
             .remove(&(tenant_id, connector_id))
             .ok_or(DBError::UnknownConnector { connector_id })?;
         s.pipelines.values_mut().for_each(|c| {
             c.descriptor
                 .attached_connectors
-                .retain(|c| c.name != row.name);
+                .retain(|c| c.name != connector_name);
         });
         Ok(())
     }

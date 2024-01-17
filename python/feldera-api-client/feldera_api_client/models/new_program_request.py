@@ -10,7 +10,7 @@ class NewProgramRequest:
     """Request to create a new Feldera program.
 
     Attributes:
-        code (str): SQL code of the program. Example: CREATE TABLE Example(name varchar);.
+        code (str): SQL code of the program. Example: CREATE TABLE example(name VARCHAR);.
         description (str): Program description. Example: Example description.
         name (str): Program name. Example: Example program.
     """

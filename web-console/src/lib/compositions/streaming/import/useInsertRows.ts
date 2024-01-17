@@ -2,13 +2,13 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { getValueFormatter, Row } from '$lib/functions/ddl'
-import { ApiError, Field, HttpInputOutputService, PipelineId, Relation } from '$lib/services/manager'
+import { ApiError, Field, HttpInputOutputService, Relation } from '$lib/services/manager'
 import Papa from 'papaparse'
 import { Dispatch, SetStateAction, useCallback } from 'react'
 
 import { useMutation } from '@tanstack/react-query'
 
-type Args = [pipelineId: PipelineId, relation: string, force: boolean, csvData: string]
+type Args = [pipelineName: string, relation: string, force: boolean, csvData: string]
 
 // We convert fields to a tuple so that we can use it as a line in the CSV we're
 // sending to the server.
@@ -25,14 +25,14 @@ function useInsertRows() {
   const { pushMessage } = useStatusNotification()
 
   const { mutate: pipelineInsert, isPending: pipelineInsertLoading } = useMutation<string, ApiError, Args>({
-    mutationFn: ([pipelineId, relation, force, csvData]) => {
-      return HttpInputOutputService.httpInput(pipelineId, relation, force, 'csv', csvData)
+    mutationFn: ([pipelineName, relation, force, csvData]) => {
+      return HttpInputOutputService.httpInput(pipelineName, relation, force, 'csv', csvData)
     }
   })
 
   const insertRows = useCallback(
     (
-      pipelineId: PipelineId,
+      pipelineName: string,
       relation: Relation,
       force: boolean,
       rows: Row[],
@@ -40,7 +40,7 @@ function useInsertRows() {
     ) => {
       if (!pipelineInsertLoading) {
         const csvData = Papa.unparse(rows.map(row => rowToCsvLine(relation, row)))
-        pipelineInsert([pipelineId, relation.name, force, csvData], {
+        pipelineInsert([pipelineName, relation.name, force, csvData], {
           onSuccess: () => {
             setRows([])
             pushMessage({ message: `${rows.length} Row(s) inserted`, key: new Date().getTime(), color: 'success' })

@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 export function usePipelineMetrics(props: {
-  pipelineId: string
+  pipelineName: string
   status: PipelineStatus
   refetchMs: number
   keepMs?: number
@@ -23,7 +23,7 @@ export function usePipelineMetrics(props: {
     output: new Map<string, OutputConnectorMetrics>()
   })
   const pipelineStatsQuery = useQuery({
-    ...PipelineManagerQuery.pipelineStats(props.pipelineId),
+    ...PipelineManagerQuery.pipelineStats(props.pipelineName),
     enabled: props.status == PipelineStatus.RUNNING,
     refetchInterval: props.refetchMs
   })

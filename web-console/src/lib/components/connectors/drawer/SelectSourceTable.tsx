@@ -22,7 +22,7 @@ const SelectSourceTable = (props: {
   onAddClick: Dispatch<ConnectorDescr>
 }) => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
-  const fetchQuery = useQuery(PipelineManagerQuery.connector())
+  const fetchQuery = useQuery(PipelineManagerQuery.connectors())
 
   const columns: GridColDef[] = [
     {
@@ -55,7 +55,7 @@ const SelectSourceTable = (props: {
               Add
             </Button>
             <Tooltip title='Inspect' key='inspect'>
-              <IconButton size='small' component={Link} href={'#view/connector/' + params.row.connector_id}>
+              <IconButton size='small' component={Link} href={'#view/connector/' + params.row.name}>
                 <IconShow fontSize={20} />
               </IconButton>
             </Tooltip>

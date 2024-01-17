@@ -95,22 +95,21 @@ export const CompileIndicator = (props: { state: ProgramStatus }) => {
     }))
     .exhaustive()
 
-  if (buttonState.visible) {
-    return (
-      <Tooltip title={buttonState.toolTip}>
-        <CustomChip
-          sx={{ mr: 1 }}
-          label={buttonState.label}
-          skin='light'
-          color={buttonState.color}
-          icon={buttonState.isCompiling ? loadingIcon : buttonState.color == 'error' ? errIcon : doneIcon}
-          data-testid={'box-compile-status-' + buttonState.status}
-        />
-      </Tooltip>
-    )
-  } else {
+  if (!buttonState.visible) {
     return <></>
   }
+  return (
+    <Tooltip title={buttonState.toolTip}>
+      <CustomChip
+        sx={{ mr: 1 }}
+        label={buttonState.label}
+        skin='light'
+        color={buttonState.color}
+        icon={buttonState.isCompiling ? loadingIcon : buttonState.color == 'error' ? errIcon : doneIcon}
+        data-testid={'box-compile-status-' + buttonState.status}
+      />
+    </Tooltip>
+  )
 }
 
 export default CompileIndicator

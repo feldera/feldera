@@ -1,32 +1,38 @@
 'use client'
 
 import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
+import { EntitySyncIndicator, EntitySyncIndicatorStatus } from '$lib/components/common/EntitySyncIndicator'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import SaveIndicator, { SaveIndicatorState } from '$lib/components/common/SaveIndicator'
 import { UnknownConnectorDialog } from '$lib/components/connectors/dialogs/UnknownConnector'
 import Metadata from '$lib/components/streaming/builder/Metadata'
 import MissingSchemaDialog from '$lib/components/streaming/builder/NoSchemaDialog'
-import PipelineGraph from '$lib/components/streaming/builder/PipelineBuilder'
+import { PipelineGraph } from '$lib/components/streaming/builder/PipelineBuilder'
 import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
+import { useDeleteNode } from '$lib/compositions/streaming/builder/useDeleteNode'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
+import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { partition, replaceElement } from '$lib/functions/common/array'
-import { setQueryData } from '$lib/functions/common/tanstack'
+import { invalidateQuery, setQueryData } from '$lib/functions/common/tanstack'
 import { showOnHashPart } from '$lib/functions/urlHash'
 import {
   ApiError,
   AttachedConnector,
+  ConnectorDescr,
   NewPipelineRequest,
   NewPipelineResponse,
-  PipelineId,
-  PipelinesService,
-  UpdatePipelineRequest,
-  UpdatePipelineResponse
+  PipelineDescr,
+  PipelineRuntimeState,
+  UpdatePipelineRequest
 } from '$lib/services/manager'
-import { invalidatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import {
+  mutationCreatePipeline,
+  PipelineManagerQuery,
+  updatePipelineConnectorName
+} from '$lib/services/pipelineManagerQuery'
 import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
-import assert from 'assert'
+import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from 'reactflow'
@@ -39,12 +45,15 @@ import { Button, Card, CardContent, Link } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-const stateToSaveLabel = (state: SaveIndicatorState): string =>
+const SAVE_DELAY = 1000
+
+interface FormError {
+  name?: { message?: string }
+}
+
+const stateToSaveLabel = (state: EntitySyncIndicatorStatus): string =>
   match(state)
     .with('isModified', () => {
-      return 'Saving …'
-    })
-    .with('isDebouncing', () => {
       return 'Saving …'
     })
     .with('isSaving', () => {
@@ -54,108 +63,104 @@ const stateToSaveLabel = (state: SaveIndicatorState): string =>
       return 'Saved'
     })
     .with('isNew', () => {
-      return 'New Pipeline'
+      return 'Name the pipeline to save it'
+    })
+    .with('isLoading', () => {
+      return 'Loading …'
     })
     .exhaustive()
 
+const useCreatePipelineEffect = (
+  pipeline: PipelineDescr,
+  setStatus: Dispatch<EntitySyncIndicatorStatus>,
+  setFormError: Dispatch<FormError>
+) => {
+  const queryClient = useQueryClient()
+  const { pushMessage } = useStatusNotification()
+  const router = useRouter()
+
+  const { mutate } = useMutation(mutationCreatePipeline(queryClient))
+  const createPipeline = (pipeline: NewPipelineRequest) => {
+    invariant(pipeline.name, 'Cannot create a pipeline with an empty name!')
+    setStatus('isSaving')
+    return mutate(pipeline, {
+      onSuccess: (_data: NewPipelineResponse) => {
+        if (!pipeline.name) {
+          setFormError({ name: { message: 'Enter a name for the project.' } })
+        }
+        setStatus('isUpToDate')
+        router.push(`/streaming/builder/?pipeline_name=${pipeline.name}`)
+        setFormError({})
+      },
+      onError: (error: ApiError) => {
+        // TODO: would be good to have error codes from the API
+        if (error.message.includes('name already exists')) {
+          setFormError({ name: { message: 'This name is already in use. Enter a different name.' } })
+          setStatus('isNew')
+        } else {
+          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
+        }
+      }
+    })
+  }
+  const createPipelineDebounced = useDebouncedCallback(() => {
+    if (!pipeline.name || pipeline.pipeline_id) {
+      return
+    }
+    return createPipeline({
+      name: pipeline.name,
+      description: pipeline.description,
+      config: pipeline.config,
+      program_name: pipeline.program_name || undefined,
+      connectors: pipeline.attached_connectors
+    })
+  }, SAVE_DELAY)
+  useEffect(() => createPipelineDebounced(), [pipeline, createPipelineDebounced])
+}
+
 const detachConnector = (c: AttachedConnector) => ({ ...c, relation_name: '' }) as AttachedConnector
 
-const PipelineBuilderPage = (props: {
-  pipelineId: PipelineId | undefined
-  setPipelineId: Dispatch<SetStateAction<PipelineId | undefined>>
-}) => {
-  const router = useRouter()
-  const [hash, setHash] = useHashPart()
-  const showOnHash = showOnHashPart([hash, setHash])
-  const queryClient = useQueryClient()
-  const [missingSchemaDialog, setMissingSchemaDialog] = useState(false)
-
-  const { pipelineId, setPipelineId } = props
-  const setSaveState = useBuilderState(state => state.setSaveState)
-  const saveState = useBuilderState(state => state.saveState)
-
-  const name = useBuilderState(state => state.name)
-  const setName = useBuilderState(state => state.setName)
-
-  const description = useBuilderState(state => state.description)
-  const setDescription = useBuilderState(state => state.setDescription)
-
-  const config = useBuilderState(state => state.config)
-  const setConfig = useBuilderState(state => state.setConfig)
-
-  const project = useBuilderState(state => state.project)
-  const setProject = useBuilderState(state => state.setProject)
-
-  const { getNode, getEdges, setNodes } = useReactFlow<IONodeData | ProgramNodeData>()
-
-  const { mutate: newPipelineMutate } = useMutation<NewPipelineResponse, ApiError, NewPipelineRequest>({
-    mutationFn: PipelinesService.newPipeline
-  })
-  const { mutate: updatePipelineMutate } = useMutation<
-    UpdatePipelineResponse,
-    ApiError,
-    { pipeline_id: PipelineId; request: UpdatePipelineRequest }
-  >({
-    mutationFn: args => PipelinesService.updatePipeline(args.pipeline_id, args.request)
-  })
+/**
+ * Displays pipeline in graph view when pipeline descriptor is updated
+ * @param pipeline
+ * @param setMissingSchemaDialog
+ */
+const useRenderPipelineEffect = (
+  pipeline: PipelineDescr,
+  saveState: EntitySyncIndicatorStatus,
+  setMissingSchemaDialog: Dispatch<SetStateAction<boolean>>
+) => {
+  const { pushMessage } = useStatusNotification()
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
-
-  const { pushMessage } = useStatusNotification()
+  const { setNodes, getNodes } = useReactFlow<IONodeData | ProgramNodeData>()
   const projectsQuery = useQuery({
     ...PipelineManagerQuery.programs(),
     refetchInterval: 2000
   })
-  const connectorQuery = useQuery(PipelineManagerQuery.connector())
-  const pipelineQuery = useQuery({
-    ...PipelineManagerQuery.pipelineStatus(pipelineId!),
-    enabled:
-      pipelineId !== undefined && saveState !== 'isSaving' && saveState !== 'isModified' && saveState !== 'isDebouncing'
+  const connectorsQuery = useQuery({
+    ...PipelineManagerQuery.connectors(),
+    refetchInterval: 2000
   })
-  useEffect(() => {
-    if (saveState === 'isSaving' || saveState === 'isModified' || saveState === 'isDebouncing') {
+  const deleteNode = useDeleteNode(() => {})
+  const render = () => {
+    if (saveState === 'isSaving' || saveState === 'isModified') {
       return
     }
-    const isReady = !(
-      pipelineQuery.isPending ||
-      pipelineQuery.isError ||
-      projectsQuery.isPending ||
-      projectsQuery.isError ||
-      connectorQuery.isPending ||
-      connectorQuery.isError
-    )
-    if (!isReady && pipelineId === undefined) {
-      setProject(undefined)
-      setSaveState('isNew')
-      setName('')
-      setDescription('')
-      // TODO: Set to 8 for now, needs to be configurable eventually
-      setConfig({ workers: 8 })
+    if (!projectsQuery.data || !connectorsQuery.data) {
       return
     }
-    if (!isReady) {
-      return
-    }
-    const descriptor = pipelineQuery.data.descriptor
-    setPipelineId(() => descriptor.pipeline_id)
-    setName(descriptor.name)
-    setDescription(descriptor.description)
-    setConfig(descriptor.config)
-    setSaveState('isUpToDate')
-
-    const attachedConnectors = descriptor.attached_connectors
+    const attachedConnectors = pipeline.attached_connectors
 
     // We don't set so `setSaveState` here because we don't want to override
     // the saveState every time the backend returns some result. Because it
     // could cancel potentially in-progress saves (started by client action).
 
-    const project = projectsQuery.data.find(p => p.name === descriptor.program_name)
+    const project = projectsQuery.data.find(p => p.name === pipeline.program_name)
     const validConnections = !project
       ? attachedConnectors
       : (() => {
           setMissingSchemaDialog(!project.schema)
-
-          setProject(project)
           replacePlaceholder(project)
 
           // Update handles of SQL Program node when program is recompiled, hide stale connection edges
@@ -192,175 +197,109 @@ const PipelineBuilderPage = (props: {
         })()
 
     validConnections.forEach(attached_connector => {
-      const connector = connectorQuery.data.find(connector => connector.name === attached_connector.connector_name)
+      const connector = connectorsQuery.data.find(connector => connector.name === attached_connector.connector_name)
       if (connector) {
         addConnector(connector, attached_connector)
       }
     })
-  }, [
-    connectorQuery.isPending,
-    connectorQuery.isError,
-    connectorQuery.data,
-    pipelineQuery.isPending,
-    pipelineQuery.isError,
-    pipelineQuery.data,
+
+    {
+      // Rename detached connectors when the connector name was changed in popup dialog
+      setNodes(
+        getNodes().map(node => {
+          if (node.type !== 'inputNode' && node.type !== 'outputNode') {
+            return node
+          }
+          invariant(((data: any): data is { connector: ConnectorDescr } => true)(node.data))
+          invariant(node.data.connector.name, 'Connector name should be stored in the connector node')
+          const realConnector = (data =>
+            connectorsQuery.data.find(c => c.connector_id === data.connector.connector_id))(node.data)
+          if (!realConnector) {
+            return node
+          }
+          if (node.data.connector.name === realConnector.name) {
+            return node
+          }
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              connector: realConnector,
+              ac: {
+                ...node.data.ac,
+                connector_name: realConnector.name
+              }
+            }
+          }
+        })
+      )
+    }
+  }
+
+  useEffect(render, [
+    connectorsQuery.isPending,
+    connectorsQuery.isError,
+    connectorsQuery.data,
+    pipeline.program_name,
+    pipeline.attached_connectors,
     projectsQuery.isPending,
     projectsQuery.isError,
     projectsQuery.data,
-    setPipelineId,
-    setName,
-    setDescription,
-    setConfig,
-    setSaveState,
-    setProject,
     replacePlaceholder,
     addConnector,
-    pipelineId,
     pushMessage,
     saveState,
-    setNodes
+    setNodes,
+    getNodes,
+    deleteNode,
+    setMissingSchemaDialog
   ])
+}
 
-  const setModifiedWhenDebouncing = useDebouncedCallback(() => {
-    if (saveState === 'isDebouncing') {
-      setSaveState('isModified')
-    }
-  }, 2000)
+const PipelineBuilderPage = ({
+  pipeline,
+  updatePipeline,
+  saveState,
+  setSaveState,
+  formError,
+  setFormError
+}: {
+  pipeline: PipelineDescr
+  updatePipeline: Dispatch<SetStateAction<UpdatePipelineRequest>>
+  saveState: EntitySyncIndicatorStatus
+  setSaveState: Dispatch<EntitySyncIndicatorStatus>
+  formError: FormError
+  setFormError: Dispatch<FormError>
+}) => {
+  const router = useRouter()
+  const [hash, setHash] = useHashPart()
+  const showOnHash = showOnHashPart([hash, setHash])
+  const queryClient = useQueryClient()
+  const [missingSchemaDialog, setMissingSchemaDialog] = useState(false)
 
-  // Send requests to update pipeline according to builder UI
-  useEffect(() => {
-    if (saveState === 'isDebouncing') {
-      setModifiedWhenDebouncing()
-    }
+  useCreatePipelineEffect(pipeline, setSaveState, setFormError)
+  useRenderPipelineEffect(pipeline, saveState, setMissingSchemaDialog)
 
-    if (saveState !== 'isModified') {
-      return
-    }
-
-    setSaveState('isSaving')
-
-    // Create a new pipeline
-    if (pipelineId === undefined) {
-      newPipelineMutate(
-        {
-          name,
-          program_name: project?.name,
-          description,
-          config
-        },
-        {
-          onError: (error: ApiError) => {
-            pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-            setSaveState('isUpToDate')
-            console.log('error', error)
-          },
-          onSuccess: (data: NewPipelineResponse) => {
-            setPipelineId(data.pipeline_id)
-            setSaveState('isUpToDate')
-          }
-        }
-      )
-      return
-    }
-
-    // Update an existing pipeline
-    const connectors = getEdges().map(edge => {
-      const source = getNode(edge.source)
-      const target = getNode(edge.target)
-      const connectsInput = source?.id !== 'sql'
-      const connector = connectsInput ? source : target
-      invariant(connector, "Couldn't extract attached connector from edge")
-      invariant('ac' in connector.data, 'Wrong connector node data')
-      const ac = connector.data.ac
-
-      ac.relation_name = (handle => {
-        invariant(handle, 'Node handle string should be defined')
-        return handle.replace(/^table-|^view-/, '')
-      })(connectsInput ? edge.targetHandle : edge.sourceHandle)
-
-      return ac
-    })
-
-    const updateRequest = {
-      name,
-      description,
-      program_name: project?.name,
-      config,
-      connectors
-    }
-
-    updatePipelineMutate(
-      { pipeline_id: pipelineId, request: updateRequest },
-      {
-        onSettled: () => {
-          assert(pipelineId !== undefined)
-          invalidatePipeline(queryClient, pipelineId)
-        },
-        onError: (error: ApiError) => {
-          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-          setSaveState('isUpToDate')
-        },
-        onSuccess: () => {
-          // It's important to update the query cache here because otherwise
-          // sometimes the query cache will be out of date and the UI will
-          // show the old connectors again after deletion.
-          setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineId), oldData => {
-            if (!oldData) {
-              return oldData
-            }
-            return {
-              ...oldData,
-              descriptor: {
-                ...oldData.descriptor,
-                name,
-                description,
-                program_id: project?.program_id,
-                config,
-                attached_connectors: connectors
-              }
-            }
-          })
-          setSaveState('isUpToDate')
-        }
-      }
+  const onConnectorUpdateSuccess = (connector: ConnectorDescr, oldConnectorName: string) => {
+    invalidateQuery(queryClient, PipelineManagerQuery.pipelineStatus(pipeline.name))
+    setQueryData(
+      queryClient,
+      PipelineManagerQuery.pipelineStatus(pipeline.name),
+      updatePipelineConnectorName(oldConnectorName, connector.name)
     )
-  }, [
-    saveState,
-    setModifiedWhenDebouncing,
-    setSaveState,
-    setPipelineId,
-    updatePipelineMutate,
-    newPipelineMutate,
-    pipelineId,
-    project,
-    name,
-    description,
-    config,
-    getNode,
-    getEdges,
-    pushMessage,
-    queryClient
-  ])
+  }
 
   return (
     <>
-      <BreadcrumbsHeader>
-        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
-          Pipelines
-        </Link>
-        <Link href={`/streaming/builder/?pipeline_id=${pipelineId}`} data-testid='button-breadcrumb-pipeline-name'>
-          {name}
-        </Link>
-      </BreadcrumbsHeader>
       <Grid container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
         <Grid item xs={12}>
           <Card>
             <CardContent>
-              <Metadata errors={{}} />
+              <Metadata errors={formError} {...{ pipeline, updatePipeline }} disabled={saveState === 'isLoading'} />
             </CardContent>
             <CardContent>
               <Grid item xs={12}>
-                <SaveIndicator getLabel={stateToSaveLabel} state={saveState} />
+                <EntitySyncIndicator getLabel={stateToSaveLabel} state={saveState} />
               </Grid>
             </CardContent>
           </Card>
@@ -370,12 +309,16 @@ const PipelineBuilderPage = (props: {
           <PipelineGraph />
         </div>
       </Grid>
-      <MissingSchemaDialog open={missingSchemaDialog} setOpen={setMissingSchemaDialog} program_name={project?.name} />
-      {(id =>
-        id && (
+      <MissingSchemaDialog
+        open={missingSchemaDialog}
+        setOpen={setMissingSchemaDialog}
+        program_name={pipeline.program_name ?? undefined}
+      />
+      {(connectorName =>
+        connectorName && (
           <UnknownConnectorDialog
             {...showOnHash('edit/connector')}
-            connectorId={id}
+            connectorName={connectorName}
             existingTitle={name => 'Update ' + name}
             submitButton={
               <Button
@@ -388,14 +331,15 @@ const PipelineBuilderPage = (props: {
                 Update
               </Button>
             }
+            onSuccess={onConnectorUpdateSuccess}
           />
         ))(/edit\/connector\/([\w-]+)/.exec(hash)?.[1])}
-      {(id =>
-        id && (
+      {(connectorName =>
+        connectorName && (
           <UnknownConnectorDialog
             show={hash.startsWith('view/connector')}
             setShow={() => router.back()}
-            connectorId={id}
+            connectorName={connectorName}
             existingTitle={name => 'Inspect ' + name}
             submitButton={<></>}
             disabled={true}
@@ -405,19 +349,91 @@ const PipelineBuilderPage = (props: {
   )
 }
 
+const defaultPipelineData: Pipeline = {
+  descriptor: {
+    attached_connectors: [],
+    config: { workers: 8 },
+    description: '',
+    name: '',
+    pipeline_id: '',
+    program_name: '',
+    version: NaN
+  },
+  state: {
+    current_status: PipelineStatus.FAILED,
+    desired_status: PipelineStatus.FAILED
+  } as PipelineRuntimeState
+}
+
 export default () => {
-  const [pipelineId, setPipelineId] = useState<PipelineId | undefined>(undefined)
-  const newPipelineId = useSearchParams().get('pipeline_id')
+  const pipelineName = useSearchParams().get('pipeline_name') || ''
+  const queryClient = useQueryClient()
+  const formError = useBuilderState(s => s.formError)
+  const setFormError = useBuilderState(s => s.setFormError)
+  const saveState = useBuilderState(s => s.saveState)
+  const setSaveState = useBuilderState(s => s.setSaveState)
+  const setPipelineName = useBuilderState(s => s.setPipelineName)
+
+  // If opening a page without queried pipelineName - set status to isNew
+  useEffect(() => {
+    if (pipelineName) {
+      return
+    }
+    setSaveState('isNew')
+  }, [pipelineName, setSaveState])
+
+  // Clear the data when creating new pipeline
+  useEffect(() => {
+    if (pipelineName) {
+      return
+    }
+    setQueryData(queryClient, PipelineManagerQuery.pipelineStatus(pipelineName), defaultPipelineData)
+    setSaveState('isNew')
+  }, [pipelineName, queryClient, setSaveState])
+
+  const pipelineQuery = useQuery({
+    ...PipelineManagerQuery.pipelineStatus(pipelineName),
+    enabled: !!pipelineName,
+    initialData: defaultPipelineData,
+    refetchOnWindowFocus: false
+  })
+  const pipeline = pipelineQuery.data?.descriptor
+  invariant(pipeline, 'Pipeline should be initialized with a default value')
 
   useEffect(() => {
-    if (newPipelineId) {
-      setPipelineId(newPipelineId)
+    setPipelineName(pipeline.name)
+  }, [pipeline.name, setPipelineName])
+
+  // Clear loading state when pipeline is fetched
+  useEffect(() => {
+    if (!pipeline.pipeline_id) {
+      return
     }
-  }, [newPipelineId, setPipelineId])
+    setSaveState('isUpToDate')
+  }, [pipeline.pipeline_id, setSaveState])
+
+  const updatePipeline = useUpdatePipeline(pipelineName, setSaveState, setFormError)
 
   return (
     <ReactFlowProvider>
-      <PipelineBuilderPage pipelineId={pipelineId} setPipelineId={setPipelineId} />
+      <BreadcrumbsHeader>
+        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
+          Pipelines
+        </Link>
+        <Link href={`/streaming/builder/?pipeline_name=${pipelineName}`} data-testid='button-breadcrumb-pipeline-name'>
+          {pipelineName}
+        </Link>
+      </BreadcrumbsHeader>
+      <PipelineBuilderPage
+        {...{
+          pipeline,
+          updatePipeline,
+          saveState,
+          setSaveState,
+          formError,
+          setFormError
+        }}
+      />
     </ReactFlowProvider>
   )
 }

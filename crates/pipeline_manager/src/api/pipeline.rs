@@ -3,7 +3,7 @@ use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
     http::Method,
-    patch, post,
+    patch, post, put,
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    api::{examples, parse_uuid_param},
+    api::{examples, parse_string_param},
     auth::TenantId,
     db::{storage::Storage, AttachedConnector, DBError, PipelineId, Version},
 };
@@ -85,6 +85,30 @@ pub(crate) struct UpdatePipelineResponse {
     version: Version,
 }
 
+/// Request to create or replace an existing pipeline.
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CreateOrReplacePipelineRequest {
+    /// Pipeline description.
+    description: String,
+    /// Name of the program to create a pipeline for.
+    program_name: Option<String>,
+    /// Pipeline configuration parameters (e.g. number of workers).
+    /// These knobs are independent of any connector attached to the pipeline.
+    config: RuntimeConfig,
+    /// Attached connectors.
+    connectors: Option<Vec<AttachedConnector>>,
+}
+
+/// Response to a pipeline create or replace request.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct CreateOrReplacePipelineResponse {
+    /// ID of the newly created pipeline.
+    pipeline_id: PipelineId,
+    /// Initial pipeline version (this field is always set to 1).
+    version: Version,
+}
+
 fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     match req.match_info().get("action") {
         None => Err(ManagerError::MissingUrlEncodedParam { param: "action" }),
@@ -133,6 +157,7 @@ pub(crate) async fn new_pipeline(
             &request.description,
             &request.config,
             &request.connectors,
+            None,
         )
         .await?;
 
@@ -152,47 +177,103 @@ pub(crate) async fn new_pipeline(
     responses(
         (status = OK, description = "Pipeline successfully updated.", body = UpdatePipelineResponse),
         (status = NOT_FOUND
-            , description = "Specified pipeline or connector id does not exist."
+            , description = "Specified pipeline or connector does not exist."
             , body = ErrorResponse
             , examples (
-                ("Unknown pipeline ID" = (value = json!(examples::unknown_pipeline()))),
-                ("Unknown connector ID" = (value = json!(examples::unknown_connector()))),
+                ("Unknown pipeline name" = (value = json!(examples::unknown_name()))),
+                ("Unknown connector name" = (value = json!(examples::unknown_name()))),
             )),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[patch("/pipelines/{pipeline_id}")]
+#[patch("/pipelines/{pipeline_name}")]
 pub(crate) async fn update_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
     body: web::Json<UpdatePipelineRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
-    let version = state
-        .db
-        .lock()
-        .await
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
+    let db = state.db.lock().await;
+    let pipeline = db.get_pipeline_by_name(*tenant_id, &pipeline_name).await?;
+    let version = db
         .update_pipeline(
             *tenant_id,
-            pipeline_id,
+            pipeline.descriptor.pipeline_id,
             &body.program_name,
             &body.name,
             &body.description,
             &body.config,
             &body.connectors,
+            None,
         )
         .await?;
 
-    info!("Updated pipeline {pipeline_id} (tenant:{})", *tenant_id);
+    info!("Updated pipeline {pipeline_name} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&UpdatePipelineResponse { version }))
+}
+
+/// Create or replace a pipeline.
+#[utoipa::path(
+    request_body = CreateOrReplaceProgramRequest,
+    responses(
+        (status = CREATED, description = "Pipeline created successfully", body = CreateOrReplaceProgramResponse),
+        (status = OK, description = "Pipeline updated successfully", body = CreateOrReplaceProgramResponse),
+        (status = CONFLICT
+            , description = "A pipeline with this name already exists in the database."
+            , body = ErrorResponse
+            , example = json!(examples::duplicate_name())),
+    ),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Pipelines"
+)]
+#[put("/pipelines/{pipeline_name}")]
+async fn create_or_replace_pipeline(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: HttpRequest,
+    body: web::Json<CreateOrReplacePipelineRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    let (created, pipeline_id, version) = state
+        .db
+        .lock()
+        .await
+        .create_or_replace_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            &body.program_name,
+            &body.description,
+            &body.config,
+            &body.connectors,
+        )
+        .await?;
+    if created {
+        Ok(HttpResponse::Created()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&CreateOrReplacePipelineResponse {
+                pipeline_id,
+                version,
+            }))
+    } else {
+        Ok(HttpResponse::Ok()
+            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+            .json(&CreateOrReplacePipelineResponse {
+                pipeline_id,
+                version,
+            }))
+    }
 }
 
 /// Fetch pipelines, optionally filtered by name or ID.
@@ -224,7 +305,7 @@ pub(crate) async fn list_pipelines(
             .db
             .lock()
             .await
-            .get_pipeline_by_name(*tenant_id, name)
+            .get_pipeline_by_name(*tenant_id, &name)
             .await?;
         vec![pipeline]
     } else {
@@ -245,25 +326,23 @@ pub(crate) async fn list_pipelines(
             , example = json!(examples::unknown_pipeline())),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[get("/pipelines/{pipeline_id}/deployed")]
+#[get("/pipelines/{pipeline_name}/deployed")]
 pub(crate) async fn pipeline_deployed(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
-
-    let descr: Option<crate::db::PipelineRevision> = match state
-        .db
-        .lock()
-        .await
-        .get_pipeline_deployment(*tenant_id, pipeline_id)
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
+    let db = state.db.lock().await;
+    let pipeline = db.get_pipeline_by_name(*tenant_id, &pipeline_name).await?;
+    let descr: Option<crate::db::PipelineRevision> = match db
+        .get_pipeline_deployment(*tenant_id, pipeline.descriptor.pipeline_id)
         .await
     {
         Ok(revision) => Some(revision),
@@ -297,23 +376,22 @@ pub(crate) async fn pipeline_deployed(
             , example = json!(examples::unknown_pipeline())),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[get("/pipelines/{pipeline_id}/stats")]
+#[get("/pipelines/{pipeline_name}/stats")]
 pub(crate) async fn pipeline_stats(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
-
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(*tenant_id, pipeline_id, Method::GET, "stats")
+        .forward_to_pipeline(*tenant_id, &pipeline_name, Method::GET, "stats")
         .await
 }
 
@@ -329,24 +407,24 @@ pub(crate) async fn pipeline_stats(
             , example = json!(examples::unknown_pipeline())),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[get("/pipelines/{pipeline_id}")]
+#[get("/pipelines/{pipeline_name}")]
 pub(crate) async fn get_pipeline(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let pipeline: crate::db::Pipeline = state
         .db
         .lock()
         .await
-        .get_pipeline_by_id(*tenant_id, pipeline_id)
+        .get_pipeline_by_name(*tenant_id, &pipeline_name)
         .await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -372,24 +450,24 @@ pub(crate) async fn get_pipeline(
             , example = json!(examples::unknown_pipeline())),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+      ("pipeline_name" = String, Path, description = "Unique pipeline name")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[get("/pipelines/{pipeline_id}/config")]
+#[get("/pipelines/{pipeline_name}/config")]
 pub(crate) async fn get_pipeline_config(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let expanded_config = state
         .db
         .lock()
         .await
-        .pipeline_config(*tenant_id, pipeline_id)
+        .pipeline_config(*tenant_id, &pipeline_name)
         .await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -426,23 +504,23 @@ pub(crate) async fn get_pipeline_config(
             , example = json!(examples::unknown_pipeline())),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[get("/pipelines/{pipeline_id}/validate")]
+#[get("/pipelines/{pipeline_name}/validate")]
 pub(crate) async fn pipeline_validate(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
-
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let db = state.db.lock().await;
+    let pipeline = db.get_pipeline_by_name(*tenant_id, &pipeline_name).await?;
     Ok(db
-        .is_pipeline_deployable(*tenant_id, pipeline_id)
+        .is_pipeline_deployable(*tenant_id, pipeline.descriptor.pipeline_id)
         .await
         .map(|_| HttpResponse::Ok().json("Pipeline successfully validated."))?)
 }
@@ -494,29 +572,39 @@ pub(crate) async fn pipeline_validate(
             , example = json!(examples::pipeline_timeout())),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier"),
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("action" = String, Path, description = "Pipeline action [start, pause, shutdown]")
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[post("/pipelines/{pipeline_id}/{action}")]
+#[post("/pipelines/{pipeline_name}/{action}")]
 pub(crate) async fn pipeline_action(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
     let action = parse_pipeline_action(&req)?;
 
     match action {
-        "start" => state.runner.start_pipeline(*tenant_id, pipeline_id).await?,
-        "pause" => state.runner.pause_pipeline(*tenant_id, pipeline_id).await?,
+        "start" => {
+            state
+                .runner
+                .start_pipeline(*tenant_id, &pipeline_name)
+                .await?
+        }
+        "pause" => {
+            state
+                .runner
+                .pause_pipeline(*tenant_id, &pipeline_name)
+                .await?
+        }
         "shutdown" => {
             state
                 .runner
-                .shutdown_pipeline(*tenant_id, pipeline_id)
+                .shutdown_pipeline(*tenant_id, &pipeline_name)
                 .await?
         }
         _ => Err(ManagerError::InvalidPipelineAction {
@@ -525,7 +613,7 @@ pub(crate) async fn pipeline_action(
     }
 
     info!(
-        "Accepted '{action}' action for pipeline {pipeline_id} (tenant:{})",
+        "Accepted '{action}' action for pipeline {pipeline_name} (tenant:{})",
         *tenant_id
     );
     Ok(HttpResponse::Accepted().finish())
@@ -552,25 +640,25 @@ pub(crate) async fn pipeline_action(
         )),
     ),
     params(
-        ("pipeline_id" = Uuid, Path, description = "Unique pipeline identifier")
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     tag = "Pipelines"
 )]
-#[delete("/pipelines/{pipeline_id}")]
+#[delete("/pipelines/{pipeline_name}")]
 pub(crate) async fn pipeline_delete(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_id = PipelineId(parse_uuid_param(&req, "pipeline_id")?);
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
 
     state
         .runner
-        .delete_pipeline(*tenant_id, pipeline_id)
+        .delete_pipeline(*tenant_id, &pipeline_name)
         .await?;
 
-    info!("Deleted pipeline {pipeline_id} (tenant:{})", *tenant_id);
+    info!("Deleted pipeline {pipeline_name} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok().finish())
 }

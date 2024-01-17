@@ -243,18 +243,16 @@ pub(crate) async fn new_program(
     program_name: &str,
     program_description: &str,
     program_code: &str,
+    txn: Option<&Transaction<'_>>,
 ) -> Result<(ProgramId, Version), DBError> {
     debug!("new_program {program_name} {program_description} {program_code}");
-    let manager = db.pool.get().await?;
+    let query = "INSERT INTO program (id, version, tenant_id, name, description, 
+                                      code, schema, status, error, status_since)
+                 VALUES($1, 1, $2, $3, $4, $5, NULL, $6, $7, now());";
     let (status, error) = ProgramStatus::None.to_columns();
-    let stmt = manager
-            .prepare_cached(
-                "INSERT INTO program (id, version, tenant_id, name, description, code, schema, status, error, status_since)
-                        VALUES($1, 1, $2, $3, $4, $5, NULL, $6, $7, now());",
-            )
-            .await?;
-    manager
-        .execute(
+    let row = if let Some(txn) = txn {
+        let stmt = txn.prepare_cached(query).await?;
+        txn.execute(
             &stmt,
             &[
                 &id,
@@ -267,9 +265,26 @@ pub(crate) async fn new_program(
             ],
         )
         .await
-        .map_err(ProjectDB::maybe_unique_violation)
+    } else {
+        let manager = db.pool.get().await?;
+        let stmt = manager.prepare_cached(query).await?;
+        manager
+            .execute(
+                &stmt,
+                &[
+                    &id,
+                    &tenant_id.0,
+                    &program_name,
+                    &program_description,
+                    &program_code,
+                    &status,
+                    &error,
+                ],
+            )
+            .await
+    };
+    row.map_err(ProjectDB::maybe_unique_violation)
         .map_err(|e| ProjectDB::maybe_tenant_id_foreign_key_constraint_err(e, tenant_id, None))?;
-
     Ok((ProgramId(id), Version(1)))
 }
 
@@ -277,7 +292,6 @@ pub(crate) async fn new_program(
 /// also accepts an optional version to do guarded updates to the code.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn update_program(
-    db: &ProjectDB,
     tenant_id: TenantId,
     program_id: ProgramId,
     program_name: &Option<String>,
@@ -286,12 +300,11 @@ pub(crate) async fn update_program(
     status: &Option<ProgramStatus>,
     schema: &Option<ProgramSchema>,
     guard: Option<Version>,
+    txn: &Transaction<'_>,
 ) -> Result<Version, DBError> {
-    let mut manager = db.pool.get().await?;
     // Only increment `version` if new code actually differs from the
     // current version. Only apply a change if the version matched the
     // guard.
-    let txn = manager.transaction().await?;
     let get_version = txn
         .prepare_cached("SELECT version, code FROM program WHERE tenant_id = $1 AND id = $2 ")
         .await?;
@@ -370,17 +383,13 @@ pub(crate) async fn update_program(
         .await
         .map_err(ProjectDB::maybe_unique_violation)?;
     if let Some(row) = row {
-        txn.commit().await?;
         Ok(Version(row.get(0)))
     } else {
-        txn.rollback().await?;
         Err(DBError::UnknownProgram { program_id })
     }
 }
 
 /// Retrieve program descriptor.
-///
-/// Returns `None` if `program_id` is not found in the database.
 pub(crate) async fn get_program_by_id(
     db: &ProjectDB,
     tenant_id: TenantId,
@@ -483,25 +492,27 @@ pub(crate) async fn get_program_by_name(
 pub(crate) async fn delete_program(
     db: &ProjectDB,
     tenant_id: TenantId,
-    program_id: ProgramId,
+    program_name: &str,
 ) -> Result<(), DBError> {
     let manager = db.pool.get().await?;
     let stmt = manager
-        .prepare_cached("DELETE FROM program WHERE id = $1 AND tenant_id = $2")
+        .prepare_cached("DELETE FROM program WHERE name = $1 AND tenant_id = $2")
         .await?;
     let res = manager
-        .execute(&stmt, &[&program_id.0, &tenant_id.0])
+        .execute(&stmt, &[&program_name, &tenant_id.0])
         .await
         .map_err(|e| {
             ProjectDB::maybe_program_id_in_use_foreign_key_constraint_err(
                 e.into(),
-                Some(program_id),
+                Some(program_name),
             )
         })?;
     if res > 0 {
         Ok(())
     } else {
-        Err(DBError::UnknownProgram { program_id })
+        Err(DBError::UnknownProgramName {
+            program_name: program_name.to_string(),
+        })
     }
 }
 

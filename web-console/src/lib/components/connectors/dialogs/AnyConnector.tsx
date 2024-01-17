@@ -21,6 +21,7 @@ export const AnyConnectorDialog = (props: {
   existingTitle: (name: string) => string
   submitButton: JSX.Element
   disabled?: boolean
+  onSuccess?: (connector: ConnectorDescr, oldConnectorName: string) => void
 }) =>
   match(connectorDescrToType(props.connector.config))
     .with(ConnectorType.KAFKA_IN, () => {

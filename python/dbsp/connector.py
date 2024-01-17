@@ -87,13 +87,13 @@ class DBSPConnector:
                 config=ConnectorConfig.from_dict(self.config),
             )
             response = update_connector.sync_detailed(
-                connector_id=self.connector_id, client=self.api_client, json_body=body
+                connector_name=self.name, client=self.api_client, json_body=body
             ).unwrap("Failed to update the connector")
 
     def delete(self):
         "Delete the existing connector."
         if self.connector_id is not None:
-            delete_connector.sync_detailed(connector_id=self.connector_id).unwrap(
+            delete_connector.sync_detailed(connector_name=self.connector_name).unwrap(
                 "Failed to add the connector"
             )
 

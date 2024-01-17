@@ -13,7 +13,7 @@ import { getQueryString, request as __request } from './manager/core/request'
  * All usages of this function should eventually be refactored out
  */
 export function httpOutputOptions(
-  pipelineId: string,
+  pipelineName: string,
   tableName: string,
   format: string,
   query?: OutputQuery | null,
@@ -24,9 +24,9 @@ export function httpOutputOptions(
 ) {
   return {
     method: 'POST' as const,
-    url: '/v0/pipelines/{pipeline_id}/egress/{table_name}',
+    url: '/v0/pipelines/{pipeline_name}/egress/{table_name}',
     path: {
-      pipeline_id: pipelineId,
+      pipeline_name: pipelineName,
       table_name: tableName
     },
     query: {

@@ -43,9 +43,7 @@ const useInsertionTable = (props: {
   const [isPending, setLoading] = useState<boolean>(false)
   const apiRef = useGridApiRef()
 
-  const pipelineRevisionQuery = useQuery(
-    PipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.pipeline_id)
-  )
+  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.name))
 
   // If a revision is loaded, find the requested relation that we want to insert
   // data into. We use it to display the table headers etc.
@@ -121,7 +119,7 @@ const InsertionTableImpl = ({
 
   const defaultColumnVisibility = { genId: false }
   const gridPersistence = useDataGridPresentationLocalStorage({
-    key: LS_PREFIX + `settings/streaming/insertion/${pipelineRevision.pipeline.pipeline_id}/${relation.name}`,
+    key: LS_PREFIX + `settings/streaming/insertion/${pipelineRevision.pipeline.name}/${relation.name}`,
     defaultColumnVisibility
   })
 

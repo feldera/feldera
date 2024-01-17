@@ -57,7 +57,7 @@ const programErrors = (program: ProgramDescr) =>
               report: {
                 Error: '```\n' + limitMessage(e.message, 1000, '\n...Beginning of the error...') + '\n```',
                 SQL: () =>
-                  ProgramsService.getProgram(program.program_id, true).then(
+                  ProgramsService.getProgram(program.name, true).then(
                     p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
                   )
               }
@@ -80,7 +80,7 @@ const programErrors = (program: ProgramDescr) =>
           report: {
             Error: '```\n' + limitMessage(e, 1000, '\n...Beginning of the error...') + '\n```',
             SQL: () =>
-              ProgramsService.getProgram(program.program_id, true).then(
+              ProgramsService.getProgram(program.name, true).then(
                 p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
               )
           }
@@ -102,7 +102,7 @@ const programErrors = (program: ProgramDescr) =>
           report: {
             Error: '```\n' + limitMessage(e, 1000, '\n...Beginning of the error...') + '\n```',
             SQL: () =>
-              ProgramsService.getProgram(program.program_id, true).then(
+              ProgramsService.getProgram(program.name, true).then(
                 p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
               )
           }
@@ -122,7 +122,7 @@ const pipelineErrors = (p: Pipeline) =>
               <>
                 Pipeline Error
                 <br />
-                <Link href={`/streaming/management/#${p.descriptor.pipeline_id}`}>
+                <Link href={`/streaming/management/#${p.descriptor.name}`}>
                   {p.descriptor.name || 'Unnamed pipeline'}
                 </Link>
                 <br />
@@ -132,13 +132,14 @@ const pipelineErrors = (p: Pipeline) =>
             report: {
               Error: '```\n' + limitMessage(p.state.error.message, 1000, '\n...Beginning of the error...') + '\n```',
               Version: String(p.descriptor.version),
-              ...(p =>
-                !p
+              ...(programName =>
+                !programName
                   ? {}
                   : {
                       SQL: () =>
-                        ProgramsService.getProgram(p, true).then(
-                          p => '```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
+                        ProgramsService.getProgram(programName, true).then(
+                          program =>
+                            '```\n' + limitMessage(program.code, 7000, '\n...Beginning of the code...') + '\n```'
                         )
                     })(p.descriptor.program_name)
             }

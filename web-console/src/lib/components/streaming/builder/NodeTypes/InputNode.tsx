@@ -47,7 +47,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
   const { showDeleteDialog } = useDeleteDialog()
   return (
     <Node>
-      <Link href={`#edit/connector/${data.connector.connector_id}`}>
+      <Link href={`#edit/connector/${data.connector.name}`}>
         <CardHeader
           title={data.connector.name}
           subheader={data.connector.description}

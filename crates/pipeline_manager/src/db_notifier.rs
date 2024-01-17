@@ -262,6 +262,7 @@ mod test {
                     &format!("test{i}").to_string(),
                     "program desc",
                     "ignored",
+                    None,
                 )
                 .await
                 .unwrap();
@@ -278,6 +279,7 @@ mod test {
                     "2",
                     &rc,
                     &Some(vec![]),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -296,20 +298,23 @@ mod test {
             );
 
             // Updates
+            let updated_program_name = format!("updated_test{i}");
             let _ = conn
                 .lock()
                 .await
                 .update_program(
                     tenant_id,
                     program_id,
-                    &Some(format!("updated_test{i}")),
+                    &Some(updated_program_name.clone()),
                     &Some("some new description".to_string()),
                     &None,
                     &None,
                     &None,
                     None,
+                    None,
                 )
                 .await;
+            let pipeline_name = &format!("{i}");
             let _ = conn
                 .lock()
                 .await
@@ -317,10 +322,11 @@ mod test {
                     tenant_id,
                     pipeline_id,
                     &None,
-                    &format!("{i}"),
+                    pipeline_name,
                     "some new description",
                     &None,
                     &None,
+                    None,
                 )
                 .await;
             let n = rx.recv().await.unwrap();
@@ -337,12 +343,12 @@ mod test {
             // Deletes
             conn.lock()
                 .await
-                .delete_program(tenant_id, program_id)
+                .delete_program(tenant_id, &updated_program_name)
                 .await
                 .unwrap();
             conn.lock()
                 .await
-                .delete_pipeline(tenant_id, pipeline_id)
+                .delete_pipeline(tenant_id, pipeline_name)
                 .await
                 .unwrap();
 
@@ -371,7 +377,14 @@ mod test {
         let _ = conn
             .lock()
             .await
-            .new_program(tenant_id, program_id, "test0", "program desc", "ignored")
+            .new_program(
+                tenant_id,
+                program_id,
+                "test0",
+                "program desc",
+                "ignored",
+                None,
+            )
             .await
             .unwrap();
         let rc = RuntimeConfig::from_yaml("");
@@ -387,6 +400,7 @@ mod test {
                 "2",
                 &rc,
                 &Some(vec![]),
+                None,
             )
             .await
             .unwrap();

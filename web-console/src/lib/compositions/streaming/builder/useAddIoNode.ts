@@ -1,5 +1,3 @@
-// Logic to add either a input or output node to the graph.
-
 import { randomString } from '$lib/functions/common/string'
 import { AttachedConnector, ProgramSchema } from '$lib/services/manager'
 import { ConnectorDescr } from '$lib/services/manager/models/ConnectorDescr'
@@ -18,13 +16,16 @@ export function connectorConnects(schema: ProgramSchema | null | undefined, ac: 
   return (ac.is_input ? schema.inputs : schema.outputs).some(view => view.name === ac.relation_name)
 }
 
+/**
+ * Add either an input or output connector node to the graph.
+ * @returns
+ */
 export function useAddConnector() {
   const { setNodes, getNodes, getNode, addNodes, addEdges } = useReactFlow()
   const redoLayout = useRedoLayout()
 
   const addNewConnector = useCallback(
     (connector: ConnectorDescr, ac: AttachedConnector) => {
-      // Input or Output?
       const newNodeType = ac.is_input ? 'inputNode' : 'outputNode'
       const placeholderId = ac.is_input ? 'inputPlaceholder' : 'outputPlaceholder'
       const placeholder = getNode(placeholderId)
@@ -34,7 +35,8 @@ export function useAddConnector() {
 
       // If this node already exists, don't add it again
       const existingNode = getNodes().find(node => node.id === ac.name)
-      if (existingNode) {
+      const isDifferentName = existingNode && existingNode.data.connector.name !== connector.name
+      if (existingNode && !isDifferentName) {
         return
       }
 
@@ -80,7 +82,7 @@ export function useAddConnector() {
         edge => edge.targetHandle === connectorHandle || edge.sourceHandle === connectorHandle
       )
 
-      if (existingEdge) {
+      if (existingEdge || isDifferentName) {
         return
       }
 

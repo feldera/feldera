@@ -12,15 +12,8 @@ import { useDataGridPresentationLocalStorage } from '$lib/compositions/persisten
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
-import {
-  ApiError,
-  ConnectorDescr,
-  ConnectorId,
-  ConnectorsService,
-  UpdateConnectorRequest,
-  UpdateConnectorResponse
-} from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { ApiError, ConnectorDescr, ConnectorsService } from '$lib/services/manager'
+import { mutationUpdateConnector, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
@@ -42,31 +35,21 @@ const DataSourceTable = () => {
   const queryClient = useQueryClient()
 
   // Query to retrieve table content
-  const fetchQuery = useQuery(PipelineManagerQuery.connector())
+  const fetchQuery = useQuery(PipelineManagerQuery.connectors())
 
   // Update row name and description if edited in the cells:
-  const mutation = useMutation<
-    UpdateConnectorResponse,
-    ApiError,
-    { connector_id: ConnectorId; request: UpdateConnectorRequest }
-  >({
-    mutationFn: args => ConnectorsService.updateConnector(args.connector_id, args.request)
-  })
+  const { mutate: updateConnector } = useMutation(mutationUpdateConnector(queryClient))
   const processRowUpdate = useCallback(
     (newRow: ConnectorDescr, oldRow: ConnectorDescr) => {
-      mutation.mutate(
+      updateConnector(
         {
-          connector_id: newRow.connector_id,
+          connectorName: oldRow.name,
           request: {
             description: newRow.description,
             name: newRow.name
           }
         },
         {
-          onSettled: () => {
-            invalidateQuery(queryClient, PipelineManagerQuery.connector())
-            invalidateQuery(queryClient, PipelineManagerQuery.connectorStatus(newRow.connector_id))
-          },
           onError: (error: ApiError) => {
             pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
             apiRef.current.updateRows([oldRow])
@@ -76,11 +59,11 @@ const DataSourceTable = () => {
 
       return newRow
     },
-    [apiRef, mutation, pushMessage, queryClient]
+    [apiRef, updateConnector, pushMessage]
   )
 
   // Delete a connector entry
-  const deleteMutation = useMutation<void, ApiError, string>({
+  const { mutate: deleteMutation } = useMutation<void, ApiError, string>({
     mutationFn: ConnectorsService.deleteConnector
   })
   const deleteSource = useCallback(
@@ -88,9 +71,9 @@ const DataSourceTable = () => {
       setTimeout(() => {
         const oldRow = rows.find(row => row.connector_id === cur_row.connector_id)
         if (oldRow !== undefined) {
-          deleteMutation.mutate(cur_row.connector_id, {
+          deleteMutation(cur_row.name, {
             onSettled: () => {
-              invalidateQuery(queryClient, PipelineManagerQuery.connector())
+              invalidateQuery(queryClient, PipelineManagerQuery.connectors())
             },
             onSuccess: () => {
               setRows(prevRows => prevRows.filter(row => row.connector_id !== cur_row.connector_id))

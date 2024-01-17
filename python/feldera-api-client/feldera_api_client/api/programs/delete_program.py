@@ -10,14 +10,14 @@ from ...types import Response
 
 
 def _get_kwargs(
-    program_id: str,
+    program_name: str,
 ) -> Dict[str, Any]:
     pass
 
     return {
         "method": "delete",
-        "url": "/v0/programs/{program_id}".format(
-            program_id=program_id,
+        "url": "/v0/programs/{program_name}".format(
+            program_name=program_name,
         ),
     }
 
@@ -54,7 +54,7 @@ def _build_response(
 
 
 def sync_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
@@ -66,7 +66,7 @@ def sync_detailed(
     program.
 
     Args:
-        program_id (str):
+        program_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -77,7 +77,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
     )
 
     response = client.get_httpx_client().request(
@@ -88,7 +88,7 @@ def sync_detailed(
 
 
 def sync(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
@@ -100,7 +100,7 @@ def sync(
     program.
 
     Args:
-        program_id (str):
+        program_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -111,13 +111,13 @@ def sync(
     """
 
     return sync_detailed(
-        program_id=program_id,
+        program_name=program_name,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
@@ -129,7 +129,7 @@ async def asyncio_detailed(
     program.
 
     Args:
-        program_id (str):
+        program_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -140,7 +140,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        program_id=program_id,
+        program_name=program_name,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -149,7 +149,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    program_id: str,
+    program_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
@@ -161,7 +161,7 @@ async def asyncio(
     program.
 
     Args:
-        program_id (str):
+        program_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -173,7 +173,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            program_id=program_id,
+            program_name=program_name,
             client=client,
         )
     ).parsed

@@ -43,6 +43,7 @@ pub(crate) trait Storage {
             &None,
             &Some(schema),
             None,
+            None,
         )
         .await?;
         Ok(())
@@ -70,6 +71,7 @@ pub(crate) trait Storage {
             &Some(status),
             &None,
             Some(expected_version),
+            None,
         )
         .await?;
         Ok(())
@@ -83,10 +85,10 @@ pub(crate) trait Storage {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(ProgramId, Version), DBError>;
 
     /// Update program name, description and, optionally, code.
-    /// XXX: Description should be optional too
     #[allow(clippy::too_many_arguments)]
     async fn update_program(
         &self,
@@ -98,6 +100,7 @@ pub(crate) trait Storage {
         status: &Option<ProgramStatus>,
         schema: &Option<ProgramSchema>,
         guard: Option<Version>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError>;
 
     /// Retrieve program descriptor.
@@ -120,13 +123,7 @@ pub(crate) trait Storage {
     ) -> Result<ProgramDescr, DBError>;
 
     /// Delete program from the database.
-    ///
-    /// This will delete all program configs and pipelines.
-    async fn delete_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-    ) -> Result<(), DBError>;
+    async fn delete_program(&self, tenant_id: TenantId, program_name: &str) -> Result<(), DBError>;
 
     /// Retrieves all programs in the DB. Intended to be used by
     /// reconciliation loops.
@@ -171,6 +168,7 @@ pub(crate) trait Storage {
         pipeline_description: &str,
         config: &RuntimeConfig,
         connectors: &Option<Vec<AttachedConnector>>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(PipelineId, Version), DBError>;
 
     /// Update existing config.
@@ -186,6 +184,7 @@ pub(crate) trait Storage {
         pipeline_description: &str,
         config: &Option<RuntimeConfig>,
         connectors: &Option<Vec<AttachedConnector>>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError>;
 
     /// Get input/output status for an attached connector.
@@ -196,12 +195,12 @@ pub(crate) trait Storage {
         name: &str,
     ) -> Result<bool, DBError>;
 
-    /// Delete `pipeline` from the DB.
+    /// Delete pipeline from the DB.
     async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<bool, DBError>;
+        pipeline_name: &str,
+    ) -> Result<(), DBError>;
 
     /// Retrieve pipeline for a given id.
     async fn get_pipeline_descr_by_id(
@@ -221,19 +220,26 @@ pub(crate) trait Storage {
     async fn get_pipeline_descr_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<PipelineDescr, DBError>;
 
     async fn get_pipeline_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
     ) -> Result<Pipeline, DBError>;
 
-    async fn get_pipeline_runtime_state(
+    async fn get_pipeline_runtime_state_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
+    ) -> Result<PipelineRuntimeState, DBError>;
+
+    async fn get_pipeline_runtime_state_by_name(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
     ) -> Result<PipelineRuntimeState, DBError>;
 
     async fn update_pipeline_runtime_state(
@@ -260,6 +266,7 @@ pub(crate) trait Storage {
         name: &str,
         description: &str,
         config: &ConnectorConfig,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ConnectorId, DBError>;
 
     /// Retrieve connectors list from the DB.
@@ -276,7 +283,8 @@ pub(crate) trait Storage {
     async fn get_connector_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ConnectorDescr, DBError>;
 
     /// Update existing connector config.
@@ -289,6 +297,7 @@ pub(crate) trait Storage {
         connector_name: &str,
         description: &str,
         config: &Option<ConnectorConfig>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError>;
 
     /// Delete connector from the database.
@@ -297,7 +306,7 @@ pub(crate) trait Storage {
     async fn delete_connector(
         &self,
         tenant_id: TenantId,
-        connector_id: ConnectorId,
+        connector_name: &str,
     ) -> Result<(), DBError>;
 
     /// Get a list of API key names

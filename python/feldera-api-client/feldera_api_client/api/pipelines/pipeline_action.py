@@ -10,15 +10,15 @@ from ...types import Response
 
 
 def _get_kwargs(
-    pipeline_id: str,
+    pipeline_name: str,
     action: str,
 ) -> Dict[str, Any]:
     pass
 
     return {
         "method": "post",
-        "url": "/v0/pipelines/{pipeline_id}/{action}".format(
-            pipeline_id=pipeline_id,
+        "url": "/v0/pipelines/{pipeline_name}/{action}".format(
+            pipeline_name=pipeline_name,
             action=action,
         ),
     }
@@ -60,7 +60,7 @@ def _build_response(
 
 
 def sync_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     action: str,
     *,
     client: AuthenticatedClient,
@@ -87,7 +87,7 @@ def sync_detailed(
     - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         action (str):
 
     Raises:
@@ -99,7 +99,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         action=action,
     )
 
@@ -111,7 +111,7 @@ def sync_detailed(
 
 
 def sync(
-    pipeline_id: str,
+    pipeline_name: str,
     action: str,
     *,
     client: AuthenticatedClient,
@@ -138,7 +138,7 @@ def sync(
     - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         action (str):
 
     Raises:
@@ -150,14 +150,14 @@ def sync(
     """
 
     return sync_detailed(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         action=action,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     action: str,
     *,
     client: AuthenticatedClient,
@@ -184,7 +184,7 @@ async def asyncio_detailed(
     - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         action (str):
 
     Raises:
@@ -196,7 +196,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         action=action,
     )
 
@@ -206,7 +206,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    pipeline_id: str,
+    pipeline_name: str,
     action: str,
     *,
     client: AuthenticatedClient,
@@ -233,7 +233,7 @@ async def asyncio(
     - 'shutdown': Terminate the execution of the pipeline.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
         action (str):
 
     Raises:
@@ -246,7 +246,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
             action=action,
             client=client,
         )

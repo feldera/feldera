@@ -10,14 +10,14 @@ from ...types import Response
 
 
 def _get_kwargs(
-    pipeline_id: str,
+    pipeline_name: str,
 ) -> Dict[str, Any]:
     pass
 
     return {
         "method": "delete",
-        "url": "/v0/pipelines/{pipeline_id}".format(
-            pipeline_id=pipeline_id,
+        "url": "/v0/pipelines/{pipeline_name}".format(
+            pipeline_name=pipeline_name,
         ),
     }
 
@@ -54,7 +54,7 @@ def _build_response(
 
 
 def sync_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
@@ -63,7 +63,7 @@ def sync_detailed(
      Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -74,7 +74,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
     )
 
     response = client.get_httpx_client().request(
@@ -85,7 +85,7 @@ def sync_detailed(
 
 
 def sync(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
@@ -94,7 +94,7 @@ def sync(
      Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -105,13 +105,13 @@ def sync(
     """
 
     return sync_detailed(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[Any, ErrorResponse]]:
@@ -120,7 +120,7 @@ async def asyncio_detailed(
      Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -131,7 +131,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -140,7 +140,7 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    pipeline_id: str,
+    pipeline_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[Any, ErrorResponse]]:
@@ -149,7 +149,7 @@ async def asyncio(
      Delete a pipeline. The pipeline must be in the shutdown state.
 
     Args:
-        pipeline_id (str):
+        pipeline_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -161,7 +161,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            pipeline_id=pipeline_id,
+            pipeline_name=pipeline_name,
             client=client,
         )
     ).parsed

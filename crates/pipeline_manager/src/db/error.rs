@@ -56,13 +56,16 @@ pub enum DBError {
         program_name: String,
     },
     ProgramInUseByPipeline {
-        program_id: ProgramId,
+        program_name: String,
     },
     OutdatedProgramVersion {
         latest_version: Version,
     },
     UnknownPipeline {
         pipeline_id: PipelineId,
+    },
+    UnknownPipelineName {
+        pipeline_name: String,
     },
     UnknownConnector {
         connector_id: ConnectorId,
@@ -340,8 +343,8 @@ impl Display for DBError {
             DBError::UnknownProgramName { program_name } => {
                 write!(f, "Unknown program name '{program_name}'")
             }
-            DBError::ProgramInUseByPipeline { program_id } => {
-                write!(f, "Program id '{program_id}' is in use by a pipeline")
+            DBError::ProgramInUseByPipeline { program_name } => {
+                write!(f, "Program named '{program_name}' is in use by a pipeline")
             }
             DBError::OutdatedProgramVersion { latest_version } => {
                 write!(
@@ -351,6 +354,9 @@ impl Display for DBError {
             }
             DBError::UnknownPipeline { pipeline_id } => {
                 write!(f, "Unknown pipeline id '{pipeline_id}'")
+            }
+            DBError::UnknownPipelineName { pipeline_name } => {
+                write!(f, "Unknown pipeline name '{pipeline_name}'")
             }
             DBError::UnknownAttachedConnector { pipeline_id, name } => {
                 write!(
@@ -452,6 +458,7 @@ impl DetailedError for DBError {
             Self::ProgramInUseByPipeline { .. } => Cow::from("ProgramInUseByPipeline"),
             Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
+            Self::UnknownPipelineName { .. } => Cow::from("UnknownPipelineName"),
             Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
             Self::UnknownConnectorName { .. } => Cow::from("UnknownConnectorName"),
             Self::UnknownService { .. } => Cow::from("UnknownService"),
@@ -506,6 +513,7 @@ impl ResponseError for DBError {
             Self::DuplicateName => StatusCode::CONFLICT,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnector { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnectorName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownService { .. } => StatusCode::NOT_FOUND,

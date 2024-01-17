@@ -158,7 +158,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let mut poll_timeout = Self::DEFAULT_PIPELINE_POLL_PERIOD;
         let db = self.db.lock().await;
         let mut pipeline = db
-            .get_pipeline_runtime_state(self.tenant_id, self.pipeline_id)
+            .get_pipeline_runtime_state_by_id(self.tenant_id, self.pipeline_id)
             .await?;
         drop(db);
         let transition: State = match (pipeline.current_status, pipeline.desired_status) {
@@ -707,7 +707,7 @@ mod test {
                 .conn
                 .lock()
                 .await
-                .get_pipeline_runtime_state(automaton.tenant_id, automaton.pipeline_id)
+                .get_pipeline_runtime_state_by_id(automaton.tenant_id, automaton.pipeline_id)
                 .await
                 .unwrap();
             assert_eq!(status, pipeline.current_status);
@@ -726,7 +726,14 @@ mod test {
         let (program_id, version) = conn
             .lock()
             .await
-            .new_program(tenant_id, program_id, "test0", "program desc", "ignored")
+            .new_program(
+                tenant_id,
+                program_id,
+                "test0",
+                "program desc",
+                "ignored",
+                None,
+            )
             .await
             .unwrap();
         let _ = conn
@@ -766,6 +773,7 @@ mod test {
                 "2",
                 &rc,
                 &Some(vec![]),
+                None,
             )
             .await
             .unwrap();

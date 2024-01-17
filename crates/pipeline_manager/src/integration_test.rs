@@ -195,22 +195,22 @@ impl TestConfig {
         let pipelines: Value = req.json().await.unwrap();
         // First, shutdown the pipelines
         for pipeline in pipelines.as_array().unwrap() {
-            let id = pipeline["descriptor"]["pipeline_id"].as_str().unwrap();
+            let name = pipeline["descriptor"]["name"].as_str().unwrap();
             let req = config
-                .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+                .post_no_body(format!("/v0/pipelines/{name}/shutdown"))
                 .await;
             assert_eq!(StatusCode::ACCEPTED, req.status(), "Response {:?}", req)
         }
         // Once we can confirm pipelines are shutdown, delete them
         for pipeline in pipelines.as_array().unwrap() {
-            let id = pipeline["descriptor"]["pipeline_id"].as_str().unwrap();
+            let name = pipeline["descriptor"]["name"].as_str().unwrap();
             self.wait_for_pipeline_status(
-                id,
+                name,
                 PipelineStatus::Shutdown,
                 time::Duration::from_secs(30),
             )
             .await;
-            let req = config.delete(format!("/v0/pipelines/{}", id)).await;
+            let req = config.delete(format!("/v0/pipelines/{name}")).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
 
@@ -218,8 +218,8 @@ impl TestConfig {
         let mut req = config.get("/v0/programs").await;
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
-            let id = program["program_id"].as_str().unwrap();
-            let req = config.delete(format!("/v0/programs/{}", id)).await;
+            let name = program["name"].as_str().unwrap();
+            let req = config.delete(format!("/v0/programs/{name}")).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
 
@@ -227,8 +227,8 @@ impl TestConfig {
         let mut req = config.get("/v0/connectors").await;
         let programs: Value = req.json().await.unwrap();
         for program in programs.as_array().unwrap() {
-            let id = program["connector_id"].as_str().unwrap();
-            let req = config.delete(format!("/v0/connectors/{}", id)).await;
+            let name = program["name"].as_str().unwrap();
+            let req = config.delete(format!("/v0/connectors/{name}")).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
 
@@ -316,10 +316,10 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn quantiles_csv(&self, id: &str, table: &str) -> String {
+    async fn quantiles_csv(&self, name: &str, table: &str) -> String {
         let mut resp = self
             .post_no_body(format!(
-                "/v0/pipelines/{id}/egress/{table}?query=quantiles&mode=snapshot&format=csv"
+                "/v0/pipelines/{name}/egress/{table}?query=quantiles&mode=snapshot&format=csv"
             ))
             .await;
         assert!(resp.status().is_success());
@@ -327,10 +327,10 @@ impl TestConfig {
         resp.get("text_data").unwrap().as_str().unwrap().to_string()
     }
 
-    async fn quantiles_json(&self, id: &str, table: &str) -> String {
+    async fn quantiles_json(&self, name: &str, table: &str) -> String {
         let mut resp = self
             .post_no_body(format!(
-                "/v0/pipelines/{id}/egress/{table}?query=quantiles&mode=snapshot&format=json"
+                "/v0/pipelines/{name}/egress/{table}?query=quantiles&mode=snapshot&format=json"
             ))
             .await;
         assert!(resp.status().is_success());
@@ -340,11 +340,11 @@ impl TestConfig {
 
     async fn delta_stream_request_json(
         &self,
-        id: &str,
+        name: &str,
         table: &str,
     ) -> ClientResponse<Decoder<Payload>> {
         let resp = self
-            .post_no_body(format!("/v0/pipelines/{id}/egress/{table}?format=json"))
+            .post_no_body(format!("/v0/pipelines/{name}/egress/{table}?format=json"))
             .await;
         assert!(resp.status().is_success());
         resp
@@ -377,7 +377,7 @@ impl TestConfig {
 
     async fn neighborhood_json(
         &self,
-        id: &str,
+        name: &str,
         table: &str,
         anchor: Option<Value>,
         before: u64,
@@ -386,7 +386,7 @@ impl TestConfig {
         let mut resp = self
             .post(
                 format!(
-                "/v0/pipelines/{id}/egress/{table}?query=neighborhood&mode=snapshot&format=json"
+                "/v0/pipelines/{name}/egress/{table}?query=neighborhood&mode=snapshot&format=json"
             ),
                 &json!({"before": before, "after": after, "anchor": anchor}),
             )
@@ -403,12 +403,12 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn compile(&self, program_id: &str, version: i64) {
+    async fn compile(&self, program_name: &str, version: i64) {
         let compilation_request = json!({ "version": version });
 
         let resp = self
             .post(
-                format!("/v0/programs/{program_id}/compile"),
+                format!("/v0/programs/{program_name}/compile"),
                 &compilation_request,
             )
             .await;
@@ -421,7 +421,7 @@ impl TestConfig {
             if now.elapsed().as_secs() > 200 {
                 panic!("Compilation timeout");
             }
-            let mut resp = self.get(format!("/v0/programs/{}", program_id)).await;
+            let mut resp = self.get(format!("/v0/programs/{program_name}")).await;
             let val: Value = resp.json().await.unwrap();
 
             let status = val["status"].clone();
@@ -442,13 +442,13 @@ impl TestConfig {
     /// Panic afrer `timeout`.
     async fn wait_for_pipeline_status(
         &self,
-        id: &str,
+        name: &str,
         status: PipelineStatus,
         timeout: Duration,
     ) -> Pipeline {
         let start = Instant::now();
         loop {
-            let mut response = self.get(format!("/v0/pipelines/{}", id)).await;
+            let mut response = self.get(format!("/v0/pipelines/{name}")).await;
 
             let pipeline = response.json::<Pipeline>().await.unwrap();
 
@@ -567,9 +567,8 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-    let id = resp["program_id"].as_str().unwrap();
     let version = resp["version"].as_i64().unwrap();
-    config.compile(id, version).await;
+    config.compile("test", version).await;
 
     let pipeline_request = json!({
         "name":  "test",
@@ -578,20 +577,21 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
         "config": {},
         "connectors": null
     });
-    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
-    let resp: Value = req.json().await.unwrap();
-    let id = resp["pipeline_id"].as_str().unwrap();
-
+    let req = config.post("/v0/pipelines", &pipeline_request).await;
+    assert_eq!(StatusCode::OK, req.status());
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/pause", id))
+        .post_no_body(format!("/v0/pipelines/test/pause"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     config
-        .wait_for_pipeline_status(id, PipelineStatus::Paused, Duration::from_millis(100_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Paused,
+            Duration::from_millis(100_000),
+        )
         .await;
-
-    id.to_string()
+    "test".to_string()
 }
 
 #[actix_web::test]
@@ -617,12 +617,11 @@ async fn program_create_compile_delete() {
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-    let id = resp["program_id"].as_str().unwrap();
     let version = resp["version"].as_i64().unwrap();
-    config.compile(id, version).await;
-    let resp = config.delete(format!("/v0/programs/{}", id)).await;
+    config.compile("test", version).await;
+    let resp = config.delete(format!("/v0/programs/test")).await;
     assert_eq!(StatusCode::OK, resp.status());
-    let resp = config.get(format!("/v0/programs/{}", id).as_str()).await;
+    let resp = config.get(format!("/v0/programs/test").as_str()).await;
     assert_eq!(StatusCode::NOT_FOUND, resp.status());
 }
 
@@ -652,7 +651,7 @@ async fn program_create_twice() {
 #[serial]
 async fn deploy_pipeline() {
     let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
+    let _ = deploy_pipeline_without_connectors(
         &config,
         "create table t1(c1 integer); create view v1 as select * from t1;",
     )
@@ -660,22 +659,26 @@ async fn deploy_pipeline() {
 
     // Pause a pipeline before it is started
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/pause", id))
+        .post_no_body(format!("/v0/pipelines/test/pause"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
     // Push some data.
     let req = config
         .post_csv(
-            format!("/v0/pipelines/{}/ingress/T1", id),
+            format!("/v0/pipelines/test/ingress/T1"),
             "1\n2\n3\n".to_string(),
         )
         .await;
@@ -684,7 +687,7 @@ async fn deploy_pipeline() {
     // Push more data without Windows-style newlines.
     let req = config
         .post_csv(
-            format!("/v0/pipelines/{}/ingress/T1", id),
+            format!("/v0/pipelines/test/ingress/T1"),
             "4\r\n5\r\n6".to_string(),
         )
         .await;
@@ -692,33 +695,37 @@ async fn deploy_pipeline() {
 
     // Pause a pipeline after it is started
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/pause", id))
+        .post_no_body(format!("/v0/pipelines/test/pause"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Paused, Duration::from_millis(1_000))
+        .wait_for_pipeline_status("test", PipelineStatus::Paused, Duration::from_millis(1_000))
         .await;
 
     // Querying quantiles should work in paused state.
-    let quantiles = config.quantiles_csv(&id, "T1").await;
+    let quantiles = config.quantiles_csv("test", "T1").await;
     assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -729,7 +736,7 @@ async fn pipeline_panic() {
     let config = setup().await;
 
     // This SQL program is known to panic.
-    let id = deploy_pipeline_without_connectors(
+    let _ = deploy_pipeline_without_connectors(
         &config,
         "create table t1(c1 integer); create view v1 as select element(array [2, 3]) from t1;",
     )
@@ -737,18 +744,22 @@ async fn pipeline_panic() {
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
 
     // Push some data.  This should cause a panic.
     let req = config
         .post_csv(
-            format!("/v0/pipelines/{}/ingress/T1", id),
+            format!("/v0/pipelines/test/ingress/T1"),
             "1\n2\n3\n".to_string(),
         )
         .await;
@@ -756,7 +767,7 @@ async fn pipeline_panic() {
 
     // The manager should discover the error next time it polls the pipeline.
     let pipeline = config
-        .wait_for_pipeline_status(&id, PipelineStatus::Failed, config.failed_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Failed, config.failed_timeout)
         .await;
 
     assert_eq!(
@@ -767,11 +778,11 @@ async fn pipeline_panic() {
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -785,10 +796,8 @@ async fn program_delete_with_pipeline() {
         "description": "desc",
         "code": "create table t1(c1 integer); create view v1 as select * from t1;"
     });
-    let mut req = config.post("/v0/programs", &program_request).await;
+    let req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
-    let resp: Value = req.json().await.unwrap();
-    let program_id = resp["program_id"].as_str().unwrap();
 
     let pipeline_request = json!({
         "name":  "test",
@@ -797,21 +806,19 @@ async fn program_delete_with_pipeline() {
         "config": {},
         "connectors": null
     });
-    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
+    let req = config.post("/v0/pipelines", &pipeline_request).await;
     assert_eq!(StatusCode::OK, req.status());
-    let resp: Value = req.json().await.unwrap();
-    let pipeline_id = resp["pipeline_id"].as_str().unwrap();
-    let req = config.get(format!("/v0/pipelines/{pipeline_id}")).await;
+    let req = config.get(format!("/v0/pipelines/test")).await;
     assert_eq!(StatusCode::OK, req.status());
 
     // Now delete the program and check that the pipeline still exists
-    let req = config.delete(format!("/v0/programs/{program_id}")).await;
+    let req = config.delete(format!("/v0/programs/test")).await;
     assert_eq!(StatusCode::BAD_REQUEST, req.status());
 
-    let req = config.get(format!("/v0/programs/{program_id}")).await;
+    let req = config.get(format!("/v0/programs/test")).await;
     assert_eq!(StatusCode::OK, req.status());
 
-    let req = config.get(format!("/v0/pipelines/{pipeline_id}")).await;
+    let req = config.get(format!("/v0/pipelines/test")).await;
     assert_eq!(StatusCode::OK, req.status());
 }
 
@@ -827,20 +834,21 @@ async fn json_ingress() {
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
 
     // Push some data using default json config.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=raw",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
             r#"{"C1": 10, "C2": true}
             {"C1": 20, "C3": "foo"}"#
                 .to_string(),
@@ -848,7 +856,7 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(quantiles, "[{\"insert\":{\"C1\":10,\"C2\":true,\"C3\":null}},{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}}]");
 
     let hood = config
@@ -865,10 +873,7 @@ async fn json_ingress() {
     // Push more data using insert/delete format.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
             r#"{"delete": {"C1": 10, "C2": true}}
             {"insert": {"C1": 30, "C3": "bar"}}"#
                 .to_string(),
@@ -876,16 +881,13 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}}]");
 
     // Format data as json array.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
             r#"{"insert": [40, true, "buzz"]}"#.to_string(),
         )
         .await;
@@ -895,23 +897,21 @@ async fn json_ingress() {
     let req = config
         .post_json(
             format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete&array=true",
-                id
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             ),
             r#"[{"delete": [40, true, "buzz"]}, {"insert": [50, true, ""]}]"#.to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":50,\"C2\":true,\"C3\":\"\"}}]");
 
     // Trigger parse errors.
     let mut req = config
         .post_json(
             format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete&array=true",
-                id
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             ),
             r#"[{"insert": [35, true, ""]}, {"delete": [40, "foo", "buzz"]}, {"insert": [true, true, ""]}]"#.to_string(),
         )
@@ -923,14 +923,13 @@ async fn json_ingress() {
 
     // Even records that are parsed successfully don't get ingested when
     // using array format.
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":50,\"C2\":true,\"C3\":\"\"}}]");
 
     let mut req = config
         .post_json(
             format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             ),
             r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
         )
@@ -948,10 +947,7 @@ async fn json_ingress() {
     // Debezium CDC format
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=debezium",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=debezium",),
             r#"{"payload": {"op": "u", "before": [50, true, ""], "after": [60, true, "hello"]}}"#
                 .to_string(),
         )
@@ -968,7 +964,7 @@ async fn json_ingress() {
     // get ingested).
     let mut req = config
         .post_csv(
-            format!("/v0/pipelines/{}/ingress/T1?format=csv", id),
+            format!("/v0/pipelines/test/ingress/T1?format=csv"),
             r#"15,true,foo
 not_a_number,true,ΑαΒβΓγΔδ
 16,false,unicode🚲"#
@@ -980,7 +976,7 @@ not_a_number,true,ΑαΒβΓγΔδ
     let error = std::str::from_utf8(&body).unwrap();
     assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles,
         "[{\"insert\":{\"C1\":15,\"C2\":true,\"C3\":\"foo\"}},{\"insert\":{\"C1\":16,\"C2\":false,\"C3\":\"unicode🚲\"}},{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":25,\"C2\":true,\"C3\":\"\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":60,\"C2\":true,\"C3\":\"hello\"}}]"
@@ -988,11 +984,11 @@ not_a_number,true,ΑαΒβΓγΔδ
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -1000,7 +996,7 @@ not_a_number,true,ΑαΒβΓγΔδ
 #[serial]
 async fn parse_datetime() {
     let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
+    let _ = deploy_pipeline_without_connectors(
         &config,
         "create table t1(t TIME, ts TIMESTAMP, d DATE);",
     )
@@ -1008,21 +1004,22 @@ async fn parse_datetime() {
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
 
     // The parser should trim leading and trailing white space when parsing
     // dates/times.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=raw",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
             r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
             {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
                 .to_string(),
@@ -1030,17 +1027,17 @@ async fn parse_datetime() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(quantiles.parse::<Value>().unwrap(),
                "[{\"insert\":{\"D\":\"2024-02-25\",\"T\":\"11:12:33.483221092\",\"TS\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"D\":\"2021-05-20\",\"T\":\"13:22:00\",\"TS\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -1048,7 +1045,7 @@ async fn parse_datetime() {
 #[serial]
 async fn quoted_columns() {
     let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
+    let _ = deploy_pipeline_without_connectors(
         &config,
         r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null)"#,
     )
@@ -1056,26 +1053,27 @@ async fn quoted_columns() {
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
 
     // Push some data using default json config.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=raw",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
             r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#.to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
         "[{\"insert\":{\"C2\":true,\"c1\":10,\"ΔΘ\":false,\"αβγ\":true,\"😁❤\":\"foo\"}}]"
@@ -1085,11 +1083,11 @@ async fn quoted_columns() {
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -1097,7 +1095,7 @@ async fn quoted_columns() {
 #[serial]
 async fn primary_keys() {
     let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
+    let _ = deploy_pipeline_without_connectors(
         &config,
         r#"create table t1(id bigint not null, s varchar not null, primary key (id))"#,
     )
@@ -1105,20 +1103,21 @@ async fn primary_keys() {
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
 
     // Push some data using default json config.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
             r#"{"insert":{"id":1, "s": "1"}}
 {"insert":{"id":2, "s": "2"}}"#
                 .to_string(),
@@ -1126,7 +1125,7 @@ async fn primary_keys() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
         "[{\"insert\":{\"ID\":1,\"S\":\"1\"}},{\"insert\":{\"ID\":2,\"S\":\"2\"}}]"
@@ -1135,7 +1134,7 @@ async fn primary_keys() {
     );
 
     let hood = config
-        .neighborhood_json(&id, "T1", Some(json!({"id":2,"s":"1"})), 10, 10)
+        .neighborhood_json("test", "T1", Some(json!({"id":2,"s":"1"})), 10, 10)
         .await;
     assert_eq!(
         hood.parse::<Value>().unwrap(),
@@ -1147,16 +1146,13 @@ async fn primary_keys() {
     // Update a key
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
             r#"{"insert":{"id":1, "s": "1-modified"}}"#.to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
         "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}},{\"insert\":{\"ID\":2,\"S\":\"2\"}}]"
@@ -1164,7 +1160,7 @@ async fn primary_keys() {
             .unwrap()
     );
 
-    let hood = config.neighborhood_json(&id, "T1", None, 10, 10).await;
+    let hood = config.neighborhood_json("test", "T1", None, 10, 10).await;
     assert_eq!(
         hood.parse::<Value>().unwrap(),
         "[{\"insert\":{\"index\":0,\"key\":{\"ID\":1,\"S\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"ID\":2,\"S\":\"2\"}}}]"
@@ -1175,16 +1171,13 @@ async fn primary_keys() {
     // Delete a key
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
             r#"{"delete":{"id":2}}"#.to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json(&id, "T1").await;
+    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
         "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}}]"
@@ -1194,11 +1187,11 @@ async fn primary_keys() {
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -1206,7 +1199,7 @@ async fn primary_keys() {
 #[serial]
 async fn distinct_outputs() {
     let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
+    let _ = deploy_pipeline_without_connectors(
         &config,
         r#"create table t1(id bigint not null, s varchar not null); create view v1 as select s from t1;"#,
     )
@@ -1214,22 +1207,23 @@ async fn distinct_outputs() {
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, Duration::from_millis(1_000))
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
         .await;
 
-    let mut response = config.delta_stream_request_json(&id, "V1").await;
+    let mut response = config.delta_stream_request_json("test", "V1").await;
 
     // Push some data using default json config.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
             r#"{"insert":{"id":1, "s": "1"}}
 {"insert":{"id":2, "s": "2"}}"#
                 .to_string(),
@@ -1250,10 +1244,7 @@ async fn distinct_outputs() {
     // Push some more data
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete"),
             r#"{"insert":{"id":3, "s": "3"}}
 {"insert":{"id":4, "s": "4"}}"#
                 .to_string(),
@@ -1275,10 +1266,7 @@ async fn distinct_outputs() {
     // suppressed by the `outputsAreSets` SQL compiler switch.
     let req = config
         .post_json(
-            format!(
-                "/v0/pipelines/{}/ingress/T1?format=json&update_format=insert_delete",
-                id
-            ),
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
             r#"{"insert":{"id":5, "s": "1"}}
 {"insert":{"id":6, "s": "2"}}"#
                 .to_string(),
@@ -1296,11 +1284,11 @@ async fn distinct_outputs() {
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -1308,7 +1296,7 @@ async fn distinct_outputs() {
 #[serial]
 async fn pipeline_restart() {
     let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
+    let _ = deploy_pipeline_without_connectors(
         &config,
         "create table t1(c1 integer); create view v1 as select * from t1;",
     )
@@ -1316,38 +1304,38 @@ async fn pipeline_restart() {
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, config.start_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Running, config.start_timeout)
         .await;
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 
     // Start the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Running, config.start_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Running, config.start_timeout)
         .await;
 
     // Shutdown the pipeline
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/shutdown", id))
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_pipeline_status(&id, PipelineStatus::Shutdown, config.shutdown_timeout)
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 }
 
@@ -1369,13 +1357,15 @@ async fn pipeline_runtime_configuration() {
         "connectors": null
     });
     // Create the pipeline
-    let mut resp = config.post("/v0/pipelines", &pipeline_request).await;
+    let resp = config.post("/v0/pipelines", &pipeline_request).await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let resp: Value = resp.json().await.unwrap();
-    let id = resp["pipeline_id"].as_str().unwrap();
 
     // Get config
-    let mut resp = config.get(format!("/v0/pipelines/{id}/config")).await;
+    let mut resp = config
+        .get(format!(
+            "/v0/pipelines/pipeline_runtime_configuration/config"
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let resp: Value = resp.json().await.unwrap();
     let workers = resp["workers"].as_i64().unwrap();
@@ -1397,11 +1387,20 @@ async fn pipeline_runtime_configuration() {
             }
         },
     });
-    let resp = config.patch(format!("/v0/pipelines/{id}"), &patch).await;
+    let resp = config
+        .patch(
+            format!("/v0/pipelines/pipeline_runtime_configuration"),
+            &patch,
+        )
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Get config
-    let mut resp = config.get(format!("/v0/pipelines/{id}/config")).await;
+    let mut resp = config
+        .get(format!(
+            "/v0/pipelines/pipeline_runtime_configuration/config"
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let resp: Value = resp.json().await.unwrap();
     let workers = resp["workers"].as_i64().unwrap();
@@ -1426,7 +1425,6 @@ async fn pipeline_start_without_compiling() {
     let mut req = config.post("/v0/programs", &program_request).await;
     assert_eq!(StatusCode::CREATED, req.status());
     let resp: Value = req.json().await.unwrap();
-    let program_id = resp["program_id"].as_str().unwrap();
     let version = resp["version"].as_i64().unwrap();
 
     let pipeline_request = json!({
@@ -1436,18 +1434,13 @@ async fn pipeline_start_without_compiling() {
         "config": {},
         "connectors": null
     });
-    let mut req = config.post("/v0/pipelines", &pipeline_request).await;
+    let req = config.post("/v0/pipelines", &pipeline_request).await;
     assert_eq!(req.status(), StatusCode::OK);
-    let resp: Value = req.json().await.unwrap();
-    let id = resp["pipeline_id"].as_str().unwrap();
 
     // Start compiling the new program but don't wait till completion
     let compilation_request = json!({ "version": version });
     let resp = config
-        .post(
-            format!("/v0/programs/{program_id}/compile"),
-            &compilation_request,
-        )
+        .post(format!("/v0/programs/test/compile"), &compilation_request)
         .await;
     assert_eq!(StatusCode::ACCEPTED, resp.status());
 
@@ -1461,7 +1454,7 @@ async fn pipeline_start_without_compiling() {
         if now.elapsed().as_secs() > 200 {
             panic!("Compilation timeout");
         }
-        let mut resp = config.get(format!("/v0/programs/{program_id}")).await;
+        let mut resp = config.get(format!("/v0/programs/test")).await;
         let val: Value = resp.json().await.unwrap();
 
         let status = val["status"].clone();
@@ -1474,7 +1467,7 @@ async fn pipeline_start_without_compiling() {
     }
     // Start the program
     let resp = config
-        .post_no_body(format!("/v0/pipelines/{}/start", id))
+        .post_no_body(format!("/v0/pipelines/test/start"))
         .await;
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
