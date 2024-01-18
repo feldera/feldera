@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebConsole: UI sends HTTP request in an infinite loop (#1085)
 
 ### Changed
+- pipeline-manager: update service endpoints to use names instead of IDs in URLs,
+  and add PUT endpoint ([#1263](https://github.com/feldera/feldera/pull/1263))
 - SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
 - pipeline-manager: use names instead of IDs in API endpoints (#1214)
 - WebConsole: use names instead of IDs as an API entity identifier (#1214)
