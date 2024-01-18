@@ -55,7 +55,7 @@ interface FormError {
 const stateToSaveLabel = (state: EntitySyncIndicatorStatus): string =>
   match(state)
     .with('isModified', () => {
-      return 'Saving …'
+      return 'Modified'
     })
     .with('isSaving', () => {
       return 'Saving …'
