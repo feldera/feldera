@@ -20,8 +20,8 @@ const SqlPlaceHolderNode = (props: NodeProps) => {
       placeHolderReplace(e, program)
     }
   }
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const { isPending, isError, data } = useQuery(PipelineManagerQuery.programs())
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const { isPending, isError, data } = useQuery(pipelineManagerQuery.programs())
   useEffect(() => {
     if (!isPending && !isError) {
       setPrograms(data)

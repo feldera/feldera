@@ -34,10 +34,10 @@ const DataSourceTable = () => {
   const { pushMessage } = useStatusNotification()
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
 
   // Query to retrieve table content
-  const fetchQuery = useQuery(PipelineManagerQuery.connectors())
+  const fetchQuery = useQuery(pipelineManagerQuery.connectors())
 
   // Update row name and description if edited in the cells:
   const { mutate: updateConnector } = useMutation(mutationUpdateConnector(queryClient))

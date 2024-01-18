@@ -65,8 +65,8 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   const { updateTable, pause, resume } = useTableUpdater()
 
   const throwError = useAsyncError()
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.descriptor.name))
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(pipeline.descriptor.name))
 
   // If a revision is loaded, find the requested relation that we want to
   // monitor. We use it to display the table headers etc.

@@ -51,8 +51,8 @@ const ImportToolbar = ({
   rows: Row[]
   children: ReactNode
 }) => {
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const { data: pipeline } = useQuery(PipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.name))
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const { data: pipeline } = useQuery(pipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.name))
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
 
   const [settings, setSettings] = useLocalStorage<Map<string, StoredFieldSettings>>({

@@ -20,10 +20,10 @@ import { useQuery } from '@tanstack/react-query'
 const Pipelines = () => {
   const theme = useTheme()
   const apexOptions = apexChartsOptions(theme)
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
 
   const fetchQuery = useQuery({
-    ...PipelineManagerQuery.pipelines(),
+    ...pipelineManagerQuery.pipelines(),
     refetchInterval: 2000
   })
   const [active, inactive] = partition(fetchQuery.data ?? [], p => p.state.current_status === PipelineStatus.RUNNING)

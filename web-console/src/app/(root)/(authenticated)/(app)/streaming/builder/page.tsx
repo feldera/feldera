@@ -135,13 +135,13 @@ const useRenderPipelineEffect = (
   const replacePlaceholder = useReplacePlaceholder()
   const addConnector = useAddConnector()
   const { setNodes, getNodes } = useReactFlow<IONodeData | ProgramNodeData>()
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
   const projectsQuery = useQuery({
-    ...PipelineManagerQuery.programs(),
+    ...pipelineManagerQuery.programs(),
     refetchInterval: 2000
   })
   const connectorsQuery = useQuery({
-    ...PipelineManagerQuery.connectors(),
+    ...pipelineManagerQuery.connectors(),
     refetchInterval: 2000
   })
   const deleteNode = useDeleteNode(() => {})
@@ -375,7 +375,7 @@ export default () => {
   const saveState = useBuilderState(s => s.saveState)
   const setSaveState = useBuilderState(s => s.setSaveState)
   const setPipelineName = useBuilderState(s => s.setPipelineName)
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
 
   // If opening a page without queried pipelineName - set status to isNew
   useEffect(() => {
@@ -395,7 +395,7 @@ export default () => {
   }, [pipelineName, queryClient, setSaveState])
 
   const pipelineQuery = useQuery({
-    ...PipelineManagerQuery.pipelineStatus(pipelineName),
+    ...pipelineManagerQuery.pipelineStatus(pipelineName),
     enabled: !!pipelineName,
     initialData: defaultPipelineData,
     refetchOnWindowFocus: false

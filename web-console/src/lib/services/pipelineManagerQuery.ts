@@ -169,8 +169,6 @@ export const makePipelineManagerQuery = ({
     })
   )
 
-export type PipelineManagerQuery = ReturnType<typeof makePipelineManagerQuery>
-
 export const PipelineManagerQueryKey = mkQueryKey(PipelineManagerApi)
 
 export const mutationGenerateApiKey = (queryClient: QueryClient) => ({

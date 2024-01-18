@@ -13,8 +13,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 export const ApiKeyList = () => {
   const { pushMessage } = useStatusNotification()
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const { data: apiKeys, isPending } = useQuery(PipelineManagerQuery.listApiKeys())
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const { data: apiKeys, isPending } = useQuery(pipelineManagerQuery.listApiKeys())
   const queryClient = useQueryClient()
   const { showDeleteDialog } = useDeleteDialog()
   const deleteKey = (
