@@ -147,6 +147,12 @@ pub struct ApiServerConfig {
     #[arg(short, long)]
     pub config_file: Option<String>,
 
+    /// Allowed origins for CORS configuration. Cannot be used together with
+    /// --dev-mode=true.
+    #[serde(default)]
+    #[arg(long)]
+    pub allowed_origins: Option<Vec<String>>,
+
     /// [Developers only] Run in development mode.
     ///
     /// This runs with permissive CORS settings and allows the manager to be
@@ -183,6 +189,28 @@ impl ApiServerConfig {
             .into_owned();
 
         Ok(self)
+    }
+
+    /// CORS configuration
+    pub(crate) fn cors(&self) -> actix_cors::Cors {
+        if self.dev_mode {
+            if self.allowed_origins.is_some() {
+                panic!("Allowed origins set while dev-mode is enabled.");
+            }
+            actix_cors::Cors::permissive()
+        } else {
+            let mut cors = actix_cors::Cors::default();
+            if let Some(ref origins) = self.allowed_origins {
+                for origin in origins {
+                    cors = cors.allowed_origin(origin);
+                }
+            } else {
+                // Add this as a default origin so users can try out the
+                // REST API from the generated documentation
+                cors = cors.allowed_origin("https://www.feldera.com");
+            }
+            cors
+        }
     }
 
     /// Where Postgres embed stores the database.
