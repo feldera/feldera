@@ -1,10 +1,9 @@
-from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
 if TYPE_CHECKING:
     from ..models.service_config_type_0 import ServiceConfigType0
-    from ..models.service_config_type_1 import ServiceConfigType1
 
 
 T = TypeVar("T", bound="ServiceDescr")
@@ -15,13 +14,23 @@ class ServiceDescr:
     """Service descriptor.
 
     Attributes:
-        config (Union['ServiceConfigType0', 'ServiceConfigType1']): A service's configuration.
+        config ('ServiceConfigType0'): Service configuration for the API
+
+            A Service is an API object, with as one of its properties its config.
+            The config is a variant of this enumeration, and is stored serialized
+            in the database.
+
+            How a service configuration is applied can vary by connector, e.g., some
+            might have options that are mutually exclusive whereas others might be
+            defaults that can be overriden.
+        config_type (str):
         description (str):
         name (str):
         service_id (str): Unique service id.
     """
 
-    config: Union["ServiceConfigType0", "ServiceConfigType1"]
+    config: "ServiceConfigType0"
+    config_type: str
     description: str
     name: str
     service_id: str
@@ -35,9 +44,7 @@ class ServiceDescr:
         if isinstance(self.config, ServiceConfigType0):
             config = self.config.to_dict()
 
-        else:
-            config = self.config.to_dict()
-
+        config_type = self.config_type
         description = self.description
         name = self.name
         service_id = self.service_id
@@ -47,6 +54,7 @@ class ServiceDescr:
         field_dict.update(
             {
                 "config": config,
+                "config_type": config_type,
                 "description": description,
                 "name": name,
                 "service_id": service_id,
@@ -58,26 +66,19 @@ class ServiceDescr:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         from ..models.service_config_type_0 import ServiceConfigType0
-        from ..models.service_config_type_1 import ServiceConfigType1
 
         d = src_dict.copy()
 
-        def _parse_config(data: object) -> Union["ServiceConfigType0", "ServiceConfigType1"]:
-            try:
-                if not isinstance(data, dict):
-                    raise TypeError()
-                componentsschemas_service_config_type_0 = ServiceConfigType0.from_dict(data)
-
-                return componentsschemas_service_config_type_0
-            except:  # noqa: E722
-                pass
+        def _parse_config(data: object) -> "ServiceConfigType0":
             if not isinstance(data, dict):
                 raise TypeError()
-            componentsschemas_service_config_type_1 = ServiceConfigType1.from_dict(data)
+            componentsschemas_service_config_type_0 = ServiceConfigType0.from_dict(data)
 
-            return componentsschemas_service_config_type_1
+            return componentsschemas_service_config_type_0
 
         config = _parse_config(d.pop("config"))
+
+        config_type = d.pop("config_type")
 
         description = d.pop("description")
 
@@ -87,6 +88,7 @@ class ServiceDescr:
 
         service_descr = cls(
             config=config,
+            config_type=config_type,
             description=description,
             name=name,
             service_id=service_id,

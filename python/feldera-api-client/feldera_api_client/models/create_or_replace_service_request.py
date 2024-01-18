@@ -1,22 +1,20 @@
-from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
-
-from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.service_config_type_0 import ServiceConfigType0
 
 
-T = TypeVar("T", bound="UpdateServiceRequest")
+T = TypeVar("T", bound="CreateOrReplaceServiceRequest")
 
 
 @define
-class UpdateServiceRequest:
-    """Request to update an existing service.
+class CreateOrReplaceServiceRequest:
+    """Request to create or replace a service.
 
     Attributes:
-        config (Union['ServiceConfigType0', None, Unset]): Service configuration for the API
+        config ('ServiceConfigType0'): Service configuration for the API
 
             A Service is an API object, with as one of its properties its config.
             The config is a variant of this enumeration, and is stored serialized
@@ -25,38 +23,31 @@ class UpdateServiceRequest:
             How a service configuration is applied can vary by connector, e.g., some
             might have options that are mutually exclusive whereas others might be
             defaults that can be overriden.
-        description (Union[Unset, None, str]): New service description. If absent, existing name will be kept
-            unmodified.
-        name (Union[Unset, None, str]): New service name. If absent, existing name will be kept unmodified.
+        description (str): Service description.
     """
 
-    config: Union["ServiceConfigType0", None, Unset] = UNSET
-    description: Union[Unset, None, str] = UNSET
-    name: Union[Unset, None, str] = UNSET
+    config: "ServiceConfigType0"
+    description: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        config: Union[Dict[str, Any], None, Unset]
-        if isinstance(self.config, Unset):
-            config = UNSET
-        elif self.config is None:
-            config = None
+        from ..models.service_config_type_0 import ServiceConfigType0
 
-        else:
+        config: Dict[str, Any]
+
+        if isinstance(self.config, ServiceConfigType0):
             config = self.config.to_dict()
 
         description = self.description
-        name = self.name
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
-        field_dict.update({})
-        if config is not UNSET:
-            field_dict["config"] = config
-        if description is not UNSET:
-            field_dict["description"] = description
-        if name is not UNSET:
-            field_dict["name"] = name
+        field_dict.update(
+            {
+                "config": config,
+                "description": description,
+            }
+        )
 
         return field_dict
 
@@ -66,31 +57,24 @@ class UpdateServiceRequest:
 
         d = src_dict.copy()
 
-        def _parse_config(data: object) -> Union["ServiceConfigType0", None, Unset]:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
+        def _parse_config(data: object) -> "ServiceConfigType0":
             if not isinstance(data, dict):
                 raise TypeError()
             componentsschemas_service_config_type_0 = ServiceConfigType0.from_dict(data)
 
             return componentsschemas_service_config_type_0
 
-        config = _parse_config(d.pop("config", UNSET))
+        config = _parse_config(d.pop("config"))
 
-        description = d.pop("description", UNSET)
+        description = d.pop("description")
 
-        name = d.pop("name", UNSET)
-
-        update_service_request = cls(
+        create_or_replace_service_request = cls(
             config=config,
             description=description,
-            name=name,
         )
 
-        update_service_request.additional_properties = d
-        return update_service_request
+        create_or_replace_service_request.additional_properties = d
+        return create_or_replace_service_request
 
     @property
     def additional_keys(self) -> List[str]:

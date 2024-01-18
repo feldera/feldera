@@ -11,14 +11,14 @@ from ...types import Response
 
 
 def _get_kwargs(
-    service_id: str,
+    service_name: str,
 ) -> Dict[str, Any]:
     pass
 
     return {
         "method": "get",
-        "url": "/v0/services/{service_id}".format(
-            service_id=service_id,
+        "url": "/v0/services/{service_name}".format(
+            service_name=service_name,
         ),
     }
 
@@ -30,10 +30,10 @@ def _parse_response(
         response_200 = ServiceDescr.from_dict(response.json())
 
         return response_200
-    if response.status_code == HTTPStatus.BAD_REQUEST:
-        response_400 = ErrorResponse.from_dict(response.json())
+    if response.status_code == HTTPStatus.NOT_FOUND:
+        response_404 = ErrorResponse.from_dict(response.json())
 
-        return response_400
+        return response_404
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -52,16 +52,16 @@ def _build_response(
 
 
 def sync_detailed(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, ServiceDescr]]:
-    """Fetch a service by ID.
+    """Fetch a service by name.
 
-     Fetch a service by ID.
+     Fetch a service by name.
 
     Args:
-        service_id (str):
+        service_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -72,7 +72,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        service_id=service_id,
+        service_name=service_name,
     )
 
     response = client.get_httpx_client().request(
@@ -83,16 +83,16 @@ def sync_detailed(
 
 
 def sync(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, ServiceDescr]]:
-    """Fetch a service by ID.
+    """Fetch a service by name.
 
-     Fetch a service by ID.
+     Fetch a service by name.
 
     Args:
-        service_id (str):
+        service_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -103,22 +103,22 @@ def sync(
     """
 
     return sync_detailed(
-        service_id=service_id,
+        service_name=service_name,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[ErrorResponse, ServiceDescr]]:
-    """Fetch a service by ID.
+    """Fetch a service by name.
 
-     Fetch a service by ID.
+     Fetch a service by name.
 
     Args:
-        service_id (str):
+        service_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -129,7 +129,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        service_id=service_id,
+        service_name=service_name,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -138,16 +138,16 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[ErrorResponse, ServiceDescr]]:
-    """Fetch a service by ID.
+    """Fetch a service by name.
 
-     Fetch a service by ID.
+     Fetch a service by name.
 
     Args:
-        service_id (str):
+        service_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -159,7 +159,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            service_id=service_id,
+            service_name=service_name,
             client=client,
         )
     ).parsed

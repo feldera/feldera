@@ -2,12 +2,20 @@ from typing import Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="KafkaConfigOptions")
+T = TypeVar("T", bound="KafkaServiceOptions")
 
 
 @define
-class KafkaConfigOptions:
-    """Additional Kafka options"""
+class KafkaServiceOptions:
+    """Additional Kafka options.
+
+    Should not contain the bootstrap.servers key
+    as it is passed explicitly via its field.
+
+    These options will likely encompass things
+    like SSL and authentication configuration.
+
+    """
 
     additional_properties: Dict[str, str] = field(init=False, factory=dict)
 
@@ -21,10 +29,10 @@ class KafkaConfigOptions:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        kafka_config_options = cls()
+        kafka_service_options = cls()
 
-        kafka_config_options.additional_properties = d
-        return kafka_config_options
+        kafka_service_options.additional_properties = d
+        return kafka_service_options
 
     @property
     def additional_keys(self) -> List[str]:

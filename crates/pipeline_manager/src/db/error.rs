@@ -76,6 +76,9 @@ pub enum DBError {
     UnknownService {
         service_id: ServiceId,
     },
+    UnknownServiceName {
+        service_name: String,
+    },
     UnknownApiKey {
         name: String,
     },
@@ -373,6 +376,9 @@ impl Display for DBError {
             DBError::UnknownService { service_id } => {
                 write!(f, "Unknown service id '{service_id}'")
             }
+            DBError::UnknownServiceName { service_name } => {
+                write!(f, "Unknown service name '{service_name}'")
+            }
             DBError::UnknownApiKey { name } => {
                 write!(f, "Unknown API key '{name}'")
             }
@@ -462,6 +468,7 @@ impl DetailedError for DBError {
             Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
             Self::UnknownConnectorName { .. } => Cow::from("UnknownConnectorName"),
             Self::UnknownService { .. } => Cow::from("UnknownService"),
+            Self::UnknownServiceName { .. } => Cow::from("UnknownServiceName"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownAttachedConnector { .. } => Cow::from("UnknownAttachedConnector"),
@@ -517,6 +524,7 @@ impl ResponseError for DBError {
             Self::UnknownConnector { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnectorName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownService { .. } => StatusCode::NOT_FOUND,
+            Self::UnknownServiceName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             // TODO: should we report not found instead?
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED,

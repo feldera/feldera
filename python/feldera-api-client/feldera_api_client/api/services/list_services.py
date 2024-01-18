@@ -14,6 +14,7 @@ def _get_kwargs(
     *,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
+    config_type: Union[Unset, None, str] = UNSET,
 ) -> Dict[str, Any]:
     pass
 
@@ -21,6 +22,8 @@ def _get_kwargs(
     params["id"] = id
 
     params["name"] = name
+
+    params["config_type"] = config_type
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -69,14 +72,16 @@ def sync_detailed(
     client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
+    config_type: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID
+    """Fetch services, optionally filtered by name or ID.
 
-     Fetch services, optionally filtered by name or ID
+     Fetch services, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        config_type (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -89,6 +94,7 @@ def sync_detailed(
     kwargs = _get_kwargs(
         id=id,
         name=name,
+        config_type=config_type,
     )
 
     response = client.get_httpx_client().request(
@@ -103,14 +109,16 @@ def sync(
     client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
+    config_type: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID
+    """Fetch services, optionally filtered by name or ID.
 
-     Fetch services, optionally filtered by name or ID
+     Fetch services, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        config_type (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -124,6 +132,7 @@ def sync(
         client=client,
         id=id,
         name=name,
+        config_type=config_type,
     ).parsed
 
 
@@ -132,14 +141,16 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
+    config_type: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID
+    """Fetch services, optionally filtered by name or ID.
 
-     Fetch services, optionally filtered by name or ID
+     Fetch services, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        config_type (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -152,6 +163,7 @@ async def asyncio_detailed(
     kwargs = _get_kwargs(
         id=id,
         name=name,
+        config_type=config_type,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -164,14 +176,16 @@ async def asyncio(
     client: AuthenticatedClient,
     id: Union[Unset, None, str] = UNSET,
     name: Union[Unset, None, str] = UNSET,
+    config_type: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID
+    """Fetch services, optionally filtered by name or ID.
 
-     Fetch services, optionally filtered by name or ID
+     Fetch services, optionally filtered by name or ID.
 
     Args:
         id (Union[Unset, None, str]):
         name (Union[Unset, None, str]):
+        config_type (Union[Unset, None, str]):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -186,5 +200,6 @@ async def asyncio(
             client=client,
             id=id,
             name=name,
+            config_type=config_type,
         )
     ).parsed

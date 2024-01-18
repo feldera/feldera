@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Feldera API",
-    "description": "\nWith Feldera, users create data pipelines out of SQL programs and data connectors. A SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.\n\nThis API allows users to create and manage data pipelines, and the programs\nand connectors that comprise these pipelines.\n\n# API concepts\n\n* *Program*.  A SQL program with a unique name and a unique ID\n  attached to it. A program contains tables and views. A program\n  needs to be compiled before it can be executed in a pipeline.\n\n* *Connector*. A data connector that can be used to feed input data to\nSQL tables or consume outputs from SQL views. Every connector\nhas a unique name and identifier. We currently support Kafka and Redpanda.\nWe also support directly ingesting and consuming data via HTTP;\nsee the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`\nendpoints.\n\n* *Service*. A service with a unique name and ID.\n  It represents a service (such as MySQL, Kafka, etc.) that a connector can refer to in\n  its config. A connector can refer to zero, one or multiple services.\n  Services are declared separately to reduce duplication and to make it\n  easier to create connectors. A service has its own configuration, which\n  generally includes hostname, port, access credentials, and any service parameters.\n\n* *Pipeline*.  A pipeline is a running instance of a program and\nsome attached connectors. A client can create multiple pipelines that make use of\nthe same program and connectors. Every pipeline has a unique name and identifier.\nDeploying a pipeline instantiates the pipeline with the then latest version of\nthe referenced program and connectors. This allows the API to accumulate edits\nto programs and connectors before use in a pipeline.\n\n# Concurrency\n\nAll programs have an associated *version*. This is done to prevent\nrace conditions due to multiple users accessing the same\nprogram concurrently.  An example is user 1 modifying the program,\nwhile user 2 is starting a pipeline for the same program. It would be confusing\nif the pipeline could end up running the old or the new version.\n\nA version is a monotonically increasing number, associated with each\nprogram and pipeline. Every request to compile the program or start a\npipeline must include the program id and version number. If the version number\nisn't equal to the current version in the database, this means that the\nlast version of the program observed by the client is outdated, so the\nrequest is rejected.",
+    "description": "\nWith Feldera, users create data pipelines out of SQL programs and data connectors. A SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.\n\nThis API allows users to create and manage data pipelines, and the programs\nand connectors that comprise these pipelines.\n\n# API concepts\n\n* *Program*.  A SQL program with a unique name and a unique ID\n  attached to it. A program contains tables and views. A program\n  needs to be compiled before it can be executed in a pipeline.\n\n* *Connector*. A data connector that can be used to feed input data to\nSQL tables or consume outputs from SQL views. Every connector\nhas a unique name and identifier. We currently support Kafka and Redpanda.\nWe also support directly ingesting and consuming data via HTTP;\nsee the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`\nendpoints.\n\n* *Service*. A service with a unique name and ID.\n  It represents a service (such as Kafka, etc.) that a connector can refer to in\n  its config. Services are declared separately to reduce duplication and to make it\n  easier to create connectors. A service has its own configuration, which\n  generally includes hostname, port, authentication, and any service parameters.\n\n* *Pipeline*.  A pipeline is a running instance of a program and\nsome attached connectors. A client can create multiple pipelines that make use of\nthe same program and connectors. Every pipeline has a unique name and identifier.\nDeploying a pipeline instantiates the pipeline with the then latest version of\nthe referenced program and connectors. This allows the API to accumulate edits\nto programs and connectors before use in a pipeline.\n\n# Concurrency\n\nAll programs have an associated *version*. This is done to prevent\nrace conditions due to multiple users accessing the same\nprogram concurrently.  An example is user 1 modifying the program,\nwhile user 2 is starting a pipeline for the same program. It would be confusing\nif the pipeline could end up running the old or the new version.\n\nA version is a monotonically increasing number, associated with each\nprogram and pipeline. Every request to compile the program or start a\npipeline must include the program id and version number. If the version number\nisn't equal to the current version in the database, this means that the\nlast version of the program observed by the client is outdated, so the\nrequest is rejected.",
     "license": {
       "name": "MIT OR Apache-2.0"
     },
@@ -2423,14 +2423,14 @@
         "tags": [
           "Services"
         ],
-        "summary": "Fetch services, optionally filtered by name or ID",
-        "description": "Fetch services, optionally filtered by name or ID",
+        "summary": "Fetch services, optionally filtered by name or ID.",
+        "description": "Fetch services, optionally filtered by name or ID.",
         "operationId": "list_services",
         "parameters": [
           {
             "name": "id",
             "in": "query",
-            "description": "Unique service identifier.",
+            "description": "If provided, will filter based on exact match of the service identifier.",
             "required": false,
             "schema": {
               "type": "string",
@@ -2441,7 +2441,17 @@
           {
             "name": "name",
             "in": "query",
-            "description": "Unique service name.",
+            "description": "If provided, will filter based on exact match of the service name.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "config_type",
+            "in": "query",
+            "description": "If provided, will filter based on exact match of the configuration type.",
             "required": false,
             "schema": {
               "type": "string",
@@ -2518,8 +2528,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Service successfully created.",
+          "201": {
+            "description": "Service successfully created",
             "content": {
               "application/json": {
                 "schema": {
@@ -2536,23 +2546,22 @@
         ]
       }
     },
-    "/v0/services/{service_id}": {
+    "/v0/services/{service_name}": {
       "get": {
         "tags": [
           "Services"
         ],
-        "summary": "Fetch a service by ID.",
-        "description": "Fetch a service by ID.",
+        "summary": "Fetch a service by name.",
+        "description": "Fetch a service by name.",
         "operationId": "get_service",
         "parameters": [
           {
-            "name": "service_id",
+            "name": "service_name",
             "in": "path",
-            "description": "Unique service identifier",
+            "description": "Unique service name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -2567,8 +2576,8 @@
               }
             }
           },
-          "400": {
-            "description": "Specified service id is not a valid uuid.",
+          "404": {
+            "description": "Specified service name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2576,11 +2585,10 @@
                 },
                 "example": {
                   "details": {
-                    "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                    "value": "not_a_uuid"
+                    "name": "unknown_name"
                   },
-                  "error_code": "InvalidUuidParam",
-                  "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -2601,40 +2609,21 @@
         "operationId": "delete_service",
         "parameters": [
           {
-            "name": "service_id",
+            "name": "service_name",
             "in": "path",
-            "description": "Unique service identifier",
+            "description": "Unique service name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Service successfully deleted."
-          },
-          "400": {
-            "description": "Specified service id is not a valid uuid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                    "value": "not_a_uuid"
-                  },
-                  "error_code": "InvalidUuidParam",
-                  "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
-                }
-              }
-            }
+            "description": "Service successfully deleted"
           },
           "404": {
-            "description": "Specified service id does not exist.",
+            "description": "Specified service name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2642,10 +2631,10 @@
                 },
                 "example": {
                   "details": {
-                    "service_id": "12345678-9123-4567-8912-345678912345"
+                    "name": "unknown_name"
                   },
-                  "error_code": "UnknownService",
-                  "message": "Unknown service id '12345678-9123-4567-8912-345678912345'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -2661,18 +2650,17 @@
         "tags": [
           "Services"
         ],
-        "summary": "Change a service's description or configuration.",
-        "description": "Change a service's description or configuration.",
+        "summary": "Update the name, description and/or configuration of a service.",
+        "description": "Update the name, description and/or configuration of a service.",
         "operationId": "update_service",
         "parameters": [
           {
-            "name": "service_id",
+            "name": "service_name",
             "in": "path",
-            "description": "Unique service identifier",
+            "description": "Unique service name",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -2688,7 +2676,7 @@
         },
         "responses": {
           "200": {
-            "description": "Service successfully updated.",
+            "description": "Service successfully updated",
             "content": {
               "application/json": {
                 "schema": {
@@ -2698,7 +2686,7 @@
             }
           },
           "404": {
-            "description": "Specified service id does not exist.",
+            "description": "Specified service name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2706,10 +2694,10 @@
                 },
                 "example": {
                   "details": {
-                    "service_id": "12345678-9123-4567-8912-345678912345"
+                    "name": "unknown_name"
                   },
-                  "error_code": "UnknownService",
-                  "message": "Unknown service id '12345678-9123-4567-8912-345678912345'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -3063,6 +3051,35 @@
           }
         }
       },
+      "CreateOrReplaceServiceRequest": {
+        "type": "object",
+        "description": "Request to create or replace a service.",
+        "required": [
+          "description",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ServiceConfig"
+          },
+          "description": {
+            "type": "string",
+            "description": "Service description."
+          }
+        }
+      },
+      "CreateOrReplaceServiceResponse": {
+        "type": "object",
+        "description": "Response to a create or replace service request.",
+        "required": [
+          "service_id"
+        ],
+        "properties": {
+          "service_id": {
+            "$ref": "#/components/schemas/ServiceId"
+          }
+        }
+      },
       "CsvEncoderConfig": {
         "type": "object",
         "properties": {
@@ -3255,30 +3272,6 @@
           "raw"
         ]
       },
-      "KafkaConfig": {
-        "type": "object",
-        "description": "Configuration for accessing a Kafka service.",
-        "required": [
-          "bootstrap_servers",
-          "options"
-        ],
-        "properties": {
-          "bootstrap_servers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "List of bootstrap servers"
-          },
-          "options": {
-            "type": "object",
-            "description": "Additional Kafka options",
-            "additionalProperties": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "KafkaInputConfig": {
         "type": "object",
         "description": "Configuration for reading data from Kafka topics with `InputTransport`.",
@@ -3444,27 +3437,27 @@
           }
         }
       },
-      "MysqlConfig": {
+      "KafkaService": {
         "type": "object",
-        "description": "Configuration for accessing a MySQL database service.",
+        "description": "Configuration for accessing a Kafka service.",
         "required": [
-          "hostname",
-          "port",
-          "user",
-          "password"
+          "bootstrap_servers",
+          "options"
         ],
         "properties": {
-          "hostname": {
-            "type": "string"
+          "bootstrap_servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of bootstrap servers, each formatted as hostname:port (e.g.,\n\"example.com:1234\"). It will be used to set the bootstrap.servers\nKafka option."
           },
-          "password": {
-            "type": "string"
-          },
-          "port": {
-            "type": "string"
-          },
-          "user": {
-            "type": "string"
+          "options": {
+            "type": "object",
+            "description": "Additional Kafka options.\n\nShould not contain the bootstrap.servers key\nas it is passed explicitly via its field.\n\nThese options will likely encompass things\nlike SSL and authentication configuration.",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },
@@ -4234,27 +4227,16 @@
           {
             "type": "object",
             "required": [
-              "mysql"
-            ],
-            "properties": {
-              "mysql": {
-                "$ref": "#/components/schemas/MysqlConfig"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
               "kafka"
             ],
             "properties": {
               "kafka": {
-                "$ref": "#/components/schemas/KafkaConfig"
+                "$ref": "#/components/schemas/KafkaService"
               }
             }
           }
         ],
-        "description": "A service's configuration."
+        "description": "Service configuration for the API\n\nA Service is an API object, with as one of its properties its config.\nThe config is a variant of this enumeration, and is stored serialized\nin the database.\n\nHow a service configuration is applied can vary by connector, e.g., some\nmight have options that are mutually exclusive whereas others might be\ndefaults that can be overriden."
       },
       "ServiceDescr": {
         "type": "object",
@@ -4263,11 +4245,15 @@
           "service_id",
           "name",
           "description",
-          "config"
+          "config",
+          "config_type"
         ],
         "properties": {
           "config": {
             "$ref": "#/components/schemas/ServiceConfig"
+          },
+          "config_type": {
+            "type": "string"
           },
           "description": {
             "type": "string"
@@ -4472,9 +4458,6 @@
       "UpdateServiceRequest": {
         "type": "object",
         "description": "Request to update an existing service.",
-        "required": [
-          "description"
-        ],
         "properties": {
           "config": {
             "allOf": [
@@ -4486,13 +4469,19 @@
           },
           "description": {
             "type": "string",
-            "description": "New service description."
+            "description": "New service description. If absent, existing name will be kept\nunmodified.",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "description": "New service name. If absent, existing name will be kept unmodified.",
+            "nullable": true
           }
         }
       },
       "UpdateServiceResponse": {
         "type": "object",
-        "description": "Response to a config update request."
+        "description": "Response to a service update request."
       },
       "UrlInputConfig": {
         "type": "object",

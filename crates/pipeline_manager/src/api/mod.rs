@@ -25,6 +25,10 @@ mod pipeline;
 mod program;
 mod service;
 
+mod services;
+
+pub(crate) use services::*;
+
 use crate::auth::JwkCache;
 use crate::probe::Probe;
 use actix_web::dev::Service;
@@ -46,7 +50,6 @@ use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
-use uuid::Uuid;
 
 pub(crate) use crate::compiler::ProgramStatus;
 pub(crate) use crate::config::ApiServerConfig;
@@ -83,11 +86,10 @@ see the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`
 endpoints.
 
 * *Service*. A service with a unique name and ID.
-  It represents a service (such as MySQL, Kafka, etc.) that a connector can refer to in
-  its config. A connector can refer to zero, one or multiple services.
-  Services are declared separately to reduce duplication and to make it
+  It represents a service (such as Kafka, etc.) that a connector can refer to in
+  its config. Services are declared separately to reduce duplication and to make it
   easier to create connectors. A service has its own configuration, which
-  generally includes hostname, port, access credentials, and any service parameters.
+  generally includes hostname, port, authentication, and any service parameters.
 
 * *Pipeline*.  A pipeline is a running instance of a program and
 some attached connectors. A client can create multiple pipelines that make use of
@@ -183,9 +185,6 @@ request is rejected."
         pipeline_types::config::TransportConfig,
         pipeline_types::config::FormatConfig,
         pipeline_types::config::ResourceConfig,
-        pipeline_types::config::ServiceConfig,
-        pipeline_types::config::MysqlConfig,
-        pipeline_types::config::KafkaConfig,
         pipeline_types::transport::file::FileInputConfig,
         pipeline_types::transport::file::FileOutputConfig,
         pipeline_types::transport::url::UrlInputConfig,
@@ -236,8 +235,12 @@ request is rejected."
         service::NewServiceResponse,
         service::UpdateServiceRequest,
         service::UpdateServiceResponse,
+        service::CreateOrReplaceServiceRequest,
+        service::CreateOrReplaceServiceResponse,
         api_key::NewApiKeyRequest,
         api_key::NewApiKeyResponse,
+        ServiceConfig,
+        KafkaService,
     ),),
     tags(
         (name = "Manager", description = "Configure system behavior"),
@@ -300,6 +303,7 @@ fn api_scope() -> Scope {
         .service(service::get_service)
         .service(service::new_service)
         .service(service::update_service)
+        .service(service::create_or_replace_service)
         .service(service::delete_service)
         .service(api_key::create_api_key)
         .service(api_key::list_api_keys)
@@ -329,22 +333,6 @@ impl Modify for SecurityAddon {
                 ),
             )
         }
-    }
-}
-
-pub(crate) fn parse_uuid_param(
-    req: &HttpRequest,
-    param_name: &'static str,
-) -> Result<Uuid, ManagerError> {
-    match req.match_info().get(param_name) {
-        None => Err(ManagerError::MissingUrlEncodedParam { param: param_name }),
-        Some(id) => match id.parse::<Uuid>() {
-            Err(e) => Err(ManagerError::InvalidUuidParam {
-                value: id.to_string(),
-                error: e.to_string(),
-            }),
-            Ok(uuid) => Ok(uuid),
-        },
     }
 }
 

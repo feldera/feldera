@@ -17,6 +17,8 @@ from .create_or_replace_pipeline_request import CreateOrReplacePipelineRequest
 from .create_or_replace_pipeline_response import CreateOrReplacePipelineResponse
 from .create_or_replace_program_request import CreateOrReplaceProgramRequest
 from .create_or_replace_program_response import CreateOrReplaceProgramResponse
+from .create_or_replace_service_request import CreateOrReplaceServiceRequest
+from .create_or_replace_service_response import CreateOrReplaceServiceResponse
 from .csv_encoder_config import CsvEncoderConfig
 from .csv_parser_config import CsvParserConfig
 from .egress_mode import EgressMode
@@ -32,8 +34,6 @@ from .json_encoder_config import JsonEncoderConfig
 from .json_flavor import JsonFlavor
 from .json_parser_config import JsonParserConfig
 from .json_update_format import JsonUpdateFormat
-from .kafka_config import KafkaConfig
-from .kafka_config_options import KafkaConfigOptions
 from .kafka_input_config import KafkaInputConfig
 from .kafka_input_ft_config import KafkaInputFtConfig
 from .kafka_input_ft_config_consumer_options import KafkaInputFtConfigConsumerOptions
@@ -43,7 +43,8 @@ from .kafka_output_config import KafkaOutputConfig
 from .kafka_output_ft_config import KafkaOutputFtConfig
 from .kafka_output_ft_config_consumer_options import KafkaOutputFtConfigConsumerOptions
 from .kafka_output_ft_config_producer_options import KafkaOutputFtConfigProducerOptions
-from .mysql_config import MysqlConfig
+from .kafka_service import KafkaService
+from .kafka_service_options import KafkaServiceOptions
 from .neighborhood_query import NeighborhoodQuery
 from .neighborhood_query_anchor import NeighborhoodQueryAnchor
 from .new_api_key_request import NewApiKeyRequest
@@ -84,7 +85,6 @@ from .relation import Relation
 from .resource_config import ResourceConfig
 from .runtime_config import RuntimeConfig
 from .service_config_type_0 import ServiceConfigType0
-from .service_config_type_1 import ServiceConfigType1
 from .service_descr import ServiceDescr
 from .sql_compiler_message import SqlCompilerMessage
 from .transport_config import TransportConfig
@@ -117,6 +117,8 @@ __all__ = (
     "CreateOrReplacePipelineResponse",
     "CreateOrReplaceProgramRequest",
     "CreateOrReplaceProgramResponse",
+    "CreateOrReplaceServiceRequest",
+    "CreateOrReplaceServiceResponse",
     "CsvEncoderConfig",
     "CsvParserConfig",
     "EgressMode",
@@ -132,8 +134,6 @@ __all__ = (
     "JsonFlavor",
     "JsonParserConfig",
     "JsonUpdateFormat",
-    "KafkaConfig",
-    "KafkaConfigOptions",
     "KafkaInputConfig",
     "KafkaInputFtConfig",
     "KafkaInputFtConfigConsumerOptions",
@@ -143,7 +143,8 @@ __all__ = (
     "KafkaOutputFtConfig",
     "KafkaOutputFtConfigConsumerOptions",
     "KafkaOutputFtConfigProducerOptions",
-    "MysqlConfig",
+    "KafkaService",
+    "KafkaServiceOptions",
     "NeighborhoodQuery",
     "NeighborhoodQueryAnchor",
     "NewApiKeyRequest",
@@ -184,7 +185,6 @@ __all__ = (
     "ResourceConfig",
     "RuntimeConfig",
     "ServiceConfigType0",
-    "ServiceConfigType1",
     "ServiceDescr",
     "SqlCompilerMessage",
     "TransportConfig",
