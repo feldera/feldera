@@ -5,6 +5,7 @@ import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { EntitySyncIndicator, EntitySyncIndicatorStatus } from '$lib/components/common/EntitySyncIndicator'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import CompileIndicator from '$lib/components/layouts/analytics/CompileIndicator'
+import { useUpdateProgram } from '$lib/compositions/analytics/useUpdateProgram'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
@@ -15,15 +16,12 @@ import {
   NewProgramResponse,
   ProgramDescr,
   SqlCompilerMessage,
-  UpdateProgramRequest,
-  UpdateProgramResponse
+  UpdateProgramRequest
 } from '$lib/services/manager'
 import { ProgramsService } from '$lib/services/manager/services/ProgramsService'
 import {
   mutationCompileProgram,
-  mutationUpdateProgram,
   PipelineManagerQueryKey,
-  programQueryCacheUpdate,
   programStatusCacheUpdate
 } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/navigation'
@@ -57,6 +55,7 @@ const MetadataForm = (props: {
   disabled?: boolean
 }) => {
   const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // setFormError({ name: { message: 'Enter a name for the project.' } })
     props.updateProgram(p => ({ ...p, name: event.target.value }))
   }
 
@@ -110,7 +109,7 @@ const stateToEditorLabel = (state: EntitySyncIndicatorStatus) =>
       return 'Name the program to save it'
     })
     .with('isModified', () => {
-      return 'Saving …'
+      return 'Modified'
     })
     .with('isSaving', () => {
       return 'Saving …'
@@ -169,63 +168,6 @@ const useCreateProgramEffect = (
     return createProgram({ ...program, code: program.code ?? '' })
   }, SAVE_DELAY)
   useEffect(() => createProgramDebounced(), [program, createProgramDebounced])
-}
-
-const useUpdateProgram = (
-  programName: string,
-  setStatus: Dispatch<SetStateAction<EntitySyncIndicatorStatus>>,
-  setFormError: Dispatch<SetStateAction<FormError>>
-) => {
-  const queryClient = useQueryClient()
-  const { pushMessage } = useStatusNotification()
-  const router = useRouter()
-
-  const { mutate, isPending } = useMutation(mutationUpdateProgram(queryClient))
-
-  // Used to accumulate changes that are being debounced
-  const [requestAggregate, setRequestAggregate] = useState<UpdateProgramRequest>({})
-
-  const debouncedUpdate = useDebouncedCallback((programName: string | undefined) => {
-    if (!programName) {
-      return
-    }
-    if (isPending) {
-      return
-    }
-    setStatus('isSaving')
-    mutate(
-      { programName, update_request: requestAggregate },
-      {
-        onSuccess: (_data: UpdateProgramResponse, variables) => {
-          setRequestAggregate({})
-          setStatus('isUpToDate')
-          setFormError({})
-          router.replace(`/analytics/editor/?program_name=${variables.update_request.name ?? variables.programName}`)
-        },
-        onError: (error: ApiError) => {
-          // TODO: would be good to have error codes from the API
-          if (error.message.includes('name already exists')) {
-            setFormError({ name: { message: 'This name is already in use. Enter a different name.' } })
-            setStatus('isUpToDate')
-          } else {
-            pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-          }
-        }
-      }
-    )
-  }, SAVE_DELAY)
-  const mutateUpdateProgram = (programName: string, updateRequest: UpdateProgramRequest) => {
-    setRequestAggregate(updateRequest)
-    programQueryCacheUpdate(queryClient, programName, updateRequest)
-    if (programName) {
-      setStatus('isModified')
-      debouncedUpdate(programName)
-    }
-  }
-  return (programAction: SetStateAction<UpdateProgramRequest>) => {
-    const pipelineRequest = programAction instanceof Function ? programAction(requestAggregate) : programAction
-    return mutateUpdateProgram(programName, pipelineRequest)
-  }
 }
 
 // Send a compile request if the project changes (e.g., we got a new version and

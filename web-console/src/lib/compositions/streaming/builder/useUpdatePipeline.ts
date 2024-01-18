@@ -11,6 +11,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 const SAVE_DELAY = 1000
 
+// The error format for the editor form.
+interface FormError {
+  name?: { message?: string }
+}
+
 const useRequestAggregate = create<{
   requestAggregate: UpdatePipelineRequest
   setRequestAggregate: Dispatch<UpdatePipelineRequest>
@@ -27,7 +32,7 @@ const useRequestAggregate = create<{
  * @param setFormError
  * @returns
  */
-export const useUpdatePipeline = <FormError extends { name?: { message: string } }>(
+export const useUpdatePipeline = (
   pipelineName: string,
   setStatus: Dispatch<EntitySyncIndicatorStatus>,
   setFormError: Dispatch<FormError>
@@ -48,24 +53,27 @@ export const useUpdatePipeline = <FormError extends { name?: { message: string }
       mutation.onSuccess?.(_data, variables, context)
       setRequestAggregate({} as any)
       setStatus('isUpToDate')
-      setFormError({} as FormError)
+      setFormError({})
       router.replace(`/streaming/builder/?pipeline_name=${variables.request.name ?? variables.pipelineName}`)
     },
     onError: (error, _args, context) => {
       mutation.onError?.(error, _args, context)
+      setStatus('isModified')
       // TODO: would be good to have error codes from the API
       if (error.message.includes('name already exists')) {
-        setFormError({ name: { message: 'This name is already in use. Enter a different name.' } } as FormError)
-        setStatus('isUpToDate')
+        setFormError({ name: { message: 'This name is already in use. Enter a different name.' } })
       } else {
         pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-        setStatus('isUpToDate')
       }
     }
   })
 
   const update = (pipelineName: string, request: UpdatePipelineRequest) => {
     if (!pipelineName) {
+      return
+    }
+    if (request.name === '') {
+      setFormError({ name: { message: 'Pipeline needs to have a name.' } })
       return
     }
     if (isPending) {

@@ -305,6 +305,7 @@ export const mutationUpdateProgram = (
   { programName: ProgramId; update_request: UpdateProgramRequest }
 > => ({
   mutationFn: args => {
+    invariant(args.update_request.name !== '', 'Cannot update a program to an invalid name')
     return ProgramsService.updateProgram(args.programName, args.update_request)
   },
   onMutate: async ({ programName, update_request }) => {
@@ -363,10 +364,10 @@ export const mutationUpdatePipeline = (
     // a workaround because when pipeline has a program we have to send program_name with each request
     // This workaround affects mutation logic in PipelineBuilder
     const pipeline = getQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(args.pipelineName))
-    invariant(args.request.name ?? pipeline?.descriptor.name, 'Cannot update to an invalid name')
+    invariant(args.request.name !== '', 'Cannot update a pipeline to an invalid name')
     return PipelinesService.updatePipeline(args.pipelineName, {
       ...args.request,
-      name: args.request.name ?? pipeline?.descriptor.name,
+      name: args.request.name ?? args.pipelineName,
       description: args.request.description ?? pipeline?.descriptor.description ?? '',
       program_name:
         args.request.program_name === undefined ? pipeline?.descriptor.program_name : args.request.program_name
@@ -468,7 +469,7 @@ export const programQueryCacheUpdate = (
     }
     return {
       ...oldData,
-      name: newData.name || oldData.name,
+      name: newData.name ?? oldData.name,
       description: newData.description ?? oldData.description,
       code: newData.code ?? oldData.code
     }
