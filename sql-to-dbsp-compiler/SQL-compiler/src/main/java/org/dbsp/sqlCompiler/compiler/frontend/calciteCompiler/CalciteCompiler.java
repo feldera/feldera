@@ -324,7 +324,7 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     /**
-     * Policy which decides whether to run the busy join optimization.
+     * Policy which decides whether to run the bushy join optimization.
      * @param rootRel Current plan.
      */
     public static boolean avoidBushyJoin(RelNode rootRel) {
