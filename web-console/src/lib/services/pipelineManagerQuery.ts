@@ -67,6 +67,13 @@ const consolidatePipelineStatus = (newPipeline: Pipeline, oldPipeline: Pipeline 
 }
 
 export type PipelineManagerQueryOptions = {
+  /**
+   * A callback that receives an error returned by the Pipeline Manager.
+   * It is asynchronous, so enables to run an asynchronous action to determine
+   * whether a query should be retried
+   * @param error Error received from the API
+   * @returns A Promise of whether a single retry of the query function should be performed
+   */
   onError?: (error: ApiError) => Promise<boolean>
 }
 
