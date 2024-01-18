@@ -108,6 +108,14 @@ REAL '1.23'  -- string style
     <td>The cotangent of the value as radians. <code>cot</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>cot</code> (like <code>cot(pi)</code>) a fixed arbitrary value may be returned.</td>
   </tr>
   <tr>
+    <td><code>SEC(value)</code></td>
+    <td>The secant of the value as radians. <code>sec</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>sec</code> (like <code>sec(pi / 2)</code>) a fixed arbitrary value may be returned.</td>
+  </tr>
+  <tr>
+    <td><code>CSC(value)</code></td>
+    <td>The cosecant of the value as radians. <code>csc</code> only supports arguments of type double, so all other types are cast to double. Returns a double. For undefined values of <code>csc</code> (like <code>csc(pi)</code>) a fixed arbitrary value may be returned.</td>
+  </tr>
+  <tr>
     <td><code>ASIN(value)</code></td>
     <td>The arcsine of the value, returned as radians. The returned value is in the range <code>[-pi/2, pi/2]</code> or <code>NaN</code> if the value is outside the range of <code>[-1, 1]</code>. <code>asin</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
@@ -134,5 +142,41 @@ REAL '1.23'  -- string style
   <tr>
     <td><code>CBRT(value)</code></td>
     <td>Calculates the cube root of the given value. <code>cbrt</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>SINH(value)</code></td>
+    <td>The hyperbolic sine of the value as radians. <code>sinh</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>COSH(value)</code></td>
+    <td>The hyperbolic cosine of the value as radians. <code>cosh</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>TANH(value)</code></td>
+    <td>The hyperbolic tangent of the value as radians. <code>tanh</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>COTH(value)</code></td>
+    <td>The hyperbolic cotangent of the value as radians. <code>coth</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>SECH(value)</code></td>
+    <td>The hyperbolic secant of the value as radians. <code>sech</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>CSCH(value)</code></td>
+    <td>The hyperbolic cosecant of the value as radians. <code>csch</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>ASINH(value)</code></td>
+    <td>The hyperbolic arcsine of the value, returned as radians. <code>asinh</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>ACOSH(value)</code></td>
+    <td>The hyperbolic arccosine of the value, returned as radians. <code>acosh</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+  </tr>
+  <tr>
+    <td><code>ATANH(value)</code></td>
+    <td>The hyperbolic arctangent of the value, returned as radians. <code>atanh</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
 </table>

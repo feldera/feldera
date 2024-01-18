@@ -690,15 +690,26 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compileFunction(call, node, type, ops, 0);
                     }
                     case "sin":
+                    case "sinh":
                     case "cos":
+                    case "cosh":
                     case "tan":
+                    case "tanh":
+                    case "atanh":
                     case "cot":
+                    case "coth":
                     case "asin":
+                    case "asinh":
                     case "acos":
+                    case "acosh":
                     case "atan":
                     case "radians":
                     case "degrees":
                     case "cbrt":
+                    case "sec":
+                    case "sech":
+                    case "csc":
+                    case "csch":
                     {
                         // Turn the argument into Double
                         DBSPExpression exp = ops.get(0);
