@@ -508,7 +508,7 @@ const pipelineStatusQueryCacheUpdate = (
     PipelineManagerQueryKey.pipelines(),
     oldDatas =>
       oldDatas?.map(oldData => {
-        if (oldData.descriptor.pipeline_id !== pipelineName) {
+        if (oldData.descriptor.name !== pipelineName) {
           return oldData
         }
         return updateCache(oldData)

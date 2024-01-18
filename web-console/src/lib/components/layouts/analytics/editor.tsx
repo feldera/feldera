@@ -55,7 +55,6 @@ const MetadataForm = (props: {
   disabled?: boolean
 }) => {
   const updateName = (event: React.ChangeEvent<HTMLInputElement>) => {
-    // setFormError({ name: { message: 'Enter a name for the project.' } })
     props.updateProgram(p => ({ ...p, name: event.target.value }))
   }
 
