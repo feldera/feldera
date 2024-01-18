@@ -2001,17 +2001,21 @@ impl Storage for Mutex<DbModel> {
                     if p.status == ProgramStatus::Pending {
                         p.schema = None;
                     }
-                    *e = SystemTime::now();
                 }
                 // If the code is updated, it overrides the schema and status
                 // changes to the equivalent of NULL.
+                let mut has_code_changed = false;
                 if let Some(code) = program_code {
                     if *code != cur_code {
                         p.code = program_code.to_owned();
                         p.version.0 += 1;
                         p.schema = None;
                         p.status = ProgramStatus::None;
+                        has_code_changed = true;
                     }
+                }
+                if !has_code_changed && (status.is_some() || schema.is_some()) {
+                    *e = SystemTime::now();
                 }
                 p.version
             })
