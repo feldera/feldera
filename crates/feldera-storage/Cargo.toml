@@ -14,8 +14,5 @@ num-derive = "0.4.1"
 num-traits = "0.2.17"
 tempfile = "3.9.0"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-io-uring = "0.6"
-
 [dev-dependencies]
 rand = "0.8.5"
