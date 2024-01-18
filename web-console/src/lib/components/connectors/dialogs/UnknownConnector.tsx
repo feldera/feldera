@@ -18,8 +18,8 @@ export const UnknownConnectorDialog = ({
   disabled?: boolean
   onSuccess?: (connector: ConnectorDescr, oldConnectorName: string) => void
 }) => {
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const { data } = useQuery(PipelineManagerQuery.connectorStatus(connectorName))
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const { data } = useQuery(pipelineManagerQuery.connectorStatus(connectorName))
   if (!data) {
     return <></>
   }

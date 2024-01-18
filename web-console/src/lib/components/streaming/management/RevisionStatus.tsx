@@ -236,10 +236,10 @@ export const PipelineRevisionStatusChip = (props: Props) => {
   const [show, setShow] = useState<boolean>(false)
   const [validationError, setValidationError] = useState<ErrorResponse | undefined>(undefined)
   const [color, setColor] = useState<ThemeColor>('success')
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
 
   const pipelineValidateQuery = useQuery({
-    ...PipelineManagerQuery.pipelineValidate(pipeline.name),
+    ...pipelineManagerQuery.pipelineValidate(pipeline.name),
     retry: false
   })
   useEffect(() => {
@@ -249,12 +249,12 @@ export const PipelineRevisionStatusChip = (props: Props) => {
     }
   }, [pipeline.name, pipelineValidateQuery])
 
-  const curPipelineConfigQuery = useQuery(PipelineManagerQuery.pipelineConfig(pipeline.name))
+  const curPipelineConfigQuery = useQuery(pipelineManagerQuery.pipelineConfig(pipeline.name))
   const curProgramQuery = useQuery({
-    ...PipelineManagerQuery.programCode(pipeline.program_name!),
+    ...pipelineManagerQuery.programCode(pipeline.program_name!),
     enabled: pipeline.program_name != null
   })
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(pipeline.name))
+  const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(pipeline.name))
   useEffect(() => {
     if (
       !pipelineRevisionQuery.isPending &&

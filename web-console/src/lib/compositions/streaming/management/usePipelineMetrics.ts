@@ -22,9 +22,9 @@ export function usePipelineMetrics(props: {
     input: new Map<string, InputConnectorMetrics>(),
     output: new Map<string, OutputConnectorMetrics>()
   })
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
   const pipelineStatsQuery = useQuery({
-    ...PipelineManagerQuery.pipelineStats(props.pipelineName),
+    ...pipelineManagerQuery.pipelineStats(props.pipelineName),
     enabled: props.status == PipelineStatus.RUNNING,
     refetchInterval: props.refetchMs
   })

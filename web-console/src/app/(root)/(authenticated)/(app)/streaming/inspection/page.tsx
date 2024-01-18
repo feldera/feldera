@@ -132,17 +132,17 @@ export default () => {
   const pipelineName = query.get('pipeline_name')
   const relation = query.get('relation')
 
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
 
   // Load the pipeline
   const { data: pipeline } = useQuery({
-    ...PipelineManagerQuery.pipelineStatus(pipelineName!),
+    ...pipelineManagerQuery.pipelineStatus(pipelineName!),
     enabled: nonNull(pipelineName)
   })
 
   // Load the last revision of the pipeline
   const { data: pipelineRevision } = useQuery({
-    ...PipelineManagerQuery.pipelineLastRevision(pipelineName!),
+    ...pipelineManagerQuery.pipelineLastRevision(pipelineName!),
     enabled: pipelineName !== undefined,
     select(pipelineRevision) {
       const program = pipelineRevision?.program

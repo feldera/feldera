@@ -172,9 +172,9 @@ const CopyButton = (props: IconButtonProps) => {
 
 const Health = () => {
   const theme = useTheme()
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const pipelinesQuery = useQuery(PipelineManagerQuery.pipelines())
-  const programsQuery = useQuery(PipelineManagerQuery.programs())
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const pipelinesQuery = useQuery(pipelineManagerQuery.pipelines())
+  const programsQuery = useQuery(pipelineManagerQuery.programs())
 
   const errors = [
     ...(pipelinesQuery.isError ? [pipelinesQuery.error as Error] : (pipelinesQuery.data ?? []).flatMap(pipelineErrors)),

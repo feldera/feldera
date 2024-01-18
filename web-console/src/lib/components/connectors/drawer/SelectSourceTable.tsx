@@ -22,8 +22,8 @@ const SelectSourceTable = (props: {
   onAddClick: Dispatch<ConnectorDescr>
 }) => {
   const [rows, setRows] = useState<ConnectorDescr[]>([])
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const fetchQuery = useQuery(PipelineManagerQuery.connectors())
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const fetchQuery = useQuery(pipelineManagerQuery.connectors())
 
   const columns: GridColDef[] = [
     {

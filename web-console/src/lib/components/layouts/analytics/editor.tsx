@@ -272,9 +272,9 @@ const useCompileProjectIfChangedEffect = (state: EntitySyncIndicatorStatus, proj
 // Polls the server during compilation and checks for the status.
 const usePollCompilationStatusEffect = (project: ProgramDescr) => {
   const queryClient = useQueryClient()
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
   const compilationStatus = useQuery({
-    ...PipelineManagerQuery.programStatus(project.name),
+    ...pipelineManagerQuery.programStatus(project.name),
     refetchInterval: 1000,
     enabled:
       project.program_id !== '' &&
@@ -297,7 +297,7 @@ const usePollCompilationStatusEffect = (project: ProgramDescr) => {
     project.version,
     project.name,
     queryClient,
-    PipelineManagerQuery
+    pipelineManagerQuery
   ])
 
   return compilationStatus
@@ -402,11 +402,11 @@ export const ProgramEditorImpl = ({
 
 export const ProgramEditor = ({ programName }: { programName: string }) => {
   const [status, setStatus] = useState<EntitySyncIndicatorStatus>(programName ? 'isLoading' : 'isNew')
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
 
   const [formError, setFormError] = useState<FormError>({})
   const programQuery = useQuery({
-    ...PipelineManagerQuery.programCode(programName!),
+    ...pipelineManagerQuery.programCode(programName!),
     enabled: !!programName,
     initialData: {
       name: '',

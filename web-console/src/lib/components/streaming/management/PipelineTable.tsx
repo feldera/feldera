@@ -116,8 +116,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   const [inputs, setInputs] = useState<ConnectorData[]>([])
   const [outputs, setOutputs] = useState<ConnectorData[]>([])
   const { descriptor, state } = props.row
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(descriptor.name))
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(descriptor.name))
   useEffect(() => {
     if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
       setInputs(getConnectorData(pipelineRevisionQuery.data, 'input'))
@@ -355,8 +355,8 @@ function CustomDetailPanelToggle({
   row: row
 }: Pick<GridRenderCellParams<Pipeline>, 'value' | 'row'>) {
   const [hasRevision, setHasRevision] = useState<boolean>(false)
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(row.descriptor.name))
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(row.descriptor.name))
   useEffect(() => {
     if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
       setHasRevision(true)
@@ -397,9 +397,9 @@ export default function PipelineTable() {
     page: 0
   })
 
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
   const pipelineQuery = useQuery({
-    ...PipelineManagerQuery.pipelines(),
+    ...pipelineManagerQuery.pipelines(),
     refetchInterval: 2000
   })
   const { isPending, isError, data, error } = pipelineQuery
@@ -588,13 +588,13 @@ export default function PipelineTable() {
 }
 
 const usePipelineStatus = (params: { row: Pipeline }) => {
-  const PipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineManagerQuery = usePipelineManagerQuery()
   const { data: pipelines } = useQuery({
-    ...PipelineManagerQuery.pipelines()
+    ...pipelineManagerQuery.pipelines()
   })
   const pipeline = params.row.descriptor
   const curProgramQuery = useQuery({
-    ...PipelineManagerQuery.programs(),
+    ...pipelineManagerQuery.programs(),
     enabled: pipeline.program_name !== null,
     refetchInterval: 2000
   })

@@ -43,8 +43,8 @@ const useInsertionTable = (props: {
   const [isPending, setLoading] = useState<boolean>(false)
   const apiRef = useGridApiRef()
 
-  const PipelineManagerQuery = usePipelineManagerQuery()
-  const pipelineRevisionQuery = useQuery(PipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.name))
+  const pipelineManagerQuery = usePipelineManagerQuery()
+  const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.name))
 
   // If a revision is loaded, find the requested relation that we want to insert
   // data into. We use it to display the table headers etc.
