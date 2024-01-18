@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Type, TypeVar
 from attrs import define, field
 
 if TYPE_CHECKING:
-    from ..models.mysql_config import MysqlConfig
+    from ..models.kafka_service import KafkaService
 
 
 T = TypeVar("T", bound="ServiceConfigType0")
@@ -13,20 +13,20 @@ T = TypeVar("T", bound="ServiceConfigType0")
 class ServiceConfigType0:
     """
     Attributes:
-        mysql (MysqlConfig): Configuration for accessing a MySQL database service.
+        kafka (KafkaService): Configuration for accessing a Kafka service.
     """
 
-    mysql: "MysqlConfig"
+    kafka: "KafkaService"
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        mysql = self.mysql.to_dict()
+        kafka = self.kafka.to_dict()
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "mysql": mysql,
+                "kafka": kafka,
             }
         )
 
@@ -34,13 +34,13 @@ class ServiceConfigType0:
 
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
-        from ..models.mysql_config import MysqlConfig
+        from ..models.kafka_service import KafkaService
 
         d = src_dict.copy()
-        mysql = MysqlConfig.from_dict(d.pop("mysql"))
+        kafka = KafkaService.from_dict(d.pop("kafka"))
 
         service_config_type_0 = cls(
-            mysql=mysql,
+            kafka=kafka,
         )
 
         service_config_type_0.additional_properties = d

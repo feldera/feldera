@@ -7,15 +7,14 @@ use super::{
     ApiKeyDescr, ApiKeyId, ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState,
     ProgramSchema,
 };
+use crate::api::{KafkaService, ServiceConfig};
 use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::{Relation, ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::Transaction;
 use openssl::sha::{self};
-use pipeline_types::config::{
-    ConnectorConfig, MysqlConfig, ResourceConfig, RuntimeConfig, ServiceConfig,
-};
+use pipeline_types::config::{ConnectorConfig, ResourceConfig, RuntimeConfig};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
 use proptest::{bool, prelude::*};
@@ -1051,6 +1050,62 @@ async fn versioning() {
     assert_ne!(r5, r6, "we got a new revision");
 }
 
+#[tokio::test]
+async fn service_name_change() {
+    let _r = env_logger::try_init();
+
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    let some_config = ServiceConfig::Kafka(KafkaService {
+        bootstrap_servers: vec![
+            format!("example.example.example:1234"),
+            "example.example:5678".to_string(),
+        ],
+        options: Default::default(),
+    });
+
+    handle
+        .db
+        .new_service(
+            tenant_id,
+            Uuid::now_v7(),
+            "service1",
+            "service1 description",
+            &some_config,
+            None,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .new_service(
+            tenant_id,
+            Uuid::now_v7(),
+            "service2",
+            "service1 description",
+            &some_config,
+            None,
+        )
+        .await
+        .unwrap();
+    match handle
+        .db
+        .update_service_by_name(tenant_id, "service1", &Some("service2"), &None, &None)
+        .await
+    {
+        Ok(_) => {
+            panic!("Expected duplicate name error but instead got success")
+        }
+        Err(err) => match err {
+            DBError::DuplicateName => {}
+            _ => {
+                panic!("Expected duplicate name error but instead got: {:?}", err);
+            }
+        },
+    }
+}
+
 /// Generate uuids but limits the the randomess to the first bits.
 ///
 /// This ensures that we have a good chance of generating a uuid that is already
@@ -1118,27 +1173,26 @@ pub(crate) fn limited_option_connector() -> impl Strategy<Value = Option<Connect
     })
 }
 
-/// Generate different service types
+/// Generate a service type
 pub(crate) fn limited_service_config() -> impl Strategy<Value = ServiceConfig> {
     any::<u8>().prop_map(|byte| {
-        ServiceConfig::Mysql(MysqlConfig {
-            hostname: format!("example{byte}"),
-            port: "1234".to_string(),
-            user: "example".to_string(),
-            password: "something".to_string(),
+        ServiceConfig::Kafka(KafkaService {
+            bootstrap_servers: vec![
+                format!("example.example{byte}.example:1234"),
+                "example.example:5678".to_string(),
+            ],
+            options: Default::default(),
         })
     })
 }
 
-/// Generate different service types
+/// Generate an optional service type
 pub(crate) fn limited_option_service_config() -> impl Strategy<Value = Option<ServiceConfig>> {
     any::<Option<u8>>().prop_map(|byte| {
         byte.map(|b| {
-            ServiceConfig::Mysql(MysqlConfig {
-                hostname: format!("example{b}"),
-                port: "1234".to_string(),
-                user: "example".to_string(),
-                password: "something".to_string(),
+            ServiceConfig::Kafka(KafkaService {
+                bootstrap_servers: vec![format!("example.com:{b}")],
+                options: Default::default(),
             })
         })
     })
@@ -1287,16 +1341,17 @@ enum StorageAction {
         String,
         #[proptest(strategy = "limited_service_config()")] ServiceConfig,
     ),
-    ListServices(TenantId),
+    ListServices(TenantId, Option<String>),
     GetServiceById(TenantId, ServiceId),
     GetServiceByName(TenantId, String),
     UpdateService(
         TenantId,
         ServiceId,
-        String,
+        Option<String>,
+        Option<String>,
         #[proptest(strategy = "limited_option_service_config()")] Option<ServiceConfig>,
     ),
-    DeleteService(TenantId, ServiceId),
+    DeleteService(TenantId, String),
     ListApiKeys(TenantId),
     GetApiKey(TenantId, String),
     DeleteApiKey(TenantId, String),
@@ -1741,43 +1796,43 @@ fn db_impl_behaves_like_model() {
                             StorageAction::NewService(tenant_id, id, name, description, config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_service(tenant_id, id, &name, &description, &config).await;
+                                    model.new_service(tenant_id, id, &name, &description, &config, None).await;
                                 let impl_response =
-                                    handle.db.new_service(tenant_id, id, &name, &description, &config).await;
+                                    handle.db.new_service(tenant_id, id, &name, &description, &config, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::ListServices(tenant_id) => {
+                            StorageAction::ListServices(tenant_id, filter_config_type) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.list_services(tenant_id).await.unwrap();
-                                let mut impl_response = handle.db.list_services(tenant_id).await.unwrap();
+                                let model_response = model.list_services(tenant_id, &filter_config_type.as_deref()).await.unwrap();
+                                let mut impl_response = handle.db.list_services(tenant_id, &filter_config_type.as_deref()).await.unwrap();
                                 // Impl does not guarantee order of rows returned by SELECT
                                 impl_response.sort_by(|a, b| a.service_id.cmp(&b.service_id));
                                 assert_eq!(model_response, impl_response);
                             }
                             StorageAction::GetServiceById(tenant_id, service_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_service_by_id(tenant_id, service_id).await;
-                                let impl_response = handle.db.get_service_by_id(tenant_id, service_id).await;
+                                let model_response = model.get_service_by_id(tenant_id, service_id, None).await;
+                                let impl_response = handle.db.get_service_by_id(tenant_id, service_id, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::GetServiceByName(tenant_id, name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.get_service_by_name(tenant_id, name.clone()).await;
-                                let impl_response = handle.db.get_service_by_name(tenant_id, name).await;
+                                let model_response = model.get_service_by_name(tenant_id, &name, None).await;
+                                let impl_response = handle.db.get_service_by_name(tenant_id, &name, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdateService(tenant_id, service_id, description, config) => {
+                            StorageAction::UpdateService(tenant_id, service_id, name, description, config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.update_service(tenant_id, service_id, &description, &config).await;
+                                    model.update_service(tenant_id, service_id, &name.as_deref(), &description.as_deref(), &config, None).await;
                                 let impl_response =
-                                    handle.db.update_service(tenant_id, service_id, &description, &config).await;
+                                    handle.db.update_service(tenant_id, service_id, &name.as_deref(), &description.as_deref(), &config, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::DeleteService(tenant_id, service_id) => {
+                            StorageAction::DeleteService(tenant_id, service_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.delete_service(tenant_id, service_id).await;
-                                let impl_response = handle.db.delete_service(tenant_id, service_id).await;
+                                let model_response = model.delete_service(tenant_id, &service_name).await;
+                                let impl_response = handle.db.delete_service(tenant_id, &service_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                         }
@@ -2779,6 +2834,7 @@ impl Storage for Mutex<DbModel> {
         name: &str,
         description: &str,
         config: &ServiceConfig,
+        _txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceId, DBError> {
         let mut s = self.lock().await;
         if s.services.keys().any(|k| k.1 == ServiceId(id)) {
@@ -2801,24 +2857,39 @@ impl Storage for Mutex<DbModel> {
                 name: name.to_owned(),
                 description: description.to_owned(),
                 config: config.to_owned(),
+                config_type: config.config_type(),
             },
         );
         Ok(service_id)
     }
 
-    async fn list_services(&self, tenant_id: TenantId) -> Result<Vec<ServiceDescr>, DBError> {
+    async fn list_services(
+        &self,
+        tenant_id: TenantId,
+        filter_config_type: &Option<&str>,
+    ) -> Result<Vec<ServiceDescr>, DBError> {
         let s = self.lock().await;
-        Ok(s.services
-            .iter()
-            .filter(|k| k.0 .0 == tenant_id)
-            .map(|k| k.1.clone())
-            .collect())
+        match filter_config_type {
+            None => Ok(s
+                .services
+                .iter()
+                .filter(|k| k.0 .0 == tenant_id)
+                .map(|k| k.1.clone())
+                .collect()),
+            Some(filter_config_type) => Ok(s
+                .services
+                .iter()
+                .filter(|k| k.0 .0 == tenant_id && k.1.config_type == *filter_config_type)
+                .map(|k| k.1.clone())
+                .collect()),
+        }
     }
 
     async fn get_service_by_id(
         &self,
         tenant_id: TenantId,
         service_id: ServiceId,
+        _txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceDescr, DBError> {
         let s = self.lock().await;
         s.services
@@ -2830,7 +2901,8 @@ impl Storage for Mutex<DbModel> {
     async fn get_service_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        _txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceDescr, DBError> {
         let s = self.lock().await;
         s.services
@@ -2838,43 +2910,76 @@ impl Storage for Mutex<DbModel> {
             .filter(|k| k.0 .0 == tenant_id)
             .map(|k| k.1.clone())
             .find(|c| c.name == name)
-            .ok_or(DBError::UnknownName { name })
+            .ok_or(DBError::UnknownServiceName {
+                service_name: name.to_string(),
+            })
     }
 
     async fn update_service(
         &self,
         tenant_id: TenantId,
         service_id: ServiceId,
-        description: &str,
+        name: &Option<&str>,
+        description: &Option<&str>,
         config: &Option<ServiceConfig>,
+        _txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError> {
         let mut s = self.lock().await;
+
         // `service_id` needs to exist
         if s.services.get(&(tenant_id, service_id)).is_none() {
             return Err(DBError::UnknownService { service_id }.into());
         }
 
+        // The new name cannot already be in use
+        if let Some(name) = name {
+            if s.services
+                .iter()
+                .filter(|k| k.0 .0 == tenant_id)
+                .map(|k| k.1.clone())
+                .any(|c| &c.name == name)
+            {
+                return Err(DBError::DuplicateName.into());
+            }
+        }
+
+        // Update the service
         let c = s
             .services
             .get_mut(&(tenant_id, service_id))
             .ok_or(DBError::UnknownService { service_id })?;
-        c.description = description.to_owned();
+        if let Some(name) = name {
+            c.name = name.to_string()
+        }
+        if let Some(description) = description {
+            c.description = description.to_string()
+        }
         if let Some(config) = config {
             c.config = config.clone();
+            c.config_type = config.config_type();
         }
         Ok(())
     }
 
-    async fn delete_service(
-        &self,
-        tenant_id: TenantId,
-        service_id: ServiceId,
-    ) -> Result<(), DBError> {
+    async fn delete_service(&self, tenant_id: TenantId, service_name: &str) -> Result<(), DBError> {
         let mut s = self.lock().await;
+        // Retrieve the service identifier and check the name exists
+        let ((_, service_id), _) = s
+            .services
+            .iter()
+            .find(|c| c.0 .0 == tenant_id && c.1.name == service_name)
+            .ok_or(DBError::UnknownServiceName {
+                service_name: service_name.to_string(),
+            })?;
+        let service_id = service_id.clone();
+
+        // Remove the service
         s.services
-            .remove(&(tenant_id, service_id))
-            .ok_or(DBError::UnknownService { service_id })?;
-        // TODO: deletion cascading / not allowing because foreign keys still exist
+            .remove(&(tenant_id, service_id.clone()))
+            .ok_or(DBError::UnknownService {
+                service_id: service_id.clone(),
+            })?;
+
         Ok(())
     }
 }

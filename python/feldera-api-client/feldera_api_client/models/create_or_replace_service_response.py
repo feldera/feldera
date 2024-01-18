@@ -2,40 +2,28 @@ from typing import Any, Dict, List, Type, TypeVar
 
 from attrs import define, field
 
-T = TypeVar("T", bound="MysqlConfig")
+T = TypeVar("T", bound="CreateOrReplaceServiceResponse")
 
 
 @define
-class MysqlConfig:
-    """Configuration for accessing a MySQL database service.
+class CreateOrReplaceServiceResponse:
+    """Response to a create or replace service request.
 
     Attributes:
-        hostname (str):
-        password (str):
-        port (str):
-        user (str):
+        service_id (str): Unique service id.
     """
 
-    hostname: str
-    password: str
-    port: str
-    user: str
+    service_id: str
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        hostname = self.hostname
-        password = self.password
-        port = self.port
-        user = self.user
+        service_id = self.service_id
 
         field_dict: Dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "hostname": hostname,
-                "password": password,
-                "port": port,
-                "user": user,
+                "service_id": service_id,
             }
         )
 
@@ -44,23 +32,14 @@ class MysqlConfig:
     @classmethod
     def from_dict(cls: Type[T], src_dict: Dict[str, Any]) -> T:
         d = src_dict.copy()
-        hostname = d.pop("hostname")
+        service_id = d.pop("service_id")
 
-        password = d.pop("password")
-
-        port = d.pop("port")
-
-        user = d.pop("user")
-
-        mysql_config = cls(
-            hostname=hostname,
-            password=password,
-            port=port,
-            user=user,
+        create_or_replace_service_response = cls(
+            service_id=service_id,
         )
 
-        mysql_config.additional_properties = d
-        return mysql_config
+        create_or_replace_service_response.additional_properties = d
+        return create_or_replace_service_response
 
     @property
     def additional_keys(self) -> List[str]:

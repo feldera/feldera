@@ -3,12 +3,12 @@ use super::{
     PipelineDescr, PipelineId, PipelineRevision, PipelineRuntimeState, PipelineStatus,
     ProgramDescr, ProgramId, ProgramSchema, Revision, Version,
 };
-use crate::api::ProgramStatus;
+use crate::api::{ProgramStatus, ServiceConfig};
 use crate::auth::TenantId;
 use crate::db::{ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use deadpool_postgres::Transaction;
-use pipeline_types::config::{ConnectorConfig, RuntimeConfig, ServiceConfig};
+use pipeline_types::config::{ConnectorConfig, RuntimeConfig};
 use uuid::Uuid;
 
 /// The storage trait contains the methods to interact with the pipeline manager
@@ -372,6 +372,9 @@ pub(crate) trait Storage {
     ) -> Result<(), DBError>;
 
     /// Creates a new service.
+    ///
+    /// Returns error if there already exists a service with the given
+    /// identifier or name.
     async fn new_service(
         &self,
         tenant_id: TenantId,
@@ -379,47 +382,58 @@ pub(crate) trait Storage {
         name: &str,
         description: &str,
         config: &ServiceConfig,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceId, DBError>;
 
     /// Retrieves a list of all services of a tenant.
-    async fn list_services(&self, tenant_id: TenantId) -> Result<Vec<ServiceDescr>, DBError>;
+    /// Optionally, filtered by service configuration type.
+    async fn list_services(
+        &self,
+        tenant_id: TenantId,
+        filter_config_type: &Option<&str>,
+    ) -> Result<Vec<ServiceDescr>, DBError>;
 
-    /// Retrieves service descriptor for the given
-    /// `service_id`.
+    /// Retrieves service descriptor for the given `service_id`.
+    ///
+    /// Returns error if there does not exist a service with the provided
+    /// identifier.
     async fn get_service_by_id(
         &self,
         tenant_id: TenantId,
         service_id: ServiceId,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceDescr, DBError>;
 
-    /// Retrieves service descriptor for the given unique `name`.
+    /// Retrieves service descriptor for the given unique service `name`.
+    ///
+    /// Returns error if there does not exist a service with the provided name.
     async fn get_service_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceDescr, DBError>;
 
-    /// Updates existing service.
-    /// Only the description and config can be updated, as the name is
-    /// immutable. The description must be provided and will always be updated.
-    /// The config is optional and not updated if not provided.
+    /// Updates the name, description and/or configuration of the existing
+    /// service, of which the identifier is provided. If new values are not
+    /// provided, the existing values in storage are kept.
+    ///
+    /// Returns error if there does not exist a service with the provided
+    /// identifier.
     async fn update_service(
         &self,
         tenant_id: TenantId,
         service_id: ServiceId,
-        description: &str,
+        name: &Option<&str>,
+        description: &Option<&str>,
         config: &Option<ServiceConfig>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError>;
 
-    /// Deletes by id the service from the database.
-    /// TODO: what are pre-conditions for successful deletion?
-    /// TODO: what are post-conditions after successful deletion
-    ///       (e.g., cascading)?
-    async fn delete_service(
-        &self,
-        tenant_id: TenantId,
-        service_id: ServiceId,
-    ) -> Result<(), DBError>;
+    /// Deletes the service by its provided name.
+    ///
+    /// Returns error if there does not exist a service with the provided name.
+    async fn delete_service(&self, tenant_id: TenantId, service_name: &str) -> Result<(), DBError>;
 
     /// Check connectivity to the DB
     async fn check_connection(&self) -> Result<(), DBError>;

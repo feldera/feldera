@@ -12,7 +12,7 @@ from ...types import Response
 
 
 def _get_kwargs(
-    service_id: str,
+    service_name: str,
     *,
     json_body: UpdateServiceRequest,
 ) -> Dict[str, Any]:
@@ -22,8 +22,8 @@ def _get_kwargs(
 
     return {
         "method": "patch",
-        "url": "/v0/services/{service_id}".format(
-            service_id=service_id,
+        "url": "/v0/services/{service_name}".format(
+            service_name=service_name,
         ),
         "json": json_json_body,
     }
@@ -58,17 +58,17 @@ def _build_response(
 
 
 def sync_detailed(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateServiceRequest,
 ) -> Response[Union[ErrorResponse, UpdateServiceResponse]]:
-    """Change a service's description or configuration.
+    """Update the name, description and/or configuration of a service.
 
-     Change a service's description or configuration.
+     Update the name, description and/or configuration of a service.
 
     Args:
-        service_id (str):
+        service_name (str):
         json_body (UpdateServiceRequest): Request to update an existing service.
 
     Raises:
@@ -80,7 +80,7 @@ def sync_detailed(
     """
 
     kwargs = _get_kwargs(
-        service_id=service_id,
+        service_name=service_name,
         json_body=json_body,
     )
 
@@ -92,17 +92,17 @@ def sync_detailed(
 
 
 def sync(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateServiceRequest,
 ) -> Optional[Union[ErrorResponse, UpdateServiceResponse]]:
-    """Change a service's description or configuration.
+    """Update the name, description and/or configuration of a service.
 
-     Change a service's description or configuration.
+     Update the name, description and/or configuration of a service.
 
     Args:
-        service_id (str):
+        service_name (str):
         json_body (UpdateServiceRequest): Request to update an existing service.
 
     Raises:
@@ -114,24 +114,24 @@ def sync(
     """
 
     return sync_detailed(
-        service_id=service_id,
+        service_name=service_name,
         client=client,
         json_body=json_body,
     ).parsed
 
 
 async def asyncio_detailed(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateServiceRequest,
 ) -> Response[Union[ErrorResponse, UpdateServiceResponse]]:
-    """Change a service's description or configuration.
+    """Update the name, description and/or configuration of a service.
 
-     Change a service's description or configuration.
+     Update the name, description and/or configuration of a service.
 
     Args:
-        service_id (str):
+        service_name (str):
         json_body (UpdateServiceRequest): Request to update an existing service.
 
     Raises:
@@ -143,7 +143,7 @@ async def asyncio_detailed(
     """
 
     kwargs = _get_kwargs(
-        service_id=service_id,
+        service_name=service_name,
         json_body=json_body,
     )
 
@@ -153,17 +153,17 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    service_id: str,
+    service_name: str,
     *,
     client: AuthenticatedClient,
     json_body: UpdateServiceRequest,
 ) -> Optional[Union[ErrorResponse, UpdateServiceResponse]]:
-    """Change a service's description or configuration.
+    """Update the name, description and/or configuration of a service.
 
-     Change a service's description or configuration.
+     Update the name, description and/or configuration of a service.
 
     Args:
-        service_id (str):
+        service_name (str):
         json_body (UpdateServiceRequest): Request to update an existing service.
 
     Raises:
@@ -176,7 +176,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
-            service_id=service_id,
+            service_name=service_name,
             client=client,
             json_body=json_body,
         )

@@ -56,13 +56,13 @@ use tokio::{
     time::{sleep, timeout},
 };
 
+use crate::api::KafkaService;
 use crate::{
     compiler::Compiler,
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
     db::{Pipeline, PipelineStatus},
 };
 use anyhow::{bail, Result as AnyResult};
-use pipeline_types::config::{KafkaConfig, MysqlConfig};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -236,8 +236,8 @@ impl TestConfig {
         let mut req = config.get("/v0/services").await;
         let services: Value = req.json().await.unwrap();
         for service in services.as_array().unwrap() {
-            let id = service["service_id"].as_str().unwrap();
-            let req = config.delete(format!("/v0/services/{}", id)).await;
+            let name = service["name"].as_str().unwrap();
+            let req = config.delete(format!("/v0/services/{}", name)).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
     }
@@ -268,6 +268,17 @@ impl TestConfig {
     async fn post_no_body<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
         self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
             .send()
+            .await
+            .unwrap()
+    }
+
+    async fn put<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        json: &Value,
+    ) -> ClientResponse<Decoder<Payload>> {
+        self.maybe_attach_bearer_token(self.client.put(self.endpoint_url(endpoint)))
+            .send_json(&json)
             .await
             .unwrap()
     }
@@ -1474,6 +1485,19 @@ async fn pipeline_start_without_compiling() {
 
 /// Test the basic functionality of the services:
 /// create, retrieve, update and delete.
+///
+/// It tests the following things:
+/// - Retrieve service
+/// - Retrieve non-existing service (not found)
+/// - Retrieve list of services, filtered by name, id or config_type
+/// - Create service and check its content
+/// - Create service with the same name (conflict)
+/// - Create service with invalid parameters (bad request)
+/// - Update service partially
+/// - Update service renaming it
+/// - Update service renaming it to another existing name (conflict)
+/// - Delete service
+/// - Delete non-existing service (not found)
 #[actix_web::test]
 #[serial]
 async fn service_basic() {
@@ -1481,49 +1505,58 @@ async fn service_basic() {
 
     // Check for non-existing service
     let resp = config
-        .get(format!("/v0/services/00000000-0000-0000-0000-000000001234"))
+        .get(format!("/v0/services/non-existing-service-name"))
         .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
     // Create first service
     let post_body = json!({
-      "name": "example_mysql",
-      "description": "abc123",
+      "name": "example_kafka1",
+      "description": "example789",
       "config": {
-        "mysql": {
-          "hostname": "value0",
-          "port": "value1",
-          "user": "value2",
-          "password": "value3"
+        "kafka": {
+          "bootstrap_servers": [
+            "first.example.com:1111",
+            "example.example.example:2222"
+          ],
+          "options": {
+            "example123": "value111",
+            "example456": "value222"
+          }
         }
       }
     });
     let mut request = config.post(format!("/v0/services"), &post_body).await;
-    assert_eq!(request.status(), StatusCode::OK);
+    assert_eq!(request.status(), StatusCode::CREATED);
     let response: Value = request.json().await.unwrap();
     let id_first = response["service_id"].as_str().unwrap();
 
     // Retrieve first service and check content
-    let mut request = config.get_ok(format!("/v0/services/{}", id_first)).await;
-    let expected_config_first = MysqlConfig {
-        hostname: "value0".to_string(),
-        port: "value1".to_string(),
-        user: "value2".to_string(),
-        password: "value3".to_string(),
+    let mut request = config.get_ok(format!("/v0/services/example_kafka1")).await;
+    let expected_config_first = KafkaService {
+        bootstrap_servers: vec![
+            "first.example.com:1111".to_string(),
+            "example.example.example:2222".to_string(),
+        ],
+        options: BTreeMap::from([
+            ("example123".to_string(), "value111".to_string()),
+            ("example456".to_string(), "value222".to_string()),
+        ]),
     };
     let response: Value = request.json().await.unwrap();
     let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_mysql");
-    assert_eq!(response["description"].as_str().unwrap(), "abc123");
-    let v = response["config"].as_object().unwrap()["mysql"].clone();
+    assert_eq!(response["name"].as_str().unwrap(), "example_kafka1");
+    assert_eq!(response["description"].as_str().unwrap(), "example789");
+    let v = response["config"].as_object().unwrap()["kafka"].clone();
     assert_eq!(
-        serde_json::from_value::<MysqlConfig>(v).unwrap(),
+        serde_json::from_value::<KafkaService>(v).unwrap(),
         expected_config_first
     );
+    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
 
     // Create second service
     let post_body = json!({
-      "name": "example_kafka",
+      "name": "example_kafka2",
       "description": "example456",
       "config": {
         "kafka": {
@@ -1539,7 +1572,7 @@ async fn service_basic() {
       }
     });
     let mut request = config.post(format!("/v0/services"), &post_body).await;
-    assert_eq!(request.status(), StatusCode::OK);
+    assert_eq!(request.status(), StatusCode::CREATED);
     let response: Value = request.json().await.unwrap();
     let id_second = response["service_id"].as_str().unwrap();
 
@@ -1548,8 +1581,8 @@ async fn service_basic() {
     assert_eq!(request.status(), StatusCode::CONFLICT);
 
     // Retrieve second service and check content
-    let mut request = config.get_ok(format!("/v0/services/{}", id_second)).await;
-    let expected_config_second = KafkaConfig {
+    let mut request = config.get_ok(format!("/v0/services/example_kafka2")).await;
+    let expected_config_second = KafkaService {
         bootstrap_servers: vec![
             "example.com:1234".to_string(),
             "example.example:5678".to_string(),
@@ -1561,13 +1594,14 @@ async fn service_basic() {
     };
     let response: Value = request.json().await.unwrap();
     let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_kafka");
+    assert_eq!(response["name"].as_str().unwrap(), "example_kafka2");
     assert_eq!(response["description"].as_str().unwrap(), "example456");
     let v = response["config"].as_object().unwrap()["kafka"].clone();
     assert_eq!(
-        serde_json::from_value::<KafkaConfig>(v).unwrap(),
+        serde_json::from_value::<KafkaService>(v).unwrap(),
         expected_config_second
     );
+    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
 
     // Attempt to create an invalid service
     let post_body = json!({
@@ -1589,26 +1623,26 @@ async fn service_basic() {
 
     // Retrieve list of services filtered
     let mut request = config
-        .get_ok(format!("/v0/services?name=example_mysql"))
+        .get_ok(format!("/v0/services?name=example_kafka1"))
         .await;
     let response: Value = request.json().await.unwrap();
     assert_eq!(response.as_array().unwrap().len(), 1);
     assert_eq!(
-        response.as_array().unwrap()[0].as_object().unwrap()["service_id"]
+        response.as_array().unwrap()[0].as_object().unwrap()["name"]
             .as_str()
             .unwrap(),
-        id_first
+        "example_kafka1"
     );
     let mut request = config
-        .get_ok(format!("/v0/services?name=example_kafka"))
+        .get_ok(format!("/v0/services?name=example_kafka2"))
         .await;
     let response: Value = request.json().await.unwrap();
     assert_eq!(response.as_array().unwrap().len(), 1);
     assert_eq!(
-        response.as_array().unwrap()[0].as_object().unwrap()["service_id"]
+        response.as_array().unwrap()[0].as_object().unwrap()["name"]
             .as_str()
             .unwrap(),
-        id_second
+        "example_kafka2"
     );
     let request = config
         .get(format!("/v0/services?name=example_does_not_exist"))
@@ -1639,37 +1673,56 @@ async fn service_basic() {
         .await;
     assert_eq!(request.status(), StatusCode::NOT_FOUND);
 
+    // Rename first service to second service (conflict)
+    let patch = json!({
+        "name": "example_kafka2",
+    });
+    let resp = config
+        .patch(format!("/v0/services/example_kafka1"), &patch)
+        .await;
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
     // Delete first service
-    let req = config.delete(format!("/v0/services/{}", id_first)).await;
+    let req = config.delete(format!("/v0/services/example_kafka1")).await;
     assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req);
 
     // Check one service is left
-    let mut request = config.get_ok(format!("/v0/services")).await;
+    let mut request = config
+        .get_ok(format!("/v0/services?config_type=kafka"))
+        .await;
     let response: Value = request.json().await.unwrap();
     assert_eq!(response.as_array().unwrap().len(), 1);
+
+    // Check filter works
+    let mut request = config
+        .get_ok(format!("/v0/services?config_type=does_not_exist"))
+        .await;
+    let response: Value = request.json().await.unwrap();
+    assert_eq!(response.as_array().unwrap().len(), 0);
 
     // Update second service (only description)
     let patch = json!({
         "description": "new_description",
     });
     let resp = config
-        .patch(format!("/v0/services/{id_second}"), &patch)
+        .patch(format!("/v0/services/example_kafka2"), &patch)
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Check description is updated
-    let mut request = config.get_ok(format!("/v0/services/{}", id_second)).await;
+    let mut request = config.get_ok(format!("/v0/services/example_kafka2")).await;
     let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_object().unwrap()["name"], "example_kafka"); // name is unchanged
+    assert_eq!(response.as_object().unwrap()["name"], "example_kafka2"); // name is unchanged
     assert_eq!(
         response.as_object().unwrap()["description"],
         "new_description"
     );
     let v = response["config"].as_object().unwrap()["kafka"].clone(); // config is unchanged
     assert_eq!(
-        serde_json::from_value::<KafkaConfig>(v).unwrap(),
+        serde_json::from_value::<KafkaService>(v).unwrap(),
         expected_config_second
     );
+    assert_eq!(response.as_object().unwrap()["config_type"], "kafka");
 
     // Update second service (description and config)
     let patch = json!({
@@ -1688,13 +1741,13 @@ async fn service_basic() {
         }
     });
     let resp = config
-        .patch(format!("/v0/services/{id_second}"), &patch)
+        .patch(format!("/v0/services/example_kafka2"), &patch)
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Check description and config is updated
-    let mut request = config.get_ok(format!("/v0/services/{}", id_second)).await;
-    let expected_updated_config_second = KafkaConfig {
+    let mut request = config.get_ok(format!("/v0/services/example_kafka2")).await;
+    let expected_updated_config_second = KafkaService {
         bootstrap_servers: vec![
             "example.example:1111".to_string(),
             "another.example:2222".to_string(),
@@ -1706,20 +1759,133 @@ async fn service_basic() {
     };
     let response: Value = request.json().await.unwrap();
     let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_kafka");
+    assert_eq!(response["name"].as_str().unwrap(), "example_kafka2");
     assert_eq!(
         response["description"].as_str().unwrap(),
         "another_new_description"
     );
     let v = response["config"].as_object().unwrap()["kafka"].clone();
     assert_eq!(
-        serde_json::from_value::<KafkaConfig>(v).unwrap(),
+        serde_json::from_value::<KafkaService>(v).unwrap(),
         expected_updated_config_second
     );
 
+    // Rename second service
+    let patch = json!({
+        "name": "example_kafka3",
+    });
+    let resp = config
+        .patch(format!("/v0/services/example_kafka2"), &patch)
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Check it is renamed
+    config.get_ok(format!("/v0/services/example_kafka3")).await;
+    assert_eq!(
+        config
+            .get(format!("/v0/services/example_kafka2"))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+
     // Delete second service
-    let req = config.delete(format!("/v0/services/{}", id_second)).await;
+    let req = config.delete(format!("/v0/services/example_kafka3")).await;
     assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req);
+
+    // Create a service using PUT
+    let put_body = json!({
+      "description": "example123456789",
+      "config": {
+        "kafka": {
+          "bootstrap_servers": [
+            "example.com:11",
+          ],
+          "options": {
+            "example8": "value1",
+          }
+        }
+      }
+    });
+    let request = config
+        .put(format!("/v0/services/example_kafka_put"), &put_body)
+        .await;
+    assert_eq!(request.status(), StatusCode::CREATED);
+
+    // Retrieve service of PUT and check content
+    let mut request = config
+        .get_ok(format!("/v0/services/example_kafka_put"))
+        .await;
+    let expected_config = KafkaService {
+        bootstrap_servers: vec!["example.com:11".to_string()],
+        options: BTreeMap::from([("example8".to_string(), "value1".to_string())]),
+    };
+    let response: Value = request.json().await.unwrap();
+    let response = response.as_object().unwrap();
+    assert_eq!(response["name"].as_str().unwrap(), "example_kafka_put");
+    assert_eq!(
+        response["description"].as_str().unwrap(),
+        "example123456789"
+    );
+    let v = response["config"].as_object().unwrap()["kafka"].clone();
+    assert_eq!(
+        serde_json::from_value::<KafkaService>(v).unwrap(),
+        expected_config
+    );
+    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
+
+    // Update a service using PUT
+    let put_body = json!({
+      "description": "another_example123",
+      "config": {
+        "kafka": {
+          "bootstrap_servers": [
+            "example.com:12",
+          ],
+          "options": {
+            "example3": "value4",
+          }
+        }
+      }
+    });
+    let request = config
+        .put(format!("/v0/services/example_kafka_put"), &put_body)
+        .await;
+    assert_eq!(request.status(), StatusCode::OK);
+
+    // Retrieve updated service of PUT and check content
+    let mut request = config
+        .get_ok(format!("/v0/services/example_kafka_put"))
+        .await;
+    let expected_config = KafkaService {
+        bootstrap_servers: vec!["example.com:12".to_string()],
+        options: BTreeMap::from([("example3".to_string(), "value4".to_string())]),
+    };
+    let response: Value = request.json().await.unwrap();
+    let response = response.as_object().unwrap();
+    assert_eq!(response["name"].as_str().unwrap(), "example_kafka_put");
+    assert_eq!(
+        response["description"].as_str().unwrap(),
+        "another_example123"
+    );
+    let v = response["config"].as_object().unwrap()["kafka"].clone();
+    assert_eq!(
+        serde_json::from_value::<KafkaService>(v).unwrap(),
+        expected_config
+    );
+    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
+
+    // Delete last service
+    let req = config
+        .delete(format!("/v0/services/example_kafka_put"))
+        .await;
+    assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req);
+
+    // Delete non-existing
+    let req = config
+        .delete(format!("/v0/services/example_kafka_put"))
+        .await;
+    assert_eq!(StatusCode::NOT_FOUND, req.status(), "Response {:?}", req);
 
     // Check no service is left
     let mut request = config.get_ok(format!("/v0/services")).await;

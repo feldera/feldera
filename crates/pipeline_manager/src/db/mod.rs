@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use log::{debug, info};
 use openssl::sha;
-use pipeline_types::config::{ConnectorConfig, PipelineConfig, RuntimeConfig, ServiceConfig};
+use pipeline_types::config::{ConnectorConfig, PipelineConfig, RuntimeConfig};
 use serde::{Deserialize, Serialize};
 use std::{fmt, fmt::Display, str::FromStr};
 use storage::Storage;
@@ -25,6 +25,7 @@ mod pg_setup;
 pub(crate) mod storage;
 
 mod error;
+use crate::api::ServiceConfig;
 pub use error::DBError;
 
 mod embedded {
@@ -768,46 +769,54 @@ impl Storage for ProjectDB {
         name: &str,
         description: &str,
         config: &ServiceConfig,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceId, DBError> {
-        Ok(service::new_service(self, tenant_id, id, name, description, config).await?)
+        Ok(service::new_service(self, tenant_id, id, name, description, config, txn).await?)
     }
 
-    async fn list_services(&self, tenant_id: TenantId) -> Result<Vec<ServiceDescr>, DBError> {
-        Ok(service::list_services(self, tenant_id).await?)
+    async fn list_services(
+        &self,
+        tenant_id: TenantId,
+        filter_config_type: &Option<&str>,
+    ) -> Result<Vec<ServiceDescr>, DBError> {
+        Ok(service::list_services(self, tenant_id, filter_config_type).await?)
     }
 
     async fn get_service_by_id(
         &self,
         tenant_id: TenantId,
         service_id: ServiceId,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceDescr, DBError> {
-        Ok(service::get_service_by_id(self, tenant_id, service_id).await?)
+        Ok(service::get_service_by_id(self, tenant_id, service_id, txn).await?)
     }
 
     async fn get_service_by_name(
         &self,
         tenant_id: TenantId,
-        name: String,
+        name: &str,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<ServiceDescr, DBError> {
-        Ok(service::get_service_by_name(self, tenant_id, name).await?)
+        Ok(service::get_service_by_name(self, tenant_id, name, txn).await?)
     }
 
     async fn update_service(
         &self,
         tenant_id: TenantId,
         service_id: ServiceId,
-        description: &str,
+        name: &Option<&str>,
+        description: &Option<&str>,
         config: &Option<ServiceConfig>,
+        txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError> {
-        Ok(service::update_service(self, tenant_id, service_id, description, config).await?)
+        Ok(
+            service::update_service(self, tenant_id, service_id, name, description, config, txn)
+                .await?,
+        )
     }
 
-    async fn delete_service(
-        &self,
-        tenant_id: TenantId,
-        service_id: ServiceId,
-    ) -> Result<(), DBError> {
-        Ok(service::delete_service(self, tenant_id, service_id).await?)
+    async fn delete_service(&self, tenant_id: TenantId, service_name: &str) -> Result<(), DBError> {
+        Ok(service::delete_service(self, tenant_id, service_name).await?)
     }
 }
 
@@ -1236,5 +1245,82 @@ impl ProjectDB {
                 actual: 0,
             })
         }
+    }
+
+    /// Create or replace a service by first, within a transaction,
+    /// attempting to resolve the name to its respective identifier.
+    /// If the service with that name already exists, it is updated.
+    /// If not, the service is newly created.
+    ///
+    /// Returns a boolean indicating whether the service was created
+    /// and the respective service identifier.
+    pub async fn create_or_replace_service(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+        description: &str,
+        config: &ServiceConfig,
+    ) -> Result<(bool, ServiceId), DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let result = match self.get_service_by_name(tenant_id, name, Some(&txn)).await {
+            Ok(service) => {
+                self.update_service(
+                    tenant_id,
+                    service.service_id,
+                    &Some(name),
+                    &Some(description),
+                    &Some(config.clone()),
+                    Some(&txn),
+                )
+                .await?;
+                Ok((false, service.service_id))
+            }
+            Err(DBError::UnknownServiceName { .. }) => {
+                let service_id = self
+                    .new_service(
+                        tenant_id,
+                        Uuid::now_v7(),
+                        name,
+                        description,
+                        config,
+                        Some(&txn),
+                    )
+                    .await?;
+                Ok((true, service_id))
+            }
+            Err(e) => Err(e),
+        }?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    /// Updates a service by name by, within a transaction, resolving
+    /// the name to its respective identifier and proceeding to use
+    /// that in the update query.
+    pub async fn update_service_by_name(
+        &self,
+        tenant_id: TenantId,
+        original_name: &str,
+        new_name: &Option<&str>,
+        description: &Option<&str>,
+        config: &Option<ServiceConfig>,
+    ) -> Result<(), DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let service = self
+            .get_service_by_name(tenant_id, original_name, Some(&txn))
+            .await?;
+        self.update_service(
+            tenant_id,
+            service.service_id,
+            new_name,
+            description,
+            config,
+            Some(&txn),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
     }
 }
