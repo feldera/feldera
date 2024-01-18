@@ -33,16 +33,3 @@ pub use indexed_zset_batch::OrdIndexedZSet;
 pub use key_batch::OrdKeyBatch;
 pub use val_batch::OrdValBatch;
 pub use zset_batch::OrdZSet;
-
-use crate::trace::Spine;
-
-/// A trace implementation using a spine of ordered lists.
-pub type OrdValSpine<K, V, T, R, O = usize> = Spine<OrdValBatch<K, V, T, R, O>>;
-
-/// A trace implementation for empty values using a spine of ordered lists.
-pub type OrdKeySpine<K, T, R, O = usize> = Spine<OrdKeyBatch<K, T, R, O>>;
-
-/// A trace implementation using a [`Spine`] of [`OrdZSet`].
-pub type OrdZSetSpine<K, R> = Spine<OrdZSet<K, R>>;
-
-pub type OrdIndexedZSetSpine<K, V, R, O = usize> = Spine<OrdIndexedZSet<K, V, R, O>>;
