@@ -5,6 +5,11 @@ import { match, P } from 'ts-pattern'
 
 import { useQuery } from '@tanstack/react-query'
 
+/**
+ * This function selects the behavior on authorization error based on a configured auth provider.
+ * It enables using UI hooks (e.g. redirect) and asynchronous functions (e.g. bearer token update through refresh token request)
+ * @returns A set of options makePipelineManagerQuery can be configured with
+ */
 export const usePipelineManagerQueryAuth = (): PipelineManagerQueryOptions => {
   const { setAuth } = useAuth()
   const { data: authConfig } = useQuery(PublicPipelineManagerQuery.getAuthConfig())
