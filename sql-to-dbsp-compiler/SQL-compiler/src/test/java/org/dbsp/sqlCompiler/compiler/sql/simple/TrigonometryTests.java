@@ -1118,4 +1118,200 @@ public class TrigonometryTests extends SqlIoTest {
                         "Supported form(s): 'SIN(<NUMERIC>)'"
         );
     }
+
+    // Tested on Apache Spark
+    @Test
+    public void testSec() {
+        this.qs("""
+                SELECT sec(0.6);
+                      sec
+                -----------------
+                 1.211628314512317
+                (1 row)
+                
+                SELECT sec(0);
+                      sec
+                -----------------
+                 1.0
+                (1 row)
+                
+                SELECT sec(PI);
+                      sec
+                -----------------
+                 -1.0
+                (1 row)
+                
+                SELECT sec(PI / 2);
+                      sec
+                -----------------
+                 16331239353195370
+                (1 row)
+                """
+        );
+    }
+
+    // Tested on Apache Spark
+    @Test
+    public void testCsc() {
+        this.qs("""
+                SELECT csc(0.6);
+                      csc
+                -----------------
+                 1.7710321966877254
+                (1 row)
+                
+                SELECT csc(0);
+                      csc
+                -----------------
+                 Infinity
+                (1 row)
+                
+                SELECT csc(PI);
+                      csc
+                -----------------
+                 8165619676597685
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testHyperbolicFns() {
+        this.qs(
+                """
+                        SELECT sinh(1);
+                              sinh
+                        -----------------
+                         1.1752011936438014
+                        (1 row)
+                        
+                        SELECT asinh(1);
+                               asinh
+                        -------------------
+                         0.881373587019543
+                        (1 row)
+                        
+                        SELECT cosh(1);
+                               cosh
+                        ------------------
+                         1.5430806348152437
+                        (1 row)
+                        
+                        SELECT coth(0.6); -- not tested in Spark
+                               coth
+                        ------------------
+                         1.862025521386666
+                        (1 row)
+                        
+                        SELECT coth(0);
+                               coth
+                        ------------------
+                         Infinity
+                        (1 row)
+                        
+                        SELECT acosh(2);
+                              acosh
+                        ------------------
+                         1.3169578969248166
+                        (1 row)
+                        
+                        SELECT tanh(1);
+                               tanh
+                        -------------------
+                         0.761594155955765
+                        (1 row)
+                        
+                        SELECT atanh(0.5);
+                               atanh
+                        -------------------
+                         0.549306144334055
+                        (1 row)
+                                                
+                        SELECT csch(0.6); -- not tested in Spark
+                               csch
+                        -------------------
+                         1.570712908935076
+                        (1 row)
+                        
+                        SELECT csch(0);
+                               csch
+                        -------------------
+                         Infinity
+                        (1 row)
+                        
+                        SELECT sech(0.6); -- not tested in Spark
+                               sech
+                        -------------------
+                         0.843550687621807
+                        (1 row)
+                        """
+        );
+    }
+
+    @Test
+    public void testArcHyperbolic() {
+        this.qs("""
+                SELECT asinh('Infinity'::float8);
+                  asinh
+                ----------
+                 Infinity
+                (1 row)
+                                
+                SELECT asinh('-Infinity'::float8);
+                   asinh
+                -----------
+                 -Infinity
+                (1 row)
+                                
+                SELECT asinh('NaN'::float8);
+                 asinh
+                -------
+                   NaN
+                (1 row)
+                
+                SELECT asinh(1);
+                       asinh
+                -------------------
+                 0.881373587019543
+                (1 row)
+                
+                SELECT acosh(2);
+                      acosh
+                ------------------
+                 1.316957896924817
+                (1 row)
+                
+                SELECT acosh('NaN'::float8);
+                 acosh
+                -------
+                   NaN
+                (1 row)
+                
+                SELECT acosh('Infinity'::float8);
+                 acosh
+                -------
+                 Infinity
+                (1 row)
+                
+                SELECT atanh('NaN'::float8);
+                 atanh
+                -------
+                 NaN
+                (1 row)
+                
+                SELECT atanh('0.5'::float8);
+                       atanh
+                -------------------
+                 0.549306144334055
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testArcHyperbolicFail() {
+        this.qf("SELECT acosh('-Infinity'::float8)", "input (-inf) out of range [1, Infinity]");
+        this.qf("SELECT atanh('Infinity'::float8)", "input (inf) out of range [-1, 1]");
+        this.qf("SELECT atanh('-Infinity'::float8)", "input (-inf) out of range [-1, 1]");
+    }
 }
