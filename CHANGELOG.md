@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - SQL: Functions on binary string (octet_length, position, overlay, substring) ([#1264](https://github.com/feldera/feldera/pull/1264))
--  pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
--  Documentation: Adding a markdown page for videos (#1126)
+- pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
+- Documentation: Adding a markdown page for videos (#1126)
 - SQL: Add hyperbolic functions ([#1280](https://github.com/feldera/feldera/pull/1280))
 
 ### Fixed
@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
 - WebConsole: Connector name change doesn't reflect in the pipeline builder (#1238)
 - WebConsole: UI sends HTTP request in an infinite loop (#1085)
+- pipeline-manager: allow docs website to CORS allowed origins (#1285)
 
 ### Changed
 - pipeline-manager: update service endpoints to use names instead of IDs in URLs,

@@ -35,7 +35,7 @@ use actix_web::dev::Service;
 use actix_web::Scope;
 use actix_web::{
     get,
-    middleware::{Condition, Logger},
+    middleware::Logger,
     web::Data as WebData,
     web::{self},
     App, HttpRequest, HttpResponse, HttpServer,
@@ -394,6 +394,8 @@ fn create_listener(api_config: &ApiServerConfig) -> AnyResult<TcpListener> {
 pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
     let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
+    let bind_address = api_config.bind_address.clone();
+    let port = api_config.port;
     let auth_configuration = match api_config.auth_provider {
         crate::config::AuthProviderType::None => None,
         crate::config::AuthProviderType::AwsCognito => Some(crate::auth::aws_auth_config()),
@@ -412,10 +414,7 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
                     .app_data(auth_configuration.clone())
                     .app_data(client)
                     .wrap(Logger::default().exclude("/healthz"))
-                    .wrap(Condition::new(
-                        api_config.dev_mode,
-                        actix_cors::Cors::permissive(),
-                    ))
+                    .wrap(api_config.cors())
                     .service(api_scope().wrap(auth_middleware))
                     .service(public_scope())
             });
@@ -428,10 +427,7 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
                     .app_data(state.clone())
                     .app_data(client)
                     .wrap(Logger::default().exclude("/healthz"))
-                    .wrap(Condition::new(
-                        api_config.dev_mode,
-                        actix_cors::Cors::permissive(),
-                    ))
+                    .wrap(api_config.cors())
                     .service(api_scope().wrap_fn(|req, srv| {
                         let req = crate::auth::tag_with_default_tenant_id(req);
                         srv.call(req)
@@ -442,8 +438,8 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
         }
     };
 
-    let addr = env::var("BANNER_ADDR").unwrap_or(api_config.bind_address);
-    let url = format!("http://{}:{}", addr, api_config.port);
+    let addr = env::var("BANNER_ADDR").unwrap_or(bind_address);
+    let url = format!("http://{}:{}", addr, port);
     info!(
         r"
                     Welcome to
