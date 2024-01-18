@@ -1310,8 +1310,8 @@ public class TrigonometryTests extends SqlIoTest {
 
     @Test
     public void testArcHyperbolicFail() {
-        this.qf("SELECT acosh('-Infinity'::float8)", "input out of range");
-        this.qf("SELECT atanh('Infinity'::float8)", "input out of range");
-        this.qf("SELECT atanh('-Infinity'::float8)", "input out of range");
+        this.qf("SELECT acosh('-Infinity'::float8)", "input (-inf) out of range [1, Infinity]");
+        this.qf("SELECT atanh('Infinity'::float8)", "input (inf) out of range [-1, 1]");
+        this.qf("SELECT atanh('-Infinity'::float8)", "input (-inf) out of range [-1, 1]");
     }
 }

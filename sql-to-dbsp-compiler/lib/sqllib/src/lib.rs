@@ -907,36 +907,21 @@ some_polymorphic_function1!(tan, d, F64, F64);
 
 #[inline(always)]
 pub fn sec_d(value: F64) -> F64 {
-    let cos = value.into_inner().cos();
-    if cos.is_zero() {
-        f64::INFINITY.into()
-    } else {
-        (1.0 / cos).into()
-    }
+    (1.0 / value.into_inner().cos()).into()
 }
 
 some_polymorphic_function1!(sec, d, F64, F64);
 
 #[inline(always)]
 pub fn csc_d(value: F64) -> F64 {
-    let sin = value.into_inner().sin();
-    if sin.is_zero() {
-        f64::INFINITY.into()
-    } else {
-        (1.0 / sin).into()
-    }
+    (1.0 / value.into_inner().sin()).into()
 }
 
 some_polymorphic_function1!(csc, d, F64, F64);
 
 #[inline(always)]
 pub fn cot_d(value: F64) -> F64 {
-    let tan = value.into_inner().tan();
-    if tan.is_zero() {
-        f64::INFINITY.into()
-    } else {
-        (1.0_f64 / tan).into()
-    }
+    (1.0_f64 / value.into_inner().tan()).into()
 }
 
 some_polymorphic_function1!(cot, d, F64, F64);
@@ -1018,12 +1003,7 @@ some_polymorphic_function1!(tanh, d, F64, F64);
 
 #[inline(always)]
 pub fn coth_d(value: F64) -> F64 {
-    let tanh = value.into_inner().tanh();
-    if tanh.is_zero() {
-        f64::INFINITY.into()
-    } else {
-        (1.0 / tanh).into()
-    }
+    (1.0 / value.into_inner().tanh()).into()
 }
 
 some_polymorphic_function1!(coth, d, F64, F64);
@@ -1038,7 +1018,7 @@ some_polymorphic_function1!(asinh, d, F64, F64);
 #[inline(always)]
 pub fn acosh_d(value: F64) -> F64 {
     if value.into_inner() < 1.0 {
-        panic!("input out of range")
+        panic!("input ({}) out of range [1, Infinity]", value)
     }
 
     value.into_inner().acosh().into()
@@ -1050,7 +1030,7 @@ some_polymorphic_function1!(acosh, d, F64, F64);
 pub fn atanh_d(value: F64) -> F64 {
     let inner = value.into_inner();
     if !(-1.0..=1.0).contains(&inner) && !inner.is_nan() {
-        panic!("input out of range")
+        panic!("input ({}) out of range [-1, 1]", value)
     }
 
     inner.atanh().into()
@@ -1060,24 +1040,14 @@ some_polymorphic_function1!(atanh, d, F64, F64);
 
 #[inline(always)]
 pub fn csch_d(value: F64) -> F64 {
-    let sinh = value.into_inner().sinh();
-    if sinh.is_zero() {
-        f64::INFINITY.into()
-    } else {
-        (1.0 / sinh).into()
-    }
+    (1.0 / value.into_inner().sinh()).into()
 }
 
 some_polymorphic_function1!(csch, d, F64, F64);
 
 #[inline(always)]
 pub fn sech_d(value: F64) -> F64 {
-    let cosh = value.into_inner().cosh();
-    if cosh.is_zero() {
-        f64::INFINITY.into()
-    } else {
-        (1.0 / cosh).into()
-    }
+    (1.0 / value.into_inner().cosh()).into()
 }
 
 some_polymorphic_function1!(sech, d, F64, F64);
