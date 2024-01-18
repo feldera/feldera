@@ -109,6 +109,15 @@ where
     }
 }
 
+impl<'s, B> Clone for PersistentTraceCursor<'s, B>
+where
+    B: Batch + 's,
+{
+    fn clone(&self) -> Self {
+        todo!()
+    }
+}
+
 impl<'s, B: Batch> PersistentTraceCursor<'s, B> {
     /// Creates a new [`PersistentTraceCursor`], requires to pass a handle to
     /// the column family of the trace.
