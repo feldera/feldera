@@ -13,7 +13,6 @@ pub mod timestamp;
 pub use geopoint::GeoPoint;
 pub use interval::LongInterval;
 pub use interval::ShortInterval;
-use num_traits::Float;
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::Date;
 pub use timestamp::Time;
@@ -26,7 +25,6 @@ use dbsp::{
     UpsertHandle,
 };
 use num::{Signed, ToPrimitive};
-use num_traits::Zero;
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
