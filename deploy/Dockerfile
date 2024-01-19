@@ -84,7 +84,7 @@ COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
 ENV BANNER_ADDR localhost
-ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
+ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080"]
 
 # Standalone api-server
 FROM gcr.io/distroless/cc-debian12 AS api-server
