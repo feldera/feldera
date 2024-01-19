@@ -2935,15 +2935,19 @@ impl Storage for Mutex<DbModel> {
             return Err(DBError::UnknownService { service_id }.into());
         }
 
-        // The new name cannot already be in use
+        // The new name cannot already be in use by another service
         if let Some(name) = name {
-            if s.services
+            if let Some(c) = s
+                .services
                 .iter()
                 .filter(|k| k.0 .0 == tenant_id)
-                .map(|k| k.1.clone())
-                .any(|c| &c.name == name)
+                .map(|k| k.1)
+                .find(|c| &c.name == name)
+                .cloned()
             {
-                return Err(DBError::DuplicateName.into());
+                if c.service_id != service_id {
+                    return Err(DBError::DuplicateName.into());
+                }
             }
         }
 
