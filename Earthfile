@@ -73,6 +73,12 @@ machete:
     FROM +rust-sources
     DO rust+CARGO --args="machete crates/"
 
+clippy:
+    FROM +rust-sources
+    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
+    COPY ( +build-webui/out ) ./web-console/out
+    DO rust+CARGO --args="clippy -- -D warnings"
+
 install-python-deps:
     FROM +install-deps
     RUN pip install wheel
@@ -118,14 +124,8 @@ build-webui:
 build-dbsp:
     FROM +rust-sources
     DO rust+CARGO --args="build --package dbsp"
-    DO rust+CARGO --args="clippy --package dbsp -- -D warnings"
-    DO rust+CARGO --args="test --package dbsp --no-run"
     DO rust+CARGO --args="build --package pipeline_types"
-    DO rust+CARGO --args="clippy --package pipeline_types -- -D warnings"
-    DO rust+CARGO --args="test --package pipeline_types --no-run"
     DO rust+CARGO --args="build --package feldera-storage"
-    DO rust+CARGO --args="clippy --package feldera-storage -- -D warnings"
-    DO rust+CARGO --args="test --package feldera-storage --no-run"
 
 build-sql:
     FROM +build-dbsp
@@ -145,9 +145,6 @@ build-adapters:
     # Adapter integration tests use the SQL compiler.
     FROM +build-sql
     DO rust+CARGO --args="build --package dbsp_adapters"
-    DO rust+CARGO --args="clippy --package dbsp_adapters -- -D warnings"
-    # --package sqllib is needed here because the adapter tests need it.
-    DO rust+CARGO --args="test --package dbsp_adapters --package sqllib --no-run"
 
 build-manager:
     FROM +build-adapters
@@ -155,8 +152,6 @@ build-manager:
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
     DO rust+CARGO --args="build --package pipeline-manager" --output="debug/pipeline-manager"
-    DO rust+CARGO --args="clippy --package pipeline-manager -- -D warnings"
-    DO rust+CARGO --args="test --package pipeline-manager --no-run"
 
     IF [ -f ./target/debug/pipeline-manager ]
         SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
@@ -173,8 +168,6 @@ test-sql:
 build-nexmark:
     FROM +build-dbsp
     DO rust+CARGO --args="build --package dbsp_nexmark"
-    DO rust+CARGO --args="clippy --package dbsp_nexmark -- -D warnings"
-    DO rust+CARGO --args="test --package dbsp_nexmark --no-run"
 
 CARGO_TEST:
     COMMAND
@@ -495,6 +488,7 @@ benchmark:
 all-tests:
     BUILD +formatting-check
     BUILD +machete
+    BUILD +clippy
     BUILD +test-rust
     BUILD +test-python
     BUILD +openapi-checker
