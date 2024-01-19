@@ -313,6 +313,11 @@ build-pipeline-manager-container:
     RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
     ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
 
+# Same as the above, but with a permissive CORS setting, else playwright doesn't work
+pipeline-manager-container-cors-all:
+    FROM +build-pipeline-manager-container
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor", "--dev-mode"]
+
 # TODO: mirrors the Dockerfile. See note above.
 build-demo-container:
     FROM +install-rust
@@ -460,7 +465,7 @@ ui-playwright-tests:
 
     TRY
         WITH DOCKER --pull postgres \
-                    --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                    --load ghcr.io/feldera/pipeline-manager:latest=+pipeline-manager-container-cors-all \
                     --compose ../docker-compose.yml \
                     --service db \
                     --service pipeline-manager
