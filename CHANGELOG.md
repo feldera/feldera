@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pipeline-manager: allow docs website to CORS allowed origins (#1285)
 
 ### Changed
+- Python demo and test scripts are standalone as they no longer depend on dbsp python library
+  ([#1230](https://github.com/feldera/feldera/pull/1230))
 - pipeline-manager: update service endpoints to use names instead of IDs in URLs,
   and add PUT endpoint ([#1263](https://github.com/feldera/feldera/pull/1263))
 - SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
