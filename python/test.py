@@ -1,198 +1,195 @@
 import tempfile
 import os
 import sys
+import time
 import requests
 import json
 
-from dbsp import DBSPConnection
-from dbsp import DBSPPipelineConfig
-from dbsp import InputEndpointConfig
-from dbsp import OutputEndpointConfig
-from dbsp import TransportConfig
-from dbsp import FormatConfig
-from dbsp import FileInputConfig
-from dbsp import FileOutputConfig
-from dbsp import CsvInputFormatConfig
-from dbsp import CsvOutputFormatConfig
-from dbsp import DBSPConnector
-
-demographics = """4218196001337,172,1,866,131,34,12043,42.684,-74.4939,8509,4,1968-10-03
-4351161559407816183,107,0,319,34,34,13027,43.162,-76.3237,31637,357,1948-06-07
-4192832764832,237,0,61,355,18,70605,30.1693,-93.2218,124276,260,1989-05-30
-4238849696532874,27,0,276,478,6,6513,41.3072,-72.8654,128884,420,1950-12-26
-4514627048281480,215,0,810,43,43,76021,32.8536,-97.1358,46885,292,1972-05-22
-3517182278248964,344,1,471,169,18,70706,30.6085,-90.9038,71335,102,1984-06-18
-213193010310510,190,0,831,573,45,23146,37.7337,-77.7,3093,341,1969-03-06
-4065133387262473,90,1,118,206,31,8318,39.5691,-75.163,12702,380,1944-12-27
-630447468723,69,0,808,498,43,79766,31.7827,-102.3449,137390,398,1927-08-23
-2222913619399092,24,0,365,711,2,72774,35.9082,-94.2304,6121,7,1971-01-26
-4251354278496,351,1,840,599,4,95122,37.3293,-121.8339,973849,440,1998-02-26
-4874016400529,231,1,696,146,43,78416,27.7536,-97.4347,306433,464,1998-08-02
-345331586923222,303,0,355,280,34,14075,42.7334,-78.8389,41937,282,2000-08-16
-6541458685014295,333,0,657,33,4,93308,35.4244,-119.0433,520197,98,1977-09-29
-3508835615951480,111,1,489,136,5,80918,38.9129,-104.7734,525713,324,1945-08-14
-6577738721489511,285,0,329,179,10,30096,33.9845,-84.1529,103980,162,1975-01-06
-4163287083172781,343,0,872,179,10,30096,33.9845,-84.1529,103980,228,1994-01-23
-4143455812236231660,125,1,682,108,14,60645,42.0086,-87.6947,2680484,244,1948-09-26
-3573467065627293,176,1,631,591,20,21804,38.3508,-75.5338,68541,358,1959-04-04
-4708053100330923275,240,1,465,563,38,15851,41.0629,-78.8961,6671,257,1962-11-24
-6011193149190586,154,1,688,545,37,97230,45.5472,-122.5001,841711,429,1990-11-15
-4314737996507527356,268,0,92,438,3,85203,33.437,-111.8057,478404,387,1930-10-26
-6011495788568554,241,0,148,353,15,47905,40.4001,-86.8602,98078,475,1975-08-02
-4082400842710944,169,1,479,418,19,2048,42.0212,-71.2178,23184,45,1978-08-09
-2706999386774968,111,1,353,592,44,84123,40.6596,-111.9193,594043,1,1959-02-24
-4471349361831,235,1,27,479,1,35761,34.9,-86.4487,11630,252,1970-03-15
-30190659401395,210,0,32,562,13,83440,43.81,-111.789,35470,280,2002-04-06
-377468071545168,296,0,884,177,17,41035,38.7049,-84.6237,10785,497,1969-12-03
-4824771093241,199,0,174,297,31,7030,40.7445,-74.0329,50005,332,1934-04-12
+nouns = """
+table,3
+chair,2
+lamp,1
+plant,3
+window,6
+car,4
+bicycle,2
+desk,3
+paper,5
+glass,3
+wind,7
+tile,2
+building,2
 """
 
-transactions = """
-2008-01-01 01:11:21,4251354278496,548,2,45.74,7f8b297e3e990c368ce365cc6f8d2bef,1199178681,38.226336,-120.947107,0
-2008-01-01 05:27:47,4251354278496,605,2,80.8,29532183df62ac0b5b09798b3e419c0e,1199194067,36.704567,-122.520603,0
-2008-01-01 07:34:11,4251354278496,474,2,75.01,5d708c8a59e61765a9a8fd75cd273895,1199201651,38.293734,-121.480201,0
-2008-01-01 05:01:11,2222913619399092,497,2,7.15,880b191586e2d55b38b353bea0003b20,1199192471,35.069558,-94.182218,0
-2008-01-01 05:07:11,2222913619399092,522,2,46.3,61efa4eb230a57e25bf7e4ac36afe117,1199192831,35.64587,-94.888836,0
-2008-01-02 09:43:16,4824771093241,117,2,1.25,0a203757f41995b5191a2f5f4ba37225,1199295796,40.999857,-73.948364,0
-2008-01-02 11:08:47,4824771093241,332,2,3.74,c7e55ca7b11bc647e1d9e515df5ae244,1199300927,41.702109,-74.728905,0
-2008-01-02 11:09:05,4211457758471,117,2,58.49,7b8631718c9006e9cd21718e24b67a35,1199300945,36.541407,-122.872482,0
-2008-01-02 11:10:21,4521746535378012,208,2,38.05,ee1158a1d18b2bff3ccbcb7f240af2ec,1199301021,41.406169,-88.699498,0
-2008-01-02 11:10:26,3547625380966414,208,2,160.59,7cb077bb10b79c257194775bc7162be0,1199301026,44.57281,-69.605028,0
-2008-01-02 11:10:37,4824771093241,107,2,193.13,4ea3c5e44e2bdf601489bb1fb49f7991,1199301037,40.862917,-73.170228,0
-2008-01-03 05:38:14,4082400842710944,231,2,17.04,abb639d206ea30d766b0fae771cb92e3,1199367494,41.13911,-71.434731,0
-2008-01-04 00:58:43,4082400842710944,208,2,37.78,775c2e16e71852ce2f0f98c14d2aa2cd,1199437123,41.952015,-70.514457,0
-2008-01-04 04:23:04,4082400842710944,381,2,89.9,c0c039baa4d0e62e4b16e0690ac54313,1199449384,42.331448,-70.495846,0
+colors = """
+red,2
+orange,1
+yellow,3
+green,8
+blue,4
+indigo,3
+violet,5
 """
 
-expected = """
-2008-01-03 05:38:14,4082400842710944.0,169,418,1
-2008-01-04 00:58:43,4082400842710944.0,169,418,1
-2008-01-04 04:23:04,4082400842710944.0,169,418,1
-2008-01-01 01:11:21,4251354278496.0,351,599,1
-2008-01-01 05:27:47,4251354278496.0,351,599,1
-2008-01-01 07:34:11,4251354278496.0,351,599,1
-2008-01-01 05:01:11,2222913619399092.0,24,711,1
-2008-01-01 05:07:11,2222913619399092.0,24,711,1
-2008-01-02 09:43:16,4824771093241.0,199,297,1
-2008-01-02 11:08:47,4824771093241.0,199,297,1
-2008-01-02 11:10:37,4824771093241.0,199,297,1
-"""
+expected = {
+    "table,yellow,3,1",
+    "table,indigo,3,1",
+    "chair,red,2,1",
+    "lamp,orange,1,1",
+    "plant,yellow,3,1",
+    "plant,indigo,3,1",
+    "car,blue,4,1",
+    "bicycle,red,2,1",
+    "desk,yellow,3,1",
+    "desk,indigo,3,1",
+    "paper,violet,5,1",
+    "glass,yellow,3,1",
+    "glass,indigo,3,1",
+    "tile,red,2,1",
+    "building,red,2,1",
+}
 
-sql_code = """
-CREATE TABLE demographics (
-    cc_num FLOAT64 NOT NULL,
-    first STRING,
-    gender STRING,
-    street STRING,
-    city STRING,
-    state STRING,
-    zip INTEGER,
-    lat FLOAT64,
-    long FLOAT64,
-    city_pop INTEGER,
-    job STRING,
-    dob STRING
+program_sql = """
+CREATE TABLE nouns (
+    noun STRING,
+    category INTEGER
 );
 
-CREATE TABLE transactions (
-    trans_date_trans_time TIMESTAMP NOT NULL,
-    cc_num FLOAT64 NOT NULL,
-    merchant STRING,
-    category STRING,
-    amt FLOAT64,
-    trans_num STRING,
-    unix_time INTEGER,
-    merch_lat FLOAT64,
-    merch_long FLOAT64,
-    is_fraud INTEGER
+CREATE TABLE colors (
+    color STRING,
+    category INTEGER
 );
 
-CREATE VIEW transactions_with_demographics as
+CREATE VIEW nouns_with_colors AS
     SELECT
-        transactions.trans_date_trans_time,
-        transactions.cc_num,
-        demographics.first,
-        demographics.city
+        nouns.noun,
+        colors.color,
+        colors.category
     FROM
-        transactions JOIN demographics
-        ON transactions.cc_num = demographics.cc_num;"""
+        nouns JOIN colors
+        ON nouns.category = colors.category;
+"""
+
 
 def main():
-    url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
-    dbsp = DBSPConnection(url)
+    api_url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
     connector_type = "file" if len(sys.argv) <= 2 else "http"
-    print("Connection established")
 
-    program = dbsp.create_or_replace_program(name="foo", sql_code=sql_code)
-    print("Project created")
+    # Create program
+    program_name = "foo"
+    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
+        "description": "",
+        "code": program_sql,
+    })
+    response.raise_for_status()
+    program_version = response.json()["version"]
 
-    status = program.status()
-    print("Project status: " + status)
+    # Compile program
+    print(f"Compiling program {program_name} (version: {program_version})...")
+    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
+    while True:
+        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
+        print(f"Program status: {status}")
+        if status == "Success":
+            break
+        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+            raise RuntimeError(f"Failed program compilation with status {status}")
+        time.sleep(5)
 
-    pipeline = DBSPPipelineConfig(program, 6)
+    # Connectors
+    connectors = []
+    path_out = None
+    if connector_type == "file":
+        fd_nouns, path_nouns = tempfile.mkstemp(suffix='.csv', prefix='nouns', text=True)
+        with os.fdopen(fd_nouns, 'w') as f:
+            f.write(nouns)
+        print(f"Nouns data written to f{path_nouns}")
 
-    if (connector_type == "file"):
-        demfd, dempath = tempfile.mkstemp(
-            suffix='.csv', prefix='demographics', text=True)
-        with os.fdopen(demfd, 'w') as f:
-            f.write(demographics)
-        print("Demographics data written to '" + dempath + "'")
+        fd_colors, path_colors = tempfile.mkstemp(suffix='.csv', prefix='colors', text=True)
+        with os.fdopen(fd_colors, 'w') as f:
+            f.write(colors)
+        print(f"Colors data written to f{path_colors}")
 
-        transfd, transpath = tempfile.mkstemp(
-            suffix='.csv', prefix='transactions', text=True)
-        with os.fdopen(transfd, 'w') as f:
-            f.write(transactions)
+        fd_out, path_out = tempfile.mkstemp(suffix='.csv', prefix='output', text=True)
+        os.close(fd_out)
 
-        outfd, outpath = tempfile.mkstemp(
-            suffix='.csv', prefix='output', text=True)
-        os.close(outfd)
-        pipeline.add_file_input(stream='DEMOGRAPHICS',
-                            filepath=dempath, format=CsvInputFormatConfig(), name="demographics")
-        pipeline.add_file_input(stream='TRANSACTIONS',
-                            filepath=transpath, format=CsvInputFormatConfig(), name="transactions")
-        pipeline.add_file_output(stream='TRANSACTIONS_WITH_DEMOGRAPHICS',
-                            filepath=outpath, format=CsvOutputFormatConfig(), name="transactions_with_demographics")
+        for (connector_name, stream, filepath, is_input) in [
+            ("nouns", "NOUNS", path_nouns, True),
+            ("colors", "COLORS", path_colors, True),
+            ("nouns-with-colors", "NOUNS_WITH_COLORS", path_out, False),
+        ]:
+            # Create connector
+            requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
+                "description": "",
+                "config": {
+                    "transport": {
+                        "name": "file",
+                        "config": {
+                            "path": filepath,
+                        }
+                    },
+                    "format": {
+                        "name": "csv",
+                        "config": {}
+                    }
+                },
+            }).raise_for_status()
 
-    program.compile()
-    print("Project compiled")
+            # Add to list of connectors
+            connectors.append({
+                "connector_name": connector_name,
+                "is_input": is_input,
+                "name": connector_name,
+                "relation_name": stream
+            })
 
-    status = program.status()
-    print("Project status: " + status)
+    # Create pipeline
+    pipeline_name = "test-py-pipeline"
+    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
+        "description": "",
+        "config": {"workers": 6},
+        "program_name": program_name,
+        "connectors": connectors,
+    }).raise_for_status()
 
-    pipeline.run()
-    print("Pipeline is running")
+    # Start pipeline
+    print("(Re)starting pipeline...")
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
+        time.sleep(1)
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
+        time.sleep(1)
+    print("Pipeline (re)started")
 
-    if (connector_type == "http"):
-        output = requests.post(
-                f'{url}/pipelines/{pipeline.name}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS',
-                stream = True)
+    if connector_type == "http":
+        output = requests.post(f'{api_url}/v0/pipelines/{pipeline_name}/egress/NOUNS_WITH_COLORS',
+                               stream=True)
 
-        print("Sending demongraphics data")
-        r = requests.post(
-                f'{url}/pipelines/{pipeline.name}/ingress/DEMOGRAPHICS',
-                data = demographics)
-        print("result: " + str(r))
+        print("Sending nouns data")
+        requests.post(f'{api_url}/v0/pipelines/{pipeline_name}/ingress/NOUNS', data=nouns).raise_for_status()
 
-        print("Sending transaction data")
-        r = requests.post(
-                f'{url}/pipelines/{pipeline.name}/ingress/TRANSACTIONS',
-                data = transactions)
-        print("result: " + str(r))
+        print("Sending colors data")
+        requests.post(f'{api_url}/v0/pipelines/{pipeline_name}/ingress/COLORS', data=colors).raise_for_status()
 
-        data = ''
+        data = set()
         for line in output.iter_lines():
-            csv = json.loads(line)['text_data']
-            print(csv.strip())
-            data = data + csv
-            if data.strip() == expected.strip():
-                break
-
-        assert data.strip() == expected.strip(), "Data: %s, Expected: %s" % (data, expected)
+            json_val = json.loads(line)
+            if 'text_data' in json_val:
+                for internal_line in json_val['text_data'].strip().split("\n"):
+                    data.add(internal_line)
+                print(sorted(list(data)))
+                print(sorted(list(expected)))
+                if data == expected:
+                    break
+        assert data == expected, "Data: %s, Expected: %s" % (data, expected)
+        print("Data matches")
 
         print("Sending neighborhood request")
         neighborhood = requests.post(
-                f'{url}/pipelines/{pipeline.name}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=neighborhood&mode=snapshot&format=csv',
-                json = {'before': 10, 'after': 20, 'anchor': ['2008-01-03 05:38:14', 0.0, 'John', 'New York'] })
+            f'{api_url}/v0/pipelines/{pipeline_name}/egress/NOUNS_WITH_COLORS?query=neighborhood&mode=snapshot&format=csv',
+            json={'before': 2, 'after': 3, 'anchor': ['rain', 'orange', 3]}
+        )
         print("result: " + str(neighborhood))
         assert neighborhood.status_code == requests.codes.ok
 
@@ -202,8 +199,8 @@ def main():
 
         print("Sending invalid neighborhood request")
         response = requests.post(
-                f'{url}/pipelines/{pipeline.name}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=neighborhood&mode=snapshot&format=csv',
-                json = {'before': 10, 'after': 20, 'anchor': ['not_a_date', 0.0, 'John', 'New York'] })
+            f'{api_url}/v0/pipelines/{pipeline_name}/egress/NOUNS_WITH_COLORS?query=neighborhood&mode=snapshot&format=csv',
+            json={'before': 3, 'after': 2, 'anchor': [123, 456, 'not_a_number']})
         print("result: " + str(response))
         assert response.status_code != requests.codes.ok
         print("response:")
@@ -211,7 +208,8 @@ def main():
 
         print("Sending quantiles request")
         quantiles = requests.post(
-                f'{url}/pipelines/{pipeline.name}/egress/TRANSACTIONS_WITH_DEMOGRAPHICS?query=quantiles&mode=snapshot&format=csv&quntiles=100')
+            f'{api_url}/v0/pipelines/{pipeline_name}/egress/NOUNS_WITH_COLORS?query=quantiles&mode=snapshot&format=csv&quantiles=100'
+        )
         print("result: " + str(quantiles))
         assert quantiles.status_code == requests.codes.ok
 
@@ -219,30 +217,47 @@ def main():
         csv = quantiles.json()['text_data']
         print(csv.strip())
 
-    print("Pipeline status: " + str(pipeline.status().state.current_status))
+    current_status = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"]
+    print("Pipeline status: " + str(current_status))
 
-    pipeline.pause()
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/pause").raise_for_status()
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Paused":
+        time.sleep(1)
     print("Pipeline paused")
 
-    pipeline.start()
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
+        time.sleep(1)
     print("Pipeline restarted")
 
-    if (connector_type == "file"):
-        pipeline.wait()
+    if connector_type == "file":
+        # Wait till the pipeline is completed
+        while not requests.get(f"{api_url}/v0/pipelines/{pipeline_name}/stats") \
+                .json()["global_metrics"]["pipeline_complete"]:
+            time.sleep(1)
         print("Pipeline finished")
-        # pipeline.shutdown()
-        # print("Pipeline terminated")
 
-        pipeline.delete()
+        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
+            time.sleep(1)
+        print("Pipeline shutdown")
+
+        requests.delete(f"{api_url}/v0/pipelines/{pipeline_name}").raise_for_status()
         print("Pipeline deleted")
 
-        with open(outpath, 'r') as outfile:
+        with open(path_out, 'r') as outfile:
             output = outfile.read()
-        print("Output read from '" + outpath + "':")
+        print("Output read from '" + path_out + "':")
         print(output)
     else:
-        pipeline.delete()
+        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
+            time.sleep(1)
+        print("Pipeline shutdown")
+
+        requests.delete(f"{api_url}/v0/pipelines/{pipeline_name}").raise_for_status()
         print("Pipeline deleted")
+
 
 if __name__ == "__main__":
     main()

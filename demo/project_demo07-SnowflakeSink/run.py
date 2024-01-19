@@ -1,27 +1,22 @@
 import os
-import subprocess
-import sys
 import time
 import requests
+import argparse
 import uuid
+import subprocess
 import snowflake.connector
 
-from dbsp import DBSPPipelineConfig
-from dbsp import JsonOutputFormatConfig
-from dbsp import KafkaOutputConfig
-
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".."))
-from demo import *
-
+# File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
+PROJECT_SQL = os.path.join(SCRIPT_DIR, "project.sql")
 
+# Snowflake constants
 SNOWFLAKE_CI_ACCOUNT_NAME = "JBHMQPR-WMB83241"
 SNOWFLAKE_CI_DATABASE = "CI"
 SNOWFLAKE_CI_USER_NAME = "CI_1"
 SCHEMA_UUID = uuid.uuid4()
 SCHEMA_NAME = f"supply_chain_demo_{str(SCHEMA_UUID).replace('-', '_')}"
 LANDING_SCHEMA_NAME = f"{SCHEMA_NAME}_landing"
-
 SNOWFLAKE_CI_USER_PASSWORD = os.getenv("SNOWFLAKE_CI_USER_PASSWORD")
 if SNOWFLAKE_CI_USER_PASSWORD is None:
     raise EnvironmentError(
@@ -29,7 +24,16 @@ if SNOWFLAKE_CI_USER_PASSWORD is None:
     )
 
 
-def prepare(args=[]):
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
+    args = parser.parse_args()
+    prepare_snowflake_debezium()
+    prepare_feldera(args.api_url)
+    generate_data(args.api_url)
+
+
+def prepare_snowflake_debezium():
     connect_server = os.getenv("KAFKA_CONNECT_SERVER", "http://localhost:8083")
 
     passphrase = os.getenv("SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE")
@@ -156,39 +160,88 @@ def prepare(args=[]):
             time.sleep(1)
 
 
-def make_config(project):
-    config = DBSPPipelineConfig(project, 8, "Snowflake Demo Pipeline")
+def prepare_feldera(api_url):
+    pipeline_to_redpanda_server = "redpanda:9092"
 
-    config.add_kafka_output(
-        name="price",
-        stream="PRICE_OUT",
-        config=KafkaOutputConfig.from_dict(
-            {
-                "topic": "snowflake.price",
+    # Create program
+    program_name = "demo-snowflake-sink-program"
+    program_sql = open(PROJECT_SQL).read()
+    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
+        "description": "",
+        "code": program_sql
+    })
+    response.raise_for_status()
+    program_version = response.json()["version"]
+
+    # Compile program
+    print(f"Compiling program {program_name} (version: {program_version})...")
+    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
+    while True:
+        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
+        print(f"Program status: {status}")
+        if status == "Success":
+            break
+        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+            raise RuntimeError(f"Failed program compilation with status {status}")
+        time.sleep(5)
+
+    # Connectors
+    connectors = []
+    for (connector_name, stream, topic) in [
+        ("price", 'PRICE_OUT',  "snowflake.price"),
+        ("preferred_vendor", 'PREFERRED_VENDOR', "snowflake.preferred_vendor"),
+    ]:
+        requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
+            "description": "",
+            "config": {
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "snowflake"
+                    }
+                },
+                "transport": {
+                    "name": "kafka",
+                    "config": {
+                        "bootstrap.servers": pipeline_to_redpanda_server,
+                        "topic": topic
+                    }
+                }
             }
-        ),
-        format=JsonOutputFormatConfig(update_format="snowflake"),
-    )
+        })
+        connectors.append({
+            "connector_name": connector_name,
+            "is_input": False,
+            "name": connector_name,
+            "relation_name": stream
+        })
 
-    config.add_kafka_output(
-        name="preferred_vendor",
-        stream="PREFERRED_VENDOR",
-        config=KafkaOutputConfig.from_dict(
-            {
-                "topic": "snowflake.preferred_vendor",
-            }
-        ),
-        format=JsonOutputFormatConfig(update_format="snowflake"),
-    )
+    # Create pipeline
+    pipeline_name = "demo-snowflake-sink-pipeline"
+    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
+        "description": "",
+        "config": {"workers": 8},
+        "program_name": program_name,
+        "connectors": connectors,
+    }).raise_for_status()
 
-    config.save()
-    return config
+    # Start pipeline
+    print("(Re)starting pipeline...")
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
+        time.sleep(1)
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
+        time.sleep(1)
+    print("Pipeline (re)started")
 
 
-def verify(dbsp_url, pipeline: DBSPPipelineConfig):
+def generate_data(api_url):
+    pipeline_name = "demo-snowflake-sink-pipeline"
+
     print("Pushing PART data")
     requests.post(
-        f"{dbsp_url}/v0/pipelines/{pipeline.name}/ingress/PART?format=json",
+        f"{api_url}/v0/pipelines/{pipeline_name}/ingress/PART?format=json",
         data=r"""{"insert": {"id": 1, "name": "Flux Capacitor"}}
 {"insert": {"id": 2, "name": "Warp Core"}}
 {"insert": {"id": 3, "name": "Kyber Crystal"}}""",
@@ -196,7 +249,7 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
 
     print("Pushing VENDOR data")
     requests.post(
-        f"{dbsp_url}/v0/pipelines/{pipeline.name}/ingress/VENDOR?format=json",
+        f"{api_url}/v0/pipelines/{pipeline_name}/ingress/VENDOR?format=json",
         data=r"""{"insert": {"id": 1, "name": "Gravitech Dynamics", "address": "222 Graviton Lane"}}
 {"insert": {"id": 2, "name": "HyperDrive Innovations", "address": "456 Warp Way"}}
 {"insert": {"id": 3, "name": "DarkMatter Devices", "address": "333 Singularity Street"}}""",
@@ -204,7 +257,7 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
 
     print("Pushing PRICE data")
     requests.post(
-        f"{dbsp_url}/v0/pipelines/{pipeline.name}/ingress/PRICE?format=json",
+        f"{api_url}/v0/pipelines/{pipeline_name}/ingress/PRICE?format=json",
         data=r"""{"insert": {"part": 1, "vendor": 2, "created": "2019-05-20 13:37:03", "effective_since": "2019-05-21", "price": 10000, "f": 0.123}}
 {"insert": {"part": 2, "vendor": 1, "created": "2023-10-9 00:00:00", "effective_since": "2023-10-10", "price": 15000, "f": 12345E-2}}
 {"insert": {"part": 3, "vendor": 3, "created": "2024-01-01 11:15:00", "effective_since": "2024-01-01", "price": 9000, "f": 12345}}""",
@@ -249,10 +302,4 @@ def verify(dbsp_url, pipeline: DBSPPipelineConfig):
 
 
 if __name__ == "__main__":
-    run_demo(
-        "Snowfake Demo",
-        os.path.join(SCRIPT_DIR, "project.sql"),
-        make_config,
-        prepare,
-        verify,
-    )
+    main()

@@ -1,20 +1,23 @@
 import os
-import sys
 import time
 import requests
+import argparse
 
-from dbsp import DBSPPipelineConfig
-from dbsp import JsonInputFormatConfig, JsonOutputFormatConfig
-from dbsp import KafkaInputConfig
-from dbsp import KafkaOutputConfig
-
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".."))
-from demo import *
-
+# File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
+PROJECT_SQL = os.path.join(SCRIPT_DIR, "project.sql")
 
 
-def prepare(args=[]):
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
+    parser.add_argument('--start', action='store_true', default=False, help="Start the Feldera pipeline")
+    args = parser.parse_args()
+    create_debezium_mysql_connector()
+    prepare_feldera_pipeline(args.api_url, args.start)
+
+
+def create_debezium_mysql_connector():
     connect_server = os.getenv("KAFKA_CONNECT_SERVER", "http://localhost:8083")
 
     print("Delete old connector")
@@ -26,7 +29,7 @@ def prepare(args=[]):
     print("Create connector")
     # Create connector.  The new connector will continue working with
     # existing Kafka topics created by the previous connectors instance
-    # if the exist.
+    # if they exist.
     config = {
         "name": "inventory-connector",
         "config": {
@@ -47,7 +50,7 @@ def prepare(args=[]):
             "decimal.handling.mode": "string",
         },
     }
-    response = requests.post(
+    requests.post(
         f"{connect_server}/connectors", json=config
     ).raise_for_status()
 
@@ -73,7 +76,6 @@ def prepare(args=[]):
         else:
             if time.time() - start_time >= 5:
                 raise Exception("Timeout waiting for connector creation")
-                break
             print("Waiting for connector creation")
             time.sleep(1)
 
@@ -104,92 +106,91 @@ def prepare(args=[]):
 
             if time.time() - start_time >= 10:
                 raise Exception("Timeout waiting for topic creation")
-                break
             print("Waiting for topics")
             time.sleep(1)
 
 
-def make_config(project):
-    config = DBSPPipelineConfig(project, 8, "Debezium MySQL Pipeline")
+def prepare_feldera_pipeline(api_url, start_pipeline):
+    pipeline_to_redpanda_server = "redpanda:9092"
 
-    config.add_kafka_input(
-        name="addresses",
-        stream="ADDRESSES",
-        config=KafkaInputConfig.from_dict(
-            {
-                "topics": ["inventory.inventory.addresses"],
-                "auto.offset.reset": "earliest",
+    # Create program
+    program_name = "demo-debezium-mysql-program"
+    program_sql = open(PROJECT_SQL).read()
+    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
+        "description": "Simple Select Program",
+        "code": program_sql
+    })
+    response.raise_for_status()
+    program_version = response.json()["version"]
+
+    # Compile program
+    print(f"Compiling program {program_name} (version: {program_version})...")
+    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
+    while True:
+        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
+        print(f"Program status: {status}")
+        if status == "Success":
+            break
+        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+            raise RuntimeError(f"Failed program compilation with status {status}")
+        time.sleep(5)
+
+    # Connectors
+    connectors = []
+    for (connector_name, stream, topics) in [
+        ("addresses", 'ADDRESSES',  ["inventory.inventory.addresses"]),
+        ("customers", 'CUSTOMERS', ["inventory.inventory.customers"]),
+        ("orders", 'ORDERS', ["inventory.inventory.orders"]),
+        ("products", 'PRODUCTS', ["inventory.inventory.products"]),
+        ("products_on_hand", 'PRODUCTS_ON_HAND', ["inventory.inventory.products_on_hand"]),
+    ]:
+        requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
+            "description": "",
+            "config": {
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "debezium",
+                        "json_flavor": "debezium_mysql"
+                    }
+                },
+                "transport": {
+                    "name": "kafka",
+                    "config": {
+                        "bootstrap.servers": pipeline_to_redpanda_server,
+                        "auto.offset.reset": "earliest",
+                        "topics": topics
+                    }
+                }
             }
-        ),
-        format=JsonInputFormatConfig(
-            update_format="debezium", json_flavor="debezium_mysql"
-        ),
-    )
+        })
+        connectors.append({
+            "connector_name": connector_name,
+            "is_input": True,
+            "name": connector_name,
+            "relation_name": stream
+        })
 
-    config.add_kafka_input(
-        name="customers",
-        stream="CUSTOMERS",
-        config=KafkaInputConfig.from_dict(
-            {
-                "topics": ["inventory.inventory.customers"],
-                "auto.offset.reset": "earliest",
-            }
-        ),
-        format=JsonInputFormatConfig(
-            update_format="debezium", json_flavor="debezium_mysql"
-        ),
-    )
+    # Create pipeline
+    pipeline_name = "demo-debezium-mysql-pipeline"
+    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
+        "description": "",
+        "config": {"workers": 8},
+        "program_name": program_name,
+        "connectors": connectors,
+    }).raise_for_status()
 
-    config.add_kafka_input(
-        name="orders",
-        stream="ORDERS",
-        config=KafkaInputConfig.from_dict(
-            {
-                "topics": ["inventory.inventory.orders"],
-                "auto.offset.reset": "earliest",
-            }
-        ),
-        format=JsonInputFormatConfig(
-            update_format="debezium", json_flavor="debezium_mysql"
-        ),
-    )
-
-    config.add_kafka_input(
-        name="products",
-        stream="PRODUCTS",
-        config=KafkaInputConfig.from_dict(
-            {
-                "topics": ["inventory.inventory.products"],
-                "auto.offset.reset": "earliest",
-            }
-        ),
-        format=JsonInputFormatConfig(
-            update_format="debezium", json_flavor="debezium_mysql"
-        ),
-    )
-
-    config.add_kafka_input(
-        name="products_on_hand",
-        stream="PRODUCTS_ON_HAND",
-        config=KafkaInputConfig.from_dict(
-            {
-                "topics": ["inventory.inventory.products_on_hand"],
-                "auto.offset.reset": "earliest",
-            }
-        ),
-        format=JsonInputFormatConfig(
-            update_format="debezium", json_flavor="debezium_mysql"
-        ),
-    )
-
-    config.save()
-    return config
+    # Start pipeline
+    if start_pipeline:
+        print("(Re)starting pipeline...")
+        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
+            time.sleep(1)
+        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
+        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
+            time.sleep(1)
+        print("Pipeline (re)started")
 
 
 if __name__ == "__main__":
-    run_demo(
-        "Debezium MySQL Demo",
-        os.path.join(SCRIPT_DIR, "project.sql"),
-        make_config,
-        prepare,
-    )
+    main()

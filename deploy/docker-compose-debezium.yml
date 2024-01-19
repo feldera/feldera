@@ -12,17 +12,7 @@ services:
       MYSQL_USER: mysqluser
       MYSQL_PASSWORD: mysqlpw
     healthcheck:
-      test:
-        [
-          "CMD",
-          "mysqladmin",
-          "-u",
-          "$$MYSQL_USER",
-          "-p$$MYSQL_PASSWORD",
-          "ping",
-          "-h",
-          "localhost"
-        ]
+      test: ["CMD-SHELL", "mysql -h localhost -u $$MYSQL_USER -p$$MYSQL_PASSWORD -e 'SELECT 1;'" ]
       interval: 5s
       timeout: 20s
       # MySQL can be _very_ slow to start.
@@ -47,4 +37,4 @@ services:
     command:
       - bash
       - -c
-      - "sleep 5 && cd demo/project_demo05-DebeziumMySQL/ && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile run"
+      - "sleep 5 && cd demo/project_demo05-DebeziumMySQL/ && python3 run.py --api-url http://pipeline-manager:8080 --start"
