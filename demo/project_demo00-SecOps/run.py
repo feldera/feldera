@@ -1,30 +1,115 @@
-from itertools import islice
 import os
-import sys
+import time
+import requests
+import argparse
 import subprocess
 from shutil import which
+from plumbum.cmd import rpk
 
-from dbsp import DBSPPipelineConfig
-from dbsp import JsonInputFormatConfig, JsonOutputFormatConfig
-from dbsp import KafkaInputConfig
-from dbsp import KafkaOutputConfig
-
-# Import
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".."))
-from demo import *
-
+# File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
+PROJECT_SQL = os.path.join(SCRIPT_DIR, "project.sql")
 
 
-def prepare(args=[]):
-    if len(args) == 1:
-        num_pipelines = args[0]
-    else:
-        num_pipelines = "-1"
+def main():
+    # Command-line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
+    parser.add_argument("--prepare-args", required=False, help="number of SecOps pipelines to simulate")
+    args = parser.parse_args()
+    prepare_feldera(args.api_url)
+    prepare_redpanda_start_simulator("-1" if args.prepare_args is None else args.prepare_args)
 
+
+def prepare_feldera(api_url):
+    pipeline_to_redpanda_server = "redpanda:9092"
+
+    # Create program
+    program_name = "demo-sec-ops-program"
+    program_sql = open(PROJECT_SQL).read()
+    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
+        "description": "",
+        "code": program_sql
+    })
+    response.raise_for_status()
+    program_version = response.json()["version"]
+
+    # Compile program
+    print(f"Compiling program {program_name} (version: {program_version})...")
+    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
+    while True:
+        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
+        print(f"Program status: {status}")
+        if status == "Success":
+            break
+        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+            raise RuntimeError(f"Failed program compilation with status {status}")
+        time.sleep(5)
+
+    # Connectors
+    connectors = []
+    for (connector_name, stream, topic_topics, is_input) in [
+        ("secops_pipeline", 'PIPELINE',  ["secops_pipeline"], True),
+        ("secops_pipeline_sources", 'PIPELINE_SOURCES', ["secops_pipeline_sources"], True),
+        ("secops_artifact", 'ARTIFACT', ["secops_artifact"], True),
+        ("secops_vulnerability", 'VULNERABILITY', ["secops_vulnerability"], True),
+        ("secops_cluster", 'K8SCLUSTER', ["secops_cluster"], True),
+        ("secops_k8sobject", 'K8SOBJECT', ["secops_k8sobject"], True),
+        ("secops_vulnerability_stats", 'K8SCLUSTER_VULNERABILITY_STATS', "secops_vulnerability_stats", False),
+    ]:
+        requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
+            "description": "",
+            "config": {
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete"
+                    }
+                },
+                "transport": {
+                    "name": "kafka",
+                    "config": {
+                        "bootstrap.servers": pipeline_to_redpanda_server,
+                        "topic": topic_topics
+                    } if not is_input else (
+                        {
+                            "bootstrap.servers": pipeline_to_redpanda_server,
+                            "topics": topic_topics,
+                            "auto.offset.reset": "earliest",
+                            "group.id": "secops_pipeline_sources",
+                            "enable.auto.commit": "true",
+                            "enable.auto.offset.store": "true",
+                        }
+                        if stream == "PIPELINE_SOURCES" else
+                        {
+                            "bootstrap.servers": pipeline_to_redpanda_server,
+                            "topics": topic_topics,
+                            "auto.offset.reset": "earliest"
+                        }
+                    )
+                }
+            }
+        })
+        connectors.append({
+            "connector_name": connector_name,
+            "is_input": is_input,
+            "name": connector_name,
+            "relation_name": stream
+        })
+
+    # Create pipeline
+    pipeline_name = "demo-sec-ops-pipeline"
+    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
+        "description": "",
+        "config": {"workers": 8},
+        "program_name": program_name,
+        "connectors": connectors,
+    }).raise_for_status()
+
+
+def prepare_redpanda_start_simulator(num_pipelines):
     # Create output topic before running the simulator, which will never return.
-    from plumbum.cmd import rpk
-
+    print("(Re-)creating topic secops_vulnerability_stats...")
     rpk["topic", "delete", "secops_vulnerability_stats"]()
     rpk[
         "topic",
@@ -35,7 +120,9 @@ def prepare(args=[]):
         "-c",
         "retention.bytes=100000000",
     ]()
+    print("(Re-)created topic secops_vulnerability_stats")
 
+    # Start running the simulator
     if which("cargo") is None:
         # Expect a pre-built binary in simulator/secops_simulator. Used
         # by the Docker container workflow where we don't want to use cargo run.
@@ -51,75 +138,5 @@ def prepare(args=[]):
         subprocess.run(cmd, cwd=os.path.join(SCRIPT_DIR, "simulator"), env=new_env)
 
 
-def make_config(project):
-    config = DBSPPipelineConfig(project, 8, "SecOps Pipeline")
-
-    config.add_kafka_input(
-        name="secops_pipeline",
-        stream="PIPELINE",
-        config=KafkaInputConfig.from_dict(
-            {"topics": ["secops_pipeline"], "auto.offset.reset": "earliest"}
-        ),
-        format=JsonInputFormatConfig(update_format="insert_delete"),
-    )
-    config.add_kafka_input(
-        name="secops_pipeline_sources",
-        stream="PIPELINE_SOURCES",
-        config=KafkaInputConfig.from_dict(
-            {
-                "topics": ["secops_pipeline_sources"],
-                "auto.offset.reset": "earliest",
-                "group.id": "secops_pipeline_sources",
-                "enable.auto.commit": "true",
-                "enable.auto.offset.store": "true",
-            }
-        ),
-        format=JsonInputFormatConfig(update_format="insert_delete"),
-    )
-    config.add_kafka_input(
-        name="secops_artifact",
-        stream="ARTIFACT",
-        config=KafkaInputConfig.from_dict(
-            {"topics": ["secops_artifact"], "auto.offset.reset": "earliest"}
-        ),
-        format=JsonInputFormatConfig(update_format="insert_delete"),
-    )
-    config.add_kafka_input(
-        name="secops_vulnerability",
-        stream="VULNERABILITY",
-        config=KafkaInputConfig.from_dict(
-            {"topics": ["secops_vulnerability"], "auto.offset.reset": "earliest"}
-        ),
-        format=JsonInputFormatConfig(update_format="insert_delete"),
-    )
-    config.add_kafka_input(
-        name="secops_cluster",
-        stream="K8SCLUSTER",
-        config=KafkaInputConfig.from_dict(
-            {"topics": ["secops_cluster"], "auto.offset.reset": "earliest"}
-        ),
-        format=JsonInputFormatConfig(update_format="insert_delete"),
-    )
-    config.add_kafka_input(
-        name="secops_k8sobject",
-        stream="K8SOBJECT",
-        config=KafkaInputConfig.from_dict(
-            {"topics": ["secops_k8sobject"], "auto.offset.reset": "earliest"}
-        ),
-        format=JsonInputFormatConfig(update_format="insert_delete"),
-    )
-    config.add_kafka_output(
-        name="secops_vulnerability_stats",
-        stream="K8SCLUSTER_VULNERABILITY_STATS",
-        config=KafkaOutputConfig.from_dict({"topic": "secops_vulnerability_stats"}),
-        format=JsonOutputFormatConfig(),
-    )
-
-    config.save()
-    return config
-
-
 if __name__ == "__main__":
-    run_demo(
-        "SecOps demo", os.path.join(SCRIPT_DIR, "project.sql"), make_config, prepare
-    )
+    main()

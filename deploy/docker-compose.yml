@@ -141,4 +141,4 @@ services:
     command:
       - bash
       - -c
-      - "sleep 1 && env && cd demo/project_demo07-SnowflakeSink/ && python3 run.py --dbsp_url http://pipeline-manager:8080 --actions prepare create compile run verify"
+      - "sleep 1 && env && cd demo/project_demo07-SnowflakeSink/ && python3 run.py --api-url http://pipeline-manager:8080"
