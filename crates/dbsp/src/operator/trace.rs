@@ -235,6 +235,16 @@ where
         B: BatchReader<Time = ()>,
         T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
     {
+        // ```text
+        //          ┌─────────────┐ trace
+        // self ───►│ TraceAppend ├─────────┐───► output
+        //          └─────────────┘         │
+        //            ▲                     │
+        //            │                     │
+        //            │ local   ┌───────┐   │z1feedback
+        //            └─────────┤Z1Trace│◄──┘
+        //                      └───────┘
+        // ```
         let mut trace_bounds = self.circuit().cache_get_or_insert_with(
             TraceId::new(self.origin_node_id().clone()),
             || {
