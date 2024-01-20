@@ -79,7 +79,7 @@ class TestCase {
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
-        boolean useCatalog = this.compiler.options.ioOptions.emitCatalog;
+        boolean useHandles = this.compiler.options.ioOptions.emitHandles;
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
         circuitArguments[0] = new DBSPUSizeLiteral(2);  // workers
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
@@ -107,7 +107,7 @@ class TestCase {
             DBSPLetStatement in = new DBSPLetStatement(functionName, inputFunction.call());
             list.add(in);
 
-            if (useCatalog)
+            if (!useHandles)
                 throw new UnimplementedException();
 
             for (int i = 0; i < inputs.length; i++) {

@@ -938,7 +938,7 @@
 //!   OutputHandle<OrdIndexedZSet<Tup3<String, i32, u8>, (i64, i64), i64>>,
 //! )> {
 //!     let (input_stream, input_handle) =
-//!             circuit.add_input_zset::<Record, i64>();      
+//!             circuit.add_input_zset::<Record, i64>();
 //! #     let subset = input_stream.filter(|r| {
 //! #         r.location == "England"
 //! #             || r.location == "Northern Ireland"
@@ -993,7 +993,7 @@
 //!     Ok(())
 //! }
 //! ```
-//! 
+//!
 //! The whole program is in `tutorial6.rs`.  If we run it, it prints both per-month
 //! vaccination numbers and 3-month moving averages:
 //!

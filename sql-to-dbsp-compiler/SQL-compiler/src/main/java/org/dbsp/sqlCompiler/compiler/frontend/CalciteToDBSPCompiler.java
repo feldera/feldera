@@ -1344,7 +1344,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPOperator o;
             if (this.generateOutputForNextView) {
                 DBSPType originalRowType = this.convertType(view.getRelNode().getRowType(), true);
-                DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class);
+                DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class).rename(view.relationName);
                 o = new DBSPSinkOperator(
                         view.getCalciteObject(), view.relationName, view.statement,
                         struct, statement.comment, op);

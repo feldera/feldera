@@ -12,43 +12,26 @@ public class CatalogTests extends BaseSQLTests {
     @Override
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
         CompilerOptions result = super.testOptions(incremental, optimize);
-        result.ioOptions.emitCatalog = true;
+        result.ioOptions.emitHandles = false;
         return result;
     }
 
     @Test
     public void testSanitizeNames() {
-        String statements = "create table t1(\n" +
-                "c1 integer,\n" +
-                "\"col\" boolean,\n" +
-                "\"SPACES INSIDE\" CHAR,\n" +
-                "\"CC\" CHAR,\n" +
-                "\"quoted \"\" with quote\" CHAR,\n" +
-                "U&\"d\\0061t\\0061\" CHAR,\n" + // 'data' spelled in Unicode
-                "José CHAR,\n"  +
-                "\"Gosé\" CHAR,\n" +
-                "\"\uD83D\uDE00❤\" varchar not null,\n" +
-                "\"αβγ\" boolean not null,\n" +
-                "ΔΘ boolean not null" +
-                ");\n" +
-                "create view v1 as select * from t1;";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(statements);
-        this.addRustTestCase("docTest", compiler, getCircuit(compiler));
-    }
-
-    @Test
-    public void docTest() {
-        // The example given in the documentation
         String statements = """
-                -- define Person table
-                CREATE TABLE Person
-                (
-                    name    VARCHAR,
-                    age     INT,
-                    present BOOLEAN
-                );
-                CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;""";
+                create table t1(
+                c1 integer,
+                "col" boolean,
+                "SPACES INSIDE" CHAR,
+                "CC" CHAR,
+                "quoted "" with quote" CHAR,
+                U&"d\\0061t\\0061" CHAR, -- 'data' spelled in Unicode
+                José CHAR,
+                "Gosé" CHAR,
+                "\uD83D\uDE00❤" varchar not null,
+                "αβγ" boolean not null,
+                ΔΘ boolean not null);
+                create view v1 as select * from t1;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(statements);
         this.addRustTestCase("docTest", compiler, getCircuit(compiler));

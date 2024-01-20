@@ -165,15 +165,13 @@ public class BaseSQLTests {
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
-        options.ioOptions.emitCatalog = false;
+        options.ioOptions.emitHandles = true;
         options.languageOptions.incrementalize = incremental;
         options.languageOptions.optimizationLevel = optimize ? 2 : 1;
         return options;
     }
 
-    /**
-     * Return the default compiler used for testing.
-     */
+    /** Return the default compiler used for testing. */
     public DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions(false, true);
         return new DBSPCompiler(options);

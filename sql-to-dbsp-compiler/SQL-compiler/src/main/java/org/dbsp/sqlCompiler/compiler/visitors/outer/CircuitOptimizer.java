@@ -79,7 +79,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         IErrorReporter reporter = this.getCompiler();
         CompilerOptions options = this.getCompiler().options;
 
-        if (options.ioOptions.emitCatalog)
+        if (!options.ioOptions.emitHandles)
             passes.add(new IndexedInputs(reporter));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));

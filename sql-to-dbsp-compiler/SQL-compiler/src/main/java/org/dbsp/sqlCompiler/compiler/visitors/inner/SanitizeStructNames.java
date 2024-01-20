@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.FreshName;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -60,7 +61,10 @@ public class SanitizeStructNames extends InnerRewriteVisitor {
         }
         this.pop(type);
         this.nameGenerator = save;
-        String sanitizedName = this.sanitizeName(type.name, "TABLE", true);
+        String saneName = type.name;
+        if (!Utilities.isLegalRustIdentifier(saneName))
+            saneName = "TABLE";
+        String sanitizedName = this.sanitizeName(type.name, saneName, true);
         DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, sanitizedName, fields);
         this.map(type, result);
         return VisitDecision.STOP;
