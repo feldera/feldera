@@ -939,7 +939,7 @@
 //! )> {
 //!     let (input_stream, input_handle) =
 //!             circuit.add_input_zset::<Record, i64>();      
-//!     // ... #     let subset = input_stream.filter(|r| {
+//! #     let subset = input_stream.filter(|r| {
 //! #         r.location == "England"
 //! #             || r.location == "Northern Ireland"
 //! #             || r.location == "Scotland"
@@ -970,7 +970,8 @@
 //!
 //! fn main() -> Result<()> {
 //!     let (circuit, (input_handle, output_handle)) =
-//! RootCircuit::build(build_circuit)?; #     let path = format!(
+//! RootCircuit::build(build_circuit)?;
+//! #     let path = format!(
 //! #         "{}/examples/tutorial/vaccinations.csv",
 //! #         env!("CARGO_MANIFEST_DIR")
 //! #     );
@@ -982,7 +983,7 @@
 //! #
 //! #     circuit.step()?;
 //! #
-//!     // ...
+//!
 //!     output_handle
 //!         .consolidate()
 //!         .iter()

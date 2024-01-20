@@ -9,6 +9,7 @@ use dbsp::{
     utils::Tup2,
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, UpsertHandle, ZSet,
 };
+use std::fmt::Debug;
 
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, SqlSerdeConfig};
 
@@ -28,9 +29,10 @@ impl Catalog {
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
+            + Debug
             + Send
             + 'static,
-        Z: ZSet + Send + Sync,
+        Z: ZSet + Debug + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Sync + From<D>,
     {
@@ -54,10 +56,11 @@ impl Catalog {
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
+            + Debug
             + Clone
             + Send
             + 'static,
-        Z: ZSet + Send + Sync,
+        Z: ZSet + Debug + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Sync + From<D>,
     {
@@ -97,6 +100,7 @@ impl Catalog {
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
+            + Debug
             + Clone
             + Send
             + 'static,
@@ -116,10 +120,11 @@ impl Catalog {
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
+            + Debug
             + Clone
             + Send
             + 'static,
-        Z: ZSet + Send + Sync,
+        Z: ZSet + Debug + Send + Sync,
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Sync + From<D>,
     {
@@ -235,6 +240,7 @@ impl Catalog {
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
+            + Debug
             + Clone
             + Send
             + 'static,

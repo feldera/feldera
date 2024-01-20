@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{serialize_struct, static_compile::DeScalarHandle, ControllerError};
@@ -155,6 +156,43 @@ pub trait SerBatch: Send + Sync {
         &'a self,
         record_format: RecordFormat,
     ) -> Result<Box<dyn SerCursor + 'a>, ControllerError>;
+}
+
+impl Debug for dyn SerBatch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut cursor = self
+            .cursor(RecordFormat::Json(Default::default()))
+            .map_err(|_| std::fmt::Error)?;
+        let mut key = Vec::new();
+        let mut val = Vec::new();
+        while cursor.key_valid() {
+            cursor
+                .serialize_key(&mut key)
+                .map_err(|_| std::fmt::Error)?;
+            write!(f, "{}=>{{", String::from_utf8_lossy(&key))?;
+
+            while cursor.val_valid() {
+                cursor
+                    .serialize_val(&mut val)
+                    .map_err(|_| std::fmt::Error)?;
+                write!(
+                    f,
+                    "{}=>{}, ",
+                    String::from_utf8_lossy(&val),
+                    cursor.weight()
+                )?;
+
+                val.clear();
+                cursor.step_val();
+            }
+
+            write!(f, "}}, ")?;
+            key.clear();
+            cursor.step_key();
+        }
+
+        Ok(())
+    }
 }
 
 /// Cursor that allows serializing the contents of a type-erased batch.
