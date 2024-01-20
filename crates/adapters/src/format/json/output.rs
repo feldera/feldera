@@ -329,12 +329,14 @@ mod test {
                     table: None,
                     insert: Some(val),
                     delete: None,
+                    update: None,
                 }
             } else {
                 Self {
                     table: None,
                     insert: None,
                     delete: Some(val),
+                    update: None,
                 }
             }
         }

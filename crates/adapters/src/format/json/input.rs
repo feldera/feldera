@@ -47,13 +47,18 @@ impl<'a> UpdateFormat for InsDelUpdate<&'a RawValue> {
     fn apply(self, parser: &mut JsonParser) -> Result<usize, ParseError> {
         let mut updates = 0;
 
+        if let Some(val) = self.delete {
+            parser.delete(val)?;
+            updates += 1;
+        }
+
         if let Some(val) = self.insert {
             parser.insert(val)?;
             updates += 1;
         }
 
-        if let Some(val) = self.delete {
-            parser.delete(val)?;
+        if let Some(val) = self.update {
+            parser.update(val)?;
             updates += 1;
         }
 
@@ -271,6 +276,18 @@ impl JsonParser {
         })
     }
 
+    fn update(&mut self, val: &RawValue) -> Result<(), ParseError> {
+        self.input_stream.update(val.get().as_bytes()).map_err(|e| {
+            ParseError::text_event_error(
+                "failed to deserialize JSON record",
+                e,
+                self.last_event_number + 1,
+                Some(val.get()),
+                None,
+            )
+        })
+    }
+
     fn apply_update<'de, F>(&mut self, update: &'de RawValue, errors: &mut Vec<ParseError>) -> usize
     where
         F: UpdateFormat + Deserialize<'de>,
@@ -429,7 +446,9 @@ impl Parser for JsonParser {
 #[cfg(test)]
 mod test {
     use crate::{
-        deserialize_table_record, test::mock_parser_pipeline, transport::InputConsumer,
+        deserialize_table_record,
+        test::{mock_parser_pipeline, MockUpdate},
+        transport::InputConsumer,
         DeserializeWithContext, FormatConfig, ParseError, SqlSerdeConfig,
     };
     use log::trace;
@@ -467,20 +486,44 @@ mod test {
         }
     }
 
+    #[derive(PartialEq, Debug, Eq)]
+    struct TestStructUpd {
+        b: Option<bool>,
+        i: i32,
+        s: Option<Option<String>>,
+    }
+
+    deserialize_table_record!(TestStructUpd["TestStructUpd", 3] {
+        (b, "B", false, Option<bool>, Some(None)),
+        (i, "I", false, i32, None),
+        (s, "S", false, Option<Option<String>>, Some(None), |x| if x.is_none() { Some(None) } else {x})
+    });
+
+    impl TestStructUpd {
+        fn new(b: Option<bool>, i: i32, s: Option<Option<&str>>) -> Self {
+            Self {
+                b,
+                i,
+                s: s.map(|s| s.map(str::to_string)),
+            }
+        }
+    }
+
     #[derive(Debug)]
-    struct TestCase<T> {
+    struct TestCase<T, U> {
         chunks: bool,
         config: JsonParserConfig,
         /// Input data, expected result.
         input_batches: Vec<(String, Vec<ParseError>)>,
         final_result: Vec<ParseError>,
         /// Expected contents at the end of the test.
-        expected_output: Vec<(T, bool)>,
+        expected_output: Vec<MockUpdate<T, U>>,
     }
 
-    fn run_test_cases<T>(test_cases: Vec<TestCase<T>>)
+    fn run_test_cases<T, U>(test_cases: Vec<TestCase<T, U>>)
     where
         T: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+        U: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     {
         for test in test_cases {
             trace!("test: {test:?}");
@@ -505,12 +548,12 @@ mod test {
         }
     }
 
-    impl<T> TestCase<T> {
+    impl<T, U> TestCase<T, U> {
         fn new(
             chunks: bool,
             config: JsonParserConfig,
             input_batches: Vec<(String, Vec<ParseError>)>,
-            expected_output: Vec<(T, bool)>,
+            expected_output: Vec<MockUpdate<T, U>>,
             final_result: Vec<ParseError>,
         ) -> Self {
             Self {
@@ -525,7 +568,7 @@ mod test {
 
     #[test]
     fn test_json_variants() {
-        let test_cases: Vec<TestCase<_>> = vec! [
+        let test_cases: Vec<TestCase<TestStruct, TestStructUpd>> = vec! [
             /* Raw update format */
 
             // raw: single-record chunk.
@@ -537,7 +580,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"b": true, "i": 0}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new(),
             ),
             TestCase::new(
@@ -548,7 +591,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"[true, 0, "a"]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, Some("a")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("a")), true)],
                 Vec::new(),
             ),
             TestCase::new(
@@ -559,7 +602,7 @@ mod test {
                     array: true,
                 },
                 vec![(r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -570,7 +613,7 @@ mod test {
                     array: true,
                 },
                 vec![(r#"[[true, 0, "b"]]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, Some("b")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("b")), true)],
                 Vec::new()
             ),
             // raw: one chunk, two records.
@@ -582,7 +625,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"b": true, "i": 0}{"b": false, "i": 100, "s": "foo"}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -593,7 +636,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"[true, 0, "c"][false, 100, "foo"]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, Some("c")), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("c")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -604,7 +647,7 @@ mod test {
                     array: true,
                 },
                 vec![(r#"[{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -615,7 +658,7 @@ mod test {
                     array: true,
                 },
                 vec![(r#"[[true, 0, "d"],[false, 100, "foo"]]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, Some("d")), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("d")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             // raw: two chunks, one record each.
@@ -628,7 +671,7 @@ mod test {
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 100, "s": "foo"}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -640,7 +683,7 @@ mod test {
                 },
                 vec![ (r#"[true, 0, "e"]"#.to_string(), Vec::new())
                     , (r#"[false, 100, "foo"]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, Some("e")), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("e")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -652,7 +695,7 @@ mod test {
                 },
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
                     , (r#"[{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -664,7 +707,7 @@ mod test {
                 },
                 vec![ (r#"[[true, 0, "e"]]"#.to_string(), Vec::new())
                     , (r#"[[false, 100, "foo"]]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, Some("e")), true), (TestStruct::new(false, 100, Some("foo")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("e")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
                 Vec::new()
             ),
             // raw: invalid json.
@@ -677,7 +720,7 @@ mod test {
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 27".to_string(), "{\"b\": false, \"i\": 100, \"s\":", None)])],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -689,7 +732,7 @@ mod test {
                 },
                 vec![ (r#"[true, 0, "f"]"#.to_string(), Vec::new())
                     , (r#"[false, 100, "#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 13".to_string(), "[false, 100, ", None)])],
-                vec![(TestStruct::new(true, 0, Some("f")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("f")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -701,7 +744,7 @@ mod test {
                 },
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
                     , (r#"[{"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 28".to_string(), "[{\"b\": false, \"i\": 100, \"s\":", None)])],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -713,7 +756,7 @@ mod test {
                 },
                 vec![ (r#"[[true, 0, "g"]]"#.to_string(), Vec::new())
                     , (r#"[[false, 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: expected `,` or `]` at line 1 column 18".to_string(), "[[false, 100, \"s\":", None)])],
-                vec![(TestStruct::new(true, 0, Some("g")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("g")), true)],
                 Vec::new()
             ),
             // raw: valid json, but data doesn't match type definition.
@@ -726,7 +769,7 @@ mod test {
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 5}{"b": false}{"b": false, "I": "hello"}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None), ParseError::new("failed to deserialize JSON record: error parsing field 'I': invalid type: string \"hello\", expected i32 at line 1 column 25".to_string(), Some(4), Some("I".to_string()), Some("{\"b\": false, \"I\": \"hello\"}"), None, None)])],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -740,7 +783,7 @@ mod test {
                     , (r#"[{"b": false, "i": 5},{"b": false}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])
                     , (r#"[{"b": false, "i": 5},{"b": 20, "I": 10}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: error parsing field 'B': invalid type: integer `20`, expected a boolean at line 1 column 8".to_string(), Some(5), Some("B".to_string()), Some("{\"b\": 20, \"I\": 10}"), None, None)])
                 ],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -752,7 +795,7 @@ mod test {
                 },
                 vec![ (r#"[[true, 0, "h"]]"#.to_string(), Vec::new())
                     , (r#"[{"b": false, "i": 5},[false]]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: invalid length 1, expected 3 columns at line 1 column 7".to_string(), Some(3), None, Some("[false]"), None, None)])],
-                vec![(TestStruct::new(true, 0, Some("h")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("h")), true)],
                 Vec::new()
             ),
             // raw: streaming mode; record split across two fragments.
@@ -767,7 +810,7 @@ mod test {
                     , (r#"{"b": false, "i": 5}
                        {"b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -781,7 +824,7 @@ mod test {
                     , (r#"{"b": false, "i": 5}
                        [false, "#.to_string(), Vec::new())
                     , (r#"5, "j"]"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, Some("i")), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, Some("j")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("i")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("j")), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -794,7 +837,7 @@ mod test {
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
                     , (r#"[{"b": false, "i": 5}, {"b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}]"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
             // raw: streaming mode; record split across several fragments.
@@ -810,7 +853,7 @@ mod test {
                        {"#.to_string(), Vec::new())
                     , (r#""b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -825,7 +868,7 @@ mod test {
                        ["#.to_string(), Vec::new())
                     , (r#"false, "#.to_string(), Vec::new())
                     , (r#"5, "k"]"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, Some("")), true), (TestStruct::new(false, 5, Some("k")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("k")), true)],
                 Vec::new()
             ),
 
@@ -840,7 +883,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -851,7 +894,27 @@ mod test {
                     array: true,
                 },
                 vec![(r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
+                Vec::new()
+            ),
+            // Parse update record.
+            TestCase::new(
+                true,
+                JsonParserConfig {
+                    update_format: JsonUpdateFormat::InsertDelete,
+                    json_flavor: JsonFlavor::Default,
+                    array: false,
+                },
+                vec![(r#"{"update": {"b": true, "i": 0}}"#.to_string(), Vec::new()),
+                     (r#"{"update": {"b": true, "i": 0, "s": "foo"}}"#.to_string(), Vec::new()),
+                     // Ok to skip non-key fields.
+                     // `null` parses as `Some(None)`, i.e., set table field to Null.
+                     (r#"{"update": {"i": 0, "s": null}}"#.to_string(), Vec::new()),
+                ],
+                vec![MockUpdate::Update(TestStructUpd::new(Some(true), 0, None)),
+                     MockUpdate::Update(TestStructUpd::new(Some(true), 0, Some(Some("foo")))),
+                     MockUpdate::Update(TestStructUpd::new(None, 0, Some(None))),
+                ],
                 Vec::new()
             ),
             // insert_delete: one chunk, two records.
@@ -863,7 +926,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"insert": {"b": true, "i": 0}}{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
                 Vec::new()
             ),
             TestCase::new(
@@ -874,7 +937,7 @@ mod test {
                     array: true,
                 },
                 vec![(r#"[{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
                 Vec::new()
             ),
             TestCase::new(
@@ -885,7 +948,7 @@ mod test {
                     array: true,
                 },
                 vec![(r#"[{"insert": [true, 0, "a"]}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, Some("a")), true), (TestStruct::new(false, 100, Some("foo")), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("a")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
                 Vec::new()
             ),
             // insert_delete: two chunks, one record each.
@@ -898,7 +961,7 @@ mod test {
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
                 Vec::new()
             ),
             // insert_delete: invalid json.
@@ -911,7 +974,7 @@ mod test {
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"delete": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 38".to_string(), "{\"delete\": {\"b\": false, \"i\": 100, \"s\":", None)])],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -923,7 +986,7 @@ mod test {
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
                     , (r#"[{"delete": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 39".to_string(), "[{\"delete\": {\"b\": false, \"i\": 100, \"s\":", None)])],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             // insert_delete: valid json, but data doesn't match type definition.
@@ -936,7 +999,7 @@ mod test {
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"insert": {"b": false, "i": 5}}{"delete": {"b": false}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -948,7 +1011,7 @@ mod test {
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
                     , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -962,8 +1025,8 @@ mod test {
                     , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])
                     , (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
                     , (r#"[{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(5), None, Some("{\"b\": false}"), None, None)])
-                    , (r#"[{"b": false}]"#.to_string(), vec![ParseError::text_envelope_error("error deserializing string as a JSON array of updates: unknown field `b`, expected one of `table`, `insert`, `delete` at line 1 column 5".to_string(), "[{\"b\": false}]", Some(Cow::from("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")))])],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(true, 0, None), true)],
+                    , (r#"[{"b": false}]"#.to_string(), vec![ParseError::text_envelope_error("error deserializing string as a JSON array of updates: unknown field `b`, expected one of `table`, `insert`, `delete`, `update` at line 1 column 5".to_string(), "[{\"b\": false}]", Some(Cow::from("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")))])],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             // insert_delete: streaming mode; record split across two fragments.
@@ -978,7 +1041,7 @@ mod test {
                     , (r#"{"insert": {"b": false, "i": 5}}
                        {"delete": {"b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}}"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
                 Vec::new()
             ),
             TestCase::new(
@@ -991,7 +1054,7 @@ mod test {
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
                     , (r#"[{"insert": {"b": false, "i": 5}}, {"delete": {"b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}}]"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
                 Vec::new()
             ),
             // insert_delete: streaming mode; record split across several fragments.
@@ -1007,7 +1070,7 @@ mod test {
                        {"delete""#.to_string(), Vec::new())
                     , (r#": {"b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}}"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
                 Vec::new()
             ),
             TestCase::new(
@@ -1021,7 +1084,7 @@ mod test {
                     , (r#"[{"insert": {"b": false, "i": 5}},{"delete""#.to_string(), Vec::new())
                     , (r#": {"b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}}]"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
                 Vec::new()
             ),
             TestCase::new(
@@ -1035,7 +1098,7 @@ mod test {
                     , (r#"[{"insert": [false, 5, "b"]},{"delete""#.to_string(), Vec::new())
                     , (r#": [false, "#.to_string(), Vec::new())
                     , (r#"5, "c"]}]"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, Some("a")), true), (TestStruct::new(false, 5, Some("b")), true), (TestStruct::new(false, 5, Some("c")), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("a")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("b")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("c")), false)],
                 Vec::new()
             ),
 
@@ -1050,7 +1113,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             // debezium: "u" record.
@@ -1062,7 +1125,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "u", "before": {"b": true, "i": 123}, "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 123, None), false), (TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 123, None), false), MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             TestCase::new(
@@ -1073,7 +1136,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "u", "before": [true, 123, "abc"], "after": [true, 0, "def"]}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 123, Some("abc")), false), (TestStruct::new(true, 0, Some("def")), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 123, Some("abc")), false), MockUpdate::with_polarity(TestStruct::new(true, 0, Some("def")), true)],
                 Vec::new()
             ),
             // debezium: one chunk, two records.
@@ -1085,7 +1148,7 @@ mod test {
                     array: false,
                 },
                 vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
                 Vec::new()
             ),
             // debezium: two chunks, one record each.
@@ -1098,7 +1161,7 @@ mod test {
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Vec::new())],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 100, Some("foo")), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
                 Vec::new()
             ),
             // debezium: invalid json.
@@ -1111,7 +1174,7 @@ mod test {
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 61".to_string(), "{\"payload\": {\"op\": \"d\", \"before\": {\"b\": false, \"i\": 100, \"s\":", None)])],
-                vec![(TestStruct::new(true, 0, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
             // debezium: valid json, but data doesn't match type definition.
@@ -1124,7 +1187,7 @@ mod test {
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}{"payload": {"op": "d", "before": {"b": false}}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
             // debezium: streaming mode; record split across two fragments.
@@ -1139,7 +1202,7 @@ mod test {
                     , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}
                        {"payload": {"op": "d", "before": {"b": false, "i":"#.to_string(), Vec::new())
                     , (r#"5}}}"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
                 Vec::new()
             ),
             // debezium: streaming mode; record split across several fragments.
@@ -1155,7 +1218,7 @@ mod test {
                        {"payload": {"op": "d", "before""#.to_string(), Vec::new())
                     , (r#""#.to_string(), Vec::new())
                     , (r#": {"b": false, "i":5}}}"#.to_string(), Vec::new()) ],
-                vec![(TestStruct::new(true, 0, None), true), (TestStruct::new(false, 5, None), true), (TestStruct::new(false, 5, None), false)],
+                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
                 Vec::new()
             ),
         ];

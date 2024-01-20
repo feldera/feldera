@@ -201,4 +201,21 @@ public class CatalogTests extends BaseSQLTests {
         DBSPCircuit circuit = getCircuit(compiler);
         this.addRustTestCase(sql, compiler, circuit);
     }
+
+    @Test
+    public void updateTest() {
+        String sql = """
+                create table t1(
+                            id1 bigint not null,
+                            id2 bigint,
+                            str1 varchar not null,
+                            str2 varchar,
+                            int1 bigint not null,
+                            int2 bigint,
+                            primary key(id1, id2))""";
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        this.addRustTestCase(sql, compiler, circuit);
+    }
 }

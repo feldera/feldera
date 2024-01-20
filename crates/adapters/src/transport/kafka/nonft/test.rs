@@ -20,7 +20,7 @@ use std::{
 };
 
 /// Wait to receive all records in `data` in the same order.
-fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
+fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
     wait(
@@ -29,12 +29,12 @@ fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct
     );
 
     for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
-        assert_eq!(&zset.state().flushed[i].0, val);
+        assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
     }
 }
 
 /// Wait to receive all records in `data` in some order.
-fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
+fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
     wait(
@@ -52,10 +52,7 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStru
         .state()
         .flushed
         .iter()
-        .map(|(val, polarity)| {
-            assert!(polarity);
-            val.clone()
-        })
+        .map(|upd| upd.unwrap_insert().clone())
         .collect::<Vec<_>>();
     zset_sorted.sort();
 
@@ -236,7 +233,8 @@ format:
 "#
     );
 
-    match mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()) {
+    match mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
+    {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
     };
@@ -255,7 +253,7 @@ format:
     name: csv
 "#;
 
-    match mock_input_pipeline::<TestStruct>(serde_yaml::from_str(config_str).unwrap()) {
+    match mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(config_str).unwrap()) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
     };
@@ -281,7 +279,8 @@ format:
     info!("proptest_kafka_input: Building input pipeline");
 
     let (endpoint, _consumer, zset) =
-        mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
+        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
+            .unwrap();
 
     endpoint.start(0).unwrap();
 

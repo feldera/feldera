@@ -5,7 +5,7 @@ use crate::{
 };
 use dbsp::{
     algebra::ZRingValue,
-    operator::{DelayedFeedback, FilterMap, NeighborhoodDescr},
+    operator::{DelayedFeedback, FilterMap, NeighborhoodDescr, Update},
     utils::Tup2,
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, UpsertHandle, ZSet,
 };
@@ -80,17 +80,23 @@ impl Catalog {
     /// * `K` - Key type of the input collection.
     /// * `KD` - Key type in the input byte stream.  Keys will get deserialized
     ///   into instances of `KD` and then converted to `K`.
-    /// * `V` - value type of the input collection.
+    /// * `V` - Value type of the input collection.
     /// * `VD` - Value type in the input byte stream.  Values will get
-    ///   deserialized into instances of `VD` and then converted to `K`.
-    pub fn register_input_map<K, KD, V, VD, R, F>(
+    ///   deserialized into instances of `VD` and then converted to `V`.
+    /// * `U` - Update type, which specifies a modification of a record in the
+    ///   collection.
+    /// * `UD` - Update type in the input byte stream.  Updates will get
+    ///   deserialized into instances of `UD` and then converted to `U`.
+    pub fn register_input_map<K, KD, V, VD, U, UD, R, VF, UF>(
         &mut self,
         name: &str,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V, R>>,
-        handle: UpsertHandle<K, Option<V>>,
-        key_func: F,
+        handle: UpsertHandle<K, Update<V, U>>,
+        value_key_func: VF,
+        update_key_func: UF,
     ) where
-        F: Fn(&V) -> K + Clone + Send + Sync + 'static,
+        VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
+        UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
@@ -104,14 +110,25 @@ impl Catalog {
             + Clone
             + Send
             + 'static,
+        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<U>
+            + Debug
+            + Clone
+            + Send
+            + 'static,
         R: DBWeight + ZRingValue + Into<i64> + Sync,
         K: DBData + Sync + Default + From<KD>,
         V: DBData + Sync + From<VD> + Default,
+        U: DBData + Sync + From<UD> + Default,
     {
-        self.register_input_collection_handle(name, DeMapHandle::new(handle, key_func.clone()));
+        self.register_input_collection_handle(
+            name,
+            DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
+        );
 
         // Inputs are also outputs.
-        self.register_output_map(name, stream, key_func);
+        self.register_output_map(name, stream, value_key_func);
     }
 
     /// Add an output stream of Z-sets to the catalog.
@@ -428,12 +445,13 @@ mod test {
     fn catalog_map_handle_test() {
         let (mut circuit, catalog) = Runtime::init_circuit(4, |circuit| {
             let mut catalog = Catalog::new();
-            let (input, hinput) = circuit.add_input_map::<u32, TestStruct, i32>();
+            let (input, hinput) = circuit.add_input_map::<u32, TestStruct, TestStruct, i32>(Box::new(|v, u| *v = u));
 
-            catalog.register_input_map::<u32, u32, TestStruct, TestStruct, _, _>(
+            catalog.register_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _, _>(
                 "input_map",
                 input.clone(),
                 hinput,
+                |test_struct| test_struct.id,
                 |test_struct| test_struct.id,
             );
 

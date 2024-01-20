@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- API: Generalized upsert operation that allows partial modifications to table records ([#1296](https://github.com/feldera/feldera/pull/1296))
 - SQL: Functions on binary string (octet_length, position, overlay, substring) ([#1264](https://github.com/feldera/feldera/pull/1264))
 - pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
 - Documentation: Adding a markdown page for videos (#1126)

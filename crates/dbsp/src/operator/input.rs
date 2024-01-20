@@ -23,6 +23,8 @@ use std::{
 };
 use typedmap::TypedMapKey;
 
+pub use crate::operator::input_upsert::{PatchFunc, Update};
+
 pub type IndexedZSetStream<K, V, R> = Stream<RootCircuit, OrdIndexedZSet<K, V, R>>;
 pub type ZSetStream<K, R> = Stream<RootCircuit, OrdZSet<K, R>>;
 
@@ -164,44 +166,30 @@ impl RootCircuit {
         sorted.update_set::<B>()
     }
 
-    fn add_upsert_indexed<K, VI, V, F, B>(
+    #[allow(clippy::type_complexity)]
+    fn add_upsert_indexed<K, V, U, B>(
         &self,
-        input_stream: Stream<Self, Vec<(K, VI)>>,
-        upsert_func: F,
+        input_stream: Stream<Self, Vec<(K, Update<V, U>)>>,
+        patch_func: PatchFunc<V, U>,
     ) -> Stream<Self, B>
     where
         K: DBData,
-        F: Fn(VI) -> Option<V> + 'static,
         B: Batch<Key = K, Val = V, Time = ()>,
         B::R: ZRingValue,
         V: DBData,
-        VI: DBData,
+        U: DBData,
     {
         let sorted = input_stream
             .apply_owned(move |mut upserts| {
                 // Sort the vector by key, preserving the history of updates for each key.
                 // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
                 upserts.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-
-                // Find the last upsert for each key, that's the only one that matters.
-                upserts.dedup_by(|(k1, v1), (k2, v2)| {
-                    if k1 == k2 {
-                        swap(v1, v2);
-                        true
-                    } else {
-                        false
-                    }
-                });
-
                 upserts
-                    .into_iter()
-                    .map(|(k, v)| (k, upsert_func(v)))
-                    .collect::<Vec<_>>()
             })
             // UpsertHandle shards its inputs.
             .mark_sharded();
 
-        sorted.upsert::<B>()
+        sorted.input_upsert::<B>(patch_func)
     }
 
     /// Create an input table with set semantics.
@@ -322,10 +310,11 @@ impl RootCircuit {
     /// values of type `OrdIndexedZSet<K, V, R>` and an input handle of type
     /// [`UpsertHandle<K,Option<V>>`](`UpsertHandle`).  The client uses
     /// [`UpsertHandle::push`] and [`UpsertHandle::append`] to submit
-    /// commands of the form `(key, Some(val))` to insert a new key-value
-    /// pair and `(key, None) ` to delete the value associated with `key` is
-    /// any. These commands are buffered until the start of the next clock
-    /// cycle.
+    /// commands of the form `(key, Update::Insert(val))` to insert a new
+    /// key-value pair, `(key, Update::Delete)` to delete the value
+    /// associated with `key`, and `(key, Update::Update)` to modify the
+    /// values associated with `key`, if it exists. These commands are
+    /// buffered until the start of the next clock cycle.
     ///
     /// At the start of a clock cycle (triggered by
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) or
@@ -338,15 +327,17 @@ impl RootCircuit {
     /// operator:
     ///
     /// ```text
-    /// time │      input commands               │content of the        │ stream returned by         │  comment
-    ///      │                                   │input map             │ `add_input_map`            │
-    /// ─────┼───────────────────────────────────┼──────────────────────┼────────────────────────────┼───────────────────────────────────────────────────────
-    ///    1 │{(1,Some("foo"), (2,Some("bar"))}  │{(1,"foo"),(2,"bar")} │ {(1,"foo",+1),(2,"bar",+1)}│
-    ///    2 │{(1,Some("foo"), (2,Some("baz"))}  │{(1,"foo"),(2,"baz")} │ {(2,"bar",-1),(2,"baz",+1)}│ Ignore duplicate insert of (1,"foo"). New value
-    ///      |                                   |                      |                            | "baz" for key 2 overwrites the old value "bar".
-    ///    3 │{(1,None),(2,Some("bar")),(2,None)}│{}                    │ {(1,"foo",-1),(2,"baz",-1)}│ Delete both keys. Upsert (2,"bar") is overridden
-    ///      |                                   |                      |                            | by subsequent delete command.
-    /// ─────┴───────────────────────────────────┴──────────────────────┴────────────────────────────┴────────────────────────────────────────────────────────
+    /// time │      input commands                     │content of the        │ stream returned by         │  comment
+    ///      │                                         │input map             │ `add_input_map`            │
+    /// ─────┼─────────────────────────────────────────┼──────────────────────┼────────────────────────────┼───────────────────────────────────────────────────────
+    ///    1 │{(1,Insert("foo"), (2,Insert("bar"))}    │{(1,"foo"),(2,"bar")} │ {(1,"foo",+1),(2,"bar",+1)}│
+    ///    2 │{(1,Insert("foo"), (2,Insert("baz"))}    │{(1,"foo"),(2,"baz")} │ {(2,"bar",-1),(2,"baz",+1)}│ Ignore duplicate insert of (1,"foo"). New value
+    ///      |                                         |                      |                            | "baz" for key 2 overwrites the old value "bar".
+    ///    3 │{(1,Delete),(2,Insert("bar")),(2,Delete)}│{}                    │ {(1,"foo",-1),(2,"baz",-1)}│ Delete both keys. Upsert (2,"bar") is overridden
+    ///      |                                         |                      |                            | by subsequent delete command.
+    ///    4 |{(1,Update("new")), (2,Update("bar"))}   |{(1,"foo")}           | {(1,"new")}                | Note that the second update is ignored because
+    ///      |                                         |                      |                            | key 2 is not present in the map.
+    /// ─────┴─────────────────────────────────────────┴──────────────────────┴────────────────────────────┴────────────────────────────────────────────────────────
     /// ```
     ///
     /// Note that upsert commands cannot fail.  Duplicate inserts and deletes
@@ -362,24 +353,34 @@ impl RootCircuit {
     /// Applying [`Stream::integrate_trace_retain_keys`],
     /// [`Stream::integrate_trace_retain_values`], and
     /// [`Stream::integrate_trace_with_bound`] methods to the stream has the
-    /// additional effect of filtering out all values that don't satisfy the
+    /// additional effect of filtering out all updates that don't satisfy the
     /// retention policy configured by these methods from the stream.
-    /// Specifically, retention conditions configured at logical time `t`
+    /// In particular, this means that attempts to overwrite, update, or delete
+    /// a key-value pair whose key or value don't satisfy current retention
+    /// conditions are ignored, since all these operations involve deleting
+    /// an existing tuple.
+    ///
+    /// Retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
     // TODO: Add a version that takes a custom hash function.
-    pub fn add_input_map<K, V, R>(&self) -> (IndexedZSetStream<K, V, R>, UpsertHandle<K, Option<V>>)
+    #[allow(clippy::type_complexity)]
+    pub fn add_input_map<K, V, U, R>(
+        &self,
+        patch_func: PatchFunc<V, U>,
+    ) -> (IndexedZSetStream<K, V, R>, UpsertHandle<K, Update<V, U>>)
     where
         K: DBData,
         V: DBData,
+        U: DBData,
         R: DBData + ZRingValue,
         Option<V>: DBData,
     {
         self.region("input_map", || {
-            let (input, input_handle) = Input::new(|tuples: Vec<(K, Option<V>)>| tuples);
+            let (input, input_handle) = Input::new(|tuples: Vec<(K, Update<V, U>)>| tuples);
             let input_stream = self.add_source(input);
-            let zset_handle = <UpsertHandle<K, Option<V>>>::new(input_handle);
+            let zset_handle = <UpsertHandle<K, Update<V, U>>>::new(input_handle);
 
-            let upsert = self.add_upsert_indexed(input_stream, |val| val);
+            let upsert = self.add_upsert_indexed(input_stream, patch_func);
 
             (upsert, zset_handle)
         })
@@ -1038,6 +1039,7 @@ mod test {
     use crate::utils::Tup2;
     use crate::{
         indexed_zset,
+        operator::input::Update,
         trace::{cursor::Cursor, Batch, BatchReader, Builder},
         zset, CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime,
         UpsertHandle,
@@ -1421,33 +1423,43 @@ mod test {
         set_test_mt(4);
     }
 
-    fn input_map_updates() -> Vec<Vec<(u64, Option<u64>)>> {
+    fn input_map_updates1() -> Vec<Vec<(u64, Update<u64, i64>)>> {
         vec![
-            vec![(1, Some(1)), (1, Some(2)), (2, None), (3, Some(3))],
             vec![
-                (1, Some(1)),
-                (1, None),
-                (2, Some(2)),
-                (3, Some(4)),
-                (4, Some(4)),
-                (4, None),
-                (4, Some(5)),
+                (1, Update::Insert(1)),
+                (1, Update::Insert(2)),
+                (2, Update::Delete),
+                (3, Update::Insert(3)),
             ],
-            vec![(1, Some(5)), (1, Some(6)), (3, None), (4, Some(6))],
+            vec![
+                (1, Update::Insert(1)),
+                (1, Update::Delete),
+                (2, Update::Insert(2)),
+                (3, Update::Insert(4)),
+                (4, Update::Insert(4)),
+                (4, Update::Delete),
+                (4, Update::Insert(5)),
+            ],
+            vec![
+                (1, Update::Insert(5)),
+                (1, Update::Insert(6)),
+                (3, Update::Delete),
+                (4, Update::Insert(6)),
+            ],
             // bump watermark
-            vec![(1, Some(100))],
+            vec![(1, Update::Insert(100))],
             // below watermark
-            vec![(1, Some(80))],
-            vec![(1, Some(91))],
+            vec![(1, Update::Insert(80))],
+            vec![(1, Update::Insert(91))],
             // bump watermark more
-            vec![(1, Some(200))],
+            vec![(1, Update::Insert(200))],
             // below watermark
-            vec![(1, Some(91))],
-            vec![(1, Some(191))],
+            vec![(1, Update::Insert(91))],
+            vec![(1, Update::Insert(191))],
         ]
     }
 
-    fn output_map_updates() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
+    fn output_map_updates1() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
         vec![
             indexed_zset! { 1 => {2 => 1},  3 => {3 => 1}},
             indexed_zset! { 1 => {2 => -1}, 2 => {2 => 1}, 3 => {3 => -1, 4 => 1}, 4 => {5 => 1}},
@@ -1461,8 +1473,100 @@ mod test {
         ]
     }
 
-    fn map_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<u64, Option<u64>>> {
-        let (stream, handle) = circuit.add_input_map::<u64, u64, i64>();
+    // Test handling of updates.
+    fn input_map_updates2() -> Vec<Vec<(u64, Update<u64, i64>)>> {
+        vec![
+            vec![
+                // Insert and instantly update: values add up.
+                (1, Update::Insert(1)),
+                (1, Update::Update(1)),
+                // Insert and intantly overwrite: the last value is used.
+                (2, Update::Insert(1)),
+                (2, Update::Insert(1)),
+                // Insert and instantly delete.
+                (3, Update::Insert(1)),
+                (3, Update::Delete),
+                // Delete non-existing value - ignored.
+                (4, Update::Delete),
+            ],
+            vec![
+                // Two more updates added to existing value.
+                (1, Update::Update(1)),
+                (1, Update::Update(1)),
+                // Delete and then try to update the value. The update is ignored.
+                (2, Update::Delete),
+                (2, Update::Update(1)),
+                // Update missing value and then insert. The update is ignored.
+                (3, Update::Update(1)),
+                (3, Update::Insert(5)),
+            ],
+            vec![
+                // Updates followed by a delete.
+                (1, Update::Update(2)),
+                (1, Update::Update(3)),
+                (1, Update::Delete),
+                // Insert -> update -> delete.
+                (2, Update::Insert(3)),
+                (2, Update::Update(4)),
+                (2, Update::Delete),
+                // Insert the same value - noop.
+                (3, Update::Insert(5)),
+            ],
+            vec![(1, Update::Insert(1)), (2, Update::Insert(5))],
+            // Push waterline to 15.
+            vec![(3, Update::Update(10))],
+            vec![
+                // Attempt to update value below waterline - ignored
+                (1, Update::Update(10)),
+                // Update value above waterline - accepted.
+                (2, Update::Update(10)),
+            ],
+            vec![
+                // Attempt to delete value below waterline - ignored
+                (1, Update::Delete),
+                // Overwrite value above waterline with a value below - ignored
+                (2, Update::Insert(4)),
+                // Attempt to create new value below waterline - ignored
+                (4, Update::Insert(1)),
+            ],
+            vec![
+                // Attempt to insert new value overwriting value below waterline - ignored.
+                (1, Update::Insert(20)),
+                // Overwrite value above waterline with a new value above waterline - accepted
+                (2, Update::Insert(10)),
+                // Create new value above waterline - accepted, try to overwrite it with a value
+                // below waterline - ignored.
+                (4, Update::Insert(15)),
+                (4, Update::Insert(4)),
+            ],
+            vec![
+                // Attempt to update value below waterline - ignored, even though the new value
+                // would have been above waterline.
+                (1, Update::Update(20)),
+            ],
+        ]
+    }
+
+    fn output_map_updates2() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
+        vec![
+            indexed_zset! { 1 => {2 => 1}, 2 => {1 => 1}},
+            indexed_zset! { 1 => {2 => -1, 4 => 1}, 2 => {1 => -1}, 3 => { 5 => 1 } },
+            indexed_zset! { 1 => {4 => -1} },
+            indexed_zset! { 1 => {1 => 1}, 2 => {5=>1} },
+            indexed_zset! { 3 => {5 => -1, 15 => 1} },
+            indexed_zset! { 2 => {5 => -1, 15 => 1} },
+            indexed_zset! {},
+            indexed_zset! {2 => {15 => -1, 10 => 1}, 4 => {15 => 1}},
+            indexed_zset! {},
+        ]
+    }
+
+    fn map_test_circuit(
+        circuit: &RootCircuit,
+        expected_outputs: fn() -> Vec<OrdIndexedZSet<u64, u64, i64>>,
+    ) -> AnyResult<UpsertHandle<u64, Update<u64, i64>>> {
+        let (stream, handle) = circuit
+            .add_input_map::<u64, u64, i64, i64>(Box::new(|v, u| *v = ((*v as i64) + u) as u64));
         let watermark = stream.waterline(
             || (0, 0),
             |k, v| (*k, *v),
@@ -1470,7 +1574,7 @@ mod test {
         );
         stream.integrate_trace_retain_values(&watermark, |v, ts| *v >= ts.1.saturating_sub(10));
 
-        let mut expected_batches = output_map_updates().into_iter();
+        let mut expected_batches = expected_outputs().into_iter();
 
         stream.gather(0).inspect(move |batch| {
             if Runtime::worker_index() == 0 {
@@ -1484,17 +1588,19 @@ mod test {
     #[test]
     fn map_test_st() {
         let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
+                .unwrap();
 
-        for mut vec in input_map_updates().into_iter() {
+        for mut vec in input_map_updates1().into_iter() {
             input_handle.append(&mut vec);
             circuit.step().unwrap();
         }
 
         let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit)).unwrap();
+            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
+                .unwrap();
 
-        for vec in input_map_updates().into_iter() {
+        for vec in input_map_updates1().into_iter() {
             for (k, v) in vec.into_iter() {
                 input_handle.push(k, v);
             }
@@ -1502,21 +1608,30 @@ mod test {
         }
     }
 
-    fn map_test_mt(workers: usize) {
-        let (mut dbsp, mut input_handle) =
-            Runtime::init_circuit(workers, |circuit| map_test_circuit(circuit)).unwrap();
+    fn map_test_mt(
+        workers: usize,
+        inputs: fn() -> Vec<Vec<(u64, Update<u64, i64>)>>,
+        expected_outputs: fn() -> Vec<OrdIndexedZSet<u64, u64, i64>>,
+    ) {
+        let expected_outputs_clone = expected_outputs.clone();
+        let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
+            map_test_circuit(circuit, expected_outputs_clone)
+        })
+        .unwrap();
 
-        for mut vec in input_map_updates().into_iter() {
+        for mut vec in inputs().into_iter() {
             input_handle.append(&mut vec);
             dbsp.step().unwrap();
         }
 
         dbsp.kill().unwrap();
 
-        let (mut dbsp, input_handle) =
-            Runtime::init_circuit(workers, |circuit| map_test_circuit(circuit)).unwrap();
+        let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
+            map_test_circuit(circuit, expected_outputs)
+        })
+        .unwrap();
 
-        for vec in input_map_updates().into_iter() {
+        for vec in inputs().into_iter() {
             for (k, v) in vec.into_iter() {
                 input_handle.push(k, v);
             }
@@ -1528,11 +1643,13 @@ mod test {
 
     #[test]
     fn map_test_mt1() {
-        map_test_mt(1);
+        map_test_mt(1, input_map_updates1, output_map_updates1);
+        map_test_mt(1, input_map_updates2, output_map_updates2);
     }
 
     #[test]
     fn map_test_mt4() {
-        map_test_mt(4);
+        map_test_mt(4, input_map_updates1, output_map_updates1);
+        map_test_mt(4, input_map_updates2, output_map_updates2);
     }
 }

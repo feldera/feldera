@@ -26,7 +26,7 @@ mod mock_output_consumer;
 pub use data::{
     generate_test_batch, generate_test_batches, generate_test_batches_with_weights, TestStruct,
 };
-pub use mock_dezset::MockDeZSet;
+pub use mock_dezset::{MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
 
@@ -74,13 +74,14 @@ where
 /// │MockInputConsumer├──►│parser├──►│MockDeZSet│
 /// └─────────────────┘   └──────┘   └──────────┘
 /// ```
-pub fn mock_parser_pipeline<T>(
+pub fn mock_parser_pipeline<T, U>(
     config: &FormatConfig,
-) -> AnyResult<(MockInputConsumer, MockDeZSet<T>)>
+) -> AnyResult<(MockInputConsumer, MockDeZSet<T, U>)>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
-    let input_handle = <MockDeZSet<T>>::new();
+    let input_handle = <MockDeZSet<T, U>>::new();
     let consumer = MockInputConsumer::from_handle(&input_handle, config);
     Ok((consumer, input_handle))
 }
@@ -97,11 +98,12 @@ where
 /// │endpoint├──►│MockInputConsumer├──►│parser├──►│MockDeZSet│
 /// └────────┘   └─────────────────┘   └──────┘   └──────────┘
 /// ```
-pub fn mock_input_pipeline<T>(
+pub fn mock_input_pipeline<T, U>(
     config: InputEndpointConfig,
-) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T>)>
+) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T, U>)>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     let (consumer, input_handle) = mock_parser_pipeline(&config.connector_config.format)?;
 
