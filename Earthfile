@@ -119,10 +119,10 @@ build-dbsp:
     FROM +rust-sources
     DO rust+CARGO --args="build --package dbsp"
     DO rust+CARGO --args="clippy --package dbsp -- -D warnings"
-    DO rust+CARGO --args="test --package dbsp --no-run" 
+    DO rust+CARGO --args="test --package dbsp --no-run"
     DO rust+CARGO --args="build --package pipeline_types"
     DO rust+CARGO --args="clippy --package pipeline_types -- -D warnings"
-    DO rust+CARGO --args="test --package pipeline_types --no-run" 
+    DO rust+CARGO --args="test --package pipeline_types --no-run"
     DO rust+CARGO --args="build --package feldera-storage"
     DO rust+CARGO --args="clippy --package feldera-storage -- -D warnings"
     DO rust+CARGO --args="test --package feldera-storage --no-run"
@@ -168,7 +168,7 @@ build-manager:
 test-sql:
     # SQL-generated code imports adapters crate.
     FROM +build-adapters
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package --no-transfer-progress
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -q --no-transfer-progress
 
 build-nexmark:
     FROM +build-dbsp

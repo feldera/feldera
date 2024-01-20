@@ -87,7 +87,7 @@ public class ToRustVisitor extends CircuitVisitor {
     // Assemble here the list of streams that is output by the circuit
     protected final IndentStream streams;
     final InnerVisitor innerVisitor;
-    final boolean generateCatalog;
+    final boolean useHandles;
 
     /* Example output generated when 'generateCatalog' is true:
      * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
@@ -102,11 +102,11 @@ public class ToRustVisitor extends CircuitVisitor {
      * }
      */
 
-    public ToRustVisitor(IErrorReporter reporter, IndentStream builder, boolean generateCatalog) {
+    public ToRustVisitor(IErrorReporter reporter, IndentStream builder, boolean useHandles) {
         super(reporter);
         this.builder = builder;
         this.innerVisitor = new ToRustInnerVisitor(reporter, builder, false);
-        this.generateCatalog = generateCatalog;
+        this.useHandles = useHandles;
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
     }
@@ -295,7 +295,7 @@ public class ToRustVisitor extends CircuitVisitor {
         IndentStream signature = new IndentStream(b);
         ToRustInnerVisitor inner = new ToRustInnerVisitor(this.errorReporter, signature, false);
 
-        if (this.generateCatalog) {
+        if (!this.useHandles) {
             signature.append("Catalog");
         } else {
             signature.append("(");
@@ -332,13 +332,13 @@ public class ToRustVisitor extends CircuitVisitor {
                 .newline()
                 .append("let (circuit, streams) = Runtime::init_circuit(workers, |circuit| {")
                 .increase();
-        if (this.generateCatalog)
+        if (!this.useHandles)
             this.builder.append("let mut catalog = Catalog::new();").newline();
 
         for (IDBSPNode node : circuit.getAllOperators())
             this.processNode(node);
 
-        if (this.generateCatalog)
+        if (!this.useHandles)
             this.builder.append("Ok(catalog)");
         else
             this.builder.append("Ok((")
@@ -378,7 +378,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         zsetType.weightType.accept(this.innerVisitor);
         this.builder.append(">();").newline();
-        if (this.generateCatalog) {
+        if (!this.useHandles) {
             this.builder.append("catalog.register_input_zset::<_, ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
@@ -427,7 +427,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         ix.weightType.accept(this.innerVisitor);
         this.builder.append(">();").newline();
-        if (this.generateCatalog) {
+        if (!this.useHandles) {
             this.builder.append("catalog.register_input_map::<");
             DBSPTypeStruct keyStructType = operator.getKeyStructType();
             keyStructType.toTuple().accept(this.innerVisitor);
@@ -545,7 +545,7 @@ public class ToRustVisitor extends CircuitVisitor {
         item.accept(this.innerVisitor);
         this.generateFromTrait(type);
         this.generateRenameMacro(operator.outputName, type, null);
-        if (this.generateCatalog) {
+        if (!this.useHandles) {
             this.builder.append("catalog.register_output_zset::<_, ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
@@ -876,10 +876,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    public static String toRustString(IErrorReporter reporter, DBSPCircuit node, boolean useCatalog) {
+    public static String toRustString(IErrorReporter reporter, DBSPCircuit node, boolean useHandles) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, useCatalog);
+        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, useHandles);
         visitor.apply(node);
         return builder.toString();
     }

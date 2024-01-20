@@ -71,6 +71,7 @@ import org.junit.Test;
 
 import javax.imageio.ImageIO;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -462,11 +463,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     public void testDefaultColumnValueCompiler() throws IOException, InterruptedException {
         String[] statements = new String[]{
                 """
-CREATE TABLE T (
-COL1 INT NOT NULL DEFAULT 0
-, COL2 DOUBLE DEFAULT 0.0
-, COL3 VARCHAR DEFAULT NULL
-)""",
+                CREATE TABLE T (
+                COL1 INT NOT NULL DEFAULT 0
+                , COL2 DOUBLE DEFAULT 0.0
+                , COL3 VARCHAR DEFAULT NULL
+                )""",
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = createInputScript(statements);
@@ -595,6 +596,100 @@ COL1 INT NOT NULL DEFAULT 0
         Assert.assertTrue(jsonContents.contains("COL1"));
         Assert.assertTrue(jsonContents.contains("yourtable"));
         Assert.assertTrue(jsonContents.contains("column1"));
+    }
+
+    @Test
+    public void testCompilerExample() throws IOException, InterruptedException {
+        // The example in docs/contributors/compiler.md
+        String sql = """
+                -- define Person table
+                CREATE TABLE Person
+                (
+                    name    VARCHAR NOT NULL,
+                    age     INT,
+                    present BOOLEAN
+                );
+                CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18;
+                """;
+        String rustHandlesTest = """
+                #[test]
+                pub fn test() {
+                    let (mut circuit, (person, adult) ) = circuit(2).unwrap();
+                    // Feed two input records to the circuit.
+                    // First input has a count of "1"
+                    person.push( ("Bob".to_string(), Some(12), Some(true)).into(), 1 );
+                    // Second input has a count of "2"
+                    person.push( ("Tom".to_string(), Some(20), Some(false)).into(), 2 );
+                    // Execute the circuit on these inputs
+                    circuit.step().unwrap();
+                    // Read the produced output
+                    let out = adult.consolidate();
+                    // Print the produced output
+                    println!("{}", out);
+                }
+                """;
+        String rustCatalogTest = """
+                #[test]
+                pub fn test() {
+                    use dbsp_adapters::{CircuitCatalog, RecordFormat};
+                                
+                    let (mut circuit, catalog) = circuit(2)
+                        .expect("Failed to build circuit");
+                    let persons = catalog
+                        .input_collection_handle("PERSON")
+                        .expect("Failed to get input collection handle");
+                    let mut persons_stream = persons
+                        .configure_deserializer(RecordFormat::Csv)
+                        .expect("Failed to configure deserializer");
+                    persons_stream
+                        .insert(b"Bob,12,true")
+                        .expect("Failed to insert data");
+                    persons_stream
+                        .insert(b"Tom,20,false")
+                        .expect("Failed to insert data");
+                    persons_stream
+                        .insert(b"Tom,20,false")
+                        .expect("Failed to insert data");  // Insert twice
+                    persons_stream.flush();
+                    // Execute the circuit on these inputs
+                    circuit
+                        .step()
+                        .unwrap();
+                                
+                    let adult = &catalog
+                        .output_handles("ADULT")
+                        .expect("Failed to get output collection handles")
+                        .delta_handle;
+                                
+                    // Read the produced output
+                    let out = adult.consolidate();
+                    // Print the produced output
+                    println!("{:?}", out);
+                }
+                """;
+        File file = createInputScript(sql);
+        CompilerMessages message = CompilerMain.execute(
+                "--handles", "-o", BaseSQLTests.testFilePath, file.getPath());
+        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertTrue(file.exists());
+
+        File rust = new File(BaseSQLTests.testFilePath);
+        try (FileWriter fr = new FileWriter(rust, true)) { // append
+            fr.write(rustHandlesTest);
+        }
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+
+        // Second test
+        message = CompilerMain.execute(
+                "-i", "-o", BaseSQLTests.testFilePath, file.getPath());
+        Assert.assertEquals(message.exitCode, 0);
+        Assert.assertTrue(file.exists());
+
+        rust = new File(BaseSQLTests.testFilePath);
+        try (FileWriter fr = new FileWriter(rust, true)) { // append
+            fr.write(rustCatalogTest);
+        }
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
 
     @Test

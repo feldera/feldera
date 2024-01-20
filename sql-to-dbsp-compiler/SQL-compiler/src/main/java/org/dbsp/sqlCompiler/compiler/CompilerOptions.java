@@ -120,9 +120,8 @@ public class CompilerOptions {
         public String functionName = "circuit";
         @Parameter(names = "-v", description = "Output verbosity")
         public int verbosity = 0;
-        /** Internal option only: emit Rust code where a catalog is used to
-         * store I/O handles.  Testing code does not use the catalog. */
-        public boolean emitCatalog = true;
+        @Parameter(names = "--handles", description = "Use handles (true) or Catalog (false) in the emitted Rust code")
+        public boolean emitHandles = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO io) {

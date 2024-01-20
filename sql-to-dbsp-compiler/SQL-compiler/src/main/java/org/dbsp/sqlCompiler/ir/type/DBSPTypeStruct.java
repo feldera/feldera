@@ -25,14 +25,15 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
@@ -116,7 +117,7 @@ public class DBSPTypeStruct extends DBSPType {
     public final String sanitizedName;
     public final LinkedHashMap<String, Field> fields;
 
-    public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName, List<Field> args) {
+    public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName, Collection<Field> args) {
         super(node, STRUCT, false);
         this.sanitizedName = sanitizedName;
         this.name = name;
@@ -126,6 +127,10 @@ public class DBSPTypeStruct extends DBSPType {
                 this.error("Field name " + f + " is duplicated");
             this.fields.put(f.name, f);
         }
+    }
+
+    public DBSPTypeStruct rename(String newName) {
+        return new DBSPTypeStruct(this.getNode(), newName, sanitizedName, this.fields.values());
     }
 
     @Override
