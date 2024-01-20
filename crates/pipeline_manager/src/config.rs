@@ -1,4 +1,5 @@
 use crate::db::{PipelineId, ProgramId, Version};
+use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use serde::Deserialize;
@@ -209,7 +210,9 @@ impl ApiServerConfig {
                 // REST API from the generated documentation
                 cors = cors.allowed_origin("https://www.feldera.com");
             }
-            cors
+            cors.allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
+                .allowed_headers(vec![header::AUTHORIZATION, header::ACCEPT])
+                .supports_credentials()
         }
     }
 
