@@ -6,6 +6,7 @@ pub mod communication;
 pub mod recursive;
 
 pub(crate) mod apply;
+pub(crate) mod input_upsert;
 pub(crate) mod inspect;
 pub(crate) mod upsert;
 
@@ -50,7 +51,7 @@ pub use generator::{Generator, GeneratorNested};
 pub use group::CmpFunc;
 pub use index::Index;
 use input::Mailbox;
-pub use input::{CollectionHandle, InputHandle, UpsertHandle};
+pub use input::{CollectionHandle, InputHandle, Update, UpsertHandle};
 pub use inspect::Inspect;
 pub use join::Join;
 pub use join_range::StreamJoinRange;

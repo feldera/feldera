@@ -8,8 +8,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -66,13 +68,9 @@ public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
         return this;
     }
 
-    /**
-     * Return a struct that contains only the key fields from the
-     * originalRowType.
-     */
-    public DBSPTypeStruct getKeyStructType() {
-        // TODO: this should be a fresh name.
-        String name = this.originalRowType.sanitizedName + "_key";
+    /** Return a struct that contains only the key fields from the
+     * originalRowType. */
+    public DBSPTypeStruct getKeyStructType(String name) {
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         int current = 0;
         int keyIndexes = 0;
@@ -88,11 +86,42 @@ public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
         return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields);
     }
 
-    /**
-     * Return a closure that describes the key function.
-     */
+    /** Return a struct that is similar with the originalRowType, but where
+     * each non-key field is wrapped in an additional Option type. */
+    public DBSPTypeStruct getStructUpsertType(String name) {
+        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+        int current = 0;
+        int keyIndexes = 0;
+        for (DBSPTypeStruct.Field field: this.originalRowType.fields.values()) {
+            if (keyIndexes < this.keyFields.size() && current == this.keyFields.get(keyIndexes)) {
+                fields.add(field);
+                keyIndexes++;
+            } else {
+                DBSPType some = new DBSPTypeUser(
+                        field.getNode(), DBSPTypeCode.USER, "Option", false, field.type);
+                fields.add(new DBSPTypeStruct.Field(
+                        field.getNode(), field.name, field.sanitizedName, some, field.nameIsQuoted));
+            }
+            current++;
+        }
+        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields);
+    }
+
+    /** Return a closure that describes the key function. */
     public DBSPExpression getKeyFunc() {
         DBSPVariablePath var = new DBSPVariablePath("t", this.getOutputIndexedZSetType().elementType.ref());
+        DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
+        int insertAt = 0;
+        for (int index: this.keyFields) {
+            fields[insertAt++] = var.deref().field(index);
+        }
+        DBSPExpression tuple = new DBSPTupleExpression(fields);
+        return tuple.closure(var.asParameter());
+    }
+
+    /** Return a closure that describes the key function when applied to upsertStructType.toTuple(). */
+    public DBSPExpression getUpdateKeyFunc(DBSPTypeStruct upsertStructType) {
+        DBSPVariablePath var = new DBSPVariablePath("t", upsertStructType.toTuple().ref());
         DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
         int insertAt = 0;
         for (int index: this.keyFields) {

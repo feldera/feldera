@@ -291,8 +291,10 @@ format:
         }
         writer.flush().unwrap();
 
-        let (endpoint, consumer, zset) =
-            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
+        let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+            serde_yaml::from_str(&config_str).unwrap(),
+        )
+        .unwrap();
 
         sleep(Duration::from_millis(10));
 
@@ -306,9 +308,8 @@ format:
             || zset.state().flushed.len() == test_data.len(),
             DEFAULT_TIMEOUT_MS,
         );
-        for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
-            assert!(polarity);
-            assert_eq!(val, &test_data[i]);
+        for (i, upd) in zset.state().flushed.iter().enumerate() {
+            assert_eq!(upd.unwrap_insert(), &test_data[i]);
         }
     }
 
@@ -343,8 +344,10 @@ format:
             .has_headers(false)
             .from_writer(temp_file.as_file());
 
-        let (endpoint, consumer, zset) =
-            mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
+        let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+            serde_yaml::from_str(&config_str).unwrap(),
+        )
+        .unwrap();
 
         for _ in 0..10 {
             for val in test_data.iter().cloned() {
@@ -364,9 +367,8 @@ format:
                 || zset.state().flushed.len() == test_data.len(),
                 DEFAULT_TIMEOUT_MS,
             );
-            for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
-                assert!(polarity);
-                assert_eq!(val, &test_data[i]);
+            for (i, upd) in zset.state().flushed.iter().enumerate() {
+                assert_eq!(upd.unwrap_insert(), &test_data[i]);
             }
             endpoint.pause().unwrap();
 

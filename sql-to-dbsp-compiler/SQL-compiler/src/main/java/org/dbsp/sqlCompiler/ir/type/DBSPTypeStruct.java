@@ -215,9 +215,7 @@ public class DBSPTypeStruct extends DBSPType {
                 .append("}");
     }
 
-    /**
-     * Generate a tuple type by ignoring the struct and field names.
-     */
+    /** Generate a tuple type by ignoring the struct and field names. */
     public DBSPTypeTuple toTuple() {
         List<DBSPType> types = Linq.list(Linq.map(this.fields.values(), f -> f.type));
         return new DBSPTypeTuple(this.getNode(), types);

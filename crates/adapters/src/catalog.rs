@@ -53,11 +53,11 @@ where
 /// an [`UpsertHandle`](`dbsp::UpsertHandle`) and pushes serialized relational
 /// data to the associated input stream record-by-record.  The client passes a
 /// byte array with a serialized data record (e.g., in JSON or CSV format)
-/// to [`insert`](`Self::insert`) and [`delete`](`Self::delete`) methods.
-/// The record gets deserialized into the strongly typed representation
-/// expected by the input stream and gets buffered inside the handle.
-/// The [`flush`](`Self::flush`) method pushes all buffered data to the
-/// underlying [`CollectionHandle`](`dbsp::CollectionHandle`) or
+/// to [`insert`](`Self::insert`), [`delete`](`Self::delete`), and
+/// [`update`](`Self::update`) methods. The record gets deserialized into the
+/// strongly typed representation expected by the input stream and gets buffered
+/// inside the handle. The [`flush`](`Self::flush`) method pushes all buffered
+/// data to the underlying [`CollectionHandle`](`dbsp::CollectionHandle`) or
 /// [`UpsertHandle`](`dbsp::UpsertHandle`).
 ///
 /// Instances of this trait are created by calling
@@ -91,6 +91,15 @@ pub trait DeCollectionStream: Send {
     /// representation is corrupted or does not match the value or key
     /// type of the underlying input stream.
     fn delete(&mut self, data: &[u8]) -> AnyResult<()>;
+
+    /// Buffer a new update that will modify an existing record.
+    ///
+    /// This method can only be called on streams created with
+    /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
+    /// and will fail on other streams.  The serialized record must match
+    /// the update type of this stream, specified as a type argument to
+    /// [`Catalog::register_input_map`].
+    fn update(&mut self, data: &[u8]) -> AnyResult<()>;
 
     /// Reserve space for at least `reservation` more updates in the
     /// internal input buffer.

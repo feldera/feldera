@@ -1155,11 +1155,13 @@ async fn primary_keys() {
             .unwrap()
     );
 
-    // Update a key
+    // Make some changes.
     let req = config
         .post_json(
             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            r#"{"insert":{"id":1, "s": "1-modified"}}"#.to_string(),
+            r#"{"insert":{"id":1, "s": "1-modified"}}
+{"update":{"id":2, "s": "2-modified"}}"#
+                .to_string(),
         )
         .await;
     assert!(req.status().is_success());
@@ -1167,7 +1169,7 @@ async fn primary_keys() {
     let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}},{\"insert\":{\"ID\":2,\"S\":\"2\"}}]"
+        "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}},{\"insert\":{\"ID\":2,\"S\":\"2-modified\"}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1175,7 +1177,7 @@ async fn primary_keys() {
     let hood = config.neighborhood_json("test", "T1", None, 10, 10).await;
     assert_eq!(
         hood.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"index\":0,\"key\":{\"ID\":1,\"S\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"ID\":2,\"S\":\"2\"}}}]"
+        "[{\"insert\":{\"index\":0,\"key\":{\"ID\":1,\"S\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"ID\":2,\"S\":\"2-modified\"}}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1293,6 +1295,132 @@ async fn distinct_outputs() {
 
     // Use assert_eq, so we get to see the unexpected output on error.
     assert_eq!(delta, None);
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
+#[actix_web::test]
+#[serial]
+async fn upsert() {
+    let config = setup().await;
+    let _ = deploy_pipeline_without_connectors(
+        &config,
+        r#"create table t1(
+            id1 bigint not null,
+            id2 bigint,
+            str1 varchar not null,
+            str2 varchar,
+            int1 bigint not null,
+            int2 bigint,
+            primary key(id1, id2));"#,
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/start"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
+        .await;
+
+    let mut response = config.delta_stream_request_json("test", "T1").await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            // Add several identcal records with different id's
+            r#"{"insert":{"id1":1, "str1": "1", "int1": 1}}
+{"insert":{"id1":2, "str1": "1", "int1": 1}}
+{"insert":{"id1":3, "str1": "1", "int1": 1}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let delta = config
+        .read_response_json(&mut response, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        delta.unwrap(),
+        json!([{"insert": {"ID1":1,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
+{"insert": {"ID1":2,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
+{"insert": {"ID1":3,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}}])
+    );
+
+    let req = config
+        .post_json(
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            // 1: Update 'str1'.
+            // 2: Update 'str2'.
+            // 3: Overwrite entire record.
+            r#"{"update":{"id1":1, "str1": "2"}}
+{"update":{"id1":2, "str2": "foo"}}
+{"insert":{"id1":3, "str1": "1", "str2": "2", "int1":3, "int2":33}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let delta = config
+        .read_response_json(&mut response, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        delta.unwrap(),
+        json!([{"delete": {"ID1":1,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
+{"delete": {"ID1":2,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
+{"delete": {"ID1":3,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
+{"insert": {"ID1":1,"ID2":null,"STR1":"2","STR2":null,"INT1":1,"INT2":null}},
+{"insert": {"ID1":2,"ID2":null,"STR1":"1","STR2":"foo","INT1":1,"INT2":null}},
+{"insert": {"ID1":3,"ID2":null,"STR1":"1","STR2":"2","INT1":3,"INT2":33}}])
+    );
+
+    let req = config
+        .post_json(
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            // 1: Update command that doesn't modify any fields - noop.
+            // 2: Clear 'str2' to null.
+            // 3: Delete record.
+            // 4: Delete non-existing key - noop.
+            // 5: Update non-existing key - noop.
+            r#"{"update":{"id1":1}}
+{"update":{"id1":2, "str2": null}}
+{"delete":{"id1":3}}
+{"delete":{"id1":4}}
+{"update":{"id1":4, "int1":0, "str1":""}}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let delta = config
+        .read_response_json(&mut response, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        delta.unwrap(),
+        json!([{"delete": {"ID1":2,"ID2":null,"STR1":"1","STR2":"foo","INT1":1,"INT2":null}},
+{"delete": {"ID1":3,"ID2":null,"STR1":"1","STR2":"2","INT1":3,"INT2":33}},
+{"insert": {"ID1":2,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}}])
+    );
 
     // Shutdown the pipeline
     let resp = config

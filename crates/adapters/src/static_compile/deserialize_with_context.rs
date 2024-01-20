@@ -455,7 +455,7 @@ deserialize_struct!(NeighborhoodDescr(K, V: Default)[4]{
 /// - On error, reports the name of the field that failed to parse.
 #[macro_export]
 macro_rules! deserialize_table_record {
-    ($table:ident[$sql_table:tt, $num_cols:expr]{$(($field_name:ident, $column_name:tt, $case_sensitive:tt, $type:ty, $init:expr)),* }) => {
+    ($table:ident[$sql_table:tt, $num_cols:expr]{$(($field_name:ident, $column_name:tt, $case_sensitive:tt, $type:ty, $init:expr $(, $postprocess:expr)*)),* }) => {
         #[allow(non_snake_case)]
         #[allow(unused_variables)]
         #[allow(unused_mut)]
@@ -498,6 +498,7 @@ macro_rules! deserialize_table_record {
                                     // deserializer type `D`, so we instead encode it as a JSON
                                     // object, which the client will have to parse.
                                     $field_name = Some(map.next_value_seed(<$crate::DeserializationContext<$crate::SqlSerdeConfig, $type>>::new(self.context))
+                                                  $(.map($postprocess))*
                                                   .map_err(|e| serde::de::Error::custom(serde_json::to_string(&$crate::FieldParseError{field: $column_name.to_string(), description: e.to_string()}).unwrap()))?);
                                 } else
                             )*

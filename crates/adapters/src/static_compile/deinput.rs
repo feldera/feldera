@@ -3,8 +3,11 @@ use crate::{
     format::byte_record_deserializer,
     ControllerError, DeCollectionHandle, DeserializeWithContext,
 };
-use anyhow::{anyhow, Result as AnyResult};
-use dbsp::{algebra::ZRingValue, CollectionHandle, DBData, DBWeight, InputHandle, UpsertHandle};
+use anyhow::{anyhow, bail, Result as AnyResult};
+use dbsp::{
+    algebra::ZRingValue, operator::Update, CollectionHandle, DBData, DBWeight, InputHandle,
+    UpsertHandle,
+};
 use std::{collections::VecDeque, marker::PhantomData};
 
 use super::SqlSerdeConfig;
@@ -362,6 +365,10 @@ where
         Ok(())
     }
 
+    fn update(&mut self, _data: &[u8]) -> AnyResult<()> {
+        bail!("update operation is not supported on this stream")
+    }
+
     fn reserve(&mut self, reservation: usize) {
         self.updates.reserve(reservation);
     }
@@ -479,6 +486,10 @@ where
         Ok(())
     }
 
+    fn update(&mut self, _data: &[u8]) -> AnyResult<()> {
+        bail!("update operation is not supported on this stream")
+    }
+
     fn reserve(&mut self, reservation: usize) {
         self.updates.reserve(reservation);
     }
@@ -498,29 +509,46 @@ where
     }
 }
 
-pub struct DeMapHandle<K, KD, V, VD, F> {
-    handle: UpsertHandle<K, Option<V>>,
-    key_func: F,
-    phantom: PhantomData<fn(KD, VD)>,
+pub struct DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
+where
+    V: DBData,
+    U: DBData,
+{
+    handle: UpsertHandle<K, Update<V, U>>,
+    value_key_func: VF,
+    update_key_func: UF,
+    phantom: PhantomData<fn(KD, VD, UD)>,
 }
 
-impl<K, KD, V, VD, F> DeMapHandle<K, KD, V, VD, F> {
-    pub fn new(handle: UpsertHandle<K, Option<V>>, key_func: F) -> Self {
+impl<K, KD, V, VD, U, UD, VF, UF> DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
+where
+    V: DBData,
+    U: DBData,
+{
+    pub fn new(
+        handle: UpsertHandle<K, Update<V, U>>,
+        value_key_func: VF,
+        update_key_func: UF,
+    ) -> Self {
         Self {
             handle,
-            key_func,
+            value_key_func,
+            update_key_func,
             phantom: PhantomData,
         }
     }
 }
 
-impl<K, KD, V, VD, F> DeCollectionHandle for DeMapHandle<K, KD, V, VD, F>
+impl<K, KD, V, VD, U, UD, VF, UF> DeCollectionHandle for DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
 where
     K: DBData + From<KD>,
     KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     V: DBData + From<VD>,
     VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    F: Fn(&V) -> K + Clone + Send + 'static,
+    U: DBData + From<UD>,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + 'static,
+    UF: Fn(&U) -> K + Clone + Send + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -533,11 +561,15 @@ where
                 KD,
                 V,
                 VD,
-                F,
+                U,
+                UD,
+                VF,
+                UF,
                 _,
             >::new(
                 self.handle.clone(),
-                self.key_func.clone(),
+                self.value_key_func.clone(),
+                self.update_key_func.clone(),
                 SqlSerdeConfig::default(),
             ))),
             RecordFormat::Json(flavor) => Ok(Box::new(DeMapStream::<
@@ -546,11 +578,15 @@ where
                 KD,
                 V,
                 VD,
-                F,
+                U,
+                UD,
+                VF,
+                UF,
                 _,
             >::new(
                 self.handle.clone(),
-                self.key_func.clone(),
+                self.value_key_func.clone(),
+                self.update_key_func.clone(),
                 SqlSerdeConfig::from(flavor),
             ))),
         }
@@ -569,24 +605,37 @@ where
 /// The [`delete`](`Self::delete`) method of this handle deserializes value
 /// `k` type `K` and buffers a `(k, None)` update for the underlying
 /// `UpsertHandle`.
-pub struct DeMapStream<De, K, KD, V, VD, F, C> {
-    updates: Vec<(K, Option<V>)>,
-    key_func: F,
-    handle: UpsertHandle<K, Option<V>>,
+pub struct DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
+where
+    V: DBData,
+    U: DBData,
+{
+    updates: Vec<(K, Update<V, U>)>,
+    value_key_func: VF,
+    update_key_func: UF,
+    handle: UpsertHandle<K, Update<V, U>>,
     config: C,
     deserializer: De,
-    phantom: PhantomData<fn(KD, VD)>,
+    phantom: PhantomData<fn(KD, VD, UD)>,
 }
 
-impl<De, K, KD, V, VD, F, C> DeMapStream<De, K, KD, V, VD, F, C>
+impl<De, K, KD, V, VD, U, UD, VF, UF, C> DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
 where
+    V: DBData,
+    U: DBData,
     De: DeserializerFromBytes<C>,
     C: Clone,
 {
-    pub fn new(handle: UpsertHandle<K, Option<V>>, key_func: F, config: C) -> Self {
+    pub fn new(
+        handle: UpsertHandle<K, Update<V, U>>,
+        value_key_func: VF,
+        update_key_func: UF,
+        config: C,
+    ) -> Self {
         Self {
             updates: Vec::new(),
-            key_func,
+            value_key_func,
+            update_key_func,
             handle,
             deserializer: De::create(config.clone()),
             config,
@@ -595,7 +644,8 @@ where
     }
 }
 
-impl<De, K, KD, V, VD, F, C> DeCollectionStream for DeMapStream<De, K, KD, V, VD, F, C>
+impl<De, K, KD, V, VD, U, UD, VF, UF, C> DeCollectionStream
+    for DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
 where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
@@ -603,20 +653,31 @@ where
     KD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
     V: DBData + From<VD>,
     VD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
-    F: Fn(&V) -> K + Clone + Send + 'static,
+    U: DBData + From<UD>,
+    UD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + 'static,
+    UF: Fn(&U) -> K + Clone + Send + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = V::from(self.deserializer.deserialize::<VD>(data)?);
-        let key = (self.key_func)(&val);
+        let key = (self.value_key_func)(&val);
 
-        self.updates.push((key, Some(val)));
+        self.updates.push((key, Update::Insert(val)));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = K::from(self.deserializer.deserialize::<KD>(data)?);
 
-        self.updates.push((key, None));
+        self.updates.push((key, Update::Delete));
+        Ok(())
+    }
+
+    fn update(&mut self, data: &[u8]) -> AnyResult<()> {
+        let upd = U::from(self.deserializer.deserialize::<UD>(data)?);
+        let key = (self.update_key_func)(&upd);
+
+        self.updates.push((key, Update::Update(upd)));
         Ok(())
     }
 
@@ -637,7 +698,8 @@ where
     fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(
             self.handle.clone(),
-            self.key_func.clone(),
+            self.value_key_func.clone(),
+            self.update_key_func.clone(),
             self.config.clone(),
         ))
     }
@@ -785,7 +847,8 @@ mod test {
             Runtime::init_circuit(workers, |circuit| {
                 let (zset, zset_handle) = circuit.add_input_zset::<TestStruct, i64>();
                 let (set, set_handle) = circuit.add_input_set::<TestStruct, i64>();
-                let (map, map_handle) = circuit.add_input_map::<i64, TestStruct, i64>();
+                let (map, map_handle) = circuit
+                    .add_input_map::<i64, TestStruct, TestStruct, i64>(Box::new(|v, u| *v = u));
 
                 let zset_output = zset.output();
                 let set_output = set.output();
@@ -801,8 +864,11 @@ mod test {
 
         let de_zset = DeZSetHandle::new(zset_input);
         let de_set = DeSetHandle::new(set_input);
-        let de_map: DeMapHandle<i64, i64, _, _, _> =
-            DeMapHandle::new(map_input, |test_struct: &TestStruct| test_struct.id);
+        let de_map: DeMapHandle<i64, i64, _, _, _, _, _, _> = DeMapHandle::new(
+            map_input,
+            |test_struct: &TestStruct| test_struct.id,
+            |test_struct: &TestStruct| test_struct.id,
+        );
 
         (
             dbsp,

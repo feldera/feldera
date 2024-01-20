@@ -1,5 +1,5 @@
 use crate::{
-    test::{wait, MockDeZSet, TestStruct, DEFAULT_TIMEOUT_MS},
+    test::{wait, MockDeZSet, MockUpdate, TestStruct, DEFAULT_TIMEOUT_MS},
     InputFormat,
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
@@ -216,7 +216,7 @@ impl TestProducer {
 /// Consumer thread: read from output topic, deserialize to a shared buffer.
 pub struct BufferConsumer {
     thread_handle: Option<JoinHandle<()>>,
-    buffer: MockDeZSet<TestStruct>,
+    buffer: MockDeZSet<TestStruct, TestStruct>,
     shutdown_flag: Arc<AtomicBool>,
 }
 
@@ -341,7 +341,10 @@ impl BufferConsumer {
         let mut received = self.buffer.state().flushed.clone();
         received.sort();
         assert_eq!(
-            expected.into_iter().map(|x| (x, true)).collect::<Vec<_>>(),
+            expected
+                .into_iter()
+                .map(|x| MockUpdate::Insert(x))
+                .collect::<Vec<_>>(),
             received
         );
     }

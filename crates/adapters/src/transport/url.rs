@@ -299,7 +299,7 @@ mod test {
 
     deserialize_without_context!(TestStruct);
 
-    fn n_recs(zset: &MockDeZSet<TestStruct>) -> usize {
+    fn n_recs(zset: &MockDeZSet<TestStruct, TestStruct>) -> usize {
         zset.state().flushed.len()
     }
 
@@ -309,7 +309,7 @@ mod test {
     ) -> (
         Box<dyn InputReader>,
         MockInputConsumer,
-        MockDeZSet<TestStruct>,
+        MockDeZSet<TestStruct, TestStruct>,
     )
     where
         F: Handler<Args> + Send + Copy,
@@ -348,7 +348,8 @@ format:
 "#
         );
 
-        mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap()
+        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
+            .unwrap()
     }
 
     /// Test normal successful data retrieval.
@@ -381,9 +382,8 @@ bar,false,-10
         // Unpause the endpoint, wait for the data to appear at the output.
         endpoint.start(0).unwrap();
         wait(|| n_recs(&zset) == test_data.len(), DEFAULT_TIMEOUT_MS);
-        for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
-            assert!(polarity);
-            assert_eq!(val, &test_data[i]);
+        for (i, upd) in zset.state().flushed.iter().enumerate() {
+            assert_eq!(upd.unwrap_insert(), &test_data[i]);
         }
         Ok(())
     }
@@ -520,9 +520,8 @@ bar,false,-10
         let n6 = n_recs(&zset);
         println!("{} more records took {n6_time} ms to arrive", n6 - n5);
 
-        for (i, (val, polarity)) in zset.state().flushed.iter().enumerate() {
-            assert!(polarity);
-            assert_eq!(val, &test_data[i]);
+        for (i, upd) in zset.state().flushed.iter().enumerate() {
+            assert_eq!(upd.unwrap_insert(), &test_data[i]);
         }
         Ok(())
     }

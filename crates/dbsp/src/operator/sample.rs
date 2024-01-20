@@ -330,6 +330,7 @@ where
 #[allow(clippy::type_complexity)]
 mod test {
     use crate::{
+        operator::input::Update,
         trace::{
             cursor::Cursor,
             test_batch::{batch_to_tuples, TestBatch},
@@ -378,13 +379,14 @@ mod test {
         circuit: &mut RootCircuit,
     ) -> AnyResult<(
         InputHandle<usize>,
-        UpsertHandle<i32, Option<i32>>,
+        UpsertHandle<i32, Update<i32, i32>>,
         OutputHandle<OrdZSet<Tup2<i32, i32>, i32>>,
         OutputHandle<OrdZSet<Tup2<i32, i32>, i32>>,
         OutputHandle<OrdIndexedZSet<i32, i32, i32>>,
     )> {
         let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
-        let (input_stream, input_handle) = circuit.add_input_map::<i32, i32, i32>();
+        let (input_stream, input_handle) =
+            circuit.add_input_map::<i32, i32, i32, i32>(Box::new(|v, u| *v = u));
 
         let sample_handle = input_stream
             .shard()
@@ -495,10 +497,10 @@ mod test {
                 for (k, v, r) in batch.into_iter() {
                     match r.cmp(&0) {
                         Ordering::Greater => {
-                            input_handle.push(k, Some(v));
+                            input_handle.push(k, Update::Insert(v));
                         }
                         Ordering::Less => {
-                            input_handle.push(k, None);
+                            input_handle.push(k, Update::Delete);
                         }
                         _ => (),
                     }

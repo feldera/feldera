@@ -25,7 +25,7 @@ use std::{
 use uuid::Uuid;
 
 /// Wait to receive all records in `data` in the same order.
-fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
+fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
     wait(
@@ -34,12 +34,12 @@ fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct
     );
 
     for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
-        assert_eq!(&zset.state().flushed[i].0, val);
+        assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
     }
 }
 
 /// Wait to receive all records in `data` in some order.
-fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStruct>]) {
+fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
     wait(
@@ -57,10 +57,7 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct>, data: &[Vec<TestStru
         .state()
         .flushed
         .iter()
-        .map(|(val, polarity)| {
-            assert!(polarity);
-            val.clone()
-        })
+        .map(|upd| upd.unwrap_insert().clone())
         .collect::<Vec<_>>();
     zset_sorted.sort();
 
@@ -653,7 +650,8 @@ format:
     );
 
     let (reader, consumer, _input_handle) =
-        mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
+        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
+            .unwrap();
     consumer.on_error(Some(Box::new(|_, _| {})));
     reader.start(0).unwrap();
     wait(|| consumer.state().endpoint_error.is_some(), 60000).unwrap();
@@ -677,7 +675,8 @@ format:
 "#;
 
     let (reader, consumer, _input_handle) =
-        mock_input_pipeline::<TestStruct>(serde_yaml::from_str(config_str).unwrap()).unwrap();
+        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(config_str).unwrap())
+            .unwrap();
     consumer.on_error(Some(Box::new(|_, _| {})));
     reader.start(0).unwrap();
     wait(|| consumer.state().endpoint_error.is_some(), 60000).unwrap();
@@ -703,7 +702,8 @@ format:
     info!("proptest_kafka_input: Building input pipeline");
 
     let (endpoint, _consumer, zset) =
-        mock_input_pipeline::<TestStruct>(serde_yaml::from_str(&config_str).unwrap()).unwrap();
+        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
+            .unwrap();
     consumer.on_error(Some(Box::new(|fatal, error| {
         // It's normal for Kafka to emit errors, but not fatal ones.
         if fatal {

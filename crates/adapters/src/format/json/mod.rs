@@ -69,6 +69,10 @@ pub struct InsDelUpdate<T> {
     /// from the table.
     #[serde(skip_serializing_if = "Option::is_none")]
     delete: Option<T>,
+    /// When present and not `null`, this field specifies an update to an
+    /// existing record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    update: Option<T>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]

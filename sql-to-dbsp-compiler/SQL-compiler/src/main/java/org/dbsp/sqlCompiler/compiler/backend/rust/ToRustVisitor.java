@@ -191,6 +191,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .increase();
         boolean first = true;
         for (DBSPTypeStruct.Field field: type.fields.values()) {
+            boolean isOption = false;
+            DBSPTypeUser user = field.type.as(DBSPTypeUser.class);
+            isOption = user != null && user.name.equals("Option");
             if (!first)
                 this.builder.append(",").newline();
             first = false;
@@ -214,12 +217,21 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(", ");
             field.type.accept(this.innerVisitor);
             this.builder.append(", ");
+            if (isOption)
+                this.builder.append("Some(");
             if (meta == null || meta.defaultValue == null) {
                 this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
             } else {
                 this.builder.append("Some(");
                 meta.defaultValue.accept(this.innerVisitor);
                 this.builder.append(")");
+            }
+            if (isOption)
+                this.builder.append(")");
+
+            if (isOption && user.typeArgs[0].mayBeNull) {
+                // Option<Option<...>>
+                this.builder.append(", |x| if x.is_none() { Some(None) } else {x}");
             }
             this.builder.append(")");
         }
@@ -406,11 +418,25 @@ public class ToRustVisitor extends CircuitVisitor {
         this.generateFromTrait(type);
         // Macro for serialization
         this.generateRenameMacro(operator.outputName, type, operator.metadata);
+
+        DBSPTypeStruct keyStructType = operator.getKeyStructType(
+                // TODO: this should be a fresh name.
+                operator.originalRowType.sanitizedName + "_key");
         // Generate key type definition
-        item = new DBSPStructItem(operator.getKeyStructType());
+        item = new DBSPStructItem(keyStructType);
+        item.accept(this.innerVisitor);
+
+        // Trait for serialization
+        this.generateFromTrait(keyStructType);
+        this.generateRenameMacro(item.type.name, item.type, operator.metadata);
+
+        DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
+                operator.originalRowType.sanitizedName + "_upsert");
+        // Generate key type definition
+        item = new DBSPStructItem(upsertStruct);
         item.accept(this.innerVisitor);
         // Trait for serialization
-        this.generateFromTrait(operator.getKeyStructType());
+        this.generateFromTrait(upsertStruct);
         this.generateRenameMacro(item.type.name, item.type, operator.metadata);
 
         this.writeComments(operator)
@@ -425,11 +451,41 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         ix.elementType.accept(this.innerVisitor);
         this.builder.append(", ");
+        upsertStruct.toTuple().accept(this.innerVisitor);
+        this.builder.append(", ");
         ix.weightType.accept(this.innerVisitor);
-        this.builder.append(">();").newline();
+        this.builder.append(">(").increase();
+        {
+            // Upsert update function
+            this.builder.append("Box::new(|updated: &mut ");
+            type.toTuple().accept(this.innerVisitor);
+            this.builder.append(", changes: ");
+            upsertStruct.toTuple().accept(this.innerVisitor);
+            this.builder.append("| {");
+            int index = 0;
+            for (DBSPTypeStruct.Field field: upsertStruct.fields.values()) {
+                String name = field.sanitizedName;
+                if (!keyStructType.hasField(field.name)) {
+                    this.builder.append("if let Some(")
+                            .append(name)
+                            .append(") = changes.")
+                            .append(index)
+                            .append(" { ")
+                            .append("updated.")
+                            .append(index)
+                            .append(" = ")
+                            .append(name)
+                            .append("; }")
+                            .newline();
+                }
+                index++;
+            }
+            this.builder.append("})");
+        }
+
+        this.builder.decrease().append(");").newline();
         if (!this.useHandles) {
             this.builder.append("catalog.register_input_map::<");
-            DBSPTypeStruct keyStructType = operator.getKeyStructType();
             keyStructType.toTuple().accept(this.innerVisitor);
             this.builder.append(", ");
             keyStructType.accept(this.innerVisitor);
@@ -438,15 +494,21 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(", ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(", ");
+            upsertStruct.toTuple().accept(this.innerVisitor);
+            this.builder.append(", ");
+            upsertStruct.accept(this.innerVisitor);
+            this.builder.append(", ");
             operator.getOutputIndexedZSetType().weightType.accept(this.innerVisitor);
-            this.builder.append(", _>(")
+            this.builder.append(", _, _>(")
                     .append(Utilities.doubleQuote(operator.getName()))
                     .append(", ")
                     .append(operator.outputName)
                     .append(".clone(), ")
-                    .append(this.handleName((operator)))
+                    .append(this.handleName(operator))
                     .append(", ");
             operator.getKeyFunc().accept(this.innerVisitor);
+            this.builder.append(", ");
+            operator.getUpdateKeyFunc(upsertStruct).accept(this.innerVisitor);
             this.builder.append(");")
                     .newline();
         } else {
