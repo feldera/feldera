@@ -9,7 +9,7 @@ ENV RUSTUP_HOME=$HOME/.rustup
 ENV CARGO_HOME=$HOME/.cargo
 # Adds python and rust binaries to thep path
 ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
-ENV RUST_VERSION=1.73.0
+ENV RUST_VERSION=1.75.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
 
 install-deps:
@@ -499,4 +499,3 @@ all-tests:
     BUILD +test-snowflake
     BUILD +integration-tests
     BUILD +ui-playwright-tests
-

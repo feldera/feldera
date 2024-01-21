@@ -18,31 +18,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: Add hyperbolic functions ([#1280](https://github.com/feldera/feldera/pull/1280))
 
 ### Fixed
+
 - pipeline-manager: fix a resource usage problem with http streaming under high load
   ([#1257](https://github.com/feldera/feldera/pull/1257))
-- SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
+- SQL: Changed the semantics of integer arithmetic to match SQL
+  standard ([#1247](https://github.com/feldera/feldera/pull/1247))
 - WebConsole: Connector name change doesn't reflect in the pipeline builder (#1238)
 - WebConsole: UI sends HTTP request in an infinite loop (#1085)
 - pipeline-manager: allow docs website to CORS allowed origins (#1285)
 
 ### Changed
+
 - Python demo and test scripts are standalone as they no longer depend on dbsp python library
   ([#1230](https://github.com/feldera/feldera/pull/1230))
 - pipeline-manager: update service endpoints to use names instead of IDs in URLs,
   and add PUT endpoint ([#1263](https://github.com/feldera/feldera/pull/1263))
-- SQL: Changed the semantics of integer arithmetic to match SQL standard ([#1247](https://github.com/feldera/feldera/pull/1247))
+- SQL: Changed the semantics of integer arithmetic to match SQL
+  standard ([#1247](https://github.com/feldera/feldera/pull/1247))
 - pipeline-manager: use names instead of IDs in API endpoints (#1214)
 - WebConsole: use names instead of IDs as an API entity identifier (#1214)
 - WebConsole: Bearer token expiration now triggers a background token refresh or redirects to a login page (#1100)
+- Minimal rust version required to build feldera increased to 1.75 (was 1.73).
 
 ## [0.7.0] - 2024-01-09
 
 ### Added
+
 - WebConsole: Add ability to edit connector configuration as JSON
 - SQL: Preliminary support for computations with bounded memory on unbounded
   streams ([#1197](https://github.com/feldera/feldera/pull/1197))
 
 ### Fixed
+
 - SQL: Changed semantics of division to match SQL standard
   ([#1201](https://github.com/feldera/feldera/pull/1201))
 - WebConsole: display AWS Cognito username in user profile dropdown (#1077)
@@ -50,19 +57,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.0] - 2023-12-19
 
 ### Fixed
+
 - WebConsole: Vendor logos now change color when in dark mode
 
 ### Changed
+
 - WebConsole: group.id Kafka connector configuration field is now optional
 - pipeline-manager: reference programs and connectors by name when creating pipelines (#1143)
 - pipeline-manager: update-program should allow any field to be updated (#1191)
 
 ### Added
+
 - SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
 - SQL: support for mathematical constant `PI` ([#1123](https://github.com/feldera/feldera/pull/1123))
 - WebConsole: 'Inspect connector' button in the connector list in Pipeline Builder that opens a non-editable popup
-- SQL: Support for user-defined functions, declared in SQL and implemented in Rust ([#1129](https://github.com/feldera/feldera/pull/1129))
-- SQL: support for other trigonometric functions supported by Calcite ([#1127](https://github.com/feldera/feldera/pull/1127))
+- SQL: Support for user-defined functions, declared in SQL and implemented in
+  Rust ([#1129](https://github.com/feldera/feldera/pull/1129))
+- SQL: support for other trigonometric functions supported by
+  Calcite ([#1127](https://github.com/feldera/feldera/pull/1127))
 - WebConsole: Add Settings page, add a view to manage API keys (#1136)
 
 ## [0.5.0] - 2023-12-05
@@ -82,12 +94,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1074](https://github.com/feldera/feldera/pull/1074))
 - SQL: support for trigonometric functions `sin` and `cos` ([#1118](https://github.com/feldera/feldera/pull/1118))
 - pipeline-manager: create and manage API keys via the REST API ([#1126](https://github.com/feldera/feldera/pull/1126))
-- pipeline-manager: expose authorization and security scheme through OpenAPI ([#1126](https://github.com/feldera/feldera/pull/1126))
+- pipeline-manager: expose authorization and security scheme through
+  OpenAPI ([#1126](https://github.com/feldera/feldera/pull/1126))
 
 ## [0.4.0] - 2023-11-21
 
-
 ### Fixed
+
 - [SQL] Fix bugs in parsing of KEY and FOREIGN KEY constraints
 - Use better defaults for running the pipeline-manager (#994)
   ([#1011](https://github.com/feldera/feldera/pull/1011))
@@ -126,12 +139,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.2] - 2023-11-10
 
 ### Fixed
-- Fix a bug in Pipeline Management table where sometimes pipeline action buttons do not send requests ([#1008](https://github.com/feldera/feldera/pull/1008))
+
+- Fix a bug in Pipeline Management table where sometimes pipeline action buttons do not send
+  requests ([#1008](https://github.com/feldera/feldera/pull/1008))
 - Fix pipeline with no program displays COMPILING status in Pipeline Management table
 
 ## [0.3.1] - 2023-11-09
 
 ### Fixed
+
 - Display package version below pipeline manager banner ([#988](https://github.com/feldera/feldera/pull/988))
 - Fix Data Browser regression where data rows become invalid after switching between relations
   ([#993](https://github.com/feldera/feldera/issues/993))
@@ -165,8 +181,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ability to pause/resume row updates in Data Inspection tables
   ([#603](https://github.com/feldera/feldera/issues/603))
 
-
 ### Fixed
+
 - Reduce Docker logging noise from Kafka connect and Redpanda.
 - Regression in pipeline shutdown logic
   ([#961](https://github.com/feldera/feldera/pull/961))
@@ -174,6 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2023-10-24
 
 ### Fixed
+
 - Avoid shutting down pipelines when they encounter
   errors during lifecycle state changes.
   ([#869](https://github.com/feldera/feldera/pull/869))
@@ -195,7 +212,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#859](https://github.com/feldera/feldera/issues/859))
 - Source and sink connector documentation
   ([#882](https://github.com/feldera/feldera/pull/882))
-- Enforce distinct outputs.  This is equivalent to applying
+- Enforce distinct outputs. This is equivalent to applying
   `SELECT DISTINCT` to each output view.
   ([#871](https://github.com/feldera/feldera/issues/871))
 - Ignore outermost `ORDER BY` clauses, which don't make
@@ -211,7 +228,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#787](https://github.com/feldera/feldera/issues/787))
 - Added a `--lenient` SQL compiler flag to allow views with multiple
   columns with the same name.
-- Added a demo based on the "Feldera: The Basics" tutorial.  People who don't
+- Added a demo based on the "Feldera: The Basics" tutorial. People who don't
   want to manually complete all steps in the tutorial can instead play with the
   pre-built pipeline.
   ([#822](https://github.com/feldera/feldera/pull/822))
@@ -256,12 +273,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixes a regression in the CSV parser where it rejected the last row as an invalid row if `\r\n` was used for line-endings
+- Fixes a regression in the CSV parser where it rejected the last row as an invalid row if `\r\n` was used for
+  line-endings
   ([#801](https://github.com/feldera/feldera/pull/801))
 - Clarify some label names for output connectors
   ([#802](https://github.com/feldera/feldera/issues/802))
 
 ### Enhanced
+
 - Made connector type icons look nicer in Pipeline Builder
 - Forbid empty group.id in Kafka form
   ([#840](https://github.com/feldera/feldera/issues/840))
@@ -326,20 +345,17 @@ Milestone [v0.1.4](https://github.com/feldera/feldera/milestone/1)
 - REST API: A Pipeline can now receive deletes for rows in the paused state
   ([#612](https://github.com/feldera/feldera/issues/612)).
 
-
 ### Removed
 
 - WebConsole: Removed the Auto Offset Reset option from the Kafka output
   connector configuration dialog (it only applies to Kafka inputs)
   ([#602](https://github.com/feldera/feldera/issues/602)).
 
-
 ## [0.1.1] - 2023-08-25
 
 - Docker: Reduce logging when running demo via docker-compose
   ([#575](https://github.com/feldera/feldera/issues/575)).
 - Docker: compose script now exposes the pipeline-manager on port 8080.
-
 
 ## [0.1.0] - 2023-08-25
 

@@ -36,7 +36,6 @@ To this end we set the following high-level objectives:
    business logic of their application, leaving it to the system to evaluate
    this logic efficiently.
 
-
 ## Architecture
 
 With Feldera Platform, users create data pipelines out of SQL programs and data
@@ -62,7 +61,8 @@ This repository comprises all the buildings blocks to run continuous analytics
 pipelines using Feldera Platform.
 
 * [web UI](web-console): a web interface for writing SQL, setting up connectors, and managing pipelines.
-* [pipeline-manager](crates/pipeline_manager): serves the web UI and is the REST API server for building and managing data pipelines.
+* [pipeline-manager](crates/pipeline_manager): serves the web UI and is the REST API server for building and managing
+  data pipelines.
 * [dbsp](crates/dbsp): the core [engine](#theory) that allows us to evaluate arbitrary queries incrementally.
 * [SQL compiler](sql-to-dbsp-compiler): translates SQL programs into DBSP programs.
 * [connectors](crates/adapters/): to stream data in and out of Feldera Platform pipelines.
@@ -87,7 +87,7 @@ Our [Getting Started](https://www.feldera.com/docs/intro) guide has more detaile
 ## Running Feldera from sources
 
 To run Feldera from sources, first install all the required
-[dependencies](CONTRIBUTING.md). This includes the Rust toolchain, Java (at
+[dependencies](CONTRIBUTING.md). This includes the Rust toolchain (at least 1.75), Java (at
 least JDK 19), Maven and Typescript.
 
 After that, the first step is to build the SQL compiler:
@@ -122,12 +122,12 @@ To learn more about Feldera Platform, we recommend going through the
 ## Contributing
 
 Most of the software in this repository is governed by an open-source license.
-We welcome contributions.  Here are some [guidelines](CONTRIBUTING.md).
+We welcome contributions. Here are some [guidelines](CONTRIBUTING.md).
 
 ## Theory
 
 Feldera Platform achieves its objectives by building on a solid mathematical
-foundation.  The formal model that underpins our system, called DBSP, is
+foundation. The formal model that underpins our system, called DBSP, is
 described in the accompanying paper:
 
 - [Budiu, Chajed, McSherry, Ryzhyk, Tannen. DBSP: Automatic
@@ -136,16 +136,16 @@ described in the accompanying paper:
   Canada](https://www.feldera.com/vldb23.pdf)
 
 - Here is [a presentation about DBSP](https://www.youtube.com/watch?v=iT4k5DCnvPU) at the 2023
-Apache Calcite Meetup.
+  Apache Calcite Meetup.
 
 The model provides two things:
 
 1. **Semantics.** DBSP defines a formal language of streaming operators and
-queries built out of these operators, and precisely specifies how these queries
-must transform input streams to output streams.
+   queries built out of these operators, and precisely specifies how these queries
+   must transform input streams to output streams.
 
 1. **Algorithm.** DBSP also gives an algorithm that takes an arbitrary query and
-generates an incremental dataflow program that implements this query correctly (in accordance
-with its formal semantics) and efficiently.  Efficiency here means, in a
-nutshell, that the cost of processing a set of input events is proportional to
-the size of the input rather than the entire state of the database.
+   generates an incremental dataflow program that implements this query correctly (in accordance
+   with its formal semantics) and efficiently. Efficiency here means, in a
+   nutshell, that the cost of processing a set of input events is proportional to
+   the size of the input rather than the entire state of the database.

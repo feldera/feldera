@@ -2770,7 +2770,6 @@ dependencies = [
 name = "feldera-storage"
 version = "0.1.0"
 dependencies = [
- "arcstr",
  "binrw",
  "clap 4.4.14",
  "crc32c",
@@ -2779,7 +2778,6 @@ dependencies = [
  "futures",
  "futures-locks",
  "glommio",
- "log",
  "metrics",
  "metrics-exporter-tcp",
  "monoio",
@@ -2791,7 +2789,6 @@ dependencies = [
  "proptest-state-machine",
  "rand 0.8.5",
  "rkyv",
- "size-of",
  "tempfile",
  "thiserror",
  "uuid",
