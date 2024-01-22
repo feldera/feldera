@@ -49,4 +49,5 @@ cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD
     --runner-working-directory="${WORKING_DIR_ABS}" \
     --sql-compiler-home="${SQL_COMPILER_DIR}" \
     --dbsp-override-path="${ROOT_DIR}" \
+    --allowed-origins="http://localhost:8080" \
     ${DB_CONNECTION_STRING}
