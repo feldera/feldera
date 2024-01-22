@@ -6,7 +6,7 @@ use std::{
     cmp::Ordering::{self, *},
     fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
-    ops::Range,
+    ops::{Bound, Range, RangeBounds},
     rc::Rc,
     sync::Arc,
 };
@@ -480,9 +480,17 @@ where
         let item = self.archived_item(index);
         item.0.deserialize(&mut Infallible).unwrap()
     }
+    unsafe fn aux(&self, index: usize) -> A {
+        let item = self.archived_item(index);
+        item.1.deserialize(&mut Infallible).unwrap()
+    }
     unsafe fn key_for_row(&self, row: u64) -> K {
         let index = (row - self.first_row) as usize;
         self.key(index)
+    }
+    unsafe fn aux_for_row(&self, row: u64) -> A {
+        let index = (row - self.first_row) as usize;
+        self.aux(index)
     }
 
     unsafe fn find_best_match<C>(
@@ -1220,8 +1228,22 @@ where
     }
 
     /// Returns a row group for a subset of the rows in this one.
-    pub fn subset(&self, subset: Range<u64>) -> Self {
-        assert!(subset.end <= self.len());
+    pub fn subset<B>(&self, range: B) -> Self
+    where
+        B: RangeBounds<u64>,
+    {
+        let start = match range.start_bound() {
+            Bound::Included(&index) => index,
+            Bound::Excluded(&index) => index + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&index) => index + 1,
+            Bound::Excluded(&index) => index,
+            Bound::Unbounded => self.len(),
+        };
+        let subset = start..end;
+
         let start = self.rows.start + subset.start;
         let end = start + (subset.end - subset.start);
         Self {
@@ -1405,6 +1427,16 @@ where
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn key(&self) -> Option<K> {
         self.position.key()
+    }
+
+    /// Returns the auxiliary data in the current row, or `None` if the cursor
+    /// is before or after the row group.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe.
+    pub unsafe fn aux(&self) -> Option<A> {
+        self.position.aux()
     }
 
     /// Returns the key and auxiliary data in the current row, or `None` if the
@@ -1686,6 +1718,9 @@ where
     unsafe fn key(&self) -> K {
         self.data.key_for_row(self.row)
     }
+    unsafe fn aux(&self) -> A {
+        self.data.aux_for_row(self.row)
+    }
     unsafe fn item(&self) -> (K, A) {
         self.data.item_for_row(self.row)
     }
@@ -1924,6 +1959,9 @@ where
     }
     pub unsafe fn key(&self) -> Option<K> {
         self.path().map(|path| path.key())
+    }
+    pub unsafe fn aux(&self) -> Option<A> {
+        self.path().map(|path| path.aux())
     }
     pub unsafe fn item(&self) -> Option<(K, A)> {
         self.path().map(|path| path.item())
