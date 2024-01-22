@@ -1,4 +1,19 @@
 //! A simple CLI app to benchmark different storage backends/scenarios.
+//!
+//! An example invocation:
+//!
+//! ```no-run
+//! cargo run --release --bin bench --features metrics-exporter-tcp -- --cache --threads 2 --total-size 4294967296 --path /path/to/disk
+//! ```
+//!
+//! Run `metrics-observer` in another terminal to see the metrics.
+//!
+//! There are still some issues with this benchmark to make it useful:
+//! - Unable to get read metrics in metrics-oberserver without adding a loop
+//!   around the read loop to make it much longer
+//! - Threads indicate they're done writing but are still writing, potentially
+//!   async code is just wrong/needs join.
+//! - One thread may be done writing before the other, needs a barrier.
 
 #![allow(async_fn_in_trait)]
 
@@ -85,7 +100,7 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
     let mut wbuffers = Vec::with_capacity(args.total_size / args.buffer_size);
     for _i in 0..args.total_size / args.buffer_size {
         let mut buf = allocate_buffer(args.buffer_size);
-        buf.resize(args.buffer_size, 0);
+        buf.resize(args.buffer_size, 0xff);
         wbuffers.push(buf);
     }
 
@@ -99,18 +114,15 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
             .await
             .expect("write failed");
     }
+    let ih = backend.complete(file).await.expect("complete failed");
     let write_time = start_write.elapsed();
 
-    let ih = backend.complete(file).await.expect("complete failed");
-
     let start_read = Instant::now();
-    let mut ops = vec![];
     for i in 0..args.total_size / args.buffer_size {
-        ops.push(backend.read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size));
-    }
-    for (i, op) in ops.into_iter().enumerate() {
-        let rr = op.await.unwrap_or_else(|_| panic!("read {i} failed"));
-
+        let rr = backend
+            .read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size)
+            .await
+            .expect("read failed");
         if args.verify {
             assert_eq!(rr.len(), args.buffer_size);
             assert_eq!(

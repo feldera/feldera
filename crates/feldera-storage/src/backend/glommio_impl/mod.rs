@@ -13,7 +13,6 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use glommio::io::DmaFile;
 use glommio::sync::RwLock;
-use metrics::counter;
 use uuid::Uuid;
 
 use crate::backend::{
@@ -85,7 +84,6 @@ impl StorageWrite for GlommioBackend {
         dma_buf.as_bytes_mut().copy_from_slice(&data);
 
         let written = files.get(&fd.0).unwrap().write_at(dma_buf, offset).await?;
-        counter!("disk_write_total").increment(data.len() as u64);
         assert_eq!(written, to_write);
         Ok(Rc::new(data))
     }
@@ -120,7 +118,6 @@ impl StorageRead for GlommioBackend {
         let files = self.files.read().await?;
         let file = files.get(&fd.0).unwrap();
         let dma_buf = file.read_at_aligned(offset, size).await?;
-        counter!("disk_read_total").increment(dma_buf.len() as u64);
         if dma_buf.len() != size {
             return Err(StorageError::ShortRead);
         }

@@ -5,14 +5,16 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::time::Instant;
 
 use futures_locks::RwLock;
-use metrics::{counter, describe_counter, Unit};
+use metrics::{counter, histogram};
 use monoio::fs::File;
 use uuid::Uuid;
 
 use crate::backend::{
-    FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageRead, StorageWrite,
+    describe_disk_metrics, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
+    StorageRead, StorageWrite,
 };
 use crate::buffer_cache::FBuf;
 
@@ -42,16 +44,7 @@ pub struct MonoioBackend {
 impl MonoioBackend {
     /// Instantiates a new backend.
     pub fn new<P: AsRef<Path>>(base: P) -> Self {
-        describe_counter!(
-            "disk_write_total",
-            Unit::Bytes,
-            "total number of bytes written to disk"
-        );
-        describe_counter!(
-            "disk_read_total",
-            Unit::Bytes,
-            "total number of bytes read from disk"
-        );
+        describe_disk_metrics();
         Self {
             base: base.as_ref().to_path_buf(),
             files: RwLock::new(HashMap::new()),
@@ -98,6 +91,7 @@ impl StorageWrite for MonoioBackend {
         data: FBuf,
     ) -> Result<Rc<FBuf>, StorageError> {
         let files = self.files.read().await;
+        let request_start = Instant::now();
         let (res, buf) = files
             .get(&fd.0)
             .unwrap()
@@ -105,7 +99,10 @@ impl StorageWrite for MonoioBackend {
             .write_all_at(data, offset)
             .await;
         res?;
-        counter!("disk_write_total").increment(buf.len() as u64);
+        counter!("disk.total_bytes_written").increment(buf.len() as u64);
+        counter!("disk.total_writes_success").increment(1);
+        histogram!("disk.write_latency").record(request_start.elapsed().as_secs_f64());
+
         Ok(Rc::new(buf))
     }
 
@@ -144,11 +141,14 @@ impl StorageRead for MonoioBackend {
 
         let files = self.files.read().await;
         let fm = files.get(&fd.0).unwrap();
+        let request_start = Instant::now();
         let (res, buf) = fm.file.read_at(buffer, offset).await;
-        counter!("disk_read_total").increment(buf.len() as u64);
-
         match res {
-            Ok(_) => {
+            Ok(_len) => {
+                counter!("disk.total_bytes_read").increment(buf.len() as u64);
+                counter!("disk.total_reads_success").increment(1);
+                histogram!("disk.read_latency").record(request_start.elapsed().as_secs_f64());
+
                 if size != buf.len() {
                     Err(StorageError::ShortRead)
                 } else {

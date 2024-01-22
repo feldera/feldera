@@ -4,7 +4,7 @@
 //! It forwards requests to a storage backend, but it also adds a buffer cache
 //! in front of the backend to serve reads faster if they are cached.
 
-use metrics::{counter, describe_counter};
+use metrics::counter;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -55,8 +55,6 @@ impl<B> BufferCache<B> {
     const TINY_LFU_SAMPLE_SIZE: usize = 42;
 
     pub fn with_backend(backend: B) -> Self {
-        describe_counter!("buffer_cache_hit", "total number of buffer cache hits");
-        describe_counter!("buffer_cache_miss", "total number of buffer cache misses");
         Self {
             cache: RefCell::new(WTinyLfuCache::new(
                 BufferCache::<B>::LFU_CACHE_SIZE,
@@ -166,10 +164,10 @@ impl<B: StorageRead> StorageRead for BufferCache<B> {
         size: usize,
     ) -> Result<Rc<FBuf>, StorageError> {
         if let Some(buf) = self.get(&(fd.into(), offset, size)) {
-            counter!("buffer_cache_hit").increment(1);
+            counter!("disk.buffer_cache_hit").increment(1);
             Ok(buf)
         } else {
-            counter!("buffer_cache_miss").increment(1);
+            counter!("disk.buffer_cache_miss").increment(1);
             match self.backend.read_block(fd, offset, size).await {
                 Ok(buf) => {
                     self.insert((fd.into(), offset, size), buf.clone());
