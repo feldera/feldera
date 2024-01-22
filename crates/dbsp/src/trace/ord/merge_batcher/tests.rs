@@ -146,7 +146,7 @@ fn count_tuples() {
     assert_eq!(has_tuples.tuples(), 1257);
 
     #[allow(clippy::type_complexity)]
-    let batcher: MergeBatcher<(u64, u64), u32, i64, OrdValBatch<u64, u64, u32, i64, u64>> =
+    let batcher: MergeBatcher<(u64, u64), u32, i64, OrdValBatch<u64, u64, u32, i64>> =
         MergeBatcher {
             sorter: has_tuples,
             time: 0,

@@ -27,7 +27,10 @@ mod merge_batcher;
 pub mod file;
 pub mod vec;
 
-pub use vec::VecIndexedZSet as OrdIndexedZSet;
-pub use vec::VecKeyBatch as OrdKeyBatch;
-pub use vec::VecValBatch as OrdValBatch;
-pub use vec::VecZSet as OrdZSet;
+pub use file::{FileIndexedZSet, FileKeyBatch, FileValBatch, FileZSet};
+pub use vec::{VecIndexedZSet, VecKeyBatch, VecValBatch, VecZSet};
+
+pub use VecIndexedZSet as OrdIndexedZSet;
+pub use VecKeyBatch as OrdKeyBatch;
+pub use VecValBatch as OrdValBatch;
+pub use VecZSet as OrdZSet;
