@@ -4,8 +4,11 @@
 // The code in this file is originally derived from the rkyv `AlignedVec`
 // type, and adapted for use within the Feldera storage engine.
 //
-// Original rkyv attribution of the code is MIT license with copyright:
-// Copyright © 2021 David Koloski.
+// Original rkyv attribution of the code:
+//
+// SPDX-FileCopyrightText: Copyright © 2021 David Koloski
+//
+// SPDX-License-Identifier: MIT
 
 use std::{
     alloc,
