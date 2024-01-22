@@ -21,24 +21,12 @@ Start the pipeline you created in Part 1 of the tutorial from a clean state:
 - If the pipeline is still running, click <icon icon="bx:stop-circle" /> to shutdown it down.
 - Click <icon icon="bx:play-circle" /> to restart the pipeline.
 
-Open the detailed view of the pipeline by clicking the <icon
-icon="bx:chevron-down" /> icon, copy the UUID of the pipeline and store it
-in an environment variable (this way you will be able to use
-`curl` commands in this tutorial verbatim):
-
-![Pipeline UUID](pipeline-uuid.png)
-
-```bash
-export PIPELINE_UUID=018a0ea6-9165-7e55-95f4-e5d865eeb272
-```
-
-
 ## Step 2. Subscribe to output changes
 
 Subscribe to changes to the `PREFERRED_VENDOR` view:
 
 ```bash
-curl -s -N -X 'POST' http://localhost:8080/v0/pipelines/${PIPELINE_UUID}/egress/PREFERRED_VENDOR?format=json | jq
+curl -s -N -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/egress/PREFERRED_VENDOR?format=json | jq
 ```
 
 You should see periodic heartbeat messages:
@@ -62,11 +50,10 @@ You should see periodic heartbeat messages:
 ## Step 3. Populate inputs
 
 In another terminal, use the following command to populate the `PART` table
-with the same data we entered manually in part 1 of the tutorial (make sure
-the `${PIPELINE_UUID}` variable is set in this terminal):
+with the same data we entered manually in part 1 of the tutorial:
 
 ```bash
-curl -X 'POST' http://localhost:8080/v0/pipelines/${PIPELINE_UUID}/ingress/PART?format=json -d '
+curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PART?format=json -d '
 {"insert": {"id": 1, "name": "Flux Capacitor"}}
 {"insert": {"id": 2, "name": "Warp Core"}}
 {"insert": {"id": 3, "name": "Kyber Crystal"}}'
@@ -80,12 +67,12 @@ Records are encoded as JSON objects with one key per table column.
 Next, we populate the other two tables:
 
 ```bash
-curl -X 'POST' http://localhost:8080/v0/pipelines/${PIPELINE_UUID}/ingress/VENDOR?format=json -d '
+curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/VENDOR?format=json -d '
 {"insert": {"id": 1, "name": "Gravitech Dynamics", "address": "222 Graviton Lane"}}
 {"insert": {"id": 2, "name": "HyperDrive Innovations", "address": "456 Warp Way"}}
 {"insert": {"id": 3, "name": "DarkMatter Devices", "address": "333 Singularity Street"}}'
 
-curl -X 'POST' http://localhost:8080/v0/pipelines/${PIPELINE_UUID}/ingress/PRICE?format=json -d '
+curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PRICE?format=json -d '
 {"insert": {"part": 1, "vendor": 2, "price": 10000}}
 {"insert": {"part": 2, "vendor": 1, "price": 15000}}
 {"insert": {"part": 3, "vendor": 3, "price": 9000}}'
@@ -149,7 +136,7 @@ that there is no `update` command.  Modifying a record amounts to deleting the
 old version and inserting the new one.
 
 ```bash
-curl -X 'POST' http://localhost:8080/v0/pipelines/${PIPELINE_UUID}/ingress/PRICE?format=json -d '
+curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PRICE?format=json -d '
 {"delete": {"part": 1, "vendor": 2, "price": 10000}}
 {"insert": {"part": 1, "vendor": 2, "price": 30000}}
 {"delete": {"part": 2, "vendor": 1, "price": 15000}}

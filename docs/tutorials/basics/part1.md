@@ -122,7 +122,7 @@ this example, the `PREFERRED_VENDOR` view is expressed in terms of the
 
 In order to run our SQL program, we must instantiate it as part of a _pipeline_.
 Navigate to the `Pipelines` section and click `ADD PIPELINE`.  Give the new
-pipeline a name, e.g., "Supply Chain Test Pipeline" and select "Supply Chain
+pipeline a name, e.g., "supply_chain" and select "Supply Chain
 Analytics" from the list of SQL programs.
 
 The selected program is visualized as a rectangle with a blue dot for each table
