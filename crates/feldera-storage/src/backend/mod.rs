@@ -13,6 +13,8 @@
 #![allow(async_fn_in_trait)]
 
 use std::rc::Rc;
+
+use metrics::{describe_counter, describe_histogram, Unit};
 use thiserror::Error;
 
 use crate::buffer_cache::FBuf;
@@ -86,6 +88,34 @@ impl PartialEq for StorageError {
             _ => false,
         }
     }
+}
+
+/// Adds descriptions for the metrics we expose.
+fn describe_disk_metrics() {
+    // Storage backend metrics.
+    describe_counter!("disk.total_writes_success", "total number of disk writes");
+    describe_counter!("disk.total_reads_success", "total number of disk reads");
+
+    describe_counter!(
+        "disk.total_bytes_written",
+        Unit::Bytes,
+        "total number of bytes written to disk"
+    );
+    describe_counter!(
+        "disk.total_bytes_read",
+        Unit::Bytes,
+        "total number of bytes read from disk"
+    );
+
+    describe_histogram!("disk.read_latency", Unit::Seconds, "Read request latency");
+    describe_histogram!("disk.write_latency", Unit::Seconds, "Write request latency");
+
+    // Buffer cache metrics.
+    describe_counter!("disk.buffer_cache_hit", "total number of buffer cache hits");
+    describe_counter!(
+        "disk.buffer_cache_miss",
+        "total number of buffer cache misses"
+    );
 }
 
 #[cfg(test)]
