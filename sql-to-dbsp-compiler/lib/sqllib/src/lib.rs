@@ -10,6 +10,7 @@ pub mod source;
 pub mod string;
 pub mod timestamp;
 
+use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
 pub use interval::LongInterval;
 pub use interval::ShortInterval;
@@ -29,6 +30,7 @@ use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Index;
+use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct DefaultOptSemigroup<T>(PhantomData<T>);
@@ -713,6 +715,12 @@ pub fn times_i32_ShortInterval(left: i32, right: ShortInterval) -> ShortInterval
 some_polymorphic_function2!(times, i32, i32, ShortInterval, ShortInterval, ShortInterval);
 
 /***** decimals ***** */
+
+#[inline(always)]
+pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<Decimal> {
+    let value = Decimal::from_str(s).ok()?;
+    Some(cast_to_decimal_decimal(value, precision, scale))
+}
 
 #[inline(always)]
 pub fn round_decimal<T>(left: Decimal, right: T) -> Decimal

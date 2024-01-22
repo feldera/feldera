@@ -64,7 +64,7 @@ public class CastTests extends BaseSQLTests {
                 new DBSPDoubleLiteral(12.0),
                 new DBSPStringLiteral("100100"),
                 DBSPLiteral.none(tenTwo),
-                new DBSPDecimalLiteral(tenFour, new BigDecimal(100103123))));
+                new DBSPDecimalLiteral(tenFour, new BigDecimal(100103))));
     }
 
     public void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
@@ -111,6 +111,13 @@ public class CastTests extends BaseSQLTests {
     @Test
     public void castFromFPTest() {
         String query = "SELECT T.COL1 + T.COL2 + T.COL3 + T.COL5 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPDoubleLiteral(100203245.0))));
+        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPDoubleLiteral(200225.0))));
+    }
+
+    @Test
+    public void decimalOutOfRange() {
+        this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
+                "cannot represent 100103123 as DECIMAL(10, 4)",
+                this.getEmptyIOPair());
     }
 }

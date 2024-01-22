@@ -202,7 +202,7 @@ pub fn cast_to_TimeN_time(value: Time) -> Option<Time> {
 /////////// cast to decimal
 
 #[inline]
-pub fn cast_to_decimal_b(value: bool, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_b(value: bool, precision: u32, scale: u32) -> Decimal {
     let result = if value {
         Decimal::one()
     } else {
@@ -212,7 +212,7 @@ pub fn cast_to_decimal_b(value: bool, precision: u32, scale: i32) -> Decimal {
 }
 
 #[inline]
-pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: u32) -> Decimal {
     let result = if value.unwrap() {
         Decimal::one()
     } else {
@@ -222,52 +222,69 @@ pub fn cast_to_decimal_bN(value: Option<bool>, precision: u32, scale: i32) -> De
 }
 
 #[inline]
-pub fn cast_to_decimal_decimal(value: Decimal, _precision: u32, scale: i32) -> Decimal {
-    //value.with_prec(precision as u64).with_scale(scale as i64)
+pub fn cast_to_decimal_decimal(value: Decimal, precision: u32, scale: u32) -> Decimal {
+    // make sure we can fit the left half of the number in the new wanted precision
+
+    // '1234.5678' -> DECIMAL(6, 2) is fine as the integer part fits in 4 digits
+    // but to DECIMAL(6, 3) would error as we can't fit '1234' in 3 digits
+
+    let int_part_precision = value
+        .trunc()
+        .mantissa()
+        .checked_abs()
+        .unwrap_or(i128::MAX) // i128::MIN and i128::MAX have the same number of digits
+        .checked_ilog10()
+        .map(|v| v + 1)
+        .unwrap_or(0);
+    let to_int_part_precision = precision - scale;
+
+    if to_int_part_precision < int_part_precision {
+        panic!("cannot represent {value} as DECIMAL({precision}, {scale})")
+    }
+
     let mut result = value;
-    result.rescale(scale as u32);
+    result.rescale(scale);
     result
 }
 
 #[inline]
-pub fn cast_to_decimal_decimalN(value: Option<Decimal>, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_decimalN(value: Option<Decimal>, precision: u32, scale: u32) -> Decimal {
     let result = value.unwrap();
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_d(value: F64, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_d(value: F64, precision: u32, scale: u32) -> Decimal {
     let result = Decimal::from_f64(value.into_inner()).unwrap();
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_dN(value: Option<F64>, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_dN(value: Option<F64>, precision: u32, scale: u32) -> Decimal {
     let result = Decimal::from_f64(value.unwrap().into_inner()).unwrap();
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_f(value: F32, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_f(value: F32, precision: u32, scale: u32) -> Decimal {
     let result = Decimal::from_f32(value.into_inner()).unwrap();
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_fN(value: Option<F32>, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_fN(value: Option<F32>, precision: u32, scale: u32) -> Decimal {
     let result = Decimal::from_f32(value.unwrap().into_inner()).unwrap();
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_s(value: String, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_s(value: String, precision: u32, scale: u32) -> Decimal {
     let result = value.trim().parse().unwrap();
-    println!("{}", result);
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: i32) -> Decimal {
+pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: u32) -> Decimal {
     let result = match value {
         None => Decimal::zero(),
         Some(x) => x.trim().parse().unwrap(),
@@ -279,25 +296,25 @@ macro_rules! cast_to_decimal {
     ($type_name: ident, $arg_type: ty) => {
         ::paste::paste! {
             #[inline]
-            pub fn [<cast_to_decimal_ $type_name> ]( value: $arg_type, precision: u32, scale: i32 ) -> Decimal {
+            pub fn [<cast_to_decimal_ $type_name> ]( value: $arg_type, precision: u32, scale: u32 ) -> Decimal {
                 let result = Decimal::[<from_ $arg_type>](value).unwrap();
                 cast_to_decimal_decimal(result, precision, scale)
             }
 
             #[inline]
-            pub fn [<cast_to_decimal_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: i32 ) -> Decimal {
+            pub fn [<cast_to_decimal_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: u32 ) -> Decimal {
                 let result = Decimal::[<from_ $arg_type>](value.unwrap()).unwrap();
                 cast_to_decimal_decimal(result, precision, scale)
             }
 
             #[inline]
-            pub fn [<cast_to_decimalN_ $type_name> ]( value: $arg_type, precision: u32, scale: i32 ) -> Option<Decimal> {
+            pub fn [<cast_to_decimalN_ $type_name> ]( value: $arg_type, precision: u32, scale: u32 ) -> Option<Decimal> {
                 let result = Some(Decimal::[<from_ $arg_type>](value).unwrap());
                 set_ps(result, precision, scale)
             }
 
             #[inline]
-            pub fn [<cast_to_decimalN_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: i32 ) -> Option<Decimal> {
+            pub fn [<cast_to_decimalN_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: u32 ) -> Option<Decimal> {
                 let value = value?;
                 [<cast_to_decimalN_ $type_name >](value, precision, scale)
             }
@@ -315,7 +332,7 @@ cast_to_decimal!(u, usize);
 /////////// cast to decimalN
 
 #[inline]
-fn set_ps(value: Option<Decimal>, precision: u32, scale: i32) -> Option<Decimal> {
+fn set_ps(value: Option<Decimal>, precision: u32, scale: u32) -> Option<Decimal> {
     value.map(|v| cast_to_decimal_decimal(v, precision, scale))
 }
 
@@ -325,7 +342,7 @@ pub fn cast_to_decimalN_nullN(_value: Option<()>, _precision: u32, _scale: i32) 
 }
 
 #[inline]
-pub fn cast_to_decimalN_b(value: bool, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_b(value: bool, precision: u32, scale: u32) -> Option<Decimal> {
     let result = if value {
         Some(Decimal::one())
     } else {
@@ -335,13 +352,13 @@ pub fn cast_to_decimalN_b(value: bool, precision: u32, scale: i32) -> Option<Dec
 }
 
 #[inline]
-pub fn cast_to_decimalN_bN(value: Option<bool>, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_bN(value: Option<bool>, precision: u32, scale: u32) -> Option<Decimal> {
     let result = value.map(|x| if x { Decimal::one() } else { Decimal::zero() });
     set_ps(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimalN_decimal(value: Decimal, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_decimal(value: Decimal, precision: u32, scale: u32) -> Option<Decimal> {
     let result = Some(value);
     set_ps(result, precision, scale)
 }
@@ -350,19 +367,19 @@ pub fn cast_to_decimalN_decimal(value: Decimal, precision: u32, scale: i32) -> O
 pub fn cast_to_decimalN_decimalN(
     value: Option<Decimal>,
     precision: u32,
-    scale: i32,
+    scale: u32,
 ) -> Option<Decimal> {
     set_ps(value, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimalN_d(value: F64, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_d(value: F64, precision: u32, scale: u32) -> Option<Decimal> {
     let result = Decimal::from_f64(value.into_inner());
     set_ps(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimalN_dN(value: Option<F64>, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_dN(value: Option<F64>, precision: u32, scale: u32) -> Option<Decimal> {
     let result = match value {
         None => None,
         Some(x) => Decimal::from_f64(x.into_inner()),
@@ -371,13 +388,13 @@ pub fn cast_to_decimalN_dN(value: Option<F64>, precision: u32, scale: i32) -> Op
 }
 
 #[inline]
-pub fn cast_to_decimalN_f(value: F32, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_f(value: F32, precision: u32, scale: u32) -> Option<Decimal> {
     let result = Decimal::from_f32(value.into_inner());
     set_ps(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimalN_fN(value: Option<F32>, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_fN(value: Option<F32>, precision: u32, scale: u32) -> Option<Decimal> {
     let result = match value {
         None => None,
         Some(x) => Decimal::from_f32(x.into_inner()),
@@ -386,7 +403,7 @@ pub fn cast_to_decimalN_fN(value: Option<F32>, precision: u32, scale: i32) -> Op
 }
 
 #[inline]
-pub fn cast_to_decimalN_s(value: String, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_s(value: String, precision: u32, scale: u32) -> Option<Decimal> {
     let result = match value.trim().parse() {
         Err(_) => Some(Decimal::zero()),
         Ok(x) => Some(x),
@@ -395,7 +412,7 @@ pub fn cast_to_decimalN_s(value: String, precision: u32, scale: i32) -> Option<D
 }
 
 #[inline]
-pub fn cast_to_decimalN_sN(value: Option<String>, precision: u32, scale: i32) -> Option<Decimal> {
+pub fn cast_to_decimalN_sN(value: Option<String>, precision: u32, scale: u32) -> Option<Decimal> {
     let result = match value {
         None => None,
         Some(x) => match x.trim().parse() {
