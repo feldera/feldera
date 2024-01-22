@@ -71,10 +71,8 @@ available for each connector. The available settings vary with the
 connector type. The connectors in the demo are already set up
 properly, so don't make changes.
 
-Click on "Add Connector" to see the types of connectors that Feldera Platform
-supports.  Input and output connectors are listed separately.  Apache
-[Kafka], the most widely used kind of connector, is listed twice
-because Feldera Platform supports it for both input and output:
+Click on "Add Connector" to see the types of connectors that Feldera
+Platform supports for input or output or both:
 
 ![Connector Creator](connector-creator.png)
 
@@ -139,7 +137,7 @@ row to see how it works:
 
 You can browse the table or view by clicking the the next or previous buttons in
 the bottom right corner of the table. In larger tables or views, a slider
-appears next to the back button. You can use it to jump to a given percentile in
+appears by the buttons. You can use it to jump to a given percentile in
 the table by moving the slider to the desired percentile position.
 
 When you're done with the pipeline, you can temporarily pause it by
