@@ -206,9 +206,7 @@ impl ApiServerConfig {
                     cors = cors.allowed_origin(origin);
                 }
             } else {
-                // Add this as a default origin so users can try out the
-                // REST API from the generated documentation
-                cors = cors.allowed_origin("https://www.feldera.com");
+                cors = cors.allow_any_origin();
             }
             cors.allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
                 .allowed_headers(vec![header::AUTHORIZATION, header::ACCEPT])
