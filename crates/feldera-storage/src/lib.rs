@@ -14,7 +14,7 @@ mod init {
     /// Note that this is a no-op on Windows platforms, hence it's not behind an
     /// architecture cfg.
     ///
-    /// TODO: We should raise a warning/abort if the fd limit is (still) too
+    /// TODO: We should raise a warning/abort if the fd limit is (still) too low
     /// e.g., due to hard-limit being set too low and display a message on
     /// how to fix it.
     #[ctor]
