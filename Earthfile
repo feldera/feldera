@@ -54,7 +54,13 @@ install-rust:
     RUN rustup --version
     RUN cargo --version
     RUN rustc --version
-    DO rust+INIT --keep_fingerprints=true
+    # Switch back to this once https://github.com/earthly/earthly/issues/3718 is resolved:
+    # DO rust+INIT --keep_fingerprints=true
+    # Do this until then:
+    ARG EARTHLY_TARGET_PROJECT_NO_TAG
+    ARG EARTHLY_GIT_BRANCH
+    ARG OS_RELEASE=$(md5sum /etc/os-release | cut -d ' ' -f 1)
+    DO rust+INIT --cache_prefix="${EARTHLY_TARGET_PROJECT_NO_TAG}#${EARTHLY_GIT_BRANCH}#${OS_RELEASE}#earthly-cargo-cache" --keep_fingerprints=true
 
 rust-sources:
     FROM +install-rust

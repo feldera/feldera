@@ -43,8 +43,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    runs-on: [self-hosted, skylake40]
-    needs: [pre_job]
+    runs-on: [ self-hosted, skylake40 ]
+    needs: [ pre_job ]
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     env:
       FORCE_COLOR: 1
@@ -90,8 +90,8 @@ jobs:
         run: earthly --version
 
       - name: Run CI
-        # run: earthly --verbose -P --ci --env-file-path .ci.env +all-tests
-        run: earthly --verbose -P --ci +all-tests
+        # run: earthly -P --ci --env-file-path .ci.env +all-tests
+        run: earthly -P --ci +all-tests
 
       - uses: actions/upload-artifact@v3
         if: always()
