@@ -53,7 +53,7 @@ import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
 
 import { useLocalStorage } from '@mantine/hooks'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { alpha, Button, useTheme } from '@mui/material'
+import { alpha, Button, Typography, useTheme } from '@mui/material'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -71,7 +71,9 @@ import {
   GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
   GridColDef,
   GridRenderCellParams,
+  GridRow,
   GridRowId,
+  GridRowProps,
   GridToolbarFilterButton,
   GridValueSetterParams,
   useGridApiRef
@@ -252,13 +254,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
     key: LS_PREFIX + 'settings/streaming/management/details/grid'
   })
 
-  return !pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError ? (
-    <Box
-      display='flex'
-      sx={{ m: 2 }}
-      justifyContent='center'
-      data-testid={`box-details-${pipelineRevisionQuery.data!.pipeline.name}`}
-    >
+  return (
+    <Box display='flex' sx={{ m: 2 }} justifyContent='center' data-testid={`box-details-${props.row.descriptor.name}`}>
       <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
         <Grid item xs={4}>
           <Card>
@@ -268,7 +265,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   <TextIcon size={24} fontSize={10} text='SQL' />
                 </ListItemIcon>
                 <ListItemText
-                  primary={pipelineRevisionQuery.data?.program.name || 'not set'}
+                  primary={props.row.descriptor.program_name || 'not set'}
                   secondaryTypographyProps={
                     {
                       'data-testid': 'box-pipeline-id',
@@ -276,7 +273,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                       variant: 'caption'
                     } as any
                   }
-                  secondary={pipelineRevisionQuery.data?.pipeline.pipeline_id || 'not set'}
+                  secondary={props.row.descriptor.pipeline_id || 'not set'}
                 />
               </ListItem>
               {state.current_status == PipelineStatus.RUNNING && (
@@ -344,8 +341,6 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         </Grid>
       </Grid>
     </Box>
-  ) : (
-    <Box>Loading...</Box>
   )
 }
 
@@ -354,24 +349,36 @@ function CustomDetailPanelToggle({
   value: isExpanded,
   row: row
 }: Pick<GridRenderCellParams<Pipeline>, 'value' | 'row'>) {
-  const [hasRevision, setHasRevision] = useState<boolean>(false)
+  const [hadRevision, setHadRevision] = useState<boolean>(false)
   const pipelineManagerQuery = usePipelineManagerQuery()
   const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(row.descriptor.name))
+  const hasRevision =
+    !pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data !== null
   useEffect(() => {
-    if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data != null) {
-      setHasRevision(true)
+    if (hasRevision) {
+      setHadRevision(true)
     }
-  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data])
+  }, [hasRevision, setHadRevision])
 
-  return (isExpanded ||
-    row.state.current_status === PipelineStatus.RUNNING ||
-    row.state.current_status === PipelineStatus.PAUSED) &&
-    hasRevision ? (
+  if (
+    (!isExpanded &&
+      row.state.current_status !== PipelineStatus.RUNNING &&
+      row.state.current_status !== PipelineStatus.PAUSED) ||
+    !hadRevision
+  ) {
+    return <></>
+  }
+
+  if (!pipelineRevisionQuery.data) {
+    return <></>
+  }
+
+  return (
     <IconButton
       size='small'
       tabIndex={-1}
       aria-label={isExpanded ? 'Close' : 'Open'}
-      data-testid={`button-expand-pipeline-${pipelineRevisionQuery.data!.pipeline.name}`}
+      data-testid={`button-expand-pipeline-${pipelineRevisionQuery.data.pipeline.name}`}
     >
       <ExpandMoreIcon
         sx={{
@@ -384,8 +391,6 @@ function CustomDetailPanelToggle({
         fontSize='inherit'
       />
     </IconButton>
-  ) : (
-    <></>
   )
 }
 
@@ -428,6 +433,26 @@ export default function PipelineTable() {
       valueGetter: params => params.row.descriptor.name,
       valueSetter: (params: GridValueSetterParams) => {
         return { ...params.row, descriptor: { ...params.row.descriptor, name: params.value } }
+      },
+      renderCell: (params: GridRenderCellParams<Pipeline>) => (
+        <Typography
+          variant='body2'
+          sx={{ color: 'text.primary' }}
+          data-testid={`box-pipeline-name-${params.row.descriptor.name}`}
+        >
+          {params.row.descriptor.name}
+        </Typography>
+      ),
+      renderHeader(params) {
+        return (
+          <Typography
+            fontSize={12}
+            sx={{ textTransform: 'uppercase', fontWeight: '530' }}
+            data-testid={`box-column-header-${params.field}`}
+          >
+            {params.field}
+          </Typography>
+        )
       }
     },
     {
@@ -444,7 +469,7 @@ export default function PipelineTable() {
       field: 'modification',
       headerName: 'Changes',
       flex: 1,
-      renderCell: (params: GridRenderCellParams) => {
+      renderCell: (params: GridRenderCellParams<Pipeline>) => {
         return <PipelineRevisionStatusChip pipeline={params.row} />
       }
     },
@@ -551,7 +576,8 @@ export default function PipelineTable() {
         getDetailPanelContent={getDetailPanelContent}
         slots={{
           toolbar: DataGridToolbar,
-          footer: DataGridFooter
+          footer: DataGridFooter,
+          row: DataGridRow
         }}
         rows={filteredData.length ? filteredData : rows}
         pageSizeOptions={[7, 10, 25, 50]}
@@ -574,9 +600,6 @@ export default function PipelineTable() {
           },
           footer: {
             children: btnAdd
-          },
-          row: {
-            'data-testid': 'box-pipeline-row'
           }
         }}
         detailPanelExpandedRowIds={expandedRows}
@@ -585,6 +608,10 @@ export default function PipelineTable() {
       />
     </Card>
   )
+}
+
+const DataGridRow = (props: GridRowProps) => {
+  return <GridRow data-testid={`box-grid-row-${props.row!.descriptor.name}`} {...props}></GridRow>
 }
 
 const usePipelineStatus = (params: { row: Pipeline }) => {

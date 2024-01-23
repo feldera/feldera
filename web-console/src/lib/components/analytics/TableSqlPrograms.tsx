@@ -27,31 +27,46 @@ import Typography from '@mui/material/Typography'
 import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-const getStatusChip = (status: ProgramStatus) =>
+const getStatusChipProps = (status: ProgramStatus) =>
   match(status)
     .with({ SqlError: P._ }, () => {
-      return { title: 'SQL Error', color: 'error' as const, tooltip: undefined }
+      return { label: 'SQL Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined }
     })
     .with({ RustError: P._ }, () => {
-      return { title: 'Rust Error', color: 'error' as const, tooltip: undefined }
+      return { label: 'Rust Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined }
     })
     .with({ SystemError: P._ }, () => {
-      return { title: 'System Error', color: 'error' as const, tooltip: undefined }
+      return { label: 'System Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined }
     })
     .with('Pending', () => {
-      return { title: 'Queued', color: 'primary' as const, tooltip: 'Waiting on another program to finish compilation' }
+      return {
+        label: 'Queued',
+        color: 'primary' as const,
+        'data-testid': 'box-status-queued',
+        tooltip: 'Waiting on another program to finish compilation'
+      }
     })
     .with('CompilingSql', () => {
-      return { title: 'Compiling sql', color: 'primary' as const, tooltip: undefined }
+      return {
+        label: 'Compiling sql',
+        color: 'primary' as const,
+        'data-testid': 'box-status-compiling-sql',
+        tooltip: undefined
+      }
     })
     .with('CompilingRust', () => {
-      return { title: 'Compiling binary', color: 'primary' as const, tooltip: undefined }
+      return {
+        label: 'Compiling binary',
+        color: 'primary' as const,
+        'data-testid': 'box-status-compiling-binary',
+        tooltip: undefined
+      }
     })
     .with('Success', () => {
-      return { title: 'Ready', color: 'success' as const, tooltip: undefined }
+      return { label: 'Ready', color: 'success' as const, 'data-testid': 'box-status-ready', tooltip: undefined }
     })
     .with('None', () => {
-      return { title: 'Unused', color: 'primary' as const, tooltip: undefined }
+      return { label: 'Unused', color: 'primary' as const, 'data-testid': 'box-status-unused', tooltip: undefined }
     })
     .exhaustive()
 
@@ -114,8 +129,24 @@ export const TableSqlPrograms = () => {
     {
       flex: 0.3,
       minWidth: 150,
-      headerName: 'Name',
       field: 'name',
+      headerName: 'Name',
+      renderCell: (params: GridRenderCellParams) => (
+        <Typography variant='body2' sx={{ color: 'text.primary' }} data-testid={`box-program-name-${params.row.name}`}>
+          {params.row.name}
+        </Typography>
+      ),
+      renderHeader(params) {
+        return (
+          <Typography
+            fontSize={12}
+            sx={{ textTransform: 'uppercase', fontWeight: '530' }}
+            data-testid={`box-column-header-${params.field}`}
+          >
+            {params.field}
+          </Typography>
+        )
+      },
       editable: true
     },
     {
@@ -123,7 +154,11 @@ export const TableSqlPrograms = () => {
       field: 'description',
       headerName: 'Description',
       renderCell: (params: GridRenderCellParams) => (
-        <Typography variant='body2' sx={{ color: 'text.primary' }}>
+        <Typography
+          variant='body2'
+          sx={{ color: 'text.primary' }}
+          data-testid={`box-program-description-${params.row.name}`}
+        >
           {params.row.description}
         </Typography>
       ),
@@ -134,10 +169,10 @@ export const TableSqlPrograms = () => {
       field: 'status',
       headerName: 'Status',
       renderCell: (params: GridRenderCellParams) => {
-        const status = getStatusChip(params.row.status)
+        const { tooltip, ...statusChipProps } = getStatusChipProps(params.row.status)
         return (
-          <Tooltip title={status.tooltip}>
-            <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
+          <Tooltip title={tooltip}>
+            <CustomChip rounded size='small' skin='light' {...statusChipProps} />
           </Tooltip>
         )
       }
