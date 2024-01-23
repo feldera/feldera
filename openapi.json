@@ -2328,8 +2328,8 @@
         "tags": [
           "Programs"
         ],
-        "summary": "Mark a program for compilation.",
-        "description": "Mark a program for compilation.\n\nThe client can track a program's compilation status by polling the\n`/program/{program_name}` or `/programs` endpoints, and\nthen checking the `status` field of the program object.",
+        "summary": "Deprecated. Mark a program for compilation.",
+        "description": "Deprecated. Mark a program for compilation.\n\nThe client can track a program's compilation status by polling the\n`/program/{program_name}` or `/programs` endpoints, and\nthen checking the `status` field of the program object.",
         "operationId": "compile_program",
         "parameters": [
           {
@@ -3994,13 +3994,6 @@
         "oneOf": [
           {
             "type": "string",
-            "description": "Initial state: program has been created or modified, but the user\nhasn't yet started compiling the program.",
-            "enum": [
-              "None"
-            ]
-          },
-          {
-            "type": "string",
             "description": "Compilation request received from the user; program has been placed\nin the queue.",
             "enum": [
               "Pending"
@@ -4015,7 +4008,7 @@
           },
           {
             "type": "string",
-            "description": "Compiling Rust -> executable in progress",
+            "description": "Compiling Rust -> executable in progress.",
             "enum": [
               "CompilingRust"
             ]

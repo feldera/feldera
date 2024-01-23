@@ -80,15 +80,12 @@ pub(crate) struct SqlCompilerMessage {
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub(crate) enum ProgramStatus {
-    /// Initial state: program has been created or modified, but the user
-    /// hasn't yet started compiling the program.
-    None,
     /// Compilation request received from the user; program has been placed
     /// in the queue.
     Pending,
     /// Compilation of SQL -> Rust in progress.
     CompilingSql,
-    /// Compiling Rust -> executable in progress
+    /// Compiling Rust -> executable in progress.
     CompilingRust,
     /// Compilation succeeded.
     #[cfg_attr(test, proptest(weight = 2))]

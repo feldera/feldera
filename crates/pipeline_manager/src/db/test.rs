@@ -199,7 +199,7 @@ async fn program_creation() {
         name: "test1".to_string(),
         description: "program desc".to_string(),
         version: res.1,
-        status: ProgramStatus::None,
+        status: ProgramStatus::Pending,
         schema: None,
         code: None,
     };
@@ -213,7 +213,7 @@ async fn program_creation() {
         name: "test1".to_string(),
         description: "program desc".to_string(),
         version: res.1,
-        status: ProgramStatus::None,
+        status: ProgramStatus::Pending,
         schema: None,
         code: Some("ignored".to_string()),
     };
@@ -227,7 +227,7 @@ async fn program_creation() {
         name: "test1".to_string(),
         description: "program desc".to_string(),
         version: res.1,
-        status: ProgramStatus::None,
+        status: ProgramStatus::Pending,
         schema: None,
         code: None,
     };
@@ -509,7 +509,7 @@ async fn update_status() {
         .get_program_by_id(tenant_id, program_id, false)
         .await
         .unwrap();
-    assert_eq!(ProgramStatus::None, desc.status);
+    assert_eq!(ProgramStatus::Pending, desc.status);
     handle
         .db
         .set_program_status_guarded(
@@ -1928,7 +1928,7 @@ impl Storage for Mutex<DbModel> {
                     program_id,
                     name: program_name.to_owned(),
                     description: program_description.to_owned(),
-                    status: ProgramStatus::None,
+                    status: ProgramStatus::Pending,
                     schema: None,
                     version,
                     code: Some(program_code.to_owned()),
@@ -2017,14 +2017,14 @@ impl Storage for Mutex<DbModel> {
                     }
                 }
                 // If the code is updated, it overrides the schema and status
-                // changes to the equivalent of NULL.
+                // changes back to Pending.
                 let mut has_code_changed = false;
                 if let Some(code) = program_code {
                     if *code != cur_code {
                         p.code = program_code.to_owned();
                         p.version.0 += 1;
                         p.schema = None;
-                        p.status = ProgramStatus::None;
+                        p.status = ProgramStatus::Pending;
                         has_code_changed = true;
                     }
                 }

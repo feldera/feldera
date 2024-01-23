@@ -36,7 +36,6 @@ impl ProgramStatus {
     /// Decode `ProgramStatus` from the values of `error` and `status` columns.
     fn from_columns(status_string: &str, error_string: Option<String>) -> Result<Self, DBError> {
         match status_string {
-            "none" => Ok(Self::None),
             "success" => Ok(Self::Success),
             "pending" => Ok(Self::Pending),
             "compiling_sql" => Ok(Self::CompilingSql),
@@ -57,7 +56,6 @@ impl ProgramStatus {
     }
     fn to_columns(&self) -> (Option<String>, Option<String>) {
         match self {
-            ProgramStatus::None => (Some("none".to_string()), None),
             ProgramStatus::Success => (Some("success".to_string()), None),
             ProgramStatus::Pending => (Some("pending".to_string()), None),
             ProgramStatus::CompilingSql => (Some("compiling_sql".to_string()), None),
@@ -249,7 +247,7 @@ pub(crate) async fn new_program(
     let query = "INSERT INTO program (id, version, tenant_id, name, description, 
                                       code, schema, status, error, status_since)
                  VALUES($1, 1, $2, $3, $4, $5, NULL, $6, $7, now());";
-    let (status, error) = ProgramStatus::None.to_columns();
+    let (status, error) = ProgramStatus::Pending.to_columns();
     let row = if let Some(txn) = txn {
         let stmt = txn.prepare_cached(query).await?;
         txn.execute(
@@ -330,7 +328,7 @@ pub(crate) async fn update_program(
                             description = COALESCE($4, description),
                             code = COALESCE($5, code),
                             version = $6,
-                            status = (CASE WHEN version = $6 THEN COALESCE($7, status) ELSE 'none' END),
+                            status = (CASE WHEN version = $6 THEN COALESCE($7, status) ELSE 'pending' END),
                             error = (CASE WHEN version = $6 THEN COALESCE($8, error) ELSE NULL END),
                             status_since = (CASE WHEN $10 THEN now() ELSE status_since END),
                             schema = (CASE WHEN $11 THEN NULL
