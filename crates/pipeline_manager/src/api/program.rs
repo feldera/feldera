@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    api::{examples, parse_string_param, ProgramStatus},
+    api::{examples, parse_string_param},
     auth::TenantId,
     db::{storage::Storage, DBError, ProgramId, Version},
 };
@@ -38,6 +38,7 @@ pub struct WithCodeQuery {
 
 /// Request to queue a program for compilation.
 #[derive(Deserialize, ToSchema)]
+#[allow(dead_code)] // Reason: this request type is deprecated
 pub(crate) struct CompileProgramRequest {
     /// Latest program version known to the client.
     version: Version,
@@ -371,7 +372,7 @@ async fn create_or_replace_program(
     }
 }
 
-/// Mark a program for compilation.
+/// Deprecated. Mark a program for compilation.
 ///
 /// The client can track a program's compilation status by polling the
 /// `/program/{program_name}` or `/programs` endpoints, and
@@ -398,46 +399,11 @@ async fn create_or_replace_program(
 )]
 #[post("/programs/{program_name}/compile")]
 async fn compile_program(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    request: HttpRequest,
-    body: web::Json<CompileProgramRequest>,
+    _state: WebData<ServerState>,
+    _tenant_id: ReqData<TenantId>,
+    _request: HttpRequest,
+    _body: web::Json<CompileProgramRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    // TODO: use transaction
-    let program_name = parse_string_param(&request, "program_name")?;
-    let descr = state
-        .db
-        .lock()
-        .await
-        .get_program_by_name(*tenant_id, &program_name, false, None)
-        .await?;
-    if descr.version != body.version {
-        return Err(DBError::OutdatedProgramVersion {
-            latest_version: descr.version,
-        }
-        .into());
-    }
-    // Do nothing if the program:
-    // * is already Pending (we don't want to requeue it for compilation),
-    // * if compilation is already in progress,
-    // * or if the program has already been compiled
-    if descr.status == ProgramStatus::Pending
-        || descr.status.is_compiling()
-        || descr.status == ProgramStatus::Success
-    {
-        return Ok(HttpResponse::Accepted().finish());
-    }
-    state
-        .db
-        .lock()
-        .await
-        .set_program_status_guarded(
-            *tenant_id,
-            descr.program_id,
-            body.version,
-            ProgramStatus::Pending,
-        )
-        .await?;
     Ok(HttpResponse::Accepted().finish())
 }
 
