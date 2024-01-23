@@ -13,7 +13,7 @@ import { Children, Dispatch, MutableRefObject, ReactNode, useEffect, useState } 
 import { ErrorBoundary } from 'react-error-boundary'
 
 import Card from '@mui/material/Card'
-import { GridValidRowModel } from '@mui/x-data-grid-pro'
+import { GridRow, GridRowProps, GridValidRowModel } from '@mui/x-data-grid-pro'
 import { GridApiPro } from '@mui/x-data-grid-pro/models/gridApiPro'
 import { UseQueryResult } from '@tanstack/react-query'
 
@@ -42,6 +42,10 @@ export type EntityTableProps<TData extends GridValidRowModel> = {
   apiRef?: MutableRefObject<GridApiPro>
   toolbarChildren?: ReactNode
   footerChildren?: ReactNode
+}
+
+const DataGridRow = (props: GridRowProps) => {
+  return <GridRow data-testid={`box-grid-row-${props.row!.name}`} {...props}></GridRow>
 }
 
 const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TData>) => {
@@ -77,7 +81,8 @@ const EntityTable = <TData extends GridValidRowModel>(props: EntityTableProps<TD
         apiRef={props.apiRef}
         slots={{
           toolbar: DataGridToolbar,
-          footer: DataGridFooter
+          footer: DataGridFooter,
+          row: DataGridRow
         }}
         rows={filteredData.length ? filteredData : tableProps.rows}
         pageSizeOptions={ROWS_PER_PAGE_OPTIONS}

@@ -223,11 +223,7 @@ export const PipelineConfigDiffDialog = (props: DialogProps) => {
   )
 }
 
-export interface Props {
-  pipeline: Pipeline
-}
-
-export const PipelineRevisionStatusChip = (props: Props) => {
+export const PipelineRevisionStatusChip = (props: { pipeline: Pipeline }) => {
   const pipeline = props.pipeline.descriptor
   // note: for diffCount we only keep the added and removed lines in the
   // Change[] arrays and throw out the unchanged entries, see `diffLines` below.

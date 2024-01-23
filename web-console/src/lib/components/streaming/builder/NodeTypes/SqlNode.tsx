@@ -124,6 +124,7 @@ export function SqlNode({ id, data }: NodeProps<{ label: string; program: Progra
                 onDelete,
                 'You can add it back later.'
               )}
+              data-testid='button-remove-program'
             >
               <IconX fontSize={20} />
             </IconButton>

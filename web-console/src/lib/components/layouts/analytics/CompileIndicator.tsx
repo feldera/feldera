@@ -17,7 +17,7 @@ export const CompileIndicator = (props: { state: ProgramStatus }) => {
   const labelCompiling = 'Compiling …'
   const labelPending = 'In queue'
 
-  const loadingIcon = <CircularProgress color='inherit' size='1rem' />
+  const loadingIcon = <CircularProgress data-testid='box-spinner' color='inherit' size='1rem' />
   const doneIcon = <DoneIcon />
   const errIcon = <ErrorOutlineIcon />
 

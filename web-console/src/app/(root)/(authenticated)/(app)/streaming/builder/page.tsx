@@ -404,8 +404,8 @@ export default () => {
   invariant(pipeline, 'Pipeline should be initialized with a default value')
 
   useEffect(() => {
-    setPipelineName(pipeline.name)
-  }, [pipeline.name, setPipelineName])
+    setPipelineName(pipelineName)
+  }, [pipelineName, setPipelineName])
 
   // Clear loading state when pipeline is fetched
   useEffect(() => {
