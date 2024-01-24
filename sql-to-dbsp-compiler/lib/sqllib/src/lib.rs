@@ -18,7 +18,7 @@ pub use timestamp::Date;
 pub use timestamp::Time;
 pub use timestamp::Timestamp;
 
-use dbsp::algebra::{Semigroup, SemigroupValue, ZRingValue, F32, F64};
+use dbsp::algebra::{AddByRef, HasZero, NegByRef, Semigroup, SemigroupValue, ZRingValue, F32, F64};
 use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{
     utils::*, CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OrdZSet, OutputHandle,
@@ -1231,4 +1231,30 @@ where
     W: DBWeight,
 {
     handle.consolidate()
+}
+
+// Check that two zsets are equal.  If yes, returns true.
+// If not, print a diff of the zsets and returns false.
+// Assumes that the zsets are positive (all weights are positive).
+pub fn must_equal<K, W>(left: &OrdZSet<K, W>, right: &OrdZSet<K, W>) -> bool
+where
+    K: DBData + Clone,
+    W: DBWeight + ZRingValue,
+{
+    let diff = left.add_by_ref(&right.neg_by_ref());
+    if diff.is_zero() {
+        return true;
+    }
+    let mut cursor = diff.cursor();
+    while cursor.key_valid() {
+        let key = cursor.key().clone();
+        let weight = cursor.weight();
+        if weight.le0() {
+            println!("R: {:?}x{:?}", key, weight.neg());
+        } else {
+            println!("L: {:?}x{:?}", key, weight);
+        }
+        cursor.step_key();
+    }
+    false
 }

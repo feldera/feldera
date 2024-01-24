@@ -7,6 +7,10 @@
 
 pub mod gen;
 
+// Make sure to also call `dbsp_adapters::deserialize_without_context!`
+// and `sqlvalue::to_sql_row_impl!` for each new tuple type.
+// Also the compiler currently generates Tup11..Tup* if necessary,
+// so if e.g., we add Tup11 here the compiler needs to be adjusted too.
 crate::declare_tuples! {
     Tup1<T1>,
     Tup2<T1, T2>,

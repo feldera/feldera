@@ -16,7 +16,6 @@ use paste::paste;
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::*;
-use sqlvalue::{SqlRow, SqlValue, ToSqlRow};
 use sqlx::{
     any::AnyRow, migrate::MigrateDatabase, sqlite::SqliteConnection, sqlite::SqliteRow,
     AnyConnection, Connection, Executor, Row,

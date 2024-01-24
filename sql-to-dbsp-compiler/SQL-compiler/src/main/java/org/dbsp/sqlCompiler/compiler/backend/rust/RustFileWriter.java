@@ -154,7 +154,6 @@ public class RustFileWriter implements ICompilerComponent {
                         operators::*,
                         aggregates::*,
                     };
-                    #[cfg(test)]
                     use sqlvalue::*;
                     #[cfg(test)]
                     use readers::*;
@@ -178,6 +177,22 @@ public class RustFileWriter implements ICompilerComponent {
     @Override
     public DBSPCompiler getCompiler() {
         return this.compiler;
+    }
+
+    /** Generate TupN[T0, T1, ...] */
+    String tup(int count) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(DBSPTypeCode.TUPLE.rustName)
+                .append(count)
+                .append("<");
+        for (int j = 0; j < count; j++) {
+            if (j > 0)
+                builder.append(", ");
+            builder.append("T")
+                    .append(j);
+        }
+        builder.append(">");
+        return builder.toString();
     }
 
     void generateStructures(StructuresUsed used, IndentStream stream) {
@@ -270,16 +285,8 @@ public class RustFileWriter implements ICompilerComponent {
             if (i <= 10)
                 // These are already pre-declared
                 continue;
-            stream.append(DBSPTypeCode.TUPLE.rustName)
-                    .append(i)
-                    .append("<");
-            for (int j = 0; j < i; j++) {
-                if (j > 0)
-                    stream.append(", ");
-                stream.append("T")
-                        .append(j);
-            }
-            stream.append(">,\n");
+            stream.append(this.tup(i));
+            stream.append(",\n");
         }
         stream.decrease().append("}\n\n");
 
@@ -298,6 +305,16 @@ public class RustFileWriter implements ICompilerComponent {
             stream.append(");\n");
         }
         stream.append("\n");
+
+        stream.append("sqlvalue::to_sql_row_impl! {").increase();
+        for (int i: used.tupleSizesUsed) {
+            if (i <= 10)
+                // These are already pre-declared
+                continue;
+            stream.append(this.tup(i));
+            stream.append(",\n");
+        }
+        stream.decrease().append("}\n\n");
     }
 
     String generatePreamble(StructuresUsed used) {

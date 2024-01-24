@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -14,16 +13,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.path.DBSPPath;
-import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqllogictest.Main;
 import org.dbsp.util.Linq;
 import org.dbsp.util.TableValue;
@@ -35,7 +26,6 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
@@ -50,8 +40,6 @@ class InputFunctionGenerator {
     final DBSPCompiler compiler;
     final InputGenerator inputGenerator;
     final String connectionString;
-    @Nullable
-    private DBSPFunction streamInputFunction = null;
     @Nullable
     private DBSPFunction inputFunction = null;
 
@@ -118,78 +106,8 @@ class InputFunctionGenerator {
                 result.getType(), result, Linq.list());
     }
 
-    /**
-     * Example generated code for the function body:
-     * let mut vec = Vec::new();
-     * vec.push((data.0, zset!(), zset!(), zset!()));
-     * vec.push((zset!(), data.1, zset!(), zset!()));
-     * vec.push((zset!(), zset!(), data.2, zset!()));
-     * vec.push((zset!(), zset!(), zset!(), data.3));
-     * vec
-     */
-    DBSPFunction createStreamInputFunction(
-            DBSPFunction inputGeneratingFunction) {
-        DBSPTypeRawTuple inputType = Objects.requireNonNull(inputGeneratingFunction.returnType).to(DBSPTypeRawTuple.class);
-        DBSPType returnType = new DBSPTypeVec(inputType, false);
-        DBSPVariablePath vec = returnType.var("vec");
-        DBSPLetStatement input = new DBSPLetStatement("data", inputGeneratingFunction.call());
-        List<DBSPStatement> statements = new ArrayList<>();
-        statements.add(input);
-        DBSPLetStatement let = new DBSPLetStatement(vec.variable,
-                new DBSPPath("Vec", "new").toExpression().call(), true);
-        statements.add(let);
-        if (this.compiler.options.languageOptions.incrementalize) {
-            for (int i = 0; i < inputType.tupFields.length; i++) {
-                DBSPExpression field = input.getVarReference().field(i);
-                DBSPExpression elems = new DBSPApplyExpression("to_elements",
-                        DBSPTypeAny.getDefault(), field.borrow());
-
-                DBSPVariablePath e = DBSPTypeAny.getDefault().var("e");
-                DBSPExpression[] fields = new DBSPExpression[inputType.tupFields.length];
-                for (int j = 0; j < inputType.tupFields.length; j++) {
-                    DBSPType fieldType = inputType.tupFields[j];
-                    if (i == j) {
-                        fields[j] = e.applyClone();
-                    } else {
-                        fields[j] = new DBSPApplyExpression("zset!", fieldType);
-                    }
-                }
-                DBSPExpression projected = new DBSPRawTupleExpression(fields);
-                DBSPExpression lambda = projected.closure(e.asParameter());
-                DBSPExpression iter = new DBSPApplyMethodExpression(
-                        "iter", DBSPTypeAny.getDefault(), elems);
-                DBSPExpression map = new DBSPApplyMethodExpression(
-                        "map", DBSPTypeAny.getDefault(), iter, lambda);
-                DBSPExpression expr = new DBSPApplyMethodExpression(
-                        "extend", new DBSPTypeVoid(), vec, map);
-                statements.add(expr.toStatement());
-            }
-            if (inputType.tupFields.length == 0) {
-                // This case will cause no invocation of the circuit, but we need
-                // at least one.
-                DBSPExpression expr = new DBSPApplyMethodExpression(
-                        "push", new DBSPTypeVoid(), vec, new DBSPRawTupleExpression());
-                statements.add(expr.toStatement());
-            }
-        } else {
-            DBSPExpression expr = new DBSPApplyMethodExpression(
-                    "push", new DBSPTypeVoid(), vec, input.getVarReference());
-            DBSPStatement statement = expr.toStatement();
-            statements.add(statement);
-        }
-        DBSPBlockExpression block = new DBSPBlockExpression(statements, vec);
-        return new DBSPFunction("stream_input", Linq.list(), returnType, block, Linq.list());
-    }
-
     void generate() throws IOException, SQLException {
         this.inputFunction = this.createInputFunction();
-        this.streamInputFunction = this.createStreamInputFunction(this.inputFunction);
-    }
-
-    public DBSPFunction getStreamInputFunction() throws IOException, SQLException {
-        if (this.streamInputFunction == null)
-            this.generate();
-        return this.streamInputFunction;
     }
 
     public DBSPFunction getInputFunction() throws IOException, SQLException {

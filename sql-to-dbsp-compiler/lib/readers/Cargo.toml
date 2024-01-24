@@ -18,5 +18,4 @@ rkyv = { version = "0.7.42", default-features = false, features = ["size_64"] }
 dbsp_adapters = { path = "../../../crates/adapters" }
 
 [dev-dependencies]
-
 dbsp_adapters = { path = "../../../crates/adapters" }
