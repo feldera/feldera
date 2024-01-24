@@ -6,9 +6,9 @@ use crate::{
         operator_traits::{BinaryOperator, Operator},
         Scope,
     },
-    trace::{Batch, BatchReader, Builder, Cursor},
+    trace::{ord::VecZSet, Batch, BatchReader, Builder, Cursor},
     utils::Tup2,
-    Circuit, DBData, DBWeight, OrdZSet, RootCircuit, Stream,
+    Circuit, DBData, DBWeight, RootCircuit, Stream,
 };
 use rand::thread_rng;
 use std::{borrow::Cow, cmp::min, marker::PhantomData};
@@ -59,7 +59,7 @@ where
     pub fn stream_sample_keys(
         &self,
         sample_size: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<B::Key, B::R>> {
+    ) -> Stream<RootCircuit, VecZSet<B::Key, B::R>> {
         self.circuit().region("stream_sample_keys", || {
             let stream = self.try_sharded_version();
 
@@ -86,7 +86,7 @@ where
     pub fn stream_sample_unique_key_vals(
         &self,
         sample_size: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<Tup2<B::Key, B::Val>, B::R>> {
+    ) -> Stream<RootCircuit, VecZSet<Tup2<B::Key, B::Val>, B::R>> {
         self.circuit().region("stream_sample_unique_key_vals", || {
             let stream = self.try_sharded_version();
 
@@ -134,7 +134,7 @@ where
     pub fn stream_key_quantiles(
         &self,
         num_quantiles: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<B::Key, B::R>> {
+    ) -> Stream<RootCircuit, VecZSet<B::Key, B::R>> {
         let sample_size = num_quantiles.apply(|num| num * num);
 
         self.stream_sample_keys(&sample_size).apply2_owned(
@@ -148,7 +148,7 @@ where
                     sample
                 } else {
                     let mut builder =
-                        <<OrdZSet<_, _> as Batch>::Builder>::with_capacity((), num_quantiles);
+                        <<VecZSet<_, _> as Batch>::Builder>::with_capacity((), num_quantiles);
                     for i in 0..num_quantiles {
                         let key = sample.layer.keys()[(i * sample_size) / num_quantiles].clone();
                         builder.push((key, HasOne::one()));
@@ -169,7 +169,7 @@ where
     pub fn stream_unique_key_val_quantiles(
         &self,
         num_quantiles: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<Tup2<B::Key, B::Val>, B::R>> {
+    ) -> Stream<RootCircuit, VecZSet<Tup2<B::Key, B::Val>, B::R>> {
         let sample_size = num_quantiles.apply(|num| num * num);
 
         self.stream_sample_unique_key_vals(&sample_size)
@@ -182,7 +182,7 @@ where
                     sample
                 } else {
                     let mut builder =
-                        <<OrdZSet<_, _> as Batch>::Builder>::with_capacity((), num_quantiles);
+                        <<VecZSet<_, _> as Batch>::Builder>::with_capacity((), num_quantiles);
                     for i in 0..num_quantiles {
                         let key = sample.layer.keys()[(i * sample_size) / num_quantiles].clone();
                         builder.push((key, HasOne::one()));
@@ -223,27 +223,27 @@ where
     }
 }
 
-impl<T> BinaryOperator<T, usize, OrdZSet<T::Key, T::R>> for SampleKeys<T>
+impl<T> BinaryOperator<T, usize, VecZSet<T::Key, T::R>> for SampleKeys<T>
 where
     T: BatchReader<Time = ()>,
     T::Key: DBData,
     T::Val: DBData,
     T::R: DBWeight + ZRingValue,
 {
-    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> OrdZSet<T::Key, T::R> {
+    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> VecZSet<T::Key, T::R> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
         if sample_size != 0 {
             let mut sample = Vec::with_capacity(sample_size);
             input_trace.sample_keys(&mut thread_rng(), sample_size, &mut sample);
 
-            let mut builder = <<OrdZSet<_, _> as Batch>::Builder>::with_capacity((), sample.len());
+            let mut builder = <<VecZSet<_, _> as Batch>::Builder>::with_capacity((), sample.len());
             for key in sample.into_iter() {
                 builder.push((key, HasOne::one()));
             }
             builder.done()
         } else {
-            <OrdZSet<_, _>>::empty(())
+            <VecZSet<_, _>>::empty(())
         }
     }
 }
@@ -279,7 +279,7 @@ where
     }
 }
 
-impl<T> BinaryOperator<T, usize, OrdZSet<Tup2<T::Key, T::Val>, T::R>> for SampleUniqueKeyVals<T>
+impl<T> BinaryOperator<T, usize, VecZSet<Tup2<T::Key, T::Val>, T::R>> for SampleUniqueKeyVals<T>
 where
     T: BatchReader<Time = ()>,
     T::Key: DBData,
@@ -290,7 +290,7 @@ where
         &mut self,
         input_trace: &T,
         &sample_size: &usize,
-    ) -> OrdZSet<Tup2<T::Key, T::Val>, T::R> {
+    ) -> VecZSet<Tup2<T::Key, T::Val>, T::R> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
         if sample_size != 0 {
@@ -315,13 +315,13 @@ where
             }
 
             let mut builder =
-                <<OrdZSet<_, _> as Batch>::Builder>::with_capacity((), sample_with_vals.len());
+                <<VecZSet<_, _> as Batch>::Builder>::with_capacity((), sample_with_vals.len());
             for key in sample_with_vals.into_iter() {
                 builder.push((key, HasOne::one()));
             }
             builder.done()
         } else {
-            <OrdZSet<_, _>>::empty(())
+            <VecZSet<_, _>>::empty(())
         }
     }
 }
@@ -333,11 +333,12 @@ mod test {
         operator::input::Update,
         trace::{
             cursor::Cursor,
+            ord::VecZSet,
             test_batch::{batch_to_tuples, TestBatch},
             BatchReader, Trace,
         },
         utils::Tup2,
-        CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
+        CollectionHandle, InputHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
         UpsertHandle,
     };
     use anyhow::Result as AnyResult;
@@ -349,8 +350,8 @@ mod test {
     ) -> AnyResult<(
         InputHandle<usize>,
         CollectionHandle<i32, Tup2<i32, i32>>,
-        OutputHandle<OrdZSet<i32, i32>>,
-        OutputHandle<OrdZSet<i32, i32>>,
+        OutputHandle<VecZSet<i32, i32>>,
+        OutputHandle<VecZSet<i32, i32>>,
     )> {
         let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
         let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32, i32>();
@@ -380,8 +381,8 @@ mod test {
     ) -> AnyResult<(
         InputHandle<usize>,
         UpsertHandle<i32, Update<i32, i32>>,
-        OutputHandle<OrdZSet<Tup2<i32, i32>, i32>>,
-        OutputHandle<OrdZSet<Tup2<i32, i32>, i32>>,
+        OutputHandle<VecZSet<Tup2<i32, i32>, i32>>,
+        OutputHandle<VecZSet<Tup2<i32, i32>, i32>>,
         OutputHandle<OrdIndexedZSet<i32, i32, i32>>,
     )> {
         let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
