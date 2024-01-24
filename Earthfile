@@ -84,6 +84,8 @@ clippy:
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
     DO rust+CARGO --args="clippy -- -D warnings"
+    ENV RUSTDOCFLAGS="-D warnings"
+    DO rust+CARGO --args="doc --no-deps"
 
 install-python-deps:
     FROM +install-deps
