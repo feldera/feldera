@@ -32,7 +32,8 @@ use rkyv::{
 /// buffer-cache.
 ///
 /// # Invariants
-/// - `data.as_ptr()` has 16-byte alignment
+/// - `data.as_ptr()` has 512-byte alignment: This is the minimal alignment
+///   required for Direct IO.
 pub struct FBuf {
     ptr: NonNull<u8>,
     cap: usize,
@@ -52,7 +53,7 @@ impl Drop for FBuf {
 
 impl FBuf {
     /// The alignment of the vector
-    pub const ALIGNMENT: usize = 16;
+    pub const ALIGNMENT: usize = 512;
 
     /// Maximum capacity of the vector.
     /// Dictated by the requirements of
