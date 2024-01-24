@@ -1,8 +1,5 @@
-/// The storage backend implementations.
 pub mod backend;
-/// This module contains a buffer cache that can be used to cache reads.
 pub mod buffer_cache;
-/// File based data format for feldera.
 pub mod file;
 
 mod init {

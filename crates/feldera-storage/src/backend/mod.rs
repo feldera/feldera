@@ -143,7 +143,8 @@ pub trait StorageControl {
     /// This removes the file from the storage backend and makes it unavailable
     /// for writing.
     ///
-    /// Use [`delete`] for deleting a file that has been completed.
+    /// Use [`delete`](Self::delete) for deleting a file that has been
+    /// completed.
     async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError>;
 }
 
