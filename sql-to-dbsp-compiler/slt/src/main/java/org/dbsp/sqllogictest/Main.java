@@ -74,7 +74,7 @@ public class Main {
 
         // Logger.INSTANCE.setLoggingLevel(Passes.class, 3);
         String[] args = {
-                "-v", "-x",
+                "-v", "-x", "-inc",
                 "-e", "hybrid",      // executor
         };
         if (argv.length > 0) {

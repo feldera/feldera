@@ -42,11 +42,9 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -100,9 +98,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Sql test executor that uses DBSP for query execution.
- */
+/** Sql test executor that uses DBSP for query execution. */
 public class DBSPExecutor extends SqlSltTestExecutor {
     private final boolean execute;
     public final CompilerOptions compilerOptions;
@@ -203,9 +199,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
             // Write the code to Rust files on the filesystem.
             DBSPFunction inputFunction = gen.getInputFunction();
-            DBSPFunction streamInputFunction = gen.getStreamInputFunction();
-            this.writeCodeToFile(compiler,
-                    Linq.list(inputFunction, streamInputFunction), codeGenerated);
+            this.writeCodeToFile(compiler, Linq.list(inputFunction), codeGenerated);
             this.startTest();
             if (this.execute) {
                 String[] extraArgs = new String[0];
@@ -321,7 +315,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
         return createTesterCode(
                     "tester" + suffix, dbsp,
-                    gen.getStreamInputFunction(),
+                    gen.getInputFunction(),
                     compiler.getTableContents(),
                     expectedOutput, testQuery.outputDescription);
     }
@@ -454,21 +448,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         // True if the output is a zset of vectors (generated for order by queries)
         boolean isVector = circuitOutputType.to(DBSPTypeZSet.class).elementType.is(DBSPTypeVec.class);
 
-        DBSPLetStatement inputStream = new DBSPLetStatement("_in_stream",
+        DBSPLetStatement inputStream = new DBSPLetStatement("_in",
                 inputGeneratingFunction.call());
         list.add(inputStream);
-        DBSPLetStatement createOutput = new DBSPLetStatement(
-                "output",
-                        new DBSPApplyExpression(
-                                "zset!", outputType.getFieldType(0)), true);
-        list.add(createOutput);
-
         DBSPVariablePath loopIndex = new DBSPVariablePath("_in", DBSPTypeAny.getDefault());
-        List<DBSPStatement> loopBody = new ArrayList<>();
         for (int i = 0; i < circuit.getInputTables().size(); i++) {
             String inputI = circuit.getInputTables().get(i);
             int index = contents.getTableIndex(inputI);
-            loopBody.add(new DBSPApplyExpression("append_to_collection_handle", DBSPTypeAny.getDefault(),
+            list.add(new DBSPApplyExpression("append_to_collection_handle", DBSPTypeAny.getDefault(),
                     loopIndex.field(index).borrow(),
                     streams.getVarReference().field(i).borrow())
                     .toStatement());
@@ -477,25 +464,12 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 new DBSPLetStatement("_",
                         new DBSPApplyMethodExpression("step", DBSPTypeAny.getDefault(),
                         cas.getVarReference().field(0)).unwrap());
-        loopBody.add(step);
-        DBSPLetStatement partialOutput =
+        list.add(step);
+        DBSPLetStatement outputStatement =
                 new DBSPLetStatement("out",
                         new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
                                 streams.getVarReference().field(circuit.getInputTables().size()).borrow()));
-        loopBody.add(partialOutput);
-
-        DBSPForExpression loop = new DBSPForExpression(
-                loopIndex,
-                inputStream.getVarReference(),
-                new DBSPBlockExpression(
-                        loopBody,
-                        new DBSPAssignmentExpression(createOutput.getVarReference(),
-                                new DBSPApplyMethodExpression("add_by_ref", outputType,
-                                        createOutput.getVarReference(),
-                                        partialOutput.getVarReference().borrow()))
-                )
-        );
-        list.add(loop.toStatement());
+        list.add(outputStatement);
         DBSPExpression sort = new DBSPEnumValue("SortOrder", description.getOrder().toString());
 
         if (description.getExpectedOutputSize() >= 0) {
@@ -504,11 +478,11 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 count = new DBSPApplyExpression(
                         "weighted_vector_count",
                         new DBSPTypeUSize(CalciteObject.EMPTY, false),
-                        createOutput.getVarReference().borrow());
+                        outputStatement.getVarReference().borrow());
             } else {
                 count = new DBSPApplyMethodExpression("weighted_count",
                         new DBSPTypeUSize(CalciteObject.EMPTY, false),
-                        createOutput.getVarReference());
+                        outputStatement.getVarReference());
             }
             list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
                             new DBSPAsExpression(count, new DBSPTypeWeight()), new DBSPAsExpression(
@@ -535,11 +509,12 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 );
                 list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
                                 new DBSPApplyExpression(functionProducingStrings, DBSPTypeAny.getDefault(),
-                                        createOutput.getVarReference().borrow(), columnTypes, sort),
+                                        outputStatement.getVarReference().borrow(), columnTypes, sort),
                                  zset_to_strings.call(output.borrow(), columnTypes, sort)).toStatement());
             } else {
                 list.add(new DBSPApplyExpression(
-                        "assert_eq!", new DBSPTypeVoid(), createOutput.getVarReference().borrow(), output).toStatement());
+                        "assert_eq!", new DBSPTypeVoid(), outputStatement.getVarReference().borrow(), output)
+                        .toStatement());
             }
         } else {
             if (description.columnTypes == null)
@@ -550,7 +525,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             String hash = isVector ? "hash_vectors" : "hash";
             list.add(new DBSPLetStatement("_hash",
                     new DBSPApplyExpression(hash, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false),
-                            createOutput.getVarReference().borrow(),
+                            outputStatement.getVarReference().borrow(),
                             columnTypes,
                             sort)));
             list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),

@@ -623,7 +623,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression condition = null;
         DBSPExpression originalCondition = null;
         if (leftOver != null) {
-            DBSPVariablePath t = resultType.ref().var("t");
+            DBSPVariablePath t = lr.getType().ref().var("t");
             ExpressionCompiler expressionCompiler = new ExpressionCompiler(t, this.compiler);
             condition = expressionCompiler.compile(leftOver);
             if (condition.getType().mayBeNull)
@@ -649,31 +649,43 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.makeIndexedZSet(rightKey.getType(), rightElementType), false, filteredRight);
         this.circuit.addOperator(rIndex);
 
-        // For outer joins additional columns may become nullable.
-        DBSPTupleExpression allFields = lr.pointwiseCast(resultType);
-        DBSPClosureExpression makeTuple = allFields.closure(k.asParameter(), l.asParameter(), r.asParameter());
-        DBSPStreamJoinOperator joinResult = new DBSPStreamJoinOperator(node, this.makeZSet(resultType),
+        DBSPClosureExpression makeTuple = lr.closure(k.asParameter(), l.asParameter(), r.asParameter());
+        DBSPOperator joinResult = new DBSPStreamJoinOperator(node, this.makeZSet(lr.getType()),
                 makeTuple, left.isMultiset || right.isMultiset, leftIndex, rIndex);
 
+        // Save the result of the inner join here
         DBSPOperator inner = joinResult;
         if (originalCondition != null) {
-            DBSPBoolLiteral blit = originalCondition.as(DBSPBoolLiteral.class);
-            if (blit == null || blit.value == null || !blit.value) {
+            // Apply additional filters
+            DBSPBoolLiteral bLit = originalCondition.as(DBSPBoolLiteral.class);
+            if (bLit == null || bLit.value == null || !bLit.value) {
                 // Technically if blit.value == null or !blit.value then
                 // the filter is false, and the result is empty.  But hopefully
                 // the calcite optimizer won't allow that.
-                DBSPFilterOperator fop = new DBSPFilterOperator(node, condition, joinResult);
                 this.circuit.addOperator(joinResult);
-                inner = fop;
+                inner = new DBSPFilterOperator(node, condition, joinResult);
+                joinResult = inner;
             }
-            // if blit it true we don't need to filter.
+            // if bLit it true we don't need to filter.
+        }
+
+        if (!resultType.sameType(lr.getType())) {
+            // For outer joins additional columns may become nullable.
+            DBSPVariablePath t = new DBSPVariablePath("t", lr.getType().ref());
+            DBSPExpression[] casts = new DBSPExpression[lr.size()];
+            for (int index = 0; index < lr.size(); index++) {
+                casts[index] = t.deref().field(index).applyCloneIfNeeded().cast(resultType.getFieldType(index));
+            }
+            DBSPTupleExpression allFields = new DBSPTupleExpression(casts);
+            this.circuit.addOperator(joinResult);
+            joinResult = new DBSPMapOperator(node, allFields.closure(t.asParameter()),
+                    this.makeZSet(resultType), joinResult);
         }
 
         // Handle outer joins
-        DBSPOperator result = inner;
-        DBSPVariablePath joinVar = resultType.ref().var("j");
+        DBSPOperator result = joinResult;
+        DBSPVariablePath joinVar = lr.getType().ref().var("j");
         if (joinType == JoinRelType.LEFT || joinType == JoinRelType.FULL) {
-            DBSPVariablePath lCasted = leftResultType.ref().var("l");
             this.circuit.addOperator(result);
             // project the join on the left columns
             DBSPClosureExpression toLeftColumns =
@@ -705,6 +717,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTupleExpression rEmpty = new DBSPTupleExpression(
                     Linq.map(rightElementType.tupFields,
                              et -> DBSPLiteral.none(et.setMayBeNull(true)), DBSPExpression.class));
+            DBSPVariablePath lCasted = leftResultType.ref().var("l");
             DBSPClosureExpression leftRow = DBSPTupleExpression.flatten(lCasted.deref(), rEmpty).closure(
                     lCasted.asParameter());
             DBSPOperator expand = new DBSPMapOperator(node, leftRow, this.makeZSet(resultType), dist);
@@ -712,7 +725,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             result = new DBSPSumOperator(node, result, expand);
         }
         if (joinType == JoinRelType.RIGHT || joinType == JoinRelType.FULL) {
-            DBSPVariablePath rCasted = rightResultType.ref().var("r");
             this.circuit.addOperator(result);
 
             // project the join on the right columns
@@ -746,6 +758,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTupleExpression lEmpty = new DBSPTupleExpression(
                     Linq.map(leftElementType.tupFields,
                             et -> DBSPLiteral.none(et.setMayBeNull(true)), DBSPExpression.class));
+            DBSPVariablePath rCasted = rightResultType.ref().var("r");
             DBSPClosureExpression rightRow =
                     DBSPTupleExpression.flatten(lEmpty, rCasted.deref()).closure(
                     rCasted.asParameter());

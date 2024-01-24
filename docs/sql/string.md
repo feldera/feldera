@@ -248,7 +248,12 @@ SELECT 'h%wkeye' NOT LIKE 'h#%%' ESCAPE '#'    false
 SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#'   true
 ```
 
+When either argument or `LIKE`, `NOT LIKE` is `NULL`, the result is `NULL`.
+
 ## POSIX regular expressions
+
+Regular expressions are matched using the `RLIKE` function.  If either
+argument of `RLIKE` is `NULL`, the result is also `NULL`.
 
 The description below is from the [Postgres
 documentation](https://www.postgresql.org/docs/15/functions-matching.html#FUNCTIONS-POSIX-REGEXP),
@@ -259,7 +264,7 @@ matching than the `LIKE` and `SIMILAR TO` operators.  Many Unix tools
 such as `egrep`, `sed`, or `awk` use a pattern matching language that
 is similar to the one described here.
 
-Currently our compiler does not support `SIMILAR TO` regular
+Currently our compiler does *not* support `SIMILAR TO` regular
 expressions.
 
 A regular expression is a character sequence that is an abbreviated

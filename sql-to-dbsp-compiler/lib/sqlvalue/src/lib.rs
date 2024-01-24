@@ -4,6 +4,8 @@
 //! Tuple* types are used for computations, and they are converted
 //! to SqlRow objects when they need to be serialized as strings.
 
+#![allow(non_snake_case)]
+
 use dbsp::algebra::{F32, F64};
 use rust_decimal::Decimal;
 use sqllib::casts::*;
@@ -248,4 +250,42 @@ impl SqlLogicTestFormat for SqlValue {
             _ => panic!("Unexpected combination {:?} {:?}", self, arg),
         }
     }
+}
+
+#[macro_export]
+macro_rules! to_sql_row_impl {
+    (
+        $(
+            $tuple_name:ident<$($element:tt),* $(,)?>
+        ),*
+        $(,)?
+    ) => {
+        $(
+            impl<$($element),*> ToSqlRow for $tuple_name<$($element,)*> where
+                $(SqlValue: From<$element>,)*
+                $($element: Clone, )*
+            {
+                fn to_row(&self) -> SqlRow  {
+                    let mut result = SqlRow::new();
+                    let $tuple_name($($element),*) = self;
+                    $(result.push(SqlValue::from($element.clone()));)*
+                    result
+                }
+            }
+        )*
+    };
+}
+
+use dbsp::utils::{Tup1, Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9};
+crate::to_sql_row_impl! {
+    Tup1<T1>,
+    Tup2<T1, T2>,
+    Tup3<T1, T2, T3>,
+    Tup4<T1, T2, T3, T4>,
+    Tup5<T1, T2, T3, T4, T5>,
+    Tup6<T1, T2, T3, T4, T5, T6>,
+    Tup7<T1, T2, T3, T4, T5, T6, T7>,
+    Tup8<T1, T2, T3, T4, T5, T6, T7, T8>,
+    Tup9<T1, T2, T3, T4, T5, T6, T7, T8, T9>,
+    Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>,
 }

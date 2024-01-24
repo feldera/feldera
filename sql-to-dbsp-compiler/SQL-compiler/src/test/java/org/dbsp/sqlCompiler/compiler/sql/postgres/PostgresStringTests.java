@@ -1,13 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
-/**
- * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/strings.out
- */
+/** https://github.com/postgres/postgres/blob/master/src/test/regress/expected/strings.out */
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresStringTests extends SqlIoTest {
     @Override
@@ -224,40 +223,48 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testTrimConstant() {
-        this.q("""
+        this.qs("""
                 SELECT TRIM(BOTH FROM '  bunch o blanks  ') = 'bunch o blanks' AS "bunch o blanks";
                  bunch o blanks
                 ----------------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+                 
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
                  bunch o blanks
                 ------------------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+                
                 SELECT TRIM(TRAILING FROM '  bunch o blanks  ') = '  bunch o blanks' AS "  bunch o blanks";
                    bunch o blanks
                 ------------------
-                 t""");
+                 t
+                (1 row)
+                """);
     }
 
     @Test
     public void testTrim() {
-        this.q("""
+        this.qs("""
                 SELECT TRIM(BOTH FROM '  bunch o blanks  ') = 'bunch o blanks' AS "bunch o blanks";
                  bunch o blanks
                 ----------------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+                
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
                  bunch o blanks
                 ------------------
-                 t""");
-        this.q("""
+                 t
+                (1 row)
+
                 SELECT TRIM(TRAILING FROM '  bunch o blanks  ') = '  bunch o blanks' AS "  bunch o blanks";
                    bunch o blanks
                 ------------------
-                 t""");
+                 t
+                (1 row)
+                """);
     }
 
     @Test
@@ -361,87 +368,104 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test @Ignore("Not yet implemented")
     public void testRegexpReplace() {
-        this.q("""
+        this.qs("""
                 SELECT regexp_replace('1112223333', E'(\\\\d{3})(\\\\d{3})(\\\\d{4})', E'(\\\\1) \\\\2-\\\\3');
                  regexp_replace
                 ----------------
-                 (111) 222-3333""");
-        this.q("""
+                 (111) 222-3333
+                (1 row)
+
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\&Y', 'g');
                   regexp_replace
                 -------------------
-                 fXooYbaXrrYbaXzzY""");
-        this.q("""
+                 fXooYbaXrrYbaXzzY
+                (1 row)
+
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\\\\\Y', 'g');
                  regexp_replace
                 ----------------
-                 fX\\YbaX\\YbaX\\Y""");
-        this.q("""
+                 fX\\YbaX\\YbaX\\Y
+                (1 row)
+
                 SELECT regexp_replace('foobarrbazz', E'(.)\\\\1', E'X\\\\Y\\\\1Z\\\\');
                  regexp_replace
                 -----------------
-                 fX\\YoZ\\barrbazz""");
-        this.q("""
+                 fX\\YoZ\\barrbazz
+                (1 row)
+        
                 SELECT regexp_replace('AAA   BBB   CCC   ', E'\\\\s+', ' ', 'g');
                  regexp_replace
                 ----------------
-                 AAA BBB CCC\s""");
-        this.q("""
+                 AAA BBB CCC\\s
+                (1 row)
+        
                 SELECT regexp_replace('AAA', '^|$', 'Z', 'g');
                  regexp_replace
                 ----------------
-                 ZAAAZ""");
-        this.q("""
+                 ZAAAZ
+                (1 row)
+        
                 SELECT regexp_replace('AAA aaa', 'A+', 'Z', 'gi');
                  regexp_replace
                 ----------------
-                 Z Z""");
-        this.q("""
+                 Z Z
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1);
                     regexp_replace
                 -----------------------
-                 X PostgreSQL function""");
-        this.q("""
+                 X PostgreSQL function
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1, 2);
                     regexp_replace
                 -----------------------
-                 A PXstgreSQL function""");
-        this.q("""
+                 A PXstgreSQL function
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 0, 'i');
                     regexp_replace
                 -----------------------
-                 X PXstgrXSQL fXnctXXn""");
-        this.q("""
+                 X PXstgrXSQL fXnctXXn
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'i');
                     regexp_replace
                 -----------------------
-                 X PostgreSQL function""");
-        this.q("""
+                 X PostgreSQL function
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 2, 'i');
                     regexp_replace
                 -----------------------
-                 A PXstgreSQL function""");
-        this.q("""
+                 A PXstgreSQL function
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 3, 'i');
                     regexp_replace
                 -----------------------
-                 A PostgrXSQL function""");
-        this.q("""
+                 A PostgrXSQL function
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 9, 'i');
                     regexp_replace
                 -----------------------
-                 A PostgreSQL function""");
-        this.q("""
+                 A PostgreSQL function
+                (1 row)
+        
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 7, 0, 'i');
                     regexp_replace
                 -----------------------
-                 A PostgrXSQL fXnctXXn""");
-        this.q("""
+                 A PostgrXSQL fXnctXXn
+                (1 row)
+        
                 -- 'g' flag should be ignored when N is specified
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'g');
                     regexp_replace
                 -----------------------
-                 A PXstgreSQL function""");
+                 A PXstgreSQL function
+                (1 row)
+                """);
     }
 
     // TODO: regexp_count
@@ -832,6 +856,65 @@ public class PostgresStringTests extends SqlIoTest {
     }
 
     @Test
+    public void testLikeNull() {
+        this.qs("""
+                SELECT NULL LIKE '%';
+                 result
+                -------
+                \s
+                (1 row)
+                                
+                SELECT 'a' LIKE NULL;
+                 result
+                -------
+                \s
+                (1 row)
+                                
+                SELECT NULL LIKE NULL;
+                 result
+                -------
+                \s
+                (1 row)
+                                
+                SELECT NULL NOT LIKE '%';
+                 result
+                -------
+                \s
+                (1 row)
+                                
+                SELECT 'a' NOT LIKE NULL;
+                 result
+                -------
+                \s
+                (1 row)
+                                
+                SELECT NULL NOT LIKE NULL;
+                 result
+                -------
+                \s
+                (1 row)
+                
+                SELECT NULL RLIKE '.*';
+                 result
+                -------
+                \s
+                (1 row)
+                                
+                SELECT 'a' RLIKE NULL;
+                 result
+                -------
+                \s
+                (1 row)
+                                
+                SELECT NULL RLIKE NULL;
+                 result
+                -------
+                \s
+                (1 row)
+                """);
+    }
+
+    @Test
     public void testConcatConversions() {
         // In Postgres concatenation converts to text, whereas Calcite does not.
         this.q("""
@@ -985,6 +1068,22 @@ public class PostgresStringTests extends SqlIoTest {
                  repeat
                 --------
                 \s""");
+    }
+
+    @Test
+    public void testLikeTable() {
+        String sql = """
+                CREATE TABLE example (
+                    name VARCHAR
+                );
+
+                CREATE VIEW example_count AS
+                    SELECT COUNT(*) FROM example WHERE name LIKE 'abc%' OR name LIKE name;
+                    """;
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        this.addRustTestCase(sql, compiler, circuit);
     }
 
     // TODO: bytea computations

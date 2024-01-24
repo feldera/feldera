@@ -188,7 +188,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case 32 -> new DBSPI32Literal(Objects.requireNonNull(literal.getValueAs(Integer.class)));
                     case 64 -> new DBSPI64Literal(Objects.requireNonNull(literal.getValueAs(Long.class)));
                     default ->
-                            throw new UnsupportedOperationException("Unsupported integer width type " + intType.getWidth());
+                            throw new UnsupportedOperationException("Unsupported integer width type " +
+                                    intType.getWidth());
                 };
             } else if (type.is(DBSPTypeDouble.class))
                 return new DBSPDoubleLiteral(Objects.requireNonNull(literal.getValueAs(Double.class)));
@@ -408,7 +409,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         return new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
     }
 
-    public String typeString(DBSPType type) {
+    String typeString(DBSPType type) {
         DBSPTypeVec vec = type.as(DBSPTypeVec.class);
         String result = "";
         if (vec != null)
@@ -493,6 +494,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             name.append("_").append(op.getType().baseTypeWithSuffix());
         }
         return new DBSPApplyExpression(node, name.toString(), resultType, operands);
+    }
+
+    void ensureString(List<DBSPExpression> ops, int argument) {
+        DBSPExpression arg = ops.get(argument);
+        if (!arg.getType().is(DBSPTypeString.class))
+            ops.set(argument, arg.cast(DBSPTypeString.varchar(arg.getType().mayBeNull)));
     }
 
     @Override
@@ -726,14 +733,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compilePolymorphicFunction(call, node, type, ops, 2);
                     }
                     case "split":
-                        // If any argument is NULL, cast it to a string.
                         // Calcite should be doing this, but it doesn't.
-                        for (int i = 0; i < ops.size(); i++) {
-                            DBSPExpression arg = ops.get(i);
-                            if (arg.getType().is(DBSPTypeNull.class))
-                                ops.set(i, arg.cast(new DBSPTypeString(
-                                        node, DBSPTypeString.UNLIMITED_PRECISION, false, true)));
-                        }
+                        for (int i = 0; i < ops.size(); i++)
+                            this.ensureString(ops, i);
                         return this.compileFunction(call, node, type, ops, 1, 2);
                     case "overlay": {
                         // case "regexp_replace":
@@ -814,7 +816,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 // This is also hit for "date_part", which is an alias for "extract".
                 return this.compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
             }
-            case RLIKE:
+            case RLIKE: {
+                // Calcite does not enforce the type of the arguments, why?
+                for (int i = 0; i < 2; i++)
+                    this.ensureString(ops, i);
+                return this.compileFunction(call, node, type, ops, 2);
+            }
             case POSITION: {
                 String module_prefix = "";
                 if (ops.get(0).type.is(DBSPTypeBinary.class)) {
@@ -826,12 +833,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             }
             case ARRAY_TO_STRING: {
                 // Calcite does not enforce the type of the arguments, why?
-                DBSPExpression op1 = ops.get(1);
-                ops.set(1, this.castTo(op1, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false)));
-                if (ops.size() > 2) {
-                    DBSPExpression op2 = ops.get(2);
-                    ops.set(2, this.castTo(op2, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false)));
-                }
+                this.ensureString(ops, 1);
+                if (ops.size() > 2)
+                    this.ensureString(ops, 2);
                 return this.compileFunction(call, node, type, ops, 2, 3);
             }
             case LIKE:

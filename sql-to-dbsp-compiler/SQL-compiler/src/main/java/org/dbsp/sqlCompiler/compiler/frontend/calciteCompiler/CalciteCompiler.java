@@ -418,16 +418,18 @@ public class CalciteCompiler implements IWritesLogs {
         );
         Utilities.putNew(result,"Isolate DISTINCT aggregates", distinctAggregates);
 
-        HepProgram multiJoins = new HepProgramBuilder()
-                // Join order optimization
-                .addRuleInstance(CoreRules.FILTER_INTO_JOIN)
-                .addMatchOrder(HepMatchOrder.BOTTOM_UP)
-                .addRuleInstance(CoreRules.JOIN_TO_MULTI_JOIN)
-                .addRuleInstance(CoreRules.PROJECT_MULTI_JOIN_MERGE)
-                .addRuleInstance(CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY)
-                .build();
+        HepProgramBuilder joinBuilder = new HepProgramBuilder()
+                .addRuleInstance(CoreRules.JOIN_CONDITION_PUSH)
+                .addRuleInstance(CoreRules.JOIN_PUSH_EXPRESSIONS)
+                //.addRuleInstance(CoreRules.FILTER_INTO_JOIN) // Rule seems to be unsound
+            ;
         if (!avoidBushyJoin(rel))
-            Utilities.putNew(result, "Join order optimization", multiJoins);
+            joinBuilder
+                    .addRuleInstance(CoreRules.JOIN_TO_MULTI_JOIN)
+                    .addRuleInstance(CoreRules.PROJECT_MULTI_JOIN_MERGE)
+                    .addRuleInstance(CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY);
+        Utilities.putNew(result, "Join order optimization",
+                joinBuilder.addMatchOrder(HepMatchOrder.BOTTOM_UP).build());
 
         HepProgram move = createProgram(
                 CoreRules.PROJECT_CORRELATE_TRANSPOSE,
@@ -458,8 +460,6 @@ public class CalciteCompiler implements IWritesLogs {
         return Linq.list(
                 CoreRules.AGGREGATE_PROJECT_PULL_UP_CONSTANTS,
                 CoreRules.AGGREGATE_UNION_AGGREGATE,
-                CoreRules.JOIN_PUSH_EXPRESSIONS,
-                CoreRules.JOIN_CONDITION_PUSH,
         );
          */
     }

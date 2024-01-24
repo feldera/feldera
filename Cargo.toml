@@ -6,11 +6,9 @@ members = [
   "crates/nexmark",
   "crates/pipeline-types",
   "crates/pipeline_manager",
-  "sql-to-dbsp-compiler/lib/hashing",
   "sql-to-dbsp-compiler/lib/readers",
   "sql-to-dbsp-compiler/lib/sqllib",
-  "sql-to-dbsp-compiler/lib/sqlvalue",
-]	  
+]
 exclude = ["sql-to-dbsp-compiler/temp"]
 resolver = "2"
 
