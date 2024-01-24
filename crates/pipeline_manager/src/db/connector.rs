@@ -5,13 +5,14 @@ use uuid::Uuid;
 
 use crate::auth::TenantId;
 
-use super::{storage::Storage, DBError, ProjectDB};
+use super::{DBError, ProjectDB};
 
 use std::fmt::{self, Display};
 
 use utoipa::ToSchema;
 
 use serde::{Deserialize, Serialize};
+use tokio_postgres::types::ToSql;
 
 /// Unique connector id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize, ToSchema)]
@@ -164,46 +165,39 @@ pub(crate) async fn update_connector(
     db: &ProjectDB,
     tenant_id: TenantId,
     connector_id: ConnectorId,
-    connector_name: &str,
-    description: &str,
+    connector_name: &Option<&str>,
+    description: &Option<&str>,
     config: &Option<ConnectorConfig>,
     txn: Option<&Transaction<'_>>,
 ) -> Result<(), DBError> {
-    let query = "UPDATE connector SET name = $1, description = $2, config = $3 WHERE id = $4";
-    // TODO: update the query to fetch the connector we need instead of doing this
-    // extra read
-    let descr = db.get_connector_by_id(tenant_id, connector_id).await?;
-    let config = config.clone().unwrap_or(descr.config);
-    let row = if let Some(txn) = txn {
+    let query = r#"UPDATE connector
+                         SET name = COALESCE($1, name),
+                             description = COALESCE($2, description),
+                             config = COALESCE($3, config)
+                         WHERE id = $4 AND tenant_id = $5"#;
+    let config_yaml = config.as_ref().map(|config| config.to_yaml());
+    let params: &[&(dyn ToSql + Sync)] = &[
+        &connector_name,
+        &description,
+        &config_yaml,
+        &connector_id.0,
+        &tenant_id.0,
+    ];
+    let modified_rows = if let Some(txn) = txn {
         let stmt = txn.prepare_cached(query).await?;
-        txn.execute(
-            &stmt,
-            &[
-                &connector_name,
-                &description,
-                &config.to_yaml(),
-                &connector_id.0,
-            ],
-        )
-        .await
+        txn.execute(&stmt, params).await
     } else {
         let manager = db.pool.get().await?;
         let stmt = manager.prepare_cached(query).await?;
-        manager
-            .execute(
-                &stmt,
-                &[
-                    &connector_name,
-                    &description,
-                    &config.to_yaml(),
-                    &connector_id.0,
-                ],
-            )
-            .await
-    };
-    row.map_err(ProjectDB::maybe_unique_violation)?;
+        manager.execute(&stmt, params).await
+    }
+    .map_err(ProjectDB::maybe_unique_violation)?;
 
-    Ok(())
+    if modified_rows > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownConnector { connector_id })
+    }
 }
 
 pub(crate) async fn delete_connector(

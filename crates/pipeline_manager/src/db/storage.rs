@@ -287,15 +287,18 @@ pub(crate) trait Storage {
         txn: Option<&Transaction<'_>>,
     ) -> Result<ConnectorDescr, DBError>;
 
-    /// Update existing connector config.
+    /// Updates the name, description and/or configuration of the existing
+    /// connector, of which the identifier is provided. If new values are not
+    /// provided, the existing values in storage are kept.
     ///
-    /// Update connector name and, optionally, YAML.
+    /// Returns error if there does not exist a connector with the provided
+    /// identifier.
     async fn update_connector(
         &self,
         tenant_id: TenantId,
         connector_id: ConnectorId,
-        connector_name: &str,
-        description: &str,
+        connector_name: &Option<&str>,
+        description: &Option<&str>,
         config: &Option<ConnectorConfig>,
         txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError>;
