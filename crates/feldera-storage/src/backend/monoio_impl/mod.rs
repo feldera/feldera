@@ -2,14 +2,15 @@
 //! [`StorageRead`], and [`StorageWrite`]) using the Monoio library.
 
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Instant;
 
-use futures_locks::RwLock;
+use async_lock::RwLock;
 use metrics::{counter, histogram};
-use monoio::fs::File;
+use monoio::fs::{File, OpenOptions};
 use uuid::Uuid;
 
 use crate::backend::{
@@ -24,6 +25,19 @@ pub(crate) mod tests;
 /// Number of entries an IO-ring will have.
 #[cfg(test)]
 pub(self) const MAX_RING_ENTRIES: u32 = 32768;
+
+/// Helper function that opens files as direct IO files on linux.
+async fn open_as_direct<P: AsRef<Path>>(
+    p: P,
+    options: &mut OpenOptions,
+) -> Result<File, io::Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_DIRECT);
+    }
+    options.open(p).await
+}
 
 /// Meta-data we keep per file we created.
 struct FileMetaData {
@@ -66,8 +80,7 @@ impl StorageControl for MonoioBackend {
         let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
         let name = Uuid::now_v7();
         let path = self.base.join(name.to_string() + ".feldera");
-        let file = File::create(path.clone()).await?;
-
+        let file = open_as_direct(&path, OpenOptions::new().create(true).write(true)).await?;
         let mut files = self.files.write().await;
         files.insert(file_counter, FileMetaData { file, path });
 
@@ -113,7 +126,7 @@ impl StorageWrite for MonoioBackend {
         fm.file.sync_all().await?;
         fm.file.close().await?;
 
-        let readable_file = File::open(&fm.path).await?;
+        let readable_file = open_as_direct(&fm.path, OpenOptions::new().read(true)).await?;
         files.insert(
             fd.0,
             FileMetaData {

@@ -17,8 +17,9 @@
 
 #![allow(async_fn_in_trait)]
 
-use std::cmp::max;
+use async_lock::Barrier;
 use std::fs::create_dir_all;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,122 @@ use feldera_storage::backend::glommio_impl::GlommioBackend;
 use feldera_storage::backend::monoio_impl::MonoioBackend;
 use feldera_storage::backend::{StorageControl, StorageRead, StorageWrite};
 use feldera_storage::buffer_cache::{BufferCache, FBuf};
+
+#[derive(Debug, Clone, Default)]
+struct ThreadBenchResult {
+    read_time: Duration,
+    write_time: Duration,
+}
+
+#[derive(Debug, Clone, Default)]
+struct BenchResult {
+    times: Vec<ThreadBenchResult>,
+}
+
+fn mean(data: &[f64]) -> Option<f64> {
+    let sum = data.iter().sum::<f64>();
+    let count = data.len();
+
+    match count {
+        positive if positive > 0 => Some(sum / count as f64),
+        _ => None,
+    }
+}
+
+fn std_deviation(data: &[f64]) -> Option<f64> {
+    match (mean(data), data.len()) {
+        (Some(data_mean), count) if count > 0 => {
+            let variance = data
+                .iter()
+                .map(|value| {
+                    let diff = data_mean - *value;
+
+                    diff * diff
+                })
+                .sum::<f64>()
+                / count as f64;
+
+            Some(variance.sqrt())
+        }
+        _ => None,
+    }
+}
+
+impl BenchResult {
+    fn validate(&self) -> Result<(), String> {
+        if self.times.is_empty() {
+            return Err("No results found.".to_string());
+        }
+        assert!(!self.times.is_empty());
+
+        if self.read_time_std() >= 2.0 {
+            return Err("Read times are not stable.".to_string());
+        }
+        if self.write_time_std() >= 5.0 {
+            return Err("Write times are not stable.".to_string());
+        }
+        Ok(())
+    }
+
+    fn read_time_std(&self) -> f64 {
+        std_deviation(
+            &self
+                .times
+                .iter()
+                .map(|t| t.read_time.as_secs_f64())
+                .collect::<Vec<f64>>(),
+        )
+        .unwrap()
+    }
+
+    fn write_time_std(&self) -> f64 {
+        std_deviation(
+            &self
+                .times
+                .iter()
+                .map(|t| t.write_time.as_secs_f64())
+                .collect::<Vec<f64>>(),
+        )
+        .unwrap()
+    }
+
+    fn read_time_mean(&self) -> f64 {
+        mean(
+            &self
+                .times
+                .iter()
+                .map(|t| t.read_time.as_secs_f64())
+                .collect::<Vec<f64>>(),
+        )
+        .unwrap()
+    }
+
+    fn write_time_mean(&self) -> f64 {
+        mean(
+            &self
+                .times
+                .iter()
+                .map(|t| t.write_time.as_secs_f64())
+                .collect::<Vec<f64>>(),
+        )
+        .unwrap()
+    }
+
+    fn display(&self, args: Args) {
+        let read_time = self.read_time_mean();
+        let write_time = self.write_time_mean();
+        const ONE_MIB: f64 = 1024f64 * 1024f64;
+        println!(
+            "read: {} MiB/s (mean: {}s, std: {}s)\nwrite: {} MiB/s (mean: {}s, std: {}s)",
+            ((args.total_size * args.threads) as f64 / ONE_MIB) / read_time,
+            read_time,
+            self.read_time_std(),
+            ((args.total_size * args.threads) as f64 / ONE_MIB) / write_time,
+            write_time,
+            self.write_time_std()
+        )
+    }
+}
 
 #[derive(Debug, Clone)]
 enum Backend {
@@ -93,7 +210,8 @@ fn allocate_buffer(sz: usize) -> FBuf {
 
 async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
     backend: T,
-) -> (Duration, Duration) {
+    barrier: Arc<Barrier>,
+) -> ThreadBenchResult {
     let args = Args::parse();
     let file = backend.create().await.unwrap();
 
@@ -104,6 +222,7 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
         wbuffers.push(buf);
     }
 
+    barrier.wait_blocking();
     let start_write = Instant::now();
     for i in 0..args.total_size / args.buffer_size {
         let wb = wbuffers.pop().unwrap();
@@ -117,6 +236,7 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
     let ih = backend.complete(file).await.expect("complete failed");
     let write_time = start_write.elapsed();
 
+    barrier.wait_blocking();
     let start_read = Instant::now();
     for i in 0..args.total_size / args.buffer_size {
         let rr = backend
@@ -134,26 +254,30 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
     let read_time = start_read.elapsed();
 
     backend.delete(ih).await.expect("delete failed");
-    (write_time, read_time)
+    ThreadBenchResult {
+        write_time,
+        read_time,
+    }
 }
 
 #[cfg(feature = "glommio")]
-fn glommio_main(args: Args) -> (Duration, Duration) {
+fn glommio_main(args: Args) -> BenchResult {
     use glommio::{
         timer::Timer, DefaultStallDetectionHandler, LocalExecutorPoolBuilder, PoolPlacement,
     };
 
-    let mut write_time = Duration::ZERO;
-    let mut read_time = Duration::ZERO;
+    let mut br = BenchResult::default();
+    let barrier = Arc::new(Barrier::new(args.threads));
 
     LocalExecutorPoolBuilder::new(PoolPlacement::Unbound(args.threads))
         .ring_depth(4096)
         .spin_before_park(Duration::from_millis(10))
         .detect_stalls(Some(Box::new(|| Box::new(DefaultStallDetectionHandler {}))))
         .on_all_shards(|| async move {
+            let barrier = barrier.clone();
             let backend = GlommioBackend::new(args.path.clone());
             Timer::new(Duration::from_millis(100)).await;
-            benchmark(backend).await
+            benchmark(backend, barrier).await
         })
         .expect("failed to spawn local executors")
         .join_all()
@@ -164,37 +288,33 @@ fn glommio_main(args: Args) -> (Duration, Duration) {
                 panic!("unable to get result from benchmark thread")
             }
         })
-        .for_each(|(w, r)| {
-            // TODO: ideally we should determine if we have a high std-dev here and abort
-            // (for now this must be done by hand by inspecting the individual thread times)
-            write_time = max(write_time, w);
-            read_time = max(read_time, r);
-        });
+        .for_each(|tres| br.times.push(tres.clone()));
 
-    (write_time, read_time)
+    br
 }
 
-fn monoio_main(args: Args) -> (Duration, Duration) {
+fn monoio_main(args: Args) -> BenchResult {
+    let barrier = Arc::new(Barrier::new(args.threads));
     // spawn n-1 threads
     let threads: Vec<_> = (1..args.threads)
         .map(|_| {
             let args = args.clone();
+            let barrier = barrier.clone();
             thread::spawn(move || {
+                let barrier = barrier.clone();
                 let monoio_backend = MonoioBackend::new(args.path.clone());
+                let mut rt = RuntimeBuilder::<FusionDriver>::new()
+                    .enable_timer()
+                    .with_entries(4096)
+                    .build()
+                    .expect("Failed building the Runtime");
                 if args.cache {
-                    RuntimeBuilder::<FusionDriver>::new()
-                        .enable_timer()
-                        .with_entries(32768)
-                        .build()
-                        .expect("Failed building the Runtime")
-                        .block_on(benchmark(BufferCache::with_backend(monoio_backend)))
+                    rt.block_on(benchmark(
+                        BufferCache::with_backend(monoio_backend),
+                        barrier,
+                    ))
                 } else {
-                    RuntimeBuilder::<FusionDriver>::new()
-                        .enable_timer()
-                        .with_entries(32768)
-                        .build()
-                        .expect("Failed building the Runtime")
-                        .block_on(benchmark(monoio_backend))
+                    rt.block_on(benchmark(monoio_backend, barrier))
                 }
             })
         })
@@ -202,30 +322,30 @@ fn monoio_main(args: Args) -> (Duration, Duration) {
 
     // Run on main thread
     let monoio_backend = MonoioBackend::new(args.path.clone());
-    let (mut write_time, mut read_time) = if args.cache {
-        RuntimeBuilder::<FusionDriver>::new()
-            .enable_timer()
-            .with_entries(32768)
-            .build()
-            .expect("Failed building the Runtime")
-            .block_on(benchmark(BufferCache::with_backend(monoio_backend)))
+    let mut rt = RuntimeBuilder::<FusionDriver>::new()
+        .enable_timer()
+        .with_entries(4096)
+        .build()
+        .expect("Failed building the Runtime");
+
+    let mut br = BenchResult::default();
+    let main_res = if args.cache {
+        rt.block_on(benchmark(
+            BufferCache::with_backend(monoio_backend),
+            barrier,
+        ))
     } else {
-        RuntimeBuilder::<FusionDriver>::new()
-            .enable_timer()
-            .with_entries(32768)
-            .build()
-            .expect("Failed building the Runtime")
-            .block_on(benchmark(monoio_backend))
+        rt.block_on(benchmark(monoio_backend, barrier))
     };
+    br.times.push(main_res);
 
     // Wait for other n-1 threads
     threads.into_iter().for_each(|t| {
-        let (r, w) = t.join().expect("thread panicked");
-        write_time = max(write_time, w);
-        read_time = max(read_time, r);
+        let tres = t.join().expect("thread panicked");
+        br.times.push(tres);
     });
 
-    (write_time, read_time)
+    br
 }
 
 fn main() {
@@ -244,18 +364,16 @@ fn main() {
         builder.install().expect("failed to install TCP exporter");
     }
 
-    let (write_time, read_time) = match args.backend {
+    let br = match args.backend {
         #[cfg(feature = "glommio")]
         Backend::Glommio => glommio_main(args.clone()),
         Backend::Monoio => monoio_main(args.clone()),
     };
 
-    println!(
-        "write: {} MiB/s",
-        ((args.total_size * args.threads) as f64 / (1024f64 * 1024f64)) / write_time.as_secs_f64()
-    );
-    println!(
-        "read: {} MiB/s",
-        ((args.total_size * args.threads) as f64 / (1024f64 * 1024f64)) / read_time.as_secs_f64()
-    );
+    br.display(args);
+
+    if let Err(e) = br.validate() {
+        println!("Result validation failed: {}", e);
+        std::process::exit(1);
+    }
 }
