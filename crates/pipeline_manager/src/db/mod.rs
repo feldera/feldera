@@ -510,8 +510,8 @@ impl Storage for ProjectDB {
         &self,
         tenant_id: TenantId,
         connector_id: ConnectorId,
-        connector_name: &str,
-        description: &str,
+        connector_name: &Option<&str>,
+        description: &Option<&str>,
         config: &Option<ConnectorConfig>,
         txn: Option<&Transaction<'_>>,
     ) -> Result<(), DBError> {
@@ -1175,8 +1175,8 @@ impl ProjectDB {
                 .update_connector(
                     tenant_id,
                     c.connector_id,
-                    connector_name,
-                    description,
+                    &Some(connector_name),
+                    &Some(description),
                     &Some(config.clone()),
                     Some(&txn),
                 )
@@ -1197,6 +1197,35 @@ impl ProjectDB {
         }?;
         txn.commit().await?;
         Ok(res)
+    }
+
+    /// Updates a connector by name by, within a transaction, resolving
+    /// the name to its respective identifier and proceeding to use
+    /// that in the update query.
+    pub async fn update_connector_by_name(
+        &self,
+        tenant_id: TenantId,
+        original_name: &str,
+        new_name: &Option<&str>,
+        description: &Option<&str>,
+        config: &Option<ConnectorConfig>,
+    ) -> Result<(), DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let connector = self
+            .get_connector_by_name(tenant_id, original_name, Some(&txn))
+            .await?;
+        self.update_connector(
+            tenant_id,
+            connector.connector_id,
+            new_name,
+            description,
+            config,
+            Some(&txn),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
     }
 
     /// Run database migrations

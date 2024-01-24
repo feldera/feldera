@@ -612,7 +612,14 @@ async fn update_conn_name() {
         .unwrap();
     handle
         .db
-        .update_connector(tenant_id, connector_id, "not-a", "b", &None, None)
+        .update_connector(
+            tenant_id,
+            connector_id,
+            &Some("not-a"),
+            &Some("b"),
+            &None,
+            None,
+        )
         .await
         .unwrap();
     let pipeline = handle
@@ -985,7 +992,14 @@ async fn versioning() {
     };
     handle
         .db
-        .update_connector(tenant_id, connector_id1, "a", "b", &Some(config3), None)
+        .update_connector(
+            tenant_id,
+            connector_id1,
+            &Some("a"),
+            &Some("b"),
+            &Some(config3),
+            None,
+        )
         .await
         .unwrap();
     let r4 = commit_check(&handle, tenant_id, pipeline_id).await;
@@ -1329,8 +1343,8 @@ enum StorageAction {
     UpdateConnector(
         TenantId,
         ConnectorId,
-        String,
-        String,
+        Option<String>,
+        Option<String>,
         #[proptest(strategy = "limited_option_connector()")] Option<ConnectorConfig>,
     ),
     DeleteConnector(TenantId, String),
@@ -1739,9 +1753,9 @@ fn db_impl_behaves_like_model() {
                             StorageAction::UpdateConnector(tenant_id,connector_id, name, description, config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.update_connector(tenant_id, connector_id, &name, &description, &config, None).await;
+                                    model.update_connector(tenant_id, connector_id, &name.as_deref(), &description.as_deref(), &config, None).await;
                                 let impl_response =
-                                    handle.db.update_connector(tenant_id, connector_id, &name, &description, &config, None).await;
+                                    handle.db.update_connector(tenant_id, connector_id, &name.as_deref(), &description.as_deref(), &config, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::DeleteConnector(tenant_id, connector_name) => {
@@ -2641,8 +2655,8 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         connector_id: super::ConnectorId,
-        connector_name: &str,
-        description: &str,
+        connector_name: &Option<&str>,
+        description: &Option<&str>,
         config: &Option<ConnectorConfig>,
         _txn: Option<&Transaction<'_>>,
     ) -> DBResult<()> {
@@ -2652,16 +2666,18 @@ impl Storage for Mutex<DbModel> {
             return Err(DBError::UnknownConnector { connector_id }.into());
         }
         // UNIQUE constraint on name
-        if let Some(c) = s
-            .connectors
-            .iter()
-            .filter(|k| k.0 .0 == tenant_id)
-            .map(|k| k.1)
-            .find(|c| c.name == connector_name)
-            .cloned()
-        {
-            if c.connector_id != connector_id {
-                return Err(DBError::DuplicateName.into());
+        if let Some(connector_name) = connector_name {
+            if let Some(c) = s
+                .connectors
+                .iter()
+                .filter(|k| k.0 .0 == tenant_id)
+                .map(|k| k.1)
+                .find(|c| &c.name == connector_name)
+                .cloned()
+            {
+                if c.connector_id != connector_id {
+                    return Err(DBError::DuplicateName.into());
+                }
             }
         }
 
@@ -2669,8 +2685,12 @@ impl Storage for Mutex<DbModel> {
             .connectors
             .get_mut(&(tenant_id, connector_id))
             .ok_or(DBError::UnknownConnector { connector_id })?;
-        c.name = connector_name.to_owned();
-        c.description = description.to_owned();
+        if let Some(name) = connector_name {
+            c.name = name.to_string();
+        }
+        if let Some(description) = description {
+            c.description = description.to_string();
+        }
         if let Some(config) = config {
             c.config = config.clone();
         }
