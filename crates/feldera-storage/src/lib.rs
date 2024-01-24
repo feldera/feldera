@@ -16,7 +16,7 @@ mod init {
     fn init() {
         match raise_fd_limit() {
             Ok(LimitRaised { from, to }) => {
-                const WARN_THRESHOLD: u64 = 2 << 19;
+                const WARN_THRESHOLD: u64 = 1 << 19;
                 if to < WARN_THRESHOLD {
                     warn!("Raised fd limit from {} to {}. It's still very low -- try increasing the fd hard-limit (in your limits.conf).", from, to);
                 }
