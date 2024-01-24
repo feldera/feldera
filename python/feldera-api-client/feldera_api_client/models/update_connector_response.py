@@ -7,7 +7,7 @@ T = TypeVar("T", bound="UpdateConnectorResponse")
 
 @define
 class UpdateConnectorResponse:
-    """Response to a config update request."""
+    """Response to a connector update request."""
 
     additional_properties: Dict[str, Any] = field(init=False, factory=dict)
 

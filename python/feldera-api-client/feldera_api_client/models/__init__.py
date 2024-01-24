@@ -68,7 +68,6 @@ from .pipeline_revision import PipelineRevision
 from .pipeline_runtime_state import PipelineRuntimeState
 from .pipeline_stats_response_200 import PipelineStatsResponse200
 from .pipeline_status import PipelineStatus
-from .program_code_response import ProgramCodeResponse
 from .program_descr import ProgramDescr
 from .program_schema import ProgramSchema
 from .program_status_type_0 import ProgramStatusType0
@@ -168,7 +167,6 @@ __all__ = (
     "PipelineRuntimeState",
     "PipelineStatsResponse200",
     "PipelineStatus",
-    "ProgramCodeResponse",
     "ProgramDescr",
     "ProgramSchema",
     "ProgramStatusType0",

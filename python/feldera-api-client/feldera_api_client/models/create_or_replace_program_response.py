@@ -7,7 +7,7 @@ T = TypeVar("T", bound="CreateOrReplaceProgramResponse")
 
 @define
 class CreateOrReplaceProgramResponse:
-    """Response to a new program request.
+    """Response to a create or replace program request.
 
     Attributes:
         program_id (str): Unique program id.

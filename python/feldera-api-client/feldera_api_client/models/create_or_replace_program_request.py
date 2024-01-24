@@ -7,10 +7,10 @@ T = TypeVar("T", bound="CreateOrReplaceProgramRequest")
 
 @define
 class CreateOrReplaceProgramRequest:
-    """Request to create or replace a Feldera program.
+    """Request to create or replace a program.
 
     Attributes:
-        code (str): SQL code of the program. Example: CREATE TABLE Example(name varchar);.
+        code (str): SQL code of the program. Example: CREATE TABLE example(name VARCHAR);.
         description (str): Program description. Example: Example description.
     """
 

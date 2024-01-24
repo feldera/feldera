@@ -30,10 +30,10 @@ def _parse_response(
         response_200 = ConnectorDescr.from_dict(response.json())
 
         return response_200
-    if response.status_code == HTTPStatus.BAD_REQUEST:
-        response_400 = ErrorResponse.from_dict(response.json())
+    if response.status_code == HTTPStatus.NOT_FOUND:
+        response_404 = ErrorResponse.from_dict(response.json())
 
-        return response_400
+        return response_404
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -56,9 +56,9 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[ConnectorDescr, ErrorResponse]]:
-    """Fetch a connector by ID.
+    """Fetch a connector by name.
 
-     Fetch a connector by ID.
+     Fetch a connector by name.
 
     Args:
         connector_name (str):
@@ -87,9 +87,9 @@ def sync(
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
-    """Fetch a connector by ID.
+    """Fetch a connector by name.
 
-     Fetch a connector by ID.
+     Fetch a connector by name.
 
     Args:
         connector_name (str):
@@ -113,9 +113,9 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
 ) -> Response[Union[ConnectorDescr, ErrorResponse]]:
-    """Fetch a connector by ID.
+    """Fetch a connector by name.
 
-     Fetch a connector by ID.
+     Fetch a connector by name.
 
     Args:
         connector_name (str):
@@ -142,9 +142,9 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
 ) -> Optional[Union[ConnectorDescr, ErrorResponse]]:
-    """Fetch a connector by ID.
+    """Fetch a connector by name.
 
-     Fetch a connector by ID.
+     Fetch a connector by name.
 
     Args:
         connector_name (str):

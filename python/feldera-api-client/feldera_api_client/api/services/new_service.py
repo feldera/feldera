@@ -5,6 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.error_response import ErrorResponse
 from ...models.new_service_request import NewServiceRequest
 from ...models.new_service_response import NewServiceResponse
 from ...types import Response
@@ -27,11 +28,15 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Optional[NewServiceResponse]:
+) -> Optional[Union[ErrorResponse, NewServiceResponse]]:
     if response.status_code == HTTPStatus.CREATED:
         response_201 = NewServiceResponse.from_dict(response.json())
 
         return response_201
+    if response.status_code == HTTPStatus.CONFLICT:
+        response_409 = ErrorResponse.from_dict(response.json())
+
+        return response_409
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -40,7 +45,7 @@ def _parse_response(
 
 def _build_response(
     *, client: Union[AuthenticatedClient, Client], response: httpx.Response
-) -> Response[NewServiceResponse]:
+) -> Response[Union[ErrorResponse, NewServiceResponse]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -53,7 +58,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     json_body: NewServiceRequest,
-) -> Response[NewServiceResponse]:
+) -> Response[Union[ErrorResponse, NewServiceResponse]]:
     """Create a new service.
 
      Create a new service.
@@ -66,7 +71,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[NewServiceResponse]
+        Response[Union[ErrorResponse, NewServiceResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -84,7 +89,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     json_body: NewServiceRequest,
-) -> Optional[NewServiceResponse]:
+) -> Optional[Union[ErrorResponse, NewServiceResponse]]:
     """Create a new service.
 
      Create a new service.
@@ -97,7 +102,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        NewServiceResponse
+        Union[ErrorResponse, NewServiceResponse]
     """
 
     return sync_detailed(
@@ -110,7 +115,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     json_body: NewServiceRequest,
-) -> Response[NewServiceResponse]:
+) -> Response[Union[ErrorResponse, NewServiceResponse]]:
     """Create a new service.
 
      Create a new service.
@@ -123,7 +128,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[NewServiceResponse]
+        Response[Union[ErrorResponse, NewServiceResponse]]
     """
 
     kwargs = _get_kwargs(
@@ -139,7 +144,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     json_body: NewServiceRequest,
-) -> Optional[NewServiceResponse]:
+) -> Optional[Union[ErrorResponse, NewServiceResponse]]:
     """Create a new service.
 
      Create a new service.
@@ -152,7 +157,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        NewServiceResponse
+        Union[ErrorResponse, NewServiceResponse]
     """
 
     return (
