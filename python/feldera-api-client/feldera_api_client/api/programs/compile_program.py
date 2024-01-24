@@ -69,9 +69,9 @@ def sync_detailed(
 
      Mark a program for compilation.
 
-    The client can track a program's compilation status by pollling the
-    `/program/{program_id}` or `/programs` endpoints, and
-    then checking the `status` field of the program object
+    The client can track a program's compilation status by polling the
+    `/program/{program_name}` or `/programs` endpoints, and
+    then checking the `status` field of the program object.
 
     Args:
         program_name (str):
@@ -107,9 +107,9 @@ def sync(
 
      Mark a program for compilation.
 
-    The client can track a program's compilation status by pollling the
-    `/program/{program_id}` or `/programs` endpoints, and
-    then checking the `status` field of the program object
+    The client can track a program's compilation status by polling the
+    `/program/{program_name}` or `/programs` endpoints, and
+    then checking the `status` field of the program object.
 
     Args:
         program_name (str):
@@ -140,9 +140,9 @@ async def asyncio_detailed(
 
      Mark a program for compilation.
 
-    The client can track a program's compilation status by pollling the
-    `/program/{program_id}` or `/programs` endpoints, and
-    then checking the `status` field of the program object
+    The client can track a program's compilation status by polling the
+    `/program/{program_name}` or `/programs` endpoints, and
+    then checking the `status` field of the program object.
 
     Args:
         program_name (str):
@@ -176,9 +176,9 @@ async def asyncio(
 
      Mark a program for compilation.
 
-    The client can track a program's compilation status by pollling the
-    `/program/{program_id}` or `/programs` endpoints, and
-    then checking the `status` field of the program object
+    The client can track a program's compilation status by polling the
+    `/program/{program_name}` or `/programs` endpoints, and
+    then checking the `status` field of the program object.
 
     Args:
         program_name (str):

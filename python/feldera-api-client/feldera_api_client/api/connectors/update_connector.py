@@ -63,13 +63,13 @@ def sync_detailed(
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Change a connector's name, description or configuration.
+    """Update the name, description and/or configuration of a connector.
 
-     Change a connector's name, description or configuration.
+     Update the name, description and/or configuration of a connector.
 
     Args:
         connector_name (str):
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        json_body (UpdateConnectorRequest): Request to update an existing connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -97,13 +97,13 @@ def sync(
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Change a connector's name, description or configuration.
+    """Update the name, description and/or configuration of a connector.
 
-     Change a connector's name, description or configuration.
+     Update the name, description and/or configuration of a connector.
 
     Args:
         connector_name (str):
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        json_body (UpdateConnectorRequest): Request to update an existing connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -126,13 +126,13 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Response[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Change a connector's name, description or configuration.
+    """Update the name, description and/or configuration of a connector.
 
-     Change a connector's name, description or configuration.
+     Update the name, description and/or configuration of a connector.
 
     Args:
         connector_name (str):
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        json_body (UpdateConnectorRequest): Request to update an existing connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -158,13 +158,13 @@ async def asyncio(
     client: AuthenticatedClient,
     json_body: UpdateConnectorRequest,
 ) -> Optional[Union[ErrorResponse, UpdateConnectorResponse]]:
-    """Change a connector's name, description or configuration.
+    """Update the name, description and/or configuration of a connector.
 
-     Change a connector's name, description or configuration.
+     Update the name, description and/or configuration of a connector.
 
     Args:
         connector_name (str):
-        json_body (UpdateConnectorRequest): Request to update an existing data-connector.
+        json_body (UpdateConnectorRequest): Request to update an existing connector.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

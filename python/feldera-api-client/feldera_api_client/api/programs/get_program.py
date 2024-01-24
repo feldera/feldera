@@ -65,9 +65,9 @@ def sync_detailed(
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
 ) -> Response[Union[ErrorResponse, ProgramDescr]]:
-    """Fetch a program by ID.
+    """Fetch a program by name.
 
-     Fetch a program by ID.
+     Fetch a program by name.
 
     Args:
         program_name (str):
@@ -99,9 +99,9 @@ def sync(
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
 ) -> Optional[Union[ErrorResponse, ProgramDescr]]:
-    """Fetch a program by ID.
+    """Fetch a program by name.
 
-     Fetch a program by ID.
+     Fetch a program by name.
 
     Args:
         program_name (str):
@@ -128,9 +128,9 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
 ) -> Response[Union[ErrorResponse, ProgramDescr]]:
-    """Fetch a program by ID.
+    """Fetch a program by name.
 
-     Fetch a program by ID.
+     Fetch a program by name.
 
     Args:
         program_name (str):
@@ -160,9 +160,9 @@ async def asyncio(
     client: AuthenticatedClient,
     with_code: Union[Unset, None, bool] = UNSET,
 ) -> Optional[Union[ErrorResponse, ProgramDescr]]:
-    """Fetch a program by ID.
+    """Fetch a program by name.
 
-     Fetch a program by ID.
+     Fetch a program by name.
 
     Args:
         program_name (str):

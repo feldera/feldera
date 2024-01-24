@@ -364,12 +364,27 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Connector successfully created.",
+          "201": {
+            "description": "Connector successfully created",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NewConnectorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A connector with this name already exists in the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
                 }
               }
             }
@@ -387,8 +402,8 @@
         "tags": [
           "Connectors"
         ],
-        "summary": "Fetch a connector by ID.",
-        "description": "Fetch a connector by ID.",
+        "summary": "Fetch a connector by name.",
+        "description": "Fetch a connector by name.",
         "operationId": "get_connector",
         "parameters": [
           {
@@ -403,7 +418,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Connector retrieved successfully.",
+            "description": "Connector retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -412,8 +427,8 @@
               }
             }
           },
-          "400": {
-            "description": "Specified connector id is not a valid uuid.",
+          "404": {
+            "description": "Specified connector name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -421,11 +436,10 @@
                 },
                 "example": {
                   "details": {
-                    "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                    "value": "not_a_uuid"
+                    "name": "unknown_name"
                   },
-                  "error_code": "InvalidUuidParam",
-                  "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -487,7 +501,7 @@
             }
           },
           "409": {
-            "description": "A connector with this name already exists in the database.",
+            "description": "A connector with this name already exists in the database",
             "content": {
               "application/json": {
                 "schema": {
@@ -528,28 +542,10 @@
         ],
         "responses": {
           "200": {
-            "description": "connector successfully deleted."
-          },
-          "400": {
-            "description": "Specified connector id is not a valid uuid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                    "value": "not_a_uuid"
-                  },
-                  "error_code": "InvalidUuidParam",
-                  "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
-                }
-              }
-            }
+            "description": "Connector successfully deleted"
           },
           "404": {
-            "description": "Specified connector id does not exist.",
+            "description": "Specified connector name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -557,10 +553,10 @@
                 },
                 "example": {
                   "details": {
-                    "connector_id": "d764b9e2-19f2-4572-ba20-8b42641b07c4"
+                    "name": "unknown_name"
                   },
-                  "error_code": "UnknownConnector",
-                  "message": "Unknown connector id 'd764b9e2-19f2-4572-ba20-8b42641b07c4'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -576,8 +572,8 @@
         "tags": [
           "Connectors"
         ],
-        "summary": "Change a connector's name, description or configuration.",
-        "description": "Change a connector's name, description or configuration.",
+        "summary": "Update the name, description and/or configuration of a connector.",
+        "description": "Update the name, description and/or configuration of a connector.",
         "operationId": "update_connector",
         "parameters": [
           {
@@ -602,7 +598,7 @@
         },
         "responses": {
           "200": {
-            "description": "connector successfully updated.",
+            "description": "Connector successfully updated",
             "content": {
               "application/json": {
                 "schema": {
@@ -612,7 +608,7 @@
             }
           },
           "404": {
-            "description": "Specified connector id does not exist.",
+            "description": "Specified connector name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -620,10 +616,10 @@
                 },
                 "example": {
                   "details": {
-                    "connector_id": "d764b9e2-19f2-4572-ba20-8b42641b07c4"
+                    "name": "unknown_name"
                   },
-                  "error_code": "UnknownConnector",
-                  "message": "Unknown connector id 'd764b9e2-19f2-4572-ba20-8b42641b07c4'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -1950,7 +1946,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Programs retrieved successfully.",
+            "description": "List of programs retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -1963,7 +1959,7 @@
             }
           },
           "404": {
-            "description": "Specified program name or ID does not exist.",
+            "description": "Specified program name or ID does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2028,7 +2024,7 @@
             }
           },
           "409": {
-            "description": "A program with this name already exists in the database.",
+            "description": "A program with this name already exists in the database",
             "content": {
               "application/json": {
                 "schema": {
@@ -2055,8 +2051,8 @@
         "tags": [
           "Programs"
         ],
-        "summary": "Fetch a program by ID.",
-        "description": "Fetch a program by ID.",
+        "summary": "Fetch a program by name.",
+        "description": "Fetch a program by name.",
         "operationId": "get_program",
         "parameters": [
           {
@@ -2081,7 +2077,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Program retrieved successfully.",
+            "description": "Program retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -2091,7 +2087,7 @@
             }
           },
           "404": {
-            "description": "Specified program id does not exist.",
+            "description": "Specified program name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2099,10 +2095,10 @@
                 },
                 "example": {
                   "details": {
-                    "program_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
+                    "name": "unknown_name"
                   },
-                  "error_code": "UnknownProgram",
-                  "message": "Unknown program id '67e55044-10b1-426f-9247-bb680e5fe0c8'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -2164,7 +2160,7 @@
             }
           },
           "409": {
-            "description": "A program with this name already exists in the database.",
+            "description": "A program with this name already exists in the database",
             "content": {
               "application/json": {
                 "schema": {
@@ -2205,43 +2201,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Program successfully deleted."
+            "description": "Program successfully deleted"
           },
           "400": {
-            "description": "Specified program id is referenced by a pipeline or is not a valid uuid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Invalid uuid": {
-                    "description": "Specified program id is not a valid uuid.",
-                    "value": {
-                      "details": {
-                        "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                        "value": "not_a_uuid"
-                      },
-                      "error_code": "InvalidUuidParam",
-                      "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
-                    }
-                  },
-                  "Program in use": {
-                    "description": "Specified program id is referenced by a pipeline",
-                    "value": {
-                      "details": {
-                        "program_name": "unknown_name"
-                      },
-                      "error_code": "ProgramInUseByPipeline",
-                      "message": "Program named 'unknown_name' is in use by a pipeline"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified program id does not exist.",
+            "description": "Specified program is referenced by a pipeline",
             "content": {
               "application/json": {
                 "schema": {
@@ -2249,10 +2212,27 @@
                 },
                 "example": {
                   "details": {
-                    "program_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
+                    "program_name": "unknown_name"
                   },
-                  "error_code": "UnknownProgram",
-                  "message": "Unknown program id '67e55044-10b1-426f-9247-bb680e5fe0c8'"
+                  "error_code": "ProgramInUseByPipeline",
+                  "message": "Program named 'unknown_name' is in use by a pipeline"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Specified program name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "name": "unknown_name"
+                  },
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -2294,7 +2274,7 @@
         },
         "responses": {
           "200": {
-            "description": "Program updated successfully.",
+            "description": "Program updated successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -2304,7 +2284,7 @@
             }
           },
           "404": {
-            "description": "Specified program id does not exist.",
+            "description": "Specified program name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2312,16 +2292,16 @@
                 },
                 "example": {
                   "details": {
-                    "program_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
+                    "name": "unknown_name"
                   },
-                  "error_code": "UnknownProgram",
-                  "message": "Unknown program id '67e55044-10b1-426f-9247-bb680e5fe0c8'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
           },
           "409": {
-            "description": "A program with this name already exists in the database.",
+            "description": "A program with this name already exists in the database",
             "content": {
               "application/json": {
                 "schema": {
@@ -2349,7 +2329,7 @@
           "Programs"
         ],
         "summary": "Mark a program for compilation.",
-        "description": "Mark a program for compilation.\n\nThe client can track a program's compilation status by pollling the\n`/program/{program_id}` or `/programs` endpoints, and\nthen checking the `status` field of the program object",
+        "description": "Mark a program for compilation.\n\nThe client can track a program's compilation status by polling the\n`/program/{program_name}` or `/programs` endpoints, and\nthen checking the `status` field of the program object.",
         "operationId": "compile_program",
         "parameters": [
           {
@@ -2374,10 +2354,10 @@
         },
         "responses": {
           "202": {
-            "description": "Compilation request submitted."
+            "description": "Compilation request submitted"
           },
           "404": {
-            "description": "Specified program id does not exist.",
+            "description": "Specified program name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2385,16 +2365,16 @@
                 },
                 "example": {
                   "details": {
-                    "program_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
+                    "name": "unknown_name"
                   },
-                  "error_code": "UnknownProgram",
-                  "message": "Unknown program id '67e55044-10b1-426f-9247-bb680e5fe0c8'"
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
           },
           "409": {
-            "description": "Program version specified in the request doesn't match the latest program version in the database.",
+            "description": "Program version specified in the request doesn't match the latest program version in the database",
             "content": {
               "application/json": {
                 "schema": {
@@ -2423,8 +2403,8 @@
         "tags": [
           "Services"
         ],
-        "summary": "Fetch services, optionally filtered by name or ID.",
-        "description": "Fetch services, optionally filtered by name or ID.",
+        "summary": "Fetch services, optionally filtered by name, ID or configuration type.",
+        "description": "Fetch services, optionally filtered by name, ID or configuration type.",
         "operationId": "list_services",
         "parameters": [
           {
@@ -2537,6 +2517,21 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "A service with this name already exists in the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2567,7 +2562,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Service retrieved successfully.",
+            "description": "Service retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -2941,7 +2936,7 @@
       },
       "CreateOrReplaceConnectorRequest": {
         "type": "object",
-        "description": "Request to create or replace a connector",
+        "description": "Request to create or replace a connector.",
         "required": [
           "description",
           "config"
@@ -3016,7 +3011,7 @@
       },
       "CreateOrReplaceProgramRequest": {
         "type": "object",
-        "description": "Request to create or replace a Feldera program.",
+        "description": "Request to create or replace a program.",
         "required": [
           "description",
           "code"
@@ -3025,7 +3020,7 @@
           "code": {
             "type": "string",
             "description": "SQL code of the program.",
-            "example": "CREATE TABLE Example(name varchar);"
+            "example": "CREATE TABLE example(name VARCHAR);"
           },
           "description": {
             "type": "string",
@@ -3036,7 +3031,7 @@
       },
       "CreateOrReplaceProgramResponse": {
         "type": "object",
-        "description": "Response to a new program request.",
+        "description": "Response to a create or replace program request.",
         "required": [
           "program_id",
           "version"
@@ -3609,7 +3604,7 @@
       },
       "NewProgramRequest": {
         "type": "object",
-        "description": "Request to create a new Feldera program.",
+        "description": "Request to create a new program.",
         "required": [
           "name",
           "description",
@@ -3629,7 +3624,7 @@
           "name": {
             "type": "string",
             "description": "Program name.",
-            "example": "Example program"
+            "example": "example-program"
           }
         }
       },
@@ -3924,23 +3919,6 @@
           "ShuttingDown",
           "Failed"
         ]
-      },
-      "ProgramCodeResponse": {
-        "type": "object",
-        "description": "Response to a program code request.",
-        "required": [
-          "program",
-          "code"
-        ],
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "Program code."
-          },
-          "program": {
-            "$ref": "#/components/schemas/ProgramDescr"
-          }
-        }
       },
       "ProgramDescr": {
         "type": "object",
@@ -4332,11 +4310,7 @@
       },
       "UpdateConnectorRequest": {
         "type": "object",
-        "description": "Request to update an existing data-connector.",
-        "required": [
-          "name",
-          "description"
-        ],
+        "description": "Request to update an existing connector.",
         "properties": {
           "config": {
             "allOf": [
@@ -4348,17 +4322,19 @@
           },
           "description": {
             "type": "string",
-            "description": "New connector description."
+            "description": "New connector description. If absent, existing name will be kept\nunmodified.",
+            "nullable": true
           },
           "name": {
             "type": "string",
-            "description": "New connector name."
+            "description": "New connector name. If absent, existing name will be kept unmodified.",
+            "nullable": true
           }
         }
       },
       "UpdateConnectorResponse": {
         "type": "object",
-        "description": "Response to a config update request."
+        "description": "Response to a connector update request."
       },
       "UpdatePipelineRequest": {
         "type": "object",
@@ -4413,16 +4389,16 @@
       },
       "UpdateProgramRequest": {
         "type": "object",
-        "description": "Update program request.",
+        "description": "Request to update an existing program.",
         "properties": {
           "code": {
             "type": "string",
-            "description": "New SQL code for the program or `None` to keep existing program\ncode unmodified.",
+            "description": "New SQL code for the program. If absent, existing program code will be\nkept unmodified.",
             "nullable": true
           },
           "description": {
             "type": "string",
-            "description": "New description for the program.",
+            "description": "New program description. If absent, existing description will be kept\nunmodified.",
             "nullable": true
           },
           "guard": {
@@ -4435,7 +4411,7 @@
           },
           "name": {
             "type": "string",
-            "description": "New name for the program.",
+            "description": "New program name. If absent, existing name will be kept unmodified.",
             "nullable": true
           }
         }

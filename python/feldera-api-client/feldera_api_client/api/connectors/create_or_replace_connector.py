@@ -73,7 +73,7 @@ def sync_detailed(
 
     Args:
         connector_name (str):
-        json_body (CreateOrReplaceProgramRequest): Request to create or replace a Feldera program.
+        json_body (CreateOrReplaceProgramRequest): Request to create or replace a program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -107,7 +107,7 @@ def sync(
 
     Args:
         connector_name (str):
-        json_body (CreateOrReplaceProgramRequest): Request to create or replace a Feldera program.
+        json_body (CreateOrReplaceProgramRequest): Request to create or replace a program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -136,7 +136,7 @@ async def asyncio_detailed(
 
     Args:
         connector_name (str):
-        json_body (CreateOrReplaceProgramRequest): Request to create or replace a Feldera program.
+        json_body (CreateOrReplaceProgramRequest): Request to create or replace a program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -168,7 +168,7 @@ async def asyncio(
 
     Args:
         connector_name (str):
-        json_body (CreateOrReplaceProgramRequest): Request to create or replace a Feldera program.
+        json_body (CreateOrReplaceProgramRequest): Request to create or replace a program.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

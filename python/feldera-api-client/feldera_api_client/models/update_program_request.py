@@ -9,14 +9,15 @@ T = TypeVar("T", bound="UpdateProgramRequest")
 
 @define
 class UpdateProgramRequest:
-    """Update program request.
+    """Request to update an existing program.
 
     Attributes:
-        code (Union[Unset, None, str]): New SQL code for the program or `None` to keep existing program
-            code unmodified.
-        description (Union[Unset, None, str]): New description for the program.
+        code (Union[Unset, None, str]): New SQL code for the program. If absent, existing program code will be
+            kept unmodified.
+        description (Union[Unset, None, str]): New program description. If absent, existing description will be kept
+            unmodified.
         guard (Union[Unset, None, int]): Version number.
-        name (Union[Unset, None, str]): New name for the program.
+        name (Union[Unset, None, str]): New program name. If absent, existing name will be kept unmodified.
     """
 
     code: Union[Unset, None, str] = UNSET

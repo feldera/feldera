@@ -11,7 +11,7 @@ T = TypeVar("T", bound="CreateOrReplaceConnectorRequest")
 
 @define
 class CreateOrReplaceConnectorRequest:
-    """Request to create or replace a connector
+    """Request to create or replace a connector.
 
     Attributes:
         config (ConnectorConfig): A data connector's configuration

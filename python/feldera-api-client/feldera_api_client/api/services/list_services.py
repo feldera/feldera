@@ -74,9 +74,9 @@ def sync_detailed(
     name: Union[Unset, None, str] = UNSET,
     config_type: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID.
+    """Fetch services, optionally filtered by name, ID or configuration type.
 
-     Fetch services, optionally filtered by name or ID.
+     Fetch services, optionally filtered by name, ID or configuration type.
 
     Args:
         id (Union[Unset, None, str]):
@@ -111,9 +111,9 @@ def sync(
     name: Union[Unset, None, str] = UNSET,
     config_type: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID.
+    """Fetch services, optionally filtered by name, ID or configuration type.
 
-     Fetch services, optionally filtered by name or ID.
+     Fetch services, optionally filtered by name, ID or configuration type.
 
     Args:
         id (Union[Unset, None, str]):
@@ -143,9 +143,9 @@ async def asyncio_detailed(
     name: Union[Unset, None, str] = UNSET,
     config_type: Union[Unset, None, str] = UNSET,
 ) -> Response[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID.
+    """Fetch services, optionally filtered by name, ID or configuration type.
 
-     Fetch services, optionally filtered by name or ID.
+     Fetch services, optionally filtered by name, ID or configuration type.
 
     Args:
         id (Union[Unset, None, str]):
@@ -178,9 +178,9 @@ async def asyncio(
     name: Union[Unset, None, str] = UNSET,
     config_type: Union[Unset, None, str] = UNSET,
 ) -> Optional[Union[ErrorResponse, List["ServiceDescr"]]]:
-    """Fetch services, optionally filtered by name or ID.
+    """Fetch services, optionally filtered by name, ID or configuration type.
 
-     Fetch services, optionally filtered by name or ID.
+     Fetch services, optionally filtered by name, ID or configuration type.
 
     Args:
         id (Union[Unset, None, str]):
