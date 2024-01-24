@@ -10,9 +10,9 @@ import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
-import { useHashPart } from 'src/lib/compositions/useHashPart'
 import { nonNull } from 'src/lib/functions/common/function'
 
+import { useHash } from '@mantine/hooks'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
@@ -22,8 +22,10 @@ import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
 import type { Row } from '$lib/components/streaming/import/InsertionTable'
+
 const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
-  const [tab] = useHashPart()
+  const [tab] = useHash()
+
   return (
     <Box sx={{ mb: '-1rem' }}>
       <FormControl sx={{ mt: '-1rem' }}>
@@ -46,7 +48,7 @@ const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables:
               value={item.name}
               {...{
                 component: Link,
-                href: `?pipeline_name=${props.pipeline.descriptor.name}&relation=${item.name}#${tab}`
+                href: `?pipeline_name=${props.pipeline.descriptor.name}&relation=${item.name}${tab}`
               }}
               data-testid={`button-option-relation-${item.name}`}
             >
@@ -124,7 +126,7 @@ const ViewInspector = (props: { pipeline: Pipeline; relation: string }) => {
 }
 
 export default () => {
-  const [tab, setTab] = (([tab, setTab]) => [tab || 'browse', setTab])(useHashPart<Tab>())
+  const [tab, setTab] = (([tab, setTab]) => [tab.slice(1) || 'browse', setTab])(useHash())
 
   // Parse config, view, tab arguments from router query
   const query = useSearchParams()
@@ -161,7 +163,7 @@ export default () => {
   {
     const views = pipelineRevision?.views
     useEffect(() => {
-      if (relation && views && views.includes(relation) && tab == 'insert') {
+      if (relation && views && views.includes(relation) && tab === 'insert') {
         setTab('browse')
       }
     }, [setTab, relation, views, tab])
