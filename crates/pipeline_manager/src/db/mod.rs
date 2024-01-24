@@ -1111,6 +1111,40 @@ impl ProjectDB {
         Ok(ret)
     }
 
+    /// Updates a program by name by, within a transaction, resolving
+    /// the name to its respective identifier and proceeding to use
+    /// that in the update query.
+    pub async fn update_program_by_name(
+        &self,
+        tenant_id: TenantId,
+        original_name: &str,
+        new_name: &Option<String>,
+        description: &Option<String>,
+        program_code: &Option<String>,
+        guard: Option<Version>,
+    ) -> Result<Version, DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let program = self
+            .get_program_by_name(tenant_id, original_name, false, Some(&txn))
+            .await?;
+        let version = self
+            .update_program(
+                tenant_id,
+                program.program_id,
+                new_name,
+                description,
+                program_code,
+                &None,
+                &None,
+                guard,
+                Some(&txn),
+            )
+            .await?;
+        txn.commit().await?;
+        Ok(version)
+    }
+
     pub(crate) async fn create_or_replace_pipeline(
         &self,
         tenant_id: TenantId,

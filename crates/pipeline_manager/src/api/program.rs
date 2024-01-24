@@ -13,20 +13,11 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::{examples, parse_string_param, ProgramStatus},
     auth::TenantId,
-    db::{storage::Storage, DBError, ProgramDescr, ProgramId, Version},
+    db::{storage::Storage, DBError, ProgramId, Version},
 };
 
 use super::{ManagerError, ServerState};
 use uuid::Uuid;
-
-/// Response to a program code request.
-#[derive(Serialize, ToSchema)]
-pub(crate) struct ProgramCodeResponse {
-    /// Current program meta-data.
-    program: ProgramDescr,
-    /// Program code.
-    code: String,
-}
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct ProgramIdOrNameQuery {
@@ -52,11 +43,11 @@ pub(crate) struct CompileProgramRequest {
     version: Version,
 }
 
-/// Request to create a new Feldera program.
+/// Request to create a new program.
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct NewProgramRequest {
     /// Program name.
-    #[schema(example = "Example program")]
+    #[schema(example = "example-program")]
     name: String,
     /// Program description.
     #[schema(example = "Example description")]
@@ -69,8 +60,7 @@ pub(crate) struct NewProgramRequest {
 /// Response to a new program request.
 #[derive(Serialize, ToSchema)]
 pub(crate) struct NewProgramResponse {
-    /// Id of the newly created program.
-    #[schema(example = 42)]
+    /// Unique id assigned to the new program.
     program_id: ProgramId,
     /// Initial program version (this field is always set to 1 when
     /// a program is first created).
@@ -78,16 +68,16 @@ pub(crate) struct NewProgramResponse {
     version: Version,
 }
 
-/// Update program request.
+/// Request to update an existing program.
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct UpdateProgramRequest {
-    /// New name for the program.
+    /// New program name. If absent, existing name will be kept unmodified.
     name: Option<String>,
-    /// New description for the program.
-    #[serde(default)]
+    /// New program description. If absent, existing description will be kept
+    /// unmodified.
     description: Option<String>,
-    /// New SQL code for the program or `None` to keep existing program
-    /// code unmodified.
+    /// New SQL code for the program. If absent, existing program code will be
+    /// kept unmodified.
     code: Option<String>,
     /// A version guard: update the program only if the program version
     /// matches the supplied value.
@@ -97,30 +87,31 @@ pub(crate) struct UpdateProgramRequest {
 /// Response to a program update request.
 #[derive(Serialize, ToSchema)]
 pub(crate) struct UpdateProgramResponse {
-    /// New program version.  Equals the previous version if program code
+    /// New program version. Equals the previous version if program code
     /// doesn't change or previous version +1 if it does.
     version: Version,
 }
 
-/// Request to create or replace a Feldera program.
+/// Request to create or replace a program.
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct CreateOrReplaceProgramRequest {
     /// Program description.
     #[schema(example = "Example description")]
     description: String,
     /// SQL code of the program.
-    #[schema(example = "CREATE TABLE Example(name varchar);")]
+    #[schema(example = "CREATE TABLE example(name VARCHAR);")]
     code: String,
 }
 
-/// Response to a new program request.
+/// Response to a create or replace program request.
 #[derive(Serialize, ToSchema)]
 pub(crate) struct CreateOrReplaceProgramResponse {
-    /// Id of the newly created program.
-    #[schema(example = 42)]
+    /// Unique id assigned to the program.
     program_id: ProgramId,
-    /// Initial program version (this field is always set to 1 when
-    /// a program is first created).
+    /// Program version. This field is always set to 1 when
+    /// a program is first created. After an update, it equals
+    /// the previous version if program code doesn't change
+    /// or previous version +1 if it does.
     #[schema(example = 1)]
     version: Version,
 }
@@ -128,9 +119,9 @@ pub(crate) struct CreateOrReplaceProgramResponse {
 /// Fetch programs, optionally filtered by name or ID.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Programs retrieved successfully.", body = [ProgramDescr]),
+        (status = OK, description = "List of programs retrieved successfully", body = [ProgramDescr]),
         (status = NOT_FOUND
-            , description = "Specified program name or ID does not exist."
+            , description = "Specified program name or ID does not exist"
             , body = ErrorResponse
             , examples(
                 ("Unknown program name" = (value = json!(examples::unknown_name()))),
@@ -151,48 +142,45 @@ pub(crate) async fn get_programs(
     with_code: web::Query<WithCodeQuery>,
 ) -> Result<HttpResponse, ManagerError> {
     let with_code = with_code.with_code.unwrap_or(false);
-    if let Some(id) = req.id {
-        let program = state
-            .db
-            .lock()
-            .await
-            .get_program_by_id(*tenant_id, ProgramId(id), with_code)
-            .await?;
-
-        Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&vec![program]))
+    let programs = if let Some(id) = req.id {
+        vec![
+            state
+                .db
+                .lock()
+                .await
+                .get_program_by_id(*tenant_id, ProgramId(id), with_code)
+                .await?,
+        ]
     } else if let Some(name) = req.name.clone() {
-        let program = state
-            .db
-            .lock()
-            .await
-            .get_program_by_name(*tenant_id, &name, with_code, None)
-            .await?;
-        Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&vec![program]))
+        vec![
+            state
+                .db
+                .lock()
+                .await
+                .get_program_by_name(*tenant_id, &name, with_code, None)
+                .await?,
+        ]
     } else {
-        let programs = state
+        state
             .db
             .lock()
             .await
             .list_programs(*tenant_id, with_code)
-            .await?;
-        Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&programs))
-    }
+            .await?
+    };
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&programs))
 }
 
-/// Fetch a program by ID.
+/// Fetch a program by name.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Program retrieved successfully.", body = ProgramDescr),
+        (status = OK, description = "Program retrieved successfully", body = ProgramDescr),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist."
+            , description = "Specified program name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_program())),
+            , example = json!(examples::unknown_name())),
     ),
     params(
         ("program_name" = String, Path, description = "Unique program name"),
@@ -229,7 +217,7 @@ async fn get_program(
     responses(
         (status = CREATED, description = "Program created successfully", body = NewProgramResponse),
         (status = CONFLICT
-            , description = "A program with this name already exists in the database."
+            , description = "A program with this name already exists in the database"
             , body = ErrorResponse
             , example = json!(examples::duplicate_name())),
     ),
@@ -243,7 +231,7 @@ async fn new_program(
     tenant_id: ReqData<TenantId>,
     request: web::Json<NewProgramRequest>,
 ) -> Result<HttpResponse, DBError> {
-    state
+    let (program_id, version) = state
         .db
         .lock()
         .await
@@ -255,19 +243,18 @@ async fn new_program(
             &request.code,
             None,
         )
-        .await
-        .map(|(program_id, version)| {
-            info!(
-                "Created program {program_id} with version {version} (tenant:{})",
-                *tenant_id
-            );
-            HttpResponse::Created()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&NewProgramResponse {
-                    program_id,
-                    version,
-                })
-        })
+        .await?;
+
+    info!(
+        "Created program with name {} and id {} and version {} (tenant: {})",
+        &request.name, program_id, version, *tenant_id
+    );
+    Ok(HttpResponse::Created()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&NewProgramResponse {
+            program_id,
+            version,
+        }))
 }
 
 /// Change one or more of a program's code, description or name.
@@ -281,13 +268,13 @@ async fn new_program(
 #[utoipa::path(
     request_body = UpdateProgramRequest,
     responses(
-        (status = OK, description = "Program updated successfully.", body = UpdateProgramResponse),
+        (status = OK, description = "Program updated successfully", body = UpdateProgramResponse),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist."
+            , description = "Specified program name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_program())),
+            , example = json!(examples::unknown_name())),
         (status = CONFLICT
-            , description = "A program with this name already exists in the database."
+            , description = "A program with this name already exists in the database"
             , body = ErrorResponse
             , example = json!(examples::duplicate_name())),
     ),
@@ -307,27 +294,21 @@ async fn update_program(
 ) -> Result<HttpResponse, ManagerError> {
     let program_name = parse_string_param(&request, "program_name")?;
     let db = state.db.lock().await;
-    let program = db
-        .get_program_by_name(*tenant_id, &program_name, false, None)
-        .await?;
     let version = db
-        .update_program(
+        .update_program_by_name(
             *tenant_id,
-            program.program_id,
+            &program_name,
             &body.name,
             &body.description,
             &body.code,
-            &None,
-            &None,
             body.guard,
-            None,
         )
         .await?;
+
     info!(
-        "Updated program {program_name} to version {version} (tenant:{})",
+        "Updated program {program_name} to version {version} (tenant: {})",
         *tenant_id
     );
-
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&UpdateProgramResponse { version }))
@@ -340,7 +321,7 @@ async fn update_program(
         (status = CREATED, description = "Program created successfully", body = CreateOrReplaceProgramResponse),
         (status = OK, description = "Program updated successfully", body = CreateOrReplaceProgramResponse),
         (status = CONFLICT
-            , description = "A program with this name already exists in the database."
+            , description = "A program with this name already exists in the database"
             , body = ErrorResponse
             , example = json!(examples::duplicate_name())),
     ),
@@ -366,6 +347,10 @@ async fn create_or_replace_program(
         .create_or_replace_program(*tenant_id, &program_name, &body.description, &body.code)
         .await?;
     if created {
+        info!(
+            "Created program with name {} and id {} and version {} (tenant: {})",
+            program_name, program_id, version, *tenant_id
+        );
         Ok(HttpResponse::Created()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(&CreateOrReplaceProgramResponse {
@@ -373,6 +358,10 @@ async fn create_or_replace_program(
                 version,
             }))
     } else {
+        info!(
+            "Updated program {program_name} to version {version} (tenant: {})",
+            *tenant_id
+        );
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(&CreateOrReplaceProgramResponse {
@@ -384,19 +373,19 @@ async fn create_or_replace_program(
 
 /// Mark a program for compilation.
 ///
-/// The client can track a program's compilation status by pollling the
-/// `/program/{program_id}` or `/programs` endpoints, and
-/// then checking the `status` field of the program object
+/// The client can track a program's compilation status by polling the
+/// `/program/{program_name}` or `/programs` endpoints, and
+/// then checking the `status` field of the program object.
 #[utoipa::path(
     request_body = CompileProgramRequest,
     responses(
-        (status = ACCEPTED, description = "Compilation request submitted."),
+        (status = ACCEPTED, description = "Compilation request submitted"),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist."
+            , description = "Specified program name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_program())),
+            , example = json!(examples::unknown_name())),
         (status = CONFLICT
-            , description = "Program version specified in the request doesn't match the latest program version in the database."
+            , description = "Program version specified in the request doesn't match the latest program version in the database"
             , body = ErrorResponse
             , example = json!(examples::outdated_program_version())),
     ),
@@ -414,6 +403,7 @@ async fn compile_program(
     request: HttpRequest,
     body: web::Json<CompileProgramRequest>,
 ) -> Result<HttpResponse, ManagerError> {
+    // TODO: use transaction
     let program_name = parse_string_param(&request, "program_name")?;
     let descr = state
         .db
@@ -457,23 +447,16 @@ async fn compile_program(
 /// program.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Program successfully deleted."),
+        (status = OK, description = "Program successfully deleted"),
         (status = BAD_REQUEST
-            , description = "Specified program id is referenced by a pipeline or is not a valid uuid."
+            , description = "Specified program is referenced by a pipeline"
             , body = ErrorResponse
-            , examples (
-                ("Program in use" =
-                    (description = "Specified program id is referenced by a pipeline",
-                      value = json!(examples::program_in_use_by_pipeline()))),
-                ("Invalid uuid" =
-                    (description = "Specified program id is not a valid uuid.",
-                     value = json!(examples::invalid_uuid_param()))),
-            )
+            , example = json!(examples::program_in_use_by_pipeline()),
         ),
         (status = NOT_FOUND
-            , description = "Specified program id does not exist."
+            , description = "Specified program name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_program())),
+            , example = json!(examples::unknown_name())),
     ),
     params(
         ("program_name" = String, Path, description = "Unique program name")
@@ -494,6 +477,7 @@ async fn delete_program(
         .delete_program(*tenant_id, &program_name)
         .await
         .map(|_| HttpResponse::Ok().finish())?;
-    info!("Deleted program {program_name} (tenant:{})", *tenant_id);
+
+    info!("Deleted program {program_name} (tenant: {})", *tenant_id);
     Ok(resp)
 }
