@@ -1,6 +1,6 @@
-//! Layer file.
+//! File based data format for Feldera.
 //!
-//! A layer file stores `n > 0` columns of data, each of which has a key type
+//! A "layer file" stores `n > 0` columns of data, each of which has a key type
 //! `K[i]` and an auxiliary data type `A[i]`.  Each column is arranged into
 //! groups of rows, where column 0 forms a single group and each row in column
 //! `i` is associated with a group of one or more rows in column `i + 1` (for

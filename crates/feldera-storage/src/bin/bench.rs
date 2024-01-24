@@ -2,7 +2,7 @@
 //!
 //! An example invocation:
 //!
-//! ```no-run
+//! ```shell
 //! cargo run --release --bin bench --features metrics-exporter-tcp -- --cache --threads 2 --total-size 4294967296 --path /path/to/disk
 //! ```
 //!
