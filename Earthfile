@@ -436,9 +436,7 @@ ui-playwright-container:
     # It was decided it's better to clone the snapshots repo during the build rather than have it as a submodule
     ARG PLAYWRIGHT_SNAPSHOTS_COMMIT
     RUN echo PLAYWRIGHT_SNAPSHOTS_COMMIT=$PLAYWRIGHT_SNAPSHOTS_COMMIT
-    GIT CLONE https://github.com/feldera/playwright-snapshots.git playwright-snapshots
-    # [ -n "..." ] syntax returns true if the string is not empty, in which case the commands after `&&` execute
-    RUN [ -n "$PLAYWRIGHT_SNAPSHOTS_COMMIT" ] && cd playwright-snapshots && git checkout $PLAYWRIGHT_SNAPSHOTS_COMMIT
+    GIT CLONE --branch=$PLAYWRIGHT_SNAPSHOTS_COMMIT https://github.com/feldera/playwright-snapshots.git playwright-snapshots
 
     WORKDIR web-console
     RUN yarn install
