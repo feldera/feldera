@@ -306,7 +306,6 @@ public class RustFileWriter implements ICompilerComponent {
         }
         stream.append("\n");
 
-        stream.append("#[cfg(test)]").newline();
         stream.append("sqlvalue::to_sql_row_impl! {").increase();
         for (int i: used.tupleSizesUsed) {
             if (i <= 10)
