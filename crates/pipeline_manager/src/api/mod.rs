@@ -211,7 +211,6 @@ request is rejected."
         Version,
         ProgramStatus,
         ErrorResponse,
-        program::ProgramCodeResponse,
         program::NewProgramRequest,
         program::NewProgramResponse,
         program::UpdateProgramRequest,
