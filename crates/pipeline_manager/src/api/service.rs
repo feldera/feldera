@@ -26,7 +26,7 @@ pub(crate) struct NewServiceRequest {
     name: String,
     /// Service description.
     description: String,
-    /// Service configuration (JSON).
+    /// Service configuration.
     config: ServiceConfig,
 }
 
@@ -59,7 +59,7 @@ pub(crate) struct UpdateServiceRequest {
     /// New service description. If absent, existing name will be kept
     /// unmodified.
     description: Option<String>,
-    /// New service configuration (JSON). If absent, existing configuration will
+    /// New service configuration. If absent, existing configuration will
     /// be kept unmodified.
     config: Option<ServiceConfig>,
 }
@@ -73,7 +73,7 @@ pub(crate) struct UpdateServiceResponse {}
 pub(crate) struct CreateOrReplaceServiceRequest {
     /// Service description.
     description: String,
-    /// Service configuration (JSON).
+    /// Service configuration.
     config: ServiceConfig,
 }
 
@@ -84,7 +84,7 @@ pub(crate) struct CreateOrReplaceServiceResponse {
     service_id: ServiceId,
 }
 
-/// Fetch services, optionally filtered by name or ID.
+/// Fetch services, optionally filtered by name, ID or configuration type.
 #[utoipa::path(
     responses(
         (status = OK, description = "List of services retrieved successfully", body = [ServiceDescr]),
@@ -145,6 +145,10 @@ async fn list_services(
     request_body = NewServiceRequest,
     responses(
         (status = CREATED, description = "Service successfully created", body = NewServiceResponse),
+        (status = CONFLICT
+        , description = "A service with this name already exists in the database"
+        , body = ErrorResponse
+        , example = json!(examples::duplicate_name())),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -254,10 +258,15 @@ async fn create_or_replace_service(
         .create_or_replace_service(*tenant_id, &service_name, &body.description, &body.config)
         .await?;
     if created {
+        info!(
+            "Created service with name {} and id {} (tenant: {})",
+            service_name, service_id, *tenant_id
+        );
         Ok(HttpResponse::Created()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(&CreateOrReplaceServiceResponse { service_id }))
     } else {
+        info!("Updated service {service_name} (tenant: {})", *tenant_id);
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
             .json(&CreateOrReplaceServiceResponse { service_id }))
@@ -301,7 +310,7 @@ async fn delete_service(
 /// Fetch a service by name.
 #[utoipa::path(
     responses(
-        (status = OK, description = "Service retrieved successfully.", body = ServiceDescr),
+        (status = OK, description = "Service retrieved successfully", body = ServiceDescr),
         (status = NOT_FOUND
         , description = "Specified service name does not exist"
         , body = ErrorResponse
