@@ -928,7 +928,7 @@ where
 /// ```
 /// # use feldera_storage::file::writer::{Parameters, Writer1};
 /// # use std::fs::File;
-/// let mut file = File::create("file.layer").unwrap();
+/// let mut file = tempfile::tempfile().unwrap();
 /// let mut file = Writer1::new(file, Parameters::default()).unwrap();
 /// for i in 0..1000_u32 {
 ///     file.write0((&i, &())).unwrap();
@@ -1008,7 +1008,7 @@ where
 /// ```
 /// # use feldera_storage::file::writer::{Parameters, Writer2};
 /// # use std::fs::File;
-/// let mut file = File::create("file.layer").unwrap();
+/// let mut file = tempfile::tempfile().unwrap();
 /// let mut file = Writer2::new(file, Parameters::default()).unwrap();
 /// for i in 0..1000_u32 {
 ///     for j in 0..10_u32 {
