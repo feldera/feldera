@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::iter;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
 use proptest::prelude::*;
 use proptest_state_machine::ReferenceStateMachine;
@@ -158,12 +158,12 @@ impl<const ALLOW_OVERWRITE: bool> StorageWrite for InMemoryBackend<ALLOW_OVERWRI
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let mut files = self.files.borrow_mut();
         let file = files.get(&fd.0).unwrap();
         let new_file = insert_slice_at_offset(file, offset as usize, &data, ALLOW_OVERWRITE)?;
         files.insert(fd.0, new_file);
-        Ok(Rc::new(data))
+        Ok(Arc::new(data))
     }
 
     async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError> {
@@ -181,7 +181,7 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let files = self.immutable_files.borrow();
         let file = files.get(&fd.0).unwrap();
         let offset = offset as usize;
@@ -198,7 +198,7 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
             .map(|x| x.unwrap_or_default())
             .collect();
         buf.extend_from_slice(&slice);
-        Ok(Rc::new(buf))
+        Ok(Arc::new(buf))
     }
 
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {

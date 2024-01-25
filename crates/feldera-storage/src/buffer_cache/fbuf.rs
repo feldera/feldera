@@ -127,7 +127,7 @@ impl FBuf {
     ///
     /// Usually the safe methods `reserve` or `reserve_exact` are a better
     /// choice. This method only exists as a micro-optimization for very
-    /// performance-sensitive code where where the calculation of capacity
+    /// performance-sensitive code where the calculation of capacity
     /// required has already been performed, and you want to avoid doing it
     /// again, or if you want to implement a different growth strategy.
     ///
