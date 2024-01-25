@@ -18,8 +18,8 @@ use binrw::{
 };
 use crc32c::crc32c;
 use rkyv::{
-    archived_value, ser::serializers::AlignedSerializer, AlignedVec, Archive, Archived,
-    Deserialize, Infallible, Serialize,
+    archived_value, ser::serializers::AlignedSerializer, AlignedVec, Archive, Deserialize,
+    Infallible, Serialize,
 };
 
 use crate::file::{
@@ -225,8 +225,8 @@ impl ColumnWriter {
     {
         // Flush data.
         if !self.data_block.is_empty() {
-            let data_block = self.data_block.take().build();
-            self.write_data_block::<W, K, A>(writer, data_block)?;
+            let data_block = self.data_block.take().build::<K, A>();
+            self.write_data_block(writer, data_block)?;
         }
 
         // Flush index.
@@ -271,26 +271,16 @@ impl ColumnWriter {
         &mut self.index_blocks[level]
     }
 
-    fn write_data_block<W, K, A>(
-        &mut self,
-        writer: &mut W,
-        mut data_block: DataBlock,
-    ) -> IoResult<()>
+    fn write_data_block<W, K>(&mut self, writer: &mut W, data_block: DataBlock<K>) -> IoResult<()>
     where
         W: Write + Seek,
         K: Rkyv,
-        A: Rkyv,
     {
-        let location = write_block(writer, &mut data_block.raw)?;
+        let location = write_block(writer, data_block.raw)?;
 
-        let serialize_minmax = |dst: &mut AlignedVec| {
-            let min_offset = rkyv_copy_key::<K, A>(dst, &data_block.raw, data_block.min_offset);
-            let max_offset = rkyv_copy_key::<K, A>(dst, &data_block.raw, data_block.max_offset);
-            (min_offset, max_offset)
-        };
         if let Some(index_block) = self.get_index_block(0).add_entry(
             location,
-            serialize_minmax,
+            &data_block.min_max,
             data_block.n_values as u64,
         ) {
             self.write_index_block::<W, K>(writer, index_block, 0)?;
@@ -301,7 +291,7 @@ impl ColumnWriter {
     fn write_index_block<W, K>(
         &mut self,
         writer: &mut W,
-        mut index_block: IndexBlock,
+        mut index_block: IndexBlock<K>,
         mut level: usize,
     ) -> IoResult<(BlockLocation, u64)>
     where
@@ -309,17 +299,12 @@ impl ColumnWriter {
         K: Rkyv,
     {
         loop {
-            let location = write_block(writer, &mut index_block.raw)?;
+            let location = write_block(writer, index_block.raw)?;
 
             level += 1;
-            let serialize_minmax = |dst: &mut AlignedVec| {
-                let min_offset = rkyv_copy::<K>(dst, &index_block.raw, index_block.min_offset);
-                let max_offset = rkyv_copy::<K>(dst, &index_block.raw, index_block.max_offset);
-                (min_offset, max_offset)
-            };
             let opt_index_block = self.get_index_block(level).add_entry(
                 location,
-                serialize_minmax,
+                &index_block.min_max,
                 index_block.n_rows,
             );
             index_block = match opt_index_block {
@@ -341,7 +326,7 @@ impl ColumnWriter {
         A: Rkyv,
     {
         if let Some(data_block) = self.data_block.add_item(item, row_group) {
-            self.write_data_block::<W, K, A>(writer, data_block)?;
+            self.write_data_block(writer, data_block)?;
         }
         Ok(())
     }
@@ -400,10 +385,9 @@ struct DataBuildSpecs {
     len: usize,
 }
 
-struct DataBlock {
+struct DataBlock<K> {
     raw: AlignedVec,
-    min_offset: usize,
-    max_offset: usize,
+    min_max: (K, K),
     n_values: usize,
 }
 
@@ -470,7 +454,7 @@ impl DataBlockBuilder {
         &mut self,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
-    ) -> Option<DataBlock>
+    ) -> Option<DataBlock<K>>
     where
         K: Rkyv,
         A: Rkyv,
@@ -478,7 +462,7 @@ impl DataBlockBuilder {
         if self.try_add_item(item, row_group) {
             None
         } else {
-            let retval = self.take().build();
+            let retval = self.take().build::<K, A>();
             assert!(self.try_add_item(item, row_group));
             Some(retval)
         }
@@ -514,7 +498,11 @@ impl DataBlockBuilder {
             len,
         }
     }
-    fn build(mut self) -> DataBlock {
+    fn build<K, A>(mut self) -> DataBlock<K>
+    where
+        K: Rkyv,
+        A: Rkyv,
+    {
         let specs = self.specs();
 
         self.raw
@@ -553,10 +541,15 @@ impl DataBlockBuilder {
         };
         header.overwrite_head(&mut self.raw);
 
+        let min_offset = *self.value_offsets.first().unwrap();
+        let min = rkyv_deserialize_key::<K, A>(&self.raw, min_offset);
+
+        let max_offset = *self.value_offsets.last().unwrap();
+        let max = rkyv_deserialize_key::<K, A>(&self.raw, max_offset);
+
         DataBlock {
             raw: self.raw,
-            min_offset: *self.value_offsets.first().unwrap(),
-            max_offset: *self.value_offsets.last().unwrap(),
+            min_max: (min, max),
             n_values,
         }
     }
@@ -614,31 +607,27 @@ struct IndexBuildSpecs {
     len: usize,
 }
 
-struct IndexBlock {
+struct IndexBlock<K> {
     raw: AlignedVec,
-    min_offset: usize,
-    max_offset: usize,
+    min_max: (K, K),
     n_rows: u64,
 }
 
-fn rkyv_copy_key<K, A>(dst: &mut AlignedVec, src: &AlignedVec, offset: usize) -> usize
+fn rkyv_deserialize<K>(src: &AlignedVec, offset: usize) -> K
+where
+    K: Rkyv,
+{
+    let archived = unsafe { archived_value::<K>(src.as_slice(), offset) };
+    archived.deserialize(&mut Infallible).unwrap()
+}
+
+fn rkyv_deserialize_key<K, A>(src: &AlignedVec, offset: usize) -> K
 where
     K: Rkyv,
     A: Rkyv,
 {
-    let archived: &Archived<Item<K, A>> =
-        unsafe { archived_value::<Item<K, A>>(src.as_slice(), offset) };
-    let value: K = archived.0.deserialize(&mut Infallible).unwrap();
-    rkyv_serialize(dst, &value)
-}
-
-fn rkyv_copy<T>(dst: &mut AlignedVec, src: &AlignedVec, offset: usize) -> usize
-where
-    T: Rkyv,
-{
-    let archived: &T::Archived = unsafe { archived_value::<T>(src, offset) };
-    let value: T = archived.deserialize(&mut Infallible).unwrap();
-    rkyv_serialize(dst, &value)
+    let archived = unsafe { archived_value::<Item<K, A>>(src.as_slice(), offset) };
+    archived.0.deserialize(&mut Infallible).unwrap()
 }
 
 fn rkyv_serialize<T>(dst: &mut AlignedVec, value: &T) -> usize
@@ -687,16 +676,17 @@ impl IndexBlockBuilder {
             Self::new(&self.parameters, self.column_index, self.child_type),
         )
     }
-    fn try_add_entry<F>(&mut self, child: BlockLocation, serialize_minmax: F, n_rows: u64) -> bool
+    fn try_add_entry<K>(&mut self, child: BlockLocation, min_max: &(K, K), n_rows: u64) -> bool
     where
-        F: Fn(&mut AlignedVec) -> (usize, usize),
+        K: Rkyv,
     {
         if self.entries.len() >= self.parameters.max_branch() {
             return false;
         }
         let saved_len = self.raw.len();
 
-        let (min_offset, max_offset) = serialize_minmax(&mut self.raw);
+        let min_offset = rkyv_serialize(&mut self.raw, &min_max.0);
+        let max_offset = rkyv_serialize(&mut self.raw, &min_max.1);
         self.entries.push(IndexEntry {
             child,
             min_offset,
@@ -721,16 +711,16 @@ impl IndexBlockBuilder {
 
         true
     }
-    fn add_entry<F>(
+    fn add_entry<K>(
         &mut self,
         child: BlockLocation,
-        serialize_minmax: F,
+        min_max: &(K, K),
         n_rows: u64,
-    ) -> Option<IndexBlock>
+    ) -> Option<IndexBlock<K>>
     where
-        F: Fn(&mut AlignedVec) -> (usize, usize),
+        K: Rkyv,
     {
-        let f = |t: &mut Self| t.try_add_entry(child, &serialize_minmax, n_rows);
+        let f = |t: &mut Self| t.try_add_entry(child, min_max, n_rows);
         if f(self) {
             None
         } else {
@@ -774,7 +764,10 @@ impl IndexBlockBuilder {
             len,
         }
     }
-    fn build(mut self) -> IndexBlock {
+    fn build<K>(mut self) -> IndexBlock<K>
+    where
+        K: Rkyv,
+    {
         let specs = self.specs();
 
         self.raw
@@ -811,18 +804,20 @@ impl IndexBlockBuilder {
         header.overwrite_head(&mut self.raw);
 
         let entry_0 = self.entries.first().unwrap();
+        let min = rkyv_deserialize(&self.raw, entry_0.min_offset);
+
         let entry_n = self.entries.last().unwrap();
+        let max = rkyv_deserialize(&self.raw, entry_n.max_offset);
 
         IndexBlock {
             raw: self.raw,
-            min_offset: entry_0.min_offset,
-            max_offset: entry_n.max_offset,
+            min_max: (min, max),
             n_rows: entry_n.row_total,
         }
     }
 }
 
-fn write_block<W>(writer: &mut W, block: &mut AlignedVec) -> IoResult<BlockLocation>
+fn write_block<W>(writer: &mut W, mut block: AlignedVec) -> IoResult<BlockLocation>
 where
     W: Write + Seek,
 {
@@ -901,7 +896,7 @@ where
             version: VERSION_NUMBER,
             columns: take(&mut self.finished_columns),
         };
-        write_block(&mut self.writer, &mut file_trailer.into_block())?;
+        write_block(&mut self.writer, file_trailer.into_block())?;
 
         Ok(self.writer)
     }
