@@ -130,4 +130,10 @@ impl StorageRead for GlommioBackend {
 
         Ok(Rc::new(fbuf))
     }
+
+    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        let files = self.files.read().await?;
+        let file = files.get(&fd.0).unwrap();
+        Ok(file.file_size().await?)
+    }
 }
