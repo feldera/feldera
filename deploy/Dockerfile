@@ -144,12 +144,10 @@ RUN /root/.cargo/bin/cargo build --release
 FROM ubuntu:22.04 AS client
 ENV DEBIAN_FRONTEND noninteractive
 ENV PATH="$PATH:/root/.cargo/bin"
-COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
 COPY demo demo
 # Remove the simulator cargo project and the corresponding build artifacts
 RUN rm -rf ./demo/project_demo00-SecOps/simulator/*
 COPY --from=demo-builder /app/target/release/secops_simulator demo/project_demo00-SecOps/simulator/
-COPY python python
 RUN apt update && apt install pkg-config \
   python3-pip python3-plumbum \
   curl unzip -y --no-install-recommends \
@@ -162,15 +160,7 @@ RUN apt update && apt install pkg-config \
   # Install snowsql
   && curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
   && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
-  # Install DBSP python library and dependencies
-  && ./pipeline-manager --dump-openapi \
-  && rm pipeline-manager \
-  && pip3 install openapi-python-client==0.15.0 websockets snowflake-connector-python \
-  && cd python \
-  && rm -rf feldera-api-client \
-  && openapi-python-client generate --path ../openapi.json --fail-on-warning \
-  && pip3 install ./feldera-api-client \
-  && pip3 install . \
+  && pip3 install snowflake-connector-python \
   # TODO: only required for running the fraud detection demo. Remove when we clean that up.
   && pip3 install gdown \
   # cleanup packages we don't need anymore

@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenAPI documentation for program, connector and service is more consistent.
   ([#1315](https://github.com/feldera/feldera/pull/1315))
 
+### Removed
+
+- Remove the Python dbsp and feldera-api-client modules.
+  In lieu of Python modules, direct requests to the REST API are now used.
+  ([#1338](https://github.com/feldera/feldera/pull/1338))
+
 ## [0.8.0] - 2024-01-23
 
 ### Added

@@ -97,9 +97,6 @@ install-python:
     COPY +install-python-deps/wheels wheels
     COPY demo/demo_notebooks/requirements.txt requirements.txt
     RUN pip install --user -v --no-index --find-links=wheels -r requirements.txt
-    COPY python python
-    RUN cd python && pip3 install --user -v ./feldera-api-client
-    RUN cd python && pip3 install --user -v .
     SAVE ARTIFACT /root/.local/lib/python3.10
     SAVE ARTIFACT /root/.local/bin
 
@@ -230,25 +227,18 @@ test-manager:
 
 openapi-checker:
     FROM +build-manager
-    COPY +build-manager/pipeline-manager .
-    RUN mkdir -p /root/.local/lib/python3.10
-    RUN mkdir -p /root/.local/bin
 
-    COPY +install-python/python3.10 /root/.local/lib/python3.10
-    COPY +install-python/bin /root/.local/bin
-
-    RUN pip3 install openapi-python-client==0.15.0 && openapi-python-client --version
+    # Copy over pipeline manager executable
     COPY +build-manager/pipeline-manager .
-    COPY python/feldera-api-client feldera-api-client-base
+
+    # Copy over OpenAPI spec currently in the repository
     COPY openapi.json openapi.json-base
 
-    # This line will fail if the OpenAPI spec or python bindings need to be regenerated
+    # Below will fail if the OpenAPI spec which is freshly generated
+    # differs from the one currently in the repository
     RUN mkdir checker
     RUN cd checker && ../pipeline-manager --dump-openapi &&  \
-        diff -bur openapi.json ../openapi.json-base && \
-        openapi-python-client generate --path openapi.json --fail-on-warning && \
-        diff -bur feldera-api-client ../feldera-api-client-base
-
+        diff -bur openapi.json ../openapi.json-base
 
 test-python:
     FROM +build-manager
@@ -263,7 +253,7 @@ test-python:
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/demo_notebooks demo/demo_notebooks
-    COPY python/test.py python/test.py
+    COPY demo/simple-join demo/simple-join
 
     ENV PGHOST=localhost
     ENV PGUSER=postgres
@@ -277,7 +267,7 @@ test-python:
             sleep 10 && \
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 &) && \
             sleep 5 && \
-            python3 python/test.py && \
+            python3 demo/simple-join/run.py --api-url http://localhost:8080 && \
             cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
     END
 

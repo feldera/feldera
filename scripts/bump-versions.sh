@@ -30,9 +30,11 @@ release() {
         *) echo >&2 "Argument must be 'major' or 'minor' or 'patch'"; exit 1 ;;
     esac
 
-    # Update python API version
+    # Retrieve new version
     new_version=`cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version'`
-    (cd .. && cargo make --cwd crates/pipeline_manager openapi_python)
+
+    # Regenerate OpenAPI JSON to have updated version
+    (cd .. && cargo make --cwd crates/pipeline_manager openapi_json)
 
     # Update changelog
     release_date=`date +"%Y-%m-%d"`
