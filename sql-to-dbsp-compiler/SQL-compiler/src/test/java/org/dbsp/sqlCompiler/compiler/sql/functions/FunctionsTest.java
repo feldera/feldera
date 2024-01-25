@@ -236,4 +236,108 @@ public class FunctionsTest extends SqlIoTest {
                 ------
                 5""");
     }
+
+    // Tested on Postgres
+    @Test
+    public void testDecimalRounding() {
+        this.qs("""
+                select CAST((CAST('1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
+                 cast
+                ------
+                 1234.13
+                (1 row)
+                
+                select CAST((CAST('1234.1234' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
+                 cast
+                ------
+                 1234.12
+                (1 row)
+                
+                select CAST((CAST('-1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
+                 cast
+                ------
+                 -1234.13
+                (1 row)
+                
+                select CAST((CAST('-1234.1234' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
+                 cast
+                ------
+                 -1234.12
+                (1 row)
+                
+                select CAST((CAST('1234.1250' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
+                 cast
+                ------
+                 1234.13
+                (1 row)
+                
+                select CAST((CAST('-1234.1250' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
+                 cast
+                ------
+                 -1234.13
+                (1 row)
+                
+                select CAST((CAST('.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 0.13
+                (1 row)
+                
+                select CAST((CAST('.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 0.12
+                (1 row)
+                
+                select CAST((CAST('-.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 -0.13
+                (1 row)
+                
+                select CAST((CAST('-.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 -0.12
+                (1 row)
+                
+                select CAST((CAST('00.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 0.13
+                (1 row)
+                
+                select CAST((CAST('00.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 0.12
+                (1 row)
+                
+                select CAST((CAST('-00.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 -0.13
+                (1 row)
+                
+                select CAST((CAST('-00.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
+                 cast
+                ------
+                 -0.12
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testDecimalErrors() {
+        this.qf("select cast('1234.1234' AS DECIMAL(6, 3))",
+                // The compiler rounds `1234.1234` to `1234.123` before calling the rust code
+                "cannot represent 1234.123 as DECIMAL(6, 3)"
+        );
+
+        this.qf("select cast('1234.1236' AS DECIMAL(6, 3))",
+                // The compiler rounds `1234.1236` to `1234.124` before calling the rust code
+                "cannot represent 1234.124 as DECIMAL(6, 3)"
+        );
+    }
 }

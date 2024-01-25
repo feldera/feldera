@@ -13,8 +13,11 @@ scale, both of which must be constants.
 
 The type ``NUMERIC(precision)`` is the same as ``NUMERIC(precision, 0)``.
 
-The type ``NUMERIC`` specifies no limits on either precision or scale,
-and thus will use the maximum supported values for both.
+The type ``NUMERIC`` is the same as ``NUMERIC(MAX_PRECISION, 0)``.
+
+> [!WARNING]
+> This means that casting to ``DECIMAL`` or ``NUMERIC`` will round the value to a decimal with no fractional part.
+> Example: ``SELECT CAST('0.5' AS DECIMAL)`` will return ``1`` as the scale is 0.
 
 The maximum precision supported is 128 binary digits (38 decimal
 digits).  The maximum scale supported is 10 decimal digits.
@@ -27,8 +30,54 @@ unary and binary), ``*`` (multiplication), ``/`` (division), ``%``
 
 Division or modulus by zero cause a runtime error.
 
-Casting a string to a decimal value will produce the value ``0`` when
+Casting a string to a decimal value will produce a run time error if
 parsing fails.
+
+## Rounding while casting between Decimal types
+
+Rounding is performed using [to nearest, ties away from zero](https://en.wikipedia.org/wiki/Rounding#Rounding_half_away_from_zero) strategy.
+
+Example while casting from ``DECIMAL(8, 4)`` to ``DECIMAL(6, 2)``:
+
+<table>
+    <tr>
+        <th>Input Value</th>
+        <th>Output Value</th>
+    </tr>
+    <tr>
+        <td>1234.1250</td>
+        <td>1234.13</td>
+    </tr>
+    <tr>
+        <td> -1234.1250</td>
+        <td> -1234.13</td>
+    </tr>
+    <tr>
+        <td>1234.1264</td>
+        <td>1234.13</td>
+    </tr>
+    <tr>
+        <td>1234.1234</td>
+        <td>1234.12</td>
+    </tr>
+    <tr>
+        <td> -1234.1264</td>
+        <td> -1234.13</td>
+    </tr>
+    <tr>
+        <td> -1234.1234</td>
+        <td> -1234.12</td>
+    </tr>
+</table>
+
+### Invalid casts between Decimal types
+
+While casting to decimal types, if the current decimal number cannot be represented 
+with the specified precision and scale, a run time error is thrown.
+
+Example:
+Valid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 2))`` will return ``1234.12``.
+But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a run time error.
 
 ## Predefined functions on Decimal Values
 

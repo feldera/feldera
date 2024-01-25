@@ -488,13 +488,13 @@ public class PostgresInt8Tests extends SqlIoTest {
                                                 
                         -- check rounding when casting from numeric
                         SELECT x, x::int8 AS int8_value
-                        FROM (VALUES (-2.5::numeric),
-                                     (-1.5::numeric),
-                                     (-0.5::numeric),
-                                     (0.0::numeric),
-                                     (0.5::numeric),
-                                     (1.5::numeric),
-                                     (2.5::numeric)) t(x);
+                        FROM (VALUES (-2.5::numeric(2, 1)),
+                                     (-1.5::numeric(2, 1)),
+                                     (-0.5::numeric(2, 1)),
+                                     (0.0::numeric(2, 1)),
+                                     (0.5::numeric(2, 1)),
+                                     (1.5::numeric(2, 1)),
+                                     (2.5::numeric(2, 1))) t(x);
                           x   | int8_value
                         ------+------------
                          -2.5 |         -2

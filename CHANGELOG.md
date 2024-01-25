@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API: name and description are optional for connector PATCH endpoint.
   OpenAPI documentation for program, connector and service is more consistent.
   ([#1315](https://github.com/feldera/feldera/pull/1315))
+- SQL: check decimal precision while casting between decimal types ([#1300](https://github.com/feldera/feldera/pull/1300))
 
 ### Removed
 

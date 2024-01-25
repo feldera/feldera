@@ -458,9 +458,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (type.mayBeNull)
             this.builder.append("Some(");
         String value = Objects.requireNonNull(literal.value).toPlainString();
-        this.builder.append("Decimal::from_str(\"")
+        this.builder.append("new_decimal(\"")
                 .append(value)
-                .append("\").unwrap()");
+                .append("\", ")
+                .append(type.precision)
+                .append(", ")
+                .append(type.scale)
+                .append(").unwrap()");
         if (type.mayBeNull)
             this.builder.append(")");
         return VisitDecision.STOP;

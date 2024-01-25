@@ -302,7 +302,16 @@ public class TinyintTests extends SqlIoTest {
     public void testNumericRound() {
         this.q(
                 """
-                        SELECT x, x::tinyint AS tinyint_value FROM (VALUES (-2.9::numeric), (-2.5::numeric), (-1.5::numeric), (-0.5::numeric), (0.0::numeric), (0.5::numeric), (1.5::numeric), (2.5::numeric)) t(x);
+                        SELECT x, x::tinyint AS tinyint_value FROM (VALUES
+                                (-2.9::numeric(2, 1)),
+                                (-2.5::numeric(2, 1)),
+                                (-1.5::numeric(2, 1)),
+                                (-0.5::numeric(2, 1)),
+                                (0.0::numeric(2, 1)),
+                                (0.5::numeric(2, 1)),
+                                (1.5::numeric(2, 1)),
+                                (2.5::numeric(2, 1)))
+                        t(x);
                           x   | tinyint_value
                         ------+------------
                          -2.9 |         -2
