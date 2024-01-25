@@ -9,4 +9,4 @@ mod fbuf;
 mod tests;
 
 pub use cache::BufferCache;
-pub use fbuf::FBuf;
+pub use fbuf::{FBuf, FBufSerializer};

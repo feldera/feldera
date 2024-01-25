@@ -58,14 +58,15 @@
 //!   `(offset >> 7) | size.trailing_zeros()`, which allows `size` to range up
 //!   to `2**31` bytes.
 
+use super::Rkyv;
+use crate::buffer_cache::FBuf;
+
 use binrw::{binrw, BinRead, BinResult, BinWrite, Error as BinError};
 #[cfg(doc)]
 use crc32c;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use rkyv::{with::Inline, AlignedVec, Archive, Serialize};
-
-use super::Rkyv;
+use rkyv::{with::Inline, Archive, Serialize};
 
 /// Increment this on each incompatible change.
 pub const VERSION_NUMBER: u32 = 1;
@@ -326,7 +327,7 @@ impl Varint {
     pub(crate) fn len(&self) -> usize {
         *self as usize
     }
-    pub(crate) fn put(&self, dst: &mut AlignedVec, value: u64) {
+    pub(crate) fn put(&self, dst: &mut FBuf, value: u64) {
         #[allow(clippy::unnecessary_cast)]
         match *self {
             Self::B8 => dst.push(value as u8),
@@ -337,7 +338,7 @@ impl Varint {
             Self::B64 => dst.extend_from_slice(&(value as u64).to_le_bytes()),
         }
     }
-    pub(crate) fn get(&self, src: &AlignedVec, offset: usize) -> u64 {
+    pub(crate) fn get(&self, src: &FBuf, offset: usize) -> u64 {
         let mut raw = [0u8; 8];
         raw[..self.len()].copy_from_slice(&src[offset..offset + self.len()]);
         u64::from_le_bytes(raw)
