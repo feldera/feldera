@@ -91,6 +91,10 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
     <td>where <code>digits</code> is an integer value. Round the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
   </tr>
   <tr>
+    <td><code>TRUNCATE(value, digits)</code></td>
+    <td>where <code>digits</code> is an integer value. Truncates the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+  </tr>
+  <tr>
     <td><code>ABS(value)</code></td>
     <td>absolute value</td>
   </tr>

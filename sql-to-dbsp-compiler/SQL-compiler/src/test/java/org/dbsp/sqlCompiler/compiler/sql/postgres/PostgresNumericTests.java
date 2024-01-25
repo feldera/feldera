@@ -1028,18 +1028,19 @@ public class PostgresNumericTests extends SqlIoTest {
     @Test
     public void testLog() {
         // Removed 'inf' and 'nan'
-        // Calcite does not have log
         // Changed last digit of ln from 6 to 7
+        // log in Calcite is different from log in Postgres
+        // log(value) is equivalent to ln(value) in Calcite but log10(value) in Postgres
         this.q("WITH v(x) AS\n" +
                 "  (VALUES(1),(CAST(4.2 AS NUMERIC(" + WIDTH + ", 22))))\n" +
                 "SELECT x,\n" +
-                //"  log(x),\n" +
+                "  log(x),\n" +
                 "  log10(x),\n" +
                 "  ln(x)\n" +
                 "FROM v;\n" +
-                "    x     |        log         |         ln         \n" +
-                "----------+--------------------+--------------------\n" +
-                "        1 | 0.0000000000000000 | 0.0000000000000000\n" +
-                "      4.2 | 0.6232492903979005 | 1.4350845252893227");
+                "    x     |         log        |     log10         |         ln         \n" +
+                "----------+--------------------+---------------+------------------------\n" +
+                "        1 | 0.0000000000000000 | 0.0000000000000000 | 0.0000000000000000\n" +
+                "      4.2 | 1.4350845252893227 | 0.6232492903979005 | 1.4350845252893227");
     }
 }

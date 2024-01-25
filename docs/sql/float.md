@@ -72,6 +72,14 @@ REAL '1.23'  -- string style
     <td>Floor function: nearest integer value less than or equal to argument (result is a floating point value)</td>
   </tr>
   <tr>
+    <td><code>TRUNCATE(value)</code></td>
+    <td>Returns the integer portion of the number. This is true truncation, no rounding is performed.</td>
+  </tr>
+  <tr>
+    <td><code>ROUND(value)</code></td>
+    <td>Rounds to the nearest integer and returns it. Rounding follows "Bankers Rounding" (rounds 0.5 to the nearest even number) strategy.</td>
+  </tr>
+  <tr>
     <td><code>POWER(BASE, EXPONENT)</code></td>
     <td>The power function, raising <code>BASE</code> to the power <code>EXPONENT</code></td>
   </tr>
@@ -81,11 +89,23 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>LN(value)</code></td>
-    <td>The natural logarithm of value. Produces a runtime error for values less than or equal to zero.</td>
+    <td>The natural logarithm of value. Returns `-inf` for 0. Produces a runtime error for negative numbers.</td>
+  </tr>
+  <tr>
+    <td><code>LOG(value, [, value2])</code></td>
+    <td>The logarithm of value to base value2, or base e if value2 is not present. Returns `-inf` for value 0. Produces a runtime error for negative numbers.</td>
   </tr>
   <tr>
     <td><code>LOG10(value)</code></td>
-    <td>The logarithm base 10 of value. Produces a runtime error for values less than or equal to zero.</td>
+    <td>The logarithm base 10 of value. Returns `-inf` for 0. Produces a runtime error for negative numbers.</td>
+  </tr>
+  <tr>
+    <td><code>IS_INF(value)</code></td>
+    <td>Returns true if the value is infinite. Note that two infinite values aren't necessarily equal.</td>
+  </tr>
+  <tr>
+    <td><code>IS_NAN(value)</code></td>
+    <td>Returns true if the value is NaN. Note that two NaN values aren't equal.</td>
   </tr>
   <tr>
     <td><code>SIN(value)</code></td>
