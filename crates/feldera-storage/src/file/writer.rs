@@ -17,17 +17,17 @@ use binrw::{
     BinWrite,
 };
 use crc32c::crc32c;
-use rkyv::{
-    archived_value, ser::serializers::AlignedSerializer, AlignedVec, Archive, Deserialize,
-    Infallible, Serialize,
-};
+use rkyv::{archived_value, Archive, Deserialize, Infallible, Serialize};
 
-use crate::file::{
-    format::{
-        BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen, IndexBlockHeader,
-        Item, NodeType, Varint, VERSION_NUMBER,
+use crate::{
+    buffer_cache::{FBuf, FBufSerializer},
+    file::{
+        format::{
+            BlockHeader, DataBlockHeader, FileTrailer, FileTrailerColumn, FixedLen,
+            IndexBlockHeader, Item, NodeType, Varint, VERSION_NUMBER,
+        },
+        BlockLocation,
     },
-    BlockLocation,
 };
 
 use rkyv::ser::Serializer as RkyvSerializer;
@@ -56,7 +56,7 @@ impl VarintWriter {
             None => otherwise,
         }
     }
-    fn put<V>(&self, dst: &mut AlignedVec, values: V)
+    fn put<V>(&self, dst: &mut FBuf, values: V)
     where
         V: Iterator<Item = u64>,
     {
@@ -158,8 +158,8 @@ impl Default for Parameters {
 }
 
 trait IntoBlock {
-    fn into_block(self) -> AlignedVec;
-    fn overwrite_head(&self, dst: &mut AlignedVec)
+    fn into_block(self) -> FBuf;
+    fn overwrite_head(&self, dst: &mut FBuf)
     where
         Self: FixedLen;
 }
@@ -168,13 +168,13 @@ impl<B> IntoBlock for B
 where
     B: for<'a> BinWrite<Args<'a> = ()>,
 {
-    fn into_block(self) -> AlignedVec {
-        let mut block = NoSeek::new(AlignedVec::with_capacity(4096));
+    fn into_block(self) -> FBuf {
+        let mut block = NoSeek::new(FBuf::with_capacity(4096));
         self.write_le(&mut block).unwrap();
         block.into_inner()
     }
 
-    fn overwrite_head(&self, dst: &mut AlignedVec)
+    fn overwrite_head(&self, dst: &mut FBuf)
     where
         Self: FixedLen,
     {
@@ -372,7 +372,7 @@ impl StrideBuilder {
 
 struct DataBlockBuilder {
     parameters: Rc<Parameters>,
-    raw: AlignedVec,
+    raw: FBuf,
     value_offsets: Vec<usize>,
     value_offset_stride: StrideBuilder,
     row_groups: ContiguousRanges,
@@ -386,14 +386,14 @@ struct DataBuildSpecs {
 }
 
 struct DataBlock<K> {
-    raw: AlignedVec,
+    raw: FBuf,
     min_max: (K, K),
     n_values: usize,
 }
 
 impl DataBlockBuilder {
     fn new(parameters: &Rc<Parameters>) -> Self {
-        let mut raw = AlignedVec::with_capacity(parameters.min_data_block);
+        let mut raw = FBuf::with_capacity(parameters.min_data_block);
         raw.resize(DataBlockHeader::LEN, 0);
         Self {
             parameters: parameters.clone(),
@@ -594,7 +594,7 @@ impl ContiguousRanges {
 struct IndexBlockBuilder {
     parameters: Rc<Parameters>,
     column_index: usize,
-    raw: AlignedVec,
+    raw: FBuf,
     entries: Vec<IndexEntry>,
     child_type: NodeType,
     size_target: Option<usize>,
@@ -608,12 +608,12 @@ struct IndexBuildSpecs {
 }
 
 struct IndexBlock<K> {
-    raw: AlignedVec,
+    raw: FBuf,
     min_max: (K, K),
     n_rows: u64,
 }
 
-fn rkyv_deserialize<K>(src: &AlignedVec, offset: usize) -> K
+fn rkyv_deserialize<K>(src: &FBuf, offset: usize) -> K
 where
     K: Rkyv,
 {
@@ -621,7 +621,7 @@ where
     archived.deserialize(&mut Infallible).unwrap()
 }
 
-fn rkyv_deserialize_key<K, A>(src: &AlignedVec, offset: usize) -> K
+fn rkyv_deserialize_key<K, A>(src: &FBuf, offset: usize) -> K
 where
     K: Rkyv,
     A: Rkyv,
@@ -630,14 +630,14 @@ where
     archived.0.deserialize(&mut Infallible).unwrap()
 }
 
-fn rkyv_serialize<T>(dst: &mut AlignedVec, value: &T) -> usize
+fn rkyv_serialize<T>(dst: &mut FBuf, value: &T) -> usize
 where
-    T: Archive + for<'a> Serialize<Serializer<'a>>,
+    T: Archive + Serialize<Serializer>,
 {
     let old_len = dst.len();
 
     let mut serializer = Serializer::new(
-        AlignedSerializer::new(take(dst)),
+        FBufSerializer::new(take(dst)),
         Default::default(),
         Default::default(),
     );
@@ -655,7 +655,7 @@ where
 
 impl IndexBlockBuilder {
     fn new(parameters: &Rc<Parameters>, column_index: usize, child_type: NodeType) -> Self {
-        let mut raw = AlignedVec::with_capacity(parameters.min_index_block);
+        let mut raw = FBuf::with_capacity(parameters.min_index_block);
         raw.resize(IndexBlockHeader::LEN, 0);
 
         Self {
@@ -817,7 +817,7 @@ impl IndexBlockBuilder {
     }
 }
 
-fn write_block<W>(writer: &mut W, mut block: AlignedVec) -> IoResult<BlockLocation>
+fn write_block<W>(writer: &mut W, mut block: FBuf) -> IoResult<BlockLocation>
 where
     W: Write + Seek,
 {

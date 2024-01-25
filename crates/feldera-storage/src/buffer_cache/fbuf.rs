@@ -15,18 +15,19 @@ use std::{
     borrow::{Borrow, BorrowMut},
     fmt,
     io::{self, ErrorKind, Read},
+    mem,
     ops::{Deref, DerefMut, Index, IndexMut},
     ptr::NonNull,
     slice,
 };
 
 use monoio::buf::{IoBuf, IoBufMut};
-use rkyv::vec::VecResolver;
 use rkyv::{
     ser::{ScratchSpace, Serializer},
     vec::ArchivedVec,
     Archive, Archived, Serialize,
 };
+use rkyv::{vec::VecResolver, ArchiveUnsized, Fallible, Infallible, RelPtr};
 
 /// This is a custom buffer type that works with our read/write APIs and the
 /// buffer-cache.
@@ -734,3 +735,94 @@ unsafe impl Send for FBuf {}
 unsafe impl Sync for FBuf {}
 
 impl Unpin for FBuf {}
+
+/// A serializer made specifically to work with [`FBuf`].
+///
+/// This serializer makes it easier for the compiler to perform emplacement
+/// optimizations and may give better performance than a basic
+/// `WriteSerializer`.
+#[derive(Debug)]
+pub struct FBufSerializer<A> {
+    inner: A,
+}
+
+impl<A: Borrow<FBuf>> FBufSerializer<A> {
+    /// Creates a new `FBufSerializer` by wrapping a `Borrow<FBuf>`.
+    #[inline]
+    pub fn new(inner: A) -> Self {
+        Self { inner }
+    }
+
+    /// Consumes the serializer and returns the underlying type.
+    #[inline]
+    pub fn into_inner(self) -> A {
+        self.inner
+    }
+}
+
+impl<A: Default> Default for FBufSerializer<A> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            inner: A::default(),
+        }
+    }
+}
+
+impl<A> Fallible for FBufSerializer<A> {
+    type Error = Infallible;
+}
+
+impl<A: Borrow<FBuf> + BorrowMut<FBuf>> Serializer for FBufSerializer<A> {
+    #[inline]
+    fn pos(&self) -> usize {
+        self.inner.borrow().len()
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.inner.borrow_mut().extend_from_slice(bytes);
+        Ok(())
+    }
+
+    #[inline]
+    unsafe fn resolve_aligned<T: Archive + ?Sized>(
+        &mut self,
+        value: &T,
+        resolver: T::Resolver,
+    ) -> Result<usize, Self::Error> {
+        let pos = self.pos();
+        debug_assert_eq!(pos & (mem::align_of::<T::Archived>() - 1), 0);
+        let vec = self.inner.borrow_mut();
+        let additional = mem::size_of::<T::Archived>();
+        vec.reserve(additional);
+        vec.set_len(vec.len() + additional);
+
+        let ptr = vec.as_mut_ptr().add(pos).cast::<T::Archived>();
+        ptr.write_bytes(0, 1);
+        value.resolve(pos, resolver, ptr);
+
+        Ok(pos)
+    }
+
+    #[inline]
+    unsafe fn resolve_unsized_aligned<T: ArchiveUnsized + ?Sized>(
+        &mut self,
+        value: &T,
+        to: usize,
+        metadata_resolver: T::MetadataResolver,
+    ) -> Result<usize, Self::Error> {
+        let from = self.pos();
+        debug_assert_eq!(from & (mem::align_of::<RelPtr<T::Archived>>() - 1), 0);
+        let vec = self.inner.borrow_mut();
+        let additional = mem::size_of::<RelPtr<T::Archived>>();
+        vec.reserve(additional);
+        vec.set_len(vec.len() + additional);
+
+        let ptr = vec.as_mut_ptr().add(from).cast::<RelPtr<T::Archived>>();
+        ptr.write_bytes(0, 1);
+
+        value.resolve_unsized(from, to, metadata_resolver, ptr);
+        Ok(from)
+    }
+}

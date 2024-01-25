@@ -42,6 +42,9 @@ pub mod persistent;
 pub mod spine_fueled;
 
 pub use cursor::{Consumer, Cursor, ValueConsumer};
+use feldera_storage::buffer_cache::FBuf;
+pub use feldera_storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
+
 #[cfg(feature = "persistence")]
 pub use persistent::PersistentTrace as Spine;
 #[cfg(not(feature = "persistence"))]
@@ -57,10 +60,7 @@ use crate::{
     NumEntries,
 };
 use rand::Rng;
-use rkyv::{
-    archived_root, ser::serializers::AllocSerializer, AlignedVec, Archive, Archived, Deserialize,
-    Infallible, Serialize,
-};
+use rkyv::{archived_root, Archive, Archived, Deserialize, Infallible, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 
@@ -128,30 +128,11 @@ where
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
 ///
 /// This trait doesn't have any extra bounds on Deserializable.
-pub trait Rkyv: Archive + Serialize<Serializer> + Deserializable {}
-impl<T> Rkyv for T where T: Archive + Serialize<Serializer> + Deserializable {}
-
-/// Trait for data that can be deserialized with [`rkyv`].
-pub trait Deserializable: Archive<Archived = Self::ArchivedDeser> + Sized {
-    type ArchivedDeser: Deserialize<Self, Deserializer>;
-}
-impl<T: Archive> Deserializable for T
-where
-    Archived<T>: Deserialize<T, Deserializer>,
-{
-    type ArchivedDeser = Archived<T>;
-}
-
-/// The particular [`rkyv::ser::Serializer`] that we use.
-pub type Serializer = AllocSerializer<1024>;
-
-/// The particular [`rkyv`] deserializer that we use.
-pub type Deserializer = Infallible;
 
 /// Deserializes `bytes` as type `T` using `rkyv`, tolerating `bytes` being
 /// misaligned.
 pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
-    let mut aligned_bytes = AlignedVec::new();
+    let mut aligned_bytes = FBuf::new();
     aligned_bytes.extend_from_slice(bytes);
     unsafe { archived_root::<T>(&aligned_bytes[..]) }
         .deserialize(&mut Infallible)

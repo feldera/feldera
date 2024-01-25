@@ -72,8 +72,13 @@
 #[cfg(doc)]
 use crc32c::crc32c;
 use rkyv::{
-    ser::serializers::AllocSerializer, Archive, Archived, Deserialize, Infallible, Serialize,
+    ser::serializers::{
+        AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
+    },
+    Archive, Archived, Deserialize, Infallible, Serialize,
 };
+
+use crate::buffer_cache::{FBuf, FBufSerializer};
 
 pub mod format;
 pub mod reader;
@@ -123,8 +128,8 @@ impl From<BlockLocation> for u64 {
 }
 
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
-pub trait Rkyv: Archive + for<'a> Serialize<Serializer<'a>> + Deserializable {}
-impl<T> Rkyv for T where T: Archive + for<'a> Serialize<Serializer<'a>> + Deserializable {}
+pub trait Rkyv: Archive + Serialize<Serializer> + Deserializable {}
+impl<T> Rkyv for T where T: Archive + Serialize<Serializer> + Deserializable {}
 
 /// Trait for data that can be deserialized with [`rkyv`].
 pub trait Deserializable: Archive<Archived = Self::ArchivedDeser> + Sized {
@@ -139,7 +144,11 @@ where
 }
 
 /// The particular [`rkyv::ser::Serializer`] that we use.
-pub type Serializer<'a> = AllocSerializer<1024>;
+pub type Serializer = CompositeSerializer<
+    FBufSerializer<FBuf>,
+    FallbackScratch<HeapScratch<1024>, AllocScratch>,
+    SharedSerializeMap,
+>;
 
 /// The particular [`rkyv`] deserializer that we use.
 pub type Deserializer = Infallible;

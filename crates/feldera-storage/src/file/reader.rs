@@ -18,13 +18,16 @@ use binrw::{
     BinRead, Error as BinError,
 };
 use crc32c::crc32c;
-use rkyv::{archived_value, AlignedVec, Deserialize, Infallible};
+use rkyv::{archived_value, Deserialize, Infallible};
 use tempfile::tempfile;
 use thiserror::Error as ThisError;
 
-use crate::file::format::{
-    ArchivedItem, DataBlockHeader, FileTrailer, FileTrailerColumn, IndexBlockHeader, Item,
-    NodeType, Varint, VERSION_NUMBER,
+use crate::{
+    buffer_cache::FBuf,
+    file::format::{
+        ArchivedItem, DataBlockHeader, FileTrailer, FileTrailerColumn, IndexBlockHeader, Item,
+        NodeType, Varint, VERSION_NUMBER,
+    },
 };
 
 use super::{BlockLocation, InvalidBlockLocation, Rkyv};
@@ -252,7 +255,7 @@ struct VarintReader {
     count: usize,
 }
 impl VarintReader {
-    fn new(buf: &AlignedVec, varint: Varint, start: usize, count: usize) -> Result<Self, Error> {
+    fn new(buf: &FBuf, varint: Varint, start: usize, count: usize) -> Result<Self, Error> {
         let block_size = buf.len();
         match varint
             .len()
@@ -274,7 +277,7 @@ impl VarintReader {
         }
     }
     fn new_opt(
-        buf: &AlignedVec,
+        buf: &FBuf,
         varint: Option<Varint>,
         start: usize,
         count: usize,
@@ -283,7 +286,7 @@ impl VarintReader {
             .map(|varint| VarintReader::new(buf, varint, start, count))
             .transpose()
     }
-    fn get(&self, src: &AlignedVec, index: usize) -> u64 {
+    fn get(&self, src: &FBuf, index: usize) -> u64 {
         debug_assert!(index < self.count);
         self.varint.get(src, self.start + self.varint.len() * index)
     }
@@ -297,7 +300,7 @@ struct StrideReader {
 }
 
 impl StrideReader {
-    fn new(raw: &AlignedVec, start: usize, stride: usize, count: usize) -> Result<Self, Error> {
+    fn new(raw: &FBuf, start: usize, stride: usize, count: usize) -> Result<Self, Error> {
         let block_size = raw.len();
         if count > 0 {
             if let Some(last) = stride
@@ -334,12 +337,7 @@ enum ValueMapReader {
 }
 
 impl ValueMapReader {
-    fn new(
-        raw: &AlignedVec,
-        varint: Option<Varint>,
-        offset: u32,
-        n_values: u32,
-    ) -> Result<Self, Error> {
+    fn new(raw: &FBuf, varint: Option<Varint>, offset: u32, n_values: u32) -> Result<Self, Error> {
         let offset = offset as usize;
         let n_values = n_values as usize;
         if let Some(varint) = varint {
@@ -361,7 +359,7 @@ impl ValueMapReader {
             ValueMapReader::StrideMap(ref stride_reader) => stride_reader.count,
         }
     }
-    fn get(&self, raw: &AlignedVec, index: usize) -> usize {
+    fn get(&self, raw: &FBuf, index: usize) -> usize {
         match self {
             ValueMapReader::VarintMap(ref varint_reader) => varint_reader.get(raw, index) as usize,
             ValueMapReader::StrideMap(ref stride_reader) => stride_reader.get(index),
@@ -371,7 +369,7 @@ impl ValueMapReader {
 
 struct DataBlock<K, A> {
     location: BlockLocation,
-    raw: Rc<AlignedVec>,
+    raw: Rc<FBuf>,
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
     first_row: u64,
@@ -575,7 +573,7 @@ where
 
 struct IndexBlock<K> {
     location: BlockLocation,
-    raw: Rc<AlignedVec>,
+    raw: Rc<FBuf>,
     child_type: NodeType,
     bounds: VarintReader,
     row_totals: VarintReader,
@@ -873,8 +871,8 @@ struct ReaderInner<T> {
     _phantom: PhantomData<fn() -> T>,
 }
 
-fn read_block(file: &File, location: BlockLocation) -> Result<AlignedVec, Error> {
-    let mut block = AlignedVec::with_capacity(location.size);
+fn read_block(file: &File, location: BlockLocation) -> Result<FBuf, Error> {
+    let mut block = FBuf::with_capacity(location.size);
     // XXX This zeros the whole buffer before reading into it.
     block.resize(location.size, 0);
     file.read_exact_at(block.as_mut_slice(), location.offset)?;
