@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use glommio::io::DmaFile;
+use glommio::io::{DmaFile, OpenOptions};
 use glommio::sync::RwLock;
 use uuid::Uuid;
 
@@ -55,8 +55,12 @@ impl StorageControl for GlommioBackend {
         let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
         let name = Uuid::now_v7();
         let path = self.base.join(name.to_string() + ".feldera");
-        let file = DmaFile::create(path).await?;
-
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .read(true)
+            .dma_open(&path)
+            .await?;
         let mut files = self.files.write().await?;
         files.insert(file_counter, file);
 
@@ -96,12 +100,7 @@ impl StorageWrite for GlommioBackend {
 
         let file = files.remove(&fd.0).unwrap();
         file.fdatasync().await?;
-        let mut path_buf = PathBuf::new();
-        file.path().unwrap().clone_into(&mut path_buf);
-        file.close().await?;
-
-        let readable_file = DmaFile::open(path_buf).await?;
-        files.insert(fd.0, readable_file);
+        files.insert(fd.0, file);
 
         Ok(ImmutableFileHandle(fd.0))
     }

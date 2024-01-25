@@ -80,7 +80,11 @@ impl StorageControl for MonoioBackend {
         let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
         let name = Uuid::now_v7();
         let path = self.base.join(name.to_string() + ".feldera");
-        let file = open_as_direct(&path, OpenOptions::new().create(true).write(true)).await?;
+        let file = open_as_direct(
+            &path,
+            OpenOptions::new().create_new(true).write(true).read(true),
+        )
+        .await?;
         let mut files = self.files.write().await;
         files.insert(file_counter, FileMetaData { file, path });
 
@@ -124,16 +128,7 @@ impl StorageWrite for MonoioBackend {
 
         let fm = files.remove(&fd.0).unwrap();
         fm.file.sync_all().await?;
-        fm.file.close().await?;
-
-        let readable_file = open_as_direct(&fm.path, OpenOptions::new().read(true)).await?;
-        files.insert(
-            fd.0,
-            FileMetaData {
-                file: readable_file,
-                path: fm.path,
-            },
-        );
+        files.insert(fd.0, fm);
 
         Ok(ImmutableFileHandle(fd.0))
     }
