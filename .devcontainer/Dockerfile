@@ -55,8 +55,7 @@ RUN ARCH=`dpkg --print-architecture`; \
 ## Install python dependencies for the demos
 
 RUN \
-   pip3 install openapi-python-client==0.15.0 websockets \
-      gdown
+   pip3 install gdown
 
 ## Switch to non-root user
 

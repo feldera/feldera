@@ -1,8 +1,8 @@
-import tempfile
 import os
-import sys
 import time
 import requests
+import argparse
+import tempfile
 import json
 
 nouns = """
@@ -72,11 +72,17 @@ CREATE VIEW nouns_with_colors AS
 
 
 def main():
-    api_url = "http://localhost:8080" if len(sys.argv) <= 1 else sys.argv[1]
-    connector_type = "file" if len(sys.argv) <= 2 else "http"
+    # Command-line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
+    parser.add_argument("--connector-type", required=False, default='file', help="Either 'file' or 'http'")
+    parsed_args = parser.parse_args()
+    api_url = parsed_args.api_url
+    connector_type = parsed_args.connector_type
+    assert connector_type in ["file", "http"]
 
     # Create program
-    program_name = "foo"
+    program_name = "simple-join-program"
     response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
         "description": "",
         "code": program_sql,
@@ -114,9 +120,9 @@ def main():
         os.close(fd_out)
 
         for (connector_name, stream, filepath, is_input) in [
-            ("nouns", "NOUNS", path_nouns, True),
-            ("colors", "COLORS", path_colors, True),
-            ("nouns-with-colors", "NOUNS_WITH_COLORS", path_out, False),
+            ("simple-join-nouns", "NOUNS", path_nouns, True),
+            ("simple-join-colors", "COLORS", path_colors, True),
+            ("simple-join-nouns-with-colors", "NOUNS_WITH_COLORS", path_out, False),
         ]:
             # Create connector
             requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
@@ -144,7 +150,7 @@ def main():
             })
 
     # Create pipeline
-    pipeline_name = "test-py-pipeline"
+    pipeline_name = "simple-join-pipeline"
     requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
         "description": "",
         "config": {"workers": 6},

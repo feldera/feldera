@@ -22,20 +22,6 @@ args = [
     "--dump-openapi",
 ]
 
-[tasks.openapi_python]
-description = "Generate Python bindings for the REST API"
-dependencies = ["openapi_json"]
-script_runner = "@shell"
-script = '''
-pip3 install openapi-python-client==0.15.0
-cd ../../python
-rm -rf feldera-api-client
-openapi-python-client generate --path ../openapi.json --fail-on-warning
-pip3 install -e ./feldera-api-client
-pip3 install -e .
-pip3 install websockets
-'''
-
 [tasks.start_manager]
 script = '''
 old_manager_pid=$(pgrep "pipeline-mana" || echo "")
@@ -62,14 +48,14 @@ done
 
 [tasks.python_api_test]
 description = "Test Python API"
-dependencies = ["openapi_python", "start_manager"]
+dependencies = [ "start_manager"]
 script = '''
-python3 ../../python/test.py http://localhost:8080 http
+python3 ../../demo/simple-join/run.py --api-url http://localhost:8080 --connector-type http
 '''
 
 [tasks.fraud_notebook_test]
 description = "Fraud detection Python notebook test"
-dependencies = ["openapi_python", "start_manager"]
+dependencies = ["start_manager"]
 script = '''
 cd ../../demo/demo_notebooks
 pip3 install -r requirements.txt
