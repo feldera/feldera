@@ -247,4 +247,7 @@ pub trait StorageRead {
         offset: u64,
         size: usize,
     ) -> Result<Rc<FBuf>, StorageError>;
+
+    /// Returns the file's size in bytes.
+    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
 }

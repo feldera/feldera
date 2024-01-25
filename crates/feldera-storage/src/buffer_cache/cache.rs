@@ -178,6 +178,10 @@ impl<B: StorageRead> StorageRead for BufferCache<B> {
             }
         }
     }
+
+    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        self.backend.get_size(fd).await
+    }
 }
 
 impl<B: StorageWrite> StorageWrite for BufferCache<B> {

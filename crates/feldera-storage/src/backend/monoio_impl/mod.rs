@@ -1,6 +1,8 @@
 //! Implementation of the storage backend APIs ([`StorageControl`],
 //! [`StorageRead`], and [`StorageWrite`]) using the Monoio library.
 
+use std::cell::RefCell;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -43,6 +45,7 @@ async fn open_as_direct<P: AsRef<Path>>(
 struct FileMetaData {
     file: File,
     path: PathBuf,
+    size: RefCell<u64>,
 }
 
 /// State of the backend needed to satisfy the storage APIs.
@@ -86,7 +89,14 @@ impl StorageControl for MonoioBackend {
         )
         .await?;
         let mut files = self.files.write().await;
-        files.insert(file_counter, FileMetaData { file, path });
+        files.insert(
+            file_counter,
+            FileMetaData {
+                file,
+                path,
+                size: RefCell::new(0),
+            },
+        );
 
         Ok(FileHandle(file_counter))
     }
@@ -109,13 +119,11 @@ impl StorageWrite for MonoioBackend {
     ) -> Result<Rc<FBuf>, StorageError> {
         let files = self.files.read().await;
         let request_start = Instant::now();
-        let (res, buf) = files
-            .get(&fd.0)
-            .unwrap()
-            .file
-            .write_all_at(data, offset)
-            .await;
+        let fm = files.get(&fd.0).unwrap();
+        let end_offset = offset + data.len() as u64;
+        let (res, buf) = fm.file.write_all_at(data, offset).await;
         res?;
+        fm.size.replace_with(|size| max(*size, end_offset));
         counter!("disk.total_bytes_written").increment(buf.len() as u64);
         counter!("disk.total_writes_success").increment(1);
         histogram!("disk.write_latency").record(request_start.elapsed().as_secs_f64());
@@ -165,5 +173,12 @@ impl StorageRead for MonoioBackend {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        let files = self.files.read().await;
+        let fm = files.get(&fd.0).unwrap();
+        let size = *fm.size.borrow();
+        Ok(size)
     }
 }

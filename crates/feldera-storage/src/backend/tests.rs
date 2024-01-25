@@ -200,6 +200,12 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
         buf.extend_from_slice(&slice);
         Ok(Rc::new(buf))
     }
+
+    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        let files = self.immutable_files.borrow();
+        let file = files.get(&fd.0).unwrap();
+        Ok(file.len() as u64)
+    }
 }
 
 impl<const ALLOW_OVERWRITE: bool> ReferenceStateMachine for InMemoryBackend<ALLOW_OVERWRITE> {
