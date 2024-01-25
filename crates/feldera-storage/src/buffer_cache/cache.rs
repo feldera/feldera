@@ -4,17 +4,22 @@
 //! It forwards requests to a storage backend, but it also adds a buffer cache
 //! in front of the backend to serve reads faster if they are cached.
 
-use metrics::counter;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::env;
 use std::future::Future;
-use std::ops::Range;
-use std::rc::Rc;
-use wtinylfu::WTinyLfuCache;
+use std::ops::{Deref, Range};
+use std::sync::Arc;
+use std::time::Instant;
+
+use metrics::{counter, histogram};
+use moka::future::Cache;
+use sysinfo::System;
 
 use crate::backend::{
     FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageExecutor, StorageRead,
-    StorageWrite,
+    StorageWrite, METRIC_BUFFER_CACHE_HIT, METRIC_BUFFER_CACHE_LATENCY, METRIC_BUFFER_CACHE_MISS,
+    METRIC_WRITES_FAILED,
 };
 use crate::buffer_cache::FBuf;
 
@@ -22,8 +27,60 @@ use crate::buffer_cache::FBuf;
 /// identifies a slice in a file.
 type CacheKey = (i64, u64, usize);
 
-/// CachedBuffer (the values of the cache) are reference-counted buffers.
-type CachedBuffer = Rc<FBuf>;
+/// CachedFBuf (the values of the cache) are reference-counted buffers.
+type CachedFBuf = Arc<FBuf>;
+
+pub struct TinyLfuCache(Cache<CacheKey, CachedFBuf>);
+
+impl Deref for TinyLfuCache {
+    type Target = Cache<CacheKey, CachedFBuf>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Default for TinyLfuCache {
+    /// A default instance of the LruCache will check if the environment
+    /// variable `FELDERA_BUFFER_CACHE_BYTES` is set to determine the amount of
+    /// bytes to cache.
+    /// If not set, it will fall back to use approx. 1/3 of the system memory.
+    fn default() -> Self {
+        let bytes_from_env: Option<u64> = env::var_os("FELDERA_BUFFER_CACHE_BYTES")
+            .and_then(|v| v.into_string().ok().and_then(|s| s.parse::<u64>().ok()));
+        let cache_capacity = bytes_from_env.unwrap_or_else(|| {
+            let mut sys = System::new_all();
+            sys.refresh_all();
+            sys.total_memory() / 3
+        });
+
+        TinyLfuCache::with_capacity(cache_capacity as usize)
+    }
+}
+
+impl TinyLfuCache {
+    const BLOCK_SIZE: usize = 512;
+
+    /// Builds a TinyLFU cache with the given capacity.
+    ///
+    /// The capacity here is given in how many bytes of DRAM the sum of all
+    /// stored buffers should take up before we start to evict from it.
+    pub fn with_capacity(capacity: usize) -> Self {
+        TinyLfuCache(
+            Cache::builder()
+                .weigher(|_, fbuf: &CachedFBuf| {
+                    // This weigher API wants us to return u32. We might have buffers bigger than
+                    // `u32::MAX`. But they're also at least 512 bytes. So if we divide by 512
+                    // it gives us a max relative size we can represent of two TiB per buffer.
+                    (fbuf.len() / Self::BLOCK_SIZE) as u32
+                })
+                // This now corresponds to what is returned by weigher, so if we want it
+                // to hold `n` bytes `max_capacity` is `n / 512`.
+                .max_capacity(capacity as u64 / Self::BLOCK_SIZE as u64)
+                .build(),
+        )
+    }
+}
 
 /// Adds a buffer-cache to a storage backend which is supposed to contain
 /// the most recently used buffers and evict least recently used ones to save
@@ -33,10 +90,10 @@ type CachedBuffer = Rc<FBuf>;
 /// we will read the same data again soon. However, due to this we need to
 /// ensure that we do not put the cache in an inconsistent state.
 /// e.g., if we have two writes to overlapping regions the cache needs
-/// to still be correct (or at least reject the write, which is easier and
+/// to still be correct (or at least reject the last write, which is easier and
 /// what we do since our storage format is append-only).
 pub struct BufferCache<B> {
-    cache: RefCell<WTinyLfuCache<CacheKey, CachedBuffer>>,
+    cache: Arc<TinyLfuCache>,
     /// A list of written ranges per file. It's important that the vector is
     /// sorted by the start of the range, since we binary search it.
     blocks: RefCell<HashMap<i64, Vec<Range<u64>>>>,
@@ -45,34 +102,20 @@ pub struct BufferCache<B> {
 }
 
 impl<B> BufferCache<B> {
-    /// How many entries the LFU cache holds.
-    ///
-    /// Likely to become a configurable parameter in the future.
-    const LFU_CACHE_SIZE: usize = 4096;
-
-    /// Sample size for the LFU cache.
-    ///
-    /// Not quite sure what this parameter is for yet.
-    /// Likely to become a configurable parameter in the future.
-    const TINY_LFU_SAMPLE_SIZE: usize = 42;
-
-    pub fn with_backend(backend: B) -> Self {
+    pub fn with_backend_lfu(backend: B, cache: Arc<TinyLfuCache>) -> Self {
         Self {
-            cache: RefCell::new(WTinyLfuCache::new(
-                BufferCache::<B>::LFU_CACHE_SIZE,
-                BufferCache::<B>::TINY_LFU_SAMPLE_SIZE,
-            )),
+            cache,
             blocks: Default::default(),
             backend,
         }
     }
 
-    fn get(&self, key: &CacheKey) -> Option<CachedBuffer> {
-        self.cache.borrow_mut().get(key).cloned()
+    async fn get(&self, key: &CacheKey) -> Option<CachedFBuf> {
+        self.cache.get(key).await
     }
 
-    fn insert(&self, key: CacheKey, value: CachedBuffer) {
-        self.cache.borrow_mut().put(key, value);
+    async fn insert(&self, key: CacheKey, value: CachedFBuf) {
+        self.cache.insert(key, value).await;
     }
 
     fn overlaps_with_previous_write(&self, fd: &FileHandle, range: Range<u64>) -> bool {
@@ -113,7 +156,10 @@ fn overlaps_with_previous_write_check() {
     let mut blocks = HashMap::new();
     blocks.insert(1, vec![0..10, 20..30, 40..50]);
     let blocks = RefCell::new(blocks);
-    let mut cache = BufferCache::with_backend(InMemoryBackend::<true>::default());
+    let mut cache = BufferCache::with_backend_lfu(
+        InMemoryBackend::<true>::default(),
+        Arc::new(TinyLfuCache::default()),
+    );
     cache.blocks = blocks;
 
     let fd = &FileHandle::new(1);
@@ -131,7 +177,10 @@ fn overlaps_with_previous_write_check() {
     #[allow(clippy::single_range_in_vec_init)]
     blocks.insert(1, vec![1024..(1024 + 2048)]);
     let blocks = RefCell::new(blocks);
-    let mut cache = BufferCache::with_backend(InMemoryBackend::<true>::default());
+    let mut cache = BufferCache::with_backend_lfu(
+        InMemoryBackend::<true>::default(),
+        Arc::new(TinyLfuCache::default()),
+    );
     cache.blocks = blocks;
     let fd = &FileHandle::new(1);
     assert!(cache.overlaps_with_previous_write(fd, 512..(1024 + 512)));
@@ -165,15 +214,17 @@ impl<B: StorageRead> StorageRead for BufferCache<B> {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
-        if let Some(buf) = self.get(&(fd.into(), offset, size)) {
-            counter!("disk.buffer_cache_hit").increment(1);
+    ) -> Result<CachedFBuf, StorageError> {
+        let request_start = Instant::now();
+        if let Some(buf) = self.get(&(fd.into(), offset, size)).await {
+            counter!(METRIC_BUFFER_CACHE_HIT).increment(1);
+            histogram!(METRIC_BUFFER_CACHE_LATENCY).record(request_start.elapsed().as_secs_f64());
             Ok(buf)
         } else {
-            counter!("disk.buffer_cache_miss").increment(1);
+            counter!(METRIC_BUFFER_CACHE_MISS).increment(1);
             match self.backend.read_block(fd, offset, size).await {
                 Ok(buf) => {
-                    self.insert((fd.into(), offset, size), buf.clone());
+                    self.insert((fd.into(), offset, size), buf.clone()).await;
                     Ok(buf)
                 }
                 Err(e) => Err(e),
@@ -195,14 +246,16 @@ impl<B: StorageWrite> StorageWrite for BufferCache<B> {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<CachedFBuf, StorageError> {
         if self.overlaps_with_previous_write(fd, offset..offset + data.len() as u64) {
+            counter!(METRIC_WRITES_FAILED).increment(1);
             return Err(StorageError::OverlappingWrites);
         }
         let res = self.backend.write_block(fd, offset, data).await;
         match res {
             Ok(buf) => {
-                self.insert((fd.into(), offset, buf.len()), buf.clone());
+                self.insert((fd.into(), offset, buf.len()), buf.clone())
+                    .await;
 
                 // !overlaps_with_previous_write => range not in the list yet
                 let mut blocks = self.blocks.borrow_mut();

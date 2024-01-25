@@ -8,5 +8,5 @@ mod fbuf;
 #[cfg(test)]
 mod tests;
 
-pub use cache::BufferCache;
+pub use cache::{BufferCache, TinyLfuCache};
 pub use fbuf::{FBuf, FBufSerializer};

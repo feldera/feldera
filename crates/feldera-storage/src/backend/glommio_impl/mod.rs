@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
 use glommio::io::{DmaFile, OpenOptions};
 use glommio::sync::RwLock;
@@ -19,7 +19,8 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::backend::{
-    FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageRead, StorageWrite,
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
+    StorageRead, StorageWrite, NEXT_FILE_HANDLE,
 };
 use crate::buffer_cache::FBuf;
 
@@ -30,19 +31,27 @@ mod tests;
 
 /// Storage backend using the [`glommio`] crate.
 pub struct GlommioBackend {
+    /// Directory in which we keep the files.
     base: PathBuf,
+    /// Meta-data of all files we created so far.
     files: RwLock<HashMap<i64, DmaFile>>,
-    file_counter: AtomicI64,
+    /// A global counter to get unique identifiers for file-handles.
+    next_file_id: Arc<AtomicIncrementOnlyI64>,
 }
 
 impl GlommioBackend {
-    /// Creates a new `glommio` backend that will create files in directory
-    /// `base`.
-    pub fn new<P: AsRef<std::path::Path>>(base: P) -> Self {
+    /// Instantiates a new backend.
+    ///
+    /// ## Parameters
+    /// - `base`: Directory in which we keep the files.
+    /// - `next_file_id`: A counter to get unique identifiers for file-handles.
+    ///   Note that in case we use a global buffer cache, this counter should be
+    ///   shared among all instances of the backend.
+    pub fn new<P: AsRef<Path>>(base: P, next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
         Self {
             base: base.as_ref().to_path_buf(),
             files: RwLock::new(HashMap::new()),
-            file_counter: AtomicI64::default(),
+            next_file_id,
         }
     }
 
@@ -64,7 +73,9 @@ impl GlommioBackend {
         thread_local! {
             pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
             pub static BACKEND: Rc<GlommioBackend> = {
-                Rc::new(GlommioBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf())))
+                Rc::new(GlommioBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf()), NEXT_FILE_HANDLE.get_or_init(|| {
+                    Arc::new(Default::default())
+                }).clone()))
             };
         }
         BACKEND.with(|rc| rc.clone())
@@ -73,7 +84,7 @@ impl GlommioBackend {
 
 impl StorageControl for GlommioBackend {
     async fn create(&self) -> Result<FileHandle, StorageError> {
-        let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
+        let file_counter = self.next_file_id.increment();
         let name = Uuid::now_v7();
         let path = self.base.join(name.to_string() + ".feldera");
         let file = OpenOptions::new()
@@ -103,7 +114,7 @@ impl StorageWrite for GlommioBackend {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let to_write = data.len();
         let files = self.files.read().await?;
 
@@ -113,7 +124,7 @@ impl StorageWrite for GlommioBackend {
 
         let written = files.get(&fd.0).unwrap().write_at(dma_buf, offset).await?;
         assert_eq!(written, to_write);
-        Ok(Rc::new(data))
+        Ok(Arc::new(data))
     }
 
     async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError> {
@@ -137,7 +148,7 @@ impl StorageRead for GlommioBackend {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let files = self.files.read().await?;
         let file = files.get(&fd.0).unwrap();
         let dma_buf = file.read_at_aligned(offset, size).await?;
@@ -149,7 +160,7 @@ impl StorageRead for GlommioBackend {
         let mut fbuf = FBuf::with_capacity(dma_buf.len());
         fbuf.extend_from_slice(&dma_buf);
 
-        Ok(Rc::new(fbuf))
+        Ok(Arc::new(fbuf))
     }
 
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
@@ -166,7 +177,7 @@ impl StorageExecutor for GlommioBackend {
     {
         thread_local! {
             pub static RUNTIME: LocalExecutor = LocalExecutor::default()
-        };
+        }
         RUNTIME.with(|runtime| runtime.run(future))
     }
 }

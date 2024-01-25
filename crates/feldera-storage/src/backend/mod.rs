@@ -14,7 +14,9 @@
 #![allow(async_fn_in_trait)]
 #![warn(missing_docs)]
 
-use std::{future::Future, rc::Rc};
+use std::future::Future;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use metrics::{describe_counter, describe_histogram, Unit};
 use thiserror::Error;
@@ -27,6 +29,32 @@ pub mod monoio_impl;
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// A global counter for default backends that are initiated per-core.
+static NEXT_FILE_HANDLE: OnceLock<Arc<AtomicIncrementOnlyI64>> = OnceLock::new();
+
+/// An Increment Only Atomic.
+///
+/// Usable as a global counter to get unique identifiers for file-handles.
+///
+/// Because the buffer cache can be shared among multiple threads.
+#[derive(Debug, Default)]
+pub struct AtomicIncrementOnlyI64 {
+    value: AtomicI64,
+}
+
+impl AtomicIncrementOnlyI64 {
+    /// Creates a new counter with an initial value of 0.
+    pub const fn new() -> Self {
+        Self {
+            value: AtomicI64::new(0),
+        }
+    }
+
+    fn increment(&self) -> i64 {
+        self.value.fetch_add(1, Ordering::Relaxed)
+    }
+}
 
 /// A file-descriptor we can write to.
 pub struct FileHandle(i64);
@@ -100,31 +128,54 @@ impl PartialEq for StorageError {
     }
 }
 
+pub(crate) const METRIC_FILES_CREATED: &str = "disk.total_files_created";
+pub(crate) const METRIC_FILES_DELETED: &str = "disk.total_files_deleted";
+pub(crate) const METRIC_WRITES_SUCCESS: &str = "disk.total_writes_success";
+pub(crate) const METRIC_WRITES_FAILED: &str = "disk.total_writes_failed";
+pub(crate) const METRIC_READS_SUCCESS: &str = "disk.total_reads_success";
+pub(crate) const METRIC_READS_FAILED: &str = "disk.total_reads_failed";
+pub(crate) const METRIC_TOTAL_BYTES_WRITTEN: &str = "disk.total_bytes_written";
+pub(crate) const METRIC_TOTAL_BYTES_READ: &str = "disk.total_bytes_read";
+pub(crate) const METRIC_READ_LATENCY: &str = "disk.read_latency";
+pub(crate) const METRIC_WRITE_LATENCY: &str = "disk.write_latency";
+pub(crate) const METRIC_BUFFER_CACHE_HIT: &str = "disk.buffer_cache_hit";
+pub(crate) const METRIC_BUFFER_CACHE_MISS: &str = "disk.buffer_cache_miss";
+pub(crate) const METRIC_BUFFER_CACHE_LATENCY: &str = "disk.buffer_cache_latency";
+
 /// Adds descriptions for the metrics we expose.
 fn describe_disk_metrics() {
     // Storage backend metrics.
-    describe_counter!("disk.total_writes_success", "total number of disk writes");
-    describe_counter!("disk.total_reads_success", "total number of disk reads");
+    describe_counter!(METRIC_FILES_CREATED, "total number of files created");
+    describe_counter!(METRIC_FILES_DELETED, "total number of files deleted");
+    describe_counter!(METRIC_WRITES_SUCCESS, "total number of disk writes");
+    describe_counter!(METRIC_WRITES_FAILED, "total number of failed writes");
+    describe_counter!(METRIC_READS_SUCCESS, "total number of disk reads");
+    describe_counter!(METRIC_READS_FAILED, "total number of failed reads");
 
     describe_counter!(
-        "disk.total_bytes_written",
+        METRIC_TOTAL_BYTES_WRITTEN,
         Unit::Bytes,
         "total number of bytes written to disk"
     );
     describe_counter!(
-        "disk.total_bytes_read",
+        METRIC_TOTAL_BYTES_READ,
         Unit::Bytes,
         "total number of bytes read from disk"
     );
 
-    describe_histogram!("disk.read_latency", Unit::Seconds, "Read request latency");
-    describe_histogram!("disk.write_latency", Unit::Seconds, "Write request latency");
+    describe_histogram!(METRIC_READ_LATENCY, Unit::Seconds, "Read request latency");
+    describe_histogram!(METRIC_WRITE_LATENCY, Unit::Seconds, "Write request latency");
 
     // Buffer cache metrics.
-    describe_counter!("disk.buffer_cache_hit", "total number of buffer cache hits");
+    describe_counter!(METRIC_BUFFER_CACHE_HIT, "total number of buffer cache hits");
     describe_counter!(
-        "disk.buffer_cache_miss",
+        METRIC_BUFFER_CACHE_MISS,
         "total number of buffer cache misses"
+    );
+    describe_histogram!(
+        METRIC_BUFFER_CACHE_LATENCY,
+        Unit::Seconds,
+        "Buffer cache lookup latency"
     );
 }
 
@@ -186,7 +237,7 @@ pub trait StorageWrite {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError>;
+    ) -> Result<Arc<FBuf>, StorageError>;
 
     /// Completes writing of a file.
     ///
@@ -247,7 +298,7 @@ pub trait StorageRead {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError>;
+    ) -> Result<Arc<FBuf>, StorageError>;
 
     /// Returns the file's size in bytes.
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;

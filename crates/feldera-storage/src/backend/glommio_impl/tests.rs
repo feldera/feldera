@@ -42,7 +42,7 @@ impl StateMachineTest for GlommioBackend {
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
         let _tmpdir = tempfile::tempdir().unwrap();
-        let backend = GlommioBackend::new(_tmpdir.path());
+        let backend = GlommioBackend::new(_tmpdir.path(), Default::default());
 
         GlommioTest { backend, _tmpdir }
     }

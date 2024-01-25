@@ -1,5 +1,6 @@
 use proptest::{proptest, test_runner::Config};
 use proptest_state_machine::{prop_state_machine, ReferenceStateMachine, StateMachineTest};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::backend::monoio_impl::MonoioBackend;
@@ -7,7 +8,7 @@ use crate::backend::tests::{InMemoryBackend, Transition, MAX_TRANSITIONS};
 use crate::backend::{
     FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead, StorageWrite,
 };
-use crate::buffer_cache::BufferCache;
+use crate::buffer_cache::{BufferCache, TinyLfuCache};
 
 #[monoio::test]
 #[should_panic]
@@ -15,7 +16,10 @@ async fn overlaps_test() {
     use super::FBuf;
     use crate::backend::tests::InMemoryBackend;
 
-    let cache = BufferCache::with_backend(InMemoryBackend::<true>::default());
+    let cache = BufferCache::with_backend_lfu(
+        InMemoryBackend::<true>::default(),
+        Arc::new(TinyLfuCache::default()),
+    );
     let fd = cache.create().await.unwrap();
     let _fd2 = cache.create().await.unwrap();
 
@@ -30,7 +34,7 @@ async fn overlaps_test() {
     cache.write_block(&fd, 512, b2).await.unwrap();
 }
 
-// Setup the state machine test using the `prop_state_machine!` macro
+// Set up the state machine test using the `prop_state_machine!` macro
 prop_state_machine! {
     #![proptest_config(Config {
         verbose: 1,
@@ -59,8 +63,8 @@ impl StateMachineTest for BufferCache<MonoioBackend> {
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
         let _tmpdir = tempfile::tempdir().unwrap();
-        let storage_backend = MonoioBackend::new(_tmpdir.path());
-        let backend = BufferCache::with_backend(storage_backend);
+        let storage_backend = MonoioBackend::new(_tmpdir.path(), Default::default());
+        let backend = BufferCache::with_backend_lfu(storage_backend, Default::default());
 
         BufferCacheTest { backend, _tmpdir }
     }

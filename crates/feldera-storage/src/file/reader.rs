@@ -374,7 +374,7 @@ impl ValueMapReader {
 
 struct DataBlock<K, A> {
     location: BlockLocation,
-    raw: Rc<FBuf>,
+    raw: Arc<FBuf>,
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
     first_row: u64,
@@ -598,7 +598,7 @@ where
 
 struct IndexBlock<K> {
     location: BlockLocation,
-    raw: Rc<FBuf>,
+    raw: Arc<FBuf>,
     child_type: NodeType,
     bounds: VarintReader,
     row_totals: VarintReader,
@@ -908,7 +908,7 @@ fn read_block<S>(
     storage: &Rc<S>,
     file_handle: &ImmutableFileHandle,
     location: BlockLocation,
-) -> Result<Rc<FBuf>, Error>
+) -> Result<Arc<FBuf>, Error>
 where
     S: StorageRead + StorageExecutor,
 {

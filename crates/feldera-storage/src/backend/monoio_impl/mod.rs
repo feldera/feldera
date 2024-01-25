@@ -8,7 +8,7 @@ use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 use async_lock::RwLock;
@@ -21,8 +21,10 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::backend::{
-    describe_disk_metrics, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
-    StorageRead, StorageWrite,
+    describe_disk_metrics, AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl,
+    StorageError, StorageRead, StorageWrite, METRIC_FILES_CREATED, METRIC_FILES_DELETED,
+    METRIC_READS_FAILED, METRIC_READS_SUCCESS, METRIC_READ_LATENCY, METRIC_TOTAL_BYTES_READ,
+    METRIC_TOTAL_BYTES_WRITTEN, METRIC_WRITES_SUCCESS, METRIC_WRITE_LATENCY, NEXT_FILE_HANDLE,
 };
 use crate::buffer_cache::FBuf;
 
@@ -58,20 +60,26 @@ struct FileMetaData {
 pub struct MonoioBackend {
     /// Directory in which we keep the files.
     base: PathBuf,
-    /// All files we created so far inside `base`.
+    /// Meta-data of all files we created so far.
     files: RwLock<HashMap<i64, FileMetaData>>,
-    /// Counter used to generate unique file handles (`i64` key in `files`).
-    file_counter: AtomicI64,
+    /// A global counter to get unique identifiers for file-handles.
+    next_file_id: Arc<AtomicIncrementOnlyI64>,
 }
 
 impl MonoioBackend {
     /// Instantiates a new backend.
-    pub fn new<P: AsRef<Path>>(base: P) -> Self {
+    ///
+    /// ## Parameters
+    /// - `base`: Directory in which we keep the files.
+    /// - `next_file_id`: A counter to get unique identifiers for file-handles.
+    ///   Note that in case we use a global buffer cache, this counter should be
+    ///   shared among all instances of the backend.
+    pub fn new<P: AsRef<Path>>(base: P, next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
         describe_disk_metrics();
         Self {
             base: base.as_ref().to_path_buf(),
             files: RwLock::new(HashMap::new()),
-            file_counter: AtomicI64::default(),
+            next_file_id,
         }
     }
 
@@ -93,7 +101,9 @@ impl MonoioBackend {
         thread_local! {
             pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
             pub static DEFAULT_BACKEND: Rc<MonoioBackend> = {
-                 Rc::new(MonoioBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf())))
+                 Rc::new(MonoioBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf()), NEXT_FILE_HANDLE.get_or_init(|| {
+                    Arc::new(Default::default())
+                }).clone()))
             };
         }
         DEFAULT_BACKEND.with(|rc| rc.clone())
@@ -102,7 +112,7 @@ impl MonoioBackend {
 
 impl StorageControl for MonoioBackend {
     async fn create(&self) -> Result<FileHandle, StorageError> {
-        let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
+        let file_counter = self.next_file_id.increment();
         let name = Uuid::now_v7();
         let path = self.base.join(name.to_string() + ".feldera");
         let file = open_as_direct(
@@ -119,16 +129,21 @@ impl StorageControl for MonoioBackend {
                 size: RefCell::new(0),
             },
         );
+        counter!(METRIC_FILES_CREATED).increment(1);
 
         Ok(FileHandle(file_counter))
     }
 
     async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.delete_inner(fd.0).await
+        self.delete_inner(fd.0)
+            .await
+            .map(|_| counter!(METRIC_FILES_DELETED).increment(1))
     }
 
     async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.delete_inner(fd.0).await
+        self.delete_inner(fd.0)
+            .await
+            .map(|_| counter!(METRIC_FILES_DELETED).increment(1))
     }
 }
 
@@ -138,19 +153,20 @@ impl StorageWrite for MonoioBackend {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let files = self.files.read().await;
         let request_start = Instant::now();
         let fm = files.get(&fd.0).unwrap();
         let end_offset = offset + data.len() as u64;
         let (res, buf) = fm.file.write_all_at(data, offset).await;
         res?;
-        fm.size.replace_with(|size| max(*size, end_offset));
-        counter!("disk.total_bytes_written").increment(buf.len() as u64);
-        counter!("disk.total_writes_success").increment(1);
-        histogram!("disk.write_latency").record(request_start.elapsed().as_secs_f64());
 
-        Ok(Rc::new(buf))
+        fm.size.replace_with(|size| max(*size, end_offset));
+        counter!(METRIC_TOTAL_BYTES_WRITTEN).increment(buf.len() as u64);
+        counter!(METRIC_WRITES_SUCCESS).increment(1);
+        histogram!(METRIC_WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
+
+        Ok(Arc::new(buf))
     }
 
     async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError> {
@@ -174,7 +190,7 @@ impl StorageRead for MonoioBackend {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let buffer = FBuf::with_capacity(size);
 
         let files = self.files.read().await;
@@ -182,18 +198,21 @@ impl StorageRead for MonoioBackend {
         let request_start = Instant::now();
         let (res, buf) = fm.file.read_at(buffer, offset).await;
         match res {
-            Ok(_len) => {
-                counter!("disk.total_bytes_read").increment(buf.len() as u64);
-                counter!("disk.total_reads_success").increment(1);
-                histogram!("disk.read_latency").record(request_start.elapsed().as_secs_f64());
-
+            Ok(len) => {
+                counter!(METRIC_TOTAL_BYTES_READ).increment(len as u64);
+                histogram!(METRIC_READ_LATENCY).record(request_start.elapsed().as_secs_f64());
                 if size != buf.len() {
+                    counter!(METRIC_READS_FAILED).increment(1);
                     Err(StorageError::ShortRead)
                 } else {
-                    Ok(Rc::new(buf))
+                    counter!(METRIC_READS_SUCCESS).increment(1);
+                    Ok(Arc::new(buf))
                 }
             }
-            Err(e) => Err(e.into()),
+            Err(e) => {
+                counter!(METRIC_READS_FAILED).increment(1);
+                Err(e.into())
+            }
         }
     }
 

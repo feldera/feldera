@@ -9,11 +9,8 @@
 //! Run `metrics-observer` in another terminal to see the metrics.
 //!
 //! There are still some issues with this benchmark to make it useful:
-//! - Unable to get read metrics in metrics-oberserver without adding a loop
-//!   around the read loop to make it much longer
 //! - Threads indicate they're done writing but are still writing, potentially
 //!   async code is just wrong/needs join.
-//! - One thread may be done writing before the other, needs a barrier.
 
 #![allow(async_fn_in_trait)]
 
@@ -30,8 +27,8 @@ use monoio::{FusionDriver, RuntimeBuilder};
 use feldera_storage::backend::glommio_impl::GlommioBackend;
 
 use feldera_storage::backend::monoio_impl::MonoioBackend;
-use feldera_storage::backend::{StorageControl, StorageRead, StorageWrite};
-use feldera_storage::buffer_cache::{BufferCache, FBuf};
+use feldera_storage::backend::{AtomicIncrementOnlyI64, StorageControl, StorageRead, StorageWrite};
+use feldera_storage::buffer_cache::{BufferCache, FBuf, TinyLfuCache};
 
 #[derive(Debug, Clone, Default)]
 struct ThreadBenchResult {
@@ -137,15 +134,37 @@ impl BenchResult {
         let read_time = self.read_time_mean();
         let write_time = self.write_time_mean();
         const ONE_MIB: f64 = 1024f64 * 1024f64;
-        println!(
-            "read: {} MiB/s (mean: {}s, std: {}s)\nwrite: {} MiB/s (mean: {}s, std: {}s)",
-            ((args.total_size * args.threads) as f64 / ONE_MIB) / read_time,
-            read_time,
-            self.read_time_std(),
-            ((args.total_size * args.threads) as f64 / ONE_MIB) / write_time,
-            write_time,
-            self.write_time_std()
-        )
+
+        if !args.csv {
+            println!(
+                "read: {} MiB/s (mean: {}s, std: {}s)",
+                ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / read_time,
+                read_time,
+                self.read_time_std()
+            );
+            println!(
+                "write: {} MiB/s (mean: {}s, std: {}s)",
+                ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / write_time,
+                write_time,
+                self.write_time_std()
+            );
+        } else {
+            println!(
+                "backend,cache,per_thread_file_size,threads,buffer_size,read_time,read_time_std,write_time,write_time_std",
+            );
+            println!(
+                "{:?},{:?},{},{},{},{},{},{},{}",
+                args.backend,
+                args.cache,
+                args.per_thread_file_size,
+                args.threads,
+                args.buffer_size,
+                read_time,
+                self.read_time_std(),
+                write_time,
+                self.write_time_std(),
+            )
+        }
     }
 }
 
@@ -193,15 +212,19 @@ struct Args {
 
     /// Size that is to be written (per-thread)
     #[clap(long, default_value = "1073741824")]
-    total_size: usize,
+    per_thread_file_size: usize,
 
     /// Verify file-operations are performed correctly.
     #[clap(long, default_value = "false")]
     verify: bool,
 
-    /// Add the buffer-cache.
+    /// Adds a buffer cache with given bytes of capacity.
+    #[clap(long)]
+    cache: Option<usize>,
+
+    /// Print data as CSV.
     #[clap(long, default_value = "false")]
-    cache: bool,
+    csv: bool,
 }
 
 fn allocate_buffer(sz: usize) -> FBuf {
@@ -215,18 +238,13 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
     let args = Args::parse();
     let file = backend.create().await.unwrap();
 
-    let mut wbuffers = Vec::with_capacity(args.total_size / args.buffer_size);
-    for _i in 0..args.total_size / args.buffer_size {
-        let mut buf = allocate_buffer(args.buffer_size);
-        buf.resize(args.buffer_size, 0xff);
-        wbuffers.push(buf);
-    }
-
     barrier.wait_blocking();
     let start_write = Instant::now();
-    for i in 0..args.total_size / args.buffer_size {
-        let wb = wbuffers.pop().unwrap();
-        debug_assert!(i * args.buffer_size < args.total_size);
+    for i in 0..args.per_thread_file_size / args.buffer_size {
+        let mut wb = allocate_buffer(args.buffer_size);
+        wb.resize(args.buffer_size, 0xff);
+
+        debug_assert!(i * args.buffer_size < args.per_thread_file_size);
         debug_assert!(wb.len() == args.buffer_size);
         backend
             .write_block(&file, (i * args.buffer_size) as u64, wb)
@@ -238,7 +256,7 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
 
     barrier.wait_blocking();
     let start_read = Instant::now();
-    for i in 0..args.total_size / args.buffer_size {
+    for i in 0..args.per_thread_file_size / args.buffer_size {
         let rr = backend
             .read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size)
             .await
@@ -267,6 +285,7 @@ fn glommio_main(args: Args) -> BenchResult {
     };
 
     let mut br = BenchResult::default();
+    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
     let barrier = Arc::new(Barrier::new(args.threads));
 
     LocalExecutorPoolBuilder::new(PoolPlacement::Unbound(args.threads))
@@ -275,42 +294,45 @@ fn glommio_main(args: Args) -> BenchResult {
         .detect_stalls(Some(Box::new(|| Box::new(DefaultStallDetectionHandler {}))))
         .on_all_shards(|| async move {
             let barrier = barrier.clone();
-            let backend = GlommioBackend::new(args.path.clone());
+            let counter = counter.clone();
+            let backend = GlommioBackend::new(args.path.clone(), counter);
             Timer::new(Duration::from_millis(100)).await;
             benchmark(backend, barrier).await
         })
         .expect("failed to spawn local executors")
         .join_all()
         .into_iter()
-        .map(|r| match r {
-            Ok(r) => r,
-            Err(_e) => {
-                panic!("unable to get result from benchmark thread")
-            }
-        })
+        .map(|r| r.unwrap_or_else(|_e| panic!("unable to get result from benchmark thread")))
         .for_each(|tres| br.times.push(tres.clone()));
 
     br
 }
 
 fn monoio_main(args: Args) -> BenchResult {
+    let lfu_cache: Option<Arc<TinyLfuCache>> = args
+        .cache
+        .map(|cap| Arc::new(TinyLfuCache::with_capacity(cap)));
+
+    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
     let barrier = Arc::new(Barrier::new(args.threads));
     // spawn n-1 threads
     let threads: Vec<_> = (1..args.threads)
         .map(|_| {
             let args = args.clone();
+            let lfu_cache = lfu_cache.clone();
             let barrier = barrier.clone();
+            let counter = counter.clone();
             thread::spawn(move || {
                 let barrier = barrier.clone();
-                let monoio_backend = MonoioBackend::new(args.path.clone());
+                let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
                 let mut rt = RuntimeBuilder::<FusionDriver>::new()
                     .enable_timer()
                     .with_entries(4096)
                     .build()
                     .expect("Failed building the Runtime");
-                if args.cache {
+                if let Some(lfu_cache) = lfu_cache {
                     rt.block_on(benchmark(
-                        BufferCache::with_backend(monoio_backend),
+                        BufferCache::with_backend_lfu(monoio_backend, lfu_cache),
                         barrier,
                     ))
                 } else {
@@ -321,7 +343,7 @@ fn monoio_main(args: Args) -> BenchResult {
         .collect();
 
     // Run on main thread
-    let monoio_backend = MonoioBackend::new(args.path.clone());
+    let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
     let mut rt = RuntimeBuilder::<FusionDriver>::new()
         .enable_timer()
         .with_entries(4096)
@@ -329,9 +351,9 @@ fn monoio_main(args: Args) -> BenchResult {
         .expect("Failed building the Runtime");
 
     let mut br = BenchResult::default();
-    let main_res = if args.cache {
+    let main_res = if let Some(lfu_cache) = lfu_cache {
         rt.block_on(benchmark(
-            BufferCache::with_backend(monoio_backend),
+            BufferCache::with_backend_lfu(monoio_backend, lfu_cache),
             barrier,
         ))
     } else {
@@ -350,9 +372,9 @@ fn monoio_main(args: Args) -> BenchResult {
 
 fn main() {
     let args = Args::parse();
-    assert!(args.total_size > 0);
+    assert!(args.per_thread_file_size > 0);
     assert!(args.buffer_size > 0);
-    assert!(args.total_size >= args.buffer_size);
+    assert!(args.per_thread_file_size >= args.buffer_size);
     assert!(args.threads > 0);
     if !args.path.exists() {
         create_dir_all(&args.path).expect("failed to create directory");
@@ -370,10 +392,11 @@ fn main() {
         Backend::Monoio => monoio_main(args.clone()),
     };
 
-    br.display(args);
-
-    if let Err(e) = br.validate() {
-        println!("Result validation failed: {}", e);
-        std::process::exit(1);
+    br.display(args.clone());
+    if !args.csv {
+        if let Err(e) = br.validate() {
+            println!("Result validation failed: {}", e);
+            std::process::exit(1);
+        }
     }
 }

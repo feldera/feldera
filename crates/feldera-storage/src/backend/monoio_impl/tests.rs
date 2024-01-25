@@ -45,7 +45,7 @@ impl StateMachineTest for MonoioBackend {
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
         let tmpdir = tempfile::tempdir().unwrap();
-        let backend = MonoioBackend::new(tmpdir.path());
+        let backend = MonoioBackend::new(tmpdir.path(), Default::default());
 
         MonoioTest { backend, tmpdir }
     }
