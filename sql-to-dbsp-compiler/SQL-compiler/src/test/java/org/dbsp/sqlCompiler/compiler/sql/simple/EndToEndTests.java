@@ -271,17 +271,6 @@ public class EndToEndTests extends BaseSQLTests {
         this.testConstantOutput(query, result);
     }
 
-    @Test @Ignore("Calcite's semantics requires this to crash at runtime")
-    // Calcite's semantics requires this to crash at runtime;
-    // we should change the semantics of ELEMENT
-    // to return NULL when the array has more than 1 element.
-    public void testArrayElement() {
-        String query = "SELECT ELEMENT(ARRAY [2, 3])";
-        DBSPZSetLiteral.Contents result =
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
-        this.testQuery(query, result);
-    }
-
     @Test
     public void testConcatNull() {
         String query = "SELECT T.COL4 || NULL FROM T";
@@ -450,17 +439,6 @@ public class EndToEndTests extends BaseSQLTests {
                         new DBSPI64Literal(0, false),
                         DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
                 )));
-    }
-
-    @Test @Ignore("JSON_OBJECT not yet implemented")
-    public void jsonTest() {
-        String query = """
-                select JSON_OBJECT(
-                    KEY 'level1'
-                    VALUE(T.COL1))
-                from T""";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
-                new DBSPTupleExpression(new DBSPStringLiteral(""))));
     }
 
     @Test
@@ -710,19 +688,19 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divZeroTest() {
         String query = "SELECT 1 / 0";
-        this.runtimeFail(query, "attempt to divide by zero", this.getEmptyIOPair());
+        this.runtimeConstantFail(query, "attempt to divide by zero");
     }
 
     @Test
     public void divZero0() {
         String query = "SELECT 'Infinity' / 0";
-        this.runtimeFail(query, "InvalidDigit", this.getEmptyIOPair());
+        this.runtimeConstantFail(query, "InvalidDigit");
     }
 
     @Test
     public void nestedDivTest() {
         String query = "SELECT 2 / (1 / 0)";
-        this.runtimeFail(query, "attempt to divide by zero", this.getEmptyIOPair());
+        this.runtimeConstantFail(query, "attempt to divide by zero");
     }
 
     @Test
@@ -908,6 +886,28 @@ public class EndToEndTests extends BaseSQLTests {
         this.testAggregate(query, output, new DBSPZSetLiteral.Contents(
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
+    }
+
+    @Test
+    public void averageFpTest() {
+        String query = "SELECT AVG(T.COL2) FROM T";
+        DBSPZSetLiteral.Contents output = new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDoubleLiteral(6.5, true)));
+        this.testAggregate(query, output, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(DBSPLiteral.none(
+                        new DBSPTypeDouble(CalciteObject.EMPTY, true)))));
+    }
+
+    @Test
+    public void averageFpNullableTest() {
+        String query = "SELECT AVG(T.COL6) FROM T";
+        DBSPZSetLiteral.Contents output = new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDoubleLiteral(0.0, true)));
+        this.testAggregate(query, output, new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(DBSPLiteral.none(
+                        new DBSPTypeDouble(CalciteObject.EMPTY, true)))));
     }
 
     @Test
