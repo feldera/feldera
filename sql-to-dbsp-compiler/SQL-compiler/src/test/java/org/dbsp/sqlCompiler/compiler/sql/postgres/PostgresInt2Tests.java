@@ -297,8 +297,7 @@ public class PostgresInt2Tests extends SqlIoTest {
 
     @Test @Ignore("fails for Calcite optimized version")
     public void testINT2MINOverflowError() {
-        this.runtimeFail("SELECT (-32768)::int2 * (-1)::int2", "attempt to multiply with overflow", this.getEmptyIOPair());
-
-        this.runtimeFail("SELECT (-32768)::int2 / (-1)::int2", "attempt to divide with overflow", this.getEmptyIOPair());
+        this.runtimeConstantFail("SELECT (-32768)::int2 * (-1)::int2", "attempt to multiply with overflow");
+        this.runtimeConstantFail("SELECT (-32768)::int2 / (-1)::int2", "attempt to divide with overflow");
     }
 }

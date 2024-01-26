@@ -30,7 +30,7 @@ public class StreamingTests extends BaseSQLTests {
     public void latenessTest() {
         String ddl = """
                 CREATE TABLE series (
-                        distance DOUBLE PRECISION,
+                        distance DOUBLE,
                         pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
                 )""";
         String query =
@@ -82,7 +82,7 @@ public class StreamingTests extends BaseSQLTests {
         // Insert tuple in the past, but before the last waterline
         addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
         addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(13.0, true),
+                new DBSPDoubleLiteral(13.333333333333334, true),
                 new DBSPDateLiteral("2023-12-30")), 1);
         addSub.add(new DBSPTupleExpression(
                 new DBSPDoubleLiteral(15.0, true),

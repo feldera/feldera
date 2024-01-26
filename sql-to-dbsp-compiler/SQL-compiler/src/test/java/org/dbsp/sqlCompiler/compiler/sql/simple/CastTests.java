@@ -83,9 +83,8 @@ public class CastTests extends BaseSQLTests {
 
     @Test
     public void castFail() {
-        this.runtimeFail("SELECT CAST('blah' AS DECIMAL)",
-                "Invalid decimal: unknown character",
-                this.getEmptyIOPair());
+        this.runtimeConstantFail("SELECT CAST('blah' AS DECIMAL)",
+                "Invalid decimal: unknown character");
     }
 
     @Test

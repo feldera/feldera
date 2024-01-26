@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -152,7 +153,7 @@ public class ArrayTests extends BaseSQLTests {
                 new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
     }
 
-    @Test @Ignore("Not yet implemented")
+    @Test @Ignore("UNNEST with 2 arguments not yet implemented")
     public void testUnnest2() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5], ARRAY[3, 2, 1])";
         DBSPZSetLiteral.Contents result = null;
@@ -257,6 +258,14 @@ public class ArrayTests extends BaseSQLTests {
         this.testQuery(ddl, query);
     }
 
+    @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6228")
+    public void test2DArrayElements() {
+        String ddl = "CREATE TABLE ARR_TABLE (\n"
+                + "VALS INTEGER ARRAY ARRAY)";
+        String query = "SELECT *, CARDINALITY(VALS), VALS[1], ELEMENT(VALS), ELEMENT(VALS[1]) FROM ARR_TABLE";
+        this.testQuery(ddl, query);
+    }
+
     @Test
     public void testConstants() {
         String query = "SELECT ARRAY[2,3][2], CARDINALITY(ARRAY[2,3]), ELEMENT(ARRAY[2])";
@@ -267,5 +276,17 @@ public class ArrayTests extends BaseSQLTests {
                                 new DBSPI32Literal(2),
                                 new DBSPI32Literal(2))
                 ) }));
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6227")
+    public void testElementNull() {
+        this.testQuery("", "SELECT ELEMENT(NULL)", new InputOutputPair(new DBSPZSetLiteral.Contents[0],
+                new DBSPZSetLiteral.Contents[]{ new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(new DBSPNullLiteral())) }));
+    }
+
+    @Test
+    public void testOutOfBounds() {
+        this.runtimeConstantFail("SELECT ELEMENT(ARRAY [2, 3])", "array that does not have exactly 1 element");
     }
 }
