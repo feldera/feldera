@@ -754,7 +754,7 @@ pub fn element<T>(array: Vec<T>) -> Option<T>
 where
     T: Clone,
 {
-    if array.len() == 0 {
+    if array.is_empty() {
         None
     } else if array.len() == 1 {
         Some(array[0].clone())
