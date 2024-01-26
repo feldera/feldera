@@ -1,6 +1,9 @@
 use crate::{
-    trace::layers::{
-        file::column_layer::FileColumnLayer, Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
+    trace::{
+        layers::{
+            file::column_layer::FileColumnLayer, Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
+        },
+        ord::file::StorageBackend,
     },
     DBData, DBWeight,
 };
@@ -9,11 +12,10 @@ use feldera_storage::file::{
     writer::{Parameters, Writer1},
 };
 use size_of::SizeOf;
-use std::{cmp::Ordering, fs::File};
-use tempfile::tempfile;
+use std::cmp::Ordering;
 
 /// Implements [`MergeBuilder`] and [`TupleBuilder`] for [`FileColumnLayer`].
-pub struct FileColumnLayerBuilder<K, R>(Writer1<File, K, R>)
+pub struct FileColumnLayerBuilder<K, R>(Writer1<StorageBackend, K, R>)
 where
     K: DBData,
     R: DBWeight;
@@ -31,7 +33,11 @@ where
 
     fn done(self) -> Self::Trie {
         FileColumnLayer {
-            file: Reader::new(self.0.close().unwrap()).unwrap(),
+            file: Reader::new(
+                &StorageBackend::default_for_thread(),
+                self.0.close().unwrap(),
+            )
+            .unwrap(),
             lower_bound: 0,
         }
     }
@@ -48,7 +54,7 @@ where
     }
 
     fn with_key_capacity(_capacity: usize) -> Self {
-        Self(Writer1::new(tempfile().unwrap(), Parameters::default()).unwrap())
+        Self(Writer1::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap())
     }
 
     fn reserve(&mut self, _additional: usize) {}
@@ -135,7 +141,7 @@ where
     type Item = (K, R);
 
     fn new() -> Self {
-        Self(Writer1::new(tempfile().unwrap(), Parameters::default()).unwrap())
+        Self(Writer1::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap())
     }
 
     fn with_capacity(_capacity: usize) -> Self {
