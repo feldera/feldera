@@ -7,18 +7,22 @@
 //! submit to Glommio.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use glommio::io::{DmaFile, OpenOptions};
 use glommio::sync::RwLock;
+use glommio::LocalExecutor;
 use uuid::Uuid;
 
 use crate::backend::{
     FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageRead, StorageWrite,
 };
 use crate::buffer_cache::FBuf;
+
+use super::StorageExecutor;
 
 #[cfg(test)]
 mod tests;
@@ -135,5 +139,17 @@ impl StorageRead for GlommioBackend {
         let files = self.files.read().await?;
         let file = files.get(&fd.0).unwrap();
         Ok(file.file_size().await?)
+    }
+}
+
+impl StorageExecutor for GlommioBackend {
+    fn block_on<F>(&self, future: F) -> F::Output
+    where
+        F: Future,
+    {
+        thread_local! {
+            pub static RUNTIME: LocalExecutor = LocalExecutor::default()
+        };
+        RUNTIME.with(|runtime| runtime.run(future))
     }
 }

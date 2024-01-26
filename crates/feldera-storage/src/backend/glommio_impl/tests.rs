@@ -3,7 +3,6 @@
 //! The main test makes sure we correspond to the model defined in
 //! [`InMemoryBackend`].
 
-use glommio::{LocalExecutor, LocalExecutorBuilder};
 use pretty_assertions::assert_eq;
 use proptest::proptest;
 use proptest::test_runner::Config;
@@ -12,7 +11,9 @@ use tempfile::TempDir;
 
 use crate::backend::glommio_impl::GlommioBackend;
 use crate::backend::tests::{InMemoryBackend, Transition, MAX_TRANSITIONS};
-use crate::backend::{FileHandle, ImmutableFileHandle, StorageControl, StorageRead, StorageWrite};
+use crate::backend::{
+    FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead, StorageWrite,
+};
 
 prop_state_machine! {
     #![proptest_config(Config {
@@ -30,7 +31,6 @@ prop_state_machine! {
 
 pub struct GlommioTest {
     backend: GlommioBackend,
-    ex: LocalExecutor,
     _tmpdir: TempDir,
 }
 
@@ -42,15 +42,9 @@ impl StateMachineTest for GlommioBackend {
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
         let _tmpdir = tempfile::tempdir().unwrap();
-        let builder = LocalExecutorBuilder::default();
-        let ex = builder.make().unwrap();
         let backend = GlommioBackend::new(_tmpdir.path());
 
-        GlommioTest {
-            backend,
-            ex,
-            _tmpdir,
-        }
+        GlommioTest { backend, _tmpdir }
     }
 
     fn apply(
@@ -60,13 +54,13 @@ impl StateMachineTest for GlommioBackend {
     ) -> Self::SystemUnderTest {
         match transition {
             Transition::Create => {
-                state.ex.run(async {
+                state.backend.block_on(async {
                     let _r = state.backend.create().await.expect("create failed");
                 });
                 state
             }
             Transition::DeleteMut(id) => {
-                state.ex.run(async {
+                state.backend.block_on(async {
                     state
                         .backend
                         .delete_mut(FileHandle(id))
@@ -76,7 +70,7 @@ impl StateMachineTest for GlommioBackend {
                 state
             }
             Transition::Write(id, offset, content) => {
-                state.ex.run(async {
+                state.backend.block_on(async {
                     let mut wb = GlommioBackend::allocate_buffer(content.len());
                     wb.resize(content.len(), 0);
                     wb.copy_from_slice(content.as_bytes());
@@ -89,7 +83,7 @@ impl StateMachineTest for GlommioBackend {
                 state
             }
             Transition::Complete(id) => {
-                state.ex.run(async {
+                state.backend.block_on(async {
                     state
                         .backend
                         .complete(FileHandle(id))
@@ -99,7 +93,7 @@ impl StateMachineTest for GlommioBackend {
                 state
             }
             Transition::Read(id, offset, length) => {
-                let result_impl = state.ex.run(async {
+                let result_impl = state.backend.block_on(async {
                     state
                         .backend
                         .read_block(&ImmutableFileHandle(id), offset, length as usize)
