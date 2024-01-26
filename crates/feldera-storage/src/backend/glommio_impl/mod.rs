@@ -8,13 +8,14 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use glommio::io::{DmaFile, OpenOptions};
 use glommio::sync::RwLock;
 use glommio::LocalExecutor;
+use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::backend::{
@@ -51,6 +52,22 @@ impl GlommioBackend {
         file.remove().await?;
         file.close().await?;
         Ok(())
+    }
+
+    /// Returns the directory in which the backend creates files.
+    pub fn path(&self) -> &Path {
+        self.base.as_path()
+    }
+
+    /// Returns a thread-local default backend.
+    pub fn default_for_thread() -> Rc<Self> {
+        thread_local! {
+            pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
+            pub static BACKEND: Rc<GlommioBackend> = {
+                Rc::new(GlommioBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf())))
+            };
+        }
+        BACKEND.with(|rc| rc.clone())
     }
 }
 

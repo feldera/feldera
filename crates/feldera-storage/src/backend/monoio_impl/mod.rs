@@ -17,6 +17,7 @@ use monoio::fs::{File, OpenOptions};
 #[cfg(target_os = "linux")]
 use monoio::IoUringDriver;
 use monoio::{FusionDriver, FusionRuntime, LegacyDriver, RuntimeBuilder};
+use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::backend::{
@@ -80,6 +81,22 @@ impl MonoioBackend {
         fm.file.close().await?;
         std::fs::remove_file(fm.path).unwrap();
         Ok(())
+    }
+
+    /// Returns the directory in which the backend creates files.
+    pub fn path(&self) -> &Path {
+        self.base.as_path()
+    }
+
+    /// Returns a thread-local default backend.
+    pub fn default_for_thread() -> Rc<Self> {
+        thread_local! {
+            pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
+            pub static DEFAULT_BACKEND: Rc<MonoioBackend> = {
+                 Rc::new(MonoioBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf())))
+            };
+        }
+        DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 }
 
