@@ -752,24 +752,23 @@ where
 
 pub fn element<T>(array: Vec<T>) -> Option<T>
 where
-    T: Copy,
+    T: Clone,
 {
-    if array.len() == 1 {
-        Some(array[0])
-    } else {
+    if array.len() == 0 {
         None
+    } else if array.len() == 1 {
+        Some(array[0].clone())
+    } else {
+        panic!("'ELEMENT()' called on array that does not have exactly 1 element");
     }
 }
 
-pub fn elementN<T>(array: Vec<Option<T>>) -> Option<T>
+pub fn elementN<T>(array: Option<Vec<T>>) -> Option<T>
 where
-    T: Copy,
+    T: Clone,
 {
-    if array.len() == 1 {
-        array[0]
-    } else {
-        None
-    }
+    let array = array?;
+    element(array)
 }
 
 pub fn power_i32_d(left: i32, right: F64) -> F64 {

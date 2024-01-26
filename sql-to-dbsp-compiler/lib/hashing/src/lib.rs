@@ -1,6 +1,6 @@
 use core::{cmp::Ordering, fmt::Debug};
 use dbsp::{
-    algebra::{AddByRef, HasZero, MulByRef, NegByRef, ZRingValue, ZSet},
+    algebra::{MulByRef, ZRingValue, ZSet},
     trace::{cursor::Cursor, ord::OrdZSet, BatchReader},
     zset, DBData, DBWeight,
 };

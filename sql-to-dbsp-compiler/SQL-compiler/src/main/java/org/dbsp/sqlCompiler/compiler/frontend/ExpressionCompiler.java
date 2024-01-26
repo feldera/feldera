@@ -774,11 +774,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "element": {
-                        type = type.setMayBeNull(true);  // Why isn't this always nullable?
+                        // https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6228
+                        type = type.setMayBeNull(true);
                         DBSPExpression arg = ops.get(0);
                         DBSPTypeVec arrayType = arg.getType().to(DBSPTypeVec.class);
                         String method = "element";
-                        if (arrayType.getElementType().mayBeNull)
+                        if (arrayType.mayBeNull)
                             method += "N";
                         return new DBSPApplyExpression(node, method, type, arg);
                     }

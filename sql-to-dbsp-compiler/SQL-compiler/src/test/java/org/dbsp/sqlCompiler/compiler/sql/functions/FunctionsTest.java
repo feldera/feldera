@@ -50,13 +50,13 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void issue1180() {
-        this.runtimeFail("SELECT '1_000'::INT4", "ParseIntError", this.getEmptyIOPair());
+        this.runtimeConstantFail("SELECT '1_000'::INT4", "ParseIntError");
     }
 
     @Test
     public void issue1192() {
-        this.runtimeFail("select '-9223372036854775809'::int64", "ParseIntError", this.getEmptyIOPair());
-        this.runtimeFail("select '9223372036854775808'::int64", "ParseIntError", this.getEmptyIOPair());
+        this.runtimeConstantFail("select '-9223372036854775809'::int64", "ParseIntError");
+        this.runtimeConstantFail("select '9223372036854775808'::int64", "ParseIntError");
     }
 
     // this is an edge case for negative integer modulo
@@ -200,7 +200,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void issue1187divisorZero() {
-        this.runtimeFail("SELECT 8 % 0", "attempt to calculate the remainder with a divisor of zero", this.getEmptyIOPair());
+        this.runtimeConstantFail("SELECT 8 % 0", "attempt to calculate the remainder with a divisor of zero");
 
         this.shouldWarn("SELECT 8 % 0", "Modulus by constant zero value as divisor.");
     }

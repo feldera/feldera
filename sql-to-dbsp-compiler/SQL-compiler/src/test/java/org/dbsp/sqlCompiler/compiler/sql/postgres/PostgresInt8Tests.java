@@ -546,32 +546,28 @@ public class PostgresInt8Tests extends SqlIoTest {
 
     @Test
     public void testOutOfRangeCast() {
-        this.runtimeFail("select '-9223372036854775809'::int64", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("select '9223372036854775808'::int64", "Overflow", this.getEmptyIOPair());
-
-        this.runtimeFail("SELECT CAST('4567890123456789' AS int4)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('4567890123456789' AS int2)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('+4567890123456789' AS int4)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('+4567890123456789' AS int2)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('-4567890123456789' AS int4)", "Overflow", this.getEmptyIOPair());
-        this.runtimeFail("SELECT CAST('-4567890123456789' AS int2)", "Overflow", this.getEmptyIOPair());
+        this.runtimeConstantFail("select '-9223372036854775809'::int64", "Overflow");
+        this.runtimeConstantFail("select '9223372036854775808'::int64", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int4)", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int2)", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int4)", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int2)", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int4)", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int2)", "Overflow");
     }
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/1199")
     public void issue1199() {
-        this.runtimeFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "Overflow", this.getEmptyIOPair());
+        this.runtimeConstantFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "Overflow");
     }
 
     @Test
     public void testINT64MINOverflow() {
-        this.qs(
-                """
-                         SELECT (-9223372036854775808)::int64 % (-1)::int as x;
-                          x
-                         ----
-                          0
-                         (1 row)
-                         """
+        this.q("""
+               SELECT (-9223372036854775808)::int64 % (-1)::int as x;
+                x
+               ----
+                0"""
         );
     }
 

@@ -195,4 +195,9 @@ public class BaseSQLTests {
         DBSPCircuit circuit = getCircuit(compiler);
         this.addFailingRustTestCase(query, message, compiler, circuit, data);
     }
+
+    /** Run a test that fails at runtime without needing any inputs */
+    protected void runtimeConstantFail(String query, String message) {
+        this.runtimeFail(query, message, this.getEmptyIOPair());
+    }
 }
