@@ -16,6 +16,7 @@ use std::{
 
 use crate::algebra::{AddAssignByRef, AddByRef, NegByRef};
 use crate::trace::layers::{Builder, Trie, TupleBuilder};
+use crate::trace::ord::file::StorageBackend;
 use crate::{DBData, DBWeight, NumEntries};
 
 pub use self::builders::FileColumnLayerBuilder;
@@ -24,7 +25,7 @@ pub use consumer::{FileColumnLayerConsumer, FileColumnLayerValues};
 
 #[derive(Clone)]
 pub struct FileColumnLayer<K, R> {
-    file: Reader<(K, R, ())>,
+    file: Reader<StorageBackend, (K, R, ())>,
     lower_bound: usize,
 }
 
@@ -43,7 +44,7 @@ where
 
     pub fn empty() -> Self {
         Self {
-            file: Reader::empty().unwrap(),
+            file: Reader::empty(&StorageBackend::default_for_thread()).unwrap(),
             lower_bound: 0,
         }
     }

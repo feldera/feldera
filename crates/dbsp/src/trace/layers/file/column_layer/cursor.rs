@@ -5,7 +5,10 @@ use std::{
 
 use feldera_storage::file::reader::Cursor as FileCursor;
 
-use crate::{trace::layers::Cursor, DBData, DBWeight};
+use crate::{
+    trace::{layers::Cursor, ord::file::StorageBackend},
+    DBData, DBWeight,
+};
 
 use super::FileColumnLayer;
 
@@ -18,7 +21,7 @@ where
 {
     storage: &'s FileColumnLayer<K, R>,
     item: Option<(K, R)>,
-    cursor: FileCursor<'s, K, R, (), (K, R, ())>,
+    cursor: FileCursor<'s, StorageBackend, K, R, (), (K, R, ())>,
 }
 
 impl<'s, K, R> FileColumnLayerCursor<'s, K, R>

@@ -6,17 +6,18 @@ use feldera_storage::file::{
     writer::{Parameters, Writer2},
 };
 use rand::{seq::index::sample, Rng};
-use tempfile::tempfile;
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
-    trace::layers::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
+    trace::{
+        layers::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
+        ord::file::StorageBackend,
+    },
     DBData, DBWeight, NumEntries,
 };
 use std::{
     cmp::{min, Ordering},
     fmt::Debug,
-    fs::File,
     ops::{Add, AddAssign, Neg, Range},
 };
 
@@ -27,7 +28,8 @@ where
     V: 'static,
     R: 'static,
 {
-    file: Reader<(K, (), (V, R, ()))>,
+    #[allow(clippy::type_complexity)]
+    file: Reader<StorageBackend, (K, (), (V, R, ()))>,
     lower_bound: usize,
 }
 
@@ -83,7 +85,7 @@ where
 {
     pub fn empty() -> Self {
         Self {
-            file: Reader::empty().unwrap(),
+            file: Reader::empty(&StorageBackend::default_for_thread()).unwrap(),
             lower_bound: 0,
         }
     }
@@ -204,7 +206,7 @@ where
     }
 }
 
-pub struct FileOrderedMergeBuilder<K, V, R>(Writer2<File, K, (), V, R>)
+pub struct FileOrderedMergeBuilder<K, V, R>(Writer2<StorageBackend, K, (), V, R>)
 where
     K: DBData,
     V: DBData,
@@ -382,7 +384,7 @@ where
     }
 
     fn with_key_capacity(_capacity: usize) -> Self {
-        Self(Writer2::new(tempfile().unwrap(), Parameters::default()).unwrap())
+        Self(Writer2::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap())
     }
 
     fn reserve(&mut self, _additional: usize) {}
@@ -424,7 +426,7 @@ where
     V: DBData,
     R: DBWeight,
 {
-    writer: Writer2<File, K, (), V, R>,
+    writer: Writer2<StorageBackend, K, (), V, R>,
     key: Option<K>,
 }
 
@@ -462,7 +464,8 @@ where
 
     fn new() -> Self {
         Self {
-            writer: Writer2::new(tempfile().unwrap(), Parameters::default()).unwrap(),
+            writer: Writer2::new(&StorageBackend::default_for_thread(), Parameters::default())
+                .unwrap(),
             key: None,
         }
     }
@@ -500,7 +503,7 @@ where
     storage: &'s FileOrderedLayer<K, V, R>,
     key: Option<K>,
     #[allow(clippy::type_complexity)]
-    cursor: FileCursor<'s, K, (), (V, R, ()), (K, (), (V, R, ()))>,
+    cursor: FileCursor<'s, StorageBackend, K, (), (V, R, ()), (K, (), (V, R, ()))>,
 }
 
 impl<'s, K, V, R> FileOrderedCursor<'s, K, V, R>
@@ -543,7 +546,7 @@ where
 
     fn move_cursor(
         &mut self,
-        f: impl FnOnce(&mut FileCursor<'s, K, (), (V, R, ()), (K, (), (V, R, ()))>),
+        f: impl FnOnce(&mut FileCursor<'s, StorageBackend, K, (), (V, R, ()), (K, (), (V, R, ()))>),
     ) {
         f(&mut self.cursor);
         self.key = unsafe { self.cursor.key() };
@@ -648,7 +651,7 @@ where
 {
     item: Option<(V, R)>,
     #[allow(clippy::type_complexity)]
-    cursor: FileCursor<'s, V, R, (), (K, (), (V, R, ()))>,
+    cursor: FileCursor<'s, StorageBackend, V, R, (), (K, (), (V, R, ()))>,
 }
 
 impl<'s, K, V, R> FileOrderedValueCursor<'s, K, V, R>
@@ -658,7 +661,9 @@ where
     R: DBWeight,
 {
     #[allow(clippy::type_complexity)]
-    pub fn new(cursor: &FileCursor<'s, K, (), (V, R, ()), (K, (), (V, R, ()))>) -> Self {
+    pub fn new(
+        cursor: &FileCursor<'s, StorageBackend, K, (), (V, R, ()), (K, (), (V, R, ()))>,
+    ) -> Self {
         let cursor = cursor.next_column().unwrap().first().unwrap();
         let item = unsafe { cursor.item() };
         Self { cursor, item }
@@ -683,7 +688,10 @@ where
         item
     }
 
-    fn move_cursor(&mut self, f: impl Fn(&mut FileCursor<'s, V, R, (), (K, (), (V, R, ()))>)) {
+    fn move_cursor(
+        &mut self,
+        f: impl Fn(&mut FileCursor<'s, StorageBackend, V, R, (), (K, (), (V, R, ()))>),
+    ) {
         f(&mut self.cursor);
         self.item = unsafe { self.cursor.item() };
     }

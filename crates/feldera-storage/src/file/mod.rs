@@ -155,12 +155,14 @@ pub type Deserializer = Infallible;
 
 #[cfg(test)]
 mod test {
-    use std::fmt::Debug;
+    use std::{fmt::Debug, rc::Rc};
 
-    use tempfile::tempfile;
+    use crate::backend::{
+        DefaultBackend, StorageControl, StorageExecutor, StorageRead, StorageWrite,
+    };
 
     use super::{
-        reader::{ColumnSpec, Reader, RowGroup},
+        reader::{ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Rkyv,
     };
@@ -184,13 +186,14 @@ mod test {
         fn aux1(row0: usize, row1: usize) -> Self::A1;
     }
 
-    fn test_find<K, A, N, T>(
-        row_group: &RowGroup<K, A, N, T>,
+    fn test_find<S, K, A, N, T>(
+        row_group: &RowGroup<S, K, A, N, T>,
         before: &K,
         key: &K,
         after: &K,
         aux: A,
     ) where
+        S: StorageRead + StorageExecutor,
         K: Rkyv + Debug + Ord + Eq + Clone,
         A: Rkyv + Debug + Eq + Clone,
         T: ColumnSpec,
@@ -228,8 +231,9 @@ mod test {
         assert_eq!(unsafe { cursor.item() }, Some((key.clone(), aux.clone())));
     }
 
-    fn test_out_of_range<K, A, N, T>(row_group: &RowGroup<K, A, N, T>, before: &K, after: &K)
+    fn test_out_of_range<S, K, A, N, T>(row_group: &RowGroup<S, K, A, N, T>, before: &K, after: &K)
     where
+        S: StorageRead + StorageExecutor,
         K: Rkyv + Debug + Ord + Eq + Clone,
         A: Rkyv + Debug + Eq + Clone,
         T: ColumnSpec,
@@ -252,12 +256,13 @@ mod test {
     }
 
     #[allow(clippy::len_zero)]
-    fn test_cursor_helper<K, A, N, T>(
-        rows: &RowGroup<K, A, N, T>,
+    fn test_cursor_helper<S, K, A, N, T>(
+        rows: &RowGroup<S, K, A, N, T>,
         offset: u64,
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
+        S: StorageRead + StorageExecutor,
         K: Rkyv + Debug + Ord + Eq + Clone,
         A: Rkyv + Debug + Eq + Clone,
         T: ColumnSpec,
@@ -323,11 +328,12 @@ mod test {
         }
     }
 
-    fn test_cursor<K, A, N, T>(
-        rows: &RowGroup<K, A, N, T>,
+    fn test_cursor<S, K, A, N, T>(
+        rows: &RowGroup<S, K, A, N, T>,
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
+        S: StorageRead + StorageExecutor,
         K: Rkyv + Debug + Ord + Eq + Clone,
         A: Rkyv + Debug + Eq + Clone,
         T: ColumnSpec,
@@ -343,8 +349,12 @@ mod test {
         })
     }
 
-    fn test_two_columns<T: TwoColumns>(parameters: Parameters) {
-        let mut layer_file = Writer2::new(tempfile().unwrap(), parameters).unwrap();
+    fn test_two_columns<S, T>(storage: &Rc<S>, parameters: Parameters)
+    where
+        S: StorageControl + StorageRead + StorageWrite + StorageExecutor,
+        T: TwoColumns,
+    {
+        let mut layer_file = Writer2::new(storage, parameters).unwrap();
         let n0 = T::n0();
         for row0 in 0..n0 {
             for row1 in 0..T::n1(row0) {
@@ -376,7 +386,10 @@ mod test {
         }
     }
 
-    fn test_2_columns_helper(parameters: Parameters) {
+    fn test_2_columns_helper<S>(storage: &Rc<S>, parameters: Parameters)
+    where
+        S: StorageControl + StorageRead + StorageWrite + StorageExecutor,
+    {
         struct TwoInts;
         impl TwoColumns for TwoInts {
             type K0 = i32;
@@ -413,41 +426,54 @@ mod test {
             }
         }
 
-        test_two_columns::<TwoInts>(parameters);
+        test_two_columns::<_, TwoInts>(storage, parameters);
     }
 
     #[test]
     fn test_2_columns() {
-        test_2_columns_helper(Parameters::default());
+        test_2_columns_helper(&DefaultBackend::default_for_thread(), Parameters::default());
+    }
+
+    #[cfg(feature = "glommio")]
+    #[test]
+    fn test_2_columns_glommio() {
+        use crate::backend::glommio_impl::GlommioBackend;
+
+        test_2_columns_helper(&GlommioBackend::default_for_thread(), Parameters::default());
     }
 
     #[test]
     fn test_2_columns_max_branch_2() {
-        test_2_columns_helper(Parameters::with_max_branch(2));
+        test_2_columns_helper(
+            &DefaultBackend::default_for_thread(),
+            Parameters::with_max_branch(2),
+        );
     }
 
-    fn test_one_column<K, A>(
+    fn test_one_column<S, K, A>(
+        storage: &Rc<S>,
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
         parameters: Parameters,
     ) where
+        S: StorageControl + StorageRead + StorageWrite + StorageExecutor,
         K: Rkyv + Debug + Ord + Eq + Clone,
         A: Rkyv + Debug + Eq + Clone,
     {
-        let mut layer_file = Writer1::new(tempfile().unwrap(), parameters).unwrap();
+        let mut writer = Writer1::new(storage, parameters).unwrap();
         for row in 0..n {
             let (_before, key, _after, aux) = expected(row);
-            layer_file.write0((&key, &aux)).unwrap();
+            writer.write0((&key, &aux)).unwrap();
         }
-        let file = layer_file.close().unwrap();
 
-        let reader = Reader::<(K, A, ())>::new(file).unwrap();
+        let reader = writer.into_reader().unwrap();
         assert_eq!(reader.rows().len(), n as u64);
         test_cursor(&reader.rows(), n, expected);
     }
 
     fn test_i64_helper(parameters: Parameters) {
         test_one_column(
+            &DefaultBackend::default_for_thread(),
             1000,
             |row| (row * 2, row * 2 + 1, row * 2 + 2, ()),
             parameters,
@@ -481,6 +507,7 @@ mod test {
         }
 
         test_one_column(
+            &DefaultBackend::default_for_thread(),
             1000,
             |row| (f(row * 2), f(row * 2 + 1), f(row * 2 + 2), ()),
             Parameters::default(),
@@ -490,6 +517,7 @@ mod test {
     #[test]
     fn test_tuple() {
         test_one_column(
+            &DefaultBackend::default_for_thread(),
             1000,
             |row| ((row, 0), (row, 1), (row, 2), row),
             Parameters::default(),
@@ -502,6 +530,7 @@ mod test {
             (0..row as i64).collect()
         }
         test_one_column(
+            &DefaultBackend::default_for_thread(),
             500,
             |row| (v(row * 2), v(row * 2 + 1), v(row * 2 + 2), ()),
             Parameters::default(),

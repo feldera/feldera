@@ -2348,7 +2348,6 @@ dependencies = [
  "size-of",
  "tar",
  "tarpc",
- "tempfile",
  "textwrap 0.15.2",
  "time",
  "tokio",

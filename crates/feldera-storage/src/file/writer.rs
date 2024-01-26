@@ -5,7 +5,6 @@
 //! struct, which is easily done, or mark the currently private `Writer` as
 //! `pub`.
 use std::{
-    fs::File,
     marker::PhantomData,
     mem::{replace, take},
     ops::Range,
@@ -13,13 +12,17 @@ use std::{
 };
 
 use binrw::{
-    io::{Cursor, NoSeek, Result as IoResult, Seek, Write},
+    io::{Cursor, NoSeek},
     BinWrite,
 };
 use crc32c::crc32c;
 use rkyv::{archived_value, Archive, Deserialize, Infallible, Serialize};
 
 use crate::{
+    backend::{
+        FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageExecutor,
+        StorageRead, StorageWrite,
+    },
     buffer_cache::{FBuf, FBufSerializer},
     file::{
         format::{
@@ -184,15 +187,6 @@ where
     }
 }
 
-struct Writer<W>
-where
-    W: Write + Seek,
-{
-    writer: W,
-    cws: Vec<ColumnWriter>,
-    finished_columns: Vec<FileTrailerColumn>,
-}
-
 struct ColumnWriter {
     parameters: Rc<Parameters>,
     column_index: usize,
@@ -217,16 +211,19 @@ impl ColumnWriter {
         replace(&mut self.rows, end..end)
     }
 
-    fn finish<W, K, A>(&mut self, writer: &mut W) -> IoResult<FileTrailerColumn>
+    fn finish<W, K, A>(
+        &mut self,
+        block_writer: &mut BlockWriter<W>,
+    ) -> Result<FileTrailerColumn, StorageError>
     where
-        W: Write + Seek,
+        W: StorageWrite + StorageExecutor,
         K: Rkyv,
         A: Rkyv,
     {
         // Flush data.
         if !self.data_block.is_empty() {
             let data_block = self.data_block.take().build::<K, A>();
-            self.write_data_block(writer, data_block)?;
+            self.write_data_block(block_writer, data_block)?;
         }
 
         // Flush index.
@@ -243,7 +240,7 @@ impl ColumnWriter {
                 });
             } else if !self.index_blocks[level].is_empty() {
                 let index_block = self.index_blocks[level].take().build();
-                self.write_index_block::<W, K>(writer, index_block, level)?;
+                self.write_index_block::<W, K>(block_writer, index_block, level)?;
             }
             level += 1;
         }
@@ -271,35 +268,39 @@ impl ColumnWriter {
         &mut self.index_blocks[level]
     }
 
-    fn write_data_block<W, K>(&mut self, writer: &mut W, data_block: DataBlock<K>) -> IoResult<()>
+    fn write_data_block<W, K>(
+        &mut self,
+        block_writer: &mut BlockWriter<W>,
+        data_block: DataBlock<K>,
+    ) -> Result<(), StorageError>
     where
-        W: Write + Seek,
+        W: StorageWrite + StorageExecutor,
         K: Rkyv,
     {
-        let location = write_block(writer, data_block.raw)?;
+        let location = block_writer.write_block(data_block.raw)?;
 
         if let Some(index_block) = self.get_index_block(0).add_entry(
             location,
             &data_block.min_max,
             data_block.n_values as u64,
         ) {
-            self.write_index_block::<W, K>(writer, index_block, 0)?;
+            self.write_index_block::<W, K>(block_writer, index_block, 0)?;
         }
         Ok(())
     }
 
     fn write_index_block<W, K>(
         &mut self,
-        writer: &mut W,
+        block_writer: &mut BlockWriter<W>,
         mut index_block: IndexBlock<K>,
         mut level: usize,
-    ) -> IoResult<(BlockLocation, u64)>
+    ) -> Result<(BlockLocation, u64), StorageError>
     where
-        W: Write + Seek,
+        W: StorageWrite + StorageExecutor,
         K: Rkyv,
     {
         loop {
-            let location = write_block(writer, index_block.raw)?;
+            let location = block_writer.write_block(index_block.raw)?;
 
             level += 1;
             let opt_index_block = self.get_index_block(level).add_entry(
@@ -316,17 +317,17 @@ impl ColumnWriter {
 
     fn add_item<W, K, A>(
         &mut self,
-        writer: &mut W,
+        block_writer: &mut BlockWriter<W>,
         item: (&K, &A),
         row_group: &Option<Range<u64>>,
-    ) -> IoResult<()>
+    ) -> Result<(), StorageError>
     where
-        W: Write + Seek,
+        W: StorageWrite + StorageExecutor,
         K: Rkyv,
         A: Rkyv,
     {
         if let Some(data_block) = self.data_block.add_item(item, row_group) {
-            self.write_data_block(writer, data_block)?;
+            self.write_data_block(block_writer, data_block)?;
         }
         Ok(())
     }
@@ -817,17 +818,46 @@ impl IndexBlockBuilder {
     }
 }
 
-fn write_block<W>(writer: &mut W, mut block: FBuf) -> IoResult<BlockLocation>
+struct BlockWriter<W>
 where
-    W: Write + Seek,
+    W: StorageWrite,
 {
-    block.resize(block.len().max(4096).next_power_of_two(), 0);
-    let checksum = crc32c(&block[4..]).to_le_bytes();
-    block[..4].copy_from_slice(checksum.as_slice());
+    storage: Rc<W>,
+    file_handle: FileHandle,
+    offset: u64,
+}
 
-    let offset = writer.stream_position()?;
-    writer.write_all(block.as_slice())?;
-    Ok(BlockLocation::new(offset, block.len()).unwrap())
+impl<W> BlockWriter<W>
+where
+    W: StorageWrite + StorageExecutor,
+{
+    fn new(storage: &Rc<W>, file_handle: FileHandle) -> Self {
+        Self {
+            storage: storage.clone(),
+            file_handle,
+            offset: 0,
+        }
+    }
+
+    fn complete(self) -> Result<ImmutableFileHandle, StorageError> {
+        self.storage
+            .block_on(self.storage.complete(self.file_handle))
+    }
+
+    fn write_block(&mut self, mut block: FBuf) -> Result<BlockLocation, StorageError> {
+        block.resize(block.len().max(4096).next_power_of_two(), 0);
+        let checksum = crc32c(&block[4..]).to_le_bytes();
+        block[..4].copy_from_slice(checksum.as_slice());
+
+        let location = BlockLocation::new(self.offset, block.len()).unwrap();
+        self.offset += block.len() as u64;
+        self.storage.block_on(self.storage.write_block(
+            &self.file_handle,
+            location.offset,
+            block,
+        ))?;
+        Ok(location)
+    }
 }
 
 /// General-purpose layer file writer.
@@ -836,25 +866,38 @@ where
 /// safety to ensure that the data and auxiliary values written to columns are
 /// all the same type.  Thus, [`Writer1`] and [`Writer2`] exist for writing
 /// 1-column and 2-column layer files, respectively, with added type safety.
+struct Writer<W>
+where
+    W: StorageWrite,
+{
+    writer: BlockWriter<W>,
+    cws: Vec<ColumnWriter>,
+    finished_columns: Vec<FileTrailerColumn>,
+}
+
 impl<W> Writer<W>
 where
-    W: Write + Seek,
+    W: StorageControl + StorageWrite + StorageExecutor,
 {
-    pub fn new(writer: W, parameters: Parameters, n_columns: usize) -> IoResult<Self> {
+    pub fn new(
+        writer: &Rc<W>,
+        parameters: Parameters,
+        n_columns: usize,
+    ) -> Result<Self, StorageError> {
         let parameters = Rc::new(parameters);
         let cws = (0..n_columns)
             .map(|column| ColumnWriter::new(&parameters, column))
             .collect();
         let finished_columns = Vec::with_capacity(n_columns);
         let writer = Self {
-            writer,
+            writer: BlockWriter::new(writer, writer.block_on(writer.create())?),
             cws,
             finished_columns,
         };
         Ok(writer)
     }
 
-    pub fn write<K, A>(&mut self, column: usize, item: (&K, &A)) -> IoResult<()>
+    pub fn write<K, A>(&mut self, column: usize, item: (&K, &A)) -> Result<(), StorageError>
     where
         K: Rkyv + Ord,
         A: Rkyv,
@@ -872,7 +915,7 @@ where
         self.cws[column].add_item(&mut self.writer, item, &row_group)
     }
 
-    pub fn finish_column<K, A>(&mut self, column: usize) -> IoResult<()>
+    pub fn finish_column<K, A>(&mut self, column: usize) -> Result<(), StorageError>
     where
         K: Rkyv + Ord,
         A: Rkyv,
@@ -887,7 +930,7 @@ where
         Ok(())
     }
 
-    pub fn close(mut self) -> IoResult<W> {
+    pub fn close(mut self) -> Result<ImmutableFileHandle, StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the file trailer block.
@@ -896,9 +939,9 @@ where
             version: VERSION_NUMBER,
             columns: take(&mut self.finished_columns),
         };
-        write_block(&mut self.writer, file_trailer.into_block())?;
+        self.writer.write_block(file_trailer.into_block())?;
 
-        Ok(self.writer)
+        self.writer.complete()
     }
 
     pub fn n_columns(&self) -> usize {
@@ -907,6 +950,10 @@ where
 
     pub fn n_rows(&self) -> u64 {
         self.cws[0].rows.end
+    }
+
+    pub fn storage(&self) -> &Rc<W> {
+        &self.writer.storage
     }
 }
 
@@ -922,9 +969,9 @@ where
 ///
 /// ```
 /// # use feldera_storage::file::writer::{Parameters, Writer1};
-/// # use std::fs::File;
-/// let mut file = tempfile::tempfile().unwrap();
-/// let mut file = Writer1::new(file, Parameters::default()).unwrap();
+/// # use feldera_storage::backend::DefaultBackend;
+/// let mut file =
+///     Writer1::new(&DefaultBackend::default_for_thread(), Parameters::default()).unwrap();
 /// for i in 0..1000_u32 {
 ///     file.write0((&i, &())).unwrap();
 /// }
@@ -932,7 +979,7 @@ where
 /// ```
 pub struct Writer1<W, K0, A0>
 where
-    W: Write + Seek,
+    W: StorageWrite,
     K0: Rkyv,
     A0: Rkyv,
 {
@@ -940,22 +987,22 @@ where
     _phantom: PhantomData<(K0, A0)>,
 }
 
-impl<W, K0, A0> Writer1<W, K0, A0>
+impl<S, K0, A0> Writer1<S, K0, A0>
 where
-    W: Write + Seek,
+    S: StorageControl + StorageWrite + StorageExecutor,
     K0: Rkyv + Ord,
     A0: Rkyv,
 {
     /// Creates a new writer with the given parameters.
-    pub fn new(writer: W, parameters: Parameters) -> IoResult<Self> {
+    pub fn new(storage: &Rc<S>, parameters: Parameters) -> Result<Self, StorageError> {
         Ok(Self {
-            inner: Writer::new(writer, parameters, 1)?,
+            inner: Writer::new(storage, parameters, 1)?,
             _phantom: PhantomData,
         })
     }
     /// Writes `item` to column 0.  `item.0` must be greater than passed in the
     /// previous call to this function (if any).
-    pub fn write0(&mut self, item: (&K0, &A0)) -> IoResult<()> {
+    pub fn write0(&mut self, item: (&K0, &A0)) -> Result<(), StorageError> {
         self.inner.write(0, item)
     }
 
@@ -966,20 +1013,24 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> IoResult<W> {
+    pub fn close(mut self) -> Result<ImmutableFileHandle, StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
-}
 
-impl<K0, A0> Writer1<File, K0, A0>
-where
-    K0: Rkyv + Ord,
-    A0: Rkyv,
-{
+    /// Returns the storage used for this writer.
+    pub fn storage(&self) -> &Rc<S> {
+        self.inner.storage()
+    }
+
     /// Finishes writing the layer file and returns a reader for it.
-    pub fn into_reader(self) -> Result<Reader<(K0, A0, ())>, super::reader::Error> {
-        Reader::new(self.close()?)
+    pub fn into_reader(self) -> Result<Reader<S, (K0, A0, ())>, super::reader::Error>
+    where
+        S: StorageRead,
+    {
+        let storage = self.storage().clone();
+        let file_handle = self.close()?;
+        Reader::new(&storage, file_handle)
     }
 }
 
@@ -1002,9 +1053,9 @@ where
 ///
 /// ```
 /// # use feldera_storage::file::writer::{Parameters, Writer2};
-/// # use std::fs::File;
-/// let mut file = tempfile::tempfile().unwrap();
-/// let mut file = Writer2::new(file, Parameters::default()).unwrap();
+/// # use feldera_storage::backend::DefaultBackend;
+/// let mut file =
+///     Writer2::new(&DefaultBackend::default_for_thread(), Parameters::default()).unwrap();
 /// for i in 0..1000_u32 {
 ///     for j in 0..10_u32 {
 ///         file.write1((&j, &())).unwrap();
@@ -1015,7 +1066,7 @@ where
 /// ```
 pub struct Writer2<W, K0, A0, K1, A1>
 where
-    W: Write + Seek,
+    W: StorageWrite,
     K0: Rkyv + Ord,
     A0: Rkyv,
     K1: Rkyv + Ord,
@@ -1025,18 +1076,18 @@ where
     _phantom: PhantomData<(K0, A0, K1, A1)>,
 }
 
-impl<W, K0, A0, K1, A1> Writer2<W, K0, A0, K1, A1>
+impl<S, K0, A0, K1, A1> Writer2<S, K0, A0, K1, A1>
 where
-    W: Write + Seek,
+    S: StorageControl + StorageWrite + StorageExecutor,
     K0: Rkyv + Ord,
     A0: Rkyv,
     K1: Rkyv + Ord,
     A1: Rkyv,
 {
     /// Creates a new writer with the given parameters.
-    pub fn new(writer: W, parameters: Parameters) -> IoResult<Self> {
+    pub fn new(storage: &Rc<S>, parameters: Parameters) -> Result<Self, StorageError> {
         Ok(Self {
-            inner: Writer::new(writer, parameters, 2)?,
+            inner: Writer::new(storage, parameters, 2)?,
             _phantom: PhantomData,
         })
     }
@@ -1046,14 +1097,14 @@ where
     ///
     /// `item.0` must be greater than passed in the previous call to this
     /// function (if any).
-    pub fn write0(&mut self, item: (&K0, &A0)) -> IoResult<()> {
+    pub fn write0(&mut self, item: (&K0, &A0)) -> Result<(), StorageError> {
         self.inner.write(0, item)
     }
 
     /// Writes `item` to column 1.  `item.0` must be greater than passed in the
     /// previous call to this function (if any) since the last call to
     /// [`write0`](Self::write0) (if any).
-    pub fn write1(&mut self, item: (&K1, &A1)) -> IoResult<()> {
+    pub fn write1(&mut self, item: (&K1, &A1)) -> Result<(), StorageError> {
         self.inner.write(1, item)
     }
 
@@ -1067,23 +1118,25 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> IoResult<W> {
+    pub fn close(mut self) -> Result<ImmutableFileHandle, StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()
     }
-}
 
-impl<K0, A0, K1, A1> Writer2<File, K0, A0, K1, A1>
-where
-    K0: Rkyv + Ord,
-    A0: Rkyv,
-    K1: Rkyv + Ord,
-    A1: Rkyv,
-{
+    /// Returns the storage used for this writer.
+    pub fn storage(&self) -> &Rc<S> {
+        self.inner.storage()
+    }
+
     /// Finishes writing the layer file and returns a reader for it.
     #[allow(clippy::type_complexity)]
-    pub fn into_reader(self) -> Result<Reader<(K0, A0, (K1, A1, ()))>, super::reader::Error> {
-        Reader::new(self.close()?)
+    pub fn into_reader(self) -> Result<Reader<S, (K0, A0, (K1, A1, ()))>, super::reader::Error>
+    where
+        S: StorageRead,
+    {
+        let storage = self.storage().clone();
+        let file_handle = self.close()?;
+        Reader::new(&storage, file_handle)
     }
 }

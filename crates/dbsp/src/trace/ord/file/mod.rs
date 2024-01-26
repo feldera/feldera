@@ -8,6 +8,8 @@ pub use indexed_zset_batch::FileIndexedZSet;
 pub use key_batch::FileKeyBatch;
 pub use zset_batch::FileZSet;
 
+pub type StorageBackend = feldera_storage::backend::DefaultBackend;
+
 use crate::trace::Spine;
 
 /// A trace implementation for empty values using a spine of ordered lists.
