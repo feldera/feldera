@@ -82,6 +82,7 @@ pub enum StorageError {
 /// implementation.
 impl PartialEq for StorageError {
     fn eq(&self, other: &Self) -> bool {
+        #[allow(clippy::match_like_matches_macro)]
         match (self, other) {
             (Self::OverlappingWrites, Self::OverlappingWrites) => true,
             (Self::ShortRead, Self::ShortRead) => true,

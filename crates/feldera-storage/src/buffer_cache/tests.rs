@@ -19,12 +19,12 @@ async fn overlaps_test() {
     let _fd2 = cache.create().await.unwrap();
 
     let mut b1 = FBuf::with_capacity(2048);
-    b1.extend_from_slice(&vec!['a' as u8; 2048]);
+    b1.extend_from_slice(&vec![b'a'; 2048]);
 
     cache.write_block(&fd, 1024, b1).await.unwrap();
 
     let mut b2 = FBuf::with_capacity(1024);
-    b2.extend_from_slice(&vec!['a' as u8; 1024]);
+    b2.extend_from_slice(&vec![b'a'; 1024]);
 
     cache.write_block(&fd, 512, b2).await.unwrap();
 }
@@ -122,11 +122,10 @@ impl StateMachineTest for BufferCache<MonoioBackend> {
             }
             Transition::Read(id, offset, length) => {
                 let result_impl = state.runtime.block_on(async {
-                    let res = state
+                    state
                         .backend
                         .read_block(&ImmutableFileHandle::new(id), offset, length as usize)
-                        .await;
-                    res
+                        .await
                 });
                 let model_impl = futures::executor::block_on(ref_state.read_block(
                     &ImmutableFileHandle::new(id),

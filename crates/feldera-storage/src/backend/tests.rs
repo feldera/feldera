@@ -161,7 +161,7 @@ impl<const ALLOW_OVERWRITE: bool> StorageWrite for InMemoryBackend<ALLOW_OVERWRI
     ) -> Result<Rc<FBuf>, StorageError> {
         let mut files = self.files.borrow_mut();
         let file = files.get(&fd.0).unwrap();
-        let new_file = insert_slice_at_offset(file, offset as usize, &*data, ALLOW_OVERWRITE)?;
+        let new_file = insert_slice_at_offset(file, offset as usize, &data, ALLOW_OVERWRITE)?;
         files.insert(fd.0, new_file);
         Ok(Rc::new(data))
     }
