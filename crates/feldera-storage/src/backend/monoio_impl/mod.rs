@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
+use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -13,6 +14,9 @@ use std::time::Instant;
 use async_lock::RwLock;
 use metrics::{counter, histogram};
 use monoio::fs::{File, OpenOptions};
+#[cfg(target_os = "linux")]
+use monoio::IoUringDriver;
+use monoio::{FusionDriver, FusionRuntime, LegacyDriver, RuntimeBuilder};
 use uuid::Uuid;
 
 use crate::backend::{
@@ -21,12 +25,13 @@ use crate::backend::{
 };
 use crate::buffer_cache::FBuf;
 
+use super::StorageExecutor;
+
 #[cfg(test)]
 pub(crate) mod tests;
 
 /// Number of entries an IO-ring will have.
-#[cfg(test)]
-const MAX_RING_ENTRIES: u32 = 32768;
+pub const MAX_RING_ENTRIES: u32 = 32768;
 
 /// Helper function that opens files as direct IO files on linux.
 async fn open_as_direct<P: AsRef<Path>>(
@@ -180,5 +185,32 @@ impl StorageRead for MonoioBackend {
         let fm = files.get(&fd.0).unwrap();
         let size = *fm.size.borrow();
         Ok(size)
+    }
+}
+
+impl StorageExecutor for MonoioBackend {
+    fn block_on<F>(&self, future: F) -> F::Output
+    where
+        F: Future,
+    {
+        #[cfg(target_os = "linux")]
+        thread_local! {
+            pub static RUNTIME: RefCell<FusionRuntime<IoUringDriver, LegacyDriver>> = {
+                RefCell::new(RuntimeBuilder::<FusionDriver>::new()
+                             .with_entries(MAX_RING_ENTRIES)
+                             .build()
+                             .unwrap())
+            }
+        };
+        #[cfg(not(target_os = "linux"))]
+        thread_local! {
+            pub static RUNTIME: RefCell<FusionRuntime<LegacyDriver>> = {
+                RefCell::new(RuntimeBuilder::<FusionDriver>::new()
+                             .with_entries(MAX_RING_ENTRIES)
+                             .build()
+                             .unwrap())
+            }
+        }
+        RUNTIME.with(|runtime| runtime.borrow_mut().block_on(future))
     }
 }

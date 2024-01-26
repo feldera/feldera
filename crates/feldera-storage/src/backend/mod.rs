@@ -5,6 +5,7 @@
 //! - [`StorageControl`]: for creating and deleting files.
 //! - [`StorageWrite`]: for writing data to files.
 //! - [`StorageRead`]: for reading data from files.
+//! - [`StorageExecutor`]: for executing `Future`s from the other traits.
 //!
 //! A file transitions from being created to being written to, to being read
 //! to (eventually) deleted.
@@ -13,7 +14,7 @@
 #![allow(async_fn_in_trait)]
 #![warn(missing_docs)]
 
-use std::rc::Rc;
+use std::{future::Future, rc::Rc};
 
 use metrics::{describe_counter, describe_histogram, Unit};
 use thiserror::Error;
@@ -250,4 +251,13 @@ pub trait StorageRead {
 
     /// Returns the file's size in bytes.
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
+}
+
+/// A trait for a storage backend to implement so clients can wait on
+/// [`Future`]s.
+pub trait StorageExecutor {
+    /// Runs `future` to completion in the storage backend's executor.
+    fn block_on<F>(&self, future: F) -> F::Output
+    where
+        F: Future;
 }

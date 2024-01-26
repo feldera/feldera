@@ -4,16 +4,17 @@
 //! [`InMemoryBackend`].
 use std::fs;
 
-use monoio::{FusionDriver, FusionRuntime, IoUringDriver, LegacyDriver, RuntimeBuilder};
 use pretty_assertions::assert_eq;
 use proptest::proptest;
 use proptest::test_runner::Config;
 use proptest_state_machine::{prop_state_machine, ReferenceStateMachine, StateMachineTest};
 use tempfile::TempDir;
 
-use crate::backend::monoio_impl::{MonoioBackend, MAX_RING_ENTRIES};
+use crate::backend::monoio_impl::MonoioBackend;
 use crate::backend::tests::{InMemoryBackend, Transition, MAX_TRANSITIONS};
-use crate::backend::{FileHandle, ImmutableFileHandle, StorageControl, StorageRead, StorageWrite};
+use crate::backend::{
+    FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead, StorageWrite,
+};
 
 // Setup the state machine test using the `prop_state_machine!` macro
 prop_state_machine! {
@@ -31,28 +32,8 @@ prop_state_machine! {
     );
 }
 
-#[cfg(target_os = "linux")]
-pub(crate) fn create_test_runtime() -> FusionRuntime<IoUringDriver, LegacyDriver> {
-    RuntimeBuilder::<FusionDriver>::new()
-        .with_entries(super::MAX_RING_ENTRIES)
-        .build()
-        .unwrap()
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn create_test_runtime() -> FusionRuntime<LegacyDriver> {
-    RuntimeBuilder::<FusionDriver>::new()
-        .with_entries(super::MAX_RING_ENTRIES)
-        .build()
-        .unwrap()
-}
-
 pub struct MonoioTest {
     backend: MonoioBackend,
-    #[cfg(target_os = "linux")]
-    runtime: FusionRuntime<IoUringDriver, LegacyDriver>,
-    #[cfg(not(target_os = "linux"))]
-    runtime: FusionRuntime<LegacyDriver>,
     tmpdir: TempDir,
 }
 
@@ -64,33 +45,25 @@ impl StateMachineTest for MonoioBackend {
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
         let tmpdir = tempfile::tempdir().unwrap();
-        let runtime = RuntimeBuilder::<FusionDriver>::new()
-            .with_entries(MAX_RING_ENTRIES)
-            .build()
-            .unwrap();
         let backend = MonoioBackend::new(tmpdir.path());
 
-        MonoioTest {
-            backend,
-            runtime,
-            tmpdir,
-        }
+        MonoioTest { backend, tmpdir }
     }
 
     fn apply(
-        mut state: Self::SystemUnderTest,
+        state: Self::SystemUnderTest,
         ref_state: &<Self::Reference as ReferenceStateMachine>::State,
         transition: Transition,
     ) -> Self::SystemUnderTest {
         match transition {
             Transition::Create => {
-                state.runtime.block_on(async {
+                state.backend.block_on(async {
                     let _r = state.backend.create().await.expect("create failed");
                 });
                 state
             }
             Transition::DeleteMut(id) => {
-                state.runtime.block_on(async {
+                state.backend.block_on(async {
                     state
                         .backend
                         .delete_mut(FileHandle(id))
@@ -100,7 +73,7 @@ impl StateMachineTest for MonoioBackend {
                 state
             }
             Transition::Write(id, offset, content) => {
-                state.runtime.block_on(async {
+                state.backend.block_on(async {
                     let mut wb = MonoioBackend::allocate_buffer(content.len());
                     wb.resize(content.len(), 0);
                     wb.copy_from_slice(content.as_bytes());
@@ -113,7 +86,7 @@ impl StateMachineTest for MonoioBackend {
                 state
             }
             Transition::Complete(id) => {
-                state.runtime.block_on(async {
+                state.backend.block_on(async {
                     state
                         .backend
                         .complete(FileHandle(id))
@@ -123,7 +96,7 @@ impl StateMachineTest for MonoioBackend {
                 state
             }
             Transition::Read(id, offset, length) => {
-                let result_impl = state.runtime.block_on(async {
+                let result_impl = state.backend.block_on(async {
                     state
                         .backend
                         .read_block(&ImmutableFileHandle(id), offset, length as usize)

@@ -7,12 +7,14 @@
 use metrics::counter;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::future::Future;
 use std::ops::Range;
 use std::rc::Rc;
 use wtinylfu::WTinyLfuCache;
 
 use crate::backend::{
-    FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageRead, StorageWrite,
+    FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageExecutor, StorageRead,
+    StorageWrite,
 };
 use crate::buffer_cache::FBuf;
 
@@ -221,5 +223,17 @@ impl<B: StorageWrite> StorageWrite for BufferCache<B> {
         let fd = self.backend.complete(fd).await?;
         self.blocks.borrow_mut().remove(&fid);
         Ok(fd)
+    }
+}
+
+impl<B: StorageExecutor> StorageExecutor for BufferCache<B>
+where
+    B: StorageExecutor,
+{
+    fn block_on<F>(&self, future: F) -> F::Output
+    where
+        F: Future,
+    {
+        self.backend.block_on(future)
     }
 }
