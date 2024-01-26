@@ -126,6 +126,7 @@ fn overlaps_with_previous_write_check() {
     assert!(!cache.overlaps_with_previous_write(fd, 50..60));
 
     let mut blocks = HashMap::new();
+    #[allow(clippy::single_range_in_vec_init)]
     blocks.insert(1, vec![1024..(1024 + 2048)]);
     let blocks = RefCell::new(blocks);
     let mut cache = BufferCache::with_backend(InMemoryBackend::<true>::default());

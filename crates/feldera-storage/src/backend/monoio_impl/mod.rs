@@ -24,7 +24,7 @@ pub(crate) mod tests;
 
 /// Number of entries an IO-ring will have.
 #[cfg(test)]
-pub(self) const MAX_RING_ENTRIES: u32 = 32768;
+const MAX_RING_ENTRIES: u32 = 32768;
 
 /// Helper function that opens files as direct IO files on linux.
 async fn open_as_direct<P: AsRef<Path>>(
