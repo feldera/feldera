@@ -23,6 +23,7 @@ use crate::buffer_cache::FBuf;
 #[cfg(test)]
 mod tests;
 
+/// Storage backend using the [`glommio`] crate.
 pub struct GlommioBackend {
     base: PathBuf,
     files: RwLock<HashMap<i64, DmaFile>>,
@@ -30,6 +31,8 @@ pub struct GlommioBackend {
 }
 
 impl GlommioBackend {
+    /// Creates a new `glommio` backend that will create files in directory
+    /// `base`.
     pub fn new<P: AsRef<std::path::Path>>(base: P) -> Self {
         Self {
             base: base.as_ref().to_path_buf(),

@@ -11,6 +11,7 @@
 //! The API prevents writing to a file again that is completed/sealed.
 //! The API also prevents reading from a file that is not completed.
 #![allow(async_fn_in_trait)]
+#![warn(missing_docs)]
 
 use std::rc::Rc;
 
@@ -64,13 +65,20 @@ impl From<&ImmutableFileHandle> for i64 {
 /// An error that can occur when using the storage backend.
 #[derive(Error, Debug)]
 pub enum StorageError {
+    /// I/O error from `glommio` backend.
     #[cfg(feature = "glommio")]
     #[error("Got IO error during glommio operation")]
     Io(#[from] glommio::GlommioError<()>),
+
+    /// I/O error from `monoio` backend.
     #[error("Got IO error during monoio operation")]
     StdIo(#[from] std::io::Error),
+
+    /// Range to be written overlaps with previous write.
     #[error("The range to be written overlaps with a previous write")]
     OverlappingWrites,
+
+    /// Read ended before the full request length.
     #[error("The read would have returned less data than requested.")]
     ShortRead,
 }
@@ -193,6 +201,7 @@ pub trait StorageWrite {
     async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError>;
 }
 
+/// A trait for a storage backend to implement so clients can read from files.
 pub trait StorageRead {
     /// Prefetches a block of data from a file.
     ///
