@@ -243,6 +243,10 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         Ok(())
     }
 
+    fn push_key(&mut self, _key: &[u8], _val: &[u8]) -> AnyResult<()> {
+        todo!()
+    }
+
     fn batch_end(&mut self) -> AnyResult<()> {
         let State::BatchOpen(position) = self.state else {
             unreachable!(

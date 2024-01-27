@@ -3,7 +3,7 @@ use super::{
     Step,
 };
 use crate::{OutputEndpointConfig, PipelineState};
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use num_traits::FromPrimitive;
 use pipeline_types::transport::file::{FileInputConfig, FileOutputConfig};
@@ -224,6 +224,14 @@ impl OutputEndpoint for FileOutputEndpoint {
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         self.file.write_all(buffer)?;
         Ok(())
+    }
+
+    fn push_key(&mut self, _key: &[u8], _val: &[u8]) -> AnyResult<()> {
+        bail!(
+            "File output transport does not support key-value pairs. \
+This output endpoint was configured with a data format that produces outputs as key-value pairs; \
+however the File transport does not support this representation."
+        );
     }
 
     fn is_fault_tolerant(&self) -> bool {

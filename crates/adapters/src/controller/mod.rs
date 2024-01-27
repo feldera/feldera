@@ -526,22 +526,19 @@ impl Controller {
                                 .delta
                                 .as_ref()
                                 .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
-                            let num_delta_records = delta_batch
-                                .as_ref()
-                                .map(|batch| batch.len());
+                            let num_delta_records = delta_batch.as_ref().map(|batch| batch.len());
 
                             // This is needed to distinguish an empty snapshot from no snapshot.
                             let snapshot_not_empty = output_handles
                                 .snapshot
                                 .as_ref()
-                                .map(|handle | handle.num_nonempty_mailboxes() > 0);
+                                .map(|handle| handle.num_nonempty_mailboxes() > 0);
                             let mut snapshot_batch = output_handles
                                 .snapshot
                                 .as_ref()
                                 .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
-                            let num_snapshot_records = snapshot_batch
-                                .as_ref()
-                                .map(|batch| batch.len());
+                            let num_snapshot_records =
+                                snapshot_batch.as_ref().map(|batch| batch.len());
 
                             for (i, endpoint_id) in endpoints.iter().enumerate() {
                                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
@@ -553,8 +550,7 @@ impl Controller {
                                 if !endpoint.snapshot_sent.load(Ordering::Acquire)
                                     && output_handles.snapshot.is_some()
                                 {
-                                    if snapshot_not_empty.unwrap_or(false)
-                                    {
+                                    if snapshot_not_empty.unwrap_or(false) {
                                         // Increment stats first, so we don't end up with negative
                                         // counts.
                                         controller.status.enqueue_batch(
@@ -1440,6 +1436,26 @@ impl OutputConsumer for OutputProbe {
         let num_bytes = buffer.len();
 
         match self.endpoint.push_buffer(buffer) {
+            Ok(()) => {
+                self.controller
+                    .status
+                    .output_buffer(self.endpoint_id, num_bytes);
+            }
+            Err(error) => {
+                self.controller.output_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    error,
+                );
+            }
+        }
+    }
+
+    fn push_key(&mut self, key: &[u8], val: &[u8]) {
+        let num_bytes = key.len() + val.len();
+
+        match self.endpoint.push_key(key, val) {
             Ok(()) => {
                 self.controller
                     .status

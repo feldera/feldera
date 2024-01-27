@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{serialize_struct, static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
-use dbsp::{utils::Tup2, InputHandle, OutputHandle};
+use dbsp::{utils::Tup2, InputHandle};
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::program_schema::canonical_identifier;
 use pipeline_types::program_schema::Relation;
@@ -257,7 +257,7 @@ pub trait SerCursor {
 /// [`OutputHandle`](`dbsp::OutputHandle`) and yields output batches produced by
 /// the circuit as [`SerBatch`]s.
 pub trait SerCollectionHandle: Send + Sync {
-    /// See [`OutputHandle::num_nonempty_mailboxes`](`dbsp::OutputHandle::num_nonempty_maiboxes`)
+    /// See [`OutputHandle::num_nonempty_mailboxes`](`dbsp::OutputHandle::num_nonempty_mailboxes`)
     fn num_nonempty_mailboxes(&self) -> usize;
 
     /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),

@@ -18,7 +18,7 @@ use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, Sql
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
         serde_json::from_str(schema).map_err(|e| {
-            ControllerError::program_schema_parse_error(&format!(
+            ControllerError::schema_parse_error(&format!(
                 "error parsing relation schema: '{e}'. Invalid schema: '{schema}'"
             ))
         })

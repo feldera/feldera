@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 mod input;
 mod output;
+mod schema;
 
 pub use input::JsonInputFormat;
 pub use output::JsonOutputFormat;

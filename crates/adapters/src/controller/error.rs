@@ -18,9 +18,6 @@ pub enum ConfigError {
     /// Failed to parse pipeline configuration.
     PipelineConfigParseError { error: String },
 
-    /// Failed to parse program schema.
-    ProgramSchemaParseError { error: String },
-
     /// Failed to parse parser configuration for an endpoint.
     ParserConfigParseError {
         endpoint_name: String,
@@ -102,7 +99,6 @@ impl DetailedError for ConfigError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::PipelineConfigParseError { .. } => Cow::from("PipelineConfigParseError"),
-            Self::ProgramSchemaParseError { .. } => Cow::from("ProgramSchemaParseError"),
             Self::ParserConfigParseError { .. } => Cow::from("ParserConfigParseError"),
             Self::EncoderConfigParseError { .. } => Cow::from("EncoderConfigParseError"),
             Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
@@ -126,9 +122,6 @@ impl Display for ConfigError {
         match self {
             Self::PipelineConfigParseError { error } => {
                 write!(f, "Failed to parse pipeline configuration: {error}")
-            }
-            Self::ProgramSchemaParseError { error } => {
-                write!(f, "Failed to parse program schema: {error}")
             }
             Self::ParserConfigParseError {
                 endpoint_name,
@@ -229,15 +222,6 @@ impl ConfigError {
         E: ToString,
     {
         Self::PipelineConfigParseError {
-            error: error.to_string(),
-        }
-    }
-
-    pub fn program_schema_parse_error<E>(error: &E) -> Self
-    where
-        E: ToString,
-    {
-        Self::ProgramSchemaParseError {
             error: error.to_string(),
         }
     }
@@ -367,6 +351,9 @@ pub enum ControllerError {
 
     /// Error validating program schema.
     SchemaValidationError { error: String },
+
+    /// Feature is not supported.
+    NotSupported { error: String },
 
     /// Error parsing program IR file.
     IrParseError { error: String },
@@ -499,6 +486,7 @@ impl DetailedError for ControllerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::IoError { .. } => Cow::from("ControllerIOError"),
+            Self::NotSupported { .. } => Cow::from("NotSupported"),
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
@@ -527,6 +515,9 @@ impl Display for ControllerError {
                 context, io_error, ..
             } => {
                 write!(f, "I/O error {context}: {io_error}")
+            }
+            Self::NotSupported { error } => {
+                write!(f, "Not supported: {error}")
             }
             Self::SchemaParseError { error } => {
                 write!(f, "Error parsing program schema: {error}")
@@ -608,6 +599,12 @@ impl ControllerError {
         }
     }
 
+    pub fn not_supported(error: &str) -> Self {
+        Self::NotSupported {
+            error: error.to_string(),
+        }
+    }
+
     pub fn schema_parse_error(error: &str) -> Self {
         Self::SchemaParseError {
             error: error.to_string(),
@@ -641,15 +638,6 @@ impl ControllerError {
     {
         Self::Config {
             config_error: ConfigError::pipeline_config_parse_error(error),
-        }
-    }
-
-    pub fn program_schema_parse_error<E>(error: &E) -> Self
-    where
-        E: ToString,
-    {
-        Self::Config {
-            config_error: ConfigError::program_schema_parse_error(error),
         }
     }
 

@@ -63,20 +63,22 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
     where
         S: Serializer,
     {
-        let datetime = DateTime::from_timestamp(
-            self.milliseconds / 1000,
-            ((self.milliseconds % 1000) * 1000) as u32,
-        )
-        .ok_or_else(|| {
-            S::Error::custom(format!(
-                "timestamp value '{}' out of range",
-                self.milliseconds
-            ))
-        })?;
         match context.timestamp_format {
             TimestampFormat::String(format_string) => {
+                let datetime = DateTime::from_timestamp(
+                    self.milliseconds / 1000,
+                    ((self.milliseconds % 1000) * 1000) as u32,
+                )
+                .ok_or_else(|| {
+                    S::Error::custom(format!(
+                        "timestamp value '{}' out of range",
+                        self.milliseconds
+                    ))
+                })?;
+
                 serializer.serialize_str(&datetime.format(format_string).to_string())
             }
+            TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds),
         }
     }
 }
@@ -101,6 +103,10 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
                     })?;
 
                 Ok(Self::new(timestamp.timestamp_millis()))
+            }
+            TimestampFormat::MillisSinceEpoch => {
+                let millis: i64 = Deserialize::deserialize(deserializer)?;
+                Ok(Self::new(millis))
             }
         }
     }
@@ -813,6 +819,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Time {
                 serializer.serialize_str(&time.format(format_string).to_string())
             }
             TimeFormat::Micros => serializer.serialize_u64(self.nanoseconds / 1_000),
+            TimeFormat::Millis => serializer.serialize_u64(self.nanoseconds / 1_000_000),
         }
     }
 }
@@ -834,6 +841,9 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
             }
             TimeFormat::Micros => Ok(Self {
                 nanoseconds: u64::deserialize(deserializer)? * 1_000,
+            }),
+            TimeFormat::Millis => Ok(Self {
+                nanoseconds: u64::deserialize(deserializer)? * 1_000_000,
             }),
         }
     }

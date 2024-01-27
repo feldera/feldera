@@ -11,7 +11,6 @@ use erased_serde::Serialize as ErasedSerialize;
 use pipeline_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take, sync::Arc};
 
 pub(crate) mod deserializer;
@@ -19,6 +18,7 @@ use crate::catalog::InputCollectionHandle;
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
 use pipeline_types::program_schema::Relation;
+use serde_yaml::Value as YamlValue;
 
 /// When including a long CSV record in an error message,
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.

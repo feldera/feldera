@@ -20,6 +20,8 @@ pub enum TimeFormat {
     String(&'static str),
     /// Time specified in microseconds from the start of the day.
     Micros,
+    /// Time specified in milliseconds from the start of the day.
+    Millis,
 }
 
 impl Default for TimeFormat {
@@ -48,10 +50,12 @@ impl Default for DateFormat {
 // Representation of the SQL `TIMESTAMP` type.
 #[derive(Clone)]
 pub enum TimestampFormat {
-    // String formatted using the specified format:
-    // See [`chrono` documentation](https://docs.rs/chrono/0.4.31/chrono/format/strftime/)
-    // for supported formatting syntax.
+    /// String formatted using the specified format:
+    /// See [`chrono` documentation](https://docs.rs/chrono/0.4.31/chrono/format/strftime/)
+    /// for supported formatting syntax.
     String(&'static str),
+    /// Time specified in milliseconds since UNIX epoch.
+    MillisSinceEpoch,
 }
 
 impl Default for TimestampFormat {
@@ -75,6 +79,11 @@ impl From<JsonFlavor> for SqlSerdeConfig {
     fn from(flavor: JsonFlavor) -> Self {
         match flavor {
             JsonFlavor::Default => Default::default(),
+            JsonFlavor::KafkaConnectJsonConverter { .. } => Self {
+                time_format: TimeFormat::Millis,
+                date_format: DateFormat::DaysSinceEpoch,
+                timestamp_format: TimestampFormat::MillisSinceEpoch,
+            },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,

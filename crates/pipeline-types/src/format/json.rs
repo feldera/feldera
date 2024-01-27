@@ -137,6 +137,9 @@ pub enum JsonFlavor {
     /// JSON format accepted by Snowflake using default settings.
     #[serde(rename = "snowflake")]
     Snowflake,
+    /// JSON format accepted by the Kafka Connect `JsonConverter` class.
+    #[serde(rename = "kafka_connect_json_converter")]
+    KafkaConnectJsonConverter,
 }
 
 const fn default_buffer_size_records() -> usize {
@@ -144,7 +147,7 @@ const fn default_buffer_size_records() -> usize {
 }
 
 // TODO: support multiple update formats, e.g., `WeightedUpdate`
-// suppors arbitrary weights beyond `MAX_DUPLICATES`.
+// supports arbitrary weights beyond `MAX_DUPLICATES`.
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct JsonEncoderConfig {
     #[serde(default)]
