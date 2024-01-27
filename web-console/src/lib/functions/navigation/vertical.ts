@@ -6,6 +6,7 @@ import IconGitRepoForked from '~icons/bx/git-repo-forked'
 import IconHomeCircle from '~icons/bx/home-circle'
 import IconUnite from '~icons/bx/unite'
 import CogOutline from '~icons/mdi/cog-outline'
+import IconHardHat from '~icons/mdi/hard-hat'
 
 const navigation = (): VerticalNavItemsType => {
   return [
@@ -74,6 +75,11 @@ const navigation = (): VerticalNavItemsType => {
       title: 'Settings',
       path: '/settings',
       icon: CogOutline
+    },
+    {
+      title: 'Demos',
+      path: '/lessons',
+      icon: IconHardHat
     },
     {
       title: 'Documentation',

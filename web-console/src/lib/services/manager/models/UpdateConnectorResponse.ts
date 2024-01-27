@@ -4,6 +4,6 @@
 /* eslint-disable */
 
 /**
- * Response to a config update request.
+ * Response to a connector update request.
  */
 export type UpdateConnectorResponse = Record<string, any>

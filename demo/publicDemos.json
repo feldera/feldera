@@ -1,0 +1,14 @@
+[
+  {
+    "group": "easy",
+    "label": "Simple demos",
+    "demos": [
+      {
+        "name": "Accrual",
+        "description": "See how easy it is to aggregate and account for inventory transactions on the fly",
+        "json": "https://raw.githubusercontent.com/feldera/feldera/main/demo/publicDemos/accrual.json",
+        "import": "publicDemos/accrual.json"
+      }
+    ]
+  }
+]

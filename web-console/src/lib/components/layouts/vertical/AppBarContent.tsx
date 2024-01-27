@@ -8,7 +8,7 @@ import ModeToggler from 'src/@core/layouts/components/shared-components/ModeTogg
 import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
 import IconLockOpenAlt from '~icons/bx/lock-open-alt'
 
-import { Tooltip } from '@mui/material'
+import { Button, Link, Tooltip } from '@mui/material'
 // also has the search bar and the user dropdown and the notification dropdown.
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
@@ -37,6 +37,9 @@ const AppBarContent = (props: Props) => {
           className='actions-right'
           sx={{ display: 'flex', alignItems: 'center', mb: 'auto', pointerEvents: 'auto' }}
         >
+          <Button LinkComponent={Link} href='/lessons'>
+            Demos
+          </Button>
           <ModeToggler settings={settings} saveSettings={saveSettings} />
           {auth === 'NoAuth' ? (
             <Tooltip title='No authentication'>

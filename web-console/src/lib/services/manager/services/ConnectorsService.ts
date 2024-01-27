@@ -3,6 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { ConnectorDescr } from '../models/ConnectorDescr'
+import type { CreateOrReplaceConnectorRequest } from '../models/CreateOrReplaceConnectorRequest'
+import type { CreateOrReplaceConnectorResponse } from '../models/CreateOrReplaceConnectorResponse'
 import type { NewConnectorRequest } from '../models/NewConnectorRequest'
 import type { NewConnectorResponse } from '../models/NewConnectorResponse'
 import type { UpdateConnectorRequest } from '../models/UpdateConnectorRequest'
@@ -39,7 +41,7 @@ export class ConnectorsService {
    * Create a new connector.
    * Create a new connector.
    * @param requestBody
-   * @returns NewConnectorResponse Connector successfully created.
+   * @returns NewConnectorResponse Connector successfully created
    * @throws ApiError
    */
   public static newConnector(requestBody: NewConnectorRequest): CancelablePromise<NewConnectorResponse> {
@@ -47,15 +49,18 @@ export class ConnectorsService {
       method: 'POST',
       url: '/v0/connectors',
       body: requestBody,
-      mediaType: 'application/json'
+      mediaType: 'application/json',
+      errors: {
+        409: `A connector with this name already exists in the database`
+      }
     })
   }
 
   /**
-   * Fetch a connector by ID.
-   * Fetch a connector by ID.
+   * Fetch a connector by name.
+   * Fetch a connector by name.
    * @param connectorName Unique connector name
-   * @returns ConnectorDescr Connector retrieved successfully.
+   * @returns ConnectorDescr Connector retrieved successfully
    * @throws ApiError
    */
   public static getConnector(connectorName: string): CancelablePromise<ConnectorDescr> {
@@ -66,7 +71,33 @@ export class ConnectorsService {
         connector_name: connectorName
       },
       errors: {
-        400: `Specified connector id is not a valid uuid.`
+        404: `Specified connector name does not exist`
+      }
+    })
+  }
+
+  /**
+   * Create or replace a connector.
+   * Create or replace a connector.
+   * @param connectorName Unique connector name
+   * @param requestBody
+   * @returns CreateOrReplaceConnectorResponse Connector updated successfully
+   * @throws ApiError
+   */
+  public static createOrReplaceConnector(
+    connectorName: string,
+    requestBody: CreateOrReplaceConnectorRequest
+  ): CancelablePromise<CreateOrReplaceConnectorResponse> {
+    return __request(OpenAPI, {
+      method: 'PUT',
+      url: '/v0/connectors/{connector_name}',
+      path: {
+        connector_name: connectorName
+      },
+      body: requestBody,
+      mediaType: 'application/json',
+      errors: {
+        409: `A connector with this name already exists in the database`
       }
     })
   }
@@ -75,7 +106,7 @@ export class ConnectorsService {
    * Delete an existing connector.
    * Delete an existing connector.
    * @param connectorName Unique connector name
-   * @returns any connector successfully deleted.
+   * @returns any Connector successfully deleted
    * @throws ApiError
    */
   public static deleteConnector(connectorName: string): CancelablePromise<any> {
@@ -86,18 +117,17 @@ export class ConnectorsService {
         connector_name: connectorName
       },
       errors: {
-        400: `Specified connector id is not a valid uuid.`,
-        404: `Specified connector id does not exist.`
+        404: `Specified connector name does not exist`
       }
     })
   }
 
   /**
-   * Change a connector's name, description or configuration.
-   * Change a connector's name, description or configuration.
+   * Update the name, description and/or configuration of a connector.
+   * Update the name, description and/or configuration of a connector.
    * @param connectorName Unique connector name
    * @param requestBody
-   * @returns UpdateConnectorResponse connector successfully updated.
+   * @returns UpdateConnectorResponse Connector successfully updated
    * @throws ApiError
    */
   public static updateConnector(
@@ -113,7 +143,7 @@ export class ConnectorsService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified connector id does not exist.`
+        404: `Specified connector name does not exist`
       }
     })
   }

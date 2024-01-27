@@ -222,10 +222,10 @@ pub(crate) async fn update_pipeline(
 
 /// Create or replace a pipeline.
 #[utoipa::path(
-    request_body = CreateOrReplaceProgramRequest,
+    request_body = CreateOrReplacePipelineRequest,
     responses(
-        (status = CREATED, description = "Pipeline created successfully", body = CreateOrReplaceProgramResponse),
-        (status = OK, description = "Pipeline updated successfully", body = CreateOrReplaceProgramResponse),
+        (status = CREATED, description = "Pipeline created successfully", body = CreateOrReplacePipelineResponse),
+        (status = OK, description = "Pipeline updated successfully", body = CreateOrReplacePipelineResponse),
         (status = CONFLICT
             , description = "A pipeline with this name already exists in the database."
             , body = ErrorResponse

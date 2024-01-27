@@ -4,6 +4,6 @@
 /* eslint-disable */
 
 /**
- * Response to a config update request.
+ * Response to a service update request.
  */
 export type UpdateServiceResponse = Record<string, any>

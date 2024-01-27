@@ -3,6 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { CompileProgramRequest } from '../models/CompileProgramRequest'
+import type { CreateOrReplaceProgramRequest } from '../models/CreateOrReplaceProgramRequest'
+import type { CreateOrReplaceProgramResponse } from '../models/CreateOrReplaceProgramResponse'
 import type { NewProgramRequest } from '../models/NewProgramRequest'
 import type { NewProgramResponse } from '../models/NewProgramResponse'
 import type { ProgramDescr } from '../models/ProgramDescr'
@@ -23,7 +25,7 @@ export class ProgramsService {
    * in the Program objects returned by the query.
    * If false (default), the returned program object
    * will not include the code.
-   * @returns ProgramDescr Programs retrieved successfully.
+   * @returns ProgramDescr List of programs retrieved successfully
    * @throws ApiError
    */
   public static getPrograms(
@@ -40,7 +42,7 @@ export class ProgramsService {
         with_code: withCode
       },
       errors: {
-        404: `Specified program name or ID does not exist.`
+        404: `Specified program name or ID does not exist`
       }
     })
   }
@@ -59,20 +61,20 @@ export class ProgramsService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        409: `A program with this name already exists in the database.`
+        409: `A program with this name already exists in the database`
       }
     })
   }
 
   /**
-   * Fetch a program by ID.
-   * Fetch a program by ID.
+   * Fetch a program by name.
+   * Fetch a program by name.
    * @param programName Unique program name
    * @param withCode Option to include the SQL program code or not
    * in the Program objects returned by the query.
    * If false (default), the returned program object
    * will not include the code.
-   * @returns ProgramDescr Program retrieved successfully.
+   * @returns ProgramDescr Program retrieved successfully
    * @throws ApiError
    */
   public static getProgram(programName: string, withCode?: boolean | null): CancelablePromise<ProgramDescr> {
@@ -86,7 +88,33 @@ export class ProgramsService {
         with_code: withCode
       },
       errors: {
-        404: `Specified program id does not exist.`
+        404: `Specified program name does not exist`
+      }
+    })
+  }
+
+  /**
+   * Create or replace a program.
+   * Create or replace a program.
+   * @param programName Unique program name
+   * @param requestBody
+   * @returns CreateOrReplaceProgramResponse Program updated successfully
+   * @throws ApiError
+   */
+  public static createOrReplaceProgram(
+    programName: string,
+    requestBody: CreateOrReplaceProgramRequest
+  ): CancelablePromise<CreateOrReplaceProgramResponse> {
+    return __request(OpenAPI, {
+      method: 'PUT',
+      url: '/v0/programs/{program_name}',
+      path: {
+        program_name: programName
+      },
+      body: requestBody,
+      mediaType: 'application/json',
+      errors: {
+        409: `A program with this name already exists in the database`
       }
     })
   }
@@ -98,7 +126,7 @@ export class ProgramsService {
    * Deletion fails if there is at least one pipeline associated with the
    * program.
    * @param programName Unique program name
-   * @returns any Program successfully deleted.
+   * @returns any Program successfully deleted
    * @throws ApiError
    */
   public static deleteProgram(programName: string): CancelablePromise<any> {
@@ -109,8 +137,8 @@ export class ProgramsService {
         program_name: programName
       },
       errors: {
-        400: `Specified program id is referenced by a pipeline or is not a valid uuid.`,
-        404: `Specified program id does not exist.`
+        400: `Specified program is referenced by a pipeline`,
+        404: `Specified program name does not exist`
       }
     })
   }
@@ -127,7 +155,7 @@ export class ProgramsService {
    * version or the compilation process.
    * @param programName Unique program name
    * @param requestBody
-   * @returns UpdateProgramResponse Program updated successfully.
+   * @returns UpdateProgramResponse Program updated successfully
    * @throws ApiError
    */
   public static updateProgram(
@@ -143,8 +171,8 @@ export class ProgramsService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified program id does not exist.`,
-        409: `A program with this name already exists in the database.`
+        404: `Specified program name does not exist`,
+        409: `A program with this name already exists in the database`
       }
     })
   }
@@ -153,12 +181,12 @@ export class ProgramsService {
    * Mark a program for compilation.
    * Mark a program for compilation.
    *
-   * The client can track a program's compilation status by pollling the
-   * `/program/{program_id}` or `/programs` endpoints, and
-   * then checking the `status` field of the program object
+   * The client can track a program's compilation status by polling the
+   * `/program/{program_name}` or `/programs` endpoints, and
+   * then checking the `status` field of the program object.
    * @param programName Unique program name
    * @param requestBody
-   * @returns any Compilation request submitted.
+   * @returns any Compilation request submitted
    * @throws ApiError
    */
   public static compileProgram(programName: string, requestBody: CompileProgramRequest): CancelablePromise<any> {
@@ -171,8 +199,8 @@ export class ProgramsService {
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified program id does not exist.`,
-        409: `Program version specified in the request doesn't match the latest program version in the database.`
+        404: `Specified program name does not exist`,
+        409: `Program version specified in the request doesn't match the latest program version in the database`
       }
     })
   }

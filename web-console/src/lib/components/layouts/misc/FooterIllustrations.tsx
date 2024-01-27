@@ -1,8 +1,6 @@
 'use client'
 
 import Image from 'next/image'
-import MiscMaskDark from 'public/images/pages/misc-mask-dark.png'
-import MiscMaskLight from 'public/images/pages/misc-mask-light.png'
 import { Fragment } from 'react'
 
 import { styled, useTheme } from '@mui/material/styles'
@@ -20,7 +18,7 @@ const FooterIllustrations = () => {
   const theme = useTheme()
 
   const hidden = useMediaQuery(theme.breakpoints.down('md'))
-  const mask = theme.palette.mode === 'light' ? MiscMaskLight : MiscMaskDark
+  const mask = theme.palette.mode === 'light' ? '/images/pages/misc-mask-light.png' : '/images/pages/misc-mask-dark.png'
 
   if (!hidden) {
     return (

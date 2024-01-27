@@ -71,6 +71,7 @@ export const useUpdateConnectorRequest = <
   config: ConnectorConfig
 }*/ FieldValues
 >(
+  oldConnector: ConnectorDescr,
   onSuccess: (connector: ConnectorDescr, oldConnectorName: string) => void,
   onSettled: () => void,
   getRequestData: (data: TData) => [{ connectorId: ConnectorId; connectorName: string }, UpdateConnectorRequest]
@@ -94,9 +95,9 @@ export const useUpdateConnectorRequest = <
           onSuccess(
             {
               connector_id: connectorId,
-              name: request.name,
-              description: request.description,
-              config: request.config!
+              name: request.name ?? oldConnector.name,
+              description: request.description ?? oldConnector.description,
+              config: request.config ?? oldConnector.config
             },
             connectorName
           )
@@ -123,11 +124,12 @@ export const useConnectorRequest = <T extends FieldValues, R>(
       ? /* eslint-disable react-hooks/rules-of-hooks */
         useNewConnectorRequest(onSuccess ?? (() => {}), handleClose, prepareData as (data: T) => NewConnectorRequest)
       : /* eslint-disable react-hooks/rules-of-hooks */
-        (updateRequest => useUpdateConnectorRequest(onSuccess ?? (() => {}), handleClose, updateRequest))((data: T) =>
-          tuple(
-            { connectorId: connector.connector_id, connectorName: connector.name },
-            prepareData(data) as UpdateConnectorRequest
-          )
+        (updateRequest => useUpdateConnectorRequest(connector, onSuccess ?? (() => {}), handleClose, updateRequest))(
+          (data: T) =>
+            tuple(
+              { connectorId: connector.connector_id, connectorName: connector.name },
+              prepareData(data) as UpdateConnectorRequest
+            )
         )
 
   return onSubmit

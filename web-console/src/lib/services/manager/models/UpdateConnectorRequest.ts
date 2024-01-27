@@ -6,16 +6,17 @@
 import type { ConnectorConfig } from './ConnectorConfig'
 
 /**
- * Request to update an existing data-connector.
+ * Request to update an existing connector.
  */
 export type UpdateConnectorRequest = {
   config?: ConnectorConfig | null
   /**
-   * New connector description.
+   * New connector description. If absent, existing name will be kept
+   * unmodified.
    */
-  description: string
+  description?: string | null
   /**
-   * New connector name.
+   * New connector name. If absent, existing name will be kept unmodified.
    */
-  name: string
+  name?: string | null
 }

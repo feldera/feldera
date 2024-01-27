@@ -4,9 +4,9 @@
 /* eslint-disable */
 
 /**
- * Request to create a new program.
+ * Request to create or replace a program.
  */
-export type NewProgramRequest = {
+export type CreateOrReplaceProgramRequest = {
   /**
    * SQL code of the program.
    */
@@ -15,8 +15,4 @@ export type NewProgramRequest = {
    * Program description.
    */
   description: string
-  /**
-   * Program name.
-   */
-  name: string
 }

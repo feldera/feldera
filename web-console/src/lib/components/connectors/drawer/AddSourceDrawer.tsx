@@ -67,17 +67,16 @@ const IoSelectBox = (props: {
         >
           <CardContent sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
             {typeof props.icon === 'string' ? (
-              <Image
-                src={props.icon}
-                alt='An icon'
-                style={{
-                  height: 64,
-                  objectFit: 'cover',
-                  width: 'fit-content',
-                  padding: 6,
-                  fill: theme.palette.text.primary
-                }}
-              />
+              <Box sx={{ height: 64, position: 'relative', width: '100%' }}>
+                <Image
+                  src={props.icon}
+                  alt={'A connector logo'}
+                  fill={true}
+                  style={{
+                    fill: theme.palette.text.primary
+                  }}
+                />
+              </Box>
             ) : (
               (Icon => (
                 <Icon

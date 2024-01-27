@@ -503,7 +503,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateOrReplaceProgramRequest"
+                "$ref": "#/components/schemas/CreateOrReplaceConnectorRequest"
               }
             }
           },
@@ -912,7 +912,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateOrReplaceProgramRequest"
+                "$ref": "#/components/schemas/CreateOrReplacePipelineRequest"
               }
             }
           },
@@ -924,7 +924,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
+                  "$ref": "#/components/schemas/CreateOrReplacePipelineResponse"
                 }
               }
             }
@@ -934,7 +934,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
+                  "$ref": "#/components/schemas/CreateOrReplacePipelineResponse"
                 }
               }
             }
