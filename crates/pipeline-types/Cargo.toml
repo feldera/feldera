@@ -10,6 +10,9 @@ keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["database", "api-bindings", "network-programming"]
 publish = false
 
+[features]
+testing = ["proptest", "proptest-derive"]
+
 [dependencies]
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_yaml = "0.9.14"
@@ -17,4 +20,5 @@ serde_json = { version = "1.0.103", features = ["raw_value"] }
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 log = "0.4.20"
 utoipa = "4.1"
-
+proptest = { version = "1.0.0", optional = true }
+proptest-derive = { version = "0.3.0", optional = true }
