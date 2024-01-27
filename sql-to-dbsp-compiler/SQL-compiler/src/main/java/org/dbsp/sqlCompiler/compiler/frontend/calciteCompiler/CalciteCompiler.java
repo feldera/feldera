@@ -93,6 +93,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputTableDescription;
 import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -140,7 +141,7 @@ import java.util.Properties;
 public class CalciteCompiler implements IWritesLogs {
     private final CompilerOptions options;
     private final SqlParser.Config parserConfig;
-    private final Catalog catalog;
+    private final Catalog calciteCatalog;
     public final RelOptCluster cluster;
     public final RelDataTypeFactory typeFactory;
     private final SqlToRelConverter.Config converterConfig;
@@ -258,9 +259,9 @@ public class CalciteCompiler implements IWritesLogs {
                 .withQuotedCasing(Casing.UNCHANGED)
                 .withConformance(SqlConformanceEnum.LENIENT);
         this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
-        this.catalog = new Catalog("schema");
+        this.calciteCatalog = new Catalog("schema");
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
-        this.rootSchema.add(catalog.schemaName, this.catalog);
+        this.rootSchema.add(calciteCatalog.schemaName, this.calciteCatalog);
         // Register new types
         this.rootSchema.add("BYTEA", factory -> factory.createSqlType(SqlTypeName.VARBINARY));
         this.rootSchema.add("DATETIME", factory -> factory.createSqlType(SqlTypeName.TIMESTAMP));
@@ -315,7 +316,7 @@ public class CalciteCompiler implements IWritesLogs {
         SqlValidator.Config validatorConfig = SqlValidator.Config.DEFAULT
                 .withIdentifierExpansion(true);
         Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
-                CalciteSchema.from(this.rootSchema), Collections.singletonList(catalog.schemaName),
+                CalciteSchema.from(this.rootSchema), Collections.singletonList(calciteCatalog.schemaName),
                 this.typeFactory, connectionConfig);
         this.validator = SqlValidatorUtil.newValidator(
                 newOperatorTable,
@@ -785,16 +786,14 @@ public class CalciteCompiler implements IWritesLogs {
      * @param node         Compiled version of the SQL statement.
      * @param sqlStatement SQL statement as a string to compile.
      * @param comment      Additional information about the compiled statement.
-     * @param inputs       If not null, add here a JSON description of the tables defined by the statement, if any.
-     * @param outputs      If not null, add here a JSON description of the views defined by the statement, if any.
+     * @param metadata     Add here descriptions of the program metadata.
      */
     @Nullable
     public FrontEndStatement compile(
             String sqlStatement,
             SqlNode node,
             @Nullable String comment,
-            List<InputTableDescription> inputs,
-            List<OutputViewDescription> outputs) {
+            ProgramMetadata metadata) {
         CalciteObject object = CalciteObject.create(node);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("Compiling ")
@@ -804,7 +803,7 @@ public class CalciteCompiler implements IWritesLogs {
             if (node.getKind().equals(SqlKind.DROP_TABLE)) {
                 SqlDropTable dt = (SqlDropTable) node;
                 String tableName = Catalog.identifierToString(dt.name);
-                this.catalog.dropTable(tableName);
+                this.calciteCatalog.dropTable(tableName);
                 return new DropTableStatement(node, sqlStatement, tableName, comment);
             } else if (node.getKind().equals(SqlKind.CREATE_TABLE)) {
                 SqlCreateTable ct = (SqlCreateTable)node;
@@ -829,10 +828,10 @@ public class CalciteCompiler implements IWritesLogs {
                      */
                 }
                 CreateTableStatement table = new CreateTableStatement(node, sqlStatement, tableName, comment, cols);
-                boolean success = this.catalog.addTable(tableName, table.getEmulatedTable(), this.errorReporter, table);
+                boolean success = this.calciteCatalog.addTable(tableName, table.getEmulatedTable(), this.errorReporter, table);
                 if (!success)
                     return null;
-                inputs.add(new InputTableDescription(table));
+                metadata.addTable(new InputTableDescription(table));
                 return table;
             } else if (node.getKind().equals(SqlKind.CREATE_VIEW)) {
                 SqlToRelConverter converter = this.getConverter();
@@ -853,11 +852,11 @@ public class CalciteCompiler implements IWritesLogs {
                         Catalog.identifierToString(cv.name), comment,
                         columns, cv.query, relRoot);
                 // From Calcite's point of view we treat this view just as another table.
-                boolean success = this.catalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
+                boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
                 if (!success)
                     return null;
                 if (this.generateOutputForNextView)
-                    outputs.add(new OutputViewDescription(view));
+                    metadata.addView(new OutputViewDescription(view));
                 return view;
             }
         }

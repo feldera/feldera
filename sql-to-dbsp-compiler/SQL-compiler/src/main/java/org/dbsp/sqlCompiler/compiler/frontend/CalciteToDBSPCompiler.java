@@ -98,7 +98,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      */
     public CalciteToDBSPCompiler(boolean trackTableContents,
                                  CompilerOptions options, DBSPCompiler compiler) {
-        this.circuit = new DBSPPartialCircuit(compiler);
+        this.circuit = new DBSPPartialCircuit(compiler, compiler.metadata);
         this.compiler = compiler;
         this.nodeOperator = new HashMap<>();
         this.tableContents = new TableContents(compiler, trackTableContents);
@@ -123,12 +123,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return TypeCompiler.makeIndexedZSet(keyType, valueType, new DBSPTypeWeight());
     }
 
-    /**
-     * Gets the circuit produced so far and starts a new one.
-     */
+    /** Gets the circuit produced so far and starts a new one. */
     public DBSPPartialCircuit getFinalCircuit() {
         DBSPPartialCircuit result = this.circuit;
-        this.circuit = new DBSPPartialCircuit(this.compiler);
+        this.circuit = new DBSPPartialCircuit(this.compiler, this.compiler.metadata);
         return result;
     }
 
@@ -1359,7 +1357,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPType originalRowType = this.convertType(view.getRelNode().getRowType(), true);
                 DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class).rename(view.relationName);
                 o = new DBSPSinkOperator(
-                        view.getCalciteObject(), view.relationName, view.statement,
+                        view.getCalciteObject(), view.relationName,
+                        view.relationName, view.statement,
                         struct, statement.comment, op);
             } else {
                 // We may already have a node for this output
@@ -1388,7 +1387,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     identifier = CalciteObject.create(sct.name);
                 }
                 List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
-                InputTableMetadata tableMeta = new InputTableMetadata(metadata);
+                InputTableMetadata tableMeta = new InputTableMetadata(tableName, def, metadata);
                 DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                         create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
                         def.statement, tableMeta, tableName);

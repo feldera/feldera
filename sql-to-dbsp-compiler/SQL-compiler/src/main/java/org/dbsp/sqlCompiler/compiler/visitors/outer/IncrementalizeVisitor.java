@@ -59,8 +59,8 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPSinkOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), source);
-        DBSPSinkOperator sink = new DBSPSinkOperator(operator.getNode(), operator.outputName,
-                operator.query, operator.originalRowType, operator.comment, diff);
+        DBSPSinkOperator sink = new DBSPSinkOperator(operator.getNode(), operator.viewName,
+                operator.outputName, operator.query, operator.originalRowType, operator.comment, diff);
         this.addOperator(diff);
         this.map(operator, sink);
     }

@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -49,10 +50,12 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     public final Map<String, DBSPOperator> operatorDeclarations = new HashMap<>();
     /** Maps indexed z-set table names to the corresponding deindex operator */
     public final IErrorReporter errorReporter;
+    public final ProgramMetadata metadata;
 
-    public DBSPPartialCircuit(IErrorReporter errorReporter) {
+    public DBSPPartialCircuit(IErrorReporter errorReporter, ProgramMetadata metadata) {
         super(CalciteObject.EMPTY);
         this.errorReporter = errorReporter;
+        this.metadata = metadata;
     }
 
     /**

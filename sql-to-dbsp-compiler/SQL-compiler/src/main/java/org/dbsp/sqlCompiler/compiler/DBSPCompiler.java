@@ -23,9 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlKind;
@@ -114,15 +111,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      */
     public final DBSPVariablePath weightVar;
 
-    public final ObjectMapper mapper;
     public final CalciteCompiler frontend;
     final CalciteToDBSPCompiler midend;
     public final CompilerOptions options;
     public final CompilerMessages messages;
     public final SourceFileContents sources;
     public InputSource inputSources = InputSource.None;
-    public final List<InputTableDescription> inputTables;
-    public final List<OutputViewDescription> outputViews;
+    public final ProgramMetadata metadata;
 
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
@@ -134,16 +129,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public DBSPCompiler(CompilerOptions options) {
         this.options = options;
-        this.mapper = new ObjectMapper();
         // Setting these first allows errors to be reported
         this.messages = new CompilerMessages(this);
+        this.metadata = new ProgramMetadata();
         this.frontend = new CalciteCompiler(options, this);
         this.midend = new CalciteToDBSPCompiler(true, options, this);
         this.sources = new SourceFileContents();
         this.circuit = null;
         this.typeCompiler = new TypeCompiler(this);
-        this.inputTables = new ArrayList<>();
-        this.outputViews = new ArrayList<>();
         this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false);
         this.weightVar = new DBSPTypeWeight().var("w");
     }
@@ -263,7 +256,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 if (node.getKind().equals(SqlKind.CREATE_FUNCTION))
                     continue;
                 FrontEndStatement fe = this.frontend.compile(
-                        node.toString(), node, comment, this.inputTables, this.outputViews);
+                        node.toString(), node, comment, this.metadata);
                 if (fe == null)
                     // error during compilation
                     continue;
@@ -301,19 +294,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 throw e;
             }
         }
-    }
-
-    public ObjectNode getIOMetadataAsJson() {
-        ArrayNode inputs = this.mapper.createArrayNode();
-        for (InputTableDescription input: this.inputTables)
-            inputs.add(input.asJson());
-        ArrayNode outputs = this.mapper.createArrayNode();
-        for (OutputViewDescription output: this.outputViews)
-            outputs.add(output.asJson());
-        ObjectNode ios = this.mapper.createObjectNode();
-        ios.set("inputs", inputs);
-        ios.set("outputs", outputs);
-        return ios;
     }
 
     public void compileStatement(String statement, @Nullable String comment) {

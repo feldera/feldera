@@ -42,7 +42,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.InputTableDescription;
 import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
+import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -59,6 +62,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -90,21 +94,23 @@ public class ToRustVisitor extends CircuitVisitor {
     final InnerVisitor innerVisitor;
     final boolean useHandles;
     final CompilerOptions options;
+    final ProgramMetadata metadata;
 
     /* Example output generated when 'generateCatalog' is true:
      * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
      *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
      *         let mut catalog = Catalog::new();
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
-     *         catalog.register_input_zset("test_input1", input, handles.0);
-     *         catalog.register_output_zset("test_output1", input);
+     *         catalog.register_input_zset("input0", input, handles.0, input0_metadata);
+     *         catalog.register_output_zset("output0", input, output0_metadata);
      *         Ok(catalog)
      *     }).unwrap();
      *     (circuit, catalog)
      * }
      */
 
-    public ToRustVisitor(IErrorReporter reporter, IndentStream builder, CompilerOptions options) {
+    public ToRustVisitor(IErrorReporter reporter, IndentStream builder,
+                         CompilerOptions options, ProgramMetadata metadata) {
         super(reporter);
         this.options = options;
         this.builder = builder;
@@ -112,6 +118,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.useHandles = this.options.ioOptions.emitHandles;
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
+        this.metadata = metadata;
     }
 
     protected void generateFromTrait(DBSPTypeStruct type) {
@@ -413,6 +420,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(">();").newline();
         if (!this.useHandles) {
             this.builder.append("catalog.register_input_zset::<_, ");
+            InputTableDescription tableDescription = this.metadata.getTableDescription(operator.metadata.tableName);
+            DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
                     .append(Utilities.doubleQuote(operator.getName()))
@@ -420,7 +429,9 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(operator.outputName)
                     .append(".clone(), ")
                     .append(this.handleName(operator))
-                    .append(");")
+                    .append(", ");
+            json.accept(this.innerVisitor);
+            this.builder.append(");")
                     .newline();
         } else {
             this.streams.append(this.handleName(operator))
@@ -506,6 +517,8 @@ public class ToRustVisitor extends CircuitVisitor {
 
         this.builder.decrease().append(");").newline();
         if (!this.useHandles) {
+            InputTableDescription tableDescription = this.metadata.getTableDescription(operator.metadata.tableName);
+            DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
             this.builder.append("catalog.register_input_map::<");
             keyStructType.toTuple().accept(this.innerVisitor);
             this.builder.append(", ");
@@ -530,6 +543,8 @@ public class ToRustVisitor extends CircuitVisitor {
             operator.getKeyFunc().accept(this.innerVisitor);
             this.builder.append(", ");
             operator.getUpdateKeyFunc(upsertStruct).accept(this.innerVisitor);
+            this.builder.append(", ");
+            json.accept(this.innerVisitor);
             this.builder.append(");")
                     .newline();
         } else {
@@ -629,13 +644,18 @@ public class ToRustVisitor extends CircuitVisitor {
         this.generateFromTrait(type);
         this.generateRenameMacro(operator.outputName, type, null);
         if (!this.useHandles) {
+            OutputViewDescription description = this.metadata.getViewDescription(operator.viewName);
+            DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);
             this.builder.append("catalog.register_output_zset::<_, ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
                     .append(Utilities.doubleQuote(operator.getName()))
                     .append(", ")
                     .append(operator.input().getName())
-                    .append(".clone());")
+                    .append(".clone()")
+                    .append(", ");
+            json.accept(this.innerVisitor);
+            this.builder.append(");")
                     .newline();
         } else {
             this.builder.append("let ")
@@ -962,7 +982,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public static String toRustString(IErrorReporter reporter, DBSPCircuit node, CompilerOptions options) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, options);
+        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, options, node.getMetadata());
         visitor.apply(node);
         return builder.toString();
     }

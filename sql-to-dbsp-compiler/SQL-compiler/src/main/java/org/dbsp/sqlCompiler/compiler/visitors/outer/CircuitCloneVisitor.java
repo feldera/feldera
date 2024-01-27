@@ -341,7 +341,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
         this.startVisit(circuit);
-        this.result = new DBSPPartialCircuit(circuit.circuit.errorReporter);
+        this.result = new DBSPPartialCircuit(circuit.circuit.errorReporter, circuit.circuit.metadata);
         circuit.accept(this);
         this.endVisit();
         DBSPPartialCircuit result = this.getResult();

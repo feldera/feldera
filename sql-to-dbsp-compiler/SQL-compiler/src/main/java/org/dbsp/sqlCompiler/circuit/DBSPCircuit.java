@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -138,5 +139,9 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
                 .decrease()
                 .append("}")
                 .newline();
+    }
+
+    public ProgramMetadata getMetadata() {
+        return this.circuit.metadata;
     }
 }
