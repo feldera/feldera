@@ -1,14 +1,17 @@
 use super::{
     ApiKeyDescr, ApiPermission, AttachedConnector, ConnectorDescr, ConnectorId, DBError, Pipeline,
     PipelineDescr, PipelineId, PipelineRevision, PipelineRuntimeState, PipelineStatus,
-    ProgramDescr, ProgramId, ProgramSchema, Revision, Version,
+    ProgramDescr, ProgramId, Revision, Version,
 };
 use crate::api::{ProgramStatus, ServiceConfig};
 use crate::auth::TenantId;
 use crate::db::{ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use deadpool_postgres::Transaction;
-use pipeline_types::config::{ConnectorConfig, RuntimeConfig};
+use pipeline_types::{
+    config::{ConnectorConfig, RuntimeConfig},
+    program_schema::ProgramSchema,
+};
 use uuid::Uuid;
 
 /// The storage trait contains the methods to interact with the pipeline manager

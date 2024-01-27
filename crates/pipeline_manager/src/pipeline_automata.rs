@@ -753,7 +753,7 @@ mod test {
             .set_program_schema(
                 tenant_id,
                 program_id,
-                crate::db::ProgramSchema {
+                pipeline_types::program_schema::ProgramSchema {
                     inputs: vec![],
                     outputs: vec![],
                 },

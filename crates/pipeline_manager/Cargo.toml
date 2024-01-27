@@ -72,6 +72,7 @@ serial_test = "2.0.0"
 aws-sdk-cognitoidentityprovider = "0.28.0"
 aws-config = "0.55.3"
 wiremock = "0.5"
+pipeline_types = { path = "../pipeline-types/", features = ["testing"] }
 
 # Used in integration tests
 [dev-dependencies.tokio]
