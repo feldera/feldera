@@ -178,7 +178,8 @@ where
         self.0.mailbox(worker)
     }
 
-    /// The number of mailboxes that contain values that haven't been retrieved yet.
+    /// The number of mailboxes that contain values that haven't been retrieved
+    /// yet.
     pub fn num_nonempty_mailboxes(&self) -> usize {
         let num_workers = self.0.mailbox.len();
         let mut non_empty = 0;
@@ -192,7 +193,7 @@ where
 
     pub fn peek_from_worker<F, O: 'static>(&self, worker: usize, func: F) -> O
     where
-        F: Fn(&Option<T>) -> O
+        F: Fn(&Option<T>) -> O,
     {
         self.0.peek_from_worker(worker, func)
     }

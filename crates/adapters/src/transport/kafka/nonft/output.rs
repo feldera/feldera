@@ -145,6 +145,22 @@ impl KafkaOutputEndpoint {
             max_message_size,
         })
     }
+
+    fn wait_for_in_flight_acks(&self) {
+        // Wait for the number of unacknowledged messages to drop
+        // below `max_inflight_messages`.
+        while self.kafka_producer.in_flight_count() as i64
+            > self.config.max_inflight_messages as i64
+        {
+            // FIXME: It appears that the delivery callback can be invoked before the
+            // in-flight counter is decremented, in which case we may never get
+            // unparked and may need to poll the in-flight counter.  This
+            // shouldn't cause performance issues in practice, but
+            // it would still be nice to have a more reliable way to wake up the endpoint
+            // thread _after_ the in-flight counter has been decremented.
+            self.parker.park_timeout(OUTPUT_POLLING_INTERVAL);
+        }
+    }
 }
 
 impl OutputEndpoint for KafkaOutputEndpoint {
@@ -178,21 +194,21 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
-        // Wait for the number of unacknowledged messages to drop
-        // below `max_inflight_messages`.
-        while self.kafka_producer.in_flight_count() as i64
-            > self.config.max_inflight_messages as i64
-        {
-            // FIXME: It appears that the delivery callback can be invoked before the
-            // in-flight counter is decremented, in which case we may never get
-            // unparked and may need to poll the in-flight counter.  This
-            // shouldn't cause performance issues in practice, but
-            // it would still be nice to have a more reliable way to wake up the endpoint
-            // thread _after_ the in-flight counter has been decremented.
-            self.parker.park_timeout(OUTPUT_POLLING_INTERVAL);
-        }
+        self.wait_for_in_flight_acks();
 
         let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic).payload(buffer);
+        self.kafka_producer
+            .send(record)
+            .map_err(|(err, _record)| err)?;
+        Ok(())
+    }
+
+    fn push_key(&mut self, key: &[u8], val: &[u8]) -> AnyResult<()> {
+        self.wait_for_in_flight_acks();
+
+        let record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic)
+            .key(key)
+            .payload(val);
         self.kafka_producer
             .send(record)
             .map_err(|(err, _record)| err)?;

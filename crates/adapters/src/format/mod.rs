@@ -473,5 +473,6 @@ pub trait OutputConsumer: Send {
 
     fn batch_start(&mut self, step: Step);
     fn push_buffer(&mut self, buffer: &[u8]);
+    fn push_key(&mut self, key: &[u8], val: &[u8]);
     fn batch_end(&mut self);
 }

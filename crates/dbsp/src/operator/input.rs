@@ -507,7 +507,7 @@ where
 
     pub(super) fn map<F, O: 'static>(&self, func: F) -> O
     where
-        F: Fn(&T) -> O
+        F: Fn(&T) -> O,
     {
         func(self.value.lock().unwrap().borrow())
     }

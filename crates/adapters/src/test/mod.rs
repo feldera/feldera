@@ -25,7 +25,8 @@ mod mock_output_consumer;
 
 use crate::catalog::InputCollectionHandle;
 pub use data::{
-    generate_test_batch, generate_test_batches, generate_test_batches_with_weights, TestStruct,
+    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
+    test_struct_schema, TestStruct,
 };
 pub use mock_dezset::{MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;

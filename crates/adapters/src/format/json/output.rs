@@ -1,3 +1,4 @@
+use crate::format::json::schema::{build_key_schema, build_value_schema};
 use crate::{
     catalog::{CursorWithPolarity, RecordFormat, SerBatch, SerCursor},
     util::truncate_ellipse,
@@ -59,7 +60,7 @@ impl OutputFormat for JsonOutputFormat {
         &self,
         endpoint_name: &str,
         config: &YamlValue,
-        _schema: &Relation,
+        schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
         let mut config = JsonEncoderConfig::deserialize(config).map_err(|e| {
@@ -72,19 +73,24 @@ impl OutputFormat for JsonOutputFormat {
 
         validate(&config, endpoint_name)?;
 
-        // Snowflake requires one record per message.
-        if config.update_format == JsonUpdateFormat::Snowflake {
+        // Snowflake and Debezium require one record per message.
+        if matches!(
+            config.update_format,
+            JsonUpdateFormat::Snowflake | JsonUpdateFormat::Debezium
+        ) {
             config.buffer_size_records = 1;
         }
 
-        Ok(Box::new(JsonEncoder::new(consumer, config)))
+        Ok(Box::new(JsonEncoder::new(consumer, config, schema)?))
     }
 }
 
 fn validate(config: &JsonEncoderConfig, endpoint_name: &str) -> Result<(), ControllerError> {
     if !matches!(
         config.update_format,
-        JsonUpdateFormat::InsertDelete | JsonUpdateFormat::Snowflake
+        JsonUpdateFormat::InsertDelete
+            | JsonUpdateFormat::Snowflake
+            | JsonUpdateFormat::Debezium { .. }
     ) {
         return Err(ControllerError::output_format_not_supported(
             endpoint_name,
@@ -102,7 +108,10 @@ struct JsonEncoder {
     /// Input handle to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
     config: JsonEncoderConfig,
+    value_schema_str: Option<String>,
+    key_schema_str: Option<String>,
     buffer: Vec<u8>,
+    key_buffer: Vec<u8>,
     max_buffer_size: usize,
     /// Unique id of this encoder instance.
     stream_id: u64,
@@ -111,26 +120,37 @@ struct JsonEncoder {
 }
 
 impl JsonEncoder {
-    fn new(output_consumer: Box<dyn OutputConsumer>, mut config: JsonEncoderConfig) -> Self {
+    fn new(
+        output_consumer: Box<dyn OutputConsumer>,
+        mut config: JsonEncoderConfig,
+        schema: &Relation,
+    ) -> Result<Self, ControllerError> {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
         if config.json_flavor.is_none() {
             config.json_flavor = Some(match config.update_format {
                 JsonUpdateFormat::Snowflake => JsonFlavor::Snowflake,
+                JsonUpdateFormat::Debezium { .. } => JsonFlavor::KafkaConnectJsonConverter,
                 _ => JsonFlavor::Default,
             });
         }
 
-        Self {
+        let value_schema_str = build_value_schema(&config, schema)?;
+        let key_schema_str = build_key_schema(&config, schema)?;
+
+        Ok(Self {
             output_consumer,
             config,
+            value_schema_str,
+            key_schema_str,
             buffer: Vec::new(),
+            key_buffer: Vec::new(),
             max_buffer_size,
             // Make sure broken JSON parsers/encoders don't convert stream
             // id into a negative number.
             stream_id: StdRng::from_entropy().gen_range(0..i64::MAX) as u64,
             seq_number: 0,
-        }
+        })
     }
 }
 
@@ -141,6 +161,7 @@ impl Encoder for JsonEncoder {
 
     fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
+        let mut key_buffer = take(&mut self.key_buffer);
 
         // Reserve one extra byte for the closing bracket `]`.
         let max_buffer_size = if self.config.array {
@@ -216,6 +237,66 @@ impl Encoder for JsonEncoder {
                                 self.stream_id, self.seq_number
                             )?;
                         }
+                        JsonUpdateFormat::Debezium => {
+                            // Crate a Debezium-compliant Kafka message.  The key of the messages
+                            // contains the entire record being inserted or deleted, including its
+                            // schema. The value part of the message is a Debezium change record
+                            // with either 'd'elete of 'c'reate operation. When `op` is
+                            // `c`reate, only the `after` component (no `before`) containing the
+                            // second copy of the record is present. The value also contains a
+                            // schema for the entire payload.  If `op` is 'd'elete, neither
+                            // `before` nor `after` is present.
+                            //
+                            // This encoding is redundant and expensive, but is necessary due
+                            // to several limitations:
+                            //
+                            // - We do not currently work with schema registries and don't implement
+                            //   any other way to transfer the schema to the consumer.  We assume
+                            //   that the output is consumed by Kafka Connect using the
+                            //   `JsonConverter` class, which requires inline schema.
+                            //
+                            // - Feldera doesn't know which part of the output record forms a key.
+                            //   The list of key fields must be configured in the downstream Kafka
+                            //   Connector. As a result we must include all fields in the key and
+                            //   rely on the connector To extract the actual key.
+                            //
+                            // - The specific connector implementation we currently work with is
+                            //   Debezium JDBC sink, which only supports deletions when the primary
+                            //   key of the table is encoded in the key component of the Kafka
+                            //   message, i.e., it cannot extract it from the value.
+                            //
+                            // This encoding assumes the following Debezium sink connector config:
+                            // ```
+                            // "primary.key.mode": "record_key",
+                            // "delete.enabled": True,
+                            // "primary.key.fields": "<list_of_primary_key_columns>"
+                            // ```
+
+                            // Encode key.
+                            if let Some(key_schema_str) = &self.key_schema_str {
+                                key_buffer.extend_from_slice(br#"{"schema":"#);
+                                key_buffer.extend_from_slice(key_schema_str.as_bytes());
+                                key_buffer.extend_from_slice(br#","payload":"#);
+                            } else {
+                                key_buffer.extend_from_slice(br#"{"payload":"#);
+                            }
+
+                            cursor.serialize_key(&mut key_buffer)?;
+                            key_buffer.extend_from_slice(br#"}"#);
+
+                            let op = if w > 0 { 'c' } else { 'd' };
+
+                            if let Some(schema_str) = &self.value_schema_str {
+                                buffer.extend_from_slice(br#"{"schema":"#);
+                                buffer.extend_from_slice(schema_str.as_bytes());
+                                write!(buffer, r#","payload":{{"op":"{op}","after":"#)?;
+                            } else {
+                                write!(buffer, r#"{{"payload":{{"op":"{op}","after":"#)?;
+                            }
+
+                            cursor.serialize_key(&mut buffer)?;
+                            buffer.extend_from_slice(br#"}}"#);
+                        }
                         _ => {
                             // Should never happen.  Unsupported formats are rejected during
                             // initialization.
@@ -262,8 +343,13 @@ impl Encoder for JsonEncoder {
                         //     "push_buffer: {} bytes",
                         //     buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/
                         // );
-                        self.output_consumer.push_buffer(&buffer);
+                        if !key_buffer.is_empty() {
+                            self.output_consumer.push_key(&key_buffer, &buffer);
+                        } else {
+                            self.output_consumer.push_buffer(&buffer);
+                        }
                         buffer.clear();
+                        key_buffer.clear();
                         num_records = 0;
                     }
                 }
@@ -281,6 +367,7 @@ impl Encoder for JsonEncoder {
         }
 
         self.buffer = buffer;
+        self.key_buffer = key_buffer;
 
         Ok(())
     }
@@ -289,7 +376,7 @@ impl Encoder for JsonEncoder {
 #[cfg(test)]
 mod test {
     use super::{JsonEncoder, JsonEncoderConfig};
-    use crate::test::generate_test_batches_with_weights;
+    use crate::test::{generate_test_batches_with_weights, test_struct_schema};
     use crate::{
         catalog::SerBatch,
         format::{
@@ -381,7 +468,8 @@ mod test {
 
         let consumer = MockOutputConsumer::new();
         let consumer_data = consumer.data.clone();
-        let mut encoder = JsonEncoder::new(Box::new(consumer), config);
+        let mut encoder =
+            JsonEncoder::new(Box::new(consumer), config, &test_struct_schema()).unwrap();
         let zsets = batches
             .iter()
             .map(|batch| {
@@ -550,7 +638,8 @@ mod test {
         };
 
         let consumer = MockOutputConsumer::with_max_buffer_size_bytes(32);
-        let mut encoder = JsonEncoder::new(Box::new(consumer), config);
+        let mut encoder =
+            JsonEncoder::new(Box::new(consumer), config, &test_struct_schema()).unwrap();
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         let err = encoder

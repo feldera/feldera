@@ -1,6 +1,6 @@
 use crate::{AsyncErrorCallback, OutputEndpoint, TransportConfig};
 use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
-use anyhow::{anyhow, Result as AnyResult};
+use anyhow::{anyhow, bail, Result as AnyResult};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
 use log::debug;
@@ -265,6 +265,14 @@ impl OutputEndpoint for HttpOutputEndpoint {
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         self.inner.push_buffer(Some(buffer))
+    }
+
+    fn push_key(&mut self, _key: &[u8], _val: &[u8]) -> AnyResult<()> {
+        bail!(
+            "HTTP output transport does not support key-value pairs. \
+This output endpoint was configured with a data format that produces outputs as key-value pairs; \
+however the HTTP transport does not support this representation."
+        );
     }
 
     fn batch_end(&mut self) -> AnyResult<()> {

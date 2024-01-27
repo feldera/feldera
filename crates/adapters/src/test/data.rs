@@ -1,6 +1,8 @@
+use pipeline_types::program_schema::{ColumnType, Field, Relation};
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
+use std::string::ToString;
 
 use crate::{deserialize_without_context, serialize_struct};
 
@@ -28,6 +30,59 @@ pub struct TestStruct {
     pub b: bool,
     pub i: Option<i64>,
     pub s: String,
+}
+
+pub fn test_struct_schema() -> Relation {
+    Relation::new(
+        "TestStruct",
+        false,
+        vec![
+            Field {
+                name: "id".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: "int64".to_string(),
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                },
+            },
+            Field {
+                name: "b".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: "boolean".to_string(),
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                },
+            },
+            Field {
+                name: "i".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: "int64".to_string(),
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                },
+            },
+            Field {
+                name: "s".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: "string".to_string(),
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                },
+            },
+        ],
+    )
 }
 
 deserialize_without_context!(TestStruct);

@@ -3270,7 +3270,8 @@
         "enum": [
           "default",
           "debezium_mysql",
-          "snowflake"
+          "snowflake",
+          "kafka_connect_json_converter"
         ]
       },
       "JsonParserConfig": {
