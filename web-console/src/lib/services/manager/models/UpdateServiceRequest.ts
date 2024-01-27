@@ -11,7 +11,12 @@ import type { ServiceConfig } from './ServiceConfig'
 export type UpdateServiceRequest = {
   config?: ServiceConfig | null
   /**
-   * New service description.
+   * New service description. If absent, existing name will be kept
+   * unmodified.
    */
-  description: string
+  description?: string | null
+  /**
+   * New service name. If absent, existing name will be kept unmodified.
+   */
+  name?: string | null
 }

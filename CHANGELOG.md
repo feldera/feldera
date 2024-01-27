@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compiler option for handling unquoted identifiers
   ([#1360](https://github.com/feldera/feldera/pull/1360))
 - SQL: Support for `is_inf`, `is_nan` and `log` methods for double ([#1344](https://github.com/feldera/feldera/pull/1344))
+- WebConsole: Add functionality that would enable setting up demos in the sandbox (#1321)
 
 ### Changed
 

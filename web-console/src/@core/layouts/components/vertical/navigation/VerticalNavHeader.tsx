@@ -1,6 +1,6 @@
+import LightLogo from '$public/images/feldera/LogoSolid.svg'
+import DarkLogo from '$public/images/feldera/LogoWhite.svg'
 import Link from 'next/link'
-import LightLogo from 'public/images/feldera/LogoSolid.svg'
-import DarkLogo from 'public/images/feldera/LogoWhite.svg'
 import { ReactNode } from 'react'
 import { Settings } from 'src/@core/context/settingsTypes'
 

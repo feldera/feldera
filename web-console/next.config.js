@@ -1,11 +1,12 @@
 
 const UnpluginIcons = require("unplugin-icons/webpack")
 const { FileSystemIconLoader } = require("unplugin-icons/loaders")
+const CopyPlugin = require("copy-webpack-plugin")
 
 /** @type {import("next").NextConfig} */
 module.exports = {
   output: 'export', // https://nextjs.org/docs/app/building-your-application/deploying/static-exports
-  distDir: process.env.BUILD_DIR || 'out',
+  distDir: process.env.BUILD_DIR || '.next',
   trailingSlash: true,
   reactStrictMode: true,
   compiler: {
@@ -54,6 +55,13 @@ module.exports = {
         }
       })
     )
+    // config.plugins.push(new CopyPlugin({
+    //   patterns: [
+    //     { from: "../demo/publicDemos", to: "./public/demo/publicDemos" },
+    //     { from: "../demo/publicDemos", to: "./public/demo/publicDemos" },
+    //     { from: "../demo/publicDemos.json", to: "./public/demo/" },
+    //   ],
+    // }))
     return config
   },
 }

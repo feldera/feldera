@@ -3,16 +3,11 @@
 /* tslint:disable */
 /* eslint-disable */
 
-import type { ServiceConfig } from './ServiceConfig'
 import type { ServiceId } from './ServiceId'
 
 /**
- * Service descriptor.
+ * Response to a create or replace service request.
  */
-export type ServiceDescr = {
-  config: ServiceConfig
-  config_type: string
-  description: string
-  name: string
+export type CreateOrReplaceServiceResponse = {
   service_id: ServiceId
 }

@@ -14,20 +14,26 @@ import { request as __request } from '../core/request'
 
 export class ServicesService {
   /**
-   * Fetch services, optionally filtered by name or ID
-   * Fetch services, optionally filtered by name or ID
-   * @param id Unique service identifier.
-   * @param name Unique service name.
+   * Fetch services, optionally filtered by name, ID or configuration type.
+   * Fetch services, optionally filtered by name, ID or configuration type.
+   * @param id If provided, will filter based on exact match of the service identifier.
+   * @param name If provided, will filter based on exact match of the service name.
+   * @param configType If provided, will filter based on exact match of the configuration type.
    * @returns ServiceDescr List of services retrieved successfully
    * @throws ApiError
    */
-  public static listServices(id?: string | null, name?: string | null): CancelablePromise<Array<ServiceDescr>> {
+  public static listServices(
+    id?: string | null,
+    name?: string | null,
+    configType?: string | null
+  ): CancelablePromise<Array<ServiceDescr>> {
     return __request(OpenAPI, {
       method: 'GET',
       url: '/v0/services',
       query: {
         id: id,
-        name: name
+        name: name,
+        config_type: configType
       },
       errors: {
         404: `Specified service name or ID does not exist`
@@ -39,7 +45,7 @@ export class ServicesService {
    * Create a new service.
    * Create a new service.
    * @param requestBody
-   * @returns NewServiceResponse Service successfully created.
+   * @returns NewServiceResponse Service successfully created
    * @throws ApiError
    */
   public static newService(requestBody: NewServiceRequest): CancelablePromise<NewServiceResponse> {
@@ -47,26 +53,29 @@ export class ServicesService {
       method: 'POST',
       url: '/v0/services',
       body: requestBody,
-      mediaType: 'application/json'
+      mediaType: 'application/json',
+      errors: {
+        409: `A service with this name already exists in the database`
+      }
     })
   }
 
   /**
-   * Fetch a service by ID.
-   * Fetch a service by ID.
-   * @param serviceId Unique service identifier
-   * @returns ServiceDescr Service retrieved successfully.
+   * Fetch a service by name.
+   * Fetch a service by name.
+   * @param serviceName Unique service name
+   * @returns ServiceDescr Service retrieved successfully
    * @throws ApiError
    */
-  public static getService(serviceId: string): CancelablePromise<ServiceDescr> {
+  public static getService(serviceName: string): CancelablePromise<ServiceDescr> {
     return __request(OpenAPI, {
       method: 'GET',
-      url: '/v0/services/{service_id}',
+      url: '/v0/services/{service_name}',
       path: {
-        service_id: serviceId
+        service_name: serviceName
       },
       errors: {
-        400: `Specified service id is not a valid uuid.`
+        404: `Specified service name does not exist`
       }
     })
   }
@@ -74,46 +83,45 @@ export class ServicesService {
   /**
    * Delete an existing service.
    * Delete an existing service.
-   * @param serviceId Unique service identifier
-   * @returns any Service successfully deleted.
+   * @param serviceName Unique service name
+   * @returns any Service successfully deleted
    * @throws ApiError
    */
-  public static deleteService(serviceId: string): CancelablePromise<any> {
+  public static deleteService(serviceName: string): CancelablePromise<any> {
     return __request(OpenAPI, {
       method: 'DELETE',
-      url: '/v0/services/{service_id}',
+      url: '/v0/services/{service_name}',
       path: {
-        service_id: serviceId
+        service_name: serviceName
       },
       errors: {
-        400: `Specified service id is not a valid uuid.`,
-        404: `Specified service id does not exist.`
+        404: `Specified service name does not exist`
       }
     })
   }
 
   /**
-   * Change a service's description or configuration.
-   * Change a service's description or configuration.
-   * @param serviceId Unique service identifier
+   * Update the name, description and/or configuration of a service.
+   * Update the name, description and/or configuration of a service.
+   * @param serviceName Unique service name
    * @param requestBody
-   * @returns UpdateServiceResponse Service successfully updated.
+   * @returns UpdateServiceResponse Service successfully updated
    * @throws ApiError
    */
   public static updateService(
-    serviceId: string,
+    serviceName: string,
     requestBody: UpdateServiceRequest
   ): CancelablePromise<UpdateServiceResponse> {
     return __request(OpenAPI, {
       method: 'PATCH',
-      url: '/v0/services/{service_id}',
+      url: '/v0/services/{service_name}',
       path: {
-        service_id: serviceId
+        service_name: serviceName
       },
       body: requestBody,
       mediaType: 'application/json',
       errors: {
-        404: `Specified service id does not exist.`
+        404: `Specified service name does not exist`
       }
     })
   }

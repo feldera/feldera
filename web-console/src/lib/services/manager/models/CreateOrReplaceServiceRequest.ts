@@ -4,15 +4,14 @@
 /* eslint-disable */
 
 import type { ServiceConfig } from './ServiceConfig'
-import type { ServiceId } from './ServiceId'
 
 /**
- * Service descriptor.
+ * Request to create or replace a service.
  */
-export type ServiceDescr = {
+export type CreateOrReplaceServiceRequest = {
   config: ServiceConfig
-  config_type: string
+  /**
+   * Service description.
+   */
   description: string
-  name: string
-  service_id: ServiceId
 }

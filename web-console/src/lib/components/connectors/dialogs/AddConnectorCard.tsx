@@ -25,16 +25,16 @@ export const AddConnectorCard = (props: {
     <Card data-testid={props['data-testid']}>
       <CardContent sx={{ textAlign: 'center' }}>
         {typeof props.icon === 'string' ? (
-          <Image
-            src={props.icon}
-            alt='An icon'
-            style={{
-              height: 64,
-              objectFit: 'cover',
-              width: 'fit-content',
-              fill: theme.palette.text.primary
-            }}
-          />
+          <Box sx={{ height: 64, position: 'relative' }}>
+            <Image
+              src={props.icon}
+              alt={'A connector logo'}
+              fill={true}
+              style={{
+                fill: theme.palette.text.primary
+              }}
+            />
+          </Box>
         ) : (
           (Icon => (
             <Icon

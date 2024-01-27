@@ -220,7 +220,7 @@ async fn update_connector(
 
 /// Create or replace a connector.
 #[utoipa::path(
-    request_body = CreateOrReplaceProgramRequest,
+    request_body = CreateOrReplaceConnectorRequest,
     responses(
         (status = CREATED, description = "Connector created successfully", body = CreateOrReplaceConnectorResponse),
         (status = OK, description = "Connector updated successfully", body = CreateOrReplaceConnectorResponse),

@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { CreateOrReplacePipelineRequest } from '../models/CreateOrReplacePipelineRequest'
+import type { CreateOrReplacePipelineResponse } from '../models/CreateOrReplacePipelineResponse'
 import type { NewPipelineRequest } from '../models/NewPipelineRequest'
 import type { NewPipelineResponse } from '../models/NewPipelineResponse'
 import type { Pipeline } from '../models/Pipeline'
@@ -69,6 +71,32 @@ export class PipelinesService {
       },
       errors: {
         404: `Specified pipeline ID does not exist.`
+      }
+    })
+  }
+
+  /**
+   * Create or replace a pipeline.
+   * Create or replace a pipeline.
+   * @param pipelineName Unique pipeline name
+   * @param requestBody
+   * @returns CreateOrReplacePipelineResponse Pipeline updated successfully
+   * @throws ApiError
+   */
+  public static createOrReplacePipeline(
+    pipelineName: string,
+    requestBody: CreateOrReplacePipelineRequest
+  ): CancelablePromise<CreateOrReplacePipelineResponse> {
+    return __request(OpenAPI, {
+      method: 'PUT',
+      url: '/v0/pipelines/{pipeline_name}',
+      path: {
+        pipeline_name: pipelineName
+      },
+      body: requestBody,
+      mediaType: 'application/json',
+      errors: {
+        409: `A pipeline with this name already exists in the database.`
       }
     })
   }
