@@ -9,7 +9,10 @@ use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use log::{debug, info};
 use openssl::sha;
-use pipeline_types::config::{ConnectorConfig, PipelineConfig, RuntimeConfig};
+use pipeline_types::{
+    config::{ConnectorConfig, PipelineConfig, RuntimeConfig},
+    program_schema::ProgramSchema,
+};
 use serde::{Deserialize, Serialize};
 use std::{fmt, fmt::Display, str::FromStr};
 use storage::Storage;
@@ -112,12 +115,8 @@ impl FromStr for ApiPermission {
 // Re-exports
 // Program
 mod program;
-pub(crate) use self::program::ColumnType;
-pub(crate) use self::program::Field;
 pub(crate) use self::program::ProgramDescr;
 pub use self::program::ProgramId;
-pub(crate) use self::program::ProgramSchema;
-pub(crate) use self::program::Relation;
 
 // Connectors
 mod connector;

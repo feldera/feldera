@@ -9,12 +9,15 @@ use super::{
 };
 use crate::api::{KafkaService, ServiceConfig};
 use crate::auth::{self, TenantId, TenantRecord};
-use crate::db::{Relation, ServiceDescr, ServiceId};
+use crate::db::{ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::Transaction;
 use openssl::sha::{self};
-use pipeline_types::config::{ConnectorConfig, ResourceConfig, RuntimeConfig};
+use pipeline_types::{
+    config::{ConnectorConfig, ResourceConfig, RuntimeConfig},
+    program_schema::Relation,
+};
 use pretty_assertions::assert_eq;
 use proptest::test_runner::{Config, TestRunner};
 use proptest::{bool, prelude::*};
