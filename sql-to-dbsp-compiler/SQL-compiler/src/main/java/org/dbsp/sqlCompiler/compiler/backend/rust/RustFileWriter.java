@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -17,7 +16,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.ProgramAndTester;
 
 import java.io.IOException;
@@ -33,7 +31,7 @@ import java.util.stream.IntStream;
  * This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a compilable Rust file.
  */
-public class RustFileWriter implements ICompilerComponent {
+public class RustFileWriter {
     final List<IDBSPNode> toWrite;
     final PrintStream outputStream;
 
@@ -161,22 +159,15 @@ public class RustFileWriter implements ICompilerComponent {
                     use sqlx::{AnyConnection, any::AnyRow, Row};
                     """;
 
-    final DBSPCompiler compiler;
 
-    public RustFileWriter(DBSPCompiler compiler, PrintStream outputStream) {
-        this.compiler = compiler;
+    public RustFileWriter(PrintStream outputStream) {
         this.toWrite = new ArrayList<>();
         this.outputStream = outputStream;
     }
 
-    public RustFileWriter(DBSPCompiler compiler, String outputFile)
+    public RustFileWriter(String outputFile)
             throws IOException {
-        this(compiler, new PrintStream(outputFile, StandardCharsets.UTF_8));
-    }
-
-    @Override
-    public DBSPCompiler getCompiler() {
-        return this.compiler;
+        this(new PrintStream(outputFile, StandardCharsets.UTF_8));
     }
 
     /** Generate TupN[T0, T1, ...] */
@@ -317,7 +308,7 @@ public class RustFileWriter implements ICompilerComponent {
         stream.decrease().append("}\n\n");
     }
 
-    String generatePreamble(StructuresUsed used) {
+    String generatePreamble(DBSPCompiler compiler, StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
         stream.append(rustPreamble)
@@ -325,12 +316,12 @@ public class RustFileWriter implements ICompilerComponent {
         stream.append("type ")
                 .append(new DBSPTypeWeight().getRustString())
                 .append(" = ")
-                .append(this.getCompiler().getWeightTypeImplementation().toString())
+                .append(compiler.getWeightTypeImplementation().toString())
                 .append(";")
                 .newline();
         this.generateStructures(used, stream);
 
-        if (!this.compiler.options.ioOptions.udfs.isEmpty()) {
+        if (!compiler.options.ioOptions.udfs.isEmpty()) {
             int dot = DBSPCompiler.UDF_FILE_NAME.lastIndexOf(".");
             stream.append("mod ")
                     .append(DBSPCompiler.UDF_FILE_NAME.substring(0, dot))
@@ -356,14 +347,14 @@ public class RustFileWriter implements ICompilerComponent {
         this.toWrite.add(function);
     }
 
-    public void write() {
+    public void write(DBSPCompiler compiler) {
         // Lower the circuits
-        CircuitRewriter reducer = new BetaReduction(this.compiler).getCircuitVisitor();
+        CircuitRewriter reducer = new BetaReduction(compiler).getCircuitVisitor();
         List<IDBSPNode> lowered = new ArrayList<>();
-        FindResources findResources = new FindResources(this.compiler);
+        FindResources findResources = new FindResources(compiler);
         CircuitRewriter findCircuitResources = findResources.getCircuitVisitor();
-        LowerCircuitVisitor lower = new LowerCircuitVisitor(this.compiler);
-        SanitizeNames sanitizer = new SanitizeNames(this.compiler);
+        LowerCircuitVisitor lower = new LowerCircuitVisitor(compiler);
+        SanitizeNames sanitizer = new SanitizeNames(compiler);
 
         for (IDBSPNode node: this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
@@ -384,12 +375,12 @@ public class RustFileWriter implements ICompilerComponent {
             }
         }
         // Emit code
-        this.outputStream.println(generatePreamble(used));
+        this.outputStream.println(generatePreamble(compiler, used));
         for (IDBSPNode node: lowered) {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
-                str = ToRustInnerVisitor.toRustString(this.compiler, inner, false);
+                str = ToRustInnerVisitor.toRustString(compiler, inner, false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 str = ToRustVisitor.toRustString(compiler, outer, compiler.options);
@@ -399,9 +390,8 @@ public class RustFileWriter implements ICompilerComponent {
         }
     }
 
-    public void writeAndClose() {
-        Logger.INSTANCE.setLoggingLevel(FindResources.class, 3);
-        this.write();
+    public void writeAndClose(DBSPCompiler compiler) {
+        this.write(compiler);
         this.outputStream.close();
     }
 }

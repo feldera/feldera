@@ -122,7 +122,7 @@ public class BaseSQLTests {
         PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
         // Use the compiler from the first test case.
         DBSPCompiler firstCompiler = testsToRun.get(0).compiler;
-        RustFileWriter writer = new RustFileWriter(firstCompiler, outputStream);
+        RustFileWriter writer = new RustFileWriter(outputStream);
         int testNumber = 0;
         String[] extraArgs = new String[0];
         for (TestCase test: testsToRun) {
@@ -136,8 +136,8 @@ public class BaseSQLTests {
             writer.add(pt);
             testNumber++;
         }
-        writer.writeAndClose();
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true, extraArgs);
+        writer.writeAndClose(firstCompiler);
+        Utilities.compileAndTestRust(rustDirectory, true, extraArgs);
         testsToRun.clear();
     }
 

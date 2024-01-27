@@ -256,9 +256,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 new DBSPTypeVoid(), body, Linq.list("#[test]"));
 
-        RustFileWriter writer = new RustFileWriter(compiler, BaseSQLTests.testFilePath);
+        RustFileWriter writer = new RustFileWriter(BaseSQLTests.testFilePath);
         writer.add(tester);
-        writer.writeAndClose();
+        writer.writeAndClose(compiler);
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
 
@@ -307,9 +307,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
                 new DBSPTypeVoid(), body, Linq.list("#[test]"));
 
-        RustFileWriter writer = new RustFileWriter(compiler, BaseSQLTests.testFilePath);
+        RustFileWriter writer = new RustFileWriter(BaseSQLTests.testFilePath);
         writer.add(tester);
-        writer.writeAndClose();
+        writer.writeAndClose(compiler);
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
 
@@ -338,9 +338,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 new DBSPTypeVoid(), body, Linq.list("#[test]"));
 
         PrintStream outputStream = new PrintStream(BaseSQLTests.testFilePath, StandardCharsets.UTF_8);
-        RustFileWriter writer = new RustFileWriter(compiler, outputStream);
+        RustFileWriter writer = new RustFileWriter(outputStream);
         writer.add(tester);
-        writer.writeAndClose();
+        writer.writeAndClose(compiler);
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
 

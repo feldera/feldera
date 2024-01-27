@@ -35,14 +35,16 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public class DBSPSinkOperator extends DBSPOperator {
+    public final String viewName;
     public final String query;
     public final DBSPTypeStruct originalRowType;
 
-    public DBSPSinkOperator(CalciteObject node,
+    public DBSPSinkOperator(CalciteObject node, String viewName,
                             String outputName, String query, DBSPTypeStruct originalRowType,
                             @Nullable String comment, DBSPOperator input) {
         super(node, "inspect", null, input.outputType, input.isMultiset, comment, outputName);
         this.addInput(input);
+        this.viewName = viewName;
         this.query = query;
         this.originalRowType = originalRowType;
     }
@@ -69,7 +71,7 @@ public class DBSPSinkOperator extends DBSPOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
-                    this.getNode(), this.outputName, this.query, this.originalRowType,
+                    this.getNode(), this.viewName, this.outputName, this.query, this.originalRowType,
                     this.comment, newInputs.get(0));
         return this;
     }

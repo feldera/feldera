@@ -131,8 +131,8 @@ public class CompilerMain {
             try {
                 PrintStream outputStream = new PrintStream(
                         Files.newOutputStream(Paths.get(this.options.ioOptions.emitJsonSchema)));
-                ObjectNode ios = compiler.getIOMetadataAsJson();
-                outputStream.println(ios.toPrettyString());
+                ObjectNode programMetadata = compiler.metadata.asJson();
+                outputStream.println(programMetadata.toPrettyString());
                 outputStream.close();
             } catch (IOException e) {
                 compiler.reportError(SourcePositionRange.INVALID,
@@ -158,9 +158,9 @@ public class CompilerMain {
         }
         try {
             PrintStream stream = this.getOutputStream();
-            RustFileWriter writer = new RustFileWriter(compiler, stream);
+            RustFileWriter writer = new RustFileWriter(stream);
             writer.add(dbsp);
-            writer.write();
+            writer.write(compiler);
             stream.close();
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
