@@ -14,7 +14,7 @@ public class InputTableDescription {
         this.createTableStatement = createTableStatement;
     }
 
-    JsonNode asJson() {
+    public JsonNode asJson() {
         return this.createTableStatement.getDefinedObjectSchema();
     }
 
