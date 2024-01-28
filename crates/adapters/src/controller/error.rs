@@ -18,6 +18,9 @@ pub enum ConfigError {
     /// Failed to parse pipeline configuration.
     PipelineConfigParseError { error: String },
 
+    /// Failed to parse program schema.
+    ProgramSchemaParseError { error: String },
+
     /// Failed to parse parser configuration for an endpoint.
     ParserConfigParseError {
         endpoint_name: String,
@@ -93,6 +96,7 @@ impl DetailedError for ConfigError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::PipelineConfigParseError { .. } => Cow::from("PipelineConfigParseError"),
+            Self::ProgramSchemaParseError { .. } => Cow::from("ProgramSchemaParseError"),
             Self::ParserConfigParseError { .. } => Cow::from("ParserConfigParseError"),
             Self::EncoderConfigParseError { .. } => Cow::from("EncoderConfigParseError"),
             Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
@@ -114,6 +118,9 @@ impl Display for ConfigError {
         match self {
             Self::PipelineConfigParseError { error } => {
                 write!(f, "Failed to parse pipeline configuration: {error}")
+            }
+            Self::ProgramSchemaParseError { error } =>  {
+                write!(f, "Failed to parse program schema: {error}")
             }
             Self::ParserConfigParseError {
                 endpoint_name,
@@ -208,6 +215,15 @@ impl ConfigError {
         E: ToString,
     {
         Self::PipelineConfigParseError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn program_schema_parse_error<E>(error: &E) -> Self
+        where
+            E: ToString,
+    {
+        Self::ProgramSchemaParseError {
             error: error.to_string(),
         }
     }
@@ -599,6 +615,15 @@ impl ControllerError {
     {
         Self::Config {
             config_error: ConfigError::pipeline_config_parse_error(error),
+        }
+    }
+
+    pub fn program_schema_parse_error<E>(error: &E) -> Self
+        where
+            E: ToString,
+    {
+        Self::Config {
+            config_error: ConfigError::program_schema_parse_error(error),
         }
     }
 

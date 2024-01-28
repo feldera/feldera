@@ -2,7 +2,7 @@ use crate::{
     catalog::{CursorWithPolarity, DeCollectionStream, RecordFormat, SerBatch, SerCursor},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     util::{split_on_newline, truncate_ellipse},
-    ControllerError, DeCollectionHandle, OutputConsumer,
+    ControllerError, OutputConsumer,
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
@@ -11,12 +11,14 @@ use erased_serde::Serialize as ErasedSerialize;
 use pipeline_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take, sync::Arc};
+use serde_yaml::Value as YamlValue;
 
 pub(crate) mod deserializer;
+use crate::catalog::InputCollectionHandle;
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
+use pipeline_types::program_schema::Relation;
 
 /// When including a long CSV record in an error message,
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
@@ -44,10 +46,12 @@ impl InputFormat for CsvInputFormat {
     fn new_parser(
         &self,
         _endpoint_name: &str,
-        input_stream: &dyn DeCollectionHandle,
+        input_stream: &InputCollectionHandle,
         _config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
-        let input_stream = input_stream.configure_deserializer(RecordFormat::Csv)?;
+        let input_stream = input_stream
+            .handle
+            .configure_deserializer(RecordFormat::Csv)?;
         Ok(Box::new(CsvParser::new(input_stream)) as Box<dyn Parser>)
     }
 }
@@ -235,6 +239,7 @@ impl OutputFormat for CsvOutputFormat {
         &self,
         endpoint_name: &str,
         config: &YamlValue,
+        _schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
         let config = CsvEncoderConfig::deserialize(config).map_err(|e| {

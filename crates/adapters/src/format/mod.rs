@@ -1,12 +1,11 @@
-use crate::{
-    catalog::SerBatch, transport::Step, ControllerError, DeCollectionHandle, FieldParseError,
-};
+use crate::catalog::InputCollectionHandle;
+use crate::{catalog::SerBatch, transport::Step, ControllerError, FieldParseError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
 use once_cell::sync::Lazy;
+use pipeline_types::program_schema::Relation;
 use serde::Serialize;
-use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -14,6 +13,7 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     sync::Arc,
 };
+use serde_yaml::Value as YamlValue;
 
 pub(crate) mod csv;
 mod json;
@@ -353,7 +353,7 @@ pub trait InputFormat: Send + Sync {
     fn new_parser(
         &self,
         endpoint_name: &str,
-        input_stream: &dyn DeCollectionHandle,
+        input_stream: &InputCollectionHandle,
         config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError>;
 }
@@ -445,6 +445,7 @@ pub trait OutputFormat: Send + Sync {
         &self,
         endpoint_name: &str,
         config: &YamlValue,
+        schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError>;
 }

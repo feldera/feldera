@@ -1,11 +1,12 @@
 //! JSON format parser.
 
 use super::{DebeziumUpdate, InsDelUpdate, WeightedUpdate};
+use crate::catalog::InputCollectionHandle;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
     util::split_on_newline,
-    ControllerError, DeCollectionHandle,
+    ControllerError,
 };
 use actix_web::HttpRequest;
 use erased_serde::Serialize as ErasedSerialize;
@@ -13,8 +14,8 @@ use pipeline_types::format::json::{JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take};
+use serde_yaml::Value as YamlValue;
 
 /// JSON format parser.
 pub struct JsonInputFormat;
@@ -173,7 +174,7 @@ impl InputFormat for JsonInputFormat {
     fn new_parser(
         &self,
         endpoint_name: &str,
-        input_stream: &dyn DeCollectionHandle,
+        input_handle: &InputCollectionHandle,
         config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = JsonParserConfig::deserialize(config).map_err(|e| {
@@ -184,8 +185,9 @@ impl InputFormat for JsonInputFormat {
             )
         })?;
         validate_parser_config(&config, endpoint_name)?;
-        let input_stream =
-            input_stream.configure_deserializer(RecordFormat::Json(config.json_flavor.clone()))?;
+        let input_stream = input_handle
+            .handle
+            .configure_deserializer(RecordFormat::Json(config.json_flavor.clone()))?;
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 

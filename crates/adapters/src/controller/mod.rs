@@ -905,7 +905,7 @@ impl ControllerInner {
         // └────────┘   └──────────┘   └──────┘
 
         let catalog = self.catalog.lock().unwrap();
-        let input_stream = catalog
+        let input_handle = catalog
             .input_collection_handle(&endpoint_config.stream)
             .ok_or_else(|| {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
@@ -922,7 +922,7 @@ impl ControllerInner {
 
         let parser = format.new_parser(
             endpoint_name,
-            input_stream,
+            input_handle,
             &endpoint_config.connector_config.format.config,
         )?;
 
@@ -1088,6 +1088,7 @@ impl ControllerInner {
         let encoder = format.new_encoder(
             endpoint_name,
             &endpoint_config.connector_config.format.config,
+            &handles.schema,
             probe,
         )?;
 
