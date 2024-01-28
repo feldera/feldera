@@ -23,34 +23,44 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.*;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Set;
 
 /**
  * A partial circuit is a circuit under construction.
  * A complete circuit can be obtained by calling the "seal" method.
  */
 public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
-    public final List<DBSPSourceBaseOperator> inputOperators = new ArrayList<>();
-    public final List<DBSPSinkOperator> outputOperators = new ArrayList<>();
+    public final LinkedHashMap<String, DBSPSourceBaseOperator> inputOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<String, DBSPSinkOperator> outputOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<String, DBSPNoopOperator> namedNoops = new LinkedHashMap<>();
     public final List<DBSPOperator> allOperators = new ArrayList<>();
-    public final Map<String, DBSPOperator> operatorDeclarations = new HashMap<>();
     /** Maps indexed z-set table names to the corresponding deindex operator */
     public final IErrorReporter errorReporter;
     public final ProgramMetadata metadata;
+    final Set<DBSPOperator> operators = new HashSet<>();
 
     public DBSPPartialCircuit(IErrorReporter errorReporter, ProgramMetadata metadata) {
         super(CalciteObject.EMPTY);
@@ -62,20 +72,17 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
      * @return the names of the input tables.
      * The order of the tables corresponds to the inputs of the generated circuit.
      */
-    public List<String> getInputTables() {
-        return Linq.map(this.inputOperators, DBSPOperator::getName);
+    public Set<String> getInputTables() {
+        return this.inputOperators.keySet();
     }
 
     public int getOutputCount() {
         return this.outputOperators.size();
     }
 
-    public DBSPType getOutputType(int outputNo) {
-        return this.outputOperators.get(outputNo).getType();
-    }
-
-    public DBSPType getInputType(int inputNo) {
-        return this.inputOperators.get(inputNo).getType();
+    public DBSPType getSingleOutputType() {
+        assert this.outputOperators.size() == 1: "Expected a single output, got " + this.outputOperators.size();
+        return this.outputOperators.values().iterator().next().getType();
     }
 
     public void addOperator(DBSPOperator operator) {
@@ -83,27 +90,30 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
                 .append("Adding ")
                 .append(operator.toString())
                 .newline();
-        if (this.operatorDeclarations.containsKey(operator.outputName)) {
-            DBSPOperator previous = this.operatorDeclarations.get(operator.outputName);
-            this.errorReporter.reportError(operator.getSourcePosition(), "Duplicate definition",
-                    "Stream " + operator.outputName + " already defined");
-            this.errorReporter.reportError(previous.getSourcePosition(), "Duplicate definition",
-                    "This is the previous definition");
-            return;
-        }
-        Utilities.putNew(this.operatorDeclarations, operator.outputName, operator);
-        if (operator.is(DBSPSourceBaseOperator.class))
-            this.inputOperators.add(operator.to(DBSPSourceBaseOperator.class));
-        else if (operator.is(DBSPSinkOperator.class))
-            this.outputOperators.add(operator.to(DBSPSinkOperator.class));
+        assert !this.operators.contains(operator): "Operators " + operator + " already inserted";
+        this.operators.add(operator);
+        DBSPSourceBaseOperator source = operator.as(DBSPSourceBaseOperator.class);
+        if (source != null)
+            Utilities.putNew(this.inputOperators, source.tableName, source);
+        DBSPSinkOperator sink = operator.as(DBSPSinkOperator.class);
+        if (sink != null)
+            Utilities.putNew(this.outputOperators, sink.viewName, sink);
+        DBSPNoopOperator noop = operator.as(DBSPNoopOperator.class);
+        if (noop != null && noop.viewName != null)
+            Utilities.putNew(this.namedNoops, noop.viewName, noop);
         this.allOperators.add(operator);
     }
 
     public Iterable<DBSPOperator> getAllOperators() { return this.allOperators; }
 
     @Nullable
-    public DBSPOperator getOperator(String tableOrView) {
-        return this.operatorDeclarations.get(tableOrView);
+    public DBSPSourceBaseOperator getInput(String tableName) {
+        return this.inputOperators.get(tableName);
+    }
+
+    @Nullable
+    public DBSPSinkOperator getOutput(String viewName) {
+        return this.outputOperators.get(viewName);
     }
 
     @Override
@@ -127,15 +137,9 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         return Linq.same(this.allOperators, other.allOperators);
     }
 
-    /**
-     * No more changes are expected to the circuit.
-     */
+    /** No more changes are expected to the circuit. */
     public DBSPCircuit seal(String name) {
         return new DBSPCircuit(this.getNode(), this, name);
-    }
-
-    public int getInputCount() {
-        return this.inputOperators.size();
     }
 
     @Override
@@ -153,5 +157,10 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.intercalateI(System.lineSeparator(), this.allOperators);
+    }
+
+    @Nullable
+    public DBSPOperator getNoop(String viewName) {
+        return this.namedNoops.get(viewName);
     }
 }

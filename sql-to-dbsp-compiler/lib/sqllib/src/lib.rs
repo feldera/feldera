@@ -656,7 +656,7 @@ pub fn is_null<T>(value: Option<T>) -> bool {
 }
 
 #[inline(always)]
-pub fn indicator<T>(value: Option<T>) -> i64 {
+pub fn indicator<T>(value: &Option<T>) -> i64 {
     match value {
         None => 0,
         Some(_) => 1,

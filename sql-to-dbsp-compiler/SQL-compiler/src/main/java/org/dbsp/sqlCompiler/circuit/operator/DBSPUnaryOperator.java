@@ -44,8 +44,8 @@ public abstract class DBSPUnaryOperator extends DBSPOperator {
     protected DBSPUnaryOperator(CalciteObject node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
                                 boolean isMultiset, DBSPOperator source,
-                                @Nullable String comment, String outputName) {
-        super(node, operation, function, outputType, isMultiset, comment, outputName);
+                                @Nullable String comment) {
+        super(node, operation, function, outputType, isMultiset, comment);
         this.addInput(source);
     }
 

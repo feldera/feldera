@@ -43,7 +43,7 @@ public class DBSPSourceMultisetOperator extends DBSPSourceTableOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMultisetOperator(this.getNode(), this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
-                this.comment, this.metadata, this.outputName);
+                this.comment, this.metadata, this.tableName);
     }
 
     @Override
@@ -51,7 +51,7 @@ public class DBSPSourceMultisetOperator extends DBSPSourceTableOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceMultisetOperator(
                     this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
-                    this.comment, this.metadata, this.outputName);
+                    this.comment, this.metadata, this.tableName);
         return this;
     }
 }

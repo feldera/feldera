@@ -24,18 +24,22 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
-import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * At the end of the visit the set 'keep' contains all
@@ -116,10 +120,10 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void endVisit() {
-        for (DBSPOperator source: this.getCircuit().circuit.inputOperators) {
+        for (DBSPSourceBaseOperator source: this.getCircuit().circuit.inputOperators.values()) {
             if (!this.reachable.contains(source) && this.warn && !this.keepAllSources)
                 this.errorReporter.reportWarning(source.getSourcePosition(),
-                        "Unused", "Table " + Utilities.singleQuote(source.outputName) +
+                        "Unused", "Table " + Utilities.singleQuote(source.tableName) +
                                 " is not used");
         }
         super.endVisit();

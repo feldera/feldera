@@ -37,7 +37,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.junit.Ignore;
 import org.junit.Test;
 
-@SuppressWarnings("SpellCheckingInspection")
 public class ComplexQueriesTest extends BaseSQLTests {
     @Test @Ignore("OVER requires only integers https://github.com/feldera/feldera/issues/653")
     public void testDateDiff() {
@@ -69,16 +68,17 @@ public class ComplexQueriesTest extends BaseSQLTests {
         this.compileRustTestCase(sql);
     }
 
-    @Test @Ignore("Not yet tested")
+    @Test @Ignore("Not yet implemented")
     public void testCrossApply() {
         String query = """
-                select d.DocumentID, ds.Status, ds.DateCreated\s
-                 from Documents as d\s
-                 cross apply\s
+                 select d.DocumentID, ds.Status, ds.DateCreated
+                 from Documents as d
+                 cross apply
                      (select top 1 Status, DateCreated
-                      from DocumentStatusLogs\s
+                      from DocumentStatusLogs
                       where DocumentID = d.DocumentId
-                      order by DateCreated desc) as ds""";
+                      order by DateCreated desc) as ds
+                """;
         this.compileRustTestCase(query);
     }
 
@@ -94,7 +94,9 @@ public class ComplexQueriesTest extends BaseSQLTests {
                   trip_distance DOUBLE PRECISION,
                   fare_amount DOUBLE PRECISION
                 );
-                CREATE VIEW V AS SELECT
+                
+                CREATE VIEW V AS
+                SELECT
                 *,
                 COUNT(*) OVER(
                    PARTITION BY  pickup_location_id
@@ -109,18 +111,17 @@ public class ComplexQueriesTest extends BaseSQLTests {
     public void testProducts() {
         String script = """
                 -- create a table
-                CREATE TABLE Products (
+                CREATE TABLE "New Products" (
                     ProductName VARCHAR NOT NULL,
                     Price INT NOT NULL);
                 -- statements separated by semicolons
                 -- create a view
                 CREATE VIEW "Products Above Average Price" AS
                 SELECT ProductName, Price
-                FROM Products
-                WHERE Price > (SELECT AVG(Price) FROM Products)
+                FROM "New Products"
+                WHERE Price > (SELECT AVG(Price) FROM "New Products")
                 -- no semicolon at end""";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(script);
+        this.compileRustTestCase(script);
     }
 
     @Test
@@ -190,7 +191,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                                 is_fraud
                             FROM (
                                 SELECT t1.*, t2.*
-                                       -- , LAG(trans_date_trans_time, 1) OVER                -- (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date
+                                       -- , LAG(trans_date_trans_time, 1) OVER
+                                       -- (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date
                                 FROM  transactions AS t1
                                 LEFT JOIN  demographics AS t2
                                 ON t1.cc_num = t2.cc_num);""";
@@ -266,7 +268,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                    ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) )
                    -- 0.5 hour is 1800  seconds
                    RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,
-                case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5      then 1 else 0 end as dropoff_is_weekend
+                case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5
+                     then 1 else 0 end as dropoff_is_weekend
                 FROM green_tripdata""";
         this.compileRustTestCase(sql);
     }

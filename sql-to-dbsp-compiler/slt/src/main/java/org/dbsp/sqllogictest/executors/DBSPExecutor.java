@@ -63,7 +63,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
@@ -305,7 +304,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         if (dbsp.getOutputCount() != 1)
             throw new RuntimeException(
                     "Didn't expect a query to have " + dbsp.getOutputCount() + " outputs");
-        DBSPTypeZSet outputType = dbsp.getOutputType(0).to(DBSPTypeZSet.class);
+        DBSPTypeZSet outputType = dbsp.getSingleOutputType().to(DBSPTypeZSet.class);
         DBSPZSetLiteral expectedOutput = DBSPExecutor.convert(
                 testQuery.outputDescription.getQueryResults(), outputType);
         if (expectedOutput == null) {
@@ -442,9 +441,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
         list.add(streams);
 
-        DBSPType circuitOutputType = circuit.getOutputType(0);
-        // the following may not be the same, since SqlLogicTest sometimes lies about the output type
-        DBSPTypeRawTuple outputType = new DBSPTypeRawTuple(output != null ? output.getType() : circuitOutputType);
+        DBSPType circuitOutputType = circuit.getSingleOutputType();
         // True if the output is a zset of vectors (generated for order by queries)
         boolean isVector = circuitOutputType.to(DBSPTypeZSet.class).elementType.is(DBSPTypeVec.class);
 
@@ -452,13 +449,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 inputGeneratingFunction.call());
         list.add(inputStream);
         DBSPVariablePath loopIndex = new DBSPVariablePath("_in", DBSPTypeAny.getDefault());
-        for (int i = 0; i < circuit.getInputTables().size(); i++) {
-            String inputI = circuit.getInputTables().get(i);
+        int i = 0;
+        for (String inputI: circuit.getInputTables()) {
             int index = contents.getTableIndex(inputI);
             list.add(new DBSPApplyExpression("append_to_collection_handle", DBSPTypeAny.getDefault(),
                     loopIndex.field(index).borrow(),
                     streams.getVarReference().field(i).borrow())
                     .toStatement());
+            i++;
         }
         DBSPLetStatement step =
                 new DBSPLetStatement("_",

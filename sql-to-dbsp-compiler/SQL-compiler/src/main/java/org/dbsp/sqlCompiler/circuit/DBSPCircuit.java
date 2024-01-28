@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
-import java.util.List;
+import java.util.Set;
 
 /**
  * Core representation of a dataflow graph (aka a query plan).
@@ -69,8 +69,13 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
     }
 
     @Nullable
-    public DBSPOperator getOperator(String tableOrView) {
-        return this.circuit.getOperator(tableOrView);
+    public DBSPOperator getInput(String tableName) {
+        return this.circuit.getInput(tableName);
+    }
+
+    @Nullable
+    public DBSPOperator getOutput(String viewName) {
+        return this.circuit.getOutput(viewName);
     }
 
     /**
@@ -80,30 +85,14 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
         return this.circuit.getOutputCount();
     }
 
-    /**
-     * The output type of the i-th output.
-     * Outputs are the views, numbered in the order of creation in the
-     * input SQL program.
-     * @param i Output number.
-     */
-    public DBSPType getOutputType(int i) {
-        return this.circuit.getOutputType(i);
-    }
-
-    /**
-     * The output type of the i-th input.
-     * Inputs are the tables, numbered in the order of creation in the
-     * input SQL program.
-     * @param i Input number.
-     */
-    public DBSPType getInputType(int i) {
-        return this.circuit.getInputType(i);
+    public DBSPType getSingleOutputType() {
+        return this.circuit.getSingleOutputType();
     }
 
     /**
      * The list of all input tables of the circuit.
      */
-    public List<String> getInputTables() {
+    public Set<String> getInputTables() {
         return this.circuit.getInputTables();
     }
 

@@ -61,10 +61,10 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        String name = node.outputName;
+        String name = node.getOutputName();
         if (node.is(DBSPDelayOutputOperator.class))
             name = "delay";
-        this.stream.append(node.outputName)
+        this.stream.append(node.getOutputName())
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(" ")
@@ -76,9 +76,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     void addInputs(DBSPOperator node) {
         for (DBSPOperator input: node.inputs) {
-            this.stream.append(input.outputName)
+            this.stream.append(input.getOutputName())
                     .append(" -> ")
-                    .append(node.outputName)
+                    .append(node.getOutputName())
                     .append(";")
                     .newline();
         }
@@ -89,9 +89,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPOperator input = node.input();
         if (node.output != null) {
             // Add the edge which isn't represented explicitly in the graph
-            this.stream.append(input.outputName)
+            this.stream.append(input.getOutputName())
                     .append(" -> ")
-                    .append(node.output.outputName)
+                    .append(node.output.getOutputName())
                     .append(";")
                     .newline();
             return VisitDecision.STOP;
@@ -101,11 +101,11 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSinkOperator node) {
-        this.stream.append(node.outputName)
+        this.stream.append(node.getOutputName())
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(" ")
-                .append(node.outputName)
+                .append(node.getOutputName())
                 .append("\" ]")
                 .newline();
         this.addInputs(node);
@@ -144,7 +144,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPOperator node) {
-        this.stream.append(node.outputName)
+        this.stream.append(node.getOutputName())
                 .append(" [ shape=box")
                 .append(this.getColor(node))
                 .append(" label=\"")

@@ -104,7 +104,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !outputType.sameType(operator.outputType)) {
             result = new DBSPSourceMultisetOperator(operator.getNode(), operator.sourceName,
                     outputType.to(DBSPTypeZSet.class), originalRowType, operator.comment,
-                    operator.metadata, operator.outputName);
+                    operator.metadata, operator.getTableName());
         }
         this.map(operator, result);
     }
@@ -118,7 +118,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !outputType.sameType(operator.outputType)) {
             result = new DBSPSourceMapOperator(operator.getNode(), operator.sourceName,
                     operator.keyFields, outputType.to(DBSPTypeIndexedZSet.class), originalRowType,
-                    operator.comment, operator.metadata, operator.outputName);
+                    operator.comment, operator.metadata, operator.getTableName());
         }
         this.map(operator, result);
     }
@@ -132,8 +132,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!originalRowType.sameType(operator.originalRowType)
                 || !outputType.sameType(operator.outputType)
                 || input != operator.input()) {
-            result = new DBSPSinkOperator(operator.getNode(), operator.viewName,
-                    operator.outputName, operator.query,
+            result = new DBSPSinkOperator(operator.getNode(), operator.viewName, operator.query,
                     originalRowType, operator.comment, input);
         }
         this.map(operator, result);
