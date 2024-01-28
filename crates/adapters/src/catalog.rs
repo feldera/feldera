@@ -5,6 +5,7 @@ use crate::{serialize_struct, static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 use dbsp::{utils::Tup2, InputHandle};
 use pipeline_types::format::json::JsonFlavor;
+use pipeline_types::program_schema::Relation;
 use pipeline_types::query::OutputQuery;
 use serde::{Deserialize, Serialize};
 
@@ -368,7 +369,7 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
 /// A catalog of input and output stream handles of a circuit.
 pub trait CircuitCatalog: Send {
     /// Look up an input stream handle by name.
-    fn input_collection_handle(&self, name: &str) -> Option<&dyn DeCollectionHandle>;
+    fn input_collection_handle(&self, name: &str) -> Option<&InputCollectionHandle>;
 
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles>;
@@ -377,10 +378,12 @@ pub trait CircuitCatalog: Send {
     fn output_query_handles(&self, name: &str, query: OutputQuery) -> Option<OutputQueryHandles> {
         self.output_handles(name).map(|handles| match query {
             OutputQuery::Table => OutputQueryHandles {
+                schema: handles.schema.clone(),
                 delta: Some(handles.delta_handle.fork()),
                 snapshot: None,
             },
             OutputQuery::Neighborhood => OutputQueryHandles {
+                schema: handles.schema.clone(),
                 delta: handles
                     .neighborhood_handle
                     .as_ref()
@@ -391,6 +394,7 @@ pub trait CircuitCatalog: Send {
                     .map(|handle| handle.fork()),
             },
             OutputQuery::Quantiles => OutputQueryHandles {
+                schema: handles.schema.clone(),
                 delta: None,
                 snapshot: handles
                     .quantiles_handle
@@ -403,7 +407,7 @@ pub trait CircuitCatalog: Send {
 
 /// Circuit catalog implementation.
 pub struct Catalog {
-    pub(crate) input_collection_handles: BTreeMap<String, Box<dyn DeCollectionHandle>>,
+    pub(crate) input_collection_handles: BTreeMap<String, InputCollectionHandle>,
     pub(crate) output_batch_handles: BTreeMap<String, OutputCollectionHandles>,
 }
 
@@ -421,21 +425,24 @@ impl Catalog {
         }
     }
 
-    pub fn register_input_collection_handle<H>(&mut self, name: &str, handle: H)
+    pub fn register_input_collection_handle<H>(&mut self, name: &str, handle: H, schema: Relation)
     where
         H: DeCollectionHandle + 'static,
     {
-        self.input_collection_handles
-            .insert(name.to_owned(), Box::new(handle));
+        self.input_collection_handles.insert(
+            name.to_owned(),
+            InputCollectionHandle {
+                handle: Box::new(handle),
+                schema,
+            },
+        );
     }
 }
 
 impl CircuitCatalog for Catalog {
     /// Look up an input stream handle by name.
-    fn input_collection_handle(&self, name: &str) -> Option<&dyn DeCollectionHandle> {
-        self.input_collection_handles
-            .get(name)
-            .map(|b| &**b as &dyn DeCollectionHandle)
+    fn input_collection_handle(&self, name: &str) -> Option<&InputCollectionHandle> {
+        self.input_collection_handles.get(name)
     }
 
     /// Look up output stream handles by name.
@@ -444,8 +451,15 @@ impl CircuitCatalog for Catalog {
     }
 }
 
+pub struct InputCollectionHandle {
+    pub schema: Relation,
+    pub handle: Box<dyn DeCollectionHandle>,
+}
+
 /// A set of stream handles associated with each output collection.
 pub struct OutputCollectionHandles {
+    pub schema: Relation,
+
     /// A stream of changes to the collection.
     pub delta_handle: Box<dyn SerCollectionHandle>,
 
@@ -525,6 +539,7 @@ pub struct OutputCollectionHandles {
 /// query based on previously received inputs, and then listen to the delta
 /// stream for incremental updates triggered by new inputs.
 pub struct OutputQueryHandles {
+    pub schema: Relation,
     pub delta: Option<Box<dyn SerCollectionHandle>>,
     pub snapshot: Option<Box<dyn SerCollectionHandle>>,
 }
