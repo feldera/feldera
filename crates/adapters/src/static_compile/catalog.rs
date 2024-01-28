@@ -1,7 +1,7 @@
 use crate::{
     catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
     static_compile::{DeScalarHandle, DeScalarHandleImpl},
-    Catalog, DeserializeWithContext, SerializeWithContext,
+    Catalog, ControllerError, DeserializeWithContext, SerializeWithContext,
 };
 use dbsp::{
     algebra::ZRingValue,
@@ -9,11 +9,19 @@ use dbsp::{
     utils::Tup2,
     CollectionHandle, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, UpsertHandle, ZSet,
 };
+use pipeline_types::program_schema::Relation;
 use std::fmt::Debug;
 
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, SqlSerdeConfig};
 
 impl Catalog {
+    fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
+        serde_json::from_str(schema).map_err(|e| {
+            ControllerError::program_schema_parse_error(&format!(
+                "error parsing relation schema: '{e}'. Invalid schema: '{schema}'"
+            ))
+        })
+    }
     /// Add an input stream of Z-sets to the catalog.
     ///
     /// Adds a `DeCollectionHandle` to the catalog, which will deserialize
@@ -24,6 +32,7 @@ impl Catalog {
         name: &str,
         stream: Stream<RootCircuit, Z>,
         handle: CollectionHandle<Z::Key, Z::R>,
+        schema: &str,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -36,10 +45,12 @@ impl Catalog {
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Sync + From<D>,
     {
-        self.register_input_collection_handle(name, DeZSetHandle::new(handle));
+        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        self.register_input_collection_handle(name, DeZSetHandle::new(handle), relation_schema);
 
         // Inputs are also outputs.
-        self.register_output_zset(name, stream);
+        self.register_output_zset(name, stream, schema);
     }
 
     /// Add an input stream created using `add_input_set` to catalog.
@@ -52,6 +63,7 @@ impl Catalog {
         name: &str,
         stream: Stream<RootCircuit, Z>,
         handle: UpsertHandle<Z::Key, bool>,
+        schema: &str,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -64,10 +76,12 @@ impl Catalog {
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Sync + From<D>,
     {
-        self.register_input_collection_handle(name, DeSetHandle::new(handle));
+        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        self.register_input_collection_handle(name, DeSetHandle::new(handle), relation_schema);
 
         // Inputs are also outputs.
-        self.register_output_zset(name, stream);
+        self.register_output_zset(name, stream, schema);
     }
 
     /// Register an input handle created using `add_input_map`.
@@ -94,6 +108,7 @@ impl Catalog {
         handle: UpsertHandle<K, Update<V, U>>,
         value_key_func: VF,
         update_key_func: UF,
+        schema: &str,
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
         UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
@@ -122,18 +137,25 @@ impl Catalog {
         V: DBData + Sync + From<VD> + Default,
         U: DBData + Sync + From<UD> + Default,
     {
+        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
         self.register_input_collection_handle(
             name,
             DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
+            relation_schema,
         );
 
         // Inputs are also outputs.
-        self.register_output_map(name, stream, value_key_func);
+        self.register_output_map(name, stream, value_key_func, schema);
     }
 
     /// Add an output stream of Z-sets to the catalog.
-    pub fn register_output_zset<Z, D>(&mut self, name: &str, stream: Stream<RootCircuit, Z>)
-    where
+    pub fn register_output_zset<Z, D>(
+        &mut self,
+        name: &str,
+        stream: Stream<RootCircuit, Z>,
+        schema: &str,
+    ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
@@ -145,6 +167,8 @@ impl Catalog {
         Z::R: ZRingValue + Into<i64> + Sync,
         Z::Key: Sync + From<D>,
     {
+        let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
         let circuit = stream.circuit();
 
         // Create handle for the stream itself.
@@ -206,6 +230,7 @@ impl Catalog {
             .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
 
         let handles = OutputCollectionHandles {
+            schema,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
 
@@ -246,6 +271,7 @@ impl Catalog {
         name: &str,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V, R>>,
         key_func: F,
+        schema: &str,
     ) where
         F: Fn(&V) -> K + Clone + Send + Sync + 'static,
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
@@ -266,6 +292,7 @@ impl Catalog {
         V: DBData + Send + Sync + From<VD> + Default,
     {
         let circuit = stream.circuit();
+        let schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
         // Create handle for the stream itself.
         let delta_handle = stream.map(|(_k, v)| v.clone()).output();
@@ -332,6 +359,7 @@ impl Catalog {
             .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
 
         let handles = OutputCollectionHandles {
+            schema,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
 

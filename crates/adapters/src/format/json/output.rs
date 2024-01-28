@@ -7,6 +7,7 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
 use pipeline_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
+use pipeline_types::program_schema::Relation;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -58,6 +59,7 @@ impl OutputFormat for JsonOutputFormat {
         &self,
         endpoint_name: &str,
         config: &YamlValue,
+        schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
         let mut config = JsonEncoderConfig::deserialize(config).map_err(|e| {
@@ -75,7 +77,7 @@ impl OutputFormat for JsonOutputFormat {
             config.buffer_size_records = 1;
         }
 
-        Ok(Box::new(JsonEncoder::new(consumer, config)))
+        Ok(Box::new(JsonEncoder::new(consumer, config, schema)))
     }
 }
 
@@ -109,7 +111,11 @@ struct JsonEncoder {
 }
 
 impl JsonEncoder {
-    fn new(output_consumer: Box<dyn OutputConsumer>, mut config: JsonEncoderConfig) -> Self {
+    fn new(
+        output_consumer: Box<dyn OutputConsumer>,
+        mut config: JsonEncoderConfig,
+        _schema: &Relation,
+    ) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
         if config.json_flavor.is_none() {
@@ -118,6 +124,8 @@ impl JsonEncoder {
                 _ => JsonFlavor::Default,
             });
         }
+
+
 
         Self {
             output_consumer,
