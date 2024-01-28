@@ -3,8 +3,10 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
@@ -12,16 +14,13 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.function.Function;
 
 /*
  * Eliminate some function implementations.
  * For now just:
- * - power(a, .5)
  * - dump(x)
  */
 public class EliminateFunctions extends InnerRewriteVisitor {
@@ -40,20 +39,7 @@ public class EliminateFunctions extends InnerRewriteVisitor {
         DBSPPathExpression path = function.as(DBSPPathExpression.class);
         if (path != null) {
             String functionName = path.path.toString();
-            if (functionName.startsWith("power_")) {
-                // power_base_exp(a, .5) -> sqrt_base(a).
-                String tail = functionName.split("_")[1];
-                assert arguments.length == 2: "Expected two arguments for power function";
-                DBSPExpression argument = arguments[1];
-                if (argument.is(DBSPDecimalLiteral.class)) {
-                    DBSPDecimalLiteral dec = argument.to(DBSPDecimalLiteral.class);
-                    BigDecimal pointFive = new BigDecimal(5).movePointLeft(1);
-                    if (!dec.isNull && Objects.requireNonNull(dec.value).equals(pointFive)) {
-                        String newName = "sqrt_" + tail;
-                        result = new DBSPApplyExpression(node, newName, type, arguments[0]);
-                    }
-                }
-            } else if (functionName.startsWith("dump")) {
+            if (functionName.startsWith("dump")) {
                 // dump(prefix, tuple) -> { print(prefix);
                 //                          print(": (")
                 //                          writelog("%%,", tuple[0]), ...,

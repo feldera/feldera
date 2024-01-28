@@ -206,6 +206,16 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testSqrtNull() {
+        this.q("""
+                SELECT sqrt(null);
+                 sqrt
+                ------
+                null"""
+        );
+    }
+
+    @Test
     public void testLeftNull() {
         this.q("""
                 SELECT LEFT(NULL, 100);
