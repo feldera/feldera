@@ -4,7 +4,7 @@ pub mod file;
 
 use fdlimit::raise_fd_limit;
 use fdlimit::Outcome::LimitRaised;
-use log::warn;
+use log::{info, warn};
 
 use std::sync::Once;
 
@@ -26,6 +26,37 @@ fn init_fd_limit() {
     }
 }
 
+/// Raise the locked memory limit to avoid surprises.
+#[cfg(unix)]
+fn init_locked_memory() {
+    use rlimit::{getrlimit, setrlimit, Resource};
+
+    let (soft, hard) = match getrlimit(Resource::MEMLOCK) {
+        Ok(limits) => limits,
+        Err(error) => {
+            warn!("Failed to query locked memory limit: {error}");
+            return;
+        }
+    };
+
+    if soft < hard {
+        if let Err(error) = setrlimit(Resource::MEMLOCK, hard, hard) {
+            warn!("Failed to raise locked memory from soft limit ({soft} bytes) to hard limit ({hard} bytes): {error}");
+            return;
+        }
+    }
+
+    const MIN_REASONABLE: u64 = 4 * 1024 * 1024 * 1024;
+    if hard < MIN_REASONABLE {
+        warn!("Locked memory hard limit is low ({hard} bytes) -- try increasing the configured value (in your limits.conf).");
+    } else {
+        info!("Locked memory limit is {hard} bytes.");
+    }
+}
+
+#[cfg(not(unix))]
+fn init_locked_memory() {}
+
 /// Performs global crate initialization.
 ///
 /// On Unix, this raises the process's file descriptor and locked memory limits
@@ -38,5 +69,6 @@ pub fn init() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         init_fd_limit();
+        init_locked_memory();
     });
 }

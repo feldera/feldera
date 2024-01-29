@@ -2826,6 +2826,7 @@ dependencies = [
  "proptest-state-machine",
  "rand 0.8.5",
  "rkyv",
+ "rlimit 0.10.1",
  "sysinfo",
  "tempfile",
  "thiserror",
@@ -3184,7 +3185,7 @@ dependencies = [
  "log",
  "nix 0.23.2",
  "pin-project-lite",
- "rlimit",
+ "rlimit 0.6.2",
  "scoped-tls",
  "scopeguard",
  "signal-hook",
@@ -5717,6 +5718,15 @@ name = "rlimit"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc0bf25554376fd362f54332b8410a625c71f15445bca32ffdfdf4ec9ac91726"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "rlimit"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3560f70f30a0f16d11d01ed078a07740fe6b489667abc7c7b029155d9f21c3d8"
 dependencies = [
  "libc",
 ]
