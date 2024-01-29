@@ -23,6 +23,7 @@ use crate::backend::{
     StorageRead, StorageWrite, NEXT_FILE_HANDLE,
 };
 use crate::buffer_cache::FBuf;
+use crate::init;
 
 use super::StorageExecutor;
 
@@ -48,6 +49,7 @@ impl GlommioBackend {
     ///   Note that in case we use a global buffer cache, this counter should be
     ///   shared among all instances of the backend.
     pub fn new<P: AsRef<Path>>(base: P, next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
+        init();
         Self {
             base: base.as_ref().to_path_buf(),
             files: RwLock::new(HashMap::new()),

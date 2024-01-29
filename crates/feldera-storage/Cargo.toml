@@ -14,7 +14,6 @@ tempfile = "3.9.0"
 thiserror = "1.0"
 uuid = { version = "1.6.1", features = ["v7"] }
 clap = { version = "4.4.14", features = ["derive"] }
-ctor = { version = "0.2.4" }
 fdlimit = { version = "0.3.0" }
 # Waiting for https://github.com/bytedance/monoio/pull/227 to be merged
 monoio = { git = "https://github.com/gz/monoio.git", rev = "9303e02" }

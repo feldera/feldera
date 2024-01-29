@@ -27,6 +27,7 @@ use crate::backend::{
     METRIC_TOTAL_BYTES_WRITTEN, METRIC_WRITES_SUCCESS, METRIC_WRITE_LATENCY, NEXT_FILE_HANDLE,
 };
 use crate::buffer_cache::FBuf;
+use crate::init;
 
 use super::StorageExecutor;
 
@@ -75,6 +76,7 @@ impl MonoioBackend {
     ///   Note that in case we use a global buffer cache, this counter should be
     ///   shared among all instances of the backend.
     pub fn new<P: AsRef<Path>>(base: P, next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
+        init();
         describe_disk_metrics();
         Self {
             base: base.as_ref().to_path_buf(),
