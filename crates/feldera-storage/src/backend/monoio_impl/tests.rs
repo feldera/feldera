@@ -15,6 +15,7 @@ use crate::backend::tests::{InMemoryBackend, Transition, MAX_TRANSITIONS};
 use crate::backend::{
     FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead, StorageWrite,
 };
+use crate::test::init_test_logger;
 
 // Setup the state machine test using the `prop_state_machine!` macro
 prop_state_machine! {
@@ -44,6 +45,7 @@ impl StateMachineTest for MonoioBackend {
     fn init_test(
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
+        init_test_logger();
         let tmpdir = tempfile::tempdir().unwrap();
         let backend = MonoioBackend::new(tmpdir.path(), Default::default());
 

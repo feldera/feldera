@@ -14,6 +14,7 @@ use crate::backend::tests::{InMemoryBackend, Transition, MAX_TRANSITIONS};
 use crate::backend::{
     FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead, StorageWrite,
 };
+use crate::test::init_test_logger;
 
 prop_state_machine! {
     #![proptest_config(Config {
@@ -41,6 +42,7 @@ impl StateMachineTest for GlommioBackend {
     fn init_test(
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
+        init_test_logger();
         let _tmpdir = tempfile::tempdir().unwrap();
         let backend = GlommioBackend::new(_tmpdir.path(), Default::default());
 

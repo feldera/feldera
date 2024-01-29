@@ -9,6 +9,7 @@ use crate::backend::{
     FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead, StorageWrite,
 };
 use crate::buffer_cache::{BufferCache, TinyLfuCache};
+use crate::test::init_test_logger;
 
 #[monoio::test]
 #[should_panic]
@@ -62,6 +63,8 @@ impl StateMachineTest for BufferCache<MonoioBackend> {
     fn init_test(
         _ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) -> Self::SystemUnderTest {
+        init_test_logger();
+
         let _tmpdir = tempfile::tempdir().unwrap();
         let storage_backend = MonoioBackend::new(_tmpdir.path(), Default::default());
         let backend = BufferCache::with_backend_lfu(storage_backend, Default::default());

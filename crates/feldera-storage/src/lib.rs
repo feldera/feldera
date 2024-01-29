@@ -1,6 +1,8 @@
 pub mod backend;
 pub mod buffer_cache;
 pub mod file;
+#[cfg(test)]
+mod test;
 
 use fdlimit::raise_fd_limit;
 use fdlimit::Outcome::LimitRaised;

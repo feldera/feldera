@@ -1718,19 +1718,6 @@ dependencies = [
 [[package]]
 name = "chrono"
 version = "0.4.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
-dependencies = [
- "android-tzdata",
- "iana-time-zone",
- "num-traits",
- "serde",
- "windows-targets 0.48.5",
-]
-
-[[package]]
-name = "chrono"
-version = "0.4.31"
 source = "git+https://github.com/chronotope/chrono?rev=849932#849932b09bdc58c508c0b6794fa474a9558d27ea"
 dependencies = [
  "android-tzdata",
@@ -1738,6 +1725,21 @@ dependencies = [
  "js-sys",
  "num-traits",
  "rkyv",
+ "serde",
+ "wasm-bindgen",
+ "windows-targets 0.52.0",
+]
+
+[[package]]
+name = "chrono"
+version = "0.4.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f13690e35a5e4ace198e7beea2895d29f3a9cc55015fcebe6336bd2010af9eb"
+dependencies = [
+ "android-tzdata",
+ "iana-time-zone",
+ "js-sys",
+ "num-traits",
  "serde",
  "wasm-bindgen",
  "windows-targets 0.52.0",
@@ -2317,7 +2319,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "arc-swap",
- "chrono 0.4.31 (git+https://github.com/chronotope/chrono?rev=849932)",
+ "chrono 0.4.31",
  "clap 3.2.25",
  "criterion",
  "crossbeam",
@@ -2377,7 +2379,7 @@ dependencies = [
  "awc",
  "bstr",
  "bytestring",
- "chrono 0.4.31 (git+https://github.com/chronotope/chrono?rev=849932)",
+ "chrono 0.4.31",
  "circular-queue",
  "clap 4.4.14",
  "colored",
@@ -2807,8 +2809,10 @@ version = "0.1.0"
 dependencies = [
  "async-lock 3.3.0",
  "binrw",
+ "chrono 0.4.33",
  "clap 4.4.14",
  "crc32c",
+ "env_logger",
  "fdlimit",
  "futures",
  "glommio",
@@ -4748,7 +4752,7 @@ dependencies = [
  "base64 0.21.5",
  "cached 0.43.0",
  "change-detection",
- "chrono 0.4.31 (registry+https://github.com/rust-lang/crates.io-index)",
+ "chrono 0.4.33",
  "clap 4.4.14",
  "colored",
  "deadpool-postgres",
@@ -6135,7 +6139,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64cd236ccc1b7a29e7e2739f27c0b2dd199804abc4290e32f59f3b68d6405c23"
 dependencies = [
  "base64 0.21.5",
- "chrono 0.4.31 (registry+https://github.com/rust-lang/crates.io-index)",
+ "chrono 0.4.33",
  "hex",
  "indexmap 1.9.3",
  "indexmap 2.1.0",
@@ -6306,7 +6310,7 @@ version = "0.1.5"
 source = "git+https://github.com/gz/size-of.git?rev=3ec40db#3ec40db3d1c8470f22856257542a68ef60c99969"
 dependencies = [
  "arcstr",
- "chrono 0.4.31 (git+https://github.com/chronotope/chrono?rev=849932)",
+ "chrono 0.4.31",
  "hashbrown 0.13.2",
  "ordered-float",
  "rust_decimal",
@@ -6417,7 +6421,7 @@ dependencies = [
 name = "sqllib"
 version = "0.1.0"
 dependencies = [
- "chrono 0.4.31 (git+https://github.com/chronotope/chrono?rev=849932)",
+ "chrono 0.4.31",
  "dbsp",
  "dbsp_adapters",
  "geo",

@@ -22,6 +22,8 @@ use crate::backend::{
     METRIC_WRITES_FAILED,
 };
 use crate::buffer_cache::FBuf;
+#[cfg(test)]
+use crate::test::init_test_logger;
 
 /// The key for the cache is a tuple of (file_handle, offset, size), and
 /// identifies a slice in a file.
@@ -152,6 +154,8 @@ impl<B> BufferCache<B> {
 #[test]
 fn overlaps_with_previous_write_check() {
     use crate::backend::tests::InMemoryBackend;
+
+    init_test_logger();
 
     let mut blocks = HashMap::new();
     blocks.insert(1, vec![0..10, 20..30, 40..50]);
