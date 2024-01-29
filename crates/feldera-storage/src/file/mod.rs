@@ -157,8 +157,9 @@ pub type Deserializer = Infallible;
 mod test {
     use std::{fmt::Debug, rc::Rc};
 
-    use crate::backend::{
-        DefaultBackend, StorageControl, StorageExecutor, StorageRead, StorageWrite,
+    use crate::{
+        backend::{DefaultBackend, StorageControl, StorageExecutor, StorageRead, StorageWrite},
+        test::init_test_logger,
     };
 
     use super::{
@@ -431,6 +432,7 @@ mod test {
 
     #[test]
     fn test_2_columns() {
+        init_test_logger();
         test_2_columns_helper(&DefaultBackend::default_for_thread(), Parameters::default());
     }
 
@@ -439,11 +441,13 @@ mod test {
     fn test_2_columns_glommio() {
         use crate::backend::glommio_impl::GlommioBackend;
 
+        init_test_logger();
         test_2_columns_helper(&GlommioBackend::default_for_thread(), Parameters::default());
     }
 
     #[test]
     fn test_2_columns_max_branch_2() {
+        init_test_logger();
         test_2_columns_helper(
             &DefaultBackend::default_for_thread(),
             Parameters::with_max_branch(2),
@@ -472,6 +476,7 @@ mod test {
     }
 
     fn test_i64_helper(parameters: Parameters) {
+        init_test_logger();
         test_one_column(
             &DefaultBackend::default_for_thread(),
             1000,
@@ -506,6 +511,7 @@ mod test {
             format!("{x:09}")
         }
 
+        init_test_logger();
         test_one_column(
             &DefaultBackend::default_for_thread(),
             1000,
@@ -516,6 +522,7 @@ mod test {
 
     #[test]
     fn test_tuple() {
+        init_test_logger();
         test_one_column(
             &DefaultBackend::default_for_thread(),
             1000,
@@ -529,6 +536,7 @@ mod test {
         fn v(row: usize) -> Vec<i64> {
             (0..row as i64).collect()
         }
+        init_test_logger();
         test_one_column(
             &DefaultBackend::default_for_thread(),
             500,
