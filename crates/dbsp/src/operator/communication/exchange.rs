@@ -12,14 +12,13 @@ use crate::{
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     circuit_cache_key,
-    trace::{unaligned_deserialize, Rkyv, Serializer},
+    trace::{unaligned_deserialize, Rkyv},
 };
 
 use crossbeam_utils::CachePadded;
-use feldera_storage::buffer_cache::FBuf;
+use feldera_storage::file::to_bytes;
 use futures::{future, prelude::*};
 use once_cell::sync::{Lazy, OnceCell};
-use rkyv::{ser::Serializer as _, Fallible, Serialize};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -93,15 +92,6 @@ impl ExchangeService for ExchangeServer {
 // Maps from a range of worker IDs to the RPC client used to contact those
 // workers.  Only worker IDs for remote workers appear in the map.
 struct Clients(Vec<(Host, TokioOnceCell<ExchangeServiceClient>)>);
-
-pub fn rkyv_serialize<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Error>
-where
-    T: Serialize<Serializer>,
-{
-    let mut serializer = Serializer::default();
-    serializer.serialize_value(value)?;
-    Ok(serializer.into_serializer().into_inner())
-}
 
 impl Clients {
     fn new(runtime: &Runtime) -> Clients {
@@ -522,7 +512,7 @@ where
                                     .unwrap()
                                     .take()
                                     .unwrap();
-                                rkyv_serialize(&item).unwrap().into_vec()
+                                to_bytes(&item).unwrap().into_vec()
                             })
                             .collect()
                     })

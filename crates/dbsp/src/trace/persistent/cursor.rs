@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rkyv::to_bytes;
+use feldera_storage::file::to_bytes;
 use rocksdb::{BoundColumnFamily, DBRawIterator};
 
 use super::trace::PersistedValue;
