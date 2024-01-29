@@ -3,14 +3,16 @@
 import publicDemos from '$demo/publicDemos.json'
 import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { GridItems } from '$lib/components/common/GridItems'
+import { DemoCleanupDialog } from '$lib/components/demo/DemoCleanupDialog'
 import { DemoSetupDialog } from '$lib/components/demo/DemoSetupDialog'
 import { Fragment, useState } from 'react'
 import { DemoSetup } from 'src/lib/types/demo'
+import IconBrush from '~icons/bx/brush'
 import IconChevronRight from '~icons/bx/chevron-right'
 
-import { Box, Button, Card, CardActions, CardContent, Grid, Link, Typography } from '@mui/material'
+import { Box, Button, Card, CardActions, CardContent, Grid, IconButton, Link, Typography } from '@mui/material'
 
-const DemoTile = (props: { name: string; desc: string; onSetup: () => void }) => {
+const DemoTile = (props: { name: string; desc: string; onSetup: () => void; onCleanup: () => void }) => {
   return (
     <Card>
       <CardContent>
@@ -19,7 +21,10 @@ const DemoTile = (props: { name: string; desc: string; onSetup: () => void }) =>
         </Typography>
         <Typography variant='body1'>{props.desc}</Typography>
       </CardContent>
-      <CardActions sx={{ justifyContent: 'end' }}>
+      <CardActions sx={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
+        <IconButton onClick={props.onCleanup} sx={{ transform: 'rotate(180deg)' }}>
+          <IconBrush fontSize={20} />
+        </IconButton>
         <Button onClick={props.onSetup} endIcon={<IconChevronRight />}>
           Try
         </Button>
@@ -28,12 +33,16 @@ const DemoTile = (props: { name: string; desc: string; onSetup: () => void }) =>
   )
 }
 
+const fetchDemoSetup = (demo: { import: string }) =>
+  import(`$demo/${demo.import}`).then(imported => imported.default as DemoSetup)
+
 export default function () {
-  const [demo, setDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
+  const [setupDemo, setSetupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
+  const [cleanupDemo, setCleanupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
   return (
     <>
       <BreadcrumbsHeader>
-        <Link href={`/lessons`} data-testid='button-breadcrumb-lessons'>
+        <Link href={`/lessons/`} data-testid='button-breadcrumb-lessons'>
           Feldera Lessons
         </Link>
       </BreadcrumbsHeader>
@@ -56,11 +65,8 @@ export default function () {
                     key={demo.name}
                     name={demo.name}
                     desc={demo.description}
-                    onSetup={() =>
-                      import(`$demo/${demo.import}`)
-                        .then(imported => imported.default)
-                        .then(setup => setDemo({ name: demo.name, setup }))
-                    }
+                    onSetup={() => fetchDemoSetup(demo).then(setup => setSetupDemo({ name: demo.name, setup }))}
+                    onCleanup={() => fetchDemoSetup(demo).then(setup => setCleanupDemo({ name: demo.name, setup }))}
                   ></DemoTile>
                 ))}
               </GridItems>
@@ -68,7 +74,8 @@ export default function () {
           </Fragment>
         ))}
       </Box>
-      <DemoSetupDialog demo={demo} onClose={() => setDemo(undefined)}></DemoSetupDialog>
+      <DemoSetupDialog demo={setupDemo} onClose={() => setSetupDemo(undefined)}></DemoSetupDialog>
+      <DemoCleanupDialog demo={cleanupDemo} onClose={() => setCleanupDemo(undefined)}></DemoCleanupDialog>
     </>
   )
 }

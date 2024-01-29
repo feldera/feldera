@@ -1,4 +1,4 @@
-import { runDemoSetup } from '$lib/functions/demo/runDemo'
+import { runDemoCleanup } from '$lib/functions/demo/runDemo'
 import { DemoSetup } from '$lib/types/demo'
 import { useState } from 'react'
 import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
@@ -15,10 +15,10 @@ import {
   LinearProgress
 } from '@mui/material'
 
-const DemoSetupForm = (props: { demo: { name: string; setup: DemoSetup }; onClose: () => void }) => {
+const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onClose: () => void }) => {
   const [progress, setProgress] = useState<{ description: string; ratio: number } | 'done'>()
   const runOperation = async (form: { prefix: string }) => {
-    for await (const progress of runDemoSetup({ prefix: form.prefix, steps: props.demo.setup.steps })) {
+    for await (const progress of runDemoCleanup({ prefix: form.prefix, steps: props.demo.setup.steps })) {
       setProgress(progress)
     }
     setProgress('done')
@@ -31,9 +31,9 @@ const DemoSetupForm = (props: { demo: { name: string; setup: DemoSetup }; onClos
       }}
       onSuccess={runOperation}
     >
-      <DialogTitle>Run {props.demo.name} demo</DialogTitle>
+      <DialogTitle>Clean up after {props.demo.name} demo</DialogTitle>
       <DialogContent>
-        <DialogContentText>This prefix will be added to the name of every entity in the demo.</DialogContentText>
+        <DialogContentText>Every entity with this prefix will be removed.</DialogContentText>
       </DialogContent>
       <DialogContent>
         <TextFieldElement
@@ -66,12 +66,12 @@ const DemoSetupForm = (props: { demo: { name: string; setup: DemoSetup }; onClos
           ))
           .with(undefined, () => (
             <Button type='submit' variant='contained'>
-              Run demo
+              Clean up
             </Button>
           ))
           .with({ ratio: P._ }, () => (
             <Button disabled variant='contained' sx={{ whiteSpace: 'nowrap' }}>
-              Setting up...
+              Cleaning up...
             </Button>
           ))
           .exhaustive()}
@@ -80,7 +80,7 @@ const DemoSetupForm = (props: { demo: { name: string; setup: DemoSetup }; onClos
   )
 }
 
-export const DemoSetupDialog = (props: { demo?: { name: string; setup: DemoSetup }; onClose: () => void }) => {
+export const DemoCleanupDialog = (props: { demo?: { name: string; setup: DemoSetup }; onClose: () => void }) => {
   return (
     <Dialog
       open={!!props.demo}
@@ -91,7 +91,7 @@ export const DemoSetupDialog = (props: { demo?: { name: string; setup: DemoSetup
         props.onClose()
       }}
     >
-      {props.demo ? <DemoSetupForm demo={props.demo} onClose={props.onClose}></DemoSetupForm> : <></>}
+      {props.demo ? <DemoCleanupForm demo={props.demo} onClose={props.onClose}></DemoCleanupForm> : <></>}
     </Dialog>
   )
 }
