@@ -5,9 +5,10 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use feldera_storage::file::to_bytes;
 use rand::Rng;
 use rkyv::ser::Serializer;
-use rkyv::{to_bytes, Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 use rocksdb::compaction_filter::Decision;
 use rocksdb::{BoundColumnFamily, MergeOperands, Options, WriteBatch};
 use size_of::SizeOf;

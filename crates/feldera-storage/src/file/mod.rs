@@ -72,10 +72,13 @@
 #[cfg(doc)]
 use crc32c::crc32c;
 use rkyv::{
-    ser::serializers::{
-        AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
+    ser::{
+        serializers::{
+            AllocScratch, CompositeSerializer, FallbackScratch, HeapScratch, SharedSerializeMap,
+        },
+        Serializer as _,
     },
-    Archive, Archived, Deserialize, Infallible, Serialize,
+    Archive, Archived, Deserialize, Fallible, Infallible, Serialize,
 };
 
 use crate::buffer_cache::{FBuf, FBufSerializer};
@@ -152,6 +155,19 @@ pub type Serializer = CompositeSerializer<
 
 /// The particular [`rkyv`] deserializer that we use.
 pub type Deserializer = Infallible;
+
+/// Serializes the given value and returns the resulting bytes.
+///
+/// This is like [`rkyv::to_bytes`], but that function only works with one
+/// particular serializer whereas this function works with our [`Serializer`].
+pub fn to_bytes<T>(value: &T) -> Result<FBuf, <Serializer as Fallible>::Error>
+where
+    T: Serialize<Serializer>,
+{
+    let mut serializer = Serializer::default();
+    serializer.serialize_value(value)?;
+    Ok(serializer.into_serializer().into_inner())
+}
 
 #[cfg(test)]
 mod test {
