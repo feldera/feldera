@@ -1,5 +1,5 @@
 VERSION --try 0.8
-IMPORT github.com/earthly/lib/rust:52e8c8a1fe7e8364b7a28eeaca3e3525cee03cf6 AS rust
+IMPORT github.com/earthly/lib/rust:f2ffdb8380f6fc5ed7f4f3e1b30fc693b21984fa AS rust
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install --yes sudo
