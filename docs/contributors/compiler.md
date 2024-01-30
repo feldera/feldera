@@ -62,6 +62,10 @@ Usage: sql-to-dbsp [options] Input file to compile
     --udf
       Specify a Rust file containing implementations of user-defined functions
       Default: <empty string>
+    --unquotedCasing
+      How unquoted identifiers are treated.  Choices are: 'upper', 'lower',
+      'unchanged'
+      Default: upper
     -O
       Optimization level (0, 1, or 2)
       Default: 2

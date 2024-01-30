@@ -134,10 +134,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public DBSPCompiler(CompilerOptions options) {
         this.options = options;
+        // Setting these first allows errors to be reported
+        this.messages = new CompilerMessages(this);
         this.mapper = new ObjectMapper();
         this.frontend = new CalciteCompiler(options, this);
         this.midend = new CalciteToDBSPCompiler(true, options, this);
-        this.messages = new CompilerMessages(this);
         this.sources = new SourceFileContents();
         this.circuit = null;
         this.typeCompiler = new TypeCompiler(this);
