@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
@@ -88,6 +89,7 @@ public class ToRustVisitor extends CircuitVisitor {
     protected final IndentStream streams;
     final InnerVisitor innerVisitor;
     final boolean useHandles;
+    final CompilerOptions options;
 
     /* Example output generated when 'generateCatalog' is true:
      * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
@@ -102,11 +104,12 @@ public class ToRustVisitor extends CircuitVisitor {
      * }
      */
 
-    public ToRustVisitor(IErrorReporter reporter, IndentStream builder, boolean useHandles) {
+    public ToRustVisitor(IErrorReporter reporter, IndentStream builder, CompilerOptions options) {
         super(reporter);
+        this.options = options;
         this.builder = builder;
         this.innerVisitor = new ToRustInnerVisitor(reporter, builder, false);
-        this.useHandles = useHandles;
+        this.useHandles = this.options.ioOptions.emitHandles;
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
     }
@@ -202,7 +205,16 @@ public class ToRustVisitor extends CircuitVisitor {
             InputColumnMetadata meta = null;
             if (metadata == null) {
                 // output
-                name = name.toUpperCase();
+                switch (this.options.languageOptions.unquotedCasing) {
+                    case "upper":
+                        name = name.toUpperCase(Locale.ENGLISH);
+                        break;
+                    case "lower":
+                        name = name.toLowerCase(Locale.ENGLISH);
+                        break;
+                    default:
+                        break;
+                }
                 quoted = false;
             } else {
                 meta = metadata.getColumnMetadata(field.name);
@@ -254,7 +266,16 @@ public class ToRustVisitor extends CircuitVisitor {
             String name = field.name;
             if (metadata == null) {
                 // output
-                name = name.toUpperCase(Locale.ENGLISH);
+                switch (this.options.languageOptions.unquotedCasing) {
+                    case "upper":
+                        name = name.toUpperCase(Locale.ENGLISH);
+                        break;
+                    case "lower":
+                        name = name.toLowerCase(Locale.ENGLISH);
+                        break;
+                    default:
+                        break;
+                }
             }
             this.builder
                     .append("r#")
@@ -938,10 +959,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    public static String toRustString(IErrorReporter reporter, DBSPCircuit node, boolean useHandles) {
+    public static String toRustString(IErrorReporter reporter, DBSPCircuit node, CompilerOptions options) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, useHandles);
+        ToRustVisitor visitor = new ToRustVisitor(reporter, stream, options);
         visitor.apply(node);
         return builder.toString();
     }
