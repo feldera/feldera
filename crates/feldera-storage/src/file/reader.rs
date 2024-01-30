@@ -399,15 +399,11 @@ where
     K: Rkyv,
     A: Rkyv,
 {
-    fn new<S>(
-        storage: &Rc<S>,
-        file_handle: &ImmutableFileHandle,
-        node: &TreeNode,
-    ) -> Result<Self, Error>
+    fn new<S>(file: &ImmutableFileRef<S>, node: &TreeNode) -> Result<Self, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
     {
-        let raw = read_block(storage, file_handle, node.location)?;
+        let raw = read_block(file, node.location)?;
         let header = DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         let expected_rows = node.rows.end - node.rows.start;
         if header.n_values as u64 != expected_rows {
@@ -552,27 +548,15 @@ struct TreeNode {
 }
 
 impl TreeNode {
-    fn read<S, K, A>(
-        self,
-        storage: &Rc<S>,
-        file_handle: &ImmutableFileHandle,
-    ) -> Result<TreeBlock<K, A>, Error>
+    fn read<S, K, A>(self, file: &ImmutableFileRef<S>) -> Result<TreeBlock<K, A>, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         K: Rkyv + Debug,
         A: Rkyv,
     {
         match self.node_type {
-            NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(
-                storage,
-                file_handle,
-                &self,
-            )?)),
-            NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(
-                storage,
-                file_handle,
-                &self,
-            )?)),
+            NodeType::Data => Ok(TreeBlock::Data(DataBlock::new(file, &self)?)),
+            NodeType::Index => Ok(TreeBlock::Index(IndexBlock::new(file, &self)?)),
         }
     }
 }
@@ -636,13 +620,9 @@ impl<K> IndexBlock<K>
 where
     K: Rkyv,
 {
-    fn new<S>(
-        storage: &Rc<S>,
-        file_handle: &ImmutableFileHandle,
-        node: &TreeNode,
-    ) -> Result<Self, Error>
+    fn new<S>(file: &ImmutableFileRef<S>, node: &TreeNode) -> Result<Self, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
     {
         const MAX_DEPTH: usize = 64;
         if node.depth > MAX_DEPTH {
@@ -656,7 +636,7 @@ where
             .into());
         }
 
-        let raw = read_block(storage, file_handle, node.location)?;
+        let raw = read_block(file, node.location)?;
         let header = IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         let BlockLocation { size, offset } = node.location;
         if header.n_children == 0 {
@@ -902,9 +882,44 @@ impl Column {
     }
 }
 
-struct ReaderInner<S, T> {
+/// Encapsulates storage and a file handle, and deletes the file handle when
+/// dropped.
+pub(crate) struct ImmutableFileRef<S>
+where
+    S: StorageControl + StorageExecutor,
+{
     storage: Rc<S>,
-    file_handle: ImmutableFileHandle,
+    file_handle: Option<ImmutableFileHandle>,
+}
+
+impl<S> ImmutableFileRef<S>
+where
+    S: StorageControl + StorageExecutor,
+{
+    pub(crate) fn new(storage: &Rc<S>, file_handle: ImmutableFileHandle) -> Self {
+        Self {
+            storage: Rc::clone(storage),
+            file_handle: Some(file_handle),
+        }
+    }
+}
+
+impl<S> Drop for ImmutableFileRef<S>
+where
+    S: StorageControl + StorageExecutor,
+{
+    fn drop(&mut self) {
+        let _ = self
+            .storage
+            .block_on(self.storage.delete(self.file_handle.take().unwrap()));
+    }
+}
+
+struct ReaderInner<S, T>
+where
+    S: StorageControl + StorageExecutor,
+{
+    file: Rc<ImmutableFileRef<S>>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -912,16 +927,15 @@ struct ReaderInner<S, T> {
     _phantom: PhantomData<fn() -> T>,
 }
 
-fn read_block<S>(
-    storage: &Rc<S>,
-    file_handle: &ImmutableFileHandle,
-    location: BlockLocation,
-) -> Result<Arc<FBuf>, Error>
+fn read_block<S>(file: &ImmutableFileRef<S>, location: BlockLocation) -> Result<Arc<FBuf>, Error>
 where
-    S: StorageRead + StorageExecutor,
+    S: StorageRead + StorageControl + StorageExecutor,
 {
-    let block =
-        storage.block_on(storage.read_block(file_handle, location.offset, location.size))?;
+    let block = file.storage.block_on(file.storage.read_block(
+        file.file_handle.as_ref().unwrap(),
+        location.offset,
+        location.size,
+    ))?;
     let computed_checksum = crc32c(&block[4..]);
     let checksum = u32::from_le_bytes(block[..4].try_into().unwrap());
     if checksum != computed_checksum {
@@ -974,22 +988,23 @@ where
 ///
 /// `T` in `Reader<S, T>` must be a [`ColumnSpec`] that specifies the key and
 /// auxiliary data types for all of the columns in the file to be read.
-pub struct Reader<S, T>(Arc<ReaderInner<S, T>>);
+pub struct Reader<S, T>(Arc<ReaderInner<S, T>>)
+where
+    S: StorageControl + StorageExecutor;
 
 impl<S, T> Reader<S, T>
 where
-    S: StorageRead + StorageExecutor,
+    S: StorageRead + StorageControl + StorageExecutor,
     T: ColumnSpec,
 {
     /// Creates and returns a new `Reader` for `file`.
-    pub fn new(storage: &Rc<S>, file_handle: ImmutableFileHandle) -> Result<Self, Error> {
-        let file_size = storage.block_on(storage.get_size(&file_handle))?;
+    pub(crate) fn new(file: Rc<ImmutableFileRef<S>>) -> Result<Self, Error> {
+        let file_size = file
+            .storage
+            .block_on(file.storage.get_size(file.file_handle.as_ref().unwrap()))?;
 
-        let file_trailer_block = read_block(
-            storage,
-            &file_handle,
-            BlockLocation::new(file_size - 4096, 4096).unwrap(),
-        )?;
+        let file_trailer_block =
+            read_block(&file, BlockLocation::new(file_size - 4096, 4096).unwrap())?;
         let file_trailer =
             FileTrailer::read_le(&mut io::Cursor::new(file_trailer_block.as_slice()))?;
         if file_trailer.version != VERSION_NUMBER {
@@ -1028,8 +1043,7 @@ where
         }
 
         Ok(Self(Arc::new(ReaderInner {
-            storage: storage.clone(),
-            file_handle,
+            file,
             columns,
             _phantom: PhantomData,
         })))
@@ -1046,8 +1060,7 @@ where
         let file_handle = storage.block_on(storage.create())?;
         let file_handle = storage.block_on(storage.complete(file_handle))?;
         Ok(Self(Arc::new(ReaderInner {
-            storage: storage.clone(),
-            file_handle,
+            file: Rc::new(ImmutableFileRef::new(storage, file_handle)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })))
@@ -1071,7 +1084,10 @@ where
     }
 }
 
-impl<S, T> Clone for Reader<S, T> {
+impl<S, T> Clone for Reader<S, T>
+where
+    S: StorageControl + StorageExecutor,
+{
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
@@ -1079,6 +1095,7 @@ impl<S, T> Clone for Reader<S, T> {
 
 impl<S, K, A, N> Reader<S, (K, A, N)>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv + Debug,
     A: Rkyv,
     (K, A, N): ColumnSpec,
@@ -1101,6 +1118,7 @@ where
 /// the desired column.
 pub struct RowGroup<'a, S, K, A, N, T>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv,
     A: Rkyv,
     T: ColumnSpec,
@@ -1113,6 +1131,7 @@ where
 
 impl<'a, S, K, A, N, T> Clone for RowGroup<'a, S, K, A, N, T>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv,
     A: Rkyv,
     T: ColumnSpec,
@@ -1129,6 +1148,7 @@ where
 
 impl<'a, S, K, A, N, T> Debug for RowGroup<'a, S, K, A, N, T>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv,
     A: Rkyv,
     T: ColumnSpec,
@@ -1140,6 +1160,7 @@ where
 
 impl<'a, S, K, A, N, T> RowGroup<'a, S, K, A, N, T>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv + Debug,
     A: Rkyv,
     T: ColumnSpec,
@@ -1188,7 +1209,7 @@ where
     /// row group if it is empty.
     pub fn first(&self) -> Result<Cursor<'a, S, K, A, N, T>, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
     {
         let position = if self.is_empty() {
             Position::After
@@ -1262,6 +1283,7 @@ pub trait FallibleEq {
 
 impl<S, K, A, N> FallibleEq for Reader<S, (K, A, N)>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv + Debug,
     A: Rkyv,
     (K, A, N): ColumnSpec,
@@ -1274,7 +1296,7 @@ where
 
 impl<'a, S, K, A, T> FallibleEq for RowGroup<'a, S, K, A, (), T>
 where
-    S: StorageRead + StorageExecutor,
+    S: StorageRead + StorageControl + StorageExecutor,
     K: Rkyv + Debug + Eq,
     A: Rkyv + Eq,
     T: ColumnSpec,
@@ -1298,7 +1320,7 @@ where
 
 impl<'a, S, K, A, NK, NA, NN, T> FallibleEq for RowGroup<'a, S, K, A, (NK, NA, NN), T>
 where
-    S: StorageRead + StorageExecutor,
+    S: StorageRead + StorageControl + StorageExecutor,
     K: Rkyv + Eq + Debug,
     A: Rkyv + Eq,
     NK: Rkyv + Eq + Debug,
@@ -1333,6 +1355,7 @@ where
 /// cursor can only be before or after the row group.)
 pub struct Cursor<'a, S, K, A, N, T>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv,
     A: Rkyv,
     T: ColumnSpec,
@@ -1343,6 +1366,7 @@ where
 
 impl<'a, S, K, A, N, T> Clone for Cursor<'a, S, K, A, N, T>
 where
+    S: StorageRead + StorageControl + StorageExecutor,
     K: Rkyv + Clone,
     A: Rkyv + Clone,
     T: ColumnSpec,
@@ -1357,6 +1381,7 @@ where
 
 impl<'a, S, K, A, N, T> Debug for Cursor<'a, S, K, A, N, T>
 where
+    S: StorageRead + StorageControl + StorageExecutor,
     K: Rkyv + Debug,
     A: Rkyv + Debug,
     T: ColumnSpec,
@@ -1368,7 +1393,7 @@ where
 
 impl<'a, S, K, A, N, T> Cursor<'a, S, K, A, N, T>
 where
-    S: StorageRead + StorageExecutor,
+    S: StorageRead + StorageControl + StorageExecutor,
     K: Rkyv + Debug,
     A: Rkyv,
     T: ColumnSpec,
@@ -1599,6 +1624,7 @@ where
 
 impl<'a, S, K, A, NK, NA, NN, T> Cursor<'a, S, K, A, (NK, NA, NN), T>
 where
+    S: StorageControl + StorageExecutor,
     K: Rkyv + Debug,
     A: Rkyv,
     NK: Rkyv + Debug,
@@ -1661,7 +1687,7 @@ where
 {
     fn for_row<S, N, T>(row_group: &RowGroup<'_, S, K, A, N, T>, row: u64) -> Result<Self, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         T: ColumnSpec,
     {
         Self::for_row_from_ancestor(
@@ -1681,10 +1707,10 @@ where
         row: u64,
     ) -> Result<Self, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
     {
         loop {
-            let block = node.read(&reader.0.storage, &reader.0.file_handle)?;
+            let block = node.read(&reader.0.file)?;
             let next = block.lookup_row(row)?;
             match block {
                 TreeBlock::Data(data) => return Ok(Self { row, indexes, data }),
@@ -1695,7 +1721,7 @@ where
     }
     fn for_row_from_hint<S, T>(reader: &Reader<S, T>, hint: &Self, row: u64) -> Result<Self, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
     {
         if hint.data.rows().contains(&row) {
             return Ok(Self {
@@ -1729,7 +1755,7 @@ where
     }
     fn move_to_row<S, T>(&mut self, reader: &Reader<S, T>, row: u64) -> Result<(), Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
     {
         if self.data.rows().contains(&row) {
             self.row = row;
@@ -1744,7 +1770,7 @@ where
         bias: Ordering,
     ) -> Result<Option<Self>, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
@@ -1753,7 +1779,7 @@ where
             return Ok(None);
         };
         loop {
-            match node.read(&row_group.reader.0.storage, &row_group.reader.0.file_handle)? {
+            match node.read(&row_group.reader.0.file)? {
                 TreeBlock::Index(index_block) => {
                     let Some(child_idx) =
                         index_block.find_best_match(&row_group.rows, compare, bias)
@@ -1885,14 +1911,14 @@ where
 {
     fn for_row<S, N, T>(row_group: &RowGroup<'_, S, K, A, N, T>, row: u64) -> Result<Self, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         T: ColumnSpec,
     {
         Ok(Self::Row(Path::for_row(row_group, row)?))
     }
     fn next<S, N, T>(&mut self, row_group: &RowGroup<'_, S, K, A, N, T>) -> Result<(), Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         T: ColumnSpec,
     {
         let row = match self {
@@ -1909,7 +1935,7 @@ where
     }
     fn prev<S, N, T>(&mut self, row_group: &RowGroup<'_, S, K, A, N, T>) -> Result<(), Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         T: ColumnSpec,
     {
         match self {
@@ -1937,7 +1963,7 @@ where
         row: u64,
     ) -> Result<(), Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         T: ColumnSpec,
     {
         if !row_group.rows.is_empty() {
@@ -1981,7 +2007,7 @@ where
         bias: Ordering,
     ) -> Result<Self, Error>
     where
-        S: StorageRead + StorageExecutor,
+        S: StorageRead + StorageControl + StorageExecutor,
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
@@ -1996,6 +2022,7 @@ where
     }
     fn absolute_position<S, N, T>(&self, row_group: &RowGroup<S, K, A, N, T>) -> u64
     where
+        S: StorageControl + StorageExecutor,
         T: ColumnSpec,
     {
         match self {
@@ -2006,6 +2033,7 @@ where
     }
     fn remaining_rows<S, N, T>(&self, row_group: &RowGroup<S, K, A, N, T>) -> u64
     where
+        S: StorageControl + StorageExecutor,
         T: ColumnSpec,
     {
         match self {

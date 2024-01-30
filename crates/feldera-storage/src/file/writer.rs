@@ -35,7 +35,10 @@ use crate::{
 
 use rkyv::ser::Serializer as RkyvSerializer;
 
-use super::{reader::Reader, Rkyv, Serializer};
+use super::{
+    reader::{ImmutableFileRef, Reader},
+    Rkyv, Serializer,
+};
 
 struct VarintWriter {
     varint: Varint,
@@ -216,7 +219,7 @@ impl ColumnWriter {
         block_writer: &mut BlockWriter<W>,
     ) -> Result<FileTrailerColumn, StorageError>
     where
-        W: StorageWrite + StorageExecutor,
+        W: StorageWrite + StorageControl + StorageExecutor,
         K: Rkyv,
         A: Rkyv,
     {
@@ -274,7 +277,7 @@ impl ColumnWriter {
         data_block: DataBlock<K>,
     ) -> Result<(), StorageError>
     where
-        W: StorageWrite + StorageExecutor,
+        W: StorageWrite + StorageControl + StorageExecutor,
         K: Rkyv,
     {
         let location = block_writer.write_block(data_block.raw)?;
@@ -296,7 +299,7 @@ impl ColumnWriter {
         mut level: usize,
     ) -> Result<(BlockLocation, u64), StorageError>
     where
-        W: StorageWrite + StorageExecutor,
+        W: StorageWrite + StorageControl + StorageExecutor,
         K: Rkyv,
     {
         loop {
@@ -322,7 +325,7 @@ impl ColumnWriter {
         row_group: &Option<Range<u64>>,
     ) -> Result<(), StorageError>
     where
-        W: StorageWrite + StorageExecutor,
+        W: StorageWrite + StorageControl + StorageExecutor,
         K: Rkyv,
         A: Rkyv,
     {
@@ -820,28 +823,28 @@ impl IndexBlockBuilder {
 
 struct BlockWriter<W>
 where
-    W: StorageWrite,
+    W: StorageWrite + StorageControl + StorageExecutor,
 {
     storage: Rc<W>,
-    file_handle: FileHandle,
+    file_handle: Option<FileHandle>,
     offset: u64,
 }
 
 impl<W> BlockWriter<W>
 where
-    W: StorageWrite + StorageExecutor,
+    W: StorageWrite + StorageControl + StorageExecutor,
 {
     fn new(storage: &Rc<W>, file_handle: FileHandle) -> Self {
         Self {
             storage: storage.clone(),
-            file_handle,
+            file_handle: Some(file_handle),
             offset: 0,
         }
     }
 
-    fn complete(self) -> Result<ImmutableFileHandle, StorageError> {
+    fn complete(mut self) -> Result<ImmutableFileHandle, StorageError> {
         self.storage
-            .block_on(self.storage.complete(self.file_handle))
+            .block_on(self.storage.complete(self.file_handle.take().unwrap()))
     }
 
     fn write_block(&mut self, mut block: FBuf) -> Result<BlockLocation, StorageError> {
@@ -852,11 +855,22 @@ where
         let location = BlockLocation::new(self.offset, block.len()).unwrap();
         self.offset += block.len() as u64;
         self.storage.block_on(self.storage.write_block(
-            &self.file_handle,
+            self.file_handle.as_ref().unwrap(),
             location.offset,
             block,
         ))?;
         Ok(location)
+    }
+}
+
+impl<W> Drop for BlockWriter<W>
+where
+    W: StorageWrite + StorageControl + StorageExecutor,
+{
+    fn drop(&mut self) {
+        self.file_handle
+            .take()
+            .map(|file_handle| self.storage.block_on(self.storage.delete_mut(file_handle)));
     }
 }
 
@@ -868,7 +882,7 @@ where
 /// 1-column and 2-column layer files, respectively, with added type safety.
 struct Writer<W>
 where
-    W: StorageWrite,
+    W: StorageWrite + StorageControl + StorageExecutor,
 {
     writer: BlockWriter<W>,
     cws: Vec<ColumnWriter>,
@@ -979,7 +993,7 @@ where
 /// ```
 pub struct Writer1<W, K0, A0>
 where
-    W: StorageWrite,
+    W: StorageWrite + StorageControl + StorageExecutor,
     K0: Rkyv,
     A0: Rkyv,
 {
@@ -1030,7 +1044,7 @@ where
     {
         let storage = self.storage().clone();
         let file_handle = self.close()?;
-        Reader::new(&storage, file_handle)
+        Reader::new(Rc::new(ImmutableFileRef::new(&storage, file_handle)))
     }
 }
 
@@ -1066,7 +1080,7 @@ where
 /// ```
 pub struct Writer2<W, K0, A0, K1, A1>
 where
-    W: StorageWrite,
+    W: StorageWrite + StorageControl + StorageExecutor,
     K0: Rkyv + Ord,
     A0: Rkyv,
     K1: Rkyv + Ord,
@@ -1137,6 +1151,6 @@ where
     {
         let storage = self.storage().clone();
         let file_handle = self.close()?;
-        Reader::new(&storage, file_handle)
+        Reader::new(Rc::new(ImmutableFileRef::new(&storage, file_handle)))
     }
 }
