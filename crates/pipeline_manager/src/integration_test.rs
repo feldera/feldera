@@ -862,40 +862,40 @@ async fn json_ingress() {
     let req = config
         .post_json(
             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
-            r#"{"C1": 10, "C2": true}
-            {"C1": 20, "C3": "foo"}"#
+            r#"{"c1": 10, "c2": true}
+            {"c1": 20, "c3": "foo"}"#
                 .to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"C1\":10,\"C2\":true,\"C3\":null}},{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":null}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}]");
 
     let hood = config
         .neighborhood_json(
             &id,
             "T1",
-            Some(json!({"C1":10,"C2":true,"C3":null})),
+            Some(json!({"c1":10,"c2":true,"c3":null})),
             10,
             10,
         )
         .await;
-    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"C1\":10,\"C2\":true,\"C3\":null}}},{\"insert\":{\"index\":1,\"key\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}}}]");
+    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":null}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}}]");
 
     // Push more data using insert/delete format.
     let req = config
         .post_json(
             format!("/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",),
-            r#"{"delete": {"C1": 10, "C2": true}}
-            {"insert": {"C1": 30, "C3": "bar"}}"#
+            r#"{"delete": {"c1": 10, "c2": true}}
+            {"insert": {"c1": 30, "c3": "bar"}}"#
                 .to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json("test", "t1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}}]");
 
     // Format data as json array.
     let req = config
@@ -918,7 +918,7 @@ async fn json_ingress() {
     assert!(req.status().is_success());
 
     let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":50,\"C2\":true,\"C3\":\"\"}}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
 
     // Trigger parse errors.
     let mut req = config
@@ -932,12 +932,12 @@ async fn json_ingress() {
     assert_eq!(req.status(), StatusCode::BAD_REQUEST);
     let body = req.body().await.unwrap();
     let error = std::str::from_utf8(&body).unwrap();
-    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"C2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
+    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"c2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
 
     // Even records that are parsed successfully don't get ingested when
     // using array format.
     let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":50,\"C2\":true,\"C3\":\"\"}}]");
+    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
 
     let mut req = config
         .post_json(
@@ -950,7 +950,7 @@ async fn json_ingress() {
     assert_eq!(req.status(), StatusCode::BAD_REQUEST);
     let body = req.body().await.unwrap();
     let error = std::str::from_utf8(&body).unwrap();
-    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'C2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"C2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'C1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
+    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"c2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
 
     // Even records that are parsed successfully don't get ingested when
     // using array format.
@@ -987,12 +987,12 @@ not_a_number,true,ΑαΒβΓγΔδ
     assert_eq!(req.status(), StatusCode::BAD_REQUEST);
     let body = req.body().await.unwrap();
     let error = std::str::from_utf8(&body).unwrap();
-    assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
+    assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
 
     let quantiles = config.quantiles_json("test", "t1").await;
     assert_eq!(
         quantiles,
-        "[{\"insert\":{\"C1\":15,\"C2\":true,\"C3\":\"foo\"}},{\"insert\":{\"C1\":16,\"C2\":false,\"C3\":\"unicode🚲\"}},{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":25,\"C2\":true,\"C3\":\"\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":60,\"C2\":true,\"C3\":\"hello\"}}]"
+        "[{\"insert\":{\"c1\":15,\"c2\":true,\"c3\":\"foo\"}},{\"insert\":{\"c1\":16,\"c2\":false,\"c3\":\"unicode🚲\"}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":25,\"c2\":true,\"c3\":\"\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":60,\"c2\":true,\"c3\":\"hello\"}}]"
     );
 
     // Shutdown the pipeline
@@ -1042,7 +1042,7 @@ async fn parse_datetime() {
 
     let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(quantiles.parse::<Value>().unwrap(),
-               "[{\"insert\":{\"D\":\"2024-02-25\",\"T\":\"11:12:33.483221092\",\"TS\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"D\":\"2021-05-20\",\"T\":\"13:22:00\",\"TS\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
+               "[{\"insert\":{\"d\":\"2024-02-25\",\"t\":\"11:12:33.483221092\",\"ts\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"d\":\"2021-05-20\",\"t\":\"13:22:00\",\"ts\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
 
     // Shutdown the pipeline
     let resp = config
@@ -1089,7 +1089,7 @@ async fn quoted_columns() {
     let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"C2\":true,\"c1\":10,\"ΔΘ\":false,\"αβγ\":true,\"😁❤\":\"foo\"}}]"
+        "[{\"insert\":{\"C2\":true,\"c1\":10,\"αβγ\":true,\"δθ\":false,\"😁❤\":\"foo\"}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1141,7 +1141,7 @@ async fn primary_keys() {
     let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"ID\":1,\"S\":\"1\"}},{\"insert\":{\"ID\":2,\"S\":\"2\"}}]"
+        "[{\"insert\":{\"id\":1,\"s\":\"1\"}},{\"insert\":{\"id\":2,\"s\":\"2\"}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1151,7 +1151,7 @@ async fn primary_keys() {
         .await;
     assert_eq!(
         hood.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"index\":-1,\"key\":{\"ID\":1,\"S\":\"1\"}}},{\"insert\":{\"index\":0,\"key\":{\"ID\":2,\"S\":\"2\"}}}]"
+        "[{\"insert\":{\"index\":-1,\"key\":{\"id\":1,\"s\":\"1\"}}},{\"insert\":{\"index\":0,\"key\":{\"id\":2,\"s\":\"2\"}}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1170,7 +1170,7 @@ async fn primary_keys() {
     let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}},{\"insert\":{\"ID\":2,\"S\":\"2-modified\"}}]"
+        "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}},{\"insert\":{\"id\":2,\"s\":\"2-modified\"}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1178,7 +1178,7 @@ async fn primary_keys() {
     let hood = config.neighborhood_json("test", "T1", None, 10, 10).await;
     assert_eq!(
         hood.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"index\":0,\"key\":{\"ID\":1,\"S\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"ID\":2,\"S\":\"2-modified\"}}}]"
+        "[{\"insert\":{\"index\":0,\"key\":{\"id\":1,\"s\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"id\":2,\"s\":\"2-modified\"}}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1195,7 +1195,7 @@ async fn primary_keys() {
     let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}}]"
+        "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}}]"
             .parse::<Value>()
             .unwrap()
     );
@@ -1268,25 +1268,25 @@ create view "v1" as select * from table1;"#,
         .await
         .unwrap();
 
-    assert_eq!(delta1.unwrap(), json!([{"insert": {"ID":1}}]));
+    assert_eq!(delta1.unwrap(), json!([{"insert": {"id":1}}]));
 
     let delta2 = config
         .read_response_json(&mut response2, Duration::from_millis(10_000))
         .await
         .unwrap();
 
-    assert_eq!(delta2.unwrap(), json!([{"insert": {"ID":2}}]));
+    assert_eq!(delta2.unwrap(), json!([{"insert": {"id":2}}]));
 
     let quantiles = config.quantiles_json("test", "\"V1\"").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"ID\":1}}]".parse::<Value>().unwrap()
+        "[{\"insert\":{\"id\":1}}]".parse::<Value>().unwrap()
     );
 
     let quantiles = config.quantiles_json("test", "\"v1\"").await;
     assert_eq!(
         quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"ID\":2}}]".parse::<Value>().unwrap()
+        "[{\"insert\":{\"id\":2}}]".parse::<Value>().unwrap()
     );
 
     // Shutdown the pipeline
@@ -1342,7 +1342,7 @@ async fn distinct_outputs() {
 
     assert_eq!(
         delta.unwrap(),
-        json!([{"insert": {"S":"1"}}, {"insert":{"S":"2"}}])
+        json!([{"insert": {"s":"1"}}, {"insert":{"s":"2"}}])
     );
 
     // Push some more data
@@ -1363,7 +1363,7 @@ async fn distinct_outputs() {
 
     assert_eq!(
         delta.unwrap(),
-        json!([{"insert": {"S":"3"}}, {"insert":{"S":"4"}}])
+        json!([{"insert": {"s":"3"}}, {"insert":{"s":"4"}}])
     );
 
     // Push more records that will create duplicate outputs, which should be
@@ -1448,9 +1448,9 @@ async fn upsert() {
 
     assert_eq!(
         delta.unwrap(),
-        json!([{"insert": {"ID1":1,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
-{"insert": {"ID1":2,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
-{"insert": {"ID1":3,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}}])
+        json!([{"insert": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
+{"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
+{"insert": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}])
     );
 
     let req = config
@@ -1474,12 +1474,12 @@ async fn upsert() {
 
     assert_eq!(
         delta.unwrap(),
-        json!([{"delete": {"ID1":1,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
-{"delete": {"ID1":2,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
-{"delete": {"ID1":3,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}},
-{"insert": {"ID1":1,"ID2":null,"STR1":"2","STR2":null,"INT1":1,"INT2":null}},
-{"insert": {"ID1":2,"ID2":null,"STR1":"1","STR2":"foo","INT1":1,"INT2":null}},
-{"insert": {"ID1":3,"ID2":null,"STR1":"1","STR2":"2","INT1":3,"INT2":33}}])
+        json!([{"delete": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
+{"delete": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
+{"delete": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
+{"insert": {"id1":1,"id2":null,"str1":"2","str2":null,"int1":1,"int2":null}},
+{"insert": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}},
+{"insert": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}}])
     );
 
     let req = config
@@ -1507,9 +1507,9 @@ async fn upsert() {
 
     assert_eq!(
         delta.unwrap(),
-        json!([{"delete": {"ID1":2,"ID2":null,"STR1":"1","STR2":"foo","INT1":1,"INT2":null}},
-{"delete": {"ID1":3,"ID2":null,"STR1":"1","STR2":"2","INT1":3,"INT2":33}},
-{"insert": {"ID1":2,"ID2":null,"STR1":"1","STR2":null,"INT1":1,"INT2":null}}])
+        json!([{"delete": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}},
+{"delete": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}},
+{"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}])
     );
 
     // Shutdown the pipeline

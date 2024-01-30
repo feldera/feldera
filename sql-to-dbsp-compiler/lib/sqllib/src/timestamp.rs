@@ -902,14 +902,14 @@ mod test {
     }
 
     deserialize_table_record!(TestStruct["TestStruct", 3] {
-        (date, "DATE", false, Date, None),
-        (time, "TIME", false, Time, None),
-        (timestamp, "TIMESTAMP", false, Timestamp, None)
+        (date, "date", false, Date, None),
+        (time, "time", false, Time, None),
+        (timestamp, "timestamp", false, Timestamp, None)
     });
     serialize_table_record!(TestStruct[3] {
-        date["DATE"]: Date,
-        time["TIME"]: Time,
-        timestamp["TIMESTAMP"]:  Timestamp
+        date["date"]: Date,
+        time["time"]: Time,
+        timestamp["timestamp"]:  Timestamp
     });
 
     lazy_static! {
@@ -986,7 +986,7 @@ mod test {
                 timestamp: Timestamp::new(1529501823000),
             })
             .unwrap(),
-            r#"{"DATE":"2023-09-28","TIME":"23:21:15.123","TIMESTAMP":"2018-06-20T13:37:03+00:00"}"#
+            r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20T13:37:03+00:00"}"#
         );
     }
 
@@ -1011,7 +1011,7 @@ mod test {
                 timestamp: Timestamp::new(1529501823000),
             })
             .unwrap(),
-            r#"{"DATE":"2023-09-28","TIME":"23:21:15.123","TIMESTAMP":"2018-06-20 13:37:03"}"#
+            r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20 13:37:03"}"#
         );
     }
 }

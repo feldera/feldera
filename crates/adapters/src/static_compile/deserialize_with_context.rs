@@ -490,9 +490,9 @@ macro_rules! deserialize_table_record {
                         )*
 
                         while let Some(column_name) = map.next_key::<std::borrow::Cow<'de, str>>()? {
-                            let uppercase_column_name = column_name.to_uppercase();
+                            let lowercase_column_name = column_name.to_lowercase();
                             $(
-                                if $column_name == (if $case_sensitive { column_name.as_ref() } else { &uppercase_column_name } ) {
+                                if $column_name == (if $case_sensitive { column_name.as_ref() } else { &lowercase_column_name } ) {
                                     // We don't have a way to return `FieldParseError` to the
                                     // user, since the error type is determined by the
                                     // deserializer type `D`, so we instead encode it as a JSON
@@ -597,13 +597,13 @@ mod test {
     #[allow(non_snake_case)]
     struct Struct2 {
         #[allow(non_snake_case)]
-        CC_NUM: F64,
+        cc_num: F64,
         #[allow(non_snake_case)]
-        FIRST: Option<String>,
+        first: Option<String>,
         #[allow(non_snake_case)]
-        DEC: Decimal,
+        dec: Decimal,
     }
-    deserialize_table_record!(Struct2["Table.Name", 3] {(CC_NUM, "CC_NUM", false, F64, None), (FIRST, "FIRST", false, Option<String>, Some(None)), (DEC, "DEC", false, Decimal, None)});
+    deserialize_table_record!(Struct2["Table.Name", 3] {(cc_num, "cc_num", false, F64, None), (first, "first", false, Option<String>, Some(None)), (dec, "dec", false, Decimal, None)});
 
     #[test]
     fn deserialize_struct2() {
@@ -611,18 +611,18 @@ mod test {
             deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": "0.123"}"#)
                 .unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None,
-                DEC: dec!(0.123),
+                cc_num: F64::from(100),
+                first: None,
+                dec: dec!(0.123),
             }
         );
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": 0.123}"#)
                 .unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None,
-                DEC: dec!(0.123),
+                cc_num: F64::from(100),
+                first: None,
+                dec: dec!(0.123),
             }
         );
 
@@ -632,9 +632,9 @@ mod test {
             )
             .unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None,
-                DEC: dec!(-1.40),
+                cc_num: F64::from(100),
+                first: None,
+                dec: dec!(-1.40),
             }
         );
 
@@ -644,9 +644,9 @@ mod test {
             )
             .unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None,
-                DEC: dec!(-1.40),
+                cc_num: F64::from(100),
+                first: None,
+                dec: dec!(-1.40),
             }
         );
 
@@ -656,46 +656,46 @@ mod test {
             )
             .unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: Some("foo".to_string()),
-                DEC: dec!(1e20),
+                cc_num: F64::from(100),
+                first: Some("foo".to_string()),
+                dec: dec!(1e20),
             }
         );
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"{"first": "foo"}"#)
                 .map_err(|e| e.to_string()),
-            Err(r#"missing field `CC_NUM` at line 1 column 16"#.to_string())
+            Err(r#"missing field `cc_num` at line 1 column 16"#.to_string())
         );
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, "foo", "-1e20"]"#).unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: Some("foo".to_string()),
-                DEC: dec!(-1e20),
+                cc_num: F64::from(100),
+                first: Some("foo".to_string()),
+                dec: dec!(-1e20),
             }
         );
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, null, "2e-5"]"#).unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None,
-                DEC: dec!(0.00002),
+                cc_num: F64::from(100),
+                first: None,
+                dec: dec!(0.00002),
             }
         );
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, null, "-3e-5"]"#).unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None,
-                DEC: dec!(-3e-5),
+                cc_num: F64::from(100),
+                first: None,
+                dec: dec!(-3e-5),
             }
         );
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, null, -3e-5]"#).unwrap(),
             Struct2 {
-                CC_NUM: F64::from(100),
-                FIRST: None,
-                DEC: dec!(-3e-5),
+                cc_num: F64::from(100),
+                first: None,
+                dec: dec!(-3e-5),
             }
         );
     }
@@ -705,13 +705,13 @@ mod test {
     struct CaseSensitive {
         fIeLd1: bool,
         field2: String,
-        FIELD3: Option<u8>,
+        field3: Option<u8>,
     }
 
     deserialize_table_record!(CaseSensitive["CaseSensitive", 3] {
         (fIeLd1, "fIeLd1", true, bool, None),
         (field2, "field2", true, String, None),
-        (FIELD3, "FIELD3", false, Option<u8>, Some(None))
+        (field3, "field3", false, Option<u8>, Some(None))
     });
 
     #[test]
@@ -724,7 +724,7 @@ mod test {
             CaseSensitive {
                 fIeLd1: true,
                 field2: "foo".to_string(),
-                FIELD3: None
+                field3: None
             }
         );
         assert_eq!(
@@ -732,7 +732,7 @@ mod test {
             CaseSensitive {
                 fIeLd1: true,
                 field2: "foo".to_string(),
-                FIELD3: Some(100)
+                field3: Some(100)
             }
         );
         assert_eq!(
@@ -762,7 +762,7 @@ mod test {
             Err(r#"invalid length 1, expected 3 columns at line 1 column 6"#.to_string())
         );
         assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": null, "field2": "foo"}"#).map_err(|e| e.to_string()), Err(r#"{"field":"fIeLd1","description":"invalid type: null, expected a boolean at line 1 column 15"} at line 1 column 15"#.to_string()));
-        assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": false, "field2": "foo", "FIELD3": true}"#).map_err(|e| e.to_string()), Err(r#"{"field":"FIELD3","description":"invalid type: boolean `true`, expected u8 at line 1 column 49"} at line 1 column 50"#.to_string()));
+        assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": false, "field2": "foo", "FIELD3": true}"#).map_err(|e| e.to_string()), Err(r#"{"field":"field3","description":"invalid type: boolean `true`, expected u8 at line 1 column 49"} at line 1 column 50"#.to_string()));
         assert_eq!(deserialize_with_default_context::<CaseSensitive>(r#"{"fIeLd1": 10, "field2": "foo"}"#).map_err(|e| e.to_string()), Err(r#"{"field":"fIeLd1","description":"invalid type: integer `10`, expected a boolean at line 1 column 13"} at line 1 column 13"#.to_string()));
     }
 
@@ -776,8 +776,8 @@ mod test {
 
     deserialize_table_record!(UnicodeStruct["UnicodeStruct", 3] {
         (f1, "αΒβΓγδε", true, bool, None),
-        (f2, "УКРАЇНСЬКА", false, String, None),
-        (f3, "UNICODE⌛👏", false, Option<u8>, Some(None))
+        (f2, "українська", false, String, None),
+        (f3, "unicode⌛👏", false, Option<u8>, Some(None))
     });
 
     #[test]
@@ -797,13 +797,13 @@ mod test {
             deserialize_with_default_context::<UnicodeStruct>(
                 r#"{"αΒβΓγδε": true, "Українська": 10, "unicode⌛👏": 100}"#
             ).map_err(|e| e.to_string()),
-            Err(r#"{"field":"УКРАЇНСЬКА","description":"invalid type: integer `10`, expected a string at line 1 column 51"} at line 1 column 51"#.to_string())
+            Err(r#"{"field":"українська","description":"invalid type: integer `10`, expected a string at line 1 column 51"} at line 1 column 51"#.to_string())
         );
         assert_eq!(
             deserialize_with_default_context::<UnicodeStruct>(
                 r#"[true, 10, 100]"#
             ).map_err(|e| e.to_string()),
-            Err(r#"{"field":"УКРАЇНСЬКА","description":"invalid type: integer `10`, expected a string at line 1 column 9"} at line 1 column 11"#.to_string())
+            Err(r#"{"field":"українська","description":"invalid type: integer `10`, expected a string at line 1 column 9"} at line 1 column 11"#.to_string())
         );
     }
 
@@ -824,7 +824,7 @@ true,bar,buzz"#;
             CaseSensitive {
                 fIeLd1: true,
                 field2: "foo".to_string(),
-                FIELD3: Some(5)
+                field3: Some(5)
             }
         );
         assert_eq!(
@@ -834,7 +834,7 @@ true,bar,buzz"#;
             )
             .map_err(|e| e.to_string()),
             Err(
-                r#"{"field":"FIELD3","description":"field 2: invalid digit found in string"}"#
+                r#"{"field":"field3","description":"field 2: invalid digit found in string"}"#
                     .to_string()
             )
         );

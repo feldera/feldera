@@ -31,7 +31,7 @@ CREATE VIEW features as
     SELECT
         -- DAYOFWEEK(trans_date_trans_time) AS d,
         -- TIMESTAMPDIFF(YEAR, trans_date_trans_time, CAST(dob as TIMESTAMP)) AS age,
-        ST_DISTANCE(ST_POINT(long,lat), ST_POINT(merch_long,merch_lat)) AS distance,
+        "ST_DISTANCE"("ST_POINT"(long,lat), "ST_POINT"(merch_long,merch_lat)) AS distance,
         -- TIMESTAMPDIFF(MINUTE, trans_date_trans_time, last_txn_date) AS trans_diff,
         AVG(amt) OVER(
             PARTITION BY   CAST(cc_num AS NUMERIC)
