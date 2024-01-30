@@ -465,9 +465,9 @@ mod test {
     }
 
     deserialize_table_record!(TestStruct["TestStruct", 3] {
-        (b, "B", false, bool, None),
-        (i, "I", false, i32, None),
-        (s, "S", false, Option<String>, Some(None))
+        (b, "b", false, bool, None),
+        (i, "i", false, i32, None),
+        (s, "s", false, Option<String>, Some(None))
     });
 
     // TODO: tests for RecordFormat::Raw.
@@ -496,9 +496,9 @@ mod test {
     }
 
     deserialize_table_record!(TestStructUpd["TestStructUpd", 3] {
-        (b, "B", false, Option<bool>, Some(None)),
-        (i, "I", false, i32, None),
-        (s, "S", false, Option<Option<String>>, Some(None), |x| if x.is_none() { Some(None) } else {x})
+        (b, "b", false, Option<bool>, Some(None)),
+        (i, "i", false, i32, None),
+        (s, "s", false, Option<Option<String>>, Some(None), |x| if x.is_none() { Some(None) } else {x})
     });
 
     impl TestStructUpd {
@@ -770,7 +770,7 @@ mod test {
                     array: false,
                 },
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
-                    , (r#"{"b": false, "i": 5}{"b": false}{"b": false, "I": "hello"}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None), ParseError::new("failed to deserialize JSON record: error parsing field 'I': invalid type: string \"hello\", expected i32 at line 1 column 25".to_string(), Some(4), Some("I".to_string()), Some("{\"b\": false, \"I\": \"hello\"}"), None, None)])],
+                    , (r#"{"b": false, "i": 5}{"b": false}{"b": false, "i": "hello"}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None), ParseError::new("failed to deserialize JSON record: error parsing field 'i': invalid type: string \"hello\", expected i32 at line 1 column 25".to_string(), Some(4), Some("i".to_string()), Some("{\"b\": false, \"i\": \"hello\"}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
@@ -782,8 +782,8 @@ mod test {
                     array: true,
                 },
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
-                    , (r#"[{"b": false, "i": 5},{"b": false}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])
-                    , (r#"[{"b": false, "i": 5},{"b": 20, "I": 10}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: error parsing field 'B': invalid type: integer `20`, expected a boolean at line 1 column 8".to_string(), Some(5), Some("B".to_string()), Some("{\"b\": 20, \"I\": 10}"), None, None)])
+                    , (r#"[{"b": false, "i": 5},{"b": false}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])
+                    , (r#"[{"b": false, "i": 5},{"b": 20, "i": 10}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: error parsing field 'b': invalid type: integer `20`, expected a boolean at line 1 column 8".to_string(), Some(5), Some("b".to_string()), Some("{\"b\": 20, \"i\": 10}"), None, None)])
                 ],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
@@ -1000,7 +1000,7 @@ mod test {
                     array: false,
                 },
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
-                    , (r#"{"insert": {"b": false, "i": 5}}{"delete": {"b": false}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
+                    , (r#"{"insert": {"b": false, "i": 5}}{"delete": {"b": false}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),
@@ -1012,7 +1012,7 @@ mod test {
                     array: true,
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
-                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
+                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
             ),
@@ -1024,9 +1024,9 @@ mod test {
                     array: true,
                 },
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
-                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])
+                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])
                     , (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
-                    , (r#"[{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(5), None, Some("{\"b\": false}"), None, None)])
+                    , (r#"[{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(5), None, Some("{\"b\": false}"), None, None)])
                     , (r#"[{"b": false}]"#.to_string(), vec![ParseError::text_envelope_error("error deserializing string as a JSON array of updates: unknown field `b`, expected one of `table`, `insert`, `delete`, `update` at line 1 column 5".to_string(), "[{\"b\": false}]", Some(Cow::from("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")))])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
                 Vec::new()
@@ -1188,7 +1188,7 @@ mod test {
                     array: false,
                 },
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
-                    , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}{"payload": {"op": "d", "before": {"b": false}}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `I` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
+                    , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}{"payload": {"op": "d", "before": {"b": false}}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
                 Vec::new()
             ),

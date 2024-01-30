@@ -88,7 +88,7 @@ test('Accrual demo test', async ({ page, request }) => {
         }),
         data =>
           request.post(
-            apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/WORKSPACE_T?format=json&array=true`,
+            apiOrigin + `v0/pipelines/${pipelineNameUrlEncoded}/ingress/workspace_t?format=json&array=true`,
             { data }
           )
       )
@@ -168,25 +168,25 @@ test('Accrual demo test', async ({ page, request }) => {
     })
     await page
       .getByTestId(`box-details-${pipelineName}`)
-      .getByTestId(`box-relation-actions-WORKSPACE_T`)
+      .getByTestId(`box-relation-actions-workspace_t`)
       .getByTestId(`button-inspect`)
       .click()
   })
 
   await test.step('View data in data browser', async () => {
     for (const relation of [
-      'CUSTOMER_T',
-      'WORKSPACE_T',
-      'WORK_T',
-      'CREDIT_T',
-      'USER_T',
-      'TASK_T',
-      'WORK_CONSUMED_V',
-      'TOP10_USERS',
-      'WORKSPACE_CONSUMED_V',
-      'CUSTOMER_CONSUMED_V',
-      'CUSTOMER_TOTAL_CREDIT_V',
-      'CUSTOMER_BALANCE_V'
+      'customer_t',
+      'workspace_t',
+      'work_t',
+      'credit_t',
+      'user_t',
+      'task_t',
+      'work_consumed_v',
+      'top10_users',
+      'workspace_consumed_v',
+      'customer_consumed_v',
+      'customer_total_credit_v',
+      'customer_balance_v'
     ]) {
       await page.getByTestId('button-expand-relations').click()
       await page.getByTestId('box-relation-options').getByTestId(`button-option-relation-${relation}`).click()

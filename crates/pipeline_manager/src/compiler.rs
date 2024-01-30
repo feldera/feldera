@@ -979,6 +979,8 @@ impl CompilationJob {
             .arg("--alltables")
             .arg("--outputsAreSets")
             .arg("--ignoreOrder")
+            .arg("--unquotedCasing")
+            .arg("lower")
             .stdin(Stdio::null())
             .stderr(Stdio::from(err_file.into_std().await))
             .stdout(Stdio::from(rust_file.into_std().await))
