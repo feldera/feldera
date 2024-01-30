@@ -174,21 +174,12 @@ build-nexmark:
     FROM +build-dbsp
     DO rust+CARGO --args="build --package dbsp_nexmark"
 
-CARGO_TEST:
-    COMMAND
-    ARG package
-    ARG features
-    ARG test_args
-    DO rust+CARGO --args="test --package $package \
-        $(if [ -z $features ]; then printf -- --features $features; fi) \
-        -- $test_args"
-
 test-dbsp:
     FROM +build-dbsp
     # Limit test execution to tests in trace::persistent::tests, because
     # executing everything takes too long and (in theory) the proptests we have
     # should ensure equivalence with the DRAM trace implementation:
-    DO +CARGO_TEST --package=dbsp --features=persistence --test_args=trace::persistent::tests
+    DO rust+CARGO --args="test --package=dbsp --features=persistence -- trace::persistent::tests"
     DO rust+CARGO --args="test --package dbsp"
     DO rust+CARGO --args="test --package feldera-storage"
 
