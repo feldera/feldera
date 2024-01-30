@@ -392,8 +392,7 @@ public class RustFileWriter implements ICompilerComponent {
                 str = ToRustInnerVisitor.toRustString(this.compiler, inner, false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                str = ToRustVisitor.toRustString(
-                        this.getCompiler(), outer, this.compiler.options.ioOptions.emitHandles);
+                str = ToRustVisitor.toRustString(compiler, outer, compiler.options);
             }
             this.outputStream.println(str);
             this.outputStream.println();
