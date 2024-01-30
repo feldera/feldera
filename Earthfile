@@ -1,4 +1,4 @@
-VERSION --global-cache --try 0.7
+VERSION --try 0.8
 IMPORT github.com/earthly/lib/rust:52e8c8a1fe7e8364b7a28eeaca3e3525cee03cf6 AS rust
 FROM ubuntu:22.04
 
