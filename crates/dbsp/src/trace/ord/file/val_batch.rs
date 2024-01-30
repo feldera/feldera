@@ -5,7 +5,7 @@ use std::{
 };
 
 use feldera_storage::{
-    backend::{StorageExecutor, StorageRead},
+    backend::{StorageExecutor, StorageRead, StorageControl},
     file::{
         reader::{ColumnSpec, Cursor as FileCursor, Reader},
         writer::{Parameters, Writer2},
@@ -272,7 +272,7 @@ fn read_filtered<S, K, A, N, T>(
     filter: &Option<Filter<K>>,
 ) -> Option<K>
 where
-    S: StorageRead + StorageExecutor,
+    S: StorageRead + StorageControl + StorageExecutor,
     K: Rkyv + Debug,
     A: Rkyv,
     T: ColumnSpec,
