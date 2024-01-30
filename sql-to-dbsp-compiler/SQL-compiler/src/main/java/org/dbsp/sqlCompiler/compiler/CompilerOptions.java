@@ -66,6 +66,9 @@ public class CompilerOptions {
         @Parameter(names = "--lenient",
                 description = "Lenient SQL validation.  If true it allows duplicate column names in a view")
         public boolean lenient = false;
+        @Parameter(names = "--unquotedCasing",
+                description = "How unquoted identifiers are treated.  Choices are: 'upper', 'lower', 'unchanged'")
+        public String unquotedCasing = "upper";
 
         public boolean same(Language language) {
             // Only compare fields that matter.
@@ -86,6 +89,7 @@ public class CompilerOptions {
                     ", generateInputForEveryTable=" + this.generateInputForEveryTable +
                     ", lexicalRules=" + this.lexicalRules +
                     ", lenient=" + this.lenient +
+                    ", unquotedCasing=" + this.unquotedCasing +
                     '}';
         }
     }

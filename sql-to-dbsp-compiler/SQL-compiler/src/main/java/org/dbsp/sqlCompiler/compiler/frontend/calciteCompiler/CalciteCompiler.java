@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
-import org.apache.calcite.config.CalciteConnectionProperty;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
@@ -229,22 +228,34 @@ public class CalciteCompiler implements IWritesLogs {
         this.errorReporter = errorReporter;
         this.customFunctions = new CustomFunctions();
 
-        final boolean preserveCasing = false;
-        Properties connConfigProp = new Properties();
-        if (!preserveCasing) {
-            connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), Boolean.TRUE.toString());
-            connConfigProp.put(CalciteConnectionProperty.UNQUOTED_CASING.camelName(), Casing.UNCHANGED.toString());
-            connConfigProp.put(CalciteConnectionProperty.QUOTED_CASING.camelName(), Casing.UNCHANGED.toString());
-            connConfigProp.put(CalciteConnectionProperty.CONFORMANCE.camelName(), SqlConformanceEnum.BABEL.toString());
+        Casing unquotedCasing = Casing.TO_UPPER;
+        switch (options.languageOptions.unquotedCasing) {
+            case "upper":
+                //noinspection ReassignedVariable
+                unquotedCasing = Casing.TO_UPPER;
+                break;
+            case "lower":
+                unquotedCasing = Casing.TO_LOWER;
+                break;
+            case "unchanged":
+                unquotedCasing = Casing.UNCHANGED;
+                break;
+            default:
+                errorReporter.reportError(SourcePositionRange.INVALID,
+                        "Illegal option",
+                        "Illegal value for option --unquotedCasing: " +
+                        Utilities.singleQuote(options.languageOptions.unquotedCasing));
+                // Continue execution.
         }
+
+        Properties connConfigProp = new Properties();
         this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
                 .withLex(options.languageOptions.lexicalRules)
                 // Our own parser factory, which is a blend of DDL and BABEL
                 .withParserFactory(DbspParserImpl.FACTORY)
-                // Enable the next to preserve casing.
-                //.withUnquotedCasing(Casing.UNCHANGED)
-                //.withQuotedCasing(Casing.UNCHANGED)
+                .withUnquotedCasing(unquotedCasing)
+                .withQuotedCasing(Casing.UNCHANGED)
                 .withConformance(SqlConformanceEnum.LENIENT);
         this.typeFactory = new SqlTypeFactoryImpl(TYPE_SYSTEM);
         this.catalog = new Catalog("schema");

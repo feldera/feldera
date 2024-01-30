@@ -189,6 +189,39 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Logger.INSTANCE.setLoggingLevel(Passes.class, 0);
     }
 
+    // Test the --unquotedCasing command-line parameter
+    @Test
+    public void casing() throws IOException, InterruptedException {
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                        "COL1 INT NOT NULL" +
+                        ", COL2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM T"
+        };
+        File file = createInputScript(statements);
+        CompilerMain.execute("--unquotedCasing", "lower",
+                "-o", BaseSQLTests.testFilePath, file.getPath());
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
+    }
+
+    // Test illegal values for the --unquotedCasing command-line parameter
+    @Test
+    public void illegalCasing() throws IOException, InterruptedException {
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                        "COL1 INT NOT NULL" +
+                        ", COL2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM T"
+        };
+        File file = createInputScript(statements);
+        CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "to_lower",
+                "-o", BaseSQLTests.testFilePath, file.getPath());
+        Assert.assertTrue(messages.errorCount() > 0);
+        Assert.assertTrue(messages.toString().contains("Illegal value for option --unquotedCasing"));
+    }
+
     @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();

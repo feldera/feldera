@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Compiler option for handling unquoted identifiers
+  ([#1360](https://github.com/feldera/feldera/pull/1360))
+
 ### Changed
 
 - API: name and description are optional for connector PATCH endpoint.
