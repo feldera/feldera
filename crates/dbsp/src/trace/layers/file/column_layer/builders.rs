@@ -7,10 +7,7 @@ use crate::{
     },
     DBData, DBWeight,
 };
-use feldera_storage::file::{
-    reader::Reader,
-    writer::{Parameters, Writer1},
-};
+use feldera_storage::file::writer::{Parameters, Writer1};
 use size_of::SizeOf;
 use std::cmp::Ordering;
 
@@ -33,11 +30,7 @@ where
 
     fn done(self) -> Self::Trie {
         FileColumnLayer {
-            file: Reader::new(
-                &StorageBackend::default_for_thread(),
-                self.0.close().unwrap(),
-            )
-            .unwrap(),
+            file: self.0.into_reader().unwrap(),
             lower_bound: 0,
         }
     }
