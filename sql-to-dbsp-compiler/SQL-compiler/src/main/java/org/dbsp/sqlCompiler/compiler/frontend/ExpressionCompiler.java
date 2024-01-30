@@ -384,6 +384,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         return call.op.getName().toLowerCase();
     }
 
+    DBSPExpression compilePolymorphicFunction(String opName, CalciteObject node, DBSPType resultType,
+                                              List<DBSPExpression> ops, Integer... expectedArgCount) {
+        this.validateArgCount(node, ops.size(), expectedArgCount);
+        StringBuilder functionName = new StringBuilder(opName);
+        DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
+        for (DBSPExpression op: ops) {
+            DBSPType type = op.getType();
+            // Form the function name from the argument types
+            functionName.append("_").append(type.baseTypeWithSuffix());
+        }
+        return new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
+    }
+
     /**
      * Compile a function call into a family of Rust functions,
      * depending on the argument types.
@@ -398,15 +411,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     DBSPExpression compilePolymorphicFunction(RexCall call, CalciteObject node, DBSPType resultType,
                                     List<DBSPExpression> ops, Integer... expectedArgCount) {
         String opName = this.getCallName(call);
-        this.validateArgCount(node, ops.size(), expectedArgCount);
-        StringBuilder functionName = new StringBuilder(opName);
-        DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);
-        for (DBSPExpression op: ops) {
-            DBSPType type = op.getType();
-            // Form the function name from the argument types
-            functionName.append("_").append(type.baseTypeWithSuffix());
-        }
-        return new DBSPApplyExpression(node, functionName.toString(), resultType, operands);
+        return this.compilePolymorphicFunction(opName, node, resultType, ops, expectedArgCount);
     }
 
     String typeString(DBSPType type) {
@@ -500,6 +505,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         DBSPExpression arg = ops.get(argument);
         if (!arg.getType().is(DBSPTypeString.class))
             ops.set(argument, arg.cast(DBSPTypeString.varchar(arg.getType().mayBeNull)));
+    }
+
+    void ensureDouble(List<DBSPExpression> ops, int argument) {
+        DBSPExpression arg = ops.get(argument);
+        if (!arg.getType().is(DBSPTypeDouble.class))
+            ops.set(argument, arg.cast(new DBSPTypeDouble(arg.getType().getNode(), arg.getType().mayBeNull)));
     }
 
     @Override
@@ -688,8 +699,27 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 1);
                     }
-                    case "st_distance":
+                    case "st_distance": {
+                        return this.compilePolymorphicFunction(call, node, type,
+                                ops, 2);
+                    }
                     case "power": {
+                        // power(a, .5) -> sqrt(a).  This is more precise.
+                        // Calcite does the opposite conversion.
+                        assert ops.size() == 2: "Expected two arguments for power function";
+                        DBSPExpression argument = ops.get(1);
+                        if (argument.is(DBSPDecimalLiteral.class)) {
+                            DBSPDecimalLiteral dec = argument.to(DBSPDecimalLiteral.class);
+                            BigDecimal pointFive = new BigDecimal(5).movePointLeft(1);
+                            if (!dec.isNull && Objects.requireNonNull(dec.value).equals(pointFive)) {
+                                ops = Linq.list(ops.get(0));
+                                if (ops.get(0).getType().is(DBSPTypeNull.class)) {
+                                    ops.set(0, ops.get(0).cast(type));
+                                }
+                                return this.compilePolymorphicFunction(
+                                        "sqrt", node, type, ops, 1);
+                            }
+                        }
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 2);
                     }
@@ -718,18 +748,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "csc":
                     case "csch":
                     {
-                        // Turn the argument into Double
-                        DBSPExpression exp = ops.get(0);
-                        ops.set(0, exp.cast(new DBSPTypeDouble(node, exp.getType().mayBeNull)));
+                        this.ensureDouble(ops, 0);
                         return this.compilePolymorphicFunction(call, node, type, ops, 1);
                     }
                     case "atan2":
                     {
-                        // Turn the arguments into Double
-                        for (int i = 0; i < ops.size(); i++) {
-                            DBSPExpression arg = ops.get(i);
-                            ops.set(i, arg.cast(new DBSPTypeDouble(node, arg.getType().mayBeNull)));
-                        }
+                        for (int i = 0; i < ops.size(); i++)
+                            this.ensureDouble(ops, i);
                         return this.compilePolymorphicFunction(call, node, type, ops, 2);
                     }
                     case "split":

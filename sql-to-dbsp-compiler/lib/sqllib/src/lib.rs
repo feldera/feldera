@@ -806,6 +806,12 @@ pub fn sqrt_decimal(left: Decimal) -> F64 {
 
 some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
 
+pub fn sqrt_d(left: F64) -> F64 {
+    F64::from(left.into_inner().sqrt())
+}
+
+some_polymorphic_function1!(sqrt, d, F64, F64);
+
 //////////////////// floor /////////////////////
 
 #[inline(always)]
