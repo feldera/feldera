@@ -26,9 +26,9 @@ pipeline:
 
 ![Real-time supply chain analytics](supply-chain-analytics.png)
 
-## Step 1. Create HTTP GET connectors
+## Step 1. Create HTTPS GET connectors
 
-An HTTP GET connector retrieves data from a user-provided URL and pushes it to a
+An HTTPS GET connector retrieves data from a user-provided URL and pushes it to a
 SQL table.  Let us start with adding some GET connectors to the pipeline we
 created in Part 1 of this tutorial.  We uploaded minimal datasets for the three
 tables in this example to a public S3 bucket:
@@ -37,14 +37,22 @@ tables in this example to a public S3 bucket:
 - [https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json](https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json)
 - [https://feldera-basics-tutorial.s3.amazonaws.com/price.json](https://feldera-basics-tutorial.s3.amazonaws.com/price.json)
 
-Click on `Connectors` in the navigation bar on the left to open the connector editing
-section of the web console.  Click `ADD CONNECTOR` and choose the `GET` connector
-from the list.
+Click on `Connectors` in the navigation bar on the left to open the
+connector editing section of the web console.  Click `ADD CONNECTOR`
+and choose `ADD INPUT` for the `GET` connector.
 
 ![Connector creation menu](get-connector.png)
 
 Configure the connector by choosing the following settings in the `SOURCE` and `FORMAT`
 tabs:
+
+:::tip
+
+To avoid typing the long URL below by hand, right-click on the S3
+bucket URL for `part.json` in the list above and select Copy Link,
+then paste into the URL field.
+
+:::
 
 ![GET connector configuration](url-connector-1.png)
 ![GET connector configuration](url-connector-2.png)
@@ -125,15 +133,19 @@ for the connector:
 
 ![Input Kafka connector config: METADATA section](price-kafka-metadata.png)
 ![Input Kafka connector config: SERVER section](price-kafka-server.png)
+![Input Kafka connector config: SECURITY security](price-kafka-security.png)
 ![Input Kafka connector confif: FORMAT section](price-kafka-format.png)
 
-Use the mouse to attach the connector to the `PRICE` table.
+Use the mouse to attach the connector to the `PRICE` table, leaving
+the existing connection in place (Feldera supports multiple input and
+output connections).
 
 Click `Add a new output`, choose `NEW` Kafka connector, and specify the following configuration
 for the connector:
 
 ![Output Kafka connector config: DETAILS section](preferred_vendor-kafka-details.png)
 ![Output Kafka connector config: SERVER section](preferred_vendor-kafka-server.png)
+![Output Kafka connector config: SECURITY section](preferred_vendor-kafka-security.png)
 ![Output Kafka connector config: FORMAT section](preferred_vendor-kafka-format.png)
 
 Attach this connector to the `PREFERRED_VENDOR` view.  The pipeline

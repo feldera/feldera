@@ -78,7 +78,9 @@ curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PRICE?for
 {"insert": {"part": 3, "vendor": 3, "price": 9000}}'
 ```
 
-You should now see the following output in the terminal that is listening to changes to the `PREFERRED_VENDOR` view:
+You should now see the following output in the terminal that is
+listening to changes to the `PREFERRED_VENDOR` view (the `insert`s
+might appear in a different order):
 
 ```json
 {
@@ -145,48 +147,50 @@ curl -X 'POST' http://localhost:8080/v0/pipelines/supply_chain/ingress/PRICE?for
 {"insert": {"part": 2, "vendor": 3, "price": 11000}}'
 ```
 
-Vendors 1 and 2 have increased their prices, while vendor 3 has added more parts
-to its price list, becoming the cheapest supplier of parts 1, 2, and 3.  This
-yields the following output in the `PREFERRED_VENDOR` view:
+Vendors 1 and 2 have increased their prices, while vendor 3 has added
+more parts to its price list, becoming the cheapest supplier of parts
+1, 2, and 3.  This yields the following output in the
+`PREFERRED_VENDOR` view (the order of the operations might appear
+different):
 
 ```json
 {
-   "sequence_number" : 84,
-   "json_data" : [
+   "sequence_number": 84,
+   "json_data": [
       {
-         "delete" : {
-            "PART_ID" : 1,
-            "PART_NAME" : "Flux Capacitor",
-            "PRICE" : "10000",
-            "VENDOR_ID" : 2,
-            "VENDOR_NAME" : "HyperDrive Innovations"
+         "delete": {
+            "PART_ID": 1,
+            "PART_NAME": "Flux Capacitor",
+            "PRICE": "10000",
+            "VENDOR_ID": 2,
+            "VENDOR_NAME": "HyperDrive Innovations"
          }
       },
       {
-         "insert" : {
-            "PART_ID" : 1,
-            "PART_NAME" : "Flux Capacitor",
-            "PRICE" : "20000",
-            "VENDOR_ID" : 3,
-            "VENDOR_NAME" : "DarkMatter Devices"
+         "insert": {
+            "PART_ID": 1,
+            "PART_NAME": "Flux Capacitor",
+            "PRICE": "20000",
+            "VENDOR_ID": 3,
+            "VENDOR_NAME": "DarkMatter Devices"
          }
       },
       {
-         "delete" : {
-            "PART_ID" : 2,
-            "PART_NAME" : "Warp Core",
-            "PRICE" : "15000",
-            "VENDOR_ID" : 1,
-            "VENDOR_NAME" : "Gravitech Dynamics"
+         "delete": {
+            "PART_ID": 2,
+            "PART_NAME": "Warp Core",
+            "PRICE": "15000",
+            "VENDOR_ID": 1,
+            "VENDOR_NAME": "Gravitech Dynamics"
          }
       },
       {
-         "insert" : {
-            "PART_ID" : 2,
-            "PART_NAME" : "Warp Core",
-            "PRICE" : "11000",
-            "VENDOR_ID" : 3,
-            "VENDOR_NAME" : "DarkMatter Devices"
+         "insert": {
+            "PART_ID": 2,
+            "PART_NAME": "Warp Core",
+            "PRICE": "11000",
+            "VENDOR_ID": 3,
+            "VENDOR_NAME": "DarkMatter Devices"
          }
       },
    ]
