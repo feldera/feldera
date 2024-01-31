@@ -14,8 +14,8 @@ use pipeline_types::format::json::{JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use std::{borrow::Cow, mem::take};
 use serde_yaml::Value as YamlValue;
+use std::{borrow::Cow, mem::take};
 
 /// JSON format parser.
 pub struct JsonInputFormat;
@@ -177,14 +177,13 @@ impl InputFormat for JsonInputFormat {
         input_handle: &InputCollectionHandle,
         config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
-        let config = JsonParserConfig::deserialize(config)
-            .map_err(|e| {
-                ControllerError::parser_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    &serde_yaml::to_string(config).unwrap_or_default(),
-                )
-            })?;
+        let config = JsonParserConfig::deserialize(config).map_err(|e| {
+            ControllerError::parser_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(config).unwrap_or_default(),
+            )
+        })?;
         validate_parser_config(&config, endpoint_name)?;
         let input_stream = input_handle
             .handle

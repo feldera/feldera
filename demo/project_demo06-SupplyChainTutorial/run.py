@@ -54,7 +54,7 @@ def main():
     # Connectors
     connectors = []
     for (connector_name, stream, config, is_input) in [
-        ("tutorial-part-s3", 'PART', {
+        ("tutorial-part-s3", 'part', {
             "format": {
                 "name": "json",
                 "config": {
@@ -68,7 +68,7 @@ def main():
                 }
             }
         }, True),
-        ("tutorial-vendor-s3", 'VENDOR', {
+        ("tutorial-vendor-s3", 'vendor', {
             "format": {
                 "name": "json",
                 "config": {
@@ -82,7 +82,7 @@ def main():
                 }
             }
         }, True),
-        ("tutorial-price-s3", 'PRICE', {
+        ("tutorial-price-s3", 'price', {
             "format": {
                 "name": "json",
                 "config": {
@@ -96,7 +96,7 @@ def main():
                 }
             }
         }, True),
-        ("tutorial-price-redpanda", 'PRICE', {
+        ("tutorial-price-redpanda", 'price', {
             "format": {
                 "name": "json",
                 "config": {
