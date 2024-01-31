@@ -143,11 +143,14 @@ us add some manually.
 ## Step 4. Populate tables manually
 
 Expand the runtime state of the pipeline by clicking the chevron icon <icon
-icon="bx:chevron-down" /> on the left.  You should see the list of tables and
-views defined in your program.  Click on the <icon icon="bx:upload" /> icon next
-to the `PART` table.  This will open the view where you can insert new rows to
-the table using a configurable random data generator (feel free to play around
-with it!) or by entering the data manually.  For example, you might add the
+icon="bx:chevron-down" /> on the left.  You should see the list
+of tables and views defined in your program.  Click on the <icon
+icon="bx:upload" /> icon next to the `PART` table.  This will open a
+view with `BROWSE PART` and `INSERT NEW ROWS` tabs.  The `BROWSE PART`
+tab should be empty because no data has been inserted yet.  Click
+`INSERT NEW ROWS`, where you can insert new rows to the table using a
+configurable random data generator (feel free to play around with it!)
+or by entering the data manually.  For example, you might add the
 following rows:
 
 | ID          | NAME           |
@@ -156,8 +159,9 @@ following rows:
 | 2           | Warp Core      |
 | 3           | Kyber Crystal  |
 
-Click `INSERT ROWS` to push the new rows to the table.  Switch to the `BROWSE PART` tab
-to see the contents of the table, which should contain the newly inserted rows.
+Click `INSERT ROWS` to push the new rows to the table.  Switch to the
+`BROWSE PART` tab to see the contents of the table, which should
+contain the newly inserted rows.
 
 Follow the same process to populate `VENDOR`
 
