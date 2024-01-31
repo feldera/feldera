@@ -42,11 +42,11 @@ public class CreateViewStatement extends CreateRelationStatement {
     private final RelRoot compiled;
     public final SqlNode query;
 
-    public CreateViewStatement(SqlNode node, String statement,
-                               String tableName, @Nullable String comment,
+    public CreateViewStatement(SqlNode node, String statement, String tableName,
+                               boolean nameIsQuoted, @Nullable String comment,
                                List<RelColumnMetadata> columns, SqlNode query,
                                RelRoot compiled) {
-        super(node, statement, tableName, comment, columns);
+        super(node, statement, tableName, nameIsQuoted, comment, columns);
         this.query = query;
         this.compiled = compiled;
     }

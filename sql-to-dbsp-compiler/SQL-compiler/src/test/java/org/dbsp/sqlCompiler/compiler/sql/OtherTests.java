@@ -537,6 +537,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals("{\n" +
                 "  \"inputs\" : [ {\n" +
                 "    \"name\" : \"T\",\n" +
+                "    \"case_sensitive\" : false,\n" +
                 "    \"fields\" : [ {\n" +
                 "      \"name\" : \"COL1\",\n" +
                 "      \"case_sensitive\" : false,\n" +
@@ -576,6 +577,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "  } ],\n" +
                 "  \"outputs\" : [ {\n" +
                 "    \"name\" : \"V\",\n" +
+                "    \"case_sensitive\" : false,\n" +
                 "    \"fields\" : [ {\n" +
                 "      \"name\" : \"xCol\",\n" +
                 // TODO: the following should probably be 'true'
@@ -587,6 +589,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "    } ]\n" +
                 "  }, {\n" +
                 "    \"name\" : \"V1\",\n" +
+                "    \"case_sensitive\" : false,\n" +
                 "    \"fields\" : [ {\n" +
                 "      \"name\" : \"yCol\",\n" +
                 "      \"case_sensitive\" : true,\n" +
