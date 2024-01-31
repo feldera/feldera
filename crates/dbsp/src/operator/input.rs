@@ -11,7 +11,7 @@ use crate::{
 };
 use std::fmt::Debug;
 use std::{
-    borrow::Cow,
+    borrow::{Borrow, Cow},
     hash::{Hash, Hasher},
     marker::PhantomData,
     mem::{swap, take},
@@ -503,6 +503,13 @@ where
 
     pub(super) fn take(&self) -> T {
         take(&mut *self.value.lock().unwrap())
+    }
+
+    pub(super) fn map<F, O: 'static>(&self, func: F) -> O
+    where
+        F: Fn(&T) -> O
+    {
+        func(self.value.lock().unwrap().borrow())
     }
 
     fn update<F>(&self, f: F)

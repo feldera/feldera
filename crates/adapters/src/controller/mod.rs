@@ -525,18 +525,23 @@ impl Controller {
                             let mut delta_batch = output_handles
                                 .delta
                                 .as_ref()
-                                .map(|handle| handle.take_from_all());
+                                .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
                             let num_delta_records = delta_batch
                                 .as_ref()
-                                .map(|batch| batch.iter().map(|b| b.len()).sum());
+                                .map(|batch| batch.len());
 
+                            // This is needed to distinguish an empty snapshot from no snapshot.
+                            let snapshot_not_empty = output_handles
+                                .snapshot
+                                .as_ref()
+                                .map(|handle | handle.num_nonempty_mailboxes() > 0);
                             let mut snapshot_batch = output_handles
                                 .snapshot
                                 .as_ref()
-                                .map(|handle| handle.take_from_all());
+                                .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
                             let num_snapshot_records = snapshot_batch
                                 .as_ref()
-                                .map(|batch| batch.iter().map(|b| b.len()).sum());
+                                .map(|batch| batch.len());
 
                             for (i, endpoint_id) in endpoints.iter().enumerate() {
                                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
@@ -548,10 +553,7 @@ impl Controller {
                                 if !endpoint.snapshot_sent.load(Ordering::Acquire)
                                     && output_handles.snapshot.is_some()
                                 {
-                                    if snapshot_batch
-                                        .as_ref()
-                                        .map(|batches| !batches.is_empty())
-                                        .unwrap_or(false)
+                                    if snapshot_not_empty.unwrap_or(false)
                                     {
                                         // Increment stats first, so we don't end up with negative
                                         // counts.
@@ -572,7 +574,7 @@ impl Controller {
                                         // been sent to the output endpoint, the endpoint will get
                                         // labeled with this
                                         // frontier.
-                                        endpoint.queue.push((step, batch, processed_records));
+                                        endpoint.queue.push((step, vec![batch], processed_records));
                                         endpoint.snapshot_sent.store(true, Ordering::Release);
                                     }
                                 } else if delta_batch.is_some() {
@@ -586,7 +588,7 @@ impl Controller {
                                         delta_batch.as_ref().unwrap().clone()
                                     };
 
-                                    endpoint.queue.push((step, batch, processed_records));
+                                    endpoint.queue.push((step, vec![batch], processed_records));
                                 }
 
                                 // Wake up the output thread.  We're not trying to be smart here and
