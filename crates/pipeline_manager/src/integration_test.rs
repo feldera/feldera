@@ -886,7 +886,7 @@ async fn json_ingress() {
     // Push more data using insert/delete format.
     let req = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            format!("/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",),
             r#"{"delete": {"C1": 10, "C2": true}}
             {"insert": {"C1": 30, "C3": "bar"}}"#
                 .to_string(),
@@ -894,7 +894,7 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
+    let quantiles = config.quantiles_json("test", "t1").await;
     assert_eq!(quantiles, "[{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}}]");
 
     // Format data as json array.
@@ -910,7 +910,7 @@ async fn json_ingress() {
     let req = config
         .post_json(
             format!(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+                "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete&array=true",
             ),
             r#"[{"delete": [40, true, "buzz"]}, {"insert": [50, true, ""]}]"#.to_string(),
         )
@@ -942,7 +942,7 @@ async fn json_ingress() {
     let mut req = config
         .post_json(
             format!(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
+                "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
             ),
             r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
         )
@@ -967,7 +967,7 @@ async fn json_ingress() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_csv(&id, "T1").await;
+    let quantiles = config.quantiles_csv(&id, "t1").await;
     assert_eq!(
         quantiles,
         "20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
@@ -977,7 +977,7 @@ async fn json_ingress() {
     // get ingested).
     let mut req = config
         .post_csv(
-            format!("/v0/pipelines/test/ingress/T1?format=csv"),
+            format!("/v0/pipelines/test/ingress/t1?format=csv"),
             r#"15,true,foo
 not_a_number,true,ΑαΒβΓγΔδ
 16,false,unicode🚲"#
@@ -989,7 +989,7 @@ not_a_number,true,ΑαΒβΓγΔδ
     let error = std::str::from_utf8(&body).unwrap();
     assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'C1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"C1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
 
-    let quantiles = config.quantiles_json("test", "T1").await;
+    let quantiles = config.quantiles_json("test", "t1").await;
     assert_eq!(
         quantiles,
         "[{\"insert\":{\"C1\":15,\"C2\":true,\"C3\":\"foo\"}},{\"insert\":{\"C1\":16,\"C2\":false,\"C3\":\"unicode🚲\"}},{\"insert\":{\"C1\":20,\"C2\":null,\"C3\":\"foo\"}},{\"insert\":{\"C1\":25,\"C2\":true,\"C3\":\"\"}},{\"insert\":{\"C1\":30,\"C2\":null,\"C3\":\"bar\"}},{\"insert\":{\"C1\":60,\"C2\":true,\"C3\":\"hello\"}}]"
@@ -1032,7 +1032,7 @@ async fn parse_datetime() {
     // dates/times.
     let req = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+            format!("/v0/pipelines/test/ingress/t1?format=json&update_format=raw",),
             r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
             {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
                 .to_string(),
@@ -1198,6 +1198,95 @@ async fn primary_keys() {
         "[{\"insert\":{\"ID\":1,\"S\":\"1-modified\"}}]"
             .parse::<Value>()
             .unwrap()
+    );
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
+/// Test case-sensitive table ingress/egress behavior.
+#[actix_web::test]
+#[serial]
+async fn case_sensitive_tables() {
+    let config = setup().await;
+    // Table "TaBle1" and view "V1" are case-sensitive and can only be accessed
+    // by quoting their name.
+    // Table "v1" is also case-sensitive, but since its name is lowercase, it
+    // can be accessed as both "v1" and "\"v1\""
+    let _ = deploy_pipeline_without_connectors(
+        &config,
+        r#"create table "TaBle1"(id bigint not null);
+create table table1(id bigint);
+create view "V1" as select * from "TaBle1";
+create view "v1" as select * from table1;"#,
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/start"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
+        .await;
+
+    let mut response1 = config.delta_stream_request_json("test", "\"V1\"").await;
+    let mut response2 = config.delta_stream_request_json("test", "\"v1\"").await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!(
+                "/v0/pipelines/test/ingress/\"TaBle1\"?format=json&update_format=insert_delete",
+            ),
+            r#"{"insert":{"id":1}}"#.to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let req = config
+        .post_json(
+            format!("/v0/pipelines/test/ingress/table1?format=json&update_format=insert_delete",),
+            r#"{"insert":{"id":2}}"#.to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let delta1 = config
+        .read_response_json(&mut response1, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    assert_eq!(delta1.unwrap(), json!([{"insert": {"ID":1}}]));
+
+    let delta2 = config
+        .read_response_json(&mut response2, Duration::from_millis(10_000))
+        .await
+        .unwrap();
+
+    assert_eq!(delta2.unwrap(), json!([{"insert": {"ID":2}}]));
+
+    let quantiles = config.quantiles_json("test", "\"V1\"").await;
+    assert_eq!(
+        quantiles.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"ID\":1}}]".parse::<Value>().unwrap()
+    );
+
+    let quantiles = config.quantiles_json("test", "\"v1\"").await;
+    assert_eq!(
+        quantiles.parse::<Value>().unwrap(),
+        "[{\"insert\":{\"ID\":2}}]".parse::<Value>().unwrap()
     );
 
     // Shutdown the pipeline

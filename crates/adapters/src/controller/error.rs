@@ -38,8 +38,14 @@ pub enum ConfigError {
     /// Input endpoint with this name already exists.
     DuplicateInputEndpoint { endpoint_name: String },
 
+    /// Input table with this name already exists.
+    DuplicateInputStream { stream_name: String },
+
     /// Output endpoint with this name already exists.
     DuplicateOutputEndpoint { endpoint_name: String },
+
+    /// Output view with this name already exists.
+    DuplicateOutputStream { stream_name: String },
 
     /// Endpoint configuration specifies unknown input format name.
     UnknownInputFormat {
@@ -100,7 +106,9 @@ impl DetailedError for ConfigError {
             Self::ParserConfigParseError { .. } => Cow::from("ParserConfigParseError"),
             Self::EncoderConfigParseError { .. } => Cow::from("EncoderConfigParseError"),
             Self::DuplicateInputEndpoint { .. } => Cow::from("DuplicateInputEndpoint"),
+            Self::DuplicateInputStream { .. } => Cow::from("DuplicateInputStream"),
             Self::DuplicateOutputEndpoint { .. } => Cow::from("DuplicateOutputEndpoint"),
+            Self::DuplicateOutputStream { .. } => Cow::from("DuplicateOutputStream"),
             Self::UnknownInputFormat { .. } => Cow::from("UnknownInputFormat"),
             Self::UnknownOutputFormat { .. } => Cow::from("UnknownOutputFormat"),
             Self::UnknownInputTransport { .. } => Cow::from("UnknownInputTransport"),
@@ -145,6 +153,9 @@ impl Display for ConfigError {
             Self::DuplicateInputEndpoint { endpoint_name } => {
                 write!(f, "Input endpoint '{endpoint_name}' already exists")
             }
+            Self::DuplicateInputStream { stream_name } => {
+                write!(f, "Duplicate table name '{stream_name}'")
+            }
             Self::UnknownInputFormat {
                 endpoint_name,
                 format_name,
@@ -159,6 +170,9 @@ impl Display for ConfigError {
             }
             Self::DuplicateOutputEndpoint { endpoint_name } => {
                 write!(f, "Output endpoint '{endpoint_name}' already exists")
+            }
+            Self::DuplicateOutputStream { stream_name } => {
+                write!(f, "Duplicate table or view name '{stream_name}'")
             }
             Self::UnknownOutputFormat {
                 endpoint_name,
@@ -256,6 +270,12 @@ impl ConfigError {
         }
     }
 
+    pub fn duplicate_input_stream(stream_name: &str) -> Self {
+        Self::DuplicateInputStream {
+            stream_name: stream_name.to_owned(),
+        }
+    }
+
     pub fn unknown_input_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::UnknownInputFormat {
             endpoint_name: endpoint_name.to_owned(),
@@ -273,6 +293,12 @@ impl ConfigError {
     pub fn duplicate_output_endpoint(endpoint_name: &str) -> Self {
         Self::DuplicateOutputEndpoint {
             endpoint_name: endpoint_name.to_owned(),
+        }
+    }
+
+    pub fn duplicate_output_stream(stream_name: &str) -> Self {
+        Self::DuplicateOutputStream {
+            stream_name: stream_name.to_owned(),
         }
     }
 
@@ -651,6 +677,12 @@ impl ControllerError {
         }
     }
 
+    pub fn duplicate_input_stream(stream_name: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::duplicate_input_stream(stream_name),
+        }
+    }
+
     pub fn unknown_input_format(endpoint_name: &str, format_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::unknown_input_format(endpoint_name, format_name),
@@ -666,6 +698,12 @@ impl ControllerError {
     pub fn duplicate_output_endpoint(endpoint_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::duplicate_output_endpoint(endpoint_name),
+        }
+    }
+
+    pub fn duplicate_output_stream(stream_name: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::duplicate_output_stream(stream_name),
         }
     }
 

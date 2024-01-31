@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- API now handles SQL table and column names in a case-insensitive manner, consistent
+  with the semantics of SQL (with the exception of case-sensitive relations
+  declared using quotes).
+  ([#1369](https://github.com/feldera/feldera/pull/1369))
 - API: name and description are optional for connector PATCH endpoint.
   OpenAPI documentation for program, connector and service is more consistent.
   ([#1315](https://github.com/feldera/feldera/pull/1315))

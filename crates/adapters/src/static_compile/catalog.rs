@@ -1,3 +1,4 @@
+use crate::catalog::InputCollectionHandle;
 use crate::{
     catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
     static_compile::{DeScalarHandle, DeScalarHandleImpl},
@@ -29,7 +30,6 @@ impl Catalog {
     /// the `From` trait.
     pub fn register_input_zset<Z, D>(
         &mut self,
-        name: &str,
         stream: Stream<RootCircuit, Z>,
         handle: CollectionHandle<Z::Key, Z::R>,
         schema: &str,
@@ -47,10 +47,14 @@ impl Catalog {
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
-        self.register_input_collection_handle(name, DeZSetHandle::new(handle), relation_schema);
+        self.register_input_collection_handle(InputCollectionHandle::new(
+            relation_schema,
+            DeZSetHandle::new(handle),
+        ))
+        .unwrap();
 
         // Inputs are also outputs.
-        self.register_output_zset(name, stream, schema);
+        self.register_output_zset(stream, schema);
     }
 
     /// Add an input stream created using `add_input_set` to catalog.
@@ -60,7 +64,6 @@ impl Catalog {
     /// the `From` trait.
     pub fn register_input_set<Z, D>(
         &mut self,
-        name: &str,
         stream: Stream<RootCircuit, Z>,
         handle: UpsertHandle<Z::Key, bool>,
         schema: &str,
@@ -78,10 +81,14 @@ impl Catalog {
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
-        self.register_input_collection_handle(name, DeSetHandle::new(handle), relation_schema);
+        self.register_input_collection_handle(InputCollectionHandle::new(
+            relation_schema,
+            DeSetHandle::new(handle),
+        ))
+        .unwrap();
 
         // Inputs are also outputs.
-        self.register_output_zset(name, stream, schema);
+        self.register_output_zset(stream, schema);
     }
 
     /// Register an input handle created using `add_input_map`.
@@ -103,7 +110,6 @@ impl Catalog {
     ///   deserialized into instances of `UD` and then converted to `U`.
     pub fn register_input_map<K, KD, V, VD, U, UD, R, VF, UF>(
         &mut self,
-        name: &str,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V, R>>,
         handle: UpsertHandle<K, Update<V, U>>,
         value_key_func: VF,
@@ -139,23 +145,19 @@ impl Catalog {
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
-        self.register_input_collection_handle(
-            name,
-            DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
+        self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema,
-        );
+            DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
+        ))
+        .unwrap();
 
         // Inputs are also outputs.
-        self.register_output_map(name, stream, value_key_func, schema);
+        self.register_output_map(stream, value_key_func, schema);
     }
 
     /// Add an output stream of Z-sets to the catalog.
-    pub fn register_output_zset<Z, D>(
-        &mut self,
-        name: &str,
-        stream: Stream<RootCircuit, Z>,
-        schema: &str,
-    ) where
+    pub fn register_output_zset<Z, D>(&mut self, stream: Stream<RootCircuit, Z>, schema: &str)
+    where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
@@ -255,7 +257,7 @@ impl Catalog {
             )) as Box<dyn SerCollectionHandle>),
         };
 
-        self.output_batch_handles.insert(name.to_owned(), handles);
+        self.register_output_batch_handles(handles).unwrap();
     }
 
     /// Add an output stream that carries updates to an indexed Z-set that
@@ -268,7 +270,6 @@ impl Catalog {
     /// work with maps and z-sets in the same way.
     pub fn register_output_map<K, KD, V, VD, R, F>(
         &mut self,
-        name: &str,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V, R>>,
         key_func: F,
         schema: &str,
@@ -387,7 +388,7 @@ impl Catalog {
             )) as Box<dyn SerCollectionHandle>),
         };
 
-        self.output_batch_handles.insert(name.to_owned(), handles);
+        self.register_output_batch_handles(handles).unwrap();
     }
 }
 
@@ -476,23 +477,24 @@ mod test {
             let (input, hinput) = circuit.add_input_map::<u32, TestStruct, TestStruct, i32>(Box::new(|v, u| *v = u));
 
             catalog.register_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _, _>(
-                "input_map",
                 input.clone(),
                 hinput,
                 |test_struct| test_struct.id,
                 |test_struct| test_struct.id,
+                r#"{"name": "input_MAP", "case_sensitive": false, "fields":[]}"#
             );
 
             Ok(catalog)
         })
         .unwrap();
 
-        let input_map_handle = catalog.input_collection_handle("input_map").unwrap();
+        let input_map_handle = catalog.input_collection_handle("iNpUt_map").unwrap();
         let mut input_stream_handle = input_map_handle
+            .handle
             .configure_deserializer(RECORD_FORMAT.clone())
             .unwrap();
 
-        let output_stream_handles = catalog.output_handles("input_map").unwrap();
+        let output_stream_handles = catalog.output_handles("Input_map").unwrap();
 
         // Step 1: insert a couple of values.
 

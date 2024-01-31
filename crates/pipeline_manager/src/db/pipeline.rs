@@ -25,6 +25,7 @@ use super::{
     storage::Storage, ConnectorDescr, ConnectorId, DBError, ProgramDescr, ProgramId, ProjectDB,
     Version,
 };
+use pipeline_types::program_schema::{canonical_identifier, Relation};
 use serde::{Deserialize, Serialize};
 
 /// Unique pipeline id.
@@ -366,11 +367,11 @@ impl PipelineRevision {
         // This unwrap() is ok since we checked above that the program has a schema
         let schema = program.schema.as_ref().unwrap();
 
-        let tables = HashSet::<_>::from_iter(schema.inputs.iter().map(|r| r.name.clone()));
+        let tables = HashSet::<_>::from_iter(schema.inputs.iter().map(Relation::name));
         let acs_with_missing_tables: Vec<(String, String)> = pipeline
             .attached_connectors
             .iter()
-            .filter(|ac| ac.is_input && !tables.contains(&ac.relation_name))
+            .filter(|ac| ac.is_input && !tables.contains(&canonical_identifier(&ac.relation_name)))
             .map(|ac| (ac.name.clone(), ac.relation_name.clone()))
             .collect();
         if !acs_with_missing_tables.is_empty() {
@@ -379,11 +380,11 @@ impl PipelineRevision {
             });
         }
 
-        let views = HashSet::<_>::from_iter(schema.outputs.iter().map(|r| r.name.clone()));
+        let views = HashSet::<_>::from_iter(schema.outputs.iter().map(Relation::name));
         let acs_with_missing_views: Vec<(String, String)> = pipeline
             .attached_connectors
             .iter()
-            .filter(|ac| !ac.is_input && !views.contains(&ac.relation_name))
+            .filter(|ac| !ac.is_input && !views.contains(&canonical_identifier(&ac.relation_name)))
             .map(|ac| (ac.name.clone(), ac.relation_name.clone()))
             .collect();
         if !acs_with_missing_views.is_empty() {
