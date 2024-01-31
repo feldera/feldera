@@ -30,6 +30,8 @@ pub struct ProgramSchema {
 pub struct Relation {
     #[cfg_attr(feature = "testing", proptest(regex = "relation1|relation2|relation3"))]
     pub name: String,
+    #[serde(default)]
+    pub case_sensitive: bool,
     #[cfg_attr(feature = "testing", proptest(value = "Vec::new()"))]
     pub fields: Vec<Field>,
 }
@@ -40,6 +42,7 @@ pub struct Relation {
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct Field {
     pub name: String,
+    #[serde(default)]
     pub case_sensitive: bool,
     pub columntype: ColumnType,
 }
