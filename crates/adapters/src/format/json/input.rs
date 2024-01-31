@@ -177,13 +177,14 @@ impl InputFormat for JsonInputFormat {
         input_handle: &InputCollectionHandle,
         config: &YamlValue,
     ) -> Result<Box<dyn Parser>, ControllerError> {
-        let config = JsonParserConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(&config).unwrap_or_default(),
-            )
-        })?;
+        let config = JsonParserConfig::deserialize(config)
+            .map_err(|e| {
+                ControllerError::parser_config_parse_error(
+                    endpoint_name,
+                    &e,
+                    &serde_yaml::to_string(config).unwrap_or_default(),
+                )
+            })?;
         validate_parser_config(&config, endpoint_name)?;
         let input_stream = input_handle
             .handle

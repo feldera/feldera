@@ -119,7 +119,7 @@ impl Display for ConfigError {
             Self::PipelineConfigParseError { error } => {
                 write!(f, "Failed to parse pipeline configuration: {error}")
             }
-            Self::ProgramSchemaParseError { error } =>  {
+            Self::ProgramSchemaParseError { error } => {
                 write!(f, "Failed to parse program schema: {error}")
             }
             Self::ParserConfigParseError {
@@ -220,8 +220,8 @@ impl ConfigError {
     }
 
     pub fn program_schema_parse_error<E>(error: &E) -> Self
-        where
-            E: ToString,
+    where
+        E: ToString,
     {
         Self::ProgramSchemaParseError {
             error: error.to_string(),
@@ -619,8 +619,8 @@ impl ControllerError {
     }
 
     pub fn program_schema_parse_error<E>(error: &E) -> Self
-        where
-            E: ToString,
+    where
+        E: ToString,
     {
         Self::Config {
             config_error: ConfigError::program_schema_parse_error(error),
