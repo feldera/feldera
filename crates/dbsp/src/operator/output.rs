@@ -113,6 +113,13 @@ impl<T> OutputHandleInternal<T> {
         self.mailbox[worker].take()
     }
 
+    fn peek_from_worker<F, O: 'static>(&self, worker: usize, func: F) -> O
+    where
+        F: Fn(&Option<T>) -> O,
+    {
+        self.mailbox[worker].map(func)
+    }
+
     fn mailbox(&self, worker: usize) -> &Mailbox<Option<T>> {
         &self.mailbox[worker]
     }
@@ -171,15 +178,32 @@ where
         self.0.mailbox(worker)
     }
 
+    /// The number of mailboxes that contain values that haven't been retrieved yet.
+    pub fn num_nonempty_mailboxes(&self) -> usize {
+        let num_workers = self.0.mailbox.len();
+        let mut non_empty = 0;
+
+        for worker in 0..num_workers {
+            non_empty += self.peek_from_worker(worker, Option::is_some) as usize;
+        }
+
+        non_empty
+    }
+
+    pub fn peek_from_worker<F, O: 'static>(&self, worker: usize, func: F) -> O
+    where
+        F: Fn(&Option<T>) -> O
+    {
+        self.0.peek_from_worker(worker, func)
+    }
+
     /// Read the value produced by `worker` worker thread during the last
     /// clock cycle.
     ///
     /// This method is invoked between two consecutive
     /// [`DBSPHandle::step`](`crate::DBSPHandle::step`)
     /// calls to retrieve the value written to the stream during the last
-    /// clock cycle.  The first call is guaranteed to return a value
-    /// (since a synchronous circuit writes exactly one value to each
-    /// stream at every clock cycle).  It removes the value from the
+    /// clock cycle, if any.  It removes the value from the
     /// mailbox, so subsequent calls will return `None`.
     ///
     /// Invoking this method in the middle of a clock cycle, i.e., during

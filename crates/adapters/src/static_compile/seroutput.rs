@@ -152,6 +152,10 @@ where
             .map(|batch| Box::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Box<dyn SerBatch>)
     }
 
+    fn num_nonempty_mailboxes(&self) -> usize {
+        self.handle.num_nonempty_mailboxes()
+    }
+
     fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>> {
         self.handle
             .take_from_all()
