@@ -4,10 +4,9 @@ use crate::{
         operator_traits::{BinaryOperator, Operator},
         OwnershipPreference, Scope, WithClock,
     },
-    operator::trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, Z1Trace},
+    operator::trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace},
     trace::{
-        consolidation::consolidate, cursor::Cursor, Batch, BatchReader, Builder, Filter, Spine,
-        Trace,
+        consolidation::consolidate, cursor::Cursor, Batch, BatchReader, Builder, Filter, Trace,
     },
     utils::VecExt,
     Circuit, DBData, DBTimestamp, Stream, Timestamp,
@@ -107,11 +106,7 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <InputUpsert<
-                        Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
-                        U,
-                        B,
-                    >>::new(bounds.clone(), patch_func),
+                    <InputUpsert<ValSpine<B, C>, U, B>>::new(bounds.clone(), patch_func),
                     &local,
                     &self.try_sharded_version(),
                 )
@@ -119,11 +114,7 @@ where
             delta.mark_sharded_if(self);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<
-                    Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
-                    B,
-                    C,
-                >>::new(circuit.clone()),
+                <TraceAppend<ValSpine<B, C>, B, C>>::new(circuit.clone()),
                 (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                 (
                     &delta.try_sharded_version(),
