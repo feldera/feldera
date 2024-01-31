@@ -30,7 +30,8 @@ The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division).
 (modulus).
 
-Division or modulus by zero return `NaN`.
+Division by zero returns Infinity, (or `NaN` in case of `0e0 / 0e0`).
+Modulus by zero return `NaN`.
 
 Casting a string to a floating-point value will produce the value
 `0` when parsing fails.
@@ -72,6 +73,14 @@ REAL '1.23'  -- string style
     <td>Floor function: nearest integer value less than or equal to argument (result is a floating point value)</td>
   </tr>
   <tr>
+    <td><code>TRUNCATE(value)</code></td>
+    <td>Returns the integer portion of the number. This is true truncation, no rounding is performed.</td>
+  </tr>
+  <tr>
+    <td><code>ROUND(value)</code></td>
+    <td>Rounds to the nearest integer and returns it. Rounding follows "Bankers Rounding" (rounds 0.5 to the nearest even number) strategy.</td>
+  </tr>
+  <tr>
     <td><code>POWER(BASE, EXPONENT)</code></td>
     <td>The power function, raising <code>BASE</code> to the power <code>EXPONENT</code></td>
   </tr>
@@ -81,11 +90,23 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>LN(value)</code></td>
-    <td>The natural logarithm of value. Produces a runtime error for values less than or equal to zero.</td>
+    <td>The natural logarithm of value. Returns `-inf` for 0. Produces a runtime error for negative numbers.</td>
+  </tr>
+  <tr>
+    <td><code>LOG(value, [, base])</code></td>
+    <td>The logarithm of value to base, or base e if it is not present.  Produces a runtime error for negative values for either value or base. Returns `-inf` for base 0.</td>
   </tr>
   <tr>
     <td><code>LOG10(value)</code></td>
-    <td>The logarithm base 10 of value. Produces a runtime error for values less than or equal to zero.</td>
+    <td>The logarithm base 10 of value. Returns `-inf` for 0. Produces a runtime error for negative numbers.</td>
+  </tr>
+  <tr>
+    <td><code>IS_INF(value)</code></td>
+    <td>Returns true if the value is infinite.</td>
+  </tr>
+  <tr>
+    <td><code>IS_NAN(value)</code></td>
+    <td>Returns true if the value is NaN. Note that two NaN values may not be equal.</td>
   </tr>
   <tr>
     <td><code>SIN(value)</code></td>

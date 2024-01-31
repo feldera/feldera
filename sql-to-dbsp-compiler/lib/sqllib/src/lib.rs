@@ -14,6 +14,8 @@ use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
 pub use interval::LongInterval;
 pub use interval::ShortInterval;
+use num_traits::Pow;
+use num_traits::Zero;
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::Date;
 pub use timestamp::Time;
@@ -574,18 +576,56 @@ some_polymorphic_function1!(abs, d, F64, F64);
 some_polymorphic_function1!(abs, decimal, Decimal, Decimal);
 
 #[inline(always)]
-pub fn ln_decimal(left: Decimal) -> F64 {
-    F64::new(left.ln().to_f64().unwrap())
+pub fn ln_d(left: F64) -> F64 {
+    let left = left.into_inner();
+
+    if left.is_sign_negative() {
+        panic!("Unable to calculate ln for {left}");
+    }
+
+    left.ln().into()
 }
 
-some_polymorphic_function1!(ln, decimal, Decimal, F64);
+some_polymorphic_function1!(ln, d, F64, F64);
 
 #[inline(always)]
-pub fn log10_decimal(left: Decimal) -> F64 {
-    F64::new(left.log10().to_f64().unwrap())
+pub fn log10_d(left: F64) -> F64 {
+    let left = left.into_inner();
+
+    if left.is_sign_negative() {
+        panic!("Unable to calculate log10 for {left}");
+    }
+
+    left.log10().into()
 }
 
-some_polymorphic_function1!(log10, decimal, Decimal, F64);
+some_polymorphic_function1!(log10, d, F64, F64);
+
+#[inline(always)]
+pub fn log_d(left: F64) -> F64 {
+    ln_d(left)
+}
+
+some_polymorphic_function1!(log, d, F64, F64);
+
+#[inline(always)]
+pub fn log_d_d(left: F64, right: F64) -> F64 {
+    let left = left.into_inner();
+    let right = right.into_inner();
+
+    if left.is_sign_negative() || right.is_sign_negative() {
+        panic!("Unable to calculate log({left}, {right})")
+    }
+
+    // match Calcite's behavior, return 0 instead of -0
+    if right.is_zero() {
+        return F64::new(0.0);
+    }
+
+    left.log(right).into()
+}
+
+some_polymorphic_function2!(log, d, F64, d, F64, F64);
 
 #[inline(always)]
 pub fn is_true_b_(left: bool) -> bool {
@@ -758,6 +798,20 @@ where
     left.map(|x| truncate_decimal(x, right))
 }
 
+#[inline(always)]
+pub fn truncate_d(left: F64) -> F64 {
+    left.into_inner().trunc().into()
+}
+
+some_polymorphic_function1!(truncate, d, F64, F64);
+
+#[inline(always)]
+pub fn round_d(left: F64) -> F64 {
+    left.into_inner().round().into()
+}
+
+some_polymorphic_function1!(round, d, F64, F64);
+
 pub fn element<T>(array: Vec<T>) -> Option<T>
 where
     T: Clone,
@@ -785,9 +839,35 @@ pub fn power_i32_d(left: i32, right: F64) -> F64 {
 
 some_polymorphic_function2!(power, i32, i32, d, F64, F64);
 
+pub fn power_d_i32(left: F64, right: i32) -> F64 {
+    F64::new(left.into_inner().powi(right))
+}
+
+some_polymorphic_function2!(power, d, F64, i32, i32, F64);
+
+pub fn power_i32_decimal(left: i32, right: Decimal) -> F64 {
+    F64::new((left as f64).powf(right.to_f64().unwrap()))
+}
+
+some_polymorphic_function2!(power, i32, i32, decimal, Decimal, F64);
+
+pub fn power_decimal_i32(left: Decimal, right: i32) -> F64 {
+    F64::new(left.powi(right.into()).to_f64().unwrap())
+}
+
+some_polymorphic_function2!(power, decimal, Decimal, i32, i32, F64);
+
+pub fn power_i32_i32(left: i32, right: i32) -> F64 {
+    (left as f64).pow(right).into()
+}
+
+some_polymorphic_function2!(power, i32, i32, i32, i32, F64);
+
 pub fn power_d_d(left: F64, right: F64) -> F64 {
     F64::new(left.into_inner().powf(right.into_inner()))
 }
+
+some_polymorphic_function2!(power, d, F64, d, F64, F64);
 
 pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
     if right == Decimal::new(5, 1) {
@@ -800,6 +880,18 @@ pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
 
 some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
 
+pub fn power_decimal_d(left: Decimal, right: F64) -> F64 {
+    F64::new(left.powf(right.into_inner()).to_f64().unwrap())
+}
+
+some_polymorphic_function2!(power, decimal, Decimal, d, F64, F64);
+
+pub fn power_d_decimal(left: F64, right: Decimal) -> F64 {
+    F64::new(left.into_inner().powf(right.to_f64().unwrap()))
+}
+
+some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
+
 pub fn sqrt_decimal(left: Decimal) -> F64 {
     F64::from(left.sqrt().unwrap().to_f64().unwrap())
 }
@@ -807,7 +899,11 @@ pub fn sqrt_decimal(left: Decimal) -> F64 {
 some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
 
 pub fn sqrt_d(left: F64) -> F64 {
-    F64::from(left.into_inner().sqrt())
+    let left = left.into_inner();
+    if left < 0.0 {
+        panic!("Unable to compute sqrt of {left}");
+    }
+    F64::new(left.sqrt())
 }
 
 some_polymorphic_function1!(sqrt, d, F64, F64);
@@ -1062,6 +1158,32 @@ pub fn sech_d(value: F64) -> F64 {
 }
 
 some_polymorphic_function1!(sech, d, F64, F64);
+
+#[inline(always)]
+pub fn is_inf_d(value: F64) -> bool {
+    value.into_inner().is_infinite()
+}
+
+#[inline(always)]
+pub fn is_inf_f(value: F32) -> bool {
+    value.into_inner().is_infinite()
+}
+
+some_polymorphic_function1!(is_inf, d, F64, bool);
+some_polymorphic_function1!(is_inf, f, F32, bool);
+
+#[inline(always)]
+pub fn is_nan_d(value: F64) -> bool {
+    value.into_inner().is_nan()
+}
+
+#[inline(always)]
+pub fn is_nan_f(value: F32) -> bool {
+    value.into_inner().is_nan()
+}
+
+some_polymorphic_function1!(is_nan, d, F64, bool);
+some_polymorphic_function1!(is_nan, f, F32, bool);
 
 ////////////////////////////////////////////////
 

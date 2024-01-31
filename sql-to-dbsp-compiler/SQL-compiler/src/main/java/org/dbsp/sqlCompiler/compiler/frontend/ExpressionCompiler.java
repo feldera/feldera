@@ -679,6 +679,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         if (call.operands.isEmpty())
                             throw new UnimplementedException(node);
                         DBSPExpression left = ops.get(0);
+
+                        if (left.type.is(DBSPTypeDouble.class))
+                            return this.compilePolymorphicFunction(call, node, type, ops, 1);
+
                         if (call.operands.size() == 1)
                             right = new DBSPI32Literal(0);
                         else
@@ -693,8 +697,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     }
                     case "numeric_inc":
                     case "sign":
-                    case "log10":
-                    case "ln":
                     case "abs": {
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 1);
@@ -703,10 +705,36 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 2);
                     }
+                    case "log10":
+                    case "ln":
+                    {
+                        // Cast to Double
+                        this.ensureDouble(ops, 0);
+                        // See: https://github.com/feldera/feldera/issues/1363
+                        if (!ops.get(0).type.mayBeNull) {
+                            type = type.setMayBeNull(false);
+                        }
+                        return this.compilePolymorphicFunction(call, node, type, ops, 1);
+                    }
+                    case "log":
+                    {
+                        // Turn the arguments into Double
+                        for (int i = 0; i < ops.size(); i++) {
+                            this.ensureDouble(ops, i);
+                        }
+                        return this.compilePolymorphicFunction(call, node, type, ops, 1, 2);
+                    }
                     case "power": {
                         // power(a, .5) -> sqrt(a).  This is more precise.
                         // Calcite does the opposite conversion.
                         assert ops.size() == 2: "Expected two arguments for power function";
+
+                        // convert integer to double
+                        DBSPExpression firstArg = ops.get(0);
+                        if (firstArg.type.is(DBSPTypeInteger.class)) {
+                            this.ensureDouble(ops, 0);
+                        }
+
                         DBSPExpression argument = ops.get(1);
                         if (argument.is(DBSPDecimalLiteral.class)) {
                             DBSPDecimalLiteral dec = argument.to(DBSPDecimalLiteral.class);
@@ -720,6 +748,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                                         "sqrt", node, type, ops, 1);
                             }
                         }
+
+                        // Cast real to double
+                        for (int i = 0; i < ops.size(); i++) {
+                            if (ops.get(i).type.is(DBSPTypeReal.class)) {
+                                this.ensureDouble(ops, i);
+                            }
+                        }
+
                         return this.compilePolymorphicFunction(call, node, type,
                                 ops, 2);
                     }
@@ -749,6 +785,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "csch":
                     {
                         this.ensureDouble(ops, 0);
+                        return this.compilePolymorphicFunction(call, node, type, ops, 1);
+                    }
+                    case "is_inf":
+                    case "is_nan":
+                    {
+                        // Turn the argument into Double
+                        if (!ops.get(0).type.is(DBSPTypeReal.class)) {
+                            this.ensureDouble(ops, 0);
+                        }
                         return this.compilePolymorphicFunction(call, node, type, ops, 1);
                     }
                     case "atan2":

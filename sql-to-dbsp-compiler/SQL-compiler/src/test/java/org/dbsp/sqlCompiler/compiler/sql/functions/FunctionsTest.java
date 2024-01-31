@@ -350,4 +350,244 @@ public class FunctionsTest extends SqlIoTest {
                 "cannot represent 1234.124 as DECIMAL(6, 3)"
         );
     }
+
+    @Test
+    public void testLn() {
+        this.qs("""
+                SELECT ln(2e0);
+                 ln
+                ----
+                 0.693147180559945
+                (1 row)
+                
+                SELECT ln(2.0);
+                 ln
+                ----
+                 0.693147180559945
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testIsInf() {
+        this.qs(
+                """
+                        SELECT IS_INF(null);
+                        is_inf
+                        -------
+                        null
+                        (1 row)
+                        
+                        SELECT IS_INF(1);
+                        is_inf
+                        -------
+                         f
+                        (1 row)
+                        
+                        SELECT IS_INF('INF'::DOUBLE);
+                        is_inf
+                        -------
+                         t
+                        (1 row)
+                        
+                        SELECT IS_INF('-INF'::DOUBLE);
+                        is_inf
+                        -------
+                         t
+                        (1 row)
+                        
+                        SELECT IS_INF('Infinity'::DOUBLE);
+                        is_inf
+                        -------
+                         t
+                        (1 row)
+                        
+                        SELECT IS_INF('-Infinity'::DOUBLE);
+                        is_inf
+                        -------
+                         t
+                        (1 row)
+                        
+                        -- f64::MAX
+                        SELECT IS_INF(1.7976931348623157e308);
+                        is_inf
+                        -------
+                         f
+                        (1 row)
+                        
+                        -- f64::MIN
+                        SELECT IS_INF(-1.7976931348623157e308);
+                        is_inf
+                        -------
+                         f
+                        (1 row)
+                
+                        SELECT IS_INF(1e0 / 0e0);
+                         IS_INF
+                        --------
+                         t
+                        (1 row)
+                
+                        SELECT IS_INF(-1e0 / 0e0);
+                         IS_INF
+                        --------
+                         t
+                        (1 row)
+                        """
+        );
+    }
+
+    @Test @Ignore("Calcite bug: https://github.com/feldera/feldera/issues/1345")
+    public void testIsInfReal() {
+        this.qs("""
+                -- f64::MAX
+                SELECT is_inf(1.7976931348623157e308::real);
+                real
+                -------
+                 t
+                (1 row)
+                
+                -- f64::MIN
+                SELECT is_inf(-1.7976931348623157e308::real);
+                real
+                -------
+                 t
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testIsNan() {
+        this.qs("""
+                SELECT is_nan(null);
+                 is_nan
+                --------
+                 null
+                (1 row)
+                
+                SELECT is_nan('nan'::double);
+                 is_nan
+                --------
+                 t
+                (1 row)
+                
+                SELECT is_nan(0e0 / 0e0);
+                 is_nan
+                --------
+                 t
+                (1 row)
+                
+                SELECT is_nan(-0e0 / 0e0);
+                 is_nan
+                --------
+                 t
+                (1 row)
+                
+                SELECT is_nan(0.0);
+                 is_nan
+                --------
+                 f
+                (1 row)
+                
+                SELECT is_nan(1.7976931348623157e308);
+                 is_nan
+                --------
+                 f
+                (1 row)
+                
+                SELECT is_nan(-1.7976931348623157e308);
+                 is_nan
+                --------
+                 f
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testPower() {
+        this.qs("""
+                SELECT power(2e0, 2);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                
+                SELECT power(2e0::real, 2);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                SELECT power(2, 2e0);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                SELECT power(2e0, 2.0);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                SELECT power(2.0, 2e0);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                SELECT power(2e0, 2e0);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                SELECT power(2.0, 2.0);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                SELECT power(2.0, 2);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                 
+                SELECT power(2, 2.0);
+                 power
+                -------
+                 4.0000000000000000
+                (1 row)
+                 
+                SELECT POWER(2, 2);
+                 power
+                -------
+                 4
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testSqrtDouble() {
+        this.qs("""
+                SELECT sqrt(9e0);
+                 sqrt
+                ------
+                 3
+                (1 row)
+                
+                SELECT sqrt(null::double);
+                 sqrt
+                ------
+                null
+                (1 row)
+                """
+        );
+    }
 }
