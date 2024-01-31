@@ -9,7 +9,7 @@ use crate::{
         Circuit, GlobalNodeId, Scope, Stream, WithClock,
     },
     circuit_cache_key,
-    trace::{spine_fueled::Spine, Batch, BatchReader, Builder, Cursor as TraceCursor, Trace},
+    trace::{Batch, BatchReader, Builder, Cursor as TraceCursor, Trace},
     DBTimestamp, OrdIndexedZSet, Timestamp,
 };
 use size_of::SizeOf;
@@ -142,13 +142,7 @@ where
                             circuit.add_binary_operator(
                                 DistinctIncremental::new(circuit.clone()),
                                 &stream,
-                                &stream.trace::<Spine<
-                                    <<C as WithClock>::Time as Timestamp>::OrdValBatch<
-                                        Z::Key,
-                                        Z::Val,
-                                        Z::R,
-                                    >,
-                                >>(),
+                                &stream.trace(),
                             )
                         }
                         .mark_sharded()

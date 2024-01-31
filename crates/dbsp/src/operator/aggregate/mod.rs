@@ -20,7 +20,7 @@ use crate::{
     time::Timestamp,
     trace::{
         cursor::{Cursor, CursorGroup},
-        Batch, BatchReader, Builder, Spine,
+        Batch, BatchReader, Builder,
     },
     DBData, DBTimestamp, DBWeight, OrdIndexedZSet, OrdZSet,
 };
@@ -273,7 +273,7 @@ where
             .add_binary_operator(
                 AggregateIncremental::new(aggregator, circuit.clone()),
                 &stream,
-                &stream.trace::<Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<Z::Key, Z::Val, Z::R>>>(),
+                &stream.trace(),
             )
             .upsert::<O>()
             .mark_sharded()

@@ -5,7 +5,7 @@ use std::{
 };
 
 use feldera_storage::{
-    backend::{StorageExecutor, StorageRead, StorageControl},
+    backend::{StorageControl, StorageExecutor, StorageRead},
     file::{
         reader::{ColumnSpec, Cursor as FileCursor, Reader},
         writer::{Parameters, Writer2},

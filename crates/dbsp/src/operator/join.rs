@@ -11,7 +11,7 @@ use crate::{
     circuit_cache_key,
     operator::FilterMap,
     time::Timestamp,
-    trace::{cursor::Cursor as TraceCursor, Batch, BatchReader, Batcher, Builder, Spine, Trace},
+    trace::{cursor::Cursor as TraceCursor, Batch, BatchReader, Batcher, Builder, Trace},
     DBData, DBTimestamp, OrdIndexedZSet, OrdZSet,
 };
 use size_of::{Context, SizeOf};
@@ -273,8 +273,8 @@ where
         let left = self.shard();
         let right = other.shard();
 
-        let left_trace = left.trace::<Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<I1::Key, I1::Val, I1::R>>>();
-        let right_trace = right.trace::<Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<I1::Key, I2::Val, I1::R>>>();
+        let left_trace = left.trace();
+        let right_trace = right.trace();
 
         let left = self.circuit().add_binary_operator(
             JoinTrace::new(

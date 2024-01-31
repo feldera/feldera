@@ -4,10 +4,10 @@ use crate::{
         operator_traits::{BinaryOperator, Operator},
         OwnershipPreference, Scope, WithClock,
     },
-    operator::trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, Z1Trace},
-    trace::{
-        consolidation::consolidate, cursor::Cursor, Batch, BatchReader, Builder, Spine, Trace,
+    operator::trace::{
+        DelayedTraceId, KeySpine, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
     },
+    trace::{consolidation::consolidate, cursor::Cursor, Batch, BatchReader, Builder, Trace},
     utils::VecExt,
     Circuit, DBData, DBTimestamp, Stream, Timestamp,
 };
@@ -65,25 +65,17 @@ where
                 circuit.add_feedback(Z1Trace::new(false, circuit.root_scope(), bounds.clone()));
             local.mark_sharded_if(self);
 
-            let delta =
-                circuit
-                    .add_binary_operator(
-                        <Upsert<
-                            Spine<<<C as WithClock>::Time as Timestamp>::OrdKeyBatch<K, B::R>>,
-                            B,
-                        >>::new(bounds.clone()),
-                        &local,
-                        &self.try_sharded_version(),
-                    )
-                    .mark_distinct();
+            let delta = circuit
+                .add_binary_operator(
+                    <Upsert<KeySpine<B, C>, B>>::new(bounds.clone()),
+                    &local,
+                    &self.try_sharded_version(),
+                )
+                .mark_distinct();
             delta.mark_sharded_if(self);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<
-                    Spine<<<C as WithClock>::Time as Timestamp>::OrdKeyBatch<K, B::R>>,
-                    B,
-                    C,
-                >>::new(circuit.clone()),
+                <TraceAppend<KeySpine<B, C>, B, C>>::new(circuit.clone()),
                 (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                 (
                     &delta.try_sharded_version(),
@@ -161,10 +153,7 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <Upsert<
-                        Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
-                        B,
-                    >>::new(bounds.clone()),
+                    <Upsert<ValSpine<B, C>, B>>::new(bounds.clone()),
                     &local,
                     &self.try_sharded_version(),
                 )
@@ -172,11 +161,7 @@ where
             delta.mark_sharded_if(self);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<
-                    Spine<<<C as WithClock>::Time as Timestamp>::OrdValBatch<K, V, B::R>>,
-                    B,
-                    C,
-                >>::new(circuit.clone()),
+                <TraceAppend<ValSpine<B, C>, B, C>>::new(circuit.clone()),
                 (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                 (
                     &delta.try_sharded_version(),

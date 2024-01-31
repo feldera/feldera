@@ -12,6 +12,7 @@ use crate::{
     trace::{cursor::Cursor, Batch, BatchReader, Builder, Filter, Spine, Trace},
     DBData, Timestamp,
 };
+use crate::{DBTimestamp, IndexedZSet};
 use size_of::SizeOf;
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::DerefMut, rc::Rc};
 
@@ -207,6 +208,25 @@ where
     builder.done()
 }
 
+/// A key-only [`Spine`] of `C`'s default batch type, with key and weight types
+/// taken from `B`.
+pub type KeySpine<B, C> = Spine<
+    <<C as WithClock>::Time as Timestamp>::OrdKeyBatch<
+        <B as BatchReader>::Key,
+        <B as BatchReader>::R,
+    >,
+>;
+
+/// A [`Spine`] of `C`'s default batch type, with key, value, and weight types
+/// taken from `B`.
+pub type ValSpine<B, C> = Spine<
+    <<C as WithClock>::Time as Timestamp>::OrdValBatch<
+        <B as BatchReader>::Key,
+        <B as BatchReader>::Val,
+        <B as BatchReader>::R,
+    >,
+>;
+
 impl<C, B> Stream<C, B>
 where
     C: Circuit,
@@ -218,33 +238,36 @@ where
     ///
     /// This operator labels each untimed batch in the stream with the current
     /// timestamp and adds it to a trace.
-    pub fn trace<T>(&self) -> Stream<C, T>
+    pub fn trace(&self) -> Stream<C, ValSpine<B, C>>
     where
-        B: BatchReader<Time = ()>,
-        T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
+        B: IndexedZSet,
+        <C as WithClock>::Time: DBTimestamp,
     {
         self.trace_with_bound(TraceBound::new(), TraceBound::new())
     }
 
-    pub fn trace_with_bound<T>(
+    /// Record batches in `self` in a trace with bounds `lower_key_bound` and
+    /// `lower_val_bound`.
+    ///
+    /// ```text
+    ///          ┌─────────────┐ trace
+    /// self ───►│ TraceAppend ├─────────┐───► output
+    ///          └─────────────┘         │
+    ///            ▲                     │
+    ///            │                     │
+    ///            │ local   ┌───────┐   │z1feedback
+    ///            └─────────┤Z1Trace│◄──┘
+    ///                      └───────┘
+    /// ```
+    pub fn trace_with_bound(
         &self,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
-    ) -> Stream<C, T>
+    ) -> Stream<C, ValSpine<B, C>>
     where
-        B: BatchReader<Time = ()>,
-        T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = <C as WithClock>::Time> + Clone,
+        B: IndexedZSet,
+        <C as WithClock>::Time: DBTimestamp,
     {
-        // ```text
-        //          ┌─────────────┐ trace
-        // self ───►│ TraceAppend ├─────────┐───► output
-        //          └─────────────┘         │
-        //            ▲                     │
-        //            │                     │
-        //            │ local   ┌───────┐   │z1feedback
-        //            └─────────┤Z1Trace│◄──┘
-        //                      └───────┘
-        // ```
         let mut trace_bounds = self.circuit().cache_get_or_insert_with(
             TraceId::new(self.origin_node_id().clone()),
             || {
@@ -258,7 +281,7 @@ where
                         bounds.clone(),
                     ));
                     let trace = circuit.add_binary_operator_with_preference(
-                        <TraceAppend<T, B, C>>::new(circuit.clone()),
+                        <TraceAppend<ValSpine<B, C>, B, C>>::new(circuit.clone()),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (
                             &self.try_sharded_version(),
