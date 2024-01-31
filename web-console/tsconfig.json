@@ -40,14 +40,8 @@
       "$lib/*": [
         "./src/lib/*"
       ],
-      "$demo": [
-        "./public/demo"
-      ],
       "$demo/*": [
-        "./public/demo/*"
-      ],
-      "$public": [
-        "./public"
+        "../demo/*"
       ],
       "$public/*": [
         "./public/*"

@@ -1,6 +1,6 @@
 'use client'
 
-import publicDemos from '$demo/publicDemos.json'
+import demos from '$demo/demos.json'
 import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
 import { GridItems } from '$lib/components/common/GridItems'
 import { DemoCleanupDialog } from '$lib/components/demo/DemoCleanupDialog'
@@ -34,7 +34,7 @@ const DemoTile = (props: { name: string; desc: string; onSetup: () => void; onCl
 }
 
 const fetchDemoSetup = (demo: { import: string }) =>
-  import(`$demo/${demo.import}`).then(imported => imported.default as DemoSetup)
+  fetch(`/_next/static/demo/${demo.import}`).then(r => r.json()) as Promise<DemoSetup>
 
 export default function () {
   const [setupDemo, setSetupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
@@ -53,7 +53,7 @@ export default function () {
         <Typography variant='body1' gutterBottom>
           Setup and explore pre-made demos on your running Feldera instance
         </Typography>
-        {publicDemos.map(group => (
+        {demos.map(group => (
           <Fragment key={group.group}>
             <Typography variant='h6' gutterBottom>
               {group.label}
