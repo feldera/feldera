@@ -11,8 +11,8 @@ use erased_serde::Serialize as ErasedSerialize;
 use pipeline_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use std::{borrow::Cow, mem::take, sync::Arc};
 use serde_yaml::Value as YamlValue;
+use std::{borrow::Cow, mem::take, sync::Arc};
 
 pub(crate) mod deserializer;
 use crate::catalog::InputCollectionHandle;
@@ -242,14 +242,13 @@ impl OutputFormat for CsvOutputFormat {
         _schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let config = CsvEncoderConfig::deserialize(config)
-            .map_err(|e| {
-                ControllerError::encoder_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    &serde_yaml::to_string(&config).unwrap_or_default(),
-                )
-            })?;
+        let config = CsvEncoderConfig::deserialize(config).map_err(|e| {
+            ControllerError::encoder_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_yaml::to_string(&config).unwrap_or_default(),
+            )
+        })?;
 
         Ok(Box::new(CsvEncoder::new(consumer, config)))
     }

@@ -23,12 +23,14 @@ mod mock_dezset;
 mod mock_input_consumer;
 mod mock_output_consumer;
 
+use crate::catalog::InputCollectionHandle;
 pub use data::{
     generate_test_batch, generate_test_batches, generate_test_batches_with_weights, TestStruct,
 };
 pub use mock_dezset::{MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
+use pipeline_types::program_schema::Relation;
 
 pub struct TestLogger;
 pub static TEST_LOGGER: TestLogger = TestLogger;
@@ -82,7 +84,12 @@ where
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     let input_handle = <MockDeZSet<T, U>>::new();
-    let consumer = MockInputConsumer::from_handle(&input_handle, config);
+    // Input parsers don't care about schema yet.
+    let schema = Relation::new("mock_schema", false, vec![]);
+    let consumer = MockInputConsumer::from_handle(
+        &InputCollectionHandle::new(schema, input_handle.clone()),
+        config,
+    );
     Ok((consumer, input_handle))
 }
 
@@ -124,8 +131,15 @@ pub fn test_circuit(workers: usize) -> (Box<dyn DbspCircuitHandle>, Box<dyn Circ
         let mut catalog = Catalog::new();
         let (input, hinput) = circuit.add_input_zset::<TestStruct, i32>();
 
-        catalog.register_input_zset("test_input1", input.clone(), hinput);
-        catalog.register_output_zset("test_output1", input);
+        // Use bogus schema until any of the tests care about having a real one.
+        let input_schema =
+            serde_json::to_string(&Relation::new("test_input1", false, vec![])).unwrap();
+
+        let output_schema =
+            serde_json::to_string(&Relation::new("test_output1", false, vec![])).unwrap();
+
+        catalog.register_input_zset(input.clone(), hinput, &input_schema);
+        catalog.register_output_zset(input, &output_schema);
 
         Ok(catalog)
     })

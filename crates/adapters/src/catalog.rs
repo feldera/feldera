@@ -5,6 +5,7 @@ use crate::{serialize_struct, static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 use dbsp::{utils::Tup2, InputHandle};
 use pipeline_types::format::json::JsonFlavor;
+use pipeline_types::program_schema::canonical_identifier;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::query::OutputQuery;
 use serde::{Deserialize, Serialize};
@@ -407,8 +408,8 @@ pub trait CircuitCatalog: Send {
 
 /// Circuit catalog implementation.
 pub struct Catalog {
-    pub(crate) input_collection_handles: BTreeMap<String, InputCollectionHandle>,
-    pub(crate) output_batch_handles: BTreeMap<String, OutputCollectionHandles>,
+    input_collection_handles: BTreeMap<String, InputCollectionHandle>,
+    output_batch_handles: BTreeMap<String, OutputCollectionHandles>,
 }
 
 impl Default for Catalog {
@@ -425,35 +426,61 @@ impl Catalog {
         }
     }
 
-    pub fn register_input_collection_handle<H>(&mut self, name: &str, handle: H, schema: Relation)
-    where
-        H: DeCollectionHandle + 'static,
-    {
-        self.input_collection_handles.insert(
-            name.to_owned(),
-            InputCollectionHandle {
-                handle: Box::new(handle),
-                schema,
-            },
-        );
+    pub fn register_input_collection_handle(
+        &mut self,
+        handle: InputCollectionHandle,
+    ) -> Result<(), ControllerError> {
+        let name = handle.schema.name();
+        if self.input_collection_handles.contains_key(&name) {
+            return Err(ControllerError::duplicate_input_stream(&name));
+        }
+        self.input_collection_handles.insert(name, handle);
+
+        Ok(())
+    }
+
+    pub fn register_output_batch_handles(
+        &mut self,
+        handles: OutputCollectionHandles,
+    ) -> Result<(), ControllerError> {
+        let name = handles.schema.name();
+        if self.output_batch_handles.contains_key(&name) {
+            return Err(ControllerError::duplicate_output_stream(&name));
+        }
+        self.output_batch_handles.insert(name, handles);
+
+        Ok(())
     }
 }
 
 impl CircuitCatalog for Catalog {
     /// Look up an input stream handle by name.
     fn input_collection_handle(&self, name: &str) -> Option<&InputCollectionHandle> {
-        self.input_collection_handles.get(name)
+        self.input_collection_handles
+            .get(&canonical_identifier(name))
     }
 
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles> {
-        self.output_batch_handles.get(name)
+        self.output_batch_handles.get(&canonical_identifier(name))
     }
 }
 
 pub struct InputCollectionHandle {
     pub schema: Relation,
     pub handle: Box<dyn DeCollectionHandle>,
+}
+
+impl InputCollectionHandle {
+    pub fn new<H>(schema: Relation, handle: H) -> Self
+    where
+        H: DeCollectionHandle + 'static,
+    {
+        Self {
+            schema,
+            handle: Box::new(handle),
+        }
+    }
 }
 
 /// A set of stream handles associated with each output collection.

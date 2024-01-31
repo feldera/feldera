@@ -1,3 +1,4 @@
+use crate::catalog::InputCollectionHandle;
 use crate::{
     test::{wait, MockDeZSet, MockUpdate, TestStruct, DEFAULT_TIMEOUT_MS},
     InputFormat,
@@ -7,6 +8,7 @@ use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
 use lazy_static::lazy_static;
 use log::{error, info};
+use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::kafka::default_redpanda_server;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
@@ -235,10 +237,14 @@ impl BufferConsumer {
         let topic = topic.to_string();
         let format = <dyn InputFormat>::get_format(format).unwrap();
         let buffer = MockDeZSet::new();
+
+        // Input parsers don't care about schema yet.
+        let schema = Relation::new("mock_schema", false, vec![]);
+
         let mut parser = format
             .new_parser(
                 "BaseConsumer",
-                &buffer,
+                &InputCollectionHandle::new(schema, buffer.clone()),
                 &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
             )
             .unwrap();

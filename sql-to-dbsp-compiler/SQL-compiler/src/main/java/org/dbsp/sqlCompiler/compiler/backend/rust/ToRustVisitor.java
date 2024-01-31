@@ -101,8 +101,8 @@ public class ToRustVisitor extends CircuitVisitor {
      *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
      *         let mut catalog = Catalog::new();
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
-     *         catalog.register_input_zset("input0", input, handles.0, input0_metadata);
-     *         catalog.register_output_zset("output0", input, output0_metadata);
+     *         catalog.register_input_zset(input, handles.0, input0_metadata);
+     *         catalog.register_output_zset(input, output0_metadata);
      *         Ok(catalog)
      *     }).unwrap();
      *     (circuit, catalog)
@@ -424,8 +424,6 @@ public class ToRustVisitor extends CircuitVisitor {
             DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
-                    .append(Utilities.doubleQuote(operator.getName()))
-                    .append(", ")
                     .append(operator.outputName)
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -534,8 +532,6 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(", ");
             operator.getOutputIndexedZSetType().weightType.accept(this.innerVisitor);
             this.builder.append(", _, _>(")
-                    .append(Utilities.doubleQuote(operator.getName()))
-                    .append(", ")
                     .append(operator.outputName)
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -649,8 +645,6 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("catalog.register_output_zset::<_, ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
-                    .append(Utilities.doubleQuote(operator.getName()))
-                    .append(", ")
                     .append(operator.input().getName())
                     .append(".clone()")
                     .append(", ");

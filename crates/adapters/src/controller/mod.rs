@@ -71,6 +71,7 @@ pub use pipeline_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
+use pipeline_types::program_schema::canonical_identifier;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
@@ -724,7 +725,7 @@ impl OutputEndpointDescr {
     ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
-            stream_name: stream_name.to_string(),
+            stream_name: canonical_identifier(stream_name),
             query,
             queue: Arc::new(SegQueue::new()),
             snapshot_sent: AtomicBool::new(false),

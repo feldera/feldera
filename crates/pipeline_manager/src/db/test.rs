@@ -803,16 +803,8 @@ async fn versioning() {
             tenant_id,
             program_id,
             ProgramSchema {
-                inputs: vec![Relation {
-                    name: "t1".into(),
-                    case_sensitive: false,
-                    fields: vec![],
-                }],
-                outputs: vec![Relation {
-                    name: "v1".into(),
-                    case_sensitive: false,
-                    fields: vec![],
-                }],
+                inputs: vec![Relation::new("t1", false, vec![])],
+                outputs: vec![Relation::new("v1", false, vec![])],
             },
         )
         .await
@@ -890,22 +882,10 @@ async fn versioning() {
             program_id,
             ProgramSchema {
                 inputs: vec![
-                    Relation {
-                        name: "t1".into(),
-                        case_sensitive: false,
-                        fields: vec![],
-                    },
-                    Relation {
-                        name: "t2".into(),
-                        case_sensitive: false,
-                        fields: vec![],
-                    },
+                    Relation::new("t1", false, vec![]),
+                    Relation::new("t2", false, vec![]),
                 ],
-                outputs: vec![Relation {
-                    name: "v1".into(),
-                    case_sensitive: false,
-                    fields: vec![],
-                }],
+                outputs: vec![Relation::new("v1", false, vec![])],
             },
         )
         .await
@@ -924,16 +904,8 @@ async fn versioning() {
             tenant_id,
             program_id,
             ProgramSchema {
-                inputs: vec![Relation {
-                    name: "tnew1".into(),
-                    case_sensitive: false,
-                    fields: vec![],
-                }],
-                outputs: vec![Relation {
-                    name: "vnew1".into(),
-                    case_sensitive: false,
-                    fields: vec![],
-                }],
+                inputs: vec![Relation::new("tnew1", false, vec![])],
+                outputs: vec![Relation::new("vnew1", false, vec![])],
             },
         )
         .await

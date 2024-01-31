@@ -6,6 +6,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use once_cell::sync::Lazy;
 use pipeline_types::program_schema::Relation;
 use serde::Serialize;
+use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -13,7 +14,6 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     sync::Arc,
 };
-use serde_yaml::Value as YamlValue;
 
 pub(crate) mod csv;
 mod json;

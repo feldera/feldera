@@ -59,7 +59,7 @@ impl OutputFormat for JsonOutputFormat {
         &self,
         endpoint_name: &str,
         config: &YamlValue,
-        schema: &Relation,
+        _schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
         let mut config = JsonEncoderConfig::deserialize(config).map_err(|e| {
@@ -77,7 +77,7 @@ impl OutputFormat for JsonOutputFormat {
             config.buffer_size_records = 1;
         }
 
-        Ok(Box::new(JsonEncoder::new(consumer, config, schema)))
+        Ok(Box::new(JsonEncoder::new(consumer, config)))
     }
 }
 
@@ -111,11 +111,7 @@ struct JsonEncoder {
 }
 
 impl JsonEncoder {
-    fn new(
-        output_consumer: Box<dyn OutputConsumer>,
-        mut config: JsonEncoderConfig,
-        _schema: &Relation,
-    ) -> Self {
+    fn new(output_consumer: Box<dyn OutputConsumer>, mut config: JsonEncoderConfig) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
         if config.json_flavor.is_none() {
