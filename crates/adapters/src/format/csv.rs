@@ -242,13 +242,14 @@ impl OutputFormat for CsvOutputFormat {
         _schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let config = CsvEncoderConfig::deserialize(config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(&config).unwrap_or_default(),
-            )
-        })?;
+        let config = CsvEncoderConfig::deserialize(config)
+            .map_err(|e| {
+                ControllerError::encoder_config_parse_error(
+                    endpoint_name,
+                    &e,
+                    &serde_yaml::to_string(&config).unwrap_or_default(),
+                )
+            })?;
 
         Ok(Box::new(CsvEncoder::new(consumer, config)))
     }

@@ -3154,7 +3154,6 @@
         "description": "A SQL field.\n\nMatches the Calcite JSON format.",
         "required": [
           "name",
-          "case_sensitive",
           "columntype"
         ],
         "properties": {
@@ -4140,6 +4139,9 @@
           "fields"
         ],
         "properties": {
+          "case_sensitive": {
+            "type": "boolean"
+          },
           "fields": {
             "type": "array",
             "items": {

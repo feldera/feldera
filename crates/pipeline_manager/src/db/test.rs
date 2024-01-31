@@ -805,10 +805,12 @@ async fn versioning() {
             ProgramSchema {
                 inputs: vec![Relation {
                     name: "t1".into(),
+                    case_sensitive: false,
                     fields: vec![],
                 }],
                 outputs: vec![Relation {
                     name: "v1".into(),
+                    case_sensitive: false,
                     fields: vec![],
                 }],
             },
@@ -890,15 +892,18 @@ async fn versioning() {
                 inputs: vec![
                     Relation {
                         name: "t1".into(),
+                        case_sensitive: false,
                         fields: vec![],
                     },
                     Relation {
                         name: "t2".into(),
+                        case_sensitive: false,
                         fields: vec![],
                     },
                 ],
                 outputs: vec![Relation {
                     name: "v1".into(),
+                    case_sensitive: false,
                     fields: vec![],
                 }],
             },
@@ -921,10 +926,12 @@ async fn versioning() {
             ProgramSchema {
                 inputs: vec![Relation {
                     name: "tnew1".into(),
+                    case_sensitive: false,
                     fields: vec![],
                 }],
                 outputs: vec![Relation {
                     name: "vnew1".into(),
+                    case_sensitive: false,
                     fields: vec![],
                 }],
             },

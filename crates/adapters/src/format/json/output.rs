@@ -66,7 +66,7 @@ impl OutputFormat for JsonOutputFormat {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(&config).unwrap_or_default(),
+                &serde_yaml::to_string(config).unwrap_or_default(),
             )
         })?;
 
@@ -124,8 +124,6 @@ impl JsonEncoder {
                 _ => JsonFlavor::Default,
             });
         }
-
-
 
         Self {
             output_consumer,
