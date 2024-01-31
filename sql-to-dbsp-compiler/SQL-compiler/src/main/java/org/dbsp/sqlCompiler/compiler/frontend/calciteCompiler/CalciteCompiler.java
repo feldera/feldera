@@ -827,8 +827,10 @@ public class CalciteCompiler implements IWritesLogs {
                             ct.name, false, relRoot, null);
                      */
                 }
-                CreateTableStatement table = new CreateTableStatement(node, sqlStatement, tableName, comment, cols);
-                boolean success = this.calciteCatalog.addTable(tableName, table.getEmulatedTable(), this.errorReporter, table);
+                CreateTableStatement table = new CreateTableStatement(
+                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), comment, cols);
+                boolean success = this.calciteCatalog.addTable(
+                        tableName, table.getEmulatedTable(), this.errorReporter, table);
                 if (!success)
                     return null;
                 metadata.addTable(new InputTableDescription(table));
@@ -848,9 +850,10 @@ public class CalciteCompiler implements IWritesLogs {
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = Catalog.identifierToString(cv.name);
-                CreateViewStatement view = new CreateViewStatement(node, sqlStatement,
-                        Catalog.identifierToString(cv.name), comment,
-                        columns, cv.query, relRoot);
+                CreateViewStatement view = new CreateViewStatement(
+                        node, sqlStatement,
+                        Catalog.identifierToString(cv.name), Utilities.identifierIsQuoted(cv.name),
+                        comment, columns, cv.query, relRoot);
                 // From Calcite's point of view we treat this view just as another table.
                 boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
                 if (!success)

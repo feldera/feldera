@@ -34,8 +34,9 @@ import java.util.List;
  */
 public class CreateTableStatement extends CreateRelationStatement {
     public CreateTableStatement(SqlNode node, String statement,
-                                String tableName, @Nullable String comment,
+                                String tableName, boolean nameIsQuoted,
+                                @Nullable String comment,
                                 List<RelColumnMetadata> columns) {
-        super(node, statement, tableName, comment, columns);
+        super(node, statement, tableName, nameIsQuoted, comment, columns);
     }
 }

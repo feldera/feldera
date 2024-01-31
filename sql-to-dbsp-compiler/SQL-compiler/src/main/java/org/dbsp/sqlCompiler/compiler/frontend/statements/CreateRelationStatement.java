@@ -56,12 +56,14 @@ import java.util.List;
  */
 public abstract class CreateRelationStatement extends FrontEndStatement {
     public final String relationName;
+    public final boolean nameIsQuoted;
     public final List<RelColumnMetadata> columns;
 
-    protected CreateRelationStatement(SqlNode node, String statement,
-                                      String relationName, @Nullable String comment,
+    protected CreateRelationStatement(SqlNode node, String statement, String relationName,
+                                      boolean nameIsQuoted, @Nullable String comment,
                                       List<RelColumnMetadata> columns) {
         super(node, statement, comment);
+        this.nameIsQuoted = nameIsQuoted;
         this.relationName = relationName;
         this.columns = columns;
     }
@@ -127,6 +129,7 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode result = mapper.createObjectNode();
         result.put("name", this.relationName);
+        result.put("case_sensitive", this.nameIsQuoted);
         ArrayNode fields = result.putArray("fields");
         ArrayNode keyFields = mapper.createArrayNode();
         boolean hasKey = false;
