@@ -55,13 +55,11 @@ module.exports = {
         }
       })
     )
-    // config.plugins.push(new CopyPlugin({
-    //   patterns: [
-    //     { from: "../demo/publicDemos", to: "./public/demo/publicDemos" },
-    //     { from: "../demo/publicDemos", to: "./public/demo/publicDemos" },
-    //     { from: "../demo/publicDemos.json", to: "./public/demo/" },
-    //   ],
-    // }))
+    config.plugins.push(new CopyPlugin({
+      patterns: [
+        { from: "../demo/demos", to: "static/demo/demos" },
+      ],
+    }))
     return config
   },
 }
