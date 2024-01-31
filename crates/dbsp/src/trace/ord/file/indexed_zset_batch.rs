@@ -27,7 +27,8 @@ use std::{
 ///
 /// Each tuple in `FileIndexedZSet<K, V, R>` has key type `K`, value type `V`,
 /// weight type `R`, and time `()`.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Eq))]
 pub struct FileIndexedZSet<K, V, R>
 where
     K: DBData,
@@ -36,6 +37,40 @@ where
 {
     #[doc(hidden)]
     pub layer: FileOrderedLayer<K, V, R>,
+}
+
+// This is `#[cfg(test)]` only because it would be surprisingly expensive in
+// production.
+#[cfg(test)]
+impl<Other, K, V, R> PartialEq<Other> for FileIndexedZSet<K, V, R>
+where
+    K: DBData,
+    V: DBData,
+    R: DBWeight,
+    Other: BatchReader<Key = K, Val = V, R = R, Time = ()>,
+{
+    fn eq(&self, other: &Other) -> bool {
+        let mut c1 = self.cursor();
+        let mut c2 = other.cursor();
+        while c1.key_valid() && c2.key_valid() {
+            if c1.key() != c2.key() {
+                return false;
+            }
+            while c1.val_valid() && c2.val_valid() {
+                if c1.val() != c2.val() || c1.weight() != c2.weight() {
+                    return false;
+                }
+                c1.step_val();
+                c2.step_val();
+            }
+            if c1.val_valid() || c2.val_valid() {
+                return false;
+            }
+            c1.step_key();
+            c2.step_key();
+        }
+        !c1.key_valid() && !c2.key_valid()
+    }
 }
 
 impl<K, V, R> Display for FileIndexedZSet<K, V, R>
