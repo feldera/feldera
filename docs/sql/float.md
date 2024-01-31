@@ -30,7 +30,8 @@ The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division).
 (modulus).
 
-Division or modulus by zero return `NaN`.
+Division by zero returns Infinity, (or `NaN` in case of `0e0 / 0e0`).
+Modulus by zero return `NaN`.
 
 Casting a string to a floating-point value will produce the value
 `0` when parsing fails.
@@ -92,8 +93,8 @@ REAL '1.23'  -- string style
     <td>The natural logarithm of value. Returns `-inf` for 0. Produces a runtime error for negative numbers.</td>
   </tr>
   <tr>
-    <td><code>LOG(value, [, value2])</code></td>
-    <td>The logarithm of value to base value2, or base e if value2 is not present. Returns `-inf` for value 0. Produces a runtime error for negative numbers.</td>
+    <td><code>LOG(value, [, base])</code></td>
+    <td>The logarithm of value to base, or base e if it is not present.  Produces a runtime error for negative values for either value or base. Returns `-inf` for base 0.</td>
   </tr>
   <tr>
     <td><code>LOG10(value)</code></td>
@@ -101,11 +102,11 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>IS_INF(value)</code></td>
-    <td>Returns true if the value is infinite. Note that two infinite values aren't necessarily equal.</td>
+    <td>Returns true if the value is infinite.</td>
   </tr>
   <tr>
     <td><code>IS_NAN(value)</code></td>
-    <td>Returns true if the value is NaN. Note that two NaN values aren't equal.</td>
+    <td>Returns true if the value is NaN. Note that two NaN values may not be equal.</td>
   </tr>
   <tr>
     <td><code>SIN(value)</code></td>

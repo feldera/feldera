@@ -710,6 +710,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     {
                         // Cast to Double
                         this.ensureDouble(ops, 0);
+                        // See: https://github.com/feldera/feldera/issues/1363
+                        if (!ops.get(0).type.mayBeNull) {
+                            type = type.setMayBeNull(false);
+                        }
                         return this.compilePolymorphicFunction(call, node, type, ops, 1);
                     }
                     case "log":
@@ -724,6 +728,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         // power(a, .5) -> sqrt(a).  This is more precise.
                         // Calcite does the opposite conversion.
                         assert ops.size() == 2: "Expected two arguments for power function";
+
+                        // convert integer to double
+                        DBSPExpression firstArg = ops.get(0);
+                        if (firstArg.type.is(DBSPTypeInteger.class)) {
+                            this.ensureDouble(ops, 0);
+                        }
+
                         DBSPExpression argument = ops.get(1);
                         if (argument.is(DBSPDecimalLiteral.class)) {
                             DBSPDecimalLiteral dec = argument.to(DBSPDecimalLiteral.class);

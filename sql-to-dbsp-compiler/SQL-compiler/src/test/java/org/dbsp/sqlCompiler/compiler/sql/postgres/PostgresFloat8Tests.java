@@ -5,11 +5,19 @@ import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
-/**
+/*
  * Tests manually adapted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/float8.out
+ *
+ * Tests have been almost completely ported except for unsupported features:
+ * - create type, create function, create cast
+ * - degree based trigonometric functions
+ * - erf, erfc methods
+ * - subnormal tests and xfloat8 related tests
+ *
+ * Rest of the tests are in PostgresFloat8Part2Tests
+ *
  */
-@SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresFloat8Tests extends SqlIoTest {
     @Override
     public void prepareData(DBSPCompiler compiler) {
@@ -650,7 +658,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
     }
 
 /*
-                -- check edge cases for exp
+                -- check edge cases for exp --> we don't support exp yet
                 SELECT exp('inf'::float8), exp('-inf'::float8), exp('nan'::float8);
                    exp    | exp | exp
                 ----------+-----+-----
@@ -704,8 +712,7 @@ FROM (VALUES (float8 '-infinity'),
        NaN |                  NaN |                 NaN
 (22 rows)
 
--- ignored some of the tests after the update query
-
+-- ignored some of the tests after the update query --> trigonometric functions for degrees not supported
 SELECT x,
        sind(x),
        sind(x) IN (-1,-0.5,0,0.5,1) AS sind_exact
@@ -808,7 +815,7 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
 (5 rows)
 */
     // calcite returns: 1008618.49
-    @Test @Ignore("fails for calcite optimized version")
+    @Test @Ignore("fails for calcite optimized version: https://github.com/feldera/feldera/issues/1347")
     public void testPower() {
         this.q("""
                 SELECT power(f.f1, '2.0'::DOUBLE) AS square_f1
@@ -919,6 +926,18 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
                 -----
                  6.0
                 (1 row)
+                
+                select log(2, 0);
+                 log
+                -----
+                 0
+                (1 row)
+                
+                select log(1, 0);
+                 log
+                -----
+                 0
+                (1 row)
                 """
         );
     }
@@ -931,12 +950,5 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
         this.runtimeFail("select log(0, -1)", "Unable to calculate log(0, -1)", this.getEmptyIOPair());
         this.runtimeFail("select log(-1, 0)", "Unable to calculate log(-1, 0)", this.getEmptyIOPair());
         this.runtimeFail("select log(-1, -1)", "Unable to calculate log(-1, -1)", this.getEmptyIOPair());
-    }
-
-    // Calcite optimized version returns 0
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1348")
-    public void testLogFail2() {
-        this.qf("select log(2, 0)", "Unable to calculate log(2, 0)");
-        this.qf("select log(1, 0)", "Unable to calculate log(1, 0)");
     }
 }

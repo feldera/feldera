@@ -15,6 +15,7 @@ pub use geopoint::GeoPoint;
 pub use interval::LongInterval;
 pub use interval::ShortInterval;
 use num_traits::Pow;
+use num_traits::Zero;
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::Date;
 pub use timestamp::Time;
@@ -616,6 +617,11 @@ pub fn log_d_d(left: F64, right: F64) -> F64 {
         panic!("Unable to calculate log({left}, {right})")
     }
 
+    // match Calcite's behavior, return 0 instead of -0
+    if right.is_zero() {
+        return F64::new(0.0);
+    }
+
     left.log(right).into()
 }
 
@@ -894,7 +900,7 @@ some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
 
 pub fn sqrt_d(left: F64) -> F64 {
     let left = left.into_inner();
-    if left < 0.0 || left.is_nan() {
+    if left < 0.0 {
         panic!("Unable to compute sqrt of {left}");
     }
     F64::new(left.sqrt())
