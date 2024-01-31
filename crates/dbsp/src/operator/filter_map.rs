@@ -5,7 +5,10 @@ use crate::{
         operator_traits::{Operator, UnaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
-    trace::{Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer},
+    trace::{
+        ord::{FileIndexedZSet, FileZSet, VecIndexedZSet, VecZSet},
+        Batch, BatchReader, Builder, Consumer, Cursor, ValueConsumer,
+    },
     DBData, DBWeight, OrdIndexedZSet, OrdZSet,
 };
 use std::{
@@ -141,7 +144,9 @@ pub trait FilterMap<C> {
         O: Batch<Key = K, Val = V, Time = (), R = Self::R> + Clone + 'static;
 }
 
-impl<C, K, R> FilterMap<C> for Stream<C, OrdZSet<K, R>>
+// This impl for VecZSet is identical to the one for FileZSet below.  There
+// doesn't seem to be a good way to avoid the code duplication short of a macro.
+impl<C, K, R> FilterMap<C> for Stream<C, VecZSet<K, R>>
 where
     C: Circuit,
     K: DBData,
@@ -211,7 +216,144 @@ where
     }
 }
 
-impl<C, K, V, R> FilterMap<C> for Stream<C, OrdIndexedZSet<K, V, R>>
+impl<C, K, R> FilterMap<C> for Stream<C, FileZSet<K, R>>
+where
+    C: Circuit,
+    K: DBData,
+    R: DBWeight,
+{
+    type Item = K;
+    type ItemRef<'a> = &'a K;
+    type R = R;
+
+    fn filter<F>(&self, filter_func: F) -> Self
+    where
+        F: Fn(Self::ItemRef<'_>) -> bool + 'static,
+    {
+        let filtered = self
+            .circuit()
+            .add_unary_operator(FilterKeys::new(filter_func), &self.try_sharded_version());
+        filtered.mark_sharded_if(self);
+        filtered
+    }
+
+    fn map_generic<F, T, O>(&self, map_func: F) -> Stream<C, O>
+    where
+        F: Fn(Self::ItemRef<'_>) -> T + Clone + 'static,
+        O: Batch<Key = T, Val = (), Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(
+            MapKeys::new(map_func.clone(), move |x| (map_func)(&x)),
+            self,
+        )
+    }
+
+    fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<C, O>
+    where
+        F: Fn(Self::ItemRef<'_>) -> (KT, VT) + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(
+            Map::new(move |kv: (Self::ItemRef<'_>, &())| map_func(kv.0)),
+            self,
+        )
+    }
+
+    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<C, O>
+    where
+        F: FnMut(Self::ItemRef<'_>) -> I + 'static,
+        I: IntoIterator + 'static,
+        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(
+            FlatMap::new(move |kv: (Self::ItemRef<'_>, &())| {
+                func(kv.0).into_iter().map(|x| (x, ()))
+            }),
+            self,
+        )
+    }
+
+    fn flat_map_index_generic<F, KT, VT, I, O>(&self, func: F) -> Stream<C, O>
+    where
+        F: Fn(Self::ItemRef<'_>) -> I + 'static,
+        I: IntoIterator<Item = (KT, VT)> + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(
+            FlatMap::new(move |kv: (Self::ItemRef<'_>, &())| func(kv.0)),
+            self,
+        )
+    }
+}
+
+// This impl for VecIndexedZSet is identical to the one for FileIndexedZSet
+// below.  There doesn't seem to be a good way to avoid the code duplication
+// short of a macro.
+impl<C, K, V, R> FilterMap<C> for Stream<C, VecIndexedZSet<K, V, R>>
+where
+    C: Circuit,
+    R: DBWeight,
+    K: DBData,
+    V: DBData,
+{
+    type Item = (K, V);
+    type ItemRef<'a> = (&'a K, &'a V);
+    type R = R;
+
+    fn filter<F>(&self, filter_func: F) -> Self
+    where
+        F: Fn(Self::ItemRef<'_>) -> bool + 'static,
+    {
+        let filtered = self
+            .circuit()
+            .add_unary_operator(FilterVals::new(filter_func), &self.try_sharded_version());
+        filtered.mark_sharded_if(self);
+        filtered.mark_distinct_if(self);
+        filtered
+    }
+
+    fn map_generic<F, T, O>(&self, map_func: F) -> Stream<C, O>
+    where
+        F: Fn(Self::ItemRef<'_>) -> T + Clone + 'static,
+        O: Batch<Key = T, Val = (), Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(
+            Map::new(move |kv: Self::ItemRef<'_>| (map_func(kv), ())),
+            self,
+        )
+    }
+
+    fn map_index_generic<F, KT, VT, O>(&self, map_func: F) -> Stream<C, O>
+    where
+        F: Fn(Self::ItemRef<'_>) -> (KT, VT) + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(Map::new(map_func), self)
+    }
+
+    fn flat_map_generic<F, I, O>(&self, mut func: F) -> Stream<C, O>
+    where
+        F: FnMut(Self::ItemRef<'_>) -> I + 'static,
+        I: IntoIterator + 'static,
+        O: Batch<Key = I::Item, Val = (), Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(
+            FlatMap::new(move |kv: Self::ItemRef<'_>| func(kv).into_iter().map(|x| (x, ()))),
+            self,
+        )
+    }
+
+    fn flat_map_index_generic<F, KT, VT, I, O>(&self, func: F) -> Stream<C, O>
+    where
+        F: Fn(Self::ItemRef<'_>) -> I + 'static,
+        I: IntoIterator<Item = (KT, VT)> + 'static,
+        O: Batch<Key = KT, Val = VT, Time = (), R = Self::R>,
+    {
+        self.circuit().add_unary_operator(FlatMap::new(func), self)
+    }
+}
+
+impl<C, K, V, R> FilterMap<C> for Stream<C, FileIndexedZSet<K, V, R>>
 where
     C: Circuit,
     R: DBWeight,
