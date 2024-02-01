@@ -91,6 +91,10 @@ services:
   # TODO: add a healthcheck to this container.
   connect:
     profiles: [ "debezium", "snowflake" ]
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile
+      target: kafka-connect
     image: ghcr.io/feldera/kafka-connect:${FELDERA_VERSION:-0.9.0}
     depends_on:
       redpanda:

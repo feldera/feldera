@@ -318,6 +318,8 @@ build-demo-container:
         && snowsql -v
     COPY +install-python/python3.10 /root/.local/lib/python3.10
     COPY +install-python/bin /root/.local/bin
+    # Needed by the JDBC demo.
+    RUN pip3 install "psycopg[binary]"
     COPY demo demo
     CMD bash
 
@@ -357,7 +359,7 @@ test-docker-compose-stable:
             curl http://localhost:8080/v0/connectors
     END
 
-test-debezium:
+test-debezium-mysql:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     COPY deploy/docker-compose-debezium.yml .
@@ -369,6 +371,20 @@ test-debezium:
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
         RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
+    END
+
+test-debezium-jdbc-sink:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/docker-compose-jdbc.yml .
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --pull postgres \
+                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+                --pull debezium/example-postgres:2.3 \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
+                --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-jdbc.yml --profile debezium up --force-recreate --exit-code-from debezium-jdbc-demo
     END
 
 test-snowflake:
@@ -484,7 +500,8 @@ all-tests:
     BUILD +test-sql
     BUILD +test-docker-compose
     BUILD +test-docker-compose-stable
-    BUILD +test-debezium
+    BUILD +test-debezium-mysql
+    BUILD +test-debezium-jdbc-sink
     BUILD +test-snowflake
     BUILD +integration-tests
     BUILD +ui-playwright-tests

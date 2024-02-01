@@ -163,12 +163,13 @@ RUN apt update && apt install pkg-config \
   && pip3 install snowflake-connector-python \
   # TODO: only required for running the fraud detection demo. Remove when we clean that up.
   && pip3 install gdown \
+  && pip3 install "psycopg[binary]" \
   # cleanup packages we don't need anymore
   && apt remove python3-pip unzip pkg-config -y && apt autoremove -y
 CMD bash
 
 # Kafka connect with all Debezium connectors + the Snowflake connector.
-FROM debezium/connect:2.3 AS kafka-connect
+FROM debezium/connect:2.5 AS kafka-connect
 RUN mkdir /kafka/connect/snowflake-kafka-connector
 RUN cd /kafka/connect/snowflake-kafka-connector \
   && curl -LO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/2.1.0/snowflake-kafka-connector-2.1.0.jar \
