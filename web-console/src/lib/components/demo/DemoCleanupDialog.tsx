@@ -1,3 +1,4 @@
+import { demoFormResolver } from '$lib/functions/demo/demoSetupDialog'
 import { runDemoCleanup } from '$lib/functions/demo/runDemo'
 import { DemoSetup } from '$lib/types/demo'
 import { useState } from 'react'
@@ -24,11 +25,17 @@ const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onCl
     setProgress('done')
     setTimeout(() => props.onClose(), 1000)
   }
+  const progressBar = match(progress)
+    .with(undefined, () => undefined)
+    .with({ ratio: P._ }, p => p)
+    .with('done', () => ({ description: 'Done', ratio: 1 }))
+    .exhaustive()
   return (
     <FormContainer
       defaultValues={{
         prefix: props.demo.setup.prefix
       }}
+      resolver={demoFormResolver}
       onSuccess={runOperation}
     >
       <DialogTitle>Clean up after {props.demo.name} demo</DialogTitle>
@@ -47,16 +54,12 @@ const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onCl
         />
       </DialogContent>
       <DialogActions>
-        {match(progress)
-          .with('done', () => <></>)
-          .with(undefined, () => <></>)
-          .with({ ratio: P._ }, p => (
-            <Box sx={{ width: '100%' }}>
-              {p.description}
-              <LinearProgress variant='determinate' value={p.ratio * 100} />
-            </Box>
-          ))
-          .exhaustive()}
+        {progressBar && (
+          <Box sx={{ width: '100%' }}>
+            {progressBar.description}
+            <LinearProgress variant='determinate' value={progressBar.ratio * 100} />
+          </Box>
+        )}
 
         {match(progress)
           .with('done', () => (
