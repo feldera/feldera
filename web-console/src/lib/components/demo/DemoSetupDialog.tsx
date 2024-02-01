@@ -138,12 +138,12 @@ const DemoSetupFormContent = ({
       {props.progress === 'done' && (
         <DialogContent sx={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
           {resultEntities.program && (
-            <Button variant='contained' href='/analytics/programs/' LinkComponent={Link}>
+            <Button variant='contained' href={'/analytics/editor/?program_name=' + resultEntities.program.name} LinkComponent={Link}>
               Go to program
             </Button>
           )}
           {resultEntities.pipeline && (
-            <Button variant='contained' href='/streaming/management/' LinkComponent={Link}>
+            <Button variant='contained' href={'/streaming/builder/?pipeline_name=' + resultEntities.pipeline.name} LinkComponent={Link}>
               Go to pipeline
             </Button>
           )}
