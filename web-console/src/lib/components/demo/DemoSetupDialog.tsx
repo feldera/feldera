@@ -26,16 +26,17 @@ import {
 
 type Progress = { description: string; ratio: number } | 'done'
 
-const DemoSetupFormContent = (
-  props: Arguments<typeof DemoSetupForm>[0] & {
-    progress: Progress | undefined
-    setProgress: Dispatch<SetStateAction<Progress | undefined>>
-  }
-) => {
+const DemoSetupFormContent = ({
+  setProgress,
+  ...props
+}: Arguments<typeof DemoSetupForm>[0] & {
+  progress: Progress | undefined
+  setProgress: Dispatch<SetStateAction<Progress | undefined>>
+}) => {
   const prefix = useWatch<{ prefix: string }>({ name: 'prefix' })
   useEffect(() => {
-    props.setProgress(undefined)
-  }, [prefix, props.setProgress])
+    setProgress(undefined)
+  }, [prefix, setProgress])
   const progressBar = match(props.progress)
     .with(undefined, () => undefined)
     .with({ ratio: P._ }, p => p)
@@ -107,8 +108,12 @@ const DemoSetupFormContent = (
       <DialogActions sx={{ gap: 4 }}>
         {progressBar && (
           <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box>{progressBar.description}</Box>
-            <LinearProgress variant='determinate' color='success' value={progressBar.ratio * 100} />
+            {progressBar.description}
+            <LinearProgress
+              variant='determinate'
+              value={progressBar.ratio * 100}
+              color={progressBar.ratio === 1 ? 'success' : 'primary'}
+            />
           </Box>
         )}
 

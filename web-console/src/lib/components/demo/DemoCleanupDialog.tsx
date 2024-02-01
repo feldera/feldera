@@ -1,8 +1,9 @@
 import { demoFormResolver } from '$lib/functions/demo/demoSetupDialog'
 import { runDemoCleanup } from '$lib/functions/demo/runDemo'
+import { Arguments } from '$lib/types/common/function'
 import { DemoSetup } from '$lib/types/demo'
-import { useState } from 'react'
-import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
+import { Dispatch, Fragment, SetStateAction, useEffect, useState } from 'react'
+import { FormContainer, TextFieldElement, useFormContext, useWatch } from 'react-hook-form-mui'
 import { match, P } from 'ts-pattern'
 
 import {
@@ -13,31 +14,52 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  LinearProgress
+  LinearProgress,
+  Typography
 } from '@mui/material'
+import { useQuery } from '@tanstack/react-query'
 
-const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onClose: () => void }) => {
-  const [progress, setProgress] = useState<{ description: string; ratio: number } | 'done'>()
-  const runOperation = async (form: { prefix: string }) => {
-    for await (const progress of runDemoCleanup({ prefix: form.prefix, steps: props.demo.setup.steps })) {
-      setProgress(progress)
-    }
-    setProgress('done')
-    setTimeout(() => props.onClose(), 1000)
-  }
-  const progressBar = match(progress)
+type Progress = { description: string; ratio: number } | 'done'
+
+const DemoCleanupFormContent = ({
+  setProgress,
+  ...props
+}: Arguments<typeof DemoCleanupForm>[0] & {
+  progress: Progress | undefined
+  setProgress: Dispatch<SetStateAction<Progress | undefined>>
+}) => {
+  const prefix = useWatch<{ prefix: string }>({ name: 'prefix' })
+  useEffect(() => {
+    setProgress(undefined)
+  }, [prefix, setProgress])
+  const cleanupScope = useQuery({
+    queryKey: ['demo/cleanup', prefix],
+    queryFn: () => runDemoCleanup({ prefix: prefix, steps: props.demo.setup.steps })
+  })
+  const progressBar = match(props.progress)
     .with(undefined, () => undefined)
     .with({ ratio: P._ }, p => p)
     .with('done', () => ({ description: 'Done', ratio: 1 }))
     .exhaustive()
+  const runOperation = async () => {
+    const generator = cleanupScope.data?.cleanup()
+    if (!generator) {
+      return
+    }
+    for await (const progress of generator) {
+      setProgress(progress)
+    }
+    setProgress('done')
+  }
+  const ctx = useFormContext<{ prefix: string }>()
+  const handle = ctx.handleSubmit(runOperation)
+  const toDeleteNumber = !cleanupScope.data
+    ? 0
+    : cleanupScope.data.relatedPipelines.length +
+      cleanupScope.data.relatedConnectors.length +
+      cleanupScope.data.relatedPrograms.length
   return (
-    <FormContainer
-      defaultValues={{
-        prefix: props.demo.setup.prefix
-      }}
-      resolver={demoFormResolver}
-      onSuccess={runOperation}
-    >
+    <>
       <DialogTitle>Clean up after {props.demo.name} demo</DialogTitle>
       <DialogContent>
         <DialogContentText>Every entity with this prefix will be removed.</DialogContentText>
@@ -53,22 +75,51 @@ const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onCl
           size='small'
         />
       </DialogContent>
+      <DialogContent>
+        <DialogContentText>{toDeleteNumber > 0 ? 'This will delete:' : 'Nothing to clean up'}</DialogContentText>
+        {cleanupScope.data && (
+          <Typography sx={{ maxHeight: 200, overflowY: 'auto' }}>
+            {cleanupScope.data.relatedPipelines.map(e => (
+              <Fragment key={e.descriptor.pipeline_id}>
+                {e.descriptor.name}
+                <br />
+              </Fragment>
+            ))}
+            {cleanupScope.data.relatedPrograms.map(e => (
+              <Fragment key={e.program_id}>
+                {e.name}
+                <br />
+              </Fragment>
+            ))}
+            {cleanupScope.data.relatedConnectors.map(e => (
+              <Fragment key={e.connector_id}>
+                {e.name}
+                <br />
+              </Fragment>
+            ))}
+          </Typography>
+        )}
+      </DialogContent>
       <DialogActions>
         {progressBar && (
-          <Box sx={{ width: '100%' }}>
+          <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {progressBar.description}
-            <LinearProgress variant='determinate' value={progressBar.ratio * 100} />
+            <LinearProgress
+              variant='determinate'
+              value={progressBar.ratio * 100}
+              color={progressBar.ratio === 1 ? 'success' : 'primary'}
+            />
           </Box>
         )}
 
-        {match(progress)
+        {match(props.progress)
           .with('done', () => (
-            <Button color='success' variant='contained'>
+            <Button color='success' variant='outlined' onClick={props.onClose}>
               Done!
             </Button>
           ))
           .with(undefined, () => (
-            <Button type='submit' variant='contained'>
+            <Button onClick={handle} variant='contained' disabled={toDeleteNumber === 0}>
               Clean up
             </Button>
           ))
@@ -79,6 +130,20 @@ const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onCl
           ))
           .exhaustive()}
       </DialogActions>
+    </>
+  )
+}
+
+const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onClose: () => void }) => {
+  const [progress, setProgress] = useState<{ description: string; ratio: number } | 'done'>()
+  return (
+    <FormContainer
+      defaultValues={{
+        prefix: props.demo.setup.prefix
+      }}
+      resolver={demoFormResolver}
+    >
+      <DemoCleanupFormContent {...{ ...props, progress, setProgress }}></DemoCleanupFormContent>
     </FormContainer>
   )
 }
