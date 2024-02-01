@@ -731,6 +731,7 @@ size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
             let res = Self::compiler_task_inner(&config, &db).await;
             // Look for benign errors that the compiler can run into, in which case,
             // we resume working.
+            #[allow(clippy::collapsible_match)]
             if let Err(ManagerError::DBError { ref db_error }) = res {
                 if let DBError::OutdatedProgramVersion { latest_version: _ } = db_error {
                     warn!("Compiler encountered an OutdatedProgramVersion. Retrying.");
@@ -792,22 +793,9 @@ size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
                     match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
                             record(StageType::Sql, Status::Success, elapsed);
-                            // SQL compiler succeeded -- start the Rust job.
-                            db.set_program_status_guarded(
-                                tenant_id,
-                                program_id,
-                                version,
-                                ProgramStatus::CompilingRust,
-                            ).await?;
-
                             // Read the schema so we can store it in the DB.
-                            //
-                            // - We trust the compiler that it put the file
+                            // We trust the compiler that it put the file
                             // there if it succeeded.
-                            // - We hold the db lock so we are executing this
-                            // update in the same transaction as the program
-                            // status above.
-
                             let schema_path = config.schema_path(program_id);
                             let schema_json = fs::read_to_string(&schema_path).await
                                 .map_err(|e| {
@@ -816,13 +804,26 @@ size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
 
                             let schema = serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
-                            db.set_program_schema(tenant_id, program_id, schema).await?;
+                            // SQL compiler succeeded -- start the Rust job and update the
+                            // program schema.
+                            db.update_program(
+                                tenant_id,
+                                program_id,
+                                &None,
+                                &None,
+                                &None,
+                                &Some(ProgramStatus::CompilingRust),
+                                &Some(schema),
+                                Some(version),
+                                None
+                            ).await?;
+
                             info!("Invoking rust compiler for program {program_id} version {version} (tenant {tenant_id}). This will take a while.");
                             debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
-                            job = Some(CompilationJob::rust(tenant_id, &config, program_id, version).await?);
+                            job = Some(CompilationJob::rust(tenant_id, config, program_id, version).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
-                            Self::version_binary(&config, &db, program_id, version).await?;
+                            Self::version_binary(config, &db, program_id, version).await?;
                             // Rust compiler succeeded -- declare victory.
                             db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
                             info!("Successfully invoked rust compiler for program {program_id} version {version} (tenant {tenant_id}).");
@@ -833,7 +834,7 @@ size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
                         Ok(status) => {
                             // Compilation failed - update program status with the compiler
                             // error message.
-                            let output = job.as_ref().unwrap().error_output(&config).await?;
+                            let output = job.as_ref().unwrap().error_output(config).await?;
                             let status = if job.as_ref().unwrap().is_rust() {
                                 ProgramStatus::RustError(format!("{output}\nexit code: {status}"))
                             } else if let Ok(messages) = serde_json::from_str(&output) {
@@ -879,7 +880,7 @@ size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
 
                 if let Some((tenant_id, program_id, version, code)) = program {
                     job = Some(
-                        CompilationJob::sql(tenant_id, &config, &code, program_id, version).await?,
+                        CompilationJob::sql(tenant_id, config, &code, program_id, version).await?,
                     );
                     db.lock()
                         .await
