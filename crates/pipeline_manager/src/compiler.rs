@@ -726,8 +726,26 @@ size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
         config: CompilerConfig,
         db: Arc<Mutex<ProjectDB>>,
     ) -> Result<(), ManagerError> {
-        let mut job: Option<CompilationJob> = None;
         Self::reconcile_local_state(&config, &db).await?;
+        loop {
+            let res = Self::compiler_task_inner(&config, &db).await;
+            // Look for benign errors that the compiler can run into, in which case,
+            // we resume working.
+            if let Err(ManagerError::DBError { ref db_error }) = res {
+                if let DBError::OutdatedProgramVersion { latest_version: _ } = db_error {
+                    warn!("Compiler encountered an OutdatedProgramVersion. Retrying.");
+                    continue;
+                }
+            }
+            res?
+        }
+    }
+
+    async fn compiler_task_inner(
+        config: &CompilerConfig,
+        db: &Arc<Mutex<ProjectDB>>,
+    ) -> Result<(), ManagerError> {
+        let mut job: Option<CompilationJob> = None;
         loop {
             select! {
                 // Wake up every `COMPILER_POLL_INTERVAL` to check
