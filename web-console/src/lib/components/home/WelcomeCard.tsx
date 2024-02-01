@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import IconHelpCircle from '~icons/bx/help-circle'
 
-import { Avatar, Box, Button, Card, Modal, Typography } from '@mui/material'
+import { Avatar, Box, Button, Card, Link, Modal, Typography } from '@mui/material'
 
 const WelcomeCard = (props: { setCard: (card: number) => void }) => (
   <Card sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
@@ -21,8 +21,8 @@ const WelcomeCard = (props: { setCard: (card: number) => void }) => (
       <Button href='https://www.feldera.com/docs/tour/' target='_blank' rel='noreferrer'>
         Take the tour
       </Button>
-      <Button href='https://www.feldera.com/docs/demo/' target='_blank' rel='noreferrer'>
-        Follow the demos
+      <Button href='/lessons/' LinkComponent={Link}>
+        Try the demos
       </Button>
     </Box>
   </Card>
