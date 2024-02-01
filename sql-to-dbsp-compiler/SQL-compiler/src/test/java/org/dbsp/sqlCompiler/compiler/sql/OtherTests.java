@@ -189,15 +189,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void casing() throws IOException, InterruptedException {
         String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
+                "CREATE TABLE \"T\" (\n" +
+                        "COL1 INT NOT NULL" +
+                        ")",
+                "CREATE TABLE \"t\" (\n" +
                         "COL1 INT NOT NULL" +
                         ", COL2 DOUBLE NOT NULL" +
                         ")",
-                "CREATE VIEW V AS SELECT COL1 FROM T"
+                // lowercase 'rlike' only works if we lookup function names case-insensitively
+                "CREATE VIEW V AS SELECT COL1, rlike(COL2, 'asf') FROM \"t\""
         };
         File file = createInputScript(statements);
-        CompilerMain.execute("--unquotedCasing", "lower",
+        CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "lower",
                 "-o", BaseSQLTests.testFilePath, file.getPath());
+        System.out.println(messages);
+        Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
     }
 

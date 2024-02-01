@@ -44,6 +44,7 @@ public class CustomFunctions {
         this.udf = new HashMap<>();
     }
 
+    /** RLIKE used as a function.  RLIKE in SQL uses infix notation */
     static class RlikeFunction extends SqlFunction {
         public RlikeFunction() {
             super("RLIKE",

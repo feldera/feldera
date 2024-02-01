@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
+import org.apache.calcite.config.CalciteConnectionProperty;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
@@ -232,7 +233,7 @@ public class CalciteCompiler implements IWritesLogs {
         Casing unquotedCasing = Casing.TO_UPPER;
         switch (options.languageOptions.unquotedCasing) {
             case "upper":
-                //noinspection ReassignedVariable
+                //noinspection ReassignedVariable,DataFlowIssue
                 unquotedCasing = Casing.TO_UPPER;
                 break;
             case "lower":
@@ -249,7 +250,11 @@ public class CalciteCompiler implements IWritesLogs {
                 // Continue execution.
         }
 
+        // This influences function name lookup.
+        // We want that to be case-insensitive.
+        // Notice that this does NOT affect the parser, only the validator.
         Properties connConfigProp = new Properties();
+        connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(false));
         this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
                 .withLex(options.languageOptions.lexicalRules)

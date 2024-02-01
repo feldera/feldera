@@ -128,7 +128,7 @@ public class CompilerOptions {
         public boolean emitHandles = false;
 
         /** Only compare fields that matter. */
-        public boolean same(IO io) {
+        public boolean same(IO ignoredIo) {
             return true;
         }
 
