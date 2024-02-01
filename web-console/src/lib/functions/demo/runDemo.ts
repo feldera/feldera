@@ -1,5 +1,13 @@
 import type { DemoSetup } from '$lib/types/demo'
-import { ApiError, ConnectorsService, PipelinesService, ProgramsService } from '$lib/services/manager'
+import {
+  ApiError,
+  ConnectorDescr,
+  ConnectorsService,
+  Pipeline,
+  PipelinesService,
+  ProgramDescr,
+  ProgramsService
+} from '$lib/services/manager'
 import { match } from 'ts-pattern'
 
 export const runDemoSetup = async function* ({ prefix, steps }: DemoSetup) {
@@ -39,9 +47,13 @@ const cleanupDescription = {
 }
 
 export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
+  const partOfTheDemo = (target: Pipeline | ProgramDescr | ConnectorDescr) =>
+    (name => steps.find(step => step.entities.find(entity => entity.name === name)))(
+      'name' in target ? target.name : target.descriptor.name
+    )
   const [relatedPipelines, relatedPrograms, relatedConnectors] = await Promise.all([
     PipelinesService.listPipelines().then(
-      es => es.filter(e => e.descriptor.name.startsWith(prefix)),
+      es => es.filter(e => e.descriptor.name.startsWith(prefix)).filter(partOfTheDemo),
       e => {
         if (e instanceof ApiError && (e.body as any).error_code === 'UnknownPipelineName') {
           return []
@@ -50,7 +62,7 @@ export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
       }
     ),
     ProgramsService.getPrograms().then(
-      es => es.filter(e => e.name.startsWith(prefix)),
+      es => es.filter(e => e.name.startsWith(prefix)).filter(partOfTheDemo),
       e => {
         if (e instanceof ApiError && (e.body as any).error_code === 'UnknownProgramName') {
           return []
@@ -59,7 +71,7 @@ export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
       }
     ),
     ConnectorsService.listConnectors().then(
-      es => es.filter(e => e.name.startsWith(prefix)),
+      es => es.filter(e => e.name.startsWith(prefix)).filter(partOfTheDemo),
       e => {
         if (e instanceof ApiError && (e.body as any).error_code === 'UnknownConnectorName') {
           return []
