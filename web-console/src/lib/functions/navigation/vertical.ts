@@ -17,6 +17,11 @@ const navigation = (): VerticalNavItemsType => {
       testid: 'button-vertical-nav-home'
     },
     {
+      title: 'Demos',
+      path: '/lessons',
+      icon: IconHardHat
+    },
+    {
       sectionTitle: 'Analytics'
     },
     // {
@@ -75,11 +80,6 @@ const navigation = (): VerticalNavItemsType => {
       title: 'Settings',
       path: '/settings',
       icon: CogOutline
-    },
-    {
-      title: 'Demos',
-      path: '/lessons',
-      icon: IconHardHat
     },
     {
       title: 'Documentation',
