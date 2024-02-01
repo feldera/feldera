@@ -38,10 +38,7 @@ const cleanupDescription = {
   connectors: 'Cleaning up connectors'
 }
 
-export const runDemoCleanup = async function* ({ prefix, steps }: DemoSetup) {
-  const entityTotal = steps.reduce((acc, step) => acc + step.entities.length, 0)
-  let entityNumber = 1
-  yield { description: 'Cleaning up', ratio: 0 }
+export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
   const [relatedPipelines, relatedPrograms, relatedConnectors] = await Promise.all([
     PipelinesService.listPipelines().then(
       es => es.filter(e => e.descriptor.name.startsWith(prefix)),
@@ -71,20 +68,29 @@ export const runDemoCleanup = async function* ({ prefix, steps }: DemoSetup) {
       }
     )
   ])
-  yield { description: 'Cleaning up', ratio: 1 }
-  for (const pipeline of relatedPipelines) {
-    await PipelinesService.pipelineDelete(pipeline.descriptor.name)
-    yield { description: cleanupDescription.pipelines, ratio: entityNumber / entityTotal }
-    ++entityNumber
-  }
-  for (const program of relatedPrograms) {
-    await ProgramsService.deleteProgram(program.name)
-    yield { description: cleanupDescription.program, ratio: entityNumber / entityTotal }
-    ++entityNumber
-  }
-  for (const connector of relatedConnectors) {
-    await ConnectorsService.deleteConnector(connector.name)
-    yield { description: cleanupDescription.connectors, ratio: entityNumber / entityTotal }
-    ++entityNumber
+  return {
+    relatedPipelines,
+    relatedPrograms,
+    relatedConnectors,
+    cleanup: async function* () {
+      const entityTotal = steps.reduce((acc, step) => acc + step.entities.length, 0)
+      let entityNumber = 0
+      yield { description: 'Cleaning up', ratio: 0 }
+      for (const pipeline of relatedPipelines) {
+        await PipelinesService.pipelineDelete(pipeline.descriptor.name)
+        yield { description: cleanupDescription.pipelines, ratio: entityNumber / entityTotal }
+        ++entityNumber
+      }
+      for (const program of relatedPrograms) {
+        await ProgramsService.deleteProgram(program.name)
+        yield { description: cleanupDescription.program, ratio: entityNumber / entityTotal }
+        ++entityNumber
+      }
+      for (const connector of relatedConnectors) {
+        await ConnectorsService.deleteConnector(connector.name)
+        yield { description: cleanupDescription.connectors, ratio: entityNumber / entityTotal }
+        ++entityNumber
+      }
+    }
   }
 }
