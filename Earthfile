@@ -113,8 +113,8 @@ build-webui:
     FROM +build-webui-deps
     COPY --dir web-console/public web-console/public
     COPY --dir web-console/src web-console/src
-    COPY --dir demo/publicDemos demo/publicDemos
-    COPY demo/publicDemos.json demo/
+    COPY --dir demo/demos demo/demos
+    COPY demo/demos.json demo/
     COPY web-console/.editorconfig web-console/
     COPY web-console/.eslintrc.json web-console/
     COPY web-console/.prettierrc.js web-console/
