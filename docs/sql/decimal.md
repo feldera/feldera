@@ -28,6 +28,36 @@ The legal operations are ``+`` (plus, unary and binary), ``-`` (minus,
 unary and binary), ``*`` (multiplication), ``/`` (division), ``%``
 (modulus).
 
+Modulus happens as follows: 
+<table>
+    <caption>mod = x % y</caption>
+    <tr>
+        <th>x</th>
+        <th>y</th>
+        <th>mod</th>
+    </tr>
+    <tr>
+        <td> 1.12 </td>
+        <td> 0.3 </td>
+        <td> 0.22 </td>
+    </tr>
+    <tr>
+        <td> 1.12 </td>
+        <td> -0.3 </td>
+        <td> 0.22 </td>
+    </tr>
+    <tr>
+        <td> -1.12 </td>
+        <td> 0.3 </td>
+        <td> -0.22 </td>
+    </tr>
+    <tr>
+        <td> -1.12 </td>
+        <td> -0.3 </td>
+        <td> -0.22 </td>
+    </tr>
+</table>
+
 Division or modulus by zero cause a runtime error.
 
 Casting a string to a decimal value will produce a run time error if
@@ -89,6 +119,10 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
   <tr>
     <td><code>ROUND(value, digits)</code></td>
     <td>where <code>digits</code> is an integer value. Round the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+  </tr>
+  <tr>
+    <td><code>TRUNCATE(value)</code></td>
+    <td>same as <code>TRUNCATE(value, 0)</code></td>
   </tr>
   <tr>
     <td><code>TRUNCATE(value, digits)</code></td>

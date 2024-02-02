@@ -815,6 +815,36 @@ public class PostgresNumericTests extends SqlIoTest {
     }
 
     @Test
+    public void testModulo() {
+        this.qs("""
+                select 1.12 % 0.3;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select 1.12 % -0.3;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select -1.12 % 0.3;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                                
+                select -1.12 % -0.3;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                """
+        );
+    }
+
+    @Test
     public void testFunctionsNumeric0() {
         // dropped unsupported values inf, nan, etc.
         this.q("""

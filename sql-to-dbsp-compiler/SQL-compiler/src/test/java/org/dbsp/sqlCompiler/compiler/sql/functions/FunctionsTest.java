@@ -249,7 +249,7 @@ public class FunctionsTest extends SqlIoTest {
 
     // Tested on Postgres and some taken from MySQL
     @Test
-    public void testDecimalRounding() {
+    public void testRounding() {
         this.qs("""
                 select CAST((CAST('1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
@@ -883,6 +883,24 @@ public class FunctionsTest extends SqlIoTest {
                 ------------
                  -20
                 (1 row)
+                
+                select round(-15.91,-1::tinyint);
+                round(-15.91,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91,-1::smallint);
+                round(-15.91,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91,-1::int);
+                round(-15.91,-1)
+                ------------
+                 -20
+                (1 row)
                 """
         );
     }
@@ -890,6 +908,12 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void testTruncate() {
         this.qs("""
+                select truncate(5678.123451);
+                truncate(5678.123451)
+                -----
+                5678
+                (1 row)
+                
                 select truncate(5678.123451,0);
                 truncate(5678.123451,0)
                 -----
@@ -1022,7 +1046,44 @@ public class FunctionsTest extends SqlIoTest {
                 0
                 (1 row)
                 
+                select truncate(5678.123451,1::tinyint);
+                truncate(5678.123451,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451,1::smallint);
+                truncate(5678.123451,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451,1::int);
+                truncate(5678.123451,1)
+                -----
+                5678.1
+                (1 row)
                 """
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1379")
+    public void testRoundBigInt() {
+        this.q("""
+                SELECT round(123.123, 2::bigint);
+                 round
+                -------
+                 123.12"""
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1379")
+    public void testTruncateBigInt() {
+        this.q("""
+                select truncate(5678.123451,1::bigint);
+                truncate(5678.123451,1)
+                -----
+                5678.1"""
         );
     }
 }

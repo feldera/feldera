@@ -1074,4 +1074,34 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
                                NaN | -Infinity |       NaN |       NaN |       NaN
                                NaN |       NaN |       NaN |       NaN |       NaN""");
     }
+
+    @Test
+    public void testModulo() {
+        this.qs("""
+                select 1.12::DOUBLE % 0.3::DOUBLE;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select 1.12::DOUBLE % -0.3::DOUBLE;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select -1.12::DOUBLE % 0.3::DOUBLE;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                                
+                select -1.12::DOUBLE % -0.3::DOUBLE;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                """
+        );
+    }
 }

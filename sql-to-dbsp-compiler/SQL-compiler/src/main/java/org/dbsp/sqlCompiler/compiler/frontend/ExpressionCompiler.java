@@ -691,6 +691,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         DBSPType rightType = right.getType();
                         if (!rightType.is(DBSPTypeInteger.class))
                             throw new UnimplementedException("ROUND expects a constant second argument", node);
+
+                        // convert to int32
+                        DBSPTypeInteger rightInt = rightType.to(DBSPTypeInteger.class);
+                        if (rightInt.getWidth() != 32) {
+                            right = right.cast(new DBSPTypeInteger(right.getNode(), 32, true, rightType.mayBeNull));
+                        }
+
                         String function = opName + "_" +
                                 leftType.baseTypeWithSuffix();
                         return new DBSPApplyExpression(node, function, type, left, right);

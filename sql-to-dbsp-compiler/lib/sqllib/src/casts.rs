@@ -242,7 +242,7 @@ pub fn cast_to_decimal_decimal(value: Decimal, precision: u32, scale: u32) -> De
     let to_int_part_precision = precision - scale;
 
     if to_int_part_precision < int_part_precision {
-        panic!("cannot represent {value} as DECIMAL({precision}, {scale})")
+        panic!("cannot represent {value} as DECIMAL({precision}, {scale}): precision of DECIMAL type too small to represent value")
     }
 
     result

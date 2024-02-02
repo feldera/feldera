@@ -30,6 +30,36 @@ The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
 (modulus).
 
+Modulus happens as follows:
+<table>
+    <caption>mod = x % y</caption>
+    <tr>
+        <th>x</th>
+        <th>y</th>
+        <th>mod</th>
+    </tr>
+    <tr>
+        <td> 1.12 </td>
+        <td> 0.3 </td>
+        <td> 0.22 </td>
+    </tr>
+    <tr>
+        <td> 1.12 </td>
+        <td> -0.3 </td>
+        <td> 0.22 </td>
+    </tr>
+    <tr>
+        <td> -1.12 </td>
+        <td> 0.3 </td>
+        <td> -0.22 </td>
+    </tr>
+    <tr>
+        <td> -1.12 </td>
+        <td> -0.3 </td>
+        <td> -0.22 </td>
+    </tr>
+</table>
+
 Division by zero returns Infinity, (or `NaN` in case of `0e0 / 0e0`).
 Modulus by zero return `NaN`.
 
