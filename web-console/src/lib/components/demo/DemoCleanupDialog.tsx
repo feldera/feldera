@@ -51,8 +51,7 @@ const DemoCleanupFormContent = ({
     }
     setProgress('done')
   }
-  const ctx = useFormContext<{ prefix: string }>()
-  const handle = ctx.handleSubmit(runOperation)
+  const handleSubmit = useFormContext().handleSubmit(runOperation)
   const toDeleteNumber = !cleanupScope.data
     ? 0
     : cleanupScope.data.relatedPipelines.length +
@@ -119,7 +118,7 @@ const DemoCleanupFormContent = ({
             </Button>
           ))
           .with(undefined, () => (
-            <Button onClick={handle} variant='contained' disabled={toDeleteNumber === 0}>
+            <Button onClick={handleSubmit} variant='contained' disabled={toDeleteNumber === 0}>
               Clean up
             </Button>
           ))

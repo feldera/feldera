@@ -3,17 +3,20 @@ import { runDemoSetup } from '$lib/functions/demo/runDemo'
 import { Arguments } from '$lib/types/common/function'
 import { DemoSetup } from '$lib/types/demo'
 import { Dispatch, Fragment, SetStateAction, useEffect, useState } from 'react'
-import { FormContainer, TextFieldElement, useWatch } from 'react-hook-form-mui'
+import { FormContainer, TextFieldElement, useFormContext, useWatch } from 'react-hook-form-mui'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 
 import IconArrowDownward from '@mui/icons-material/ExpandMoreOutlined'
+import IconReportProblemOutlined from '@mui/icons-material/ReportProblemOutlined'
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Alert,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -23,6 +26,7 @@ import {
   Link,
   Typography
 } from '@mui/material'
+import { useQuery } from '@tanstack/react-query'
 
 type Progress = { description: string; ratio: number } | 'done'
 
@@ -37,11 +41,26 @@ const DemoSetupFormContent = ({
   useEffect(() => {
     setProgress(undefined)
   }, [prefix, setProgress])
+  const setupScope = useQuery({
+    queryKey: ['demo/setup', prefix],
+    queryFn: () => runDemoSetup({ prefix: prefix, steps: props.demo.setup.steps })
+  })
   const progressBar = match(props.progress)
     .with(undefined, () => undefined)
     .with({ ratio: P._ }, p => p)
     .with('done', () => ({ description: '\xa0', ratio: 1 }))
     .exhaustive()
+  const runOperation = async () => {
+    const generator = setupScope.data?.setup()
+    if (!generator) {
+      return
+    }
+    for await (const progress of generator) {
+      setProgress(progress)
+    }
+    setProgress('done')
+  }
+  const handleSubmit = useFormContext().handleSubmit(runOperation)
   const resultEntities = {
     pipeline: (() => {
       const e = props.demo.setup.steps[0]?.entities.find(e => e.type === 'pipeline')
@@ -60,6 +79,7 @@ const DemoSetupFormContent = ({
       return e
     })()
   }
+  const hasConflict = (setupScope.data?.entities ?? []).some(e => e.exists)
   return (
     <>
       <DialogTitle>Run {props.demo.name} demo</DialogTitle>
@@ -77,6 +97,7 @@ const DemoSetupFormContent = ({
           size='small'
         />
       </DialogContent>
+      {hasConflict && <Alert severity='warning'>Some entities will be overwritten</Alert>}
       <Accordion
         variant='elevation'
         style={{ boxShadow: 'none' }}
@@ -89,19 +110,22 @@ const DemoSetupFormContent = ({
       >
         <AccordionSummary expandIcon={<IconArrowDownward />}>
           <Typography>Entities in the demo</Typography>
+          {hasConflict && <IconReportProblemOutlined color='warning'></IconReportProblemOutlined>}
         </AccordionSummary>
         <AccordionDetails>
           <Box sx={{ display: 'flex', height: '100%', maxHeight: 200, overflowY: 'auto' }}>
-            {props.demo.setup.steps.map(step => (
-              <Typography key={step.name}>
-                {step.entities.map(entity => (
-                  <Fragment key={entity.name}>
-                    {prefix + entity.name}
-                    <br />
-                  </Fragment>
-                ))}
-              </Typography>
-            ))}
+            <Box component='div'>
+              {(setupScope.data?.entities ?? []).map(entity => (
+                <Fragment key={entity.name}>
+                  {prefix + entity.name}
+                  {entity.exists && (
+                    <Chip sx={{ ml: 4 }} color='warning' variant='outlined' label='conflict' size='small' />
+                  )}
+
+                  <br />
+                </Fragment>
+              ))}
+            </Box>
           </Box>
         </AccordionDetails>
       </Accordion>
@@ -124,7 +148,7 @@ const DemoSetupFormContent = ({
             </Button>
           ))
           .with(undefined, () => (
-            <Button type='submit' variant='contained'>
+            <Button onClick={handleSubmit} type='submit' variant='contained'>
               Setup demo
             </Button>
           ))
@@ -163,19 +187,12 @@ const DemoSetupFormContent = ({
 
 const DemoSetupForm = (props: { demo: { name: string; setup: DemoSetup }; onClose: () => void }) => {
   const [progress, setProgress] = useState<Progress>()
-  const runOperation = async (form: { prefix: string }) => {
-    for await (const progress of runDemoSetup({ prefix: form.prefix, steps: props.demo.setup.steps })) {
-      setProgress(progress)
-    }
-    setProgress('done')
-  }
   return (
     <FormContainer
       defaultValues={{
         prefix: props.demo.setup.prefix
       }}
       resolver={demoFormResolver}
-      onSuccess={runOperation}
     >
       <DemoSetupFormContent {...{ ...props, progress, setProgress }}></DemoSetupFormContent>
     </FormContainer>
