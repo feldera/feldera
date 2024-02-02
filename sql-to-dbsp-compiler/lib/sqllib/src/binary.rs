@@ -2,9 +2,9 @@
 
 use crate::{some_function1, some_function2, some_function3, some_function4};
 use dbsp::num_entries_scalar;
-use dbsp_adapters::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig};
+use dbsp_adapters::{deserialize_without_context, serialize_without_context};
 use hex::ToHex;
-use serde::{Deserializer, Serializer};
+use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::Debug;
 
@@ -17,6 +17,8 @@ use std::fmt::Debug;
     PartialOrd,
     Ord,
     Hash,
+    Serialize,
+    Deserialize,
     SizeOf,
     rkyv::Archive,
     rkyv::Serialize,
@@ -24,38 +26,17 @@ use std::fmt::Debug;
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
+#[serde(transparent)]
 pub struct ByteArray {
     data: Vec<u8>,
 }
 
+serialize_without_context!(ByteArray);
+deserialize_without_context!(ByteArray);
+
 num_entries_scalar! {
     // TODO: Is this right?
     ByteArray,
-}
-
-impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
-    fn serialize_with_context<S>(
-        &self,
-        _serializer: S,
-        _context: &SqlSerdeConfig,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        todo!();
-    }
-}
-
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
-    fn deserialize_with_context<D>(
-        _deserializer: D,
-        _config: &'de SqlSerdeConfig,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        todo!();
-    }
 }
 
 impl ByteArray {

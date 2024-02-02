@@ -284,18 +284,21 @@ impl Encoder for JsonEncoder {
                             cursor.serialize_key(&mut key_buffer)?;
                             key_buffer.extend_from_slice(br#"}"#);
 
-                            let op = if w > 0 { 'c' } else { 'd' };
+                            // Encode value.
+                            if w > 0 {
+                                if let Some(schema_str) = &self.value_schema_str {
+                                    buffer.extend_from_slice(br#"{"schema":"#);
+                                    buffer.extend_from_slice(schema_str.as_bytes());
+                                    write!(buffer, r#","payload":{{"op":"c","after":"#)?;
+                                } else {
+                                    write!(buffer, r#"{{"payload":{{"op":"c","after":"#)?;
+                                }
 
-                            if let Some(schema_str) = &self.value_schema_str {
-                                buffer.extend_from_slice(br#"{"schema":"#);
-                                buffer.extend_from_slice(schema_str.as_bytes());
-                                write!(buffer, r#","payload":{{"op":"{op}","after":"#)?;
+                                cursor.serialize_key(&mut buffer)?;
+                                buffer.extend_from_slice(br#"}}"#);
                             } else {
-                                write!(buffer, r#"{{"payload":{{"op":"{op}","after":"#)?;
+                                write!(buffer, r#"{{"payload":{{"op":"d"}}}}"#)?;
                             }
-
-                            cursor.serialize_key(&mut buffer)?;
-                            buffer.extend_from_slice(br#"}}"#);
                         }
                         _ => {
                             // Should never happen.  Unsupported formats are rejected during
@@ -376,6 +379,7 @@ impl Encoder for JsonEncoder {
 #[cfg(test)]
 mod test {
     use super::{JsonEncoder, JsonEncoderConfig};
+    use crate::format::json::{DebeziumOp, DebeziumPayload, DebeziumUpdate};
     use crate::test::{generate_test_batches_with_weights, test_struct_schema};
     use crate::{
         catalog::SerBatch,
@@ -451,6 +455,31 @@ mod test {
                 },
                 __seq_number: sequence_num,
                 __stream_id: stream_id,
+            }
+        }
+    }
+
+    impl<T> OutputUpdate for DebeziumUpdate<T>
+    where
+        T: Debug + Eq + Ord + for<'de> Deserialize<'de>,
+    {
+        type Val = T;
+
+        fn update_format() -> JsonUpdateFormat {
+            JsonUpdateFormat::Debezium
+        }
+
+        fn update(insert: bool, value: Self::Val, _stream_id: u64, _sequence_num: u64) -> Self {
+            DebeziumUpdate {
+                payload: DebeziumPayload {
+                    op: if insert {
+                        DebeziumOp::Create
+                    } else {
+                        DebeziumOp::Delete
+                    },
+                    before: None,
+                    after: if insert { Some(value) } else { None },
+                },
             }
         }
     }
@@ -668,6 +697,11 @@ mod test {
         test_json::<SnowflakeUpdate<TestStruct>>(true, test_data());
     }
 
+    #[test]
+    fn test_debezium() {
+        test_json::<DebeziumUpdate<TestStruct>>(false, test_data());
+    }
+
     proptest! {
         #[test]
         fn proptest_arrayjson_insdel(data in generate_test_batches_with_weights(10, 20))
@@ -692,5 +726,12 @@ mod test {
         {
             test_json::<SnowflakeUpdate<TestStruct>>(false, data)
         }
+
+        #[test]
+        fn proptest_debezium(data in generate_test_batches_with_weights(10, 20))
+        {
+            test_json::<DebeziumUpdate<TestStruct>>(false, data)
+        }
+
     }
 }
