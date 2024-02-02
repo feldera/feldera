@@ -47,7 +47,8 @@ const sidebars = {
                   'tutorials/basics/part2',
                   'tutorials/basics/part3'
               ]
-          }
+          },
+          'tutorials/rest_api/index'
       ]
     },
     'demo/demo',
