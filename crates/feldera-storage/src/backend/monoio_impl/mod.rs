@@ -35,7 +35,7 @@ use super::StorageExecutor;
 pub(crate) mod tests;
 
 /// Number of entries an IO-ring will have.
-pub const MAX_RING_ENTRIES: u32 = 32768;
+pub const MAX_RING_ENTRIES: u32 = 4096;
 
 /// Helper function that opens files as direct IO files on linux.
 async fn open_as_direct<P: AsRef<Path>>(
