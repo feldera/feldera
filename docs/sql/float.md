@@ -27,7 +27,7 @@ an example is `NaN` raised to the zero power yields one.
 In sorting order `NaN` is considered greater than all other values.
 
 The legal operations are `+` (plus, unary and binary), `-` (minus,
-unary and binary), `*` (multiplication), `/` (division).
+unary and binary), `*` (multiplication), `/` (division), `%`
 (modulus).
 
 Division by zero returns Infinity, (or `NaN` in case of `0e0 / 0e0`).

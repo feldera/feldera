@@ -763,38 +763,40 @@ pub fn new_decimal(s: &str, precision: u32, scale: u32) -> Option<Decimal> {
 }
 
 #[inline(always)]
-pub fn round_decimal<T>(left: Decimal, right: T) -> Decimal
-where
-    u32: TryFrom<T>,
-    <u32 as TryFrom<T>>::Error: Debug,
-{
+pub fn round_decimal(left: Decimal, right: i32) -> Decimal {
+    // Rust decimal doesn't support rounding with negative values
+    // but Calcite does
+    if right.is_negative() {
+        let right_unsigned = right.unsigned_abs();
+        let pow_of_ten = Decimal::new(10_i64.pow(right_unsigned), 0);
+        let rounded = ((left / pow_of_ten).round()) * pow_of_ten;
+        return rounded;
+    }
+
     left.round_dp(u32::try_from(right).unwrap())
 }
 
 #[inline(always)]
-pub fn round_decimalN<T>(left: Option<Decimal>, right: T) -> Option<Decimal>
-where
-    u32: TryFrom<T>,
-    <u32 as TryFrom<T>>::Error: Debug,
-{
+pub fn round_decimalN(left: Option<Decimal>, right: i32) -> Option<Decimal> {
     left.map(|x| round_decimal(x, right))
 }
 
 #[inline(always)]
-pub fn truncate_decimal<T>(left: Decimal, right: T) -> Decimal
-where
-    u32: TryFrom<T>,
-    <u32 as TryFrom<T>>::Error: Debug,
-{
+pub fn truncate_decimal(left: Decimal, right: i32) -> Decimal {
+    // Rust decimal doesn't support rounding with negative values
+    // but Calcite does
+    if right.is_negative() {
+        let right_unsigned = right.unsigned_abs();
+        let pow_of_ten = Decimal::new(10_i64.pow(right_unsigned), 0);
+        let truncated = (left / pow_of_ten).trunc() * pow_of_ten;
+        return truncated;
+    }
+
     left.trunc_with_scale(u32::try_from(right).unwrap())
 }
 
 #[inline(always)]
-pub fn truncate_decimalN<T>(left: Option<Decimal>, right: T) -> Option<Decimal>
-where
-    u32: TryFrom<T>,
-    <u32 as TryFrom<T>>::Error: Debug,
-{
+pub fn truncate_decimalN(left: Option<Decimal>, right: i32) -> Option<Decimal> {
     left.map(|x| truncate_decimal(x, right))
 }
 
@@ -893,6 +895,10 @@ pub fn power_d_decimal(left: F64, right: Decimal) -> F64 {
 some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
 
 pub fn sqrt_decimal(left: Decimal) -> F64 {
+    if left < Decimal::ZERO {
+        panic!("Unable to compute sqrt of {left}");
+    }
+
     F64::from(left.sqrt().unwrap().to_f64().unwrap())
 }
 
