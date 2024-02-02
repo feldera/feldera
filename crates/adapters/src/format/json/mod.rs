@@ -11,7 +11,7 @@ pub use output::JsonOutputFormat;
 ///
 /// A record in a Debezium CDC stream contains an `op` field, which specifies
 /// one of create ("c"), delete ("d") or update ("u") operations.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq)]
 pub enum DebeziumOp {
     #[serde(rename = "c")]
     Create,
@@ -34,13 +34,13 @@ pub struct DebeziumSource {
 /// A Debezium data change event.
 ///
 /// Only the `payload` field is currently supported; other fields are ignored.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq)]
 pub struct DebeziumUpdate<T> {
     payload: DebeziumPayload<T>,
 }
 
 /// Schema of the `payload` field of a Debezium data change event.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialOrd, Ord, PartialEq, Eq)]
 pub struct DebeziumPayload<T> {
     // source: Option<DebeziumSource>,
     #[allow(dead_code)]

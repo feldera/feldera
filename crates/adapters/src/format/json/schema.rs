@@ -34,7 +34,7 @@ pub fn build_key_schema(
     match config.json_flavor {
         Some(JsonFlavor::KafkaConnectJsonConverter) => {
             if matches!(config.update_format, JsonUpdateFormat::Debezium) {
-                Ok(Some(kafka_connect_json_converter::relation_schema_str(
+                Ok(Some(kafka_connect_json_converter::debezium_key_schema_str(
                     schema,
                 )?))
             } else {
@@ -74,6 +74,7 @@ mod kafka_connect_json_converter {
     struct LogicalType {
         name: String,
         #[serde(default)]
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
         parameters: BTreeMap<String, String>,
     }
 
@@ -125,6 +126,10 @@ mod kafka_connect_json_converter {
         Ok(serde_json::to_string(&debezium_value_schema(schema)?).unwrap())
     }
 
+    pub fn debezium_key_schema_str(schema: &Relation) -> Result<String, ControllerError> {
+        Ok(serde_json::to_string(&debezium_key_schema(schema)?).unwrap())
+    }
+
     fn debezium_value_schema(schema: &Relation) -> Result<Type, ControllerError> {
         Ok(Type {
             representation_type: RepresentationType::Struct {
@@ -144,13 +149,26 @@ mod kafka_connect_json_converter {
                     },
                 ],
             },
-            logical_type: None,
+            logical_type: Some(LogicalType {
+                name: "Envelope".to_string(),
+                parameters: Default::default(),
+            }),
         })
     }
 
-    pub fn relation_schema_str(schema: &Relation) -> Result<String, ControllerError> {
-        Ok(serde_json::to_string(&relation_schema(schema)?).unwrap())
+    fn debezium_key_schema(schema: &Relation) -> Result<Type, ControllerError> {
+        let mut typ = relation_schema(schema)?;
+        typ.logical_type = Some(LogicalType {
+            name: "Key".to_string(),
+            parameters: Default::default(),
+        });
+
+        Ok(typ)
     }
+
+    /*pub fn relation_schema_str(schema: &Relation) -> Result<String, ControllerError> {
+        Ok(serde_json::to_string(&relation_schema(schema)?).unwrap())
+    }*/
 
     fn relation_schema(schema: &Relation) -> Result<Type, ControllerError> {
         let mut fields = Vec::new();
@@ -232,6 +250,180 @@ mod kafka_connect_json_converter {
             _ => Err(ControllerError::not_supported(&format!(
                 "column type {schema:?} is not supported by the JSON encoder"
             ))),
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use crate::format::json::schema::kafka_connect_json_converter::debezium_value_schema_str;
+        use pipeline_types::program_schema::Relation;
+
+        #[test]
+        fn test_schema_encoder() {
+            let schema: Relation = serde_json::from_str(
+                r#"{
+    "name" : "test_table",
+    "case_sensitive" : false,
+    "fields" : [ {
+      "name" : "id",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "BIGINT",
+        "nullable" : false
+      }
+    }, {
+      "name" : "f1",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "BOOLEAN",
+        "nullable" : true
+      }
+    }, {
+      "name" : "f2",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "VARCHAR",
+        "nullable" : true,
+        "precision" : -1
+      }
+    }, {
+      "name" : "f3",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "TINYINT",
+        "nullable" : true
+      }
+    }, {
+      "name" : "f4",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "DECIMAL",
+        "nullable" : true,
+        "precision" : 5,
+        "scale" : 2
+      }
+    }, {
+      "name" : "f5",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "DOUBLE",
+        "nullable" : true
+      }
+    }, {
+      "name" : "f6",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "TIME",
+        "nullable" : true,
+        "precision" : 0
+      }
+    }, {
+      "name" : "f7",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "TIMESTAMP",
+        "nullable" : true,
+        "precision" : 0
+      }
+    }, {
+      "name" : "f8",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "DATE",
+        "nullable" : true
+      }
+    }, {
+      "name" : "f9",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "BINARY",
+        "nullable" : true,
+        "precision" : 1
+      }
+    } ],
+    "primary_key" : [ "id" ]
+}"#,
+            )
+            .unwrap();
+            let connect_schema = debezium_value_schema_str(&schema).unwrap();
+            let connect_schema_value: serde_json::Value =
+                serde_json::from_str(&connect_schema).unwrap();
+            let expected_value: serde_json::Value = serde_json::from_str(
+                r#"{
+  "type": "struct",
+  "fields": [
+    {
+      "field": "after",
+      "type": "struct",
+      "fields": [
+        {
+          "field": "id",
+          "type": "int64",
+          "optional": false
+        },
+        {
+          "field": "f1",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "field": "f2",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "field": "f3",
+          "type": "int8",
+          "optional": true
+        },
+        {
+          "field": "f4",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "field": "f5",
+          "type": "double",
+          "optional": true
+        },
+        {
+          "field": "f6",
+          "type": "int64",
+          "name": "org.apache.kafka.connect.data.Time",
+          "optional": true
+        },
+        {
+          "field": "f7",
+          "type": "int64",
+          "name": "org.apache.kafka.connect.data.Timestamp",
+          "optional": true
+        },
+        {
+          "field": "f8",
+          "type": "int32",
+          "name": "org.apache.kafka.connect.data.Date",
+          "optional": true
+        },
+        {
+          "field": "f9",
+          "type": "bytes",
+          "optional": true
+        }
+      ],
+      "optional": true
+    },
+    {
+      "field": "op",
+      "type": "string",
+      "optional": false
+    }
+  ],
+  "name": "Envelope"
+}"#,
+            )
+            .unwrap();
+            println!("{}", connect_schema);
+            assert_eq!(&connect_schema_value, &expected_value);
         }
     }
 }

@@ -34,8 +34,9 @@ impl OutputConsumer for MockOutputConsumer {
     fn push_buffer(&mut self, buffer: &[u8]) {
         self.data.lock().unwrap().extend_from_slice(buffer)
     }
-    fn push_key(&mut self, _key: &[u8], _val: &[u8]) {
-        todo!()
+    fn push_key(&mut self, _key: &[u8], val: &[u8]) {
+        // TODO: we don't test the contents of keys yet.
+        self.data.lock().unwrap().extend_from_slice(val)
     }
     fn batch_end(&mut self) {}
 }
