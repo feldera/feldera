@@ -316,7 +316,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
-        this.builder.append("fn ")
+        this.builder.append("pub fn ")
                 .append(circuit.name);
         circuit.circuit.accept(this);
         return VisitDecision.STOP;
