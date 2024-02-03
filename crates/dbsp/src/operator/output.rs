@@ -4,7 +4,7 @@ use crate::{
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
-    trace::{Batch, Spine, Trace},
+    trace::{merge_batches, Batch},
     Circuit, Runtime, Stream,
 };
 use std::fmt::Debug;
@@ -233,14 +233,7 @@ where
     /// to `take_from_worker` return `None`. `consolidate` skips `None` results
     /// when computing the consolidated batch.
     pub fn consolidate(&self) -> T {
-        let batches = self.take_from_all();
-        let mut spine = Spine::new(None);
-
-        for batch in batches {
-            spine.insert(batch);
-        }
-
-        spine.consolidate().unwrap_or_else(|| T::empty(()))
+        merge_batches(self.take_from_all())
     }
 }
 

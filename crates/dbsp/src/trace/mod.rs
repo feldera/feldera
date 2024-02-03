@@ -540,3 +540,33 @@ where
     /// progress.
     fn done(self) -> Output;
 }
+
+/// Merges all of the batches in `batches` and returns the merged result.
+pub fn merge_batches<B, T>(batches: T) -> B
+where
+    T: IntoIterator<Item = B>,
+    B: Batch<Time = ()>,
+    B::Key: Clone,
+    B::Val: Clone,
+{
+    // Repeatedly merge the smallest two batches until no more than one batch is
+    // left.
+    //
+    // Because weights can add to zero, merging two non-empty batches can yield
+    // an empty batch.
+    let mut batches: Vec<_> = batches.into_iter().filter(|b| !b.is_empty()).collect();
+    batches.sort_unstable_by(|a, b| a.len().cmp(&b.len()).reverse());
+    while batches.len() > 1 {
+        let a = batches.pop().unwrap();
+        let b = batches.pop().unwrap();
+        let new = a.merge(&b);
+        if !new.is_empty() {
+            let new_len = new.len();
+            let position = batches
+                .binary_search_by(|element| element.len().cmp(&new_len).reverse())
+                .map_or_else(|err| err, |ok| ok);
+            batches.insert(position, new);
+        }
+    }
+    batches.pop().unwrap_or(B::empty(()))
+}
