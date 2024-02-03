@@ -5,12 +5,9 @@ use crate::{
         GlobalNodeId, OwnershipPreference, Scope,
     },
     circuit_cache_key,
-    trace::{Batch, Trace},
+    trace::{merge_batches, Batch},
     Circuit, Runtime, Stream,
 };
-// Import `spine_fueled::Spine`` here instead of `trace::Spine`` because it is
-// strictly used for non-persistent data-communication between threads.
-use crate::trace::spine_fueled::Spine;
 use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicConsume;
 use crossbeam_utils::CachePadded;
@@ -71,32 +68,23 @@ where
                                     .value()
                                     .clone();
 
-                                let gather_trace = if current_worker == receiver_worker {
-                                    // Safety: The current worker is unique
-                                    let producer = unsafe {
-                                        GatherProducer::new(gather.clone(), current_worker)
-                                    };
+                                // Safety: The current worker is unique
+                                let producer =
+                                    unsafe { GatherProducer::new(gather.clone(), current_worker) };
 
+                                if current_worker == receiver_worker {
                                     self.circuit().add_exchange(
                                         producer,
                                         GatherConsumer::new(gather),
                                         self,
                                     )
                                 } else {
-                                    // Safety: The current worker is unique
-                                    let producer =
-                                        unsafe { GatherProducer::new(gather, current_worker) };
-
                                     self.circuit().add_exchange(
                                         producer,
                                         EmptyGatherConsumer::new(location),
                                         self,
                                     )
-                                };
-
-                                // Is `consolidate` always necessary? Some (all?) consumers may be
-                                // happy working with traces.
-                                gather_trace.consolidate()
+                                }
                             },
                         )
                         .clone()
@@ -330,22 +318,15 @@ impl<T: 'static> Operator for GatherConsumer<T> {
     }
 }
 
-impl<T> SourceOperator<Spine<T>> for GatherConsumer<T>
+impl<T> SourceOperator<T> for GatherConsumer<T>
 where
-    T: Batch + 'static,
-    Spine<T>: Trace<Batch = T>,
+    T: Batch<Time = ()> + 'static,
 {
-    fn eval(&mut self) -> Spine<T> {
+    fn eval(&mut self) -> T {
         // Safety: This is the gather thread
         debug_assert!(unsafe { self.gather.all_channels_ready() });
 
-        let mut spine = Spine::new(None);
-        for worker in 0..self.gather.workers() {
-            let batch = unsafe { self.gather.pop(worker) };
-            spine.insert(batch);
-        }
-
-        spine
+        merge_batches((0..self.gather.workers()).map(|worker| unsafe { self.gather.pop(worker) }))
     }
 }
 
@@ -380,12 +361,11 @@ impl<T: 'static> Operator for EmptyGatherConsumer<T> {
     }
 }
 
-impl<T> SourceOperator<Spine<T>> for EmptyGatherConsumer<T>
+impl<T> SourceOperator<T> for EmptyGatherConsumer<T>
 where
-    T: Batch + 'static,
-    Spine<T>: Trace<Batch = T>,
+    T: Batch<Time = ()> + 'static,
 {
-    fn eval(&mut self) -> Spine<T> {
-        Default::default()
+    fn eval(&mut self) -> T {
+        T::empty(())
     }
 }

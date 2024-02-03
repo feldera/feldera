@@ -8,12 +8,9 @@ use crate::{
     circuit::GlobalNodeId,
     circuit_cache_key, default_hash,
     operator::communication::exchange::new_exchange_operators,
-    trace::{cursor::Cursor, Batch, BatchReader, Builder, Trace},
+    trace::{cursor::Cursor, merge_batches, Batch, BatchReader, Builder},
     Circuit, Runtime, Stream,
 };
-// Import `spine_fueled::Spine` here instead of `trace::Spine` because it is
-// strictly used for non-persistent data-communication between threads.
-use crate::trace::spine_fueled::Spine;
 use std::{hash::Hash, panic::Location};
 
 circuit_cache_key!(ShardId<C, D>((GlobalNodeId, ShardingPolicy) => Stream<C, D>));
@@ -137,15 +134,15 @@ where
                                 move |batch: IB, batches: &mut Vec<OB>| {
                                     Self::shard_batch(&batch, num_workers, &mut builders, batches);
                                 },
-                                |trace: &mut Spine<OB>, batch: OB| trace.insert(batch),
+                                |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
                             );
 
-                            // Is `consolidate` always necessary? Some (all?) consumers may be happy
-                            // working with traces.
                             let output = self
                                 .circuit()
                                 .add_exchange(sender, receiver, self)
-                                .consolidate();
+                                .apply_owned_named("merge shards", |batches| {
+                                    merge_batches(batches)
+                                });
 
                             self.circuit().cache_insert(
                                 ShardId::new((
