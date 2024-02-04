@@ -242,7 +242,7 @@ impl Encoder for JsonEncoder {
                             // contains the entire record being inserted or deleted, including its
                             // schema. The value part of the message is a Debezium change record
                             // with either 'd'elete of 'c'reate operation. When `op` is
-                            // `c`reate, only the `after` component (no `before`) containing the
+                            // 'c'reate, only the `after` component (no `before`) containing the
                             // second copy of the record is present. The value also contains a
                             // schema for the entire payload.  If `op` is 'd'elete, neither
                             // `before` nor `after` is present.
@@ -296,6 +296,11 @@ impl Encoder for JsonEncoder {
 
                                 cursor.serialize_key(&mut buffer)?;
                                 buffer.extend_from_slice(br#"}}"#);
+                            } else if let Some(schema_str) = &self.value_schema_str {
+                                write!(
+                                    buffer,
+                                    r#"{{"schema":{schema_str},"payload":{{"op":"d"}}}}"#
+                                )?;
                             } else {
                                 write!(buffer, r#"{{"payload":{{"op":"d"}}}}"#)?;
                             }

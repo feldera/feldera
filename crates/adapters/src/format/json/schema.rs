@@ -101,17 +101,12 @@ mod kafka_connect_json_converter {
         Double,
         #[serde(rename = "bytes")]
         Bytes,
+        // not supported by the Debezium JDBC sink connector
         #[serde(rename = "array")]
-        Array {
-            // unsupported
-            items: Box<Type>,
-        },
+        Array { items: Box<Type> },
+        // not supported by the Debezium JDBC sink connector
         #[serde(rename = "map")]
-        Map {
-            // unsupported
-            keys: Box<Type>,
-            values: Box<Type>,
-        },
+        Map { keys: Box<Type>, values: Box<Type> },
     }
 
     #[derive(Serialize, Deserialize)]
@@ -166,10 +161,6 @@ mod kafka_connect_json_converter {
         Ok(typ)
     }
 
-    /*pub fn relation_schema_str(schema: &Relation) -> Result<String, ControllerError> {
-        Ok(serde_json::to_string(&relation_schema(schema)?).unwrap())
-    }*/
-
     fn relation_schema(schema: &Relation) -> Result<Type, ControllerError> {
         let mut fields = Vec::new();
 
@@ -212,6 +203,11 @@ mod kafka_connect_json_converter {
                 name: "org.apache.kafka.connect.data.Date".to_string(),
                 parameters: BTreeMap::new(),
             }),
+            // TODO: add serialization for intervals to `sqllib`.
+            "interval" => Some(LogicalType {
+                name: "io.debezium.time.Interval".to_string(),
+                parameters: BTreeMap::new(),
+            }),
             _ => None,
         })
     }
@@ -247,6 +243,7 @@ mod kafka_connect_json_converter {
                     },
                 )?)?),
             }),
+            "interval" => Ok(RepresentationType::String),
             _ => Err(ControllerError::not_supported(&format!(
                 "column type {schema:?} is not supported by the JSON encoder"
             ))),

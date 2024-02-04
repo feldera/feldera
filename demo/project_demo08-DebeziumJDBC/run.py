@@ -1,6 +1,6 @@
 # Stream output of a view to Postgres via Debesium JDBC sink connector.VIEW_NAME
 #
-# To run the demo, start Feldera along with RedPanda, Kafka Connect, and Postrgres containers:
+# To run the demo, start Feldera along with RedPanda, Kafka Connect, and Postgres containers:
 # > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml -f deploy/docker-compose-jdbc.yml \
 #       up db pipeline-manager redpanda connect postgres --build --renew-anon-volumes --force-recreate
 #
@@ -63,7 +63,8 @@ def create_database():
             cur.execute(f"CREATE DATABASE {DATABASE_NAME}")
 
 
-def wait_for_n_outputs(expected_rows):
+# Wait until the db contains exactly expected_rows rows.
+def wait_for_n_outputs(expected_rows: int):
     postgres_server = os.getenv("POSTGRES_SERVER", "localhost:6432")
 
     with psycopg.connect(f"postgresql://postgres:postgres@{postgres_server}/{DATABASE_NAME}") as conn:

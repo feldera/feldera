@@ -3151,7 +3151,7 @@
       },
       "Field": {
         "type": "object",
-        "description": "A SQL field.\n\nMatches the Calcite JSON format.",
+        "description": "A SQL field.\n\nMatches the SQL compiler JSON format.",
         "required": [
           "name",
           "columntype"
