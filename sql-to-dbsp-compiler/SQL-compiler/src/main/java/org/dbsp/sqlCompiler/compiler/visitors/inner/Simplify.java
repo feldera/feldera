@@ -245,7 +245,7 @@ public class Simplify extends InnerRewriteVisitor {
                     if (value.precision() > decType.precision) {
                         this.errorReporter.reportError(expression.getSourcePosition(),
                                 "Invalid DECIMAL",
-                                "cannot represent " + value + " as DECIMAL(" + decType.precision + ", " + decType.scale +
+                                "cannot represent " + lit + " as DECIMAL(" + decType.precision + ", " + decType.scale +
                                         "): precision of DECIMAL type too small to represent value"
                         );
                     }

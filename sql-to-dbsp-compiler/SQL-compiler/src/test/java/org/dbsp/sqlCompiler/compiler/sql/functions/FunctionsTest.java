@@ -388,15 +388,16 @@ public class FunctionsTest extends SqlIoTest {
         );
 
         this.shouldFail("select cast(1234.1234 AS DECIMAL(6, 3))",
-                "cannot represent 1234.123 as DECIMAL(6, 3)"
+                "cannot represent 1234.1234 as DECIMAL(6, 3)"
         );
 
         this.shouldFail("select cast(1234.1236 AS DECIMAL(6, 3))",
-                "cannot represent 1234.123 as DECIMAL(6, 3)"
+                "cannot represent 1234.1236 as DECIMAL(6, 3)"
         );
 
+        this.shouldFail("select cast(143.481 as decimal(2, 1))", "cannot represent 143.481 as DECIMAL(2, 1)");
+
         // this only fails in runtime
-        this.shouldFail("select cast(143.481 as decimal(2, 1))", "cannot represent 143.4 as DECIMAL(2, 1)");
         this.runtimeConstantFail("select cast(99.6 as decimal(2, 0))", "cannot represent 99.6 as DECIMAL(2, 0)");
         this.shouldFail("select cast(-13.4 as decimal(2,1))", "cannot represent -13.4 as DECIMAL(2, 1)");
     }
@@ -639,6 +640,11 @@ public class FunctionsTest extends SqlIoTest {
                 (1 row)
                 """
         );
+    }
+
+    @Test
+    public void testRoundDecimalDecimal() {
+        this.shouldFail("SELECT round(15.1, 1.0)", "Error in SQL statement: Cannot apply 'ROUND' to arguments of type 'ROUND(<DECIMAL(3, 1)>, <DECIMAL(2, 1)>)'. Supported form(s): 'ROUND(<NUMERIC>, <INTEGER>)'");
     }
 
     @Test

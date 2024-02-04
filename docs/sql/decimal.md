@@ -29,34 +29,11 @@ unary and binary), ``*`` (multiplication), ``/`` (division), ``%``
 (modulus).
 
 Modulus happens as follows: 
-<table>
-    <caption>mod = x % y</caption>
-    <tr>
-        <th>x</th>
-        <th>y</th>
-        <th>mod</th>
-    </tr>
-    <tr>
-        <td> 1.12 </td>
-        <td> 0.3 </td>
-        <td> 0.22 </td>
-    </tr>
-    <tr>
-        <td> 1.12 </td>
-        <td> -0.3 </td>
-        <td> 0.22 </td>
-    </tr>
-    <tr>
-        <td> -1.12 </td>
-        <td> 0.3 </td>
-        <td> -0.22 </td>
-    </tr>
-    <tr>
-        <td> -1.12 </td>
-        <td> -0.3 </td>
-        <td> -0.22 </td>
-    </tr>
-</table>
+For: ``mod = x % y``
+- if ``x >= 0`` and ``y > 0`` then: ``x - (floor(x / y) * y)``
+- if ``x >= 0`` and ``y < 0`` then: ``x % abs(y)``
+- if ``x < 0`` and ``y > 0`` then: ``- abs(x) % y``
+- if ``x < 0`` and ``y > 0`` then: ``- abs(x) % abs(y)``
 
 Division or modulus by zero cause a runtime error.
 
