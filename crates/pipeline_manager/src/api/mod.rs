@@ -326,7 +326,7 @@ impl Modify for SecurityAddon {
                         .scheme(HttpAuthScheme::Bearer)
                         .bearer_format("JWT")
                         .description(Some(
-                            r#"Use a JWT token obtained via an OAuth2/OIDC 
+                            r#"Use a JWT token obtained via an OAuth2/OIDC
                                login workflow or an API key obtained via
                                the `/v0/api-keys` endpoint."#,
                         ))
