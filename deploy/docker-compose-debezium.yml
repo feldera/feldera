@@ -4,7 +4,7 @@ services:
   # MySQL container with a toy database used in the Debezium
   # MySQL tutorial (based on MySQL 8.0).
   mysql:
-    image: debezium/example-mysql:2.3
+    image: debezium/example-mysql:2.5
     ports:
       - "3306:3306"
     environment:
