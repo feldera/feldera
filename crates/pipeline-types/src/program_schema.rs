@@ -73,7 +73,7 @@ impl Relation {
 
 /// A SQL field.
 ///
-/// Matches the Calcite JSON format.
+/// Matches the SQL compiler JSON format.
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct Field {
