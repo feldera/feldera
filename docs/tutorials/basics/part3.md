@@ -64,10 +64,18 @@ Repeat these steps to create connectors for the `VENDOR` and `PRICE` tables.
 Navigate to the `Pipelines` section of the Web Console and click the <icon icon="bx:pencil" />
 next to our test pipeline to open the pipeline editor.
 
+:::tip
+
+You can zoom in and out in the pipeline editor with the scroll wheel on your mouse, and
+pan around by clicking and dragging.
+
+:::
+
 ![Open pipeline editor](open-pipeline-editor.png)
 
-Click `Add a new input` and select the `parts-s3` connector, which we have just created,
-from the list of available `GET` connectors.  Add the other two connectors in the same way.
+Click `Add a new input`, find the `HTTPS GET` pane, click on `SELECT`, and select the
+`parts-s3` connector, which we have just created, from the list of available `GET`
+connectors.  Add the other two connectors in the same way.
 The pipeline editor should now look like this:
 
 ![Pipeline editor](detached-connectors.png)

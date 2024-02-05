@@ -122,8 +122,8 @@ this example, the `PREFERRED_VENDOR` view is expressed in terms of the
 
 In order to run our SQL program, we must instantiate it as part of a _pipeline_.
 Navigate to the `Pipelines` section and click `ADD PIPELINE`.  Give the new
-pipeline a name, e.g., "supply_chain" and select "Supply Chain
-Analytics" from the list of SQL programs.
+pipeline the name `supply_chain` and select "Supply Chain Analytics" from the
+list of SQL programs.
 
 The selected program is visualized as a rectangle with a blue dot for each table
 and view declared in the program.  These can be used to connect data sources and
@@ -163,7 +163,7 @@ Click `INSERT ROWS` to push the new rows to the table.  Switch to the
 `BROWSE PART` tab to see the contents of the table, which should
 contain the newly inserted rows.
 
-Follow the same process to populate `VENDOR`
+Follow the same process to populate `VENDOR`:
 
 | ID          | NAME                    | ADDRESS                |
 | ----------- | ----------------------- |------------------------|
@@ -171,7 +171,7 @@ Follow the same process to populate `VENDOR`
 | 2           | HyperDrive Innovations  | 456 Warp Way           |
 | 3           | DarkMatter Devices      | 333 Singularity Street |
 
-and `PRICE`
+and `PRICE`:
 
 | PART        | VENDOR                  | PRICE                  |
 | ----------- | ----------------------- |------------------------|
@@ -212,7 +212,7 @@ described in the next part of the tutorial instead.
 
 ## Step 6. Stop the pipeline
 
-Click the stop icon <icon icon="bx:stop-circle" /> to shutdown the pipeline.
+Click the stop icon <icon icon="bx:stop-circle" /> to shut down the pipeline.
 
 :::caution
 

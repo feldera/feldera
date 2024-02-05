@@ -18,7 +18,7 @@ In Part 2 of the tutorial we will
 
 Start the pipeline you created in Part 1 of the tutorial from a clean state:
 
-- If the pipeline is still running, click <icon icon="bx:stop-circle" /> to shutdown it down.
+- If the pipeline is still running, click <icon icon="bx:stop-circle" /> to shut it down.
 - Click <icon icon="bx:play-circle" /> to restart the pipeline.
 
 ## Step 2. Subscribe to output changes
