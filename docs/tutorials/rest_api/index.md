@@ -175,7 +175,7 @@ As response, we should get back `HTTP/1.1 201 Created` along with the identifier
 the program and its version (1). When an SQL program is created or when its code is
 updated, its version is incremented and compilation is automatically triggered.
 
-Check that the program is compiled:
+Check the program's compilation status:
 
 ```
 curl -s -X GET http://localhost:8080/v0/programs/sc-program | jq
@@ -280,7 +280,8 @@ we will define an HTTP source for each of the tables:
   }'
   ```
 
-Each of the above should return `HTTP/1.1 201 Created` when successfully created.
+Each of the above should execute almost instantly and return `HTTP/1.1
+201 Created`.
 
 We can view the existing connectors using:
 
@@ -363,7 +364,7 @@ curl -i -X PUT http://localhost:8080/v0/pipelines/sc-pipeline \
 > Observe in the above format that it is possible to connect multiple
 > connectors to the same table or view.
 
-It will return `HTTP/1.1 201 Created` when successfully created.
+It will return `HTTP/1.1 201 Created` quickly, indicating success.
 We can retrieve the pipeline using:
 
 ```
@@ -429,7 +430,7 @@ curl -X GET http://localhost:8080/v0/pipelines/sc-pipeline | jq
 ```
 
 
-> Note: only when a pipeline is started, the connectors are actually used.
+> Note: Connectors are only initialized when a pipeline starts to use them.
 > A pipeline will not start if a connector is unable to connect to its
 > data source or sink (e.g., if a URL is misspelled).
 
@@ -575,7 +576,9 @@ with a row deletion (with the previous cheapest vendor) and insertion
 
 ### Step 8: Cleanup
 
-After done with the tutorial, we can clean up. We first shut down the pipeline:
+After you are done with the tutorial, we can clean up. First, shut
+down the pipeline (which will automatically terminate monitoring the
+view if it is still running):
 
 ```
 curl -i -X POST http://localhost:8080/v0/pipelines/sc-pipeline/shutdown
