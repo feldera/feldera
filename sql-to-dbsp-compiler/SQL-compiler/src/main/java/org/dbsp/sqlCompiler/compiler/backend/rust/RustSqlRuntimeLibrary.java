@@ -88,6 +88,8 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put("gte", DBSPOpcode.GTE);
         this.dateFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.dateFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
+        this.dateFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
+        this.dateFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
 
         this.stringFunctions.put("concat", DBSPOpcode.CONCAT);
         this.stringFunctions.put("eq", DBSPOpcode.EQ);
@@ -144,7 +146,7 @@ public class RustSqlRuntimeLibrary {
             DBSPType ltype, @Nullable DBSPType rtype) {
         if (ltype.is(DBSPTypeAny.class) || (rtype != null && rtype.is(DBSPTypeAny.class)))
             throw new InternalCompilerError("Unexpected type _ for operand of " + opcode, ltype);
-        HashMap<String, DBSPOpcode> map;
+        HashMap<String, DBSPOpcode> map = null;
         boolean anyNull = ltype.mayBeNull || (rtype != null && rtype.mayBeNull);
         String suffixReturn = "";  // suffix based on the return type
 
@@ -164,7 +166,7 @@ public class RustSqlRuntimeLibrary {
             map = this.arithmeticFunctions;
         } else if (ltype.is(DBSPTypeString.class)) {
             map = this.stringFunctions;
-        } else {
+        } else if (ltype.is(DBSPTypeBinary.class)) {
             map = this.otherFunctions;
         }
         if (rtype != null && rtype.is(IsDateType.class)) {
@@ -196,7 +198,6 @@ public class RustSqlRuntimeLibrary {
             tsuffixl = ltype.to(DBSPTypeBaseType.class).shortName();
             tsuffixr = (rtype == null) ? "" : rtype.to(DBSPTypeBaseType.class).shortName();
         }
-        //noinspection ConstantValue
         if (map == null)
             throw new UnimplementedException(opcode.toString());
         for (String k: map.keySet()) {

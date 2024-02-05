@@ -2,6 +2,7 @@
 #![allow(non_camel_case_types)]
 
 use crate::binary::ByteArray;
+use crate::timestamp::*;
 use core::ops::Add;
 use dbsp::algebra::{F32, F64};
 use num::PrimInt;
@@ -112,6 +113,9 @@ where
 
 for_all_numeric_aggregate!(agg_max, agg_max);
 some_aggregate!(agg_max, agg_max, b, bool);
+some_aggregate!(agg_max, agg_max, Timestamp, Timestamp);
+some_aggregate!(agg_max, agg_max, Date, Date);
+some_aggregate!(agg_max, agg_max, Time, Time);
 
 pub fn agg_min<T>(left: &T, right: &T) -> T
 where
@@ -122,6 +126,9 @@ where
 
 for_all_numeric_aggregate!(agg_min, agg_min);
 some_aggregate!(agg_min, agg_min, b, bool);
+some_aggregate!(agg_min, agg_min, Timestamp, Timestamp);
+some_aggregate!(agg_min, agg_min, Date, Date);
+some_aggregate!(agg_min, agg_min, Time, Time);
 
 pub fn agg_plus<T>(left: &T, right: &T) -> T
 where
