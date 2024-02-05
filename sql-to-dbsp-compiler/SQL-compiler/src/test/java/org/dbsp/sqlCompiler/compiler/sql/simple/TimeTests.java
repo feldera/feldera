@@ -24,11 +24,13 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.junit.Test;
 
 public class TimeTests extends BaseSQLTests {
@@ -54,6 +56,16 @@ public class TimeTests extends BaseSQLTests {
 
     public DBSPZSetLiteral.Contents createInput() {
         return new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPTimestampLiteral(100)));
+    }
+
+    @Test
+    public void maxTest() {
+        String query = """
+                    SELECT MAX(COL1)
+                    FROM T
+                """;
+        this.testQuery(query, new DBSPTimestampLiteral(
+                CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, true), 100L));
     }
 
     @Test
