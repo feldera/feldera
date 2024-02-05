@@ -697,70 +697,6 @@ public class PostgresNumericTests extends SqlIoTest {
         this.testTwoViews(intermediate, last);
     }
 
-    @Test
-    public void testSpecialValues() {
-        // This test was written with NUMERIC values, but was converted to FP
-        this.q(
-                """
-                        WITH v(x) AS (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))
-                        SELECT x1, x2,
-                          x1 + x2 AS s,
-                          x1 - x2 AS diff,
-                          x1 * x2 AS prod
-                        FROM v AS v1(x1), v AS v2(x2);
-                            x1     |    x2     |    sum    |   diff    |   prod   \s
-                        -----------+-----------+-----------+-----------+-----------
-                                 0 |         0 |         0 |         0 |         0
-                                 0 |         1 |         1 |        -1 |         0
-                                 0 |        -1 |        -1 |         1 |        -0
-                                 0 |       4.2 |       4.2 |      -4.2 |       0.0
-                                 0 |  Infinity |  Infinity | -Infinity |       NaN
-                                 0 | -Infinity | -Infinity |  Infinity |       NaN
-                                 0 |       NaN |       NaN |       NaN |       NaN
-                                 1 |         0 |         1 |         1 |         0
-                                 1 |         1 |         2 |         0 |         1
-                                 1 |        -1 |         0 |         2 |        -1
-                                 1 |       4.2 |       5.2 |      -3.2 |       4.2
-                                 1 |  Infinity |  Infinity | -Infinity |  Infinity
-                                 1 | -Infinity | -Infinity |  Infinity | -Infinity
-                                 1 |       NaN |       NaN |       NaN |       NaN
-                                -1 |         0 |        -1 |        -1 |        -0
-                                -1 |         1 |         0 |        -2 |        -1
-                                -1 |        -1 |        -2 |         0 |         1
-                                -1 |       4.2 |       3.2 |      -5.2 |      -4.2
-                                -1 |  Infinity |  Infinity | -Infinity | -Infinity
-                                -1 | -Infinity | -Infinity |  Infinity |  Infinity
-                                -1 |       NaN |       NaN |       NaN |       NaN
-                               4.2 |         0 |       4.2 |       4.2 |       0.0
-                               4.2 |         1 |       5.2 |       3.2 |       4.2
-                               4.2 |        -1 |       3.2 |       5.2 |      -4.2
-                               4.2 |       4.2 |       8.4 |       0.0 |     17.64
-                               4.2 |  Infinity |  Infinity | -Infinity |  Infinity
-                               4.2 | -Infinity | -Infinity |  Infinity | -Infinity
-                               4.2 |       NaN |       NaN |       NaN |       NaN
-                          Infinity |         0 |  Infinity |  Infinity |       NaN
-                          Infinity |         1 |  Infinity |  Infinity |  Infinity
-                          Infinity |        -1 |  Infinity |  Infinity | -Infinity
-                          Infinity |       4.2 |  Infinity |  Infinity |  Infinity
-                          Infinity |  Infinity |  Infinity |       NaN |  Infinity
-                          Infinity | -Infinity |       NaN |  Infinity | -Infinity
-                          Infinity |       NaN |       NaN |       NaN |       NaN
-                         -Infinity |         0 | -Infinity | -Infinity |       NaN
-                         -Infinity |         1 | -Infinity | -Infinity | -Infinity
-                         -Infinity |        -1 | -Infinity | -Infinity |  Infinity
-                         -Infinity |       4.2 | -Infinity | -Infinity | -Infinity
-                         -Infinity |  Infinity |       NaN | -Infinity | -Infinity
-                         -Infinity | -Infinity | -Infinity |       NaN |  Infinity
-                         -Infinity |       NaN |       NaN |       NaN |       NaN
-                               NaN |         0 |       NaN |       NaN |       NaN
-                               NaN |         1 |       NaN |       NaN |       NaN
-                               NaN |        -1 |       NaN |       NaN |       NaN
-                               NaN |       4.2 |       NaN |       NaN |       NaN
-                               NaN |  Infinity |       NaN |       NaN |       NaN
-                               NaN | -Infinity |       NaN |       NaN |       NaN
-                               NaN |       NaN |       NaN |       NaN |       NaN""");
-    }
-
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5795")
     public void testCast() {
         this.q(
@@ -804,63 +740,6 @@ public class PostgresNumericTests extends SqlIoTest {
     }
 
     @Test
-    public void testFpDiv() {
-        // no div or mod defined for fp, so I removed these
-        this.q("WITH v(x) AS\n" +
-                "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE))," +
-                "(CAST ('nan' AS DOUBLE)))\n" +
-                "SELECT x1, x2,\n" +
-                "  x1 / x2 AS quot\n" +
-                //"  x1 % x2 AS m,\n" +
-                //"  div(x1, x2) AS div\n" +
-                "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0E0;\n" +
-                "    x1     |    x2     |          quot            \n" +
-                "-----------+-----------+--------------------------\n" +
-                "         0 |         1 |  0.00000000000000000000 \n" +
-                "         1 |         1 |  1.00000000000000000000 \n" +
-                "        -1 |         1 | -1.00000000000000000000 \n" +
-                "       4.2 |         1 |      4.2000000000000000 \n" +
-                "  Infinity |         1 |                Infinity \n" +
-                " -Infinity |         1 |               -Infinity \n" +
-                "       NaN |         1 |                     NaN \n" +
-                "         0 |        -1 | -0.00000000000000000000 \n" +
-                "         1 |        -1 | -1.00000000000000000000 \n" +
-                "        -1 |        -1 |  1.00000000000000000000 \n" +
-                "       4.2 |        -1 |     -4.2000000000000000 \n" +
-                "  Infinity |        -1 |               -Infinity \n" +
-                " -Infinity |        -1 |                Infinity \n" +
-                "       NaN |        -1 |                     NaN \n" +
-                "         0 |       4.2 |  0.00000000000000000000 \n" +
-                "         1 |       4.2 |  0.23809523809523809524 \n" +
-                "        -1 |       4.2 | -0.23809523809523809524 \n" +
-                "       4.2 |       4.2 |  1.00000000000000000000 \n" +
-                "  Infinity |       4.2 |                Infinity \n" +
-                " -Infinity |       4.2 |               -Infinity \n" +
-                "       NaN |       4.2 |                     NaN \n" +
-                "         0 |  Infinity |                       0 \n" +
-                "         1 |  Infinity |                       0 \n" +
-                "        -1 |  Infinity |                      -0 \n" +
-                "       4.2 |  Infinity |                       0 \n" +
-                "  Infinity |  Infinity |                     NaN \n" +
-                " -Infinity |  Infinity |                     NaN \n" +
-                "       NaN |  Infinity |                     NaN \n" +
-                "         0 | -Infinity |                      -0 \n" +
-                "         1 | -Infinity |                      -0 \n" +
-                "        -1 | -Infinity |                       0 \n" +
-                "       4.2 | -Infinity |                      -0 \n" +
-                "  Infinity | -Infinity |                     NaN \n" +
-                " -Infinity | -Infinity |                     NaN \n" +
-                "       NaN | -Infinity |                     NaN \n" +
-                "         0 |       NaN |                     NaN \n" +
-                "         1 |       NaN |                     NaN \n" +
-                "        -1 |       NaN |                     NaN \n" +
-                "       4.2 |       NaN |                     NaN \n" +
-                "  Infinity |       NaN |                     NaN \n" +
-                " -Infinity |       NaN |                     NaN \n" +
-                "       NaN |       NaN |                     NaN ");
-    }
-
-    @Test
     public void testCastOutOfRange() {
         this.shouldFail("SELECT CAST(1 AS NUMERIC(10, 20)) % 2",
                 "Illegal type: DECIMAL type must have scale <= precision");
@@ -896,53 +775,73 @@ public class PostgresNumericTests extends SqlIoTest {
                 "       4.2 |       4.2 |  1.00000000000000000000 |  0.0");
     }
 
-    // We don't support 'Infinity' for Decimal
-    // We don't support NaN for Decimal
-    //SELECT '0'::numeric / '0';
-    //ERROR:  division by zero
-    //SELECT 'inf'::numeric % '0';
-    //ERROR:  division by zero
-    //SELECT '-inf'::numeric % '0';
-    //ERROR:  division by zero
-    //SELECT 'nan'::numeric % '0';
-    // ?column?
-    //----------
-    //      NaN
-    //(1 row)
-    //
-    //SELECT '0'::numeric % '0';
-    //ERROR:  division by zero
-    //SELECT div('inf'::numeric, '0');
-    //ERROR:  division by zero
-    //SELECT div('-inf'::numeric, '0');
-    //ERROR:  division by zero
-    //SELECT div('nan'::numeric, '0');
-    // div
-    //-----
-    // NaN
-    //(1 row)
-    //
-    //SELECT div('0'::numeric, '0');
-    //ERROR:  division by zero
+    @Test
+    public void testDivByZero() {
+        this.qf("SELECT '0'::numeric / '0'", "divide by zero");
+
+        //SELECT 'inf'::numeric % '0';
+        this.qf("SELECT '1'::numeric % '0'", "Division by zero");
+
+        //SELECT '-inf'::numeric % '0';
+        //SELECT 'nan'::numeric % '0';
+        this.qf("SELECT '-1'::numeric % '0'", "Division by zero");
+
+        //SELECT '0'::numeric % '0';
+        this.qf("SELECT '0'::numeric % '0'", "Division by zero");
+
+        //SELECT div('inf'::numeric, '0');
+        //SELECT div('-inf'::numeric, '0');
+        //SELECT div('nan'::numeric, '0');
+        //SELECT div('0'::numeric, '0');
+    }
+
+    // this is not a postgres test
+    @Test
+    public void testModuloMinusOne() {
+        this.qs("""
+                SELECT 2::DECIMAL % -1::DECIMAL;
+                 decimal
+                ---------
+                 0
+                (1 row)
+                
+                SELECT 2.1::DECIMAL(2, 1) % -1.1::DECIMAL(2, 1);
+                 decimal
+                ---------
+                 1.0
+                (1 row)
+                """
+        );
+    }
 
     @Test
-    public void testFunctions0() {
-        // TODO: this test was written with NUMERIC values, but was converted to FP
-        this.q("""
-                WITH v(x) AS
-                  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(-7.777E0),(CAST('inf' AS DOUBLE)),(CAST('-inf' AS DOUBLE)),(CAST('nan' AS DOUBLE)))
-                SELECT x, -x as minusx, abs(x), floor(x), ceil(x), sign(x)
-                FROM v;
-                     x     |  minusx   |   abs    |   floor   |   ceil    | sign \s
-                -----------+-----------+----------+-----------+-----------+-------
-                         0 |        -0 |        0 |         0 |         0 |    0\s
-                         1 |        -1 |        1 |         1 |         1 |    1\s
-                        -1 |         1 |        1 |        -1 |        -1 |   -1\s
-                       4.2 |      -4.2 |      4.2 |         4 |         5 |    1\s
-                    -7.777 |     7.777 |    7.777 |        -8 |        -7 |   -1\s
-                  Infinity | -Infinity | Infinity |  Infinity |  Infinity |    1\s
-                 -Infinity |  Infinity | Infinity | -Infinity | -Infinity |   -1\s
-                       NaN |       NaN |      NaN |       NaN |       NaN |  NaN\s""");
+    public void testModulo() {
+        this.qs("""
+                select 1.12 % 0.3;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select 1.12 % -0.3;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select -1.12 % 0.3;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                                
+                select -1.12 % -0.3;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                """
+        );
     }
 
     @Test
@@ -965,7 +864,7 @@ public class PostgresNumericTests extends SqlIoTest {
     @Test
     public void testFunctions1() {
         // Removed the unsupported inf, nan, etc. values
-        // This test makes not sense for FP
+        // This test makes no sense for FP
         // 'trunc' has been renamed to 'truncate'
         this.q("""
                 WITH v(x) AS
@@ -1021,9 +920,10 @@ public class PostgresNumericTests extends SqlIoTest {
                       4.2 | 2.049390153191920""");
     }
 
-    // TODO: Calcite thinks that sqrt(-1) should produce a runtime error
-    // SELECT sqrt('-1'::numeric);
-    //ERROR:  cannot take square root of a negative number
+    @Test
+    public void testSqrtError() {
+        this.qf("SELECT sqrt('-1'::numeric)", "Unable to compute sqrt of -1");
+    }
 
     @Test
     public void testLog() {

@@ -228,7 +228,10 @@ pub fn cast_to_decimal_decimal(value: Decimal, precision: u32, scale: u32) -> De
     // '1234.5678' -> DECIMAL(6, 2) is fine as the integer part fits in 4 digits
     // but to DECIMAL(6, 3) would error as we can't fit '1234' in 3 digits
 
-    let int_part_precision = value
+    let mut result = value;
+    result.rescale(scale);
+
+    let int_part_precision = result
         .trunc()
         .mantissa()
         .checked_abs()
@@ -239,11 +242,9 @@ pub fn cast_to_decimal_decimal(value: Decimal, precision: u32, scale: u32) -> De
     let to_int_part_precision = precision - scale;
 
     if to_int_part_precision < int_part_precision {
-        panic!("cannot represent {value} as DECIMAL({precision}, {scale})")
+        panic!("cannot represent {value} as DECIMAL({precision}, {scale}): precision of DECIMAL type too small to represent value")
     }
 
-    let mut result = value;
-    result.rescale(scale);
     result
 }
 
@@ -1225,6 +1226,16 @@ macro_rules! cast_to_i {
             #[inline]
             pub fn [<cast_to_ $result_type _sN >](value: Option<String>) -> $result_type {
                 value.unwrap().trim().parse().unwrap()
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type N_s >](value: String) -> Option<$result_type> {
+                value.trim().parse().ok()
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_type N_sN >](value: Option<String>) -> Option<$result_type> {
+                value.unwrap().trim().parse().ok()
             }
 
             // From other integers

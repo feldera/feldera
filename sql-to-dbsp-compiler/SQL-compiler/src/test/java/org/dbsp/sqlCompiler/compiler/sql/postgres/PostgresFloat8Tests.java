@@ -951,4 +951,157 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
         this.runtimeFail("select log(-1, 0)", "Unable to calculate log(-1, 0)", this.getEmptyIOPair());
         this.runtimeFail("select log(-1, -1)", "Unable to calculate log(-1, -1)", this.getEmptyIOPair());
     }
+
+    // Moved here from `PostgresNumericTests`
+    @Test
+    public void testFpDiv() {
+        // no div or mod defined for fp, so I removed these
+        this.q("WITH v(x) AS\n" +
+                "  (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE))," +
+                "(CAST ('nan' AS DOUBLE)))\n" +
+                "SELECT x1, x2,\n" +
+                "  x1 / x2 AS quot\n" +
+                //"  x1 % x2 AS m,\n" +
+                //"  div(x1, x2) AS div\n" +
+                "FROM v AS v1(x1), v AS v2(x2) WHERE x2 != 0E0;\n" +
+                "    x1     |    x2     |          quot            \n" +
+                "-----------+-----------+--------------------------\n" +
+                "         0 |         1 |  0.00000000000000000000 \n" +
+                "         1 |         1 |  1.00000000000000000000 \n" +
+                "        -1 |         1 | -1.00000000000000000000 \n" +
+                "       4.2 |         1 |      4.2000000000000000 \n" +
+                "  Infinity |         1 |                Infinity \n" +
+                " -Infinity |         1 |               -Infinity \n" +
+                "       NaN |         1 |                     NaN \n" +
+                "         0 |        -1 | -0.00000000000000000000 \n" +
+                "         1 |        -1 | -1.00000000000000000000 \n" +
+                "        -1 |        -1 |  1.00000000000000000000 \n" +
+                "       4.2 |        -1 |     -4.2000000000000000 \n" +
+                "  Infinity |        -1 |               -Infinity \n" +
+                " -Infinity |        -1 |                Infinity \n" +
+                "       NaN |        -1 |                     NaN \n" +
+                "         0 |       4.2 |  0.00000000000000000000 \n" +
+                "         1 |       4.2 |  0.23809523809523809524 \n" +
+                "        -1 |       4.2 | -0.23809523809523809524 \n" +
+                "       4.2 |       4.2 |  1.00000000000000000000 \n" +
+                "  Infinity |       4.2 |                Infinity \n" +
+                " -Infinity |       4.2 |               -Infinity \n" +
+                "       NaN |       4.2 |                     NaN \n" +
+                "         0 |  Infinity |                       0 \n" +
+                "         1 |  Infinity |                       0 \n" +
+                "        -1 |  Infinity |                      -0 \n" +
+                "       4.2 |  Infinity |                       0 \n" +
+                "  Infinity |  Infinity |                     NaN \n" +
+                " -Infinity |  Infinity |                     NaN \n" +
+                "       NaN |  Infinity |                     NaN \n" +
+                "         0 | -Infinity |                      -0 \n" +
+                "         1 | -Infinity |                      -0 \n" +
+                "        -1 | -Infinity |                       0 \n" +
+                "       4.2 | -Infinity |                      -0 \n" +
+                "  Infinity | -Infinity |                     NaN \n" +
+                " -Infinity | -Infinity |                     NaN \n" +
+                "       NaN | -Infinity |                     NaN \n" +
+                "         0 |       NaN |                     NaN \n" +
+                "         1 |       NaN |                     NaN \n" +
+                "        -1 |       NaN |                     NaN \n" +
+                "       4.2 |       NaN |                     NaN \n" +
+                "  Infinity |       NaN |                     NaN \n" +
+                " -Infinity |       NaN |                     NaN \n" +
+                "       NaN |       NaN |                     NaN ");
+    }
+
+    // Moved here from `PostgresNumericTests`
+    @Test
+    public void testSpecialValues() {
+        // This test was written with NUMERIC values, but was converted to FP
+        this.q(
+                """
+                        WITH v(x) AS (VALUES(0E0),(1E0),(-1E0),(4.2E0),(CAST ('Infinity' AS DOUBLE)),(CAST ('-Infinity' AS DOUBLE)),(CAST ('nan' AS DOUBLE)))
+                        SELECT x1, x2,
+                          x1 + x2 AS s,
+                          x1 - x2 AS diff,
+                          x1 * x2 AS prod
+                        FROM v AS v1(x1), v AS v2(x2);
+                            x1     |    x2     |    sum    |   diff    |   prod   \s
+                        -----------+-----------+-----------+-----------+-----------
+                                 0 |         0 |         0 |         0 |         0
+                                 0 |         1 |         1 |        -1 |         0
+                                 0 |        -1 |        -1 |         1 |        -0
+                                 0 |       4.2 |       4.2 |      -4.2 |       0.0
+                                 0 |  Infinity |  Infinity | -Infinity |       NaN
+                                 0 | -Infinity | -Infinity |  Infinity |       NaN
+                                 0 |       NaN |       NaN |       NaN |       NaN
+                                 1 |         0 |         1 |         1 |         0
+                                 1 |         1 |         2 |         0 |         1
+                                 1 |        -1 |         0 |         2 |        -1
+                                 1 |       4.2 |       5.2 |      -3.2 |       4.2
+                                 1 |  Infinity |  Infinity | -Infinity |  Infinity
+                                 1 | -Infinity | -Infinity |  Infinity | -Infinity
+                                 1 |       NaN |       NaN |       NaN |       NaN
+                                -1 |         0 |        -1 |        -1 |        -0
+                                -1 |         1 |         0 |        -2 |        -1
+                                -1 |        -1 |        -2 |         0 |         1
+                                -1 |       4.2 |       3.2 |      -5.2 |      -4.2
+                                -1 |  Infinity |  Infinity | -Infinity | -Infinity
+                                -1 | -Infinity | -Infinity |  Infinity |  Infinity
+                                -1 |       NaN |       NaN |       NaN |       NaN
+                               4.2 |         0 |       4.2 |       4.2 |       0.0
+                               4.2 |         1 |       5.2 |       3.2 |       4.2
+                               4.2 |        -1 |       3.2 |       5.2 |      -4.2
+                               4.2 |       4.2 |       8.4 |       0.0 |     17.64
+                               4.2 |  Infinity |  Infinity | -Infinity |  Infinity
+                               4.2 | -Infinity | -Infinity |  Infinity | -Infinity
+                               4.2 |       NaN |       NaN |       NaN |       NaN
+                          Infinity |         0 |  Infinity |  Infinity |       NaN
+                          Infinity |         1 |  Infinity |  Infinity |  Infinity
+                          Infinity |        -1 |  Infinity |  Infinity | -Infinity
+                          Infinity |       4.2 |  Infinity |  Infinity |  Infinity
+                          Infinity |  Infinity |  Infinity |       NaN |  Infinity
+                          Infinity | -Infinity |       NaN |  Infinity | -Infinity
+                          Infinity |       NaN |       NaN |       NaN |       NaN
+                         -Infinity |         0 | -Infinity | -Infinity |       NaN
+                         -Infinity |         1 | -Infinity | -Infinity | -Infinity
+                         -Infinity |        -1 | -Infinity | -Infinity |  Infinity
+                         -Infinity |       4.2 | -Infinity | -Infinity | -Infinity
+                         -Infinity |  Infinity |       NaN | -Infinity | -Infinity
+                         -Infinity | -Infinity | -Infinity |       NaN |  Infinity
+                         -Infinity |       NaN |       NaN |       NaN |       NaN
+                               NaN |         0 |       NaN |       NaN |       NaN
+                               NaN |         1 |       NaN |       NaN |       NaN
+                               NaN |        -1 |       NaN |       NaN |       NaN
+                               NaN |       4.2 |       NaN |       NaN |       NaN
+                               NaN |  Infinity |       NaN |       NaN |       NaN
+                               NaN | -Infinity |       NaN |       NaN |       NaN
+                               NaN |       NaN |       NaN |       NaN |       NaN""");
+    }
+
+    @Test
+    public void testModulo() {
+        this.qs("""
+                select 1.12::DOUBLE % 0.3::DOUBLE;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select 1.12::DOUBLE % -0.3::DOUBLE;
+                 ?column?
+                ----------
+                     0.22
+                (1 row)
+                                
+                select -1.12::DOUBLE % 0.3::DOUBLE;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                                
+                select -1.12::DOUBLE % -0.3::DOUBLE;
+                 ?column?
+                ----------
+                    -0.22
+                (1 row)
+                """
+        );
+    }
 }

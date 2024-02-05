@@ -247,9 +247,9 @@ public class FunctionsTest extends SqlIoTest {
                 5""");
     }
 
-    // Tested on Postgres
+    // Tested on Postgres and some taken from MySQL
     @Test
-    public void testDecimalRounding() {
+    public void testRounding() {
         this.qs("""
                 select CAST((CAST('1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
@@ -334,6 +334,43 @@ public class FunctionsTest extends SqlIoTest {
                 ------
                  -0.12
                 (1 row)
+                
+                -- the following tests are from mysql
+                select cast('1.00000001335143196001808973960578441619873046875E-10' as decimal(30,15));
+                     decimal
+                -------------------
+                 0.000000000100000
+                (1 row)
+                
+                select ln(14000) as c1, cast(ln(14000) as decimal(5,3)) as c2, cast(ln(14000) as decimal(5,3)) as c3;
+                        c1         |  c2   |  c3
+                -------------------+-------+-------
+                 9.546812608597396 | 9.547 | 9.547
+                (1 row)
+                
+                select cast(143.481 as decimal(4,1));
+                 cast(143.481 as decimal(4,1))
+                -------------------------------
+                143.5
+                (1 row)
+                
+                select cast(143.481 as decimal(4,0));
+                 cast(143.481 as decimal(4,0))
+                -------------------------------
+                143
+                (1 row)
+                
+                select cast(-3.4 as decimal(2,1));
+                 cast(-3.4 as decimal(2,1))
+                -------------------------------
+                -3.4
+                (1 row)
+                
+                select cast(98.6 as decimal(2,0));
+                 cast(98.6 as decimal(2,0))
+                -------------------------------
+                99
+                (1 row)
                 """
         );
     }
@@ -349,6 +386,20 @@ public class FunctionsTest extends SqlIoTest {
                 // The compiler rounds `1234.1236` to `1234.124` before calling the rust code
                 "cannot represent 1234.124 as DECIMAL(6, 3)"
         );
+
+        this.shouldFail("select cast(1234.1234 AS DECIMAL(6, 3))",
+                "cannot represent 1234.1234 as DECIMAL(6, 3)"
+        );
+
+        this.shouldFail("select cast(1234.1236 AS DECIMAL(6, 3))",
+                "cannot represent 1234.1236 as DECIMAL(6, 3)"
+        );
+
+        this.shouldFail("select cast(143.481 as decimal(2, 1))", "cannot represent 143.481 as DECIMAL(2, 1)");
+
+        // this only fails in runtime
+        this.runtimeConstantFail("select cast(99.6 as decimal(2, 0))", "cannot represent 99.6 as DECIMAL(2, 0)");
+        this.shouldFail("select cast(-13.4 as decimal(2,1))", "cannot represent -13.4 as DECIMAL(2, 1)");
     }
 
     @Test
@@ -588,6 +639,457 @@ public class FunctionsTest extends SqlIoTest {
                 null
                 (1 row)
                 """
+        );
+    }
+
+    @Test
+    public void testRoundDecimalDecimal() {
+        this.shouldFail("SELECT round(15.1, 1.0)", "Error in SQL statement: Cannot apply 'ROUND' to arguments of type 'ROUND(<DECIMAL(3, 1)>, <DECIMAL(2, 1)>)'. Supported form(s): 'ROUND(<NUMERIC>, <INTEGER>)'");
+    }
+
+    @Test
+    public void testRound() {
+        this.qs("""
+                select round(15.1);
+                 round(15.1)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.4);
+                 round(15.4)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.5);
+                 round(15.5)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.6);
+                 round(15.6)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.9);
+                 round(15.9)
+                ------------
+                 16
+                (1 row)
+                
+                select round(-15.1);
+                 round(-15.1)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.4);
+                 round(-15.4)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.5);
+                 round(-15.5)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.6);
+                 round(-15.6)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.9);
+                 round(-15.9)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(15.1,1);
+                 round(15.1,1)
+                ------------
+                 15.1
+                (1 row)
+                
+                select round(15.4,1);
+                 round(15.4,1)
+                ------------
+                 15.4
+                (1 row)
+                
+                select round(15.5,1);
+                 round(15.5,1)
+                ------------
+                 15.5
+                (1 row)
+                
+                select round(15.6,1);
+                 round(15.6,1)
+                ------------
+                 15.6
+                (1 row)
+                
+                select round(15.9,1);
+                 round(15.9,1)
+                ------------
+                 15.9
+                (1 row)
+                
+                select round(-15.1,1);
+                round(-15.1,1)
+                ------------
+                 -15.1
+                (1 row)
+                
+                select round(-15.4,1);
+                round(-15.4,1)
+                ------------
+                 -15.4
+                (1 row)
+                
+                select round(-15.5,1);
+                round(-15.5,1)
+                ------------
+                 -15.5
+                (1 row)
+                
+                select round(-15.6,1);
+                round(-15.6,1)
+                ------------
+                 -15.6
+                (1 row)
+                
+                select round(-15.9,1);
+                round(-15.9,1)
+                ------------
+                 -15.9
+                (1 row)
+                
+                select round(15.1,0);
+                round(15.1,0)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.4,0);
+                 round(15.4,0)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.5,0);
+                round(15.5,0)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.6,0);
+                round(15.6,0)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.9,0);
+                round(15.9,0)
+                ------------
+                 16
+                (1 row)
+                
+                select round(-15.1,0);
+                round(-15.1,0)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.4,0);
+                round(-15.4,0)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.5,0);
+                round(-15.5,0)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.6,0);
+                round(-15.6,0)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.9,0);
+                round(-15.9,0)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(15.1,-1);
+                round(15.1,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.4,-1);
+                round(15.4,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.5,-1);
+                round(15.5,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.6,-1);
+                round(15.6,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.9,-1);
+                round(15.9,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(-15.1,-1);
+                round(-15.1,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.4,-1);
+                round(-15.4,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.5,-1);
+                round(-15.5,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.6,-1);
+                round(-15.6,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91,-1);
+                round(-15.91,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91,-1::tinyint);
+                round(-15.91,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91,-1::smallint);
+                round(-15.91,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91,-1::int);
+                round(-15.91,-1)
+                ------------
+                 -20
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testTruncate() {
+        this.qs("""
+                select truncate(5678.123451);
+                truncate(5678.123451)
+                -----
+                5678
+                (1 row)
+                
+                select truncate(5678.123451,0);
+                truncate(5678.123451,0)
+                -----
+                5678
+                (1 row)
+                
+                select truncate(5678.123451,1);
+                truncate(5678.123451,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451,2);
+                truncate(5678.123451,2)
+                -----
+                5678.12
+                (1 row)
+                
+                select truncate(5678.123451,3);
+                truncate(5678.123451,3)
+                -----
+                5678.123
+                (1 row)
+                
+                select truncate(5678.123451,4);
+                truncate(5678.123451,4)
+                -----
+                5678.1234
+                (1 row)
+                
+                select truncate(5678.123451,5);
+                truncate(5678.123451,5)
+                -----
+                5678.12345
+                (1 row)
+                
+                select truncate(5678.123451,6);
+                truncate(5678.123451,6)
+                -----
+                5678.123451
+                (1 row)
+                
+                select truncate(5678.123451,-1);
+                truncate(5678.123451,-1)
+                -----
+                5670
+                (1 row)
+                
+                select truncate(5678.123451,-2);
+                truncate(5678.123451,-2)
+                -----
+                5600
+                (1 row)
+                
+                select truncate(5678.123451,-3);
+                truncate(5678.123451,-3)
+                -----
+                5000
+                (1 row)
+                
+                select truncate(5678.123451,-4);
+                truncate(5678.123451,-4)
+                -----
+                0
+                (1 row)
+                
+                select truncate(-5678.123451,0);
+                truncate(-5678.123451,0)
+                -----
+                -5678
+                (1 row)
+                
+                select truncate(-5678.123451,1);
+                truncate(-5678.123451,1)
+                -----
+                -5678.1
+                (1 row)
+                
+                select truncate(-5678.123451,2);
+                truncate(-5678.123451,2)
+                -----
+                -5678.12
+                (1 row)
+                
+                select truncate(-5678.123451,3);
+                truncate(-5678.123451,3)
+                -----
+                -5678.123
+                (1 row)
+                
+                select truncate(-5678.123451,4);
+                truncate(-5678.123451,4)
+                -----
+                -5678.1234
+                (1 row)
+                
+                select truncate(-5678.123451,5);
+                truncate(-5678.123451,5)
+                -----
+                -5678.12345
+                (1 row)
+                
+                select truncate(-5678.123451,6);
+                truncate(-5678.123451,6)
+                -----
+                -5678.123451
+                (1 row)
+                
+                select truncate(-5678.123451,-1);
+                truncate(-5678.123451,-1)
+                -----
+                -5670
+                (1 row)
+                
+                select truncate(-5678.123451,-2);
+                truncate(-5678.123451,-2)
+                -----
+                -5600
+                (1 row)
+                
+                select truncate(-5678.123451,-3);
+                truncate(-5678.123451,-3)
+                -----
+                -5000
+                (1 row)
+                
+                select truncate(-5678.123451,-4);
+                truncate(-5678.123451,-4)
+                -----
+                0
+                (1 row)
+                
+                select truncate(5678.123451,1::tinyint);
+                truncate(5678.123451,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451,1::smallint);
+                truncate(5678.123451,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451,1::int);
+                truncate(5678.123451,1)
+                -----
+                5678.1
+                (1 row)
+                """
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1379")
+    public void testRoundBigInt() {
+        this.q("""
+                SELECT round(123.123, 2::bigint);
+                 round
+                -------
+                 123.12"""
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1379")
+    public void testTruncateBigInt() {
+        this.q("""
+                select truncate(5678.123451,1::bigint);
+                truncate(5678.123451,1)
+                -----
+                5678.1"""
         );
     }
 }

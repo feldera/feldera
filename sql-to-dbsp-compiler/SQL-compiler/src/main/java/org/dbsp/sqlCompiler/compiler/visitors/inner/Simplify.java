@@ -243,8 +243,11 @@ public class Simplify extends InnerRewriteVisitor {
                     DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
                     value = value.setScale(decType.scale, RoundingMode.DOWN);
                     if (value.precision() > decType.precision) {
-                        throw new IllegalArgumentException("Value " + value +
-                                " cannot be represented with precision " + decType.precision);
+                        this.errorReporter.reportError(expression.getSourcePosition(),
+                                "Invalid DECIMAL",
+                                "cannot represent " + lit + " as DECIMAL(" + decType.precision + ", " + decType.scale +
+                                        "): precision of DECIMAL type too small to represent value"
+                        );
                     }
                     result = new DBSPDecimalLiteral(source.getNode(), type, value);
                 }

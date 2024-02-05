@@ -27,8 +27,15 @@ an example is `NaN` raised to the zero power yields one.
 In sorting order `NaN` is considered greater than all other values.
 
 The legal operations are `+` (plus, unary and binary), `-` (minus,
-unary and binary), `*` (multiplication), `/` (division).
+unary and binary), `*` (multiplication), `/` (division), `%`
 (modulus).
+
+Modulus happens as follows:
+For: ``mod = x % y``
+- if ``x >= 0`` and ``y > 0`` then: ``x - (floor(x / y) * y)``
+- if ``x >= 0`` and ``y < 0`` then: ``x % abs(y)``
+- if ``x < 0`` and ``y > 0`` then: ``- abs(x) % y``
+- if ``x < 0`` and ``y > 0`` then: ``- abs(x) % abs(y)``
 
 Division by zero returns Infinity, (or `NaN` in case of `0e0 / 0e0`).
 Modulus by zero return `NaN`.
