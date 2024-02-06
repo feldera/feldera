@@ -32,7 +32,7 @@ use dbsp::{utils::Tup7, OrdZSet, RootCircuit, Stream};
 type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, String, String, String>>;
 type Q22Stream = Stream<RootCircuit, Q22Set>;
 
-pub fn q22(input: NexmarkStream) -> Q22Stream {
+pub fn q22(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q22Stream {
     input.flat_map(|event| match event {
         Event::Bid(b) => {
             let mut split = b.channel.as_str().split('/').skip(3);
@@ -109,7 +109,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q22(stream);
+            let output = q22(circuit, stream);
 
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

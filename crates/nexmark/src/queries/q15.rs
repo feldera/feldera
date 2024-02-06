@@ -91,7 +91,7 @@ pub struct Q15Output {
 
 type Q15Stream = Stream<RootCircuit, OrdZSet<Q15Output>>;
 
-pub fn q15(input: NexmarkStream) -> Q15Stream {
+pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
     // Dug for a long time to figure out how to use the const generics
     // for time formats, not well documented in docs themselves, but
     // great examples in the integration tests:
@@ -659,7 +659,7 @@ mod tests {
             ]
             .into_iter();
 
-            let output = q15(stream);
+            let output = q15(circuit, stream);
 
             output.gather(0).inspect(move |batch| {
                 if Runtime::worker_index() == 0 {

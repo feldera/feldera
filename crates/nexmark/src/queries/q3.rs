@@ -35,7 +35,7 @@ const CATEGORY_OF_INTEREST: u64 = 10;
 
 type Q3Stream = Stream<RootCircuit, OrdZSet<Tup4<String, String, String, u64>>>;
 
-pub fn q3(input: NexmarkStream) -> Q3Stream {
+pub fn q3(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q3Stream {
     // Select auctions of interest and index them by seller id.
     let auction_by_seller = input.flat_map_index(|event| match event {
         Event::Auction(a) if a.category == CATEGORY_OF_INTEREST => Some((a.seller, a.id)),
@@ -169,7 +169,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q3(stream);
+            let output = q3(circuit, stream);
 
             let mut expected_output = vec![
                 OrdZSet::from_keys(

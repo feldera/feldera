@@ -66,8 +66,6 @@ use std::{
 
 type Q13Stream = Stream<RootCircuit, OrdZSet<Tup5<u64, u64, u64, u64, String>>>;
 
-type SideInputStream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>>>;
-
 const Q13_SIDE_INPUT_CSV: &str = "benches/nexmark/data/side_input.txt";
 
 fn read_side_input<R: Read>(reader: R) -> Result<Vec<(u64, String)>> {
@@ -87,7 +85,13 @@ pub fn q13_side_input() -> Vec<Tup2<Tup3<u64, String, u64>, ZWeight>> {
         .collect()
 }
 
-pub fn q13(input: NexmarkStream, side_input: SideInputStream) -> Q13Stream {
+pub fn q13(circuit: &mut RootCircuit, input: NexmarkStream) -> Q13Stream {
+    let (side_input, side_input_handle) = circuit.add_input_zset::<Tup3<u64, String, u64>>();
+
+    // Ensure the side-input is loaded here so we can return a single input
+    // handle like the other queries.
+    side_input_handle.append(&mut q13_side_input());
+
     // Index bids by the modulo value.
     let bids_by_auction_mod = input.flat_map_index(move |event| match event {
         Event::Bid(b) => Some((
@@ -161,10 +165,8 @@ mod tests {
         ]]
         .into_iter();
 
-        let (circuit, (input_handle, side_input_handle)) = RootCircuit::build(move |circuit| {
+        let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
-            let (side_stream, side_input_handle) =
-                circuit.add_input_zset::<Tup3<u64, String, u64>>();
 
             let mut expected_output = vec![zset![
                 Tup5(1_005, 1, 99, 0, String::from("1005")) => 1,
@@ -172,15 +174,14 @@ mod tests {
             ]]
             .into_iter();
 
-            let output = q13(stream, side_stream);
+            let output = q13(circuit, stream);
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 
-            Ok((input_handle, side_input_handle))
+            Ok(input_handle)
         })
         .unwrap();
 
-        side_input_handle.append(&mut q13_side_input());
         for mut vec in input_vecs {
             input_handle.append(&mut vec);
             circuit.step().unwrap();

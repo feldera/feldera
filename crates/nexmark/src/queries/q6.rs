@@ -42,7 +42,7 @@ type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64>>;
 
 const NUM_AUCTIONS_PER_SELLER: usize = 10;
 
-pub fn q6(input: NexmarkStream) -> Q6Stream {
+pub fn q6(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q6Stream {
     // Select auctions sellers and index by auction id.
     let auctions_by_id = input.flat_map_index(|event| match event {
         Event::Auction(a) => Some((a.id, (a.seller, a.date_time, a.expires))),
@@ -191,7 +191,7 @@ mod tests {
             ]
             .into_iter();
 
-            let output = q6(stream);
+            let output = q6(circuit, stream);
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 
@@ -265,7 +265,7 @@ mod tests {
             ]
             .into_iter();
 
-            let output = q6(stream);
+            let output = q6(circuit, stream);
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 
@@ -507,7 +507,7 @@ mod tests {
             ]
             .into_iter();
 
-            let output = q6(stream);
+            let output = q6(circuit, stream);
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 
@@ -626,7 +626,7 @@ mod tests {
             ]
             .into_iter();
 
-            let output = q6(stream);
+            let output = q6(circuit, stream);
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
             Ok(input_handle)
