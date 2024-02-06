@@ -49,7 +49,7 @@ type Q8Stream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
-pub fn q8(input: NexmarkStream) -> Q8Stream {
+pub fn q8(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q8Stream {
     // People indexed by the date they entered the system.
     let people_by_time = input.flat_map_index(|event| match event {
         Event::Person(p) => Some((p.date_time, Tup2(p.id, p.name.clone()))),
@@ -207,7 +207,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q8(stream);
+            let output = q8(circuit, stream);
 
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

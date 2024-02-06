@@ -4,7 +4,7 @@ use super::model::Event;
 use dbsp::{OrdZSet, RootCircuit, Stream};
 use std::time::SystemTime;
 
-type NexmarkStream = Stream<RootCircuit, OrdZSet<Event>>;
+pub type NexmarkStream = Stream<RootCircuit, OrdZSet<Event>>;
 
 type OrdinalDate = (i32, u16);
 
@@ -24,6 +24,20 @@ macro_rules! declare_queries {
             pub enum Query {
                 $([<$query:upper>],)*
             }
+
+            impl Query {
+                pub fn query(&self, circuit: &mut RootCircuit, input: NexmarkStream) {
+                    match self {
+                        $(Query::[<$query:upper>] => {
+                            [<$query>](circuit, input).inspect(move |_zs| ());
+                        },)*
+                    }
+                }
+            }
+
+            pub static ALL_QUERIES: [Query; 21] = [
+                $(Query::[<$query:upper>],)*
+            ];
         }
     };
 }

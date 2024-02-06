@@ -51,7 +51,7 @@ type Q20Stream = Stream<RootCircuit, OrdZSet<Tup2<Bid, Auction>>>;
 
 const FILTERED_CATEGORY: u64 = 10;
 
-pub fn q20(input: NexmarkStream) -> Q20Stream {
+pub fn q20(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q20Stream {
     let bids_by_auction = input.flat_map_index(|event| match event {
         Event::Bid(b) => Some((b.auction, b.clone())),
         _ => None,
@@ -232,7 +232,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q20(stream);
+            let output = q20(circuit, stream);
 
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

@@ -163,7 +163,7 @@ pub struct Q16Intermediate2(
     ZWeight,
 );
 
-pub fn q16(input: NexmarkStream) -> Q16Stream {
+pub fn q16(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q16Stream {
     // Dug for a long time to figure out how to use the const generics
     // for time formats, not well documented in docs themselves, but
     // great examples in the integration tests:
@@ -854,7 +854,7 @@ mod tests {
             ]
             .into_iter();
 
-            let output = q16(stream);
+            let output = q16(circuit, stream);
 
             output.gather(0).inspect(move |batch| {
                 if Runtime::worker_index() == 0 {
