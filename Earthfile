@@ -323,7 +323,7 @@ build-kafka-connect-container:
     FROM DOCKERFILE -f deploy/Dockerfile --target kafka-connect .
 
 test-docker-compose:
-    FROM earthly/dind:alpine
+    FROM earthly/dind:alpine-3.18
     COPY deploy/docker-compose.yml .
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull postgres \
@@ -336,7 +336,7 @@ test-docker-compose:
 # Test whether the stable container image runs with our Docker compose file
 # and whether we can migrate from the last stable version to the latest version
 test-docker-compose-stable:
-    FROM earthly/dind:alpine
+    FROM earthly/dind:alpine-3.18
     COPY deploy/docker-compose.yml .
     ENV FELDERA_VERSION=0.8.0
     RUN apk --no-cache add curl
@@ -356,7 +356,7 @@ test-docker-compose-stable:
     END
 
 test-debezium:
-    FROM earthly/dind:alpine
+    FROM earthly/dind:alpine-3.18
     COPY deploy/docker-compose.yml .
     COPY deploy/docker-compose-debezium.yml .
     ENV FELDERA_VERSION=latest
@@ -370,7 +370,7 @@ test-debezium:
     END
 
 test-snowflake:
-    FROM earthly/dind:alpine
+    FROM earthly/dind:alpine-3.18
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
     RUN cat .env
@@ -396,7 +396,7 @@ integration-test-container:
 
 # Runs the integration test container against the docker compose setup
 integration-tests:
-    FROM earthly/dind:alpine
+    FROM earthly/dind:alpine-3.18
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
     ENV FELDERA_VERSION=latest
