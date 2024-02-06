@@ -1,3 +1,4 @@
+name: feldera
 services:
   db:
     image: postgres

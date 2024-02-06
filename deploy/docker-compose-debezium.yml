@@ -1,5 +1,5 @@
 # Additional services needed to test/demo Debezium integration
-
+name: feldera-debezium
 services:
   # MySQL container with a toy database used in the Debezium
   # MySQL tutorial (based on MySQL 8.0).
