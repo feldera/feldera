@@ -1,9 +1,11 @@
+use dbsp::RootCircuit;
+
 use super::NexmarkStream;
 /// Passthrough
 ///
 /// Measures the monitoring overhead including the source generator.
 /// See [Nexmark q0.sql](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/resources/queries/q0.sql)
-pub fn q0(input: NexmarkStream) -> NexmarkStream {
+pub fn q0(_circuit: &mut RootCircuit, input: NexmarkStream) -> NexmarkStream {
     input
 }
 
@@ -84,7 +86,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q0(stream);
+            let output = q0(circuit, stream);
 
             let mut expected_output = input_vecs().into_iter().map(|v| OrdZSet::from_keys((), v));
 

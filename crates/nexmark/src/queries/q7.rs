@@ -44,7 +44,7 @@ type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
-pub fn q7(input: NexmarkStream) -> Q7Stream {
+pub fn q7(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q7Stream {
     // All bids indexed by date time to be able to window the result.
     let bids_by_time: Stream<_, OrdIndexedZSet<u64, _>> =
         input.flat_map_index(|event| match event {
@@ -169,7 +169,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q7(stream);
+            let output = q7(circuit, stream);
 
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

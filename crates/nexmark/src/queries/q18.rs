@@ -30,7 +30,7 @@ use dbsp::{algebra::UnimplementedSemigroup, operator::Fold, OrdZSet, RootCircuit
 
 type Q18Stream = Stream<RootCircuit, OrdZSet<Bid>>;
 
-pub fn q18(input: NexmarkStream) -> Q18Stream {
+pub fn q18(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q18Stream {
     let bids_by_auction_bidder = input.flat_map_index(|event| match event {
         Event::Bid(b) => Some(((b.auction, b.bidder), b.clone())),
         _ => None,
@@ -378,7 +378,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q18(stream);
+            let output = q18(circuit, stream);
 
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

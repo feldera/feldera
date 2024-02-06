@@ -88,7 +88,7 @@ fn hour_for_millis(millis: u64) -> usize {
     (millis_for_day / (60 * 60 * 1000)) as usize
 }
 
-pub fn q14(input: NexmarkStream) -> Q14Stream {
+pub fn q14(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q14Stream {
     input.flat_map(|event| match event {
         Event::Bid(b) => {
             let new_price = Decimal::new((b.price * 100) as i64, 2) * Decimal::new(908, 3);
@@ -152,7 +152,7 @@ mod tests {
 
             let mut expected_output = vec![expected_zset].into_iter();
 
-            let output = q14(stream);
+            let output = q14(circuit, stream);
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 

@@ -41,7 +41,7 @@ use dbsp::{
 
 type Q4Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
 
-pub fn q4(input: NexmarkStream) -> Q4Stream {
+pub fn q4(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q4Stream {
     // Select auctions and index by auction id.
     let auctions_by_id = input.flat_map_index(|event| match event {
         Event::Auction(a) => Some((a.id, Tup3(a.category, a.date_time, a.expires))),
@@ -213,7 +213,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q4(stream);
+            let output = q4(circuit, stream);
 
             let mut expected_output = vec![
                 OrdZSet::from_keys((), vec![Tup2(Tup2(1, 200), 1), Tup2(Tup2(2, 20), 1)]),
