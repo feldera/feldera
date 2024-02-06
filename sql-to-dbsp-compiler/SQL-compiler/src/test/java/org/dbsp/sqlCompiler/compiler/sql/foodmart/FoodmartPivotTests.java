@@ -27,11 +27,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+----------+----------+----------+
                 | JOB       | 10_COUNT | 50_COUNT | 20_COUNT |
                 +-----------+----------+----------+----------+
-                | ANALYST|        0 |        0 |        2 |
-                | CLERK|        1 |        0 |        2 |
-                | MANAGER|        1 |        0 |        1 |
-                | PRESIDENT|        1 |        0 |        0 |
-                | SALESMAN|        0 |        0 |        0 |
+                | ANALYST|           0 |        0 |        2 |
+                | CLERK|             1 |        0 |        2 |
+                | MANAGER|           1 |        0 |        1 |
+                | PRESIDENT|         1 |        0 |        0 |
+                | SALESMAN|          0 |        0 |        0 |
                 +-----------+----------+----------+----------+
                 (5 rows)
 
@@ -57,10 +57,10 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+-------+-------+
                 | JOB       | SUM10 | SUM20 |
                 +-----------+-------+-------+
-                | ANALYST|     0 |     2 |
-                | CLERK|     1 |     2 |
-                | PRESIDENT|     1 |     0 |
-                | SALESMAN|     0 |     0 |
+                | ANALYST|        0 |     2 |
+                | CLERK|          1 |     2 |
+                | PRESIDENT|      1 |     0 |
+                | SALESMAN|       0 |     0 |
                 +-----------+-------+-------+
                 (4 rows)
 
@@ -144,11 +144,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+---------+---------+
                 | JOB       | 10_10_C | 30_20_C |
                 +-----------+---------+---------+
-                | ANALYST|       0 |       0 |
-                | CLERK|       1 |       0 |
-                | MANAGER|       1 |       0 |
-                | PRESIDENT|       1 |       0 |
-                | SALESMAN|       0 |       0 |
+                | ANALYST|          0 |       0 |
+                | CLERK|            1 |       0 |
+                | MANAGER|          1 |       0 |
+                | PRESIDENT|        1 |       0 |
+                | SALESMAN|         0 |       0 |
                 +-----------+---------+---------+
                 (5 rows)
 
@@ -230,8 +230,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +--------+---------+-------+---------+-------+---------+-------+
                 | GENDER | C10_SS  | C10_C | C20_SS  | C20_C | A20_SS  | A20_C |
                 +--------+---------+-------+---------+-------+---------+-------+
-                | F|         |     0 | 1100.00 |     1 |         |     0 |
-                | M| 1300.00 |     1 |  800.00 |     1 | 6000.00 |     2 |
+                | F|               |     0 | 1100.00 |     1 |         |     0 |
+                | M|       1300.00 |     1 |  800.00 |     1 | 6000.00 |     2 |
                 +--------+---------+-------+---------+-------+---------+-------+
                 (2 rows)
 
@@ -243,11 +243,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +--------+--------+---------+---------+
                 | GENDER | DEPTNO | JOB     | SAL     |
                 +--------+--------+---------+---------+
-                | F|     20 | CLERK| 1100.00 |
-                | M|     10 | CLERK| 1300.00 |
-                | M|     20 | ANALYST| 3000.00 |
-                | M|     20 | ANALYST| 3000.00 |
-                | M|     20 | CLERK|  800.00 |
+                | F|           20 | CLERK|    1100.00 |
+                | M|           10 | CLERK|    1300.00 |
+                | M|           20 | ANALYST|  3000.00 |
+                | M|           20 | ANALYST|  3000.00 |
+                | M|           20 | CLERK|     800.00 |
                 +--------+--------+---------+---------+
                 (5 rows)""");
     }

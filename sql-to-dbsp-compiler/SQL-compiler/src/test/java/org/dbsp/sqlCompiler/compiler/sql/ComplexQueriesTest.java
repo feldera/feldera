@@ -41,7 +41,7 @@ import org.junit.Test;
 
 @SuppressWarnings("SpellCheckingInspection")
 public class ComplexQueriesTest extends BaseSQLTests {
-    @Test @Ignore("OVER requires only integers")
+    @Test @Ignore("OVER requires only integers https://github.com/feldera/feldera/issues/653")
     public void testDateDiff() {
         String sql = """
                 create table PART_ORDER (
