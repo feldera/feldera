@@ -307,7 +307,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPRealLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        float value = Objects.requireNonNull(literal.value);
+        Float value = Objects.requireNonNull(literal.value);
         String val = Float.toString(value);
         if (Float.isNaN(value))
             val = "std::f32::NAN";
@@ -317,8 +317,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             else
                 val = "std::f32::INFINITY";
         }
-        String out = literal.raw ? val : literal.wrapSome("F32::new(" + val + ")");
+        int exact = Float.floatToRawIntBits(value);
+        String f32 = "f32::from_bits(" +
+            Integer.toUnsignedString(exact) + "u32)";
+
+        String out = literal.raw ? f32 : literal.wrapSome("F32::new(" + f32 + ")");
         this.builder.append(out);
+        this.builder.append("/*")
+                .append(val)
+                .append("*/");
         return VisitDecision.STOP;
     }
 
@@ -351,8 +358,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
             else
                 val = "std::f64::INFINITY";
         }
-        String out = literal.raw ? val : literal.wrapSome("F64::new(" + val + ")");
+        long exact = Double.doubleToRawLongBits(value);
+        String f64 = "f64::from_bits(" +
+                Long.toUnsignedString(exact) + "u64)";
+        String out = literal.raw ? f64 : literal.wrapSome("F64::new(" + f64 + ")");
         this.builder.append(out);
+        this.builder.append("/*")
+                .append(val)
+                .append("*/");
         return VisitDecision.STOP;
     }
 
