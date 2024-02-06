@@ -4527,7 +4527,7 @@ mod tests {
             let fact = circuit
                 .iterate_with_condition_and_scheduler::<_, _, S>(|child| {
                     let mut counter = 0;
-                    let countdown = source.delta0(child).apply(move |parent_val| {
+                    let countdown = source.delta0(child).apply_mut(move |parent_val| {
                         if *parent_val > 0 {
                             counter = *parent_val;
                         };

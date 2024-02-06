@@ -13,6 +13,7 @@ where
     T1: Clone + 'static,
 {
     /// Returns a stream that contains `func(&x)` for each `x` in `self`.
+    /// `func` cannot mutate captured state.
     ///
     /// The operator will have a generic name for debugging and profiling
     /// purposes.  Use [`Stream::apply_named`], instead, to give it a
@@ -20,56 +21,131 @@ where
     #[track_caller]
     pub fn apply<F, T2>(&self, func: F) -> Stream<C, T2>
     where
+        F: Fn(&T1) -> T2 + 'static,
+        T2: Clone + 'static,
+    {
+        self.circuit().add_unary_operator(
+            Apply::<_, true>::new(func, Cow::Borrowed("Apply"), Location::caller()),
+            self,
+        )
+    }
+
+    /// Returns a stream that contains `func(&x)` for each `x` in `self`.
+    /// `func` can access and mutate captured state.
+    ///
+    /// The operator will have a generic name for debugging and profiling
+    /// purposes.  Use [`Stream::apply_mut_named`], instead, to give it a
+    /// specific name.
+    #[track_caller]
+    pub fn apply_mut<F, T2>(&self, func: F) -> Stream<C, T2>
+    where
         F: FnMut(&T1) -> T2 + 'static,
         T2: Clone + 'static,
     {
         self.circuit().add_unary_operator(
-            Apply::new(func, Cow::Borrowed("Apply"), Location::caller()),
+            Apply::<_, false>::new(func, Cow::Borrowed("ApplyMut"), Location::caller()),
             self,
         )
     }
 
     /// Returns a stream that contains `func(&x)` for each `x` in `self`, giving
     /// the operator the given `name` for debugging and profiling purposes.
+    /// `func` cannot mutate captured state.
     #[track_caller]
     pub fn apply_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
     where
         N: Into<Cow<'static, str>>,
-        F: FnMut(&T1) -> T2 + 'static,
+        F: Fn(&T1) -> T2 + 'static,
         T2: Clone + 'static,
     {
-        self.circuit()
-            .add_unary_operator(Apply::new(func, name.into(), Location::caller()), self)
+        self.circuit().add_unary_operator(
+            Apply::<_, true>::new(func, name.into(), Location::caller()),
+            self,
+        )
+    }
+
+    /// Returns a stream that contains `func(&x)` for each `x` in `self`, giving
+    /// the operator the given `name` for debugging and profiling purposes.
+    /// `func` can access and mutate captured state.
+    #[track_caller]
+    pub fn apply_mut_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
+    where
+        N: Into<Cow<'static, str>>,
+        F: Fn(&T1) -> T2 + 'static,
+        T2: Clone + 'static,
+    {
+        self.circuit().add_unary_operator(
+            Apply::<_, false>::new(func, name.into(), Location::caller()),
+            self,
+        )
     }
 
     /// Returns a stream that contains `func(x)` for each `x` in `self`.
+    /// `func` cannot mutate captured state.
     ///
     /// The operator will have a generic name for debugging and profiling
-    /// purposes.  Use [`Stream::apply_named`], instead, to give it a
+    /// purposes.  Use [`Stream::apply_owned_named`], instead, to give it a
     /// specific name.
     #[track_caller]
     pub fn apply_owned<F, T2>(&self, func: F) -> Stream<C, T2>
+    where
+        F: Fn(T1) -> T2 + 'static,
+        T2: Clone + 'static,
+    {
+        self.circuit().add_unary_operator(
+            ApplyOwned::<_, true>::new(func, Cow::Borrowed("ApplyOwned"), Location::caller()),
+            self,
+        )
+    }
+
+    /// Returns a stream that contains `func(x)` for each `x` in `self`.
+    /// `func` can access and mutate captured state.
+    ///
+    /// The operator will have a generic name for debugging and profiling
+    /// purposes.  Use [`Stream::apply_mut_owned_named`], instead, to give it a
+    /// specific name.
+    #[track_caller]
+    pub fn apply_mut_owned<F, T2>(&self, func: F) -> Stream<C, T2>
     where
         F: FnMut(T1) -> T2 + 'static,
         T2: Clone + 'static,
     {
         self.circuit().add_unary_operator(
-            ApplyOwned::new(func, Cow::Borrowed("ApplyOwned"), Location::caller()),
+            ApplyOwned::<_, false>::new(func, Cow::Borrowed("ApplyOwned"), Location::caller()),
             self,
         )
     }
 
-    /// Returns a stream that contains `func(&x)` for each `x` in `self`, giving
+    /// Returns a stream that contains `func(x)` for each `x` in `self`, giving
     /// the operator the given `name` for debugging and profiling purposes.
+    /// `func` cannot mutate captured state.
     #[track_caller]
     pub fn apply_owned_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
+    where
+        N: Into<Cow<'static, str>>,
+        F: Fn(T1) -> T2 + 'static,
+        T2: Data,
+    {
+        self.circuit().add_unary_operator(
+            ApplyOwned::<_, true>::new(func, name.into(), Location::caller()),
+            self,
+        )
+    }
+
+    /// Returns a stream that contains `func(x)` for each `x` in `self`, giving
+    /// the operator the given `name` for debugging and profiling purposes.
+    /// `func` can access and mutate captured state.
+    #[track_caller]
+    pub fn apply_mut_owned_named<N, F, T2>(&self, name: N, func: F) -> Stream<C, T2>
     where
         N: Into<Cow<'static, str>>,
         F: FnMut(T1) -> T2 + 'static,
         T2: Data,
     {
-        self.circuit()
-            .add_unary_operator(ApplyOwned::new(func, name.into(), Location::caller()), self)
+        self.circuit().add_unary_operator(
+            ApplyOwned::<_, false>::new(func, name.into(), Location::caller()),
+            self,
+        )
     }
 
     /// Apply the `ApplyCore` operator to `self` with a custom name
@@ -97,13 +173,13 @@ where
 
 /// Operator that applies a user provided function to its input at each
 /// timestamp.
-pub struct Apply<F> {
+pub struct Apply<F, const FP: bool> {
     func: F,
     name: Cow<'static, str>,
     location: &'static Location<'static>,
 }
 
-impl<F> Apply<F> {
+impl<F, const FP: bool> Apply<F, FP> {
     pub const fn new(
         func: F,
         name: Cow<'static, str>,
@@ -117,7 +193,7 @@ impl<F> Apply<F> {
     }
 }
 
-impl<F> Operator for Apply<F>
+impl<F, const FP: bool> Operator for Apply<F, FP>
 where
     F: 'static,
 {
@@ -130,13 +206,12 @@ where
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
-        // TODO: either change `F` type to `Fn` from `FnMut` or
-        // parameterize the operator with custom fixed point check.
-        unimplemented!();
+        assert!(FP);
+        true
     }
 }
 
-impl<T1, T2, F> UnaryOperator<T1, T2> for Apply<F>
+impl<T1, T2, F, const FP: bool> UnaryOperator<T1, T2> for Apply<F, FP>
 where
     F: FnMut(&T1) -> T2 + 'static,
 {
@@ -145,13 +220,13 @@ where
     }
 }
 
-pub struct ApplyOwned<F> {
+pub struct ApplyOwned<F, const FP: bool> {
     apply: F,
     name: Cow<'static, str>,
     location: &'static Location<'static>,
 }
 
-impl<F> ApplyOwned<F> {
+impl<F, const FP: bool> ApplyOwned<F, FP> {
     pub const fn new(
         apply: F,
         name: Cow<'static, str>,
@@ -165,7 +240,7 @@ impl<F> ApplyOwned<F> {
     }
 }
 
-impl<F> Operator for ApplyOwned<F>
+impl<F, const FP: bool> Operator for ApplyOwned<F, FP>
 where
     F: 'static,
 {
@@ -178,13 +253,12 @@ where
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
-        // TODO: either change `F` type to `Fn` from `FnMut` or
-        // parameterize the operator with custom fixed point check.
-        unimplemented!();
+        assert!(FP);
+        true
     }
 }
 
-impl<T1, T2, F> UnaryOperator<T1, T2> for ApplyOwned<F>
+impl<T1, T2, F, const FP: bool> UnaryOperator<T1, T2> for ApplyOwned<F, FP>
 where
     F: FnMut(T1) -> T2 + 'static,
 {
