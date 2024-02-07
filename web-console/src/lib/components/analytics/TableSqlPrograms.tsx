@@ -65,9 +65,6 @@ const getStatusChipProps = (status: ProgramStatus) =>
     .with('Success', () => {
       return { label: 'Ready', color: 'success' as const, 'data-testid': 'box-status-ready', tooltip: undefined }
     })
-    .with('None', () => {
-      return { label: 'Unused', color: 'primary' as const, 'data-testid': 'box-status-unused', tooltip: undefined }
-    })
     .exhaustive()
 
 export const TableSqlPrograms = () => {

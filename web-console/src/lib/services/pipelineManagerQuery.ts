@@ -10,6 +10,7 @@ import {
   AuthProvider,
   CancelablePromise,
   CompileProgramRequest,
+  ConfigurationService,
   ConnectorsService,
   NewPipelineRequest,
   NewPipelineResponse,
@@ -125,7 +126,8 @@ const PipelineManagerApi = {
   getApiKey: ApiKeysService.getApiKey,
   listServices: ServicesService.listServices,
   getService: ServicesService.getService,
-  newService: ServicesService.newService
+  newService: ServicesService.newService,
+  getDemos: ConfigurationService.getDemos
 }
 
 export const makePipelineManagerQuery = ({

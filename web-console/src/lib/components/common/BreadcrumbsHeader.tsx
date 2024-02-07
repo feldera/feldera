@@ -16,6 +16,6 @@ export const Breadcrumbs = {
   ),
   Link: (props: LinkProps) => {
     const theme = useTheme()
-    return <Link color={theme.palette.text.primary} variant='h6' {...props} />
+    return <Link color={theme.palette.text.primary} fontSize={24} fontWeight={300} {...props} />
   }
 }

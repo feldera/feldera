@@ -58,13 +58,6 @@ export const CompileIndicator = (props: { state: ProgramStatus }) => {
       label: labelSuccess,
       status: 'success'
     }))
-    .with('None', () => ({
-      visible: false,
-      color: 'warning' as const,
-      isCompiling: false,
-      label: labelCompiling,
-      status: 'compiling'
-    }))
     .with('Pending', () => ({
       visible: true,
       color: 'warning' as const,

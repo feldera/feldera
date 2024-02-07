@@ -18,7 +18,7 @@ const navigation = (): VerticalNavItemsType => {
     },
     {
       title: 'Demos',
-      path: '/lessons',
+      path: '/demos',
       icon: IconHardHat
     },
     {
