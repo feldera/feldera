@@ -1,3 +1,4 @@
+import { unescapeRelationName } from '$lib/functions/felderaRelation'
 import { IONodeData, ProgramNodeData } from '$lib/types/connectors'
 import { useReactFlow } from 'reactflow'
 import invariant from 'tiny-invariant'
@@ -21,7 +22,7 @@ export const useAttachedPipelineConnectors = () => {
 
       ac.relation_name = (handle => {
         invariant(handle, 'Node handle string should be defined')
-        return handle.replace(/^table-|^view-/, '')
+        return unescapeRelationName(handle.replace(/^table-|^view-/, ''))
       })(connectsInput ? edge.targetHandle : edge.sourceHandle)
 
       return ac

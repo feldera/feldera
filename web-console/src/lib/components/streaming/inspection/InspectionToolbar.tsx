@@ -1,4 +1,5 @@
 import { useInsertDeleteRows } from '$lib/compositions/streaming/inspection/useDeleteRows'
+import { Relation } from '$lib/services/manager'
 import { PipelineStatus } from '$lib/types/pipeline'
 import { ReactNode, useCallback } from 'react'
 
@@ -19,7 +20,7 @@ export const InspectionToolbar = (
   props: GridToolbarProps & {
     pipelineName: string
     status: PipelineStatus
-    relation: string
+    relation: Relation
     isReadonly: boolean
     before: ReactNode
   }

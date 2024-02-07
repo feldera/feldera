@@ -22,6 +22,7 @@ import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQue
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
+import { quotifyRelationName } from '$lib/functions/felderaRelation'
 import { ApiError, AttachedConnector, ConnectorDescr, PipelineRevision, Relation } from '$lib/services/manager'
 import {
   mutationDeletePipeline,
@@ -102,7 +103,7 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
 
   return relations.map(relation => {
     const connections = attachedConnectors
-      .filter(ac => ac.relation_name === relation.name)
+      .filter(ac => ac.relation_name === quotifyRelationName(relation))
       .map(ac => {
         const connector = connectors.find(c => c.name === ac?.connector_name)
         invariant(connector, 'Attached connector has no connector.') // This can't happen in a revision
@@ -155,7 +156,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
       },
       {
         field: 'config',
-        valueGetter: params => params.row.relation.name,
+        valueGetter: params => quotifyRelationName(params.row.relation),
         headerName: direction === 'input' ? 'Table' : 'View',
         flex: 0.6
       },
@@ -227,7 +228,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
             <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
               <IconButton
                 size='small'
-                href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${params.row.relation.name}`}
+                href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${quotifyRelationName(
+                  params.row.relation
+                )}`}
                 data-testid='button-inspect'
               >
                 <IconShow fontSize={20} />
@@ -237,7 +240,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               <Tooltip title='Import Data'>
                 <IconButton
                   size='small'
-                  href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${params.row.relation.name}#insert`}
+                  href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${quotifyRelationName(
+                    params.row.relation
+                  )}#insert`}
                   data-testid='button-import'
                 >
                   <IconUpload fontSize={20} />

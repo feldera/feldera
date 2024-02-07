@@ -11,6 +11,7 @@ import type { Field } from './Field'
  * Matches the Calcite JSON format.
  */
 export type Relation = {
+  case_sensitive?: boolean
   fields: Array<Field>
   name: string
 }

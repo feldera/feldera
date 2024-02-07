@@ -10,6 +10,12 @@ import { useDataGridPresentationLocalStorage } from '$lib/compositions/persisten
 import { getDefaultValue } from '$lib/compositions/streaming/import/useDefaultRows'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { getValueFormatter, Row } from '$lib/functions/ddl'
+import {
+  caseDependentName,
+  caseDependentNameEq,
+  quotifyFieldName,
+  quotifyRelationName
+} from '$lib/functions/felderaRelation'
 import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -35,7 +41,7 @@ export type { Row } from '$lib/functions/ddl'
 
 const useInsertionTable = (props: {
   pipeline: Pipeline
-  name: string
+  quotedRelationName: string
   insert: { rows: Row[]; setRows: Dispatch<SetStateAction<Row[]>> }
 }) => {
   const [pipelineRevision, setPipelineRevision] = useState<PipelineRevision | undefined>(undefined)
@@ -58,8 +64,8 @@ const useInsertionTable = (props: {
     }
 
     const program = newPipelineRevision.program
-    const tables = program.schema?.inputs.find(v => v.name === props.name)
-    const views = program.schema?.outputs.find(v => v.name === props.name)
+    const tables = program.schema?.inputs.find(caseDependentNameEq(caseDependentName(props.quotedRelationName)))
+    const views = program.schema?.outputs.find(caseDependentNameEq(caseDependentName(props.quotedRelationName)))
     const relation = tables || views // name is unique in the schema
     if (!relation) {
       return
@@ -70,7 +76,7 @@ const useInsertionTable = (props: {
     pipelineRevisionQuery.isPending,
     pipelineRevisionQuery.isError,
     pipelineRevisionQuery.data,
-    props.name,
+    props.quotedRelationName,
     pipelineRevision,
     props.insert
   ])
@@ -87,7 +93,7 @@ const useInsertionTable = (props: {
 
 export const InsertionTable = (props: {
   pipeline: Pipeline
-  name: string
+  quotedRelationName: string
   insert: { rows: Row[]; setRows: Dispatch<SetStateAction<Row[]>> }
 }) => {
   const { relation, ...data } = useInsertionTable(props)
@@ -120,7 +126,7 @@ const InsertionTableImpl = ({
 
   const defaultColumnVisibility = { genId: false }
   const gridPersistence = useDataGridPresentationLocalStorage({
-    key: LS_PREFIX + `settings/streaming/insertion/${pipelineRevision.pipeline.name}/${relation.name}`,
+    key: LS_PREFIX + `settings/streaming/insertion/${pipelineRevision.pipeline.name}/${quotifyRelationName(relation)}`,
     defaultColumnVisibility
   })
 
@@ -145,9 +151,9 @@ const InsertionTableImpl = ({
         columns={relation.fields
           .map((col: Field) => {
             return {
-              field: col.name,
-              headerName: col.name,
-              description: col.name,
+              field: quotifyFieldName(col),
+              headerName: quotifyFieldName(col),
+              description: quotifyFieldName(col),
               flex: 1,
               editable: true,
               preProcessEditCellProps: (params: GridPreProcessEditCellProps) => {

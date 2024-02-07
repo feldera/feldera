@@ -12,6 +12,12 @@ import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTable
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
+import {
+  caseDependentName,
+  caseDependentNameEq,
+  quotifyFieldName,
+  quotifyRelationName
+} from '$lib/functions/felderaRelation'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -29,7 +35,7 @@ const FETCH_QUANTILES = 100
 
 export type InspectionTableProps = {
   pipeline: Pipeline
-  name: string
+  quotedRelationName: string
 }
 
 // The number of rows we display in the table.
@@ -52,7 +58,7 @@ const INITIAL_PAGINATION_MODEL: GridPaginationModel = { pageSize: PAGE_SIZE, pag
  * @param param
  * @returns
  */
-const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
+const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTableProps) => {
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
   const [paginationModel, setPaginationModel] = useState(INITIAL_PAGINATION_MODEL)
   const [neighborhood, setNeighborhood] = useState<NeighborhoodQuery>(DEFAULT_NEIGHBORHOOD)
@@ -71,25 +77,26 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
   // If a revision is loaded, find the requested relation that we want to
   // monitor. We use it to display the table headers etc.
   useEffect(() => {
-    if (!pipelineRevisionQuery.isPending && !pipelineRevisionQuery.isError && pipelineRevisionQuery.data) {
-      setNeighborhood(DEFAULT_NEIGHBORHOOD)
-      setPaginationModel(INITIAL_PAGINATION_MODEL)
-      setQuantiles(undefined)
-      setQuantile(0)
-      setRows([])
-      setLoading(true)
-
-      const pipelineRevision = pipelineRevisionQuery.data
-      const program = pipelineRevision.program
-      const tables = program.schema?.inputs.find(v => v.name === name)
-      const views = program.schema?.outputs.find(v => v.name === name)
-      const relation = tables || views // name is unique in the schema
-      if (!relation) {
-        return
-      }
-      setRelation(relation)
+    if (pipelineRevisionQuery.isPending || pipelineRevisionQuery.isError || !pipelineRevisionQuery.data) {
+      return
     }
-  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, name])
+    setNeighborhood(DEFAULT_NEIGHBORHOOD)
+    setPaginationModel(INITIAL_PAGINATION_MODEL)
+    setQuantiles(undefined)
+    setQuantile(0)
+    setRows([])
+    setLoading(true)
+
+    const pipelineRevision = pipelineRevisionQuery.data
+    const program = pipelineRevision.program
+    const tables = program.schema?.inputs.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
+    const views = program.schema?.outputs.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
+    const relation = tables || views // name is unique in the schema
+    if (!relation) {
+      return
+    }
+    setRelation(relation)
+  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, quotedRelationName])
 
   // Request to monitor the changes for the current rows in the table. This is
   // done by opening a stream request to the backend which then sends us the
@@ -103,7 +110,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     updateTable(
       [
         pipeline.descriptor.name,
-        name,
+        quotedRelationName,
         'csv',
         OutputQuery.NEIGHBORHOOD,
         EgressMode.WATCH,
@@ -136,7 +143,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
       // requests and we don't want to exhaust that limit)
       controller.abort()
     }
-  }, [pipeline, name, relation, updateTable, throwError, neighborhood])
+  }, [pipeline, quotedRelationName, relation, updateTable, throwError, neighborhood])
 
   // Load quantiles for the relation we're displaying.
   const quantileLoader = useQuantiles()
@@ -152,7 +159,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
     const controller = new AbortController()
 
     quantileLoader(
-      [pipeline.descriptor.name, name, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
+      [pipeline.descriptor.name, quotedRelationName, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
       setQuantiles,
       relation,
       controller
@@ -177,7 +184,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
       // requests and we don't want to exhaust that limit)
       controller.abort()
     }
-  }, [pipeline, name, relation, quantileLoader, rows, throwError, quantiles])
+  }, [pipeline, quotedRelationName, relation, quantileLoader, rows, throwError, quantiles])
 
   // If the user presses the previous or next button, we update the neighborhood
   // which will trigger update the rows in the table.
@@ -192,7 +199,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
         const minRow = rows.find((row: any) => row.genId < 0)
         if (!minRow) {
           pushMessage({
-            message: `You reached the beginning of the ${relation.name} relation.`,
+            message: `You reached the beginning of the ${quotifyRelationName(relation)} relation.`,
             key: new Date().getTime(),
             color: 'info'
           })
@@ -214,7 +221,7 @@ const useInspectionTable = ({ pipeline, name }: InspectionTableProps) => {
           })
         } else {
           pushMessage({
-            message: `You reached the end of the ${relation.name} relation.`,
+            message: `You reached the end of the ${quotifyRelationName(relation)} relation.`,
             key: new Date().getTime(),
             color: 'info'
           })
@@ -294,14 +301,14 @@ const InspectionTableImpl = ({
 
   const isReadonly =
     !!pipelineRevisionQuery.data &&
-    (pipelineRevisionQuery.data.program.schema?.outputs.some(r => r.name === relation.name) ?? false)
+    (pipelineRevisionQuery.data.program.schema?.outputs.some(caseDependentNameEq(relation)) ?? false)
 
   const defaultColumnVisibility = {
     genId: false,
     rowCount: false
   }
   const gridPersistence = useDataGridPresentationLocalStorage({
-    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.name}/${relation.name}`,
+    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.name}/${quotifyRelationName(relation)}`,
     defaultColumnVisibility
   })
 
@@ -316,9 +323,9 @@ const InspectionTableImpl = ({
         columns={relation.fields
           .map((col: Field) => {
             return {
-              field: col.name,
-              headerName: col.name,
-              description: col.name,
+              field: quotifyFieldName(col),
+              headerName: quotifyFieldName(col),
+              description: quotifyFieldName(col),
               flex: 1,
               valueGetter: (params: any) => {
                 return params.row.record[col.name]
@@ -363,13 +370,13 @@ const InspectionTableImpl = ({
           toolbar: {
             printOptions: { disableToolbarButton: true },
             csvOptions: {
-              fileName: relation.name,
+              fileName: quotifyRelationName(relation),
               delimiter: ',',
               utf8WithBom: true
             },
             pipelineName: pipeline.descriptor.name,
             status: pipeline.state.current_status,
-            relation: relation.name,
+            relation: relation,
             isReadonly,
             before: [
               !!pause && (

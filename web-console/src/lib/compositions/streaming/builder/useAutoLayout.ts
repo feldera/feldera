@@ -1,9 +1,11 @@
 // Computes the layout of the nodes in the graph.
 
 import { removePrefix } from '$lib/functions/common/string'
+import { ProgramDescr } from '$lib/services/manager'
 import assert from 'assert'
 import { useCallback, useEffect } from 'react'
 import { Edge, getConnectedEdges, Instance, Node, ReactFlowState, useReactFlow, useStore } from 'reactflow'
+import { escapeRelationName, quotifyRelationName } from 'src/lib/functions/felderaRelation'
 
 // How much spacing we put after every input/output node
 const VERTICAL_SPACING = 20
@@ -98,8 +100,9 @@ function layoutNodesFixed(
   const rawInputNodes = nodes.filter(node => node.type === 'inputNode')
   const inputOrder = new Map<string, number>()
   if (programNode[0].data?.program?.schema) {
-    programNode[0].data.program.schema.inputs.forEach((element: { name: string }, index: number) => {
-      inputOrder.set(element.name, index)
+    const schema = programNode[0].data.program.schema as NonNullable<ProgramDescr['schema']>
+    schema.inputs.forEach((relation, index: number) => {
+      inputOrder.set(escapeRelationName(quotifyRelationName(relation)), index)
     })
   }
   const inputNodes = sortInputConnectors(rawInputNodes, getEdges(), inputOrder).concat(
