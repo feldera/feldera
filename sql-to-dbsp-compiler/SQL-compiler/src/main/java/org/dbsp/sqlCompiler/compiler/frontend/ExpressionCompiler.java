@@ -790,6 +790,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "sech":
                     case "csc":
                     case "csch":
+                    case "exp":
                     {
                         this.ensureDouble(ops, 0);
                         return this.compilePolymorphicFunction(call, node, type, ops, 1);

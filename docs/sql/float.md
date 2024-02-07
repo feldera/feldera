@@ -96,6 +96,10 @@ REAL '1.23'  -- string style
     <td>Square root of value. Produces a runtime error for negative values.</td>
   </tr>
   <tr>
+    <td><code>EXP(value)</code></td>
+    <td>Returns e raised to the power of value (exponential).</td>
+  </tr>
+  <tr>
     <td><code>LN(value)</code></td>
     <td>The natural logarithm of value. Returns `-inf` for 0. Produces a runtime error for negative numbers.</td>
   </tr>

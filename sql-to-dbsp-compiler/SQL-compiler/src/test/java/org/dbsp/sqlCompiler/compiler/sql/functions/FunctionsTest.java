@@ -1092,4 +1092,55 @@ public class FunctionsTest extends SqlIoTest {
                 5678.1"""
         );
     }
+
+    @Test
+    public void testExp() {
+        this.qs("""
+                SELECT EXP(0.0);
+                 exp
+                -----
+                 1.0
+                (1 row)
+                
+                SELECT EXP(0e0);
+                 exp
+                -----
+                 1.0
+                (1 row)
+                
+                SELECT EXP(null);
+                 exp
+                -----
+                null
+                (1 row)
+                
+                SELECT EXP(null::double);
+                 exp
+                -----
+                null
+                (1 row)
+                
+                SELECT EXP(0);
+                 exp
+                -----
+                 1
+                (1 row)
+                """
+        );
+    }
+
+    @Test @Ignore("FP comparison error for Calcite optimized version")
+    public void testExpEdgeCase() {
+        this.qs("""
+                -- changed the type from numeric to double
+                -- therefore the value has also slightly changed
+                -- cases that used to generate inaccurate results in Postgres
+                select exp(32.999::double);
+                         exp
+                ---------------------
+                 214429043492155.56
+                (1 row)
+                """
+        );
+    }
 }

@@ -576,6 +576,13 @@ some_polymorphic_function1!(abs, d, F64, F64);
 some_polymorphic_function1!(abs, decimal, Decimal, Decimal);
 
 #[inline(always)]
+pub fn exp_d(value: F64) -> F64 {
+    value.into_inner().exp().into()
+}
+
+some_polymorphic_function1!(exp, d, F64, F64);
+
+#[inline(always)]
 pub fn ln_d(left: F64) -> F64 {
     let left = left.into_inner();
 
