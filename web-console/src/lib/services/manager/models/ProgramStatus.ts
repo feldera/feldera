@@ -9,7 +9,6 @@ import type { SqlCompilerMessage } from './SqlCompilerMessage'
  * Program compilation status.
  */
 export type ProgramStatus =
-  | 'None'
   | 'Pending'
   | 'CompilingSql'
   | 'CompilingRust'

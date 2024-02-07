@@ -178,8 +178,8 @@ export class ProgramsService {
   }
 
   /**
-   * Mark a program for compilation.
-   * Mark a program for compilation.
+   * Deprecated. Mark a program for compilation.
+   * Deprecated. Mark a program for compilation.
    *
    * The client can track a program's compilation status by polling the
    * `/program/{program_name}` or `/programs` endpoints, and
