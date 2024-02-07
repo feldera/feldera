@@ -1,18 +1,16 @@
 'use client'
 
 import { TableSqlPrograms } from '$lib/components/analytics/TableSqlPrograms'
-import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
-
-import { Link } from '@mui/material'
+import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 
 const SqlPrograms = () => {
   return (
     <>
-      <BreadcrumbsHeader>
-        <Link href={`/analytics/programs`} data-testid='button-breadcrumb-sql-programs'>
+      <Breadcrumbs.Header>
+        <Breadcrumbs.Link href={`/analytics/programs`} data-testid='button-breadcrumb-sql-programs'>
           SQL Programs
-        </Link>
-      </BreadcrumbsHeader>
+        </Breadcrumbs.Link>
+      </Breadcrumbs.Header>
       <TableSqlPrograms />
     </>
   )

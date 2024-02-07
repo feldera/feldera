@@ -1,7 +1,7 @@
 // Editor for SQL programs. This is the main component for the editor page.
 // It is responsible for loading the program, compiling it, and saving it.
 
-import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
+import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { EntitySyncIndicator, EntitySyncIndicatorStatus } from '$lib/components/common/EntitySyncIndicator'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import CompileIndicator from '$lib/components/layouts/analytics/CompileIndicator'
@@ -372,12 +372,12 @@ export const ProgramEditor = ({ programName }: { programName: string }) => {
 
   return (
     <>
-      <BreadcrumbsHeader>
-        <Link href={`/analytics/programs`} data-testid='button-breadcrumb-sql-programs'>
+      <Breadcrumbs.Header>
+        <Breadcrumbs.Link href={`/analytics/programs`} data-testid='button-breadcrumb-sql-programs'>
           SQL Programs
-        </Link>
-        <Link href={`/analytics/editor/?program_name=${programName}`}>{programName}</Link>
-      </BreadcrumbsHeader>
+        </Breadcrumbs.Link>
+        <Breadcrumbs.Link href={`/analytics/editor/?program_name=${programName}`}>{programName}</Breadcrumbs.Link>
+      </Breadcrumbs.Header>
       <ProgramEditorImpl
         {...{
           program,

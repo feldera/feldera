@@ -13,11 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - API: endpoint to get a list of demo URLs
   ([#1385](https://github.com/feldera/feldera/pull/1385))
+- WebConsole: Add functionality that would enable setting up demos in the sandbox (#1321)
 
 ### Changed
 
 - SQL: Illegal date literals and parsing illegal dates cause runtime
   errors instead of producing `NULL`  ([#1398](https://github.com/feldera/feldera/pull/1398))
+- WebConsole: Make Breadcrumb links larger, remove blue color
+- WebConsole: Move some footer links to navigation drawer
+- WebConsole: Make Introduction video inline on jome page, optionally collapsible
 
 ## [0.9.0] - 2024-02-06
 
@@ -26,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compiler option for handling unquoted identifiers
   ([#1360](https://github.com/feldera/feldera/pull/1360))
 - SQL: Support for `is_inf`, `is_nan` and `log` methods for double ([#1344](https://github.com/feldera/feldera/pull/1344))
-- WebConsole: Add functionality that would enable setting up demos in the sandbox (#1321)
 
 ### Changed
 
