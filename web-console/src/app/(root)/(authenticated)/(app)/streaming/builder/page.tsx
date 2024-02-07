@@ -9,7 +9,6 @@ import MissingSchemaDialog from '$lib/components/streaming/builder/NoSchemaDialo
 import { PipelineGraph } from '$lib/components/streaming/builder/PipelineBuilder'
 import { connectorConnects, useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
-import { useDeleteNode } from '$lib/compositions/streaming/builder/useDeleteNode'
 import { useReplacePlaceholder } from '$lib/compositions/streaming/builder/useSqlPlaceholderClick'
 import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
 import { useHashPart } from '$lib/compositions/useHashPart'
@@ -144,7 +143,6 @@ const useRenderPipelineEffect = (
     ...pipelineManagerQuery.connectors(),
     refetchInterval: 2000
   })
-  const deleteNode = useDeleteNode(() => {})
   const render = () => {
     if (saveState === 'isSaving' || saveState === 'isModified') {
       return
@@ -239,13 +237,9 @@ const useRenderPipelineEffect = (
   }
 
   useEffect(render, [
-    connectorsQuery.isPending,
-    connectorsQuery.isError,
     connectorsQuery.data,
     pipeline.program_name,
     pipeline.attached_connectors,
-    projectsQuery.isPending,
-    projectsQuery.isError,
     projectsQuery.data,
     replacePlaceholder,
     addConnector,
@@ -253,7 +247,6 @@ const useRenderPipelineEffect = (
     saveState,
     setNodes,
     getNodes,
-    deleteNode,
     setMissingSchemaDialog
   ])
 }

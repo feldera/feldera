@@ -1,5 +1,6 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { ApiError, HttpInputOutputService } from '$lib/services/manager'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { ApiError, HttpInputOutputService, Relation } from '$lib/services/manager'
 import { useCallback } from 'react'
 import JSONbig from 'true-json-bigint'
 
@@ -7,7 +8,7 @@ import { useMutation } from '@tanstack/react-query'
 
 type Args = [
   pipelineName: string,
-  relation: string,
+  relation: Relation,
   force: boolean,
   rows: Partial<Record<'insert' | 'delete', Record<string, unknown>>>[],
   isArray?: boolean
@@ -20,7 +21,7 @@ export function useInsertDeleteRows() {
     mutationFn: ([pipelineName, relation, force, rows, isArray]) => {
       return HttpInputOutputService.httpInput(
         pipelineName,
-        relation,
+        getCaseIndependentName(relation),
         force,
         'json',
         isArray ? JSONbig.stringify(rows) : rows.map(row => JSONbig.stringify(row)).join(''),

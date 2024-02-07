@@ -1,4 +1,5 @@
 import { randomString } from '$lib/functions/common/string'
+import { escapeRelationName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { AttachedConnector, ProgramSchema } from '$lib/services/manager'
 import { ConnectorDescr } from '$lib/services/manager/models/ConnectorDescr'
 import { useCallback } from 'react'
@@ -13,7 +14,7 @@ export function connectorConnects(schema: ProgramSchema | null | undefined, ac: 
   if (!schema) {
     return false
   }
-  return (ac.is_input ? schema.inputs : schema.outputs).some(view => view.name === ac.relation_name)
+  return (ac.is_input ? schema.inputs : schema.outputs).some(view => ac.relation_name === getCaseIndependentName(view))
 }
 
 /**
@@ -24,7 +25,7 @@ export function useAddConnector() {
   const { setNodes, getNodes, getNode, addNodes, addEdges } = useReactFlow()
   const redoLayout = useRedoLayout()
 
-  const addNewConnector = useCallback(
+  const addConnector = useCallback(
     (connector: ConnectorDescr, ac: AttachedConnector) => {
       const newNodeType = ac.is_input ? 'inputNode' : 'outputNode'
       const placeholderId = ac.is_input ? 'inputPlaceholder' : 'outputPlaceholder'
@@ -69,10 +70,9 @@ export function useAddConnector() {
       // Now that we have the node, we need to add a connector if we have one
       const sqlNode = getNode('sql')
       const ourNode = getNode(ac.name)
-      const tableOrView = ac.relation_name
       const sqlPrefix = ac.is_input ? 'table-' : 'view-'
-      const connectorHandle = sqlPrefix + tableOrView
-      const hasAnEdge = ac.relation_name != ''
+      const connectorHandle = sqlPrefix + escapeRelationName(ac.relation_name)
+      const hasAnEdge = ac.relation_name !== ''
 
       if (!(hasAnEdge && sqlNode && ourNode)) {
         return
@@ -102,5 +102,5 @@ export function useAddConnector() {
     [getNode, getNodes, setNodes, addNodes, addEdges, redoLayout]
   )
 
-  return addNewConnector
+  return addConnector
 }
