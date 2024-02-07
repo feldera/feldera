@@ -14,30 +14,48 @@ const relatedEntities = async ({ prefix, steps }: DemoSetup) => {
     (name => !!steps.find(step => step.entities.find(entity => prefix + entity.name === name)))(
       'name' in target ? target.name : target.descriptor.name
     )
-  const [relatedPipelines, relatedPrograms, relatedConnectors] = await Promise.all([
+  const [pipelines, programs, connectors] = await Promise.all([
     PipelinesService.listPipelines().then(es =>
       es.filter(e => e.descriptor.name.startsWith(prefix)).filter(partOfTheDemo)
     ),
     ProgramsService.getPrograms().then(es => es.filter(e => e.name.startsWith(prefix)).filter(partOfTheDemo)),
     ConnectorsService.listConnectors().then(es => es.filter(e => e.name.startsWith(prefix)).filter(partOfTheDemo))
   ])
-  return { relatedPipelines, relatedPrograms, relatedConnectors }
+  const stages = (() => {
+    const programs = steps[0].entities.filter(e => e.type === 'program').length
+    const connectors = programs + steps[0].entities.filter(e => e.type === 'connector').length
+    const pipelines = connectors + steps[0].entities.filter(e => e.type === 'pipeline').length
+    return {
+      programs,
+      connectors,
+      pipelines
+    }
+  })()
+  return {
+    related: { pipelines, programs, connectors },
+    getStage: (entityNumber: number) =>
+      stages.pipelines < entityNumber
+        ? ('pipelines' as const)
+        : stages.connectors < entityNumber
+          ? ('connectors' as const)
+          : ('programs' as const)
+  }
 }
 
 export const runDemoSetup = async ({ prefix, steps }: DemoSetup) => {
-  const { relatedPipelines, relatedPrograms, relatedConnectors } = await relatedEntities({ prefix, steps })
+  const { related, getStage } = await relatedEntities({ prefix, steps })
   return {
     entities: steps.flatMap(step =>
       step.entities.map(e =>
         match(e)
-          .with({ type: 'program' }, e => ({ ...e, exists: !!relatedPrograms.find(r => r.name === prefix + e.name) }))
+          .with({ type: 'program' }, e => ({ ...e, exists: !!related.programs.find(r => r.name === prefix + e.name) }))
           .with({ type: 'connector' }, e => ({
             ...e,
-            exists: !!relatedConnectors.find(r => r.name === prefix + e.name)
+            exists: !!related.connectors.find(r => r.name === prefix + e.name)
           }))
           .with({ type: 'pipeline' }, e => ({
             ...e,
-            exists: !!relatedPipelines.find(r => r.descriptor.name === prefix + e.name)
+            exists: !!related.pipelines.find(r => r.descriptor.name === prefix + e.name)
           }))
           .exhaustive()
       )
@@ -46,7 +64,7 @@ export const runDemoSetup = async ({ prefix, steps }: DemoSetup) => {
       const entityTotal = steps.reduce((acc, step) => acc + step.entities.length, 0)
       let entityNumber = 0
       if (steps.length) {
-        yield { description: steps[0].name, ratio: 0 }
+        yield { description: steps[0].name, ratio: 0, stage: 'programs' as const }
       }
       for (const step of steps) {
         for (const entity of step.entities) {
@@ -69,12 +87,20 @@ export const runDemoSetup = async ({ prefix, steps }: DemoSetup) => {
             )
             .exhaustive()
           ++entityNumber
-          yield { description: step.name, ratio: entityNumber / entityTotal }
+          yield {
+            description: step.name,
+            ratio: entityNumber / entityTotal,
+            stage: getStage(entityNumber)
+          }
         }
       }
     }
   }
 }
+
+type YieldType<T> = T extends AsyncGenerator<infer Yield, void, unknown> ? Yield : never
+
+export type DemoSetupProgress = YieldType<ReturnType<Awaited<ReturnType<typeof runDemoSetup>>['setup']>> | 'done'
 
 const cleanupDescription = {
   program: 'Cleaning up programs',
@@ -83,28 +109,38 @@ const cleanupDescription = {
 }
 
 export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
-  const { relatedPipelines, relatedPrograms, relatedConnectors } = await relatedEntities({ prefix, steps })
+  const { related, getStage } = await relatedEntities({ prefix, steps })
   return {
-    relatedPipelines,
-    relatedPrograms,
-    relatedConnectors,
+    related,
     cleanup: async function* () {
       const entityTotal = steps.reduce((acc, step) => acc + step.entities.length, 0)
       let entityNumber = 0
-      yield { description: 'Cleaning up', ratio: 0 }
-      for (const pipeline of relatedPipelines) {
+      yield { description: 'Cleaning up', ratio: 0, stage: 'pipelines' as const }
+      for (const pipeline of related.pipelines) {
         await PipelinesService.pipelineDelete(pipeline.descriptor.name)
-        yield { description: cleanupDescription.pipelines, ratio: entityNumber / entityTotal }
+        yield {
+          description: cleanupDescription.pipelines,
+          ratio: entityNumber / entityTotal,
+          stage: getStage(entityNumber)
+        }
         ++entityNumber
       }
-      for (const program of relatedPrograms) {
+      for (const program of related.programs) {
         await ProgramsService.deleteProgram(program.name)
-        yield { description: cleanupDescription.program, ratio: entityNumber / entityTotal }
+        yield {
+          description: cleanupDescription.program,
+          ratio: entityNumber / entityTotal,
+          stage: getStage(entityNumber)
+        }
         ++entityNumber
       }
-      for (const connector of relatedConnectors) {
+      for (const connector of related.connectors) {
         await ConnectorsService.deleteConnector(connector.name)
-        yield { description: cleanupDescription.connectors, ratio: entityNumber / entityTotal }
+        yield {
+          description: cleanupDescription.connectors,
+          ratio: entityNumber / entityTotal,
+          stage: getStage(entityNumber)
+        }
         ++entityNumber
       }
     }

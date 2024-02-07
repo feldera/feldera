@@ -1,3 +1,5 @@
+'use client'
+
 import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { AuthenticationSettings } from 'src/lib/components/settings/Authentication'
 

@@ -642,7 +642,7 @@ const usePipelineStatus = (params: { row: Pipeline }) => {
     return match(programData.status)
       .with('Success', () => 'Ready' as const)
       .with('CompilingRust', () => 'CompilingRust' as const)
-      .with('None', 'CompilingSql', () => 'NotReady' as const)
+      .with('CompilingSql', () => 'NotReady' as const)
       .with('Pending', () => 'Pending' as const)
       .otherwise(() => 'Error' as const)
   })()

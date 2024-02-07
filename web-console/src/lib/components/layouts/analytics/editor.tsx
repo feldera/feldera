@@ -31,7 +31,7 @@ import { match, P } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
 import Editor, { useMonaco } from '@monaco-editor/react'
-import { Card, CardContent, CardHeader, FormHelperText, Link, useTheme } from '@mui/material'
+import { Card, CardContent, CardHeader, FormHelperText, useTheme } from '@mui/material'
 import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import Grid from '@mui/material/Grid'
@@ -177,13 +177,7 @@ const useCompileProjectIfChangedEffect = (state: EntitySyncIndicatorStatus, proj
 
   const { mutate, isPending, isError } = useMutation(mutationCompileProgram(queryClient))
   useEffect(() => {
-    if (
-      isPending ||
-      state !== 'isUpToDate' ||
-      project.name === '' ||
-      project.program_id === '' ||
-      project.status !== 'None'
-    ) {
+    if (isPending || state !== 'isUpToDate' || project.name === '' || project.program_id === '') {
       return
     }
     programStatusCacheUpdate(queryClient, project.name, 'Pending')
@@ -191,7 +185,7 @@ const useCompileProjectIfChangedEffect = (state: EntitySyncIndicatorStatus, proj
       { programName: project.name, request: { version: project.version } },
       {
         onError: (error: ApiError) => {
-          programStatusCacheUpdate(queryClient, project.name, 'None')
+          programStatusCacheUpdate(queryClient, project.name, 'Pending')
           pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
         }
       }
@@ -217,9 +211,7 @@ const usePollCompilationStatusEffect = (project: ProgramDescr) => {
   const compilationStatus = useQuery({
     ...pipelineManagerQuery.programStatus(project.name),
     refetchInterval: 1000,
-    enabled:
-      project.program_id !== '' &&
-      (project.status === 'None' || project.status === 'Pending' || project.status === 'CompilingSql')
+    enabled: project.program_id !== '' && (project.status === 'Pending' || project.status === 'CompilingSql')
   })
 
   useEffect(() => {
@@ -353,7 +345,7 @@ export const ProgramEditor = ({ programName }: { programName: string }) => {
       name: '',
       description: '',
       program_id: '',
-      status: 'None',
+      status: 'Pending',
       version: 0
     },
     refetchOnWindowFocus: false
