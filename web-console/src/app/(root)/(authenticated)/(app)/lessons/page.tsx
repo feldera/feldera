@@ -1,7 +1,7 @@
 'use client'
 
 import demos from '$demo/demos.json'
-import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
+import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { GridItems } from '$lib/components/common/GridItems'
 import { DemoCleanupDialog } from '$lib/components/demo/DemoCleanupDialog'
 import { DemoSetupDialog } from '$lib/components/demo/DemoSetupDialog'
@@ -41,15 +41,15 @@ export default function () {
   const [cleanupDemo, setCleanupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
   return (
     <>
-      <BreadcrumbsHeader>
-        <Link href={`/lessons/`} data-testid='button-breadcrumb-lessons'>
-          Feldera Lessons
-        </Link>
-      </BreadcrumbsHeader>
-      <Box>
-        <Typography variant='h4' gutterBottom>
+      <Breadcrumbs.Header>
+        <Breadcrumbs.Link href={`/lessons/`} data-testid='button-breadcrumb-lessons'>
           Demos
-        </Typography>
+        </Breadcrumbs.Link>
+      </Breadcrumbs.Header>
+      <Box>
+        {/* <Typography variant='h4' gutterBottom>
+          Demos
+        </Typography> */}
         <Typography variant='body1' gutterBottom>
           Setup and explore pre-made demos on your running Feldera instance
         </Typography>

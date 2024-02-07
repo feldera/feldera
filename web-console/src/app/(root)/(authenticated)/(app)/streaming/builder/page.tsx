@@ -1,6 +1,6 @@
 'use client'
 
-import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
+import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { EntitySyncIndicator, EntitySyncIndicatorStatus } from '$lib/components/common/EntitySyncIndicator'
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { UnknownConnectorDialog } from '$lib/components/connectors/dialogs/UnknownConnector'
@@ -419,14 +419,17 @@ export default () => {
 
   return (
     <ReactFlowProvider>
-      <BreadcrumbsHeader>
-        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
+      <Breadcrumbs.Header>
+        <Breadcrumbs.Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
           Pipelines
-        </Link>
-        <Link href={`/streaming/builder/?pipeline_name=${pipelineName}`} data-testid='button-breadcrumb-pipeline-name'>
+        </Breadcrumbs.Link>
+        <Breadcrumbs.Link
+          href={`/streaming/builder/?pipeline_name=${pipelineName}`}
+          data-testid='button-breadcrumb-pipeline-name'
+        >
           {pipelineName}
-        </Link>
-      </BreadcrumbsHeader>
+        </Breadcrumbs.Link>
+      </Breadcrumbs.Header>
       <PipelineBuilderPage
         {...{
           pipeline,

@@ -1,7 +1,7 @@
 // Browse tables and views & insert data into tables.
 'use client'
 
-import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
+import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
@@ -185,15 +185,18 @@ export default () => {
   }
   return (
     <>
-      <BreadcrumbsHeader>
-        <Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
+      <Breadcrumbs.Header>
+        <Breadcrumbs.Link href={`/streaming/management`} data-testid='button-breadcrumb-pipelines'>
           Pipelines
-        </Link>
-        <Link href={`/streaming/management/#${pipeline.descriptor.name}`} data-testid='button-current-pipeline'>
+        </Breadcrumbs.Link>
+        <Breadcrumbs.Link
+          href={`/streaming/management/#${pipeline.descriptor.name}`}
+          data-testid='button-current-pipeline'
+        >
           {pipeline.descriptor.name}
-        </Link>
+        </Breadcrumbs.Link>
         <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
-      </BreadcrumbsHeader>
+      </Breadcrumbs.Header>
       <Box data-testid='box-inspection-background' sx={{ width: 2, height: 2 }}></Box>
       <Grid item xs={12}>
         {relationType === 'table' && (

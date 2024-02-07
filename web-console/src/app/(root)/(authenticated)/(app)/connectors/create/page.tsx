@@ -1,6 +1,6 @@
 'use client'
 
-import { BreadcrumbsHeader } from '$lib/components/common/BreadcrumbsHeader'
+import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { GridItems } from '$lib/components/common/GridItems'
 import {
   ConfigEditorDialog,
@@ -18,7 +18,7 @@ import { ConnectorType } from '$lib/types/connectors'
 import { match } from 'ts-pattern'
 import IconCheck from '~icons/bx/check'
 
-import { Button, Link } from '@mui/material'
+import { Button } from '@mui/material'
 import Grid from '@mui/material/Grid'
 
 const ConnectorCreateGrid = () => {
@@ -27,14 +27,14 @@ const ConnectorCreateGrid = () => {
 
   return (
     <>
-      <BreadcrumbsHeader>
-        <Link href={`/connectors/list`} data-testid='button-breadcrumb-connectors'>
+      <Breadcrumbs.Header>
+        <Breadcrumbs.Link href={`/connectors/list`} data-testid='button-breadcrumb-connectors'>
           Connectors
-        </Link>
-        <Link href={`/connectors/create`} data-testid='button-breadcrumb-create-connectors'>
+        </Breadcrumbs.Link>
+        <Breadcrumbs.Link href={`/connectors/create`} data-testid='button-breadcrumb-create-connectors'>
           Create
-        </Link>
-      </BreadcrumbsHeader>
+        </Breadcrumbs.Link>
+      </Breadcrumbs.Header>
       <Grid container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
         <GridItems xs={12} sm={6} md={4}>
           <AddConnectorCard
