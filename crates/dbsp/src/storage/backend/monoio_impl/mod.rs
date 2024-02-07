@@ -23,19 +23,16 @@ use monoio::{
 };
 use tempfile::TempDir;
 
-use crate::storage::{
-    backend::{
-        describe_disk_metrics, AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle,
-        StorageControl, StorageError, StorageRead, StorageWrite, METRIC_FILES_CREATED,
-        METRIC_FILES_DELETED, METRIC_READS_FAILED, METRIC_READS_SUCCESS, METRIC_READ_LATENCY,
-        METRIC_TOTAL_BYTES_READ, METRIC_TOTAL_BYTES_WRITTEN, METRIC_WRITES_SUCCESS,
-        METRIC_WRITE_LATENCY, NEXT_FILE_HANDLE,
-    },
-    buffer_cache::FBuf,
-    init,
-};
+use crate::storage::{buffer_cache::FBuf, init};
 
-use super::StorageExecutor;
+use super::{
+    metrics::{
+        describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
+        READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+    },
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
+    StorageExecutor, StorageRead, StorageWrite, NEXT_FILE_HANDLE,
+};
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -148,7 +145,7 @@ impl StorageControl for MonoioBackend {
                 size: RefCell::new(0),
             },
         );
-        counter!(METRIC_FILES_CREATED).increment(1);
+        counter!(FILES_CREATED).increment(1);
 
         Ok(FileHandle(file_counter))
     }
@@ -156,13 +153,13 @@ impl StorageControl for MonoioBackend {
     async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
             .await
-            .map(|_| counter!(METRIC_FILES_DELETED).increment(1))
+            .map(|_| counter!(FILES_DELETED).increment(1))
     }
 
     async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
             .await
-            .map(|_| counter!(METRIC_FILES_DELETED).increment(1))
+            .map(|_| counter!(FILES_DELETED).increment(1))
     }
 }
 
@@ -181,9 +178,9 @@ impl StorageWrite for MonoioBackend {
         res?;
 
         fm.size.replace_with(|size| max(*size, end_offset));
-        counter!(METRIC_TOTAL_BYTES_WRITTEN).increment(buf.len() as u64);
-        counter!(METRIC_WRITES_SUCCESS).increment(1);
-        histogram!(METRIC_WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
+        counter!(TOTAL_BYTES_WRITTEN).increment(buf.len() as u64);
+        counter!(WRITES_SUCCESS).increment(1);
+        histogram!(WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
 
         Ok(Arc::new(buf))
     }
@@ -222,18 +219,18 @@ impl StorageRead for MonoioBackend {
         let (res, buf) = fm.file.read_at(buffer, offset).await;
         match res {
             Ok(len) => {
-                counter!(METRIC_TOTAL_BYTES_READ).increment(len as u64);
-                histogram!(METRIC_READ_LATENCY).record(request_start.elapsed().as_secs_f64());
+                counter!(TOTAL_BYTES_READ).increment(len as u64);
+                histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
                 if size != buf.len() {
-                    counter!(METRIC_READS_FAILED).increment(1);
+                    counter!(READS_FAILED).increment(1);
                     Err(StorageError::ShortRead)
                 } else {
-                    counter!(METRIC_READS_SUCCESS).increment(1);
+                    counter!(READS_SUCCESS).increment(1);
                     Ok(Arc::new(buf))
                 }
             }
             Err(e) => {
-                counter!(METRIC_READS_FAILED).increment(1);
+                counter!(READS_FAILED).increment(1);
                 Err(e.into())
             }
         }

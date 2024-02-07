@@ -23,12 +23,12 @@ use std::{
     },
 };
 
-use metrics::{describe_counter, describe_histogram, Unit};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::storage::buffer_cache::FBuf;
+pub mod metrics;
 
 pub mod monoio_impl;
 
@@ -144,57 +144,6 @@ impl PartialEq for StorageError {
             _ => false,
         }
     }
-}
-
-pub(crate) const METRIC_FILES_CREATED: &str = "disk.total_files_created";
-pub(crate) const METRIC_FILES_DELETED: &str = "disk.total_files_deleted";
-pub(crate) const METRIC_WRITES_SUCCESS: &str = "disk.total_writes_success";
-pub(crate) const METRIC_WRITES_FAILED: &str = "disk.total_writes_failed";
-pub(crate) const METRIC_READS_SUCCESS: &str = "disk.total_reads_success";
-pub(crate) const METRIC_READS_FAILED: &str = "disk.total_reads_failed";
-pub(crate) const METRIC_TOTAL_BYTES_WRITTEN: &str = "disk.total_bytes_written";
-pub(crate) const METRIC_TOTAL_BYTES_READ: &str = "disk.total_bytes_read";
-pub(crate) const METRIC_READ_LATENCY: &str = "disk.read_latency";
-pub(crate) const METRIC_WRITE_LATENCY: &str = "disk.write_latency";
-pub(crate) const METRIC_BUFFER_CACHE_HIT: &str = "disk.buffer_cache_hit";
-pub(crate) const METRIC_BUFFER_CACHE_MISS: &str = "disk.buffer_cache_miss";
-pub(crate) const METRIC_BUFFER_CACHE_LATENCY: &str = "disk.buffer_cache_latency";
-
-/// Adds descriptions for the metrics we expose.
-fn describe_disk_metrics() {
-    // Storage backend metrics.
-    describe_counter!(METRIC_FILES_CREATED, "total number of files created");
-    describe_counter!(METRIC_FILES_DELETED, "total number of files deleted");
-    describe_counter!(METRIC_WRITES_SUCCESS, "total number of disk writes");
-    describe_counter!(METRIC_WRITES_FAILED, "total number of failed writes");
-    describe_counter!(METRIC_READS_SUCCESS, "total number of disk reads");
-    describe_counter!(METRIC_READS_FAILED, "total number of failed reads");
-
-    describe_counter!(
-        METRIC_TOTAL_BYTES_WRITTEN,
-        Unit::Bytes,
-        "total number of bytes written to disk"
-    );
-    describe_counter!(
-        METRIC_TOTAL_BYTES_READ,
-        Unit::Bytes,
-        "total number of bytes read from disk"
-    );
-
-    describe_histogram!(METRIC_READ_LATENCY, Unit::Seconds, "Read request latency");
-    describe_histogram!(METRIC_WRITE_LATENCY, Unit::Seconds, "Write request latency");
-
-    // Buffer cache metrics.
-    describe_counter!(METRIC_BUFFER_CACHE_HIT, "total number of buffer cache hits");
-    describe_counter!(
-        METRIC_BUFFER_CACHE_MISS,
-        "total number of buffer cache misses"
-    );
-    describe_histogram!(
-        METRIC_BUFFER_CACHE_LATENCY,
-        Unit::Seconds,
-        "Buffer cache lookup latency"
-    );
 }
 
 #[cfg(test)]
