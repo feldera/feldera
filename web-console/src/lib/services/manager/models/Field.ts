@@ -11,6 +11,7 @@ import type { ColumnType } from './ColumnType'
  * Matches the Calcite JSON format.
  */
 export type Field = {
+  case_sensitive?: boolean
   columntype: ColumnType
   name: string
 }

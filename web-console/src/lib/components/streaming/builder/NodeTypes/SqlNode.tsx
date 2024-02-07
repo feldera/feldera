@@ -5,6 +5,7 @@ import { Handle, Node } from '$lib/components/streaming/builder/NodeTypes'
 import { useDeleteNode, useDeleteNodeProgram } from '$lib/compositions/streaming/builder/useDeleteNode'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { zipDefault } from '$lib/functions/common/tuple'
+import { escapeRelationName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ProgramDescr, Relation } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 import { TextIcon } from 'src/lib/components/common/TextIcon'
@@ -17,7 +18,7 @@ import Avatar from '@mui/material/Avatar'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 
-function SqlTableNode(props: { name: string }) {
+function SqlTableNode(props: { relation: Relation }) {
   const { getNode, getEdges } = useReactFlow()
 
   // Only allow the connection if it's coming from an input node
@@ -37,8 +38,8 @@ function SqlTableNode(props: { name: string }) {
   return (
     <Box sx={{ ml: -6, mt: 3 }} style={{ position: 'relative' }}>
       <Chip
-        sx={{ ml: 9 }}
-        label={props.name}
+        sx={{ ml: 9, '.MuiChip-label': { textTransform: 'none' } }}
+        label={getCaseIndependentName(props.relation)}
         color='secondary'
         avatar={
           <Avatar>
@@ -48,18 +49,18 @@ function SqlTableNode(props: { name: string }) {
       />
       {/* The table- prefix is important for the isValidConnection logic */}
       <Handle
-        id={'table-' + props.name}
+        id={'table-' + escapeRelationName(getCaseIndependentName(props.relation))}
         type='target'
         position={Position.Left}
         isConnectable={true}
         isValidConnection={isValidConnection}
-        data-testid={'box-handle-table-' + props.name}
+        data-testid={'box-handle-table-' + getCaseIndependentName(props.relation)}
       />
     </Box>
   )
 }
 
-function SqlViewNode(props: { name: string }) {
+function SqlViewNode(props: { relation: Relation }) {
   const { getNode } = useReactFlow()
 
   // Only allow the connection if we're going from a view to an output node
@@ -75,8 +76,8 @@ function SqlViewNode(props: { name: string }) {
   return (
     <Box sx={{ mr: -6, mt: 3, textAlign: 'right' }} style={{ position: 'relative' }}>
       <Chip
-        sx={{ mr: 9 }}
-        label={props.name}
+        sx={{ mr: 9, '.MuiChip-label': { textTransform: 'none' } }}
+        label={getCaseIndependentName(props.relation)}
         color='secondary'
         avatar={
           <Avatar>
@@ -86,12 +87,12 @@ function SqlViewNode(props: { name: string }) {
       />
       {/* The view- prefix is important for the isValidConnection functions */}
       <Handle
-        id={'view-' + props.name}
+        id={'view-' + escapeRelationName(getCaseIndependentName(props.relation))}
         type='source'
         position={Position.Right}
         isConnectable={true}
         isValidConnection={isValidConnection}
-        data-testid={'box-handle-view-' + props.name}
+        data-testid={'box-handle-view-' + getCaseIndependentName(props.relation)}
       />
     </Box>
   )
@@ -137,8 +138,8 @@ export function SqlNode({ id, data }: NodeProps<{ label: string; program: Progra
           ([input, output], idx) => {
             return (
               <Stack direction='row' spacing={2} key={idx} sx={{ width: '100%' }}>
-                <Box sx={{ textAlign: 'left' }}>{input && <SqlTableNode name={input.name} />}</Box>
-                <Box sx={{ textAlign: 'right', width: '100%' }}> {output && <SqlViewNode name={output.name} />}</Box>
+                <Box sx={{ textAlign: 'left' }}>{input && <SqlTableNode relation={input} />}</Box>
+                <Box sx={{ textAlign: 'right', width: '100%' }}> {output && <SqlViewNode relation={output} />}</Box>
               </Stack>
             )
           }

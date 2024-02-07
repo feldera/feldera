@@ -6,6 +6,8 @@ import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
+import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { Relation } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -22,26 +24,32 @@ import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
 import type { Row } from '$lib/components/streaming/import/InsertionTable'
-
-const TablesBreadcrumb = (props: { pipeline: Pipeline; relation: string; tables: string[]; views: string[] }) => {
+const TablesBreadcrumb = (props: {
+  pipeline: Pipeline
+  caseIndependentName: string
+  relationType: 'table' | 'view'
+  tables: Relation[]
+  views: Relation[]
+}) => {
   const [tab] = useHash()
-
+  const options = props.tables
+    .map(relation => ({ type: 'Tables', name: getCaseIndependentName(relation) }))
+    .concat(props.views.map(relation => ({ type: 'Views', name: getCaseIndependentName(relation) })))
   return (
     <Box sx={{ mb: '-1rem' }}>
       <FormControl sx={{ mt: '-1rem' }}>
         <Autocomplete
-          key={props.relation} // Changing the key forces autocomplete to close when relation is changed
+          isOptionEqualToValue={(a, b) => a.name === b.name && a.type === b.type}
+          key={props.caseIndependentName} // Changing the key forces autocomplete to close when relation is changed
           size='small'
-          options={props.tables
-            .map(name => ({ type: 'Tables', name }))
-            .concat(props.views.map(name => ({ type: 'Views', name })))}
+          options={options}
           groupBy={option => option.type}
           getOptionLabel={o => o.name}
           sx={{ width: 400 }}
           slotProps={{ popupIndicator: { 'data-testid': 'button-expand-relations' } as any }}
           ListboxProps={{ 'data-testid': 'box-relation-options' } as any}
-          renderInput={params => <TextField {...params} value={props.relation} label='Tables and Views' />}
-          value={{ name: props.relation, type: '' }}
+          renderInput={params => <TextField {...params} value={props.caseIndependentName} label='Tables and Views' />}
+          value={{ name: props.caseIndependentName, type: props.relationType === 'table' ? 'Tables' : 'Views' }}
           renderOption={(_props, item) => (
             <MenuItem
               key={item.name}
@@ -67,18 +75,17 @@ const TableInspector = ({
   pipeline,
   setTab,
   tab,
-  relation
+  caseIndependentName
 }: {
   pipeline: Pipeline
   setTab: (tab: Tab) => void
   tab: string
-  relation: string
+  caseIndependentName: string
 }) => {
   const logError = (error: Error) => {
     console.error('InspectionTable error: ', error)
   }
   const [rows, setRows] = useState<Row[]>([])
-
   return (
     <TabContext value={tab}>
       <TabList
@@ -87,16 +94,16 @@ const TableInspector = ({
         onChange={(_e, tab) => setTab(tab)}
         aria-label='tabs to insert and browse relations'
       >
-        <Tab value='browse' label={`Browse ${relation}`} data-testid='button-tab-browse' />
+        <Tab value='browse' label={`Browse ${caseIndependentName}`} data-testid='button-tab-browse' />
         <Tab value='insert' label='Insert New Rows' data-testid='button-tab-insert' />
       </TabList>
       <TabPanel value='browse'>
-        <ViewInspector pipeline={pipeline} relation={relation} />
+        <ViewInspector pipeline={pipeline} caseIndependentName={caseIndependentName} />
       </TabPanel>
       <TabPanel value='insert'>
         {pipeline.state.current_status === PipelineStatus.RUNNING ? (
           <ErrorBoundary FallbackComponent={ErrorOverlay} onError={logError} key={location.pathname}>
-            <InsertionTable pipeline={pipeline} name={relation} insert={{ rows, setRows }} />
+            <InsertionTable pipeline={pipeline} caseIndependentName={caseIndependentName} insert={{ rows, setRows }} />
           </ErrorBoundary>
         ) : (
           <Alert severity='info'>
@@ -109,8 +116,7 @@ const TableInspector = ({
   )
 }
 
-const ViewInspector = (props: { pipeline: Pipeline; relation: string }) => {
-  const { pipeline, relation } = props
+const ViewInspector = ({ pipeline, caseIndependentName }: { pipeline: Pipeline; caseIndependentName: string }) => {
   const logError = (error: Error) => {
     console.error('InspectionTable error: ', error)
   }
@@ -118,7 +124,7 @@ const ViewInspector = (props: { pipeline: Pipeline; relation: string }) => {
   return pipeline.state.current_status === PipelineStatus.RUNNING ||
     pipeline.state.current_status === PipelineStatus.PAUSED ? (
     <ErrorBoundary FallbackComponent={ErrorOverlay} onError={logError} key={location.pathname}>
-      <InspectionTable pipeline={pipeline} name={relation} />
+      <InspectionTable pipeline={pipeline} caseIndependentName={caseIndependentName} />
     </ErrorBoundary>
   ) : (
     <ErrorOverlay error={new Error(`'${pipeline.descriptor.name}' is not deployed.`)} />
@@ -132,7 +138,7 @@ export default () => {
   const query = useSearchParams()
 
   const pipelineName = query.get('pipeline_name')
-  const relation = query.get('relation')
+  const caseIndependentName = query.get('relation')
 
   const pipelineManagerQuery = usePipelineManagerQuery()
 
@@ -148,8 +154,8 @@ export default () => {
     enabled: pipelineName !== undefined,
     select(pipelineRevision) {
       const program = pipelineRevision?.program
-      const tables = program?.schema?.inputs.map(v => v.name) || []
-      const views = program?.schema?.outputs.map(v => v.name) || []
+      const tables = program?.schema?.inputs || []
+      const views = program?.schema?.outputs || []
       return {
         ...pipelineRevision,
         tables,
@@ -163,23 +169,37 @@ export default () => {
   {
     const views = pipelineRevision?.views
     useEffect(() => {
-      if (relation && views && views.includes(relation) && tab === 'insert') {
+      if (
+        caseIndependentName &&
+        views &&
+        views.find(caseDependentNameEq(getCaseDependentName(caseIndependentName))) &&
+        tab === 'insert'
+      ) {
         setTab('browse')
       }
-    }, [setTab, relation, views, tab])
+    }, [setTab, caseIndependentName, views, tab])
   }
-
-  if (!relation || !pipeline || !pipelineRevision) {
+  if (!caseIndependentName || !pipeline || !pipelineRevision) {
     return <></>
   }
   const { tables, views } = pipelineRevision
-  const relationType = tables.includes(relation) ? 'table' : views.includes(relation) ? 'view' : undefined
+  const relationType = (() => {
+    const validTable = tables.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
+    if (validTable) {
+      return 'table'
+    }
+    const validView = views.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
+    if (validView) {
+      return 'view'
+    }
+    return undefined
+  })()
 
   if (!relationType) {
     return (
       <Alert severity='error'>
         <AlertTitle>Relation not found</AlertTitle>
-        Unknown table or view: {relation}
+        Unknown table or view: {caseIndependentName}
       </Alert>
     )
   }
@@ -195,14 +215,20 @@ export default () => {
         >
           {pipeline.descriptor.name}
         </Breadcrumbs.Link>
-        <TablesBreadcrumb pipeline={pipeline} relation={relation} tables={tables} views={views}></TablesBreadcrumb>
+        <TablesBreadcrumb
+          pipeline={pipeline}
+          caseIndependentName={caseIndependentName}
+          relationType={relationType}
+          tables={tables}
+          views={views}
+        ></TablesBreadcrumb>
       </Breadcrumbs.Header>
       <Box data-testid='box-inspection-background' sx={{ width: 2, height: 2 }}></Box>
       <Grid item xs={12}>
         {relationType === 'table' && (
-          <TableInspector pipeline={pipeline} setTab={setTab} tab={tab} relation={relation} />
+          <TableInspector pipeline={pipeline} setTab={setTab} tab={tab} caseIndependentName={caseIndependentName} />
         )}
-        {relationType === 'view' && <ViewInspector pipeline={pipeline} relation={relation} />}
+        {relationType === 'view' && <ViewInspector pipeline={pipeline} caseIndependentName={caseIndependentName} />}
       </Grid>
     </>
   )

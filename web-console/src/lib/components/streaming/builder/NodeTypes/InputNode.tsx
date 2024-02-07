@@ -36,7 +36,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
       return (
         targetNode !== undefined &&
         targetNode.type === 'sqlProgram' &&
-        connection.targetHandle != null &&
+        connection.targetHandle !== null &&
         connection.targetHandle.startsWith('table-')
       )
     } else {
