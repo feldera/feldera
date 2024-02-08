@@ -34,6 +34,12 @@ The following are legal time units:
 
 ## Dates
 
+The date type represents a Gregorian calendar date, independent of
+time zone.  This extends to dates before the Gregorian calendar was
+introduced, effectively meaning that the dates use a <a
+href="https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar">Proleptic
+calendar</a>.
+
 ### Date literals
 
 `DATE` literals have the form `DATE 'YYYY-MM-DD'`.  Trailing spaces
@@ -104,36 +110,36 @@ not allowed between quotes.
 
 ### Time operations
 
-`EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit from
+`EXTRACT(<unit> FROM time)` where `<unit>` is a time unit from
 `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`; the semantics is as
 described above.  Result is always a `BIGINT` value.
 
 The following abbreviations can be used as well:
 
-`HOUR(timestamp)` is an abbreviation for `EXTRACT(HOUR FROM timestamp)`.
+`HOUR(time)` is an abbreviation for `EXTRACT(HOUR FROM time)`.
 
-`MINUTE(timestamp)` is an abbreviation for `EXTRACT(MINUTE FROM timestamp)`.
+`MINUTE(time)` is an abbreviation for `EXTRACT(MINUTE FROM time)`.
 
-`SECOND(timestamp)` is an abbreviation for `EXTRACT(SECOND FROM
-timestamp)`.
+`SECOND(time)` is an abbreviation for `EXTRACT(SECOND FROM
+time)`.
 
 Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
 ## Timestamps
 
-The `TIMESTAMP` data type represents values composed of a `DATE` and a
-`TIME`.  `TIMESTAMP` support an optional precision specification,
-e.g.: `TIMESTAMP(3)`.  The precision applies to the `TIME` component
-of the `TIMESTAMP`.  The maximum precision supported for timestamps is
-3.  The default precision for timestamps (used when no precision is
-specified), is also 3.
+The `TIMESTAMP` data type represents values composed of a `DATE` (as
+described above) and a `TIME`.  `TIMESTAMP` support an optional
+precision specification, e.g.: `TIMESTAMP(3)`.  The precision applies
+to the `TIME` component of the `TIMESTAMP`.  The maximum precision
+supported for timestamps is 3.  The default precision for timestamps
+(used when no precision is specified), is also 3.
 
 ### Timestamp literals
 
-A timestamp contains both a date and a time.  `TIMESTAMP` literals
-have the form `TIMESTAMP 'YYYY-MM-DD HH:MM:SS.FFF'`, where the
-fractional part is optional.  Trailing spaces are not allowed.
+`TIMESTAMP` literals have the form `TIMESTAMP 'YYYY-MM-DD
+HH:MM:SS.FFF'`, where the fractional part is optional.  Trailing
+spaces are not allowed.
 
 Timestamp literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
