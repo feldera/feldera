@@ -19,7 +19,7 @@ import {
   StepContent,
   StepLabel,
   Stepper,
-  Tooltip
+  Typography
 } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 
@@ -101,21 +101,17 @@ const DemoCleanupFormContent = ({
                 { label: 'Delete connectors', related: 'connectors' as const },
                 { label: 'Delete programs', related: 'programs' as const }
               ].map(step => (
-                <Step key={step.label} sx={{ m: 0 }}>
+                <Step key={step.label} sx={{ m: 0 }} expanded>
                   <StepLabel>
-                    <Box sx={{ display: 'flex' }}>
-                      <Tooltip
-                        placement='bottom-start'
-                        slotProps={{ tooltip: { sx: { fontSize: 14, maxWidth: 500, wordBreak: 'keep-all' } } }}
-                        title={cleanupScope.data?.related[step.related]
-                          .map(e => ('name' in e ? e.name : e.descriptor.name))
-                          .join(', ')}
-                      >
-                        <Box>{step.label}</Box>
-                      </Tooltip>
-                    </Box>
+                    <Box sx={{ display: 'flex' }}>{step.label}</Box>
                   </StepLabel>
-                  <StepContent></StepContent>
+                  <StepContent>
+                    <Typography variant='body2'>
+                      {cleanupScope.data?.related[step.related]
+                        .map(e => ('name' in e ? e.name : e.descriptor.name))
+                        .join(', ')}
+                    </Typography>
+                  </StepContent>
                 </Step>
               ))}
             </Stepper>

@@ -22,7 +22,7 @@ import {
   StepContent,
   StepLabel,
   Stepper,
-  Tooltip
+  Typography
 } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 
@@ -111,7 +111,11 @@ const DemoSetupFormContent = ({
       <DialogContent>
         {hasConflict && (
           <Alert severity='warning'>
-            {props.progress ? <>Some entities were overwritten</> : <>Some entities will be overwritten</>}
+            {props.progress ? (
+              <>Some entities were overwritten</>
+            ) : (
+              <>Some entities with this prefix will be overwritten</>
+            )}
           </Alert>
         )}
         <LinearProgress
@@ -127,22 +131,18 @@ const DemoSetupFormContent = ({
             { label: 'Create connectors', type: 'connector' as const },
             { label: 'Create pipelines', type: 'pipeline' as const }
           ].map(step => (
-            <Step key={step.label} sx={{ m: 0 }}>
+            <Step key={step.label} sx={{ m: 0 }} expanded>
               <StepLabel sx={{ display: 'flex' }}>
-                <Box sx={{ display: 'flex' }}>
-                  <Tooltip
-                    placement='bottom-start'
-                    slotProps={{ tooltip: { sx: { fontSize: 14, maxWidth: 500, wordBreak: 'keep-all' } } }}
-                    title={setupScope.data?.entities
-                      .filter(e => e.type === step.type)
-                      .map(e => prefix + e.name)
-                      .join(', ')}
-                  >
-                    <Box>{step.label}</Box>
-                  </Tooltip>
-                </Box>
+                <Box sx={{ display: 'flex' }}>{step.label}</Box>
               </StepLabel>
-              <StepContent></StepContent>
+              <StepContent>
+                <Typography variant='body2'>
+                  {setupScope.data?.entities
+                    .filter(e => e.type === step.type)
+                    .map(e => prefix + e.name)
+                    .join(', ')}
+                </Typography>
+              </StepContent>
             </Step>
           ))}
         </Stepper>
