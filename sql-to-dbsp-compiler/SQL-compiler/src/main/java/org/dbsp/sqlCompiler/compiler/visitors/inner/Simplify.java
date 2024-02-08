@@ -134,8 +134,7 @@ public class Simplify extends InnerRewriteVisitor {
                     } catch (DateTimeParseException ex) {
                         this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a date",
                                 " String " + Utilities.singleQuote(str.value) +
-                                        " cannot be interpreted as a date, value used is `NULL`");
-                        result = DBSPLiteral.none(type);
+                                        " cannot be interpreted as a date");
                     }
                 } else if (type.is(DBSPTypeTime.class)) {
                     try {
@@ -144,8 +143,7 @@ public class Simplify extends InnerRewriteVisitor {
                     } catch (DateTimeParseException ex) {
                         this.errorReporter.reportWarning(expression.getSourcePosition(), "Not a number",
                                 " String " + Utilities.singleQuote(str.value) +
-                                        " cannot be interpreted as a time, value used is 'NULL'");
-                        result = DBSPLiteral.none(type);
+                                        " cannot be interpreted as a time");
                     }
                 } else if (type.is(DBSPTypeDecimal.class)) {
                     try {

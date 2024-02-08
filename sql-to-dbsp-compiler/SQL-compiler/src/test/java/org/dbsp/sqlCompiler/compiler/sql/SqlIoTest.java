@@ -523,6 +523,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
             compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
+        if (!compiler.messages.isEmpty())
+            System.out.println(compiler.messages);
         DBSPType outputType = circuit.getOutputType(0);
         DBSPZSetLiteral.Contents result = this.parseTable(expected, outputType);
         InputOutputPair streams = new InputOutputPair(

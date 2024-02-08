@@ -42,9 +42,6 @@ are not allowed.
 Date literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
 
-If the string does not have the expected format the resulting literal
-is interpreted as `NULL`.
-
 ### Date operations
 
 The following operations are available on dates:
@@ -81,9 +78,6 @@ For dates it always returns 0, since dates have no time component.
 Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
-Casting a string to a `DATE` produces the result `NULL` if the string
-does not have the format of a date literal.
-
 ## Times
 
 A time represents the time of day, a value between 0 and 24 hours
@@ -108,9 +102,6 @@ minutes between 0 and 59, and the seconds between 0 and 59.  Exactly
 two digits must be used for hours, minuts, and seconds.  Spaces are
 not allowed between quotes.
 
-If the string does not have the expected format the resulting literal
-is interpreted as `NULL`.
-
 ### Time operations
 
 `EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit from
@@ -129,9 +120,6 @@ timestamp)`.
 Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
-Casting a string to a `TIME` produces the result `NULL` if the string
-does not have the format of a time literal.
-
 ## Timestamps
 
 The `TIMESTAMP` data type represents values composed of a `DATE` and a
@@ -149,9 +137,6 @@ fractional part is optional.  Trailing spaces are not allowed.
 
 Timestamp literals can only represent 4-digit year positive values.
 Values BC or values greater than 10,000 years are not supported.
-
-If the string does not have the expected format the resulting literal
-is interpreted as `NULL`.
 
 The following operations are available on timestamps:
 
@@ -188,9 +173,6 @@ The result is a 32-bit integer.  `DATEDIFF` is a synonym for
 `TIMESTAMPDIFF`.  One month is considered elapsed when the calendar
 month has increased and the calendar day and time is greater than or equal
 to the start. Weeks, quarters, and years follow from that.
-
-Casting a string to a `TIMESTAMP` produces the result `NULL` if the
-string does not have the format of a timestamp literal.
 
 ## Time intervals
 
@@ -233,9 +215,6 @@ A leading negative sign applies to all fields; for example the
 negative sign in the interval literal `INTERVAL '-1 2:03:04' DAYS TO
 SECONDS` applies to both the days and hour/minute/second parts.
 
-If the interval does not have an adequate format the resulting literal
-is interpreted as `NULL`.
-
 ## Other date/time/timestamp/time interval operations
 
 The following arithmetic operations are supported:
@@ -270,3 +249,60 @@ Since DBSP is a *deterministic* query engine, it does not currently
 offer support for any function that depends on the current time.  So
 the following are *not* supported: `LOCALTIME`, `LOCALTIMESTAMP`,
 `CURRENT_TIME`, `CURRENT_DATE`, `CURRENT_TIMESTAMP`.
+
+## Date formatting
+
+We support the following functions for formatting date-like values:
+
+| Operation     | Arguments           | Example                   |
+|---------------|-------- ------------|---------------------------|
+| `FORMAT_DATE` | string_format, date | `FORMAT_DATE("%Y=%m", d)` => 2020-10 |
+
+These functions are similar to the BigQuery functions:
+<https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#format_elements_date_time>
+
+The format string recognizes the following format specifiers:
+(the Types column encodes the following types: D=Date, TS=TIMESTAMP, T=TIME
+
+| Element | Types    | Description | Example |
+|---------|----------|-------------|---------|
+| %A      | D,TS     | The full weekday name (English)        | Wednesday  |
+| %a      | D,TS     | The abbreviated weekday name (English) | Wed        |
+| %B      | D,TS     | The full month name (English)          | January    |
+| %b      | D,TS     | The abbreviated month name (English)   | Jan        |
+| %C      | D,TS     | The century (a year divided by 100 and truncated to an integer) as a decimal number (00-99) | 20 |
+| %c      | TS       | The date and time representation (English) | Wed Jan 20 21:47:00 2021 |
+| %D      | D, TS    | The date in the format %m/%d/%y        | 01/20/21   |
+| %d      | D, TS    | The day of the month as a decimal number (01-31) | 20 |
+| %e      | D, TS    | The day of the month as a decimal number (1-31); single digits are preceded by a space |        20 |
+| %F      | D, TS    | The date in the format %Y-%m-%d        | 2021-01-20 |
+| %G      | D, TS    | The ISO 8601 year with century as a decimal number. Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %G and %Y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge | 2021 |
+| %g      | D, TS    | The ISO 8601 year without century as a decimal number (00-99). Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %g and %y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge | 21 |
+| %H      | TS, T    | The hour (24-hour clock) as a decimal number (00-23) | 21 |
+| %h      | D, TS    | Same as %b   |   Jan      |
+| %I      | TS, T    | The hour (12-hour clock) as a decimal number (01-12) | 09 |
+| %j      | D, TS    | The day of the year as a decimal number (001-366) | 020 |
+| %k      | TS, T    | The hour (24-hour clock) as a decimal number (0-23); single digits are preceded by a space. | 21 |
+| %l      | TS, T    | The hour (12-hour clock) as a decimal number (1-12); single digits are preceded by a space. |  9 |
+| %M      | TS, T    | The minute as a decimal number (00-59) | 47 |
+| %m      | D, TS    | The month as a decimal number (01-12)  | 01 |
+| %P      | TS, T    | When formatting, this is either am or pm. This cannot be used with parsing. Instead, use %p. | pm |
+| %p      | TS, T    | When formatting, this is either AM or PM. When parsing, this can be used with am, pm, AM, or PM. | PM |
+| %R      | TS, T    | The time in the format %H:%M | 21:47 |
+| %S      | TS, T    | The second as a decimal number (00-60) | 00 |
+| %s      | TS, T    | The number of seconds since 1970-01-01 00:00:00. | 1611179220 |
+| %T      | TS, T    | The time in the format %H:%M:%S | 21:47:00 |
+| %U      | D, TS    | The week number of the year (Sunday as the first day of the week) as a decimal number (00-53) | 03 |
+| %u      | D, TS    | The weekday (Monday as the first day of the week) as a decimal number (1-7) | 3 |
+| %V      | D, TS    | The ISO 8601 week number of the year (Monday as the first day of the week) as a decimal number (01-53). If the week containing January 1 has four or more days in the new year, then it is week 1; otherwise it is week 53 of the previous year, and the next week is week 1 | 03 |
+| %W      | D, TS    | The week number of the year (Monday as the first day of the week) as a decimal number (00-53) | 03 |
+| %w      | D, TS    | The weekday (Sunday as the first day of the week) as a decimal number (0-6) | 3 |
+| %X      | TS, T    | The time representation in HH:MM:SS format | 21:47:00 |
+| %x      | D, TS    | The date representation in MM/DD/YY format | 01/20/21 |
+| %Y      | D, TS    | The year with century as a decimal number  |     2021 |
+| %y      | D, TS    | The year without century as a decimal number (00-99), with an optional leading zero. | 21 |
+| %Z      | TS       | The time zone name | UTC-5 |
+| %z      | TS       | The offset from the Prime Meridian in the format +HHMM or -HHMM as appropriate, with positive values representing locations east of Greenwich | -0500 |
+| %n      |          | A newline character. | |
+| %t      |          | A tab character | |
+| %%      |          | A single % character | % |

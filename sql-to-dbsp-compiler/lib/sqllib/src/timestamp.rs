@@ -18,7 +18,8 @@ use std::{
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
-    some_existing_operator, some_operator, some_polymorphic_function1, some_polymorphic_function2,
+    some_existing_operator, some_function2, some_operator, some_polymorphic_function1,
+    some_polymorphic_function2,
 };
 
 /// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and
@@ -685,6 +686,12 @@ pub fn datediff_day_Date_Date(left: Date, right: Date) -> i32 {
 }
 
 some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
+
+pub fn format_date__(format: String, date: Date) -> String {
+    return date.to_dateTime().format(&format).to_string();
+}
+
+some_function2!(format_date, String, Date, String);
 
 //////////////////////////// Time
 
