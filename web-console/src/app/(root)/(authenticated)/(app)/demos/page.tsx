@@ -58,7 +58,7 @@ export default function () {
         </Breadcrumbs.Link>
       </Breadcrumbs.Header>
       <Box>
-        <Typography variant='body1' gutterBottom>
+        <Typography variant='body1' sx={{mb: '2rem'}}>
           Setup and explore pre-made demos on your running Feldera instance
         </Typography>
         {demos.map(group => (

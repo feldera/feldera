@@ -86,3 +86,15 @@ export function replaceElement<T>(array: T[], replacement: (t: T) => T | null) {
   }
   return array
 }
+
+/**
+ * Returns a new array with a separator between each element in the source array
+ * Behaves similarly to String.join
+ * @param arr
+ * @param separator
+ * @returns
+ */
+export const intersperse = <T>(arr: T[], separator: T | ((i: number) => T)) => {
+  const getSeparator = separator instanceof Function ? separator : () => separator
+  return Array.from({ length: Math.max(0, arr.length * 2 - 1) }, (_, i) => (i % 2 ? getSeparator(i) : arr[i >> 1]))
+}
