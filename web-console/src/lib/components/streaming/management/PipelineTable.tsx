@@ -168,8 +168,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           if (params.row.connections.length > 0) {
             const records =
               (direction === 'input'
-                ? metrics.input.get(params.row.relation.name)?.total_records
-                : metrics.output.get(params.row.relation.name)?.transmitted_records) || 0
+                ? metrics.input.get(quotifyRelationName(params.row.relation))?.total_records
+                : metrics.output.get(quotifyRelationName(params.row.relation))?.transmitted_records) || 0
             return format(records > 1000 ? '.3s' : '~s')(records)
           } else {
             // TODO: we need to count records also when relation doesn't have
@@ -185,8 +185,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         renderCell: params => {
           const bytes =
             direction === 'input'
-              ? metrics.input.get(params.row.relation.name)?.total_bytes
-              : metrics.output.get(params.row.relation.name)?.transmitted_bytes
+              ? metrics.input.get(quotifyRelationName(params.row.relation))?.total_bytes
+              : metrics.output.get(quotifyRelationName(params.row.relation))?.transmitted_bytes
           return humanSize(bytes || 0)
         }
       },
@@ -198,10 +198,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           const errors =
             direction === 'input'
               ? (m => (m ? m.num_parse_errors + m.num_transport_errors : 0))(
-                  metrics.input.get(params.row.relation.name)
+                  metrics.input.get(quotifyRelationName(params.row.relation))
                 )
               : (m => (m ? m.num_encode_errors + m.num_transport_errors : 0))(
-                  metrics.output.get(params.row.relation.name)
+                  metrics.output.get(quotifyRelationName(params.row.relation))
                 )
           return (
             <Box
@@ -473,7 +473,7 @@ export default function PipelineTable() {
     {
       field: 'modification',
       headerName: 'Changes',
-      flex: 1,
+      width: 145,
       renderCell: (params: GridRenderCellParams<Pipeline>) => {
         return <PipelineRevisionStatusChip pipeline={params.row} />
       }
