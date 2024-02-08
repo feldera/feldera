@@ -127,7 +127,19 @@ const PipelineManagerApi = {
   listServices: ServicesService.listServices,
   getService: ServicesService.getService,
   newService: ServicesService.newService,
-  getDemos: ConfigurationService.getDemos
+  getDemos: () =>
+    ConfigurationService.getDemos().then(demos =>
+      Promise.all(
+        demos.map(async url => {
+          const demoBody = await fetch(url).then(r => r.json())
+          return {
+            url,
+            title: demoBody.title,
+            description: demoBody.description
+          }
+        })
+      )
+    )
 }
 
 export const makePipelineManagerQuery = ({

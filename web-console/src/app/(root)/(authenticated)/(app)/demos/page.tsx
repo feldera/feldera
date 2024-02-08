@@ -26,7 +26,7 @@ const DemoTile = (props: { name: string; desc: string; onSetup: () => void; onCl
         <IconButton onClick={props.onCleanup} sx={{ transform: 'rotate(180deg)' }}>
           <IconBrush fontSize={20} />
         </IconButton>
-        <Button onClick={props.onSetup} variant='contained' sx={{px: '1rem'}} endIcon={<IconChevronRight />}>
+        <Button onClick={props.onSetup} variant='contained' sx={{ px: '1rem' }} endIcon={<IconChevronRight />}>
           Try
         </Button>
       </CardActions>
