@@ -17,7 +17,7 @@
 //!   compiled pipelines and for interacting with them at runtime.
 
 mod api_key;
-mod auth_api;
+mod config_api;
 mod connector;
 mod examples;
 mod http_io;
@@ -149,7 +149,8 @@ request is rejected."
         api_key::list_api_keys,
         api_key::get_api_key,
         api_key::delete_api_key,
-        auth_api::get_authentication_config,
+        config_api::get_authentication_config,
+        config_api::get_demos,
     ),
     components(schemas(
         crate::auth::AuthProvider,
@@ -264,7 +265,7 @@ fn public_scope() -> Scope {
     // app, always attach other scopes without empty prefixes before this one,
     // or route resolution does not work correctly.
     web::scope("")
-        .service(auth_api::get_authentication_config)
+        .service(config_api::get_authentication_config)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
         .service(ResourceFiles::new("/", generated))
@@ -310,6 +311,7 @@ fn api_scope() -> Scope {
         .service(api_key::delete_api_key)
         .service(http_io::http_input)
         .service(http_io::http_output)
+        .service(config_api::get_demos)
 }
 
 struct SecurityAddon;
