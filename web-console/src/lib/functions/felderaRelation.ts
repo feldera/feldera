@@ -1,5 +1,4 @@
 import { Field, Relation } from '$lib/services/manager'
-import invariant from 'tiny-invariant'
 
 export type CaseDependentName = {
   case_sensitive?: boolean | undefined
@@ -10,11 +9,9 @@ export const quotifyRelationName = (relation: Relation) =>
   relation.case_sensitive ? `"${relation.name}"` : relation.name
 
 export const caseDependentName = (quotedRelationName: string) => {
-  const name = /\"?(\w+)\"?/.exec(quotedRelationName)?.[1]
-  invariant(name, `Invalid relation name parsed: ${name}`)
   return {
-    name,
-    case_sensitive: /\"/.test(quotedRelationName)
+    name: quotedRelationName.replaceAll('"', ''),
+    case_sensitive: quotedRelationName.includes('"')
   }
 }
 
