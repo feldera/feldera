@@ -1,7 +1,6 @@
 
 const UnpluginIcons = require("unplugin-icons/webpack")
 const { FileSystemIconLoader } = require("unplugin-icons/loaders")
-const CopyPlugin = require("copy-webpack-plugin")
 
 /** @type {import("next").NextConfig} */
 module.exports = {
@@ -55,11 +54,6 @@ module.exports = {
         }
       })
     )
-    config.plugins.push(new CopyPlugin({
-      patterns: [
-        { from: "../demo/demos", to: "static/demo/demos" },
-      ],
-    }))
     return config
   },
 }
