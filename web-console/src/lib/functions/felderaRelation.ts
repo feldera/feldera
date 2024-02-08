@@ -1,7 +1,7 @@
 import { Field, Relation } from '$lib/services/manager'
 
 export type CaseDependentName = {
-  case_sensitive?: boolean | undefined
+  case_sensitive?: boolean
   name: string
 }
 

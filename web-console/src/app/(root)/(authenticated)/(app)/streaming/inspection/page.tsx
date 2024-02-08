@@ -183,11 +183,17 @@ export default () => {
     return <></>
   }
   const { tables, views } = pipelineRevision
-  const relationType = tables.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
-    ? 'table'
-    : views.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
-      ? 'view'
-      : undefined
+  const relationType = (() => {
+    const validTable = tables.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
+    if (validTable) {
+      return 'table'
+    }
+    const validView = views.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
+    if (validView) {
+      return 'view'
+    }
+    return undefined
+  })()
 
   if (!relationType) {
     return (
