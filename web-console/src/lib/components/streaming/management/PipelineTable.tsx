@@ -22,7 +22,7 @@ import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQue
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
-import { quotifyRelationName } from '$lib/functions/felderaRelation'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ApiError, AttachedConnector, ConnectorDescr, PipelineRevision, Relation } from '$lib/services/manager'
 import {
   mutationDeletePipeline,
@@ -103,7 +103,7 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
 
   return relations.map(relation => {
     const connections = attachedConnectors
-      .filter(ac => ac.relation_name === quotifyRelationName(relation))
+      .filter(ac => ac.relation_name === getCaseIndependentName(relation))
       .map(ac => {
         const connector = connectors.find(c => c.name === ac?.connector_name)
         invariant(connector, 'Attached connector has no connector.') // This can't happen in a revision
@@ -156,7 +156,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
       },
       {
         field: 'config',
-        valueGetter: params => quotifyRelationName(params.row.relation),
+        valueGetter: params => getCaseIndependentName(params.row.relation),
         headerName: direction === 'input' ? 'Table' : 'View',
         flex: 0.6
       },
@@ -168,8 +168,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           if (params.row.connections.length > 0) {
             const records =
               (direction === 'input'
-                ? metrics.input.get(quotifyRelationName(params.row.relation))?.total_records
-                : metrics.output.get(quotifyRelationName(params.row.relation))?.transmitted_records) || 0
+                ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_records
+                : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_records) || 0
             return format(records > 1000 ? '.3s' : '~s')(records)
           } else {
             // TODO: we need to count records also when relation doesn't have
@@ -185,8 +185,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         renderCell: params => {
           const bytes =
             direction === 'input'
-              ? metrics.input.get(quotifyRelationName(params.row.relation))?.total_bytes
-              : metrics.output.get(quotifyRelationName(params.row.relation))?.transmitted_bytes
+              ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_bytes
+              : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_bytes
           return humanSize(bytes || 0)
         }
       },
@@ -198,10 +198,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           const errors =
             direction === 'input'
               ? (m => (m ? m.num_parse_errors + m.num_transport_errors : 0))(
-                  metrics.input.get(quotifyRelationName(params.row.relation))
+                  metrics.input.get(getCaseIndependentName(params.row.relation))
                 )
               : (m => (m ? m.num_encode_errors + m.num_transport_errors : 0))(
-                  metrics.output.get(quotifyRelationName(params.row.relation))
+                  metrics.output.get(getCaseIndependentName(params.row.relation))
                 )
           return (
             <Box
@@ -228,7 +228,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
             <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
               <IconButton
                 size='small'
-                href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${quotifyRelationName(
+                href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${getCaseIndependentName(
                   params.row.relation
                 )}`}
                 data-testid='button-inspect'
@@ -240,7 +240,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               <Tooltip title='Import Data'>
                 <IconButton
                   size='small'
-                  href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${quotifyRelationName(
+                  href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${getCaseIndependentName(
                     params.row.relation
                   )}#insert`}
                   data-testid='button-import'
@@ -541,19 +541,18 @@ export default function PipelineTable() {
       return
     }
     setExpandedRows(expandedRows =>
-      (expandedRows.includes(anchorPipelineId) ? expandedRows : [...expandedRows, anchorPipelineId]).filter(
-        row =>
-          data?.find(
-            p =>
-              p.descriptor.pipeline_id === row &&
-              [
-                PipelineStatus.PROVISIONING,
-                PipelineStatus.INITIALIZING,
-                PipelineStatus.PAUSED,
-                PipelineStatus.RUNNING,
-                PipelineStatus.SHUTTING_DOWN
-              ].includes(p.state.current_status)
-          )
+      (expandedRows.includes(anchorPipelineId) ? expandedRows : [...expandedRows, anchorPipelineId]).filter(row =>
+        data?.find(
+          p =>
+            p.descriptor.pipeline_id === row &&
+            [
+              PipelineStatus.PROVISIONING,
+              PipelineStatus.INITIALIZING,
+              PipelineStatus.PAUSED,
+              PipelineStatus.RUNNING,
+              PipelineStatus.SHUTTING_DOWN
+            ].includes(p.state.current_status)
+        )
       )
     )
   }, [anchorPipelineId, setExpandedRows, data])

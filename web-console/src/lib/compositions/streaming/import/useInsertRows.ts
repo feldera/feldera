@@ -2,7 +2,7 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import { getValueFormatter, Row } from '$lib/functions/ddl'
-import { quotifyRelationName } from '$lib/functions/felderaRelation'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ApiError, Field, HttpInputOutputService, Relation } from '$lib/services/manager'
 import Papa from 'papaparse'
 import { Dispatch, SetStateAction, useCallback } from 'react'
@@ -27,7 +27,7 @@ function useInsertRows() {
 
   const { mutate: pipelineInsert, isPending: pipelineInsertLoading } = useMutation<string, ApiError, Args>({
     mutationFn: ([pipelineName, relation, force, csvData]) => {
-      return HttpInputOutputService.httpInput(pipelineName, quotifyRelationName(relation), force, 'csv', csvData)
+      return HttpInputOutputService.httpInput(pipelineName, getCaseIndependentName(relation), force, 'csv', csvData)
     }
   })
 

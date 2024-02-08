@@ -1,5 +1,5 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { quotifyRelationName } from '$lib/functions/felderaRelation'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ApiError, HttpInputOutputService, Relation } from '$lib/services/manager'
 import { useCallback } from 'react'
 import JSONbig from 'true-json-bigint'
@@ -21,7 +21,7 @@ export function useInsertDeleteRows() {
     mutationFn: ([pipelineName, relation, force, rows, isArray]) => {
       return HttpInputOutputService.httpInput(
         pipelineName,
-        quotifyRelationName(relation),
+        getCaseIndependentName(relation),
         force,
         'json',
         isArray ? JSONbig.stringify(rows) : rows.map(row => JSONbig.stringify(row)).join(''),

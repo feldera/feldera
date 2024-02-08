@@ -5,7 +5,7 @@ import { Handle, Node } from '$lib/components/streaming/builder/NodeTypes'
 import { useDeleteNode, useDeleteNodeProgram } from '$lib/compositions/streaming/builder/useDeleteNode'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { zipDefault } from '$lib/functions/common/tuple'
-import { escapeRelationName, quotifyRelationName } from '$lib/functions/felderaRelation'
+import { escapeRelationName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ProgramDescr, Relation } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 import { TextIcon } from 'src/lib/components/common/TextIcon'
@@ -39,7 +39,7 @@ function SqlTableNode(props: { relation: Relation }) {
     <Box sx={{ ml: -6, mt: 3 }} style={{ position: 'relative' }}>
       <Chip
         sx={{ ml: 9, '.MuiChip-label': { textTransform: 'none' } }}
-        label={quotifyRelationName(props.relation)}
+        label={getCaseIndependentName(props.relation)}
         color='secondary'
         avatar={
           <Avatar>
@@ -49,12 +49,12 @@ function SqlTableNode(props: { relation: Relation }) {
       />
       {/* The table- prefix is important for the isValidConnection logic */}
       <Handle
-        id={'table-' + escapeRelationName(quotifyRelationName(props.relation))}
+        id={'table-' + escapeRelationName(getCaseIndependentName(props.relation))}
         type='target'
         position={Position.Left}
         isConnectable={true}
         isValidConnection={isValidConnection}
-        data-testid={'box-handle-table-' + quotifyRelationName(props.relation)}
+        data-testid={'box-handle-table-' + getCaseIndependentName(props.relation)}
       />
     </Box>
   )
@@ -77,7 +77,7 @@ function SqlViewNode(props: { relation: Relation }) {
     <Box sx={{ mr: -6, mt: 3, textAlign: 'right' }} style={{ position: 'relative' }}>
       <Chip
         sx={{ mr: 9, '.MuiChip-label': { textTransform: 'none' } }}
-        label={quotifyRelationName(props.relation)}
+        label={getCaseIndependentName(props.relation)}
         color='secondary'
         avatar={
           <Avatar>
@@ -87,12 +87,12 @@ function SqlViewNode(props: { relation: Relation }) {
       />
       {/* The view- prefix is important for the isValidConnection functions */}
       <Handle
-        id={'view-' + escapeRelationName(quotifyRelationName(props.relation))}
+        id={'view-' + escapeRelationName(getCaseIndependentName(props.relation))}
         type='source'
         position={Position.Right}
         isConnectable={true}
         isValidConnection={isValidConnection}
-        data-testid={'box-handle-view-' + quotifyRelationName(props.relation)}
+        data-testid={'box-handle-view-' + getCaseIndependentName(props.relation)}
       />
     </Box>
   )

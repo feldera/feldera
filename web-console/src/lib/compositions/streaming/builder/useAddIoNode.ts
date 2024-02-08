@@ -1,5 +1,5 @@
 import { randomString } from '$lib/functions/common/string'
-import { escapeRelationName, quotifyRelationName } from '$lib/functions/felderaRelation'
+import { escapeRelationName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { AttachedConnector, ProgramSchema } from '$lib/services/manager'
 import { ConnectorDescr } from '$lib/services/manager/models/ConnectorDescr'
 import { useCallback } from 'react'
@@ -14,7 +14,7 @@ export function connectorConnects(schema: ProgramSchema | null | undefined, ac: 
   if (!schema) {
     return false
   }
-  return (ac.is_input ? schema.inputs : schema.outputs).some(view => ac.relation_name === quotifyRelationName(view))
+  return (ac.is_input ? schema.inputs : schema.outputs).some(view => ac.relation_name === getCaseIndependentName(view))
 }
 
 /**

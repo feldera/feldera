@@ -12,12 +12,7 @@ import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTable
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
-import {
-  caseDependentName,
-  caseDependentNameEq,
-  quotifyFieldName,
-  quotifyRelationName
-} from '$lib/functions/felderaRelation'
+import { caseDependentName, caseDependentNameEq, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -35,7 +30,7 @@ const FETCH_QUANTILES = 100
 
 export type InspectionTableProps = {
   pipeline: Pipeline
-  quotedRelationName: string
+  caseIndependentName: string
 }
 
 // The number of rows we display in the table.
@@ -58,7 +53,7 @@ const INITIAL_PAGINATION_MODEL: GridPaginationModel = { pageSize: PAGE_SIZE, pag
  * @param param
  * @returns
  */
-const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTableProps) => {
+const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTableProps) => {
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
   const [paginationModel, setPaginationModel] = useState(INITIAL_PAGINATION_MODEL)
   const [neighborhood, setNeighborhood] = useState<NeighborhoodQuery>(DEFAULT_NEIGHBORHOOD)
@@ -89,14 +84,14 @@ const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTablePro
 
     const pipelineRevision = pipelineRevisionQuery.data
     const program = pipelineRevision.program
-    const tables = program.schema?.inputs.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
-    const views = program.schema?.outputs.find(caseDependentNameEq(caseDependentName(quotedRelationName)))
+    const tables = program.schema?.inputs.find(caseDependentNameEq(caseDependentName(caseIndependentName)))
+    const views = program.schema?.outputs.find(caseDependentNameEq(caseDependentName(caseIndependentName)))
     const relation = tables || views // name is unique in the schema
     if (!relation) {
       return
     }
     setRelation(relation)
-  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, quotedRelationName])
+  }, [pipelineRevisionQuery.isPending, pipelineRevisionQuery.isError, pipelineRevisionQuery.data, caseIndependentName])
 
   // Request to monitor the changes for the current rows in the table. This is
   // done by opening a stream request to the backend which then sends us the
@@ -110,7 +105,7 @@ const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTablePro
     updateTable(
       [
         pipeline.descriptor.name,
-        quotedRelationName,
+        caseIndependentName,
         'csv',
         OutputQuery.NEIGHBORHOOD,
         EgressMode.WATCH,
@@ -143,7 +138,7 @@ const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTablePro
       // requests and we don't want to exhaust that limit)
       controller.abort()
     }
-  }, [pipeline, quotedRelationName, relation, updateTable, throwError, neighborhood])
+  }, [pipeline, caseIndependentName, relation, updateTable, throwError, neighborhood])
 
   // Load quantiles for the relation we're displaying.
   const quantileLoader = useQuantiles()
@@ -159,7 +154,7 @@ const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTablePro
     const controller = new AbortController()
 
     quantileLoader(
-      [pipeline.descriptor.name, quotedRelationName, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
+      [pipeline.descriptor.name, caseIndependentName, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
       setQuantiles,
       relation,
       controller
@@ -184,7 +179,7 @@ const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTablePro
       // requests and we don't want to exhaust that limit)
       controller.abort()
     }
-  }, [pipeline, quotedRelationName, relation, quantileLoader, rows, throwError, quantiles])
+  }, [pipeline, caseIndependentName, relation, quantileLoader, rows, throwError, quantiles])
 
   // If the user presses the previous or next button, we update the neighborhood
   // which will trigger update the rows in the table.
@@ -199,7 +194,7 @@ const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTablePro
         const minRow = rows.find((row: any) => row.genId < 0)
         if (!minRow) {
           pushMessage({
-            message: `You reached the beginning of the ${quotifyRelationName(relation)} relation.`,
+            message: `You reached the beginning of the ${getCaseIndependentName(relation)} relation.`,
             key: new Date().getTime(),
             color: 'info'
           })
@@ -221,7 +216,7 @@ const useInspectionTable = ({ pipeline, quotedRelationName }: InspectionTablePro
           })
         } else {
           pushMessage({
-            message: `You reached the end of the ${quotifyRelationName(relation)} relation.`,
+            message: `You reached the end of the ${getCaseIndependentName(relation)} relation.`,
             key: new Date().getTime(),
             color: 'info'
           })
@@ -308,7 +303,7 @@ const InspectionTableImpl = ({
     rowCount: false
   }
   const gridPersistence = useDataGridPresentationLocalStorage({
-    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.name}/${quotifyRelationName(relation)}`,
+    key: LS_PREFIX + `settings/streaming/inspection/${pipeline.descriptor.name}/${getCaseIndependentName(relation)}`,
     defaultColumnVisibility
   })
 
@@ -323,9 +318,9 @@ const InspectionTableImpl = ({
         columns={relation.fields
           .map((col: Field) => {
             return {
-              field: quotifyFieldName(col),
-              headerName: quotifyFieldName(col),
-              description: quotifyFieldName(col),
+              field: getCaseIndependentName(col),
+              headerName: getCaseIndependentName(col),
+              description: getCaseIndependentName(col),
               flex: 1,
               valueGetter: (params: any) => {
                 return params.row.record[col.name]
@@ -370,7 +365,7 @@ const InspectionTableImpl = ({
           toolbar: {
             printOptions: { disableToolbarButton: true },
             csvOptions: {
-              fileName: quotifyRelationName(relation),
+              fileName: getCaseIndependentName(relation),
               delimiter: ',',
               utf8WithBom: true
             },

@@ -1,7 +1,7 @@
 // A dialog that displays a random generation settings form for every field in
 // the table.
 
-import { quotifyFieldName } from '$lib/functions/felderaRelation'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ColumnType, Field, Relation } from '$lib/services/manager'
 import { forwardRef, ReactElement, Ref, useState } from 'react'
 import { match, P } from 'ts-pattern'
@@ -97,10 +97,10 @@ const FieldRngSettings = (props: {
 
   return (
     <>
-      <Grid item xs={12} key={`${quotifyFieldName(field)}-${index}`}>
+      <Grid item xs={12} key={`${getCaseIndependentName(field)}-${index}`}>
         <Box sx={{ columnGap: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
           <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>
-            {index + 1}. {quotifyFieldName(field)}:
+            {index + 1}. {getCaseIndependentName(field)}:
           </Typography>
           <Typography sx={{ color: 'text.secondary' }}>{displayFieldType(field)}</Typography>
         </Box>
@@ -161,8 +161,8 @@ export const RngSettingsDialog = (props: {
               <FieldRngSettings
                 field={field}
                 index={i}
-                key={`${quotifyFieldName(field)}-${i}`}
-                fieldSettings={settings.get(quotifyFieldName(field))}
+                key={`${getCaseIndependentName(field)}-${i}`}
+                fieldSettings={settings.get(getCaseIndependentName(field))}
                 setSettings={setSettings}
               />
             ))}

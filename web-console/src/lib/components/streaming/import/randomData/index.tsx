@@ -3,7 +3,7 @@
 
 import { useDynamicValidationForm } from '$lib/compositions/streaming/import/useDynamicValidationForm/valibot'
 import { clampToSQL, ColumnTypeJS } from '$lib/functions/ddl'
-import { quotifyFieldName } from '$lib/functions/felderaRelation'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { Field } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 import dayjs from 'dayjs'
@@ -94,7 +94,7 @@ export const RngFieldSettings = (props: {
       clearErrors()
       setSettings(prev => {
         const newSettings = new Map(prev)
-        newSettings.set(quotifyFieldName(field), {
+        newSettings.set(getCaseIndependentName(field), {
           method: method.title,
           config: defaultValues
         })
@@ -137,14 +137,14 @@ export const RngFieldSettings = (props: {
       setParsedExample(clampToSQL(field.columntype)(newExample))
       setSettings(prev => {
         const newSettings = new Map(prev)
-        newSettings.set(quotifyFieldName(field), { method: selectedMethod.title, config: myFormData })
+        newSettings.set(getCaseIndependentName(field), { method: selectedMethod.title, config: myFormData })
         return newSettings
       })
     } else {
       setExample(undefined)
       setSettings(prev => {
         const newSettings = new Map(prev)
-        newSettings.delete(quotifyFieldName(field))
+        newSettings.delete(getCaseIndependentName(field))
         return newSettings
       })
     }

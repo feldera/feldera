@@ -10,7 +10,7 @@ import BigNumber from 'bignumber.js'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, MutableRefObject, ReactNode, SetStateAction, useCallback } from 'react'
-import { quotifyRelationName } from 'src/lib/functions/felderaRelation'
+import { getCaseIndependentName } from 'src/lib/functions/felderaRelation'
 import JSONbig from 'true-json-bigint'
 import IconDuplicate from '~icons/bx/duplicate'
 import IconPlusCircle from '~icons/bx/plus-circle'
@@ -57,7 +57,7 @@ const ImportToolbar = ({
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
 
   const [settings, setSettings] = useLocalStorage<Map<string, StoredFieldSettings>>({
-    key: [LS_PREFIX, 'rng-settings', pipelineRevision.program.program_id, quotifyRelationName(relation)].join('-'),
+    key: [LS_PREFIX, 'rng-settings', pipelineRevision.program.program_id, getCaseIndependentName(relation)].join('-'),
     serialize: value => {
       return JSONbig.stringify(Array.from(value.entries()))
     },

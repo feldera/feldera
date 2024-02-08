@@ -5,7 +5,7 @@ import { ProgramDescr } from '$lib/services/manager'
 import assert from 'assert'
 import { useCallback, useEffect } from 'react'
 import { Edge, getConnectedEdges, Instance, Node, ReactFlowState, useReactFlow, useStore } from 'reactflow'
-import { escapeRelationName, quotifyRelationName } from 'src/lib/functions/felderaRelation'
+import { escapeRelationName, getCaseIndependentName } from 'src/lib/functions/felderaRelation'
 
 // How much spacing we put after every input/output node
 const VERTICAL_SPACING = 20
@@ -102,7 +102,7 @@ function layoutNodesFixed(
   if (programNode[0].data?.program?.schema) {
     const schema = programNode[0].data.program.schema as NonNullable<ProgramDescr['schema']>
     schema.inputs.forEach((relation, index: number) => {
-      inputOrder.set(escapeRelationName(quotifyRelationName(relation)), index)
+      inputOrder.set(escapeRelationName(getCaseIndependentName(relation)), index)
     })
   }
   const inputNodes = sortInputConnectors(rawInputNodes, getEdges(), inputOrder).concat(
