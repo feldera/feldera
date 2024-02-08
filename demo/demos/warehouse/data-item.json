@@ -1,0 +1,200 @@
+{"insert": {"id": 1, "product_id": 15, "manufactured_at": "2023-06-17 10:54:07", "bought_at": "2024-01-01 00:02:44", "sold_at": null}}
+{"insert": {"id": 2, "product_id": 20, "manufactured_at": "2023-06-06 02:51:44", "bought_at": "2024-01-01 00:05:02", "sold_at": null}}
+{"insert": {"id": 3, "product_id": 10, "manufactured_at": "2023-12-25 21:41:47", "bought_at": "2024-01-01 00:06:43", "sold_at": null}}
+{"insert": {"id": 4, "product_id": 15, "manufactured_at": "2023-03-09 09:58:29", "bought_at": "2024-01-01 00:09:39", "sold_at": null}}
+{"insert": {"id": 5, "product_id": 18, "manufactured_at": "2023-10-06 08:47:00", "bought_at": "2024-01-01 00:11:20", "sold_at": null}}
+{"insert": {"id": 6, "product_id": 13, "manufactured_at": "2023-05-13 23:31:26", "bought_at": "2024-01-01 00:12:49", "sold_at": null}}
+{"insert": {"id": 7, "product_id": 18, "manufactured_at": "2023-01-12 12:59:42", "bought_at": "2024-01-01 00:14:41", "sold_at": null}}
+{"insert": {"id": 8, "product_id": 7, "manufactured_at": "2023-11-13 01:06:53", "bought_at": "2024-01-01 00:17:37", "sold_at": null}}
+{"insert": {"id": 9, "product_id": 20, "manufactured_at": "2023-11-12 15:22:07", "bought_at": "2024-01-01 00:20:29", "sold_at": null}}
+{"insert": {"id": 10, "product_id": 9, "manufactured_at": "2023-01-10 12:48:14", "bought_at": "2024-01-01 00:20:35", "sold_at": null}}
+{"insert": {"id": 11, "product_id": 6, "manufactured_at": "2023-02-11 02:30:53", "bought_at": "2024-01-01 00:23:11", "sold_at": null}}
+{"insert": {"id": 12, "product_id": 20, "manufactured_at": "2023-08-21 02:23:10", "bought_at": "2024-01-01 00:23:17", "sold_at": null}}
+{"insert": {"id": 13, "product_id": 11, "manufactured_at": "2023-04-28 15:31:51", "bought_at": "2024-01-01 00:23:53", "sold_at": null}}
+{"insert": {"id": 14, "product_id": 15, "manufactured_at": "2023-07-04 02:17:55", "bought_at": "2024-01-01 00:26:46", "sold_at": null}}
+{"insert": {"id": 15, "product_id": 10, "manufactured_at": "2023-05-16 14:47:51", "bought_at": "2024-01-01 00:29:17", "sold_at": null}}
+{"insert": {"id": 16, "product_id": 3, "manufactured_at": "2023-05-25 22:03:32", "bought_at": "2024-01-01 00:31:59", "sold_at": null}}
+{"insert": {"id": 17, "product_id": 11, "manufactured_at": "2023-10-04 15:18:59", "bought_at": "2024-01-01 00:33:11", "sold_at": null}}
+{"insert": {"id": 18, "product_id": 2, "manufactured_at": "2023-09-25 22:16:00", "bought_at": "2024-01-01 00:34:47", "sold_at": null}}
+{"insert": {"id": 19, "product_id": 4, "manufactured_at": "2023-07-12 11:34:10", "bought_at": "2024-01-01 00:34:50", "sold_at": null}}
+{"insert": {"id": 20, "product_id": 14, "manufactured_at": "2023-05-05 00:43:42", "bought_at": "2024-01-01 00:37:36", "sold_at": null}}
+{"insert": {"id": 21, "product_id": 3, "manufactured_at": "2023-07-29 19:05:34", "bought_at": "2024-01-01 00:39:58", "sold_at": null}}
+{"update": {"id": 15, "sold_at": "2024-01-01 00:40:03"}}
+{"insert": {"id": 22, "product_id": 4, "manufactured_at": "2023-09-20 08:25:59", "bought_at": "2024-01-01 00:41:44", "sold_at": null}}
+{"insert": {"id": 23, "product_id": 9, "manufactured_at": "2023-01-29 23:21:51", "bought_at": "2024-01-01 00:43:38", "sold_at": null}}
+{"insert": {"id": 24, "product_id": 8, "manufactured_at": "2023-02-26 18:30:12", "bought_at": "2024-01-01 00:44:55", "sold_at": null}}
+{"update": {"id": 19, "sold_at": "2024-01-01 00:45:10"}}
+{"insert": {"id": 25, "product_id": 12, "manufactured_at": "2023-04-05 05:52:18", "bought_at": "2024-01-01 00:48:05", "sold_at": null}}
+{"insert": {"id": 26, "product_id": 7, "manufactured_at": "2023-08-05 05:53:31", "bought_at": "2024-01-01 00:50:08", "sold_at": null}}
+{"insert": {"id": 27, "product_id": 12, "manufactured_at": "2023-07-04 13:10:18", "bought_at": "2024-01-01 00:52:16", "sold_at": null}}
+{"update": {"id": 20, "sold_at": "2024-01-01 00:52:40"}}
+{"update": {"id": 23, "sold_at": "2024-01-01 00:54:13"}}
+{"update": {"id": 7, "sold_at": "2024-01-01 00:56:26"}}
+{"update": {"id": 5, "sold_at": "2024-01-01 00:59:09"}}
+{"update": {"id": 16, "sold_at": "2024-01-01 01:01:48"}}
+{"insert": {"id": 28, "product_id": 18, "manufactured_at": "2023-09-27 23:50:56", "bought_at": "2024-01-01 01:03:34", "sold_at": null}}
+{"update": {"id": 22, "sold_at": "2024-01-01 01:04:02"}}
+{"insert": {"id": 29, "product_id": 15, "manufactured_at": "2023-08-01 18:55:40", "bought_at": "2024-01-01 01:05:39", "sold_at": null}}
+{"update": {"id": 27, "sold_at": "2024-01-01 01:08:04"}}
+{"insert": {"id": 30, "product_id": 13, "manufactured_at": "2023-05-20 14:43:01", "bought_at": "2024-01-01 01:09:14", "sold_at": null}}
+{"insert": {"id": 31, "product_id": 4, "manufactured_at": "2023-04-09 12:18:27", "bought_at": "2024-01-01 01:11:23", "sold_at": null}}
+{"update": {"id": 1, "sold_at": "2024-01-01 01:13:38"}}
+{"insert": {"id": 32, "product_id": 9, "manufactured_at": "2023-12-23 15:28:41", "bought_at": "2024-01-01 01:15:31", "sold_at": null}}
+{"insert": {"id": 33, "product_id": 1, "manufactured_at": "2023-06-17 07:01:53", "bought_at": "2024-01-01 01:16:54", "sold_at": null}}
+{"update": {"id": 10, "sold_at": "2024-01-01 01:19:25"}}
+{"update": {"id": 14, "sold_at": "2024-01-01 01:22:13"}}
+{"update": {"id": 24, "sold_at": "2024-01-01 01:23:49"}}
+{"insert": {"id": 34, "product_id": 4, "manufactured_at": "2023-11-20 13:59:43", "bought_at": "2024-01-01 01:24:39", "sold_at": null}}
+{"insert": {"id": 35, "product_id": 10, "manufactured_at": "2023-07-31 18:03:41", "bought_at": "2024-01-01 01:25:50", "sold_at": null}}
+{"update": {"id": 29, "sold_at": "2024-01-01 01:27:49"}}
+{"update": {"id": 12, "sold_at": "2024-01-01 01:29:15"}}
+{"insert": {"id": 36, "product_id": 11, "manufactured_at": "2023-02-13 14:29:26", "bought_at": "2024-01-01 01:29:49", "sold_at": null}}
+{"update": {"id": 35, "sold_at": "2024-01-01 01:30:20"}}
+{"insert": {"id": 37, "product_id": 7, "manufactured_at": "2023-11-16 01:42:17", "bought_at": "2024-01-01 01:33:15", "sold_at": null}}
+{"insert": {"id": 38, "product_id": 2, "manufactured_at": "2023-03-18 06:21:28", "bought_at": "2024-01-01 01:35:27", "sold_at": null}}
+{"update": {"id": 28, "sold_at": "2024-01-01 01:35:57"}}
+{"update": {"id": 33, "sold_at": "2024-01-01 01:37:38"}}
+{"insert": {"id": 39, "product_id": 8, "manufactured_at": "2023-10-06 15:13:29", "bought_at": "2024-01-01 01:40:27", "sold_at": null}}
+{"update": {"id": 34, "sold_at": "2024-01-01 01:42:52"}}
+{"insert": {"id": 40, "product_id": 7, "manufactured_at": "2023-08-27 01:35:56", "bought_at": "2024-01-01 01:43:55", "sold_at": null}}
+{"insert": {"id": 41, "product_id": 9, "manufactured_at": "2023-11-02 17:14:51", "bought_at": "2024-01-01 01:44:59", "sold_at": null}}
+{"update": {"id": 30, "sold_at": "2024-01-01 01:45:09"}}
+{"update": {"id": 37, "sold_at": "2024-01-01 01:46:32"}}
+{"insert": {"id": 42, "product_id": 16, "manufactured_at": "2023-04-30 05:55:23", "bought_at": "2024-01-01 01:46:35", "sold_at": null}}
+{"update": {"id": 18, "sold_at": "2024-01-01 01:48:43"}}
+{"insert": {"id": 43, "product_id": 8, "manufactured_at": "2023-03-14 20:18:24", "bought_at": "2024-01-01 01:51:35", "sold_at": null}}
+{"insert": {"id": 44, "product_id": 9, "manufactured_at": "2023-06-08 18:21:01", "bought_at": "2024-01-01 01:52:14", "sold_at": null}}
+{"update": {"id": 3, "sold_at": "2024-01-01 01:54:12"}}
+{"insert": {"id": 45, "product_id": 13, "manufactured_at": "2023-03-28 08:46:51", "bought_at": "2024-01-01 01:55:37", "sold_at": null}}
+{"insert": {"id": 46, "product_id": 13, "manufactured_at": "2023-02-23 23:34:34", "bought_at": "2024-01-01 01:56:44", "sold_at": null}}
+{"update": {"id": 17, "sold_at": "2024-01-01 01:59:20"}}
+{"insert": {"id": 47, "product_id": 15, "manufactured_at": "2023-07-26 01:37:37", "bought_at": "2024-01-01 01:59:21", "sold_at": null}}
+{"insert": {"id": 48, "product_id": 19, "manufactured_at": "2023-11-13 13:19:43", "bought_at": "2024-01-01 01:59:33", "sold_at": null}}
+{"update": {"id": 11, "sold_at": "2024-01-01 02:02:23"}}
+{"update": {"id": 8, "sold_at": "2024-01-01 02:02:58"}}
+{"update": {"id": 26, "sold_at": "2024-01-01 02:04:22"}}
+{"insert": {"id": 49, "product_id": 12, "manufactured_at": "2023-10-16 18:44:16", "bought_at": "2024-01-01 02:05:30", "sold_at": null}}
+{"update": {"id": 42, "sold_at": "2024-01-01 02:06:08"}}
+{"insert": {"id": 50, "product_id": 16, "manufactured_at": "2023-12-10 10:49:58", "bought_at": "2024-01-01 02:08:40", "sold_at": null}}
+{"insert": {"id": 51, "product_id": 6, "manufactured_at": "2023-06-12 01:29:49", "bought_at": "2024-01-01 02:09:44", "sold_at": null}}
+{"insert": {"id": 52, "product_id": 1, "manufactured_at": "2023-07-26 23:22:04", "bought_at": "2024-01-01 02:10:21", "sold_at": null}}
+{"update": {"id": 2, "sold_at": "2024-01-01 02:11:20"}}
+{"update": {"id": 13, "sold_at": "2024-01-01 02:11:57"}}
+{"update": {"id": 43, "sold_at": "2024-01-01 02:13:07"}}
+{"update": {"id": 6, "sold_at": "2024-01-01 02:14:18"}}
+{"insert": {"id": 53, "product_id": 15, "manufactured_at": "2023-11-17 22:11:27", "bought_at": "2024-01-01 02:15:13", "sold_at": null}}
+{"update": {"id": 32, "sold_at": "2024-01-01 02:16:39"}}
+{"insert": {"id": 54, "product_id": 10, "manufactured_at": "2023-11-22 09:04:04", "bought_at": "2024-01-01 02:17:51", "sold_at": null}}
+{"insert": {"id": 55, "product_id": 15, "manufactured_at": "2023-04-22 10:41:09", "bought_at": "2024-01-01 02:19:35", "sold_at": null}}
+{"update": {"id": 31, "sold_at": "2024-01-01 02:21:36"}}
+{"insert": {"id": 56, "product_id": 20, "manufactured_at": "2023-08-06 15:50:02", "bought_at": "2024-01-01 02:23:39", "sold_at": null}}
+{"insert": {"id": 57, "product_id": 17, "manufactured_at": "2023-06-19 05:33:57", "bought_at": "2024-01-01 02:23:40", "sold_at": null}}
+{"update": {"id": 49, "sold_at": "2024-01-01 02:25:19"}}
+{"insert": {"id": 58, "product_id": 3, "manufactured_at": "2023-04-29 20:12:48", "bought_at": "2024-01-01 02:27:51", "sold_at": null}}
+{"insert": {"id": 59, "product_id": 20, "manufactured_at": "2023-10-23 04:43:51", "bought_at": "2024-01-01 02:29:23", "sold_at": null}}
+{"insert": {"id": 60, "product_id": 5, "manufactured_at": "2023-06-06 23:26:25", "bought_at": "2024-01-01 02:30:32", "sold_at": null}}
+{"update": {"id": 54, "sold_at": "2024-01-01 02:30:35"}}
+{"update": {"id": 39, "sold_at": "2024-01-01 02:30:35"}}
+{"insert": {"id": 61, "product_id": 10, "manufactured_at": "2023-04-16 22:14:31", "bought_at": "2024-01-01 02:31:59", "sold_at": null}}
+{"insert": {"id": 62, "product_id": 11, "manufactured_at": "2023-07-25 10:54:44", "bought_at": "2024-01-01 02:34:51", "sold_at": null}}
+{"update": {"id": 9, "sold_at": "2024-01-01 02:34:51"}}
+{"update": {"id": 21, "sold_at": "2024-01-01 02:36:12"}}
+{"insert": {"id": 63, "product_id": 9, "manufactured_at": "2023-07-10 08:22:35", "bought_at": "2024-01-01 02:36:49", "sold_at": null}}
+{"insert": {"id": 64, "product_id": 1, "manufactured_at": "2023-11-23 00:31:18", "bought_at": "2024-01-01 02:39:04", "sold_at": null}}
+{"insert": {"id": 65, "product_id": 11, "manufactured_at": "2023-11-22 09:33:30", "bought_at": "2024-01-01 02:39:21", "sold_at": null}}
+{"insert": {"id": 66, "product_id": 3, "manufactured_at": "2023-03-16 00:00:51", "bought_at": "2024-01-01 02:40:51", "sold_at": null}}
+{"insert": {"id": 67, "product_id": 19, "manufactured_at": "2023-11-04 17:27:16", "bought_at": "2024-01-01 02:41:10", "sold_at": null}}
+{"update": {"id": 25, "sold_at": "2024-01-01 02:43:17"}}
+{"insert": {"id": 68, "product_id": 2, "manufactured_at": "2023-03-18 07:21:49", "bought_at": "2024-01-01 02:44:43", "sold_at": null}}
+{"insert": {"id": 69, "product_id": 6, "manufactured_at": "2023-07-05 18:38:53", "bought_at": "2024-01-01 02:45:07", "sold_at": null}}
+{"insert": {"id": 70, "product_id": 17, "manufactured_at": "2023-04-06 16:49:54", "bought_at": "2024-01-01 02:47:48", "sold_at": null}}
+{"insert": {"id": 71, "product_id": 3, "manufactured_at": "2023-08-21 09:07:22", "bought_at": "2024-01-01 02:50:33", "sold_at": null}}
+{"insert": {"id": 72, "product_id": 14, "manufactured_at": "2023-06-11 06:16:23", "bought_at": "2024-01-01 02:52:13", "sold_at": null}}
+{"insert": {"id": 73, "product_id": 13, "manufactured_at": "2023-08-07 11:52:38", "bought_at": "2024-01-01 02:55:06", "sold_at": null}}
+{"update": {"id": 36, "sold_at": "2024-01-01 02:56:30"}}
+{"insert": {"id": 74, "product_id": 13, "manufactured_at": "2023-03-05 13:08:02", "bought_at": "2024-01-01 02:58:33", "sold_at": null}}
+{"update": {"id": 69, "sold_at": "2024-01-01 03:00:04"}}
+{"update": {"id": 65, "sold_at": "2024-01-01 03:02:04"}}
+{"insert": {"id": 75, "product_id": 9, "manufactured_at": "2023-07-24 12:38:26", "bought_at": "2024-01-01 03:03:47", "sold_at": null}}
+{"update": {"id": 55, "sold_at": "2024-01-01 03:05:46"}}
+{"update": {"id": 73, "sold_at": "2024-01-01 03:07:17"}}
+{"update": {"id": 48, "sold_at": "2024-01-01 03:07:42"}}
+{"update": {"id": 68, "sold_at": "2024-01-01 03:09:06"}}
+{"update": {"id": 47, "sold_at": "2024-01-01 03:10:25"}}
+{"update": {"id": 59, "sold_at": "2024-01-01 03:10:27"}}
+{"update": {"id": 74, "sold_at": "2024-01-01 03:11:25"}}
+{"update": {"id": 64, "sold_at": "2024-01-01 03:12:43"}}
+{"insert": {"id": 76, "product_id": 18, "manufactured_at": "2023-02-15 19:09:31", "bought_at": "2024-01-01 03:13:25", "sold_at": null}}
+{"update": {"id": 51, "sold_at": "2024-01-01 03:16:08"}}
+{"update": {"id": 62, "sold_at": "2024-01-01 03:18:12"}}
+{"update": {"id": 58, "sold_at": "2024-01-01 03:19:31"}}
+{"insert": {"id": 77, "product_id": 12, "manufactured_at": "2023-04-11 03:39:36", "bought_at": "2024-01-01 03:20:07", "sold_at": null}}
+{"update": {"id": 72, "sold_at": "2024-01-01 03:20:13"}}
+{"insert": {"id": 78, "product_id": 4, "manufactured_at": "2023-08-28 04:28:32", "bought_at": "2024-01-01 03:22:37", "sold_at": null}}
+{"update": {"id": 45, "sold_at": "2024-01-01 03:25:23"}}
+{"insert": {"id": 79, "product_id": 15, "manufactured_at": "2023-06-26 18:34:33", "bought_at": "2024-01-01 03:27:11", "sold_at": null}}
+{"insert": {"id": 80, "product_id": 13, "manufactured_at": "2023-02-22 16:52:45", "bought_at": "2024-01-01 03:27:56", "sold_at": null}}
+{"insert": {"id": 81, "product_id": 6, "manufactured_at": "2023-03-13 01:50:53", "bought_at": "2024-01-01 03:28:11", "sold_at": null}}
+{"update": {"id": 63, "sold_at": "2024-01-01 03:30:25"}}
+{"update": {"id": 41, "sold_at": "2024-01-01 03:30:44"}}
+{"update": {"id": 78, "sold_at": "2024-01-01 03:32:11"}}
+{"update": {"id": 79, "sold_at": "2024-01-01 03:32:56"}}
+{"update": {"id": 75, "sold_at": "2024-01-01 03:34:20"}}
+{"insert": {"id": 82, "product_id": 11, "manufactured_at": "2023-08-07 01:28:30", "bought_at": "2024-01-01 03:37:19", "sold_at": null}}
+{"insert": {"id": 83, "product_id": 1, "manufactured_at": "2023-11-18 12:59:04", "bought_at": "2024-01-01 03:39:50", "sold_at": null}}
+{"update": {"id": 71, "sold_at": "2024-01-01 03:42:42"}}
+{"insert": {"id": 84, "product_id": 5, "manufactured_at": "2023-07-19 10:42:47", "bought_at": "2024-01-01 03:43:46", "sold_at": null}}
+{"update": {"id": 46, "sold_at": "2024-01-01 03:46:36"}}
+{"update": {"id": 67, "sold_at": "2024-01-01 03:46:55"}}
+{"insert": {"id": 85, "product_id": 12, "manufactured_at": "2023-01-04 17:28:17", "bought_at": "2024-01-01 03:48:47", "sold_at": null}}
+{"update": {"id": 83, "sold_at": "2024-01-01 03:49:15"}}
+{"insert": {"id": 86, "product_id": 16, "manufactured_at": "2023-06-23 18:16:48", "bought_at": "2024-01-01 03:51:34", "sold_at": null}}
+{"update": {"id": 82, "sold_at": "2024-01-01 03:53:53"}}
+{"insert": {"id": 87, "product_id": 5, "manufactured_at": "2023-06-24 06:06:36", "bought_at": "2024-01-01 03:54:12", "sold_at": null}}
+{"update": {"id": 76, "sold_at": "2024-01-01 03:55:02"}}
+{"insert": {"id": 88, "product_id": 15, "manufactured_at": "2023-01-07 15:28:54", "bought_at": "2024-01-01 03:57:06", "sold_at": null}}
+{"insert": {"id": 89, "product_id": 14, "manufactured_at": "2023-10-30 20:15:59", "bought_at": "2024-01-01 03:57:23", "sold_at": null}}
+{"insert": {"id": 90, "product_id": 10, "manufactured_at": "2023-09-14 18:57:40", "bought_at": "2024-01-01 03:57:25", "sold_at": null}}
+{"insert": {"id": 91, "product_id": 17, "manufactured_at": "2023-05-23 21:50:06", "bought_at": "2024-01-01 03:59:36", "sold_at": null}}
+{"insert": {"id": 92, "product_id": 13, "manufactured_at": "2023-10-28 20:01:03", "bought_at": "2024-01-01 04:01:47", "sold_at": null}}
+{"insert": {"id": 93, "product_id": 10, "manufactured_at": "2023-01-16 19:16:26", "bought_at": "2024-01-01 04:02:57", "sold_at": null}}
+{"update": {"id": 89, "sold_at": "2024-01-01 04:04:08"}}
+{"update": {"id": 81, "sold_at": "2024-01-01 04:04:36"}}
+{"insert": {"id": 94, "product_id": 4, "manufactured_at": "2023-08-03 14:02:59", "bought_at": "2024-01-01 04:07:36", "sold_at": null}}
+{"insert": {"id": 95, "product_id": 18, "manufactured_at": "2023-09-18 17:49:13", "bought_at": "2024-01-01 04:09:12", "sold_at": null}}
+{"update": {"id": 57, "sold_at": "2024-01-01 04:09:53"}}
+{"insert": {"id": 96, "product_id": 4, "manufactured_at": "2023-12-12 16:26:19", "bought_at": "2024-01-01 04:10:26", "sold_at": null}}
+{"insert": {"id": 97, "product_id": 13, "manufactured_at": "2023-11-13 17:49:51", "bought_at": "2024-01-01 04:11:13", "sold_at": null}}
+{"insert": {"id": 98, "product_id": 5, "manufactured_at": "2023-10-05 22:20:56", "bought_at": "2024-01-01 04:13:42", "sold_at": null}}
+{"update": {"id": 87, "sold_at": "2024-01-01 04:15:26"}}
+{"update": {"id": 85, "sold_at": "2024-01-01 04:17:42"}}
+{"insert": {"id": 99, "product_id": 6, "manufactured_at": "2023-08-29 17:48:47", "bought_at": "2024-01-01 04:19:31", "sold_at": null}}
+{"update": {"id": 84, "sold_at": "2024-01-01 04:19:49"}}
+{"update": {"id": 66, "sold_at": "2024-01-01 04:22:24"}}
+{"update": {"id": 94, "sold_at": "2024-01-01 04:24:32"}}
+{"insert": {"id": 100, "product_id": 12, "manufactured_at": "2023-06-22 09:30:14", "bought_at": "2024-01-01 04:24:34", "sold_at": null}}
+{"insert": {"id": 101, "product_id": 8, "manufactured_at": "2023-02-08 05:17:06", "bought_at": "2024-01-01 04:27:26", "sold_at": null}}
+{"update": {"id": 91, "sold_at": "2024-01-01 04:28:23"}}
+{"insert": {"id": 102, "product_id": 1, "manufactured_at": "2023-08-21 04:08:14", "bought_at": "2024-01-01 04:29:38", "sold_at": null}}
+{"insert": {"id": 103, "product_id": 15, "manufactured_at": "2023-02-06 23:22:34", "bought_at": "2024-01-01 04:29:49", "sold_at": null}}
+{"update": {"id": 4, "sold_at": "2024-01-01 04:31:41"}}
+{"update": {"id": 101, "sold_at": "2024-01-01 04:34:34"}}
+{"insert": {"id": 104, "product_id": 8, "manufactured_at": "2023-04-04 02:06:05", "bought_at": "2024-01-01 04:36:34", "sold_at": null}}
+{"update": {"id": 61, "sold_at": "2024-01-01 04:39:04"}}
+{"update": {"id": 98, "sold_at": "2024-01-01 04:41:30"}}
+{"update": {"id": 86, "sold_at": "2024-01-01 04:43:32"}}
+{"insert": {"id": 105, "product_id": 7, "manufactured_at": "2023-08-27 05:23:54", "bought_at": "2024-01-01 04:46:12", "sold_at": null}}
+{"insert": {"id": 106, "product_id": 10, "manufactured_at": "2023-06-16 05:55:11", "bought_at": "2024-01-01 04:46:34", "sold_at": null}}
+{"update": {"id": 77, "sold_at": "2024-01-01 04:47:10"}}
+{"insert": {"id": 107, "product_id": 11, "manufactured_at": "2023-08-10 18:27:02", "bought_at": "2024-01-01 04:50:03", "sold_at": null}}
+{"update": {"id": 50, "sold_at": "2024-01-01 04:50:18"}}
+{"insert": {"id": 108, "product_id": 13, "manufactured_at": "2023-08-29 13:57:04", "bought_at": "2024-01-01 04:50:30", "sold_at": null}}
+{"update": {"id": 100, "sold_at": "2024-01-01 04:51:08"}}
+{"update": {"id": 104, "sold_at": "2024-01-01 04:51:33"}}
+{"update": {"id": 70, "sold_at": "2024-01-01 04:52:10"}}
+{"update": {"id": 96, "sold_at": "2024-01-01 04:54:25"}}
+{"insert": {"id": 109, "product_id": 14, "manufactured_at": "2023-10-18 08:34:00", "bought_at": "2024-01-01 04:56:44", "sold_at": null}}
+{"insert": {"id": 110, "product_id": 13, "manufactured_at": "2023-05-08 09:45:27", "bought_at": "2024-01-01 04:59:13", "sold_at": null}}
+{"insert": {"id": 111, "product_id": 7, "manufactured_at": "2023-09-07 11:18:41", "bought_at": "2024-01-01 05:02:00", "sold_at": null}}
+{"update": {"id": 99, "sold_at": "2024-01-01 05:04:26"}}
+{"update": {"id": 95, "sold_at": "2024-01-01 05:06:11"}}
