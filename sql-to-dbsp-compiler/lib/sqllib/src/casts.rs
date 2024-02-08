@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use crate::{geopoint::*, interval::*, some_polymorphic_function1, timestamp::*};
+use crate::{geopoint::*, interval::*, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
@@ -13,6 +13,29 @@ use rust_decimal::Decimal;
 
 const FLOAT_DISPLAY_PRECISION: usize = 6;
 const DOUBLE_DISPLAY_PRECISION: usize = 15;
+
+// Creates three cast functions based on an existing one
+macro_rules! cast_function {
+    ($result_name: ident, $result_type: ty, $type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_ $result_name N_ $type_name>]( value: $arg_type ) -> Option<$result_type> {
+                Some([<cast_to_ $result_name _ $type_name>](value))
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_name _ $type_name N >]( value: Option<$arg_type> ) -> $result_type {
+                [<cast_to_ $result_name _ $type_name>](value.unwrap())
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_name N_ $type_name N >]( value: Option<$arg_type> ) -> Option<$result_type> {
+                let value = value?;
+                Some([<cast_to_ $result_name _ $type_name >](value))
+            }
+        }
+    };
+}
 
 /////////// cast to b
 
@@ -119,16 +142,16 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> Option<bool> {
 
 /////////// cast to date
 
-// TODO
-
 #[inline]
 pub fn cast_to_Date_s(value: String) -> Date {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok();
     match dt {
         Some(value) => Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32),
-        None => Date::default(),
+        None => panic!("Could not parse string '{value}' as a Date"),
     }
 }
+
+cast_function!(Date, Date, s, String);
 
 pub fn cast_to_Date_Timestamp(value: Timestamp) -> Date {
     let dt = value.to_dateTime();
@@ -137,51 +160,31 @@ pub fn cast_to_Date_Timestamp(value: Timestamp) -> Date {
     Date::new((seconds / 86400i64) as i32)
 }
 
-some_polymorphic_function1!(cast_to_Date, s, String, Date);
-some_polymorphic_function1!(cast_to_Date, Timestamp, Timestamp, Date);
+cast_function!(Date, Date, Timestamp, Timestamp);
 
 #[inline]
 pub fn cast_to_DateN_nullN(_value: Option<()>) -> Option<Date> {
     None
 }
 
-/*
-#[inline]
-pub fn cast_to_DateN_s(value: String) -> Option<Date> {
-    let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d");
-    dt.ok()
-        .map(|value| Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32))
-}
-*/
-
 #[inline]
 pub fn cast_to_Date_Date(value: Date) -> Date {
     value
 }
 
-#[inline]
-pub fn cast_to_Date_DateN(value: Option<Date>) -> Date {
-    value.unwrap()
-}
-
-#[inline]
-pub fn cast_to_DateN_Date(value: Date) -> Option<Date> {
-    Some(value)
-}
+cast_function!(Date, Date, Date, Date);
 
 /////////// cast to Time
-
-// TODO
 
 #[inline]
 pub fn cast_to_Time_s(value: String) -> Time {
     match NaiveTime::parse_from_str(&value, "%H:%M:%S%.f").ok() {
-        None => Time::default(),
+        None => panic!("Could not parse string '{value}' as a Time"),
         Some(value) => Time::from_time(value),
     }
 }
 
-/////////// cast to TimeN
+cast_function!(Time, Time, s, String);
 
 #[inline]
 pub fn cast_to_TimeN_nullN(_value: Option<()>) -> Option<Time> {
@@ -189,15 +192,11 @@ pub fn cast_to_TimeN_nullN(_value: Option<()>) -> Option<Time> {
 }
 
 #[inline]
-pub fn cast_to_TimeN_s(value: String) -> Option<Time> {
-    let time = NaiveTime::parse_from_str(&value, "%H:%M:%S%.f");
-    time.ok().map(Time::from_time)
+pub fn cast_to_Time_Time(value: Time) -> Time {
+    value
 }
 
-#[inline]
-pub fn cast_to_TimeN_time(value: Time) -> Option<Time> {
-    Some(value)
-}
+cast_function!(Time, Time, Time, Time);
 
 /////////// cast to decimal
 
@@ -1305,23 +1304,6 @@ pub fn cast_to_ShortIntervalN_nullN(_value: Option<()>) -> Option<ShortInterval>
 
 #[inline]
 pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
-    cast_to_TimestampN_s(value).unwrap_or_default()
-}
-
-#[inline]
-pub fn cast_to_Timestamp_Date(value: Date) -> Timestamp {
-    value.to_timestamp()
-}
-
-//////// casts to TimestampN
-
-#[inline]
-pub fn cast_to_TimestampN_nullN(_value: Option<()>) -> Option<Timestamp> {
-    None
-}
-
-#[inline]
-pub fn cast_to_TimestampN_s(value: String) -> Option<Timestamp> {
     if let Ok(v) = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f") {
         // round the number of milliseconds
         let nanos = v.timestamp_subsec_nanos();
@@ -1329,7 +1311,7 @@ pub fn cast_to_TimestampN_s(value: String) -> Option<Timestamp> {
         let result = Timestamp::new(v.timestamp() * 1000 + (nanos as i64));
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.milliseconds());
-        return Some(result);
+        return result;
     }
 
     // Try just a date.
@@ -1339,32 +1321,34 @@ pub fn cast_to_TimestampN_s(value: String) -> Option<Timestamp> {
         let result = Timestamp::new(dt.timestamp_millis());
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d", result, result.milliseconds());
-        return Some(result);
+        return result;
     }
 
-    //println!("Failed to parse {}", value);
+    panic!("Failed to parse '{value}' as a Timestamp");
+}
+
+cast_function!(Timestamp, Timestamp, s, String);
+
+#[inline]
+pub fn cast_to_Timestamp_Date(value: Date) -> Timestamp {
+    value.to_timestamp()
+}
+
+cast_function!(Timestamp, Timestamp, Date, Date);
+
+#[inline]
+pub fn cast_to_TimestampN_nullN(_value: Option<()>) -> Option<Timestamp> {
     None
 }
 
 #[inline]
-pub fn cast_to_TimestampN_sN(value: Option<String>) -> Option<Timestamp> {
-    match value {
-        None => None,
-        Some(x) => cast_to_TimestampN_s(x),
-    }
+pub fn cast_to_Timestamp_Timestamp(value: Timestamp) -> Timestamp {
+    value
 }
 
-#[inline]
-pub fn cast_to_TimestampN_Timestamp(value: Timestamp) -> Option<Timestamp> {
-    Some(value)
-}
+cast_function!(Timestamp, Timestamp, Timestamp, Timestamp);
 
-#[inline]
-pub fn cast_to_TimestampN_DateN(value: Option<Date>) -> Option<Timestamp> {
-    value.map(cast_to_Timestamp_Date)
-}
-
-/////////// cast to u
+//////////////////// Other casts
 
 #[inline]
 pub fn cast_to_u_i32(value: i32) -> usize {

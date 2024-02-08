@@ -9,8 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
 - API: endpoint to get a list of demo URLs
   ([#1385](https://github.com/feldera/feldera/pull/1385))
+
+### Changed
+
+- SQL: Illegal date literals and parsing illegal dates cause runtime
+  errors instead of producing `NULL`  ([#1398](https://github.com/feldera/feldera/pull/1398))
 
 ## [0.9.0] - 2024-02-06
 

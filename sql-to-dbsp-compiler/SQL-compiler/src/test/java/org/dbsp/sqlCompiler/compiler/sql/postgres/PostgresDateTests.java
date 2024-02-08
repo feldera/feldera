@@ -25,13 +25,10 @@ package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.util.Linq;
 import org.junit.Test;
 
@@ -51,8 +48,8 @@ public class PostgresDateTests extends SqlIoTest {
                 "INSERT INTO DATE_TBL VALUES ('1996-03-01');\n" +
                 "INSERT INTO DATE_TBL VALUES ('1996-03-02');\n" +
                 "INSERT INTO DATE_TBL VALUES ('1997-02-28');\n" +
-                // illegal date; this fails in Postgres, but inserts a NULL in Calcite.
-                "INSERT INTO DATE_TBL VALUES ('1997-02-29');\n" +
+                // illegal date
+                // "INSERT INTO DATE_TBL VALUES ('1997-02-29');\n" +
                 "INSERT INTO DATE_TBL VALUES ('1997-03-01');\n" +
                 "INSERT INTO DATE_TBL VALUES ('1997-03-02');\n" +
                 "INSERT INTO DATE_TBL VALUES ('2000-04-01');\n" +
@@ -86,8 +83,7 @@ public class PostgresDateTests extends SqlIoTest {
                 04-03-2000
                 04-08-2038
                 04-09-2039
-                04-10-2040
-                null""");  // The invalid date
+                04-10-2040""");
     }
 
     @Test
@@ -935,13 +931,11 @@ public class PostgresDateTests extends SqlIoTest {
                 14710L,
                 //-1475115L
         };
-        // TODO: why is the output an integer instead of an interval?
+        // TODO: why is the output an integer instead of an interval in Postgres?
         DBSPZSetLiteral.Contents result =
                 new DBSPZSetLiteral.Contents(Linq.map(results,
                         l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(
                                 l * 86400 * 1000, true)), DBSPExpression.class));
-        result.add(new DBSPTupleExpression(DBSPLiteral.none(
-                new DBSPTypeMillisInterval(CalciteObject.EMPTY, true))));
         this.compare(query, result, true);
     }
 
@@ -1038,8 +1032,7 @@ public class PostgresDateTests extends SqlIoTest {
                  04-03-2000    |  2000 |     4 |   3 |       2 |    200 |      20 |          2 |    2000 |   14 |   2 |      1 |  94 |     954720000
                  04-08-2038    |  2038 |     4 |   8 |       2 |    203 |      21 |          3 |    2038 |   14 |   5 |      4 |  98 |    2154297600
                  04-09-2039    |  2039 |     4 |   9 |       2 |    203 |      21 |          3 |    2039 |   14 |   7 |      6 |  99 |    2185920000
-                 04-10-2040    |  2040 |     4 |  10 |       2 |    204 |      21 |          3 |    2040 |   15 |   3 |      2 | 101 |    2217628800
-                               |       |       |     |         |        |         |            |         |      |     |        |     |              \s"""
+                 04-10-2040    |  2040 |     4 |  10 |       2 |    204 |      21 |          3 |    2040 |   15 |   3 |      2 | 101 |    2217628800"""
                 //" 04-10-2040 BC | -2040 |     4 |  10 |       2 |   -204 |     -21 |         -3 |   -2040 |   15 |   2 |      1 | 100 | -126503251200"
                 );
     }

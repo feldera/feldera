@@ -845,6 +845,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return new DBSPApplyExpression(node, opName, type, ops.get(0), ops.get(1));
                     case "repeat":
                     case "left":
+                    case "format_date":
                         return this.compileFunction(call, node, type, ops, 2);
                     case "replace":
                         return this.compileFunction(call, node, type, ops, 3);
