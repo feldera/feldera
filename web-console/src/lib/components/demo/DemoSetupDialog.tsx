@@ -1,3 +1,4 @@
+import { intersperse } from '$lib/functions/common/array'
 import { demoFormResolver } from '$lib/functions/demo/demoSetupDialog'
 import { DemoSetupProgress, runDemoSetup } from '$lib/functions/demo/runDemo'
 import { Arguments } from '$lib/types/common/function'
@@ -95,7 +96,7 @@ const DemoSetupFormContent = ({
     <>
       <DialogTitle>Setup {props.demo.name} demo</DialogTitle>
       <DialogContent>
-        <DialogContentText>This prefix will be added to the name of every entity in the demo.</DialogContentText>
+        <DialogContentText>This prefix will be added to the name of every item in the demo.</DialogContentText>
       </DialogContent>
       <DialogContent>
         <TextFieldElement
@@ -111,11 +112,7 @@ const DemoSetupFormContent = ({
       <DialogContent>
         {hasConflict && (
           <Alert severity='warning'>
-            {props.progress ? (
-              <>Some entities were overwritten</>
-            ) : (
-              <>Some entities with this prefix will be overwritten</>
-            )}
+            {props.progress ? <>Some items were overwritten</> : <>With this prefix, some items will be overwritten</>}
           </Alert>
         )}
         <LinearProgress
@@ -131,17 +128,31 @@ const DemoSetupFormContent = ({
             { label: 'Create connectors', type: 'connector' as const },
             { label: 'Create pipelines', type: 'pipeline' as const }
           ].map(step => (
-            <Step key={step.label} sx={{ m: 0 }} expanded>
+            <Step key={step.label} sx={{ m: 0 }} expanded active>
               <StepLabel sx={{ display: 'flex' }}>
                 <Box sx={{ display: 'flex' }}>{step.label}</Box>
               </StepLabel>
               <StepContent>
-                <Typography variant='body2'>
-                  {setupScope.data?.entities
-                    .filter(e => e.type === step.type)
-                    .map(e => prefix + e.name)
-                    .join(', ')}
-                </Typography>
+                <span>
+                  {intersperse(
+                    setupScope.data?.entities
+                      .filter(e => e.type === step.type)
+                      .map((e, i) => (
+                        <Typography
+                          component='span'
+                          key={i * 2}
+                          variant='body2'
+                          color={e.exists ? 'warning.contrastText' : undefined}
+                          sx={{ whiteSpace: 'nowrap' }}
+                        >
+                          {prefix + e.name}
+                        </Typography>
+                      )) ?? [],
+                    i => <Typography key={i} component='span' color='text.secondary'>
+                      ,{' '}
+                    </Typography>
+                  )}
+                </span>
               </StepContent>
             </Step>
           ))}
@@ -161,7 +172,7 @@ const DemoSetupFormContent = ({
                 href={'/streaming/management/#' + resultEntities.pipeline.name}
                 LinkComponent={Link}
               >
-                Run pipeline
+                Go to pipeline
               </Button>
             ) : resultEntities.program ? (
               <Button

@@ -72,7 +72,7 @@ const DemoCleanupFormContent = ({
     <>
       <DialogTitle>Clean up after {props.demo.name} demo</DialogTitle>
       <DialogContent>
-        <DialogContentText>Every entity with this prefix will be removed.</DialogContentText>
+        <DialogContentText>Every item with this prefix will be removed.</DialogContentText>
       </DialogContent>
       <DialogContent>
         <TextFieldElement
@@ -101,7 +101,7 @@ const DemoCleanupFormContent = ({
                 { label: 'Delete connectors', related: 'connectors' as const },
                 { label: 'Delete programs', related: 'programs' as const }
               ].map(step => (
-                <Step key={step.label} sx={{ m: 0 }} expanded>
+                <Step key={step.label} sx={{ m: 0 }} expanded active>
                   <StepLabel>
                     <Box sx={{ display: 'flex' }}>{step.label}</Box>
                   </StepLabel>
