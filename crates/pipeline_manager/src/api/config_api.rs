@@ -34,5 +34,23 @@ async fn get_authentication_config(
     Ok(HttpResponse::Ok().json(&auth_config.provider))
 }
 
+/// Get the list of demo URLs.
+#[utoipa::path(
+    path="/config/demos",
+    responses(
+        (status = OK
+            , description = "URLs to JSON objects that describe a set of demos"
+            , content_type = "application/json"
+            , body = Vec<String>),
+    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Configuration",
+)]
+#[get("/config/demos")]
+async fn get_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
+    Ok(HttpResponse::Ok().json(&state._config.demos))
+}
+
 #[derive(Serialize, ToSchema)]
 pub(crate) struct EmptyResponse {}

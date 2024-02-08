@@ -728,6 +728,7 @@ mod test {
             dump_openapi: false,
             config_file: None,
             allowed_origins: None,
+            demos: vec![],
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;

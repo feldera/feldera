@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- API: endpoint to get a list of demo URLs
+  ([#1385](https://github.com/feldera/feldera/pull/1385))
+
 ## [0.9.0] - 2024-02-06
 
 ### Added

@@ -107,6 +107,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         dump_openapi: false,
         config_file: None,
         allowed_origins: None,
+        demos: vec![],
     }
     .canonicalize()
     .unwrap();

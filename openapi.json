@@ -264,6 +264,36 @@
         ]
       }
     },
+    "/v0/config/demos": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "Get the list of demo URLs.",
+        "description": "Get the list of demo URLs.",
+        "operationId": "get_demos",
+        "responses": {
+          "200": {
+            "description": "URLs to JSON objects that describe a set of demos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/connectors": {
       "get": {
         "tags": [
