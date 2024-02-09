@@ -9,7 +9,6 @@ import {
   AuthenticationService,
   AuthProvider,
   CancelablePromise,
-  CompileProgramRequest,
   ConfigurationService,
   ConnectorsService,
   NewPipelineRequest,
@@ -340,19 +339,6 @@ export const mutationUpdateProgram = (
     setQueryData(queryClient, PipelineManagerQueryKey.programStatus(programName), updateCache)
   },
   onSuccess(_data, variables, _context) {
-    invalidateQuery(queryClient, PipelineManagerQueryKey.programStatus(variables.programName))
-    invalidateQuery(queryClient, PipelineManagerQueryKey.programCode(variables.programName))
-    invalidateQuery(queryClient, PipelineManagerQueryKey.programs())
-  }
-})
-
-export const mutationCompileProgram = (
-  queryClient: QueryClient
-): UseMutationOptions<CompileProgramRequest, ApiError, { programName: string; request: CompileProgramRequest }> => ({
-  mutationFn: args => {
-    return ProgramsService.compileProgram(args.programName, args.request)
-  },
-  async onSettled(_data, _error, variables, _context) {
     invalidateQuery(queryClient, PipelineManagerQueryKey.programStatus(variables.programName))
     invalidateQuery(queryClient, PipelineManagerQueryKey.programCode(variables.programName))
     invalidateQuery(queryClient, PipelineManagerQueryKey.programs())

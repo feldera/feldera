@@ -19,11 +19,7 @@ import {
   UpdateProgramRequest
 } from '$lib/services/manager'
 import { ProgramsService } from '$lib/services/manager/services/ProgramsService'
-import {
-  mutationCompileProgram,
-  PipelineManagerQueryKey,
-  programStatusCacheUpdate
-} from '$lib/services/pipelineManagerQuery'
+import { PipelineManagerQueryKey, programStatusCacheUpdate } from '$lib/services/pipelineManagerQuery'
 import { useRouter } from 'next/navigation'
 import { Dispatch, MutableRefObject, SetStateAction, useEffect, useRef, useState } from 'react'
 import invariant from 'tiny-invariant'
@@ -169,41 +165,6 @@ const useCreateProgramEffect = (
   useEffect(() => createProgramDebounced(), [program, createProgramDebounced])
 }
 
-// Send a compile request if the project changes (e.g., we got a new version and
-// we're not already compiling)
-const useCompileProjectIfChangedEffect = (state: EntitySyncIndicatorStatus, project: ProgramDescr) => {
-  const queryClient = useQueryClient()
-  const { pushMessage } = useStatusNotification()
-
-  const { mutate, isPending, isError } = useMutation(mutationCompileProgram(queryClient))
-  useEffect(() => {
-    if (isPending || state !== 'isUpToDate' || project.name === '' || project.program_id === '') {
-      return
-    }
-    programStatusCacheUpdate(queryClient, project.name, 'Pending')
-    mutate(
-      { programName: project.name, request: { version: project.version } },
-      {
-        onError: (error: ApiError) => {
-          programStatusCacheUpdate(queryClient, project.name, 'Pending')
-          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
-        }
-      }
-    )
-  }, [
-    mutate,
-    isPending,
-    isError,
-    state,
-    project.name,
-    project.program_id,
-    project.version,
-    project.status,
-    queryClient,
-    pushMessage
-  ])
-}
-
 // Polls the server during compilation and checks for the status.
 const usePollCompilationStatusEffect = (project: ProgramDescr) => {
   const queryClient = useQueryClient()
@@ -282,7 +243,6 @@ export const ProgramEditorImpl = ({
   useCreateProgramEffect(program, setStatus, setFormError)
 
   usePollCompilationStatusEffect(program)
-  useCompileProjectIfChangedEffect(status, program)
 
   // Mounting and callback for when code is edited
   // TODO: The IStandaloneCodeEditor type is not exposed in the react monaco
