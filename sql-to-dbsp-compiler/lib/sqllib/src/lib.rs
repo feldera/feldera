@@ -69,9 +69,10 @@ macro_rules! some_polymorphic_function1 {
     };
 }
 
-// Macro to create variants of a polymorphic function with 1 argument that is also
-// polymorphic in the return type.
-// If there exists a function is f_type_result(x: T) -> S, this creates a function
+// Macro to create variants of a polymorphic function with 1 argument that is
+// also polymorphic in the return type.
+// If there exists a function is f_type_result(x: T) -> S, this creates a
+// function
 // f_typeN_resultN(x: Option<T>) -> Option<S>
 // { let x = x?; Some(f_type(x)) }.
 #[macro_export]
@@ -118,8 +119,8 @@ macro_rules! some_function2 {
 
 // Macro to create variants of a polymorphic function with 2 arguments
 // that is also polymorphic in the return type
-// If there exists a function is f_type1_type2_result(x: T, y: S) -> U, this creates
-// three functions:
+// If there exists a function is f_type1_type2_result(x: T, y: S) -> U, this
+// creates three functions:
 // - f_type1_type2N_resultN(x: T, y: Option<S>) -> Option<U>
 // - f_type1N_type2_resultN(x: Option<T>, y: S) -> Option<U>
 // - f_type1N_type2N_resultN(x: Option<T>, y: Option<S>) -> Option<U>
@@ -148,8 +149,8 @@ macro_rules! polymorphic_return_function2 {
 }
 
 // Macro to create variants of a polymorphic function with 2 arguments
-// If there exists a function is f_type1_type2(x: T, y: S) -> U, this creates
-// three functions:
+// If there exists a function is f_type1_type2(x: T, y: S) -> U, this
+// creates three functions:
 // - f_type1_type2N(x: T, y: Option<S>) -> Option<U>
 // - f_type1N_type2(x: Option<T>, y: S) -> Option<U>
 // - f_type1N_type2N(x: Option<T>, y: Option<S>) -> Option<U>
@@ -177,7 +178,91 @@ macro_rules! some_polymorphic_function2 {
     }
 }
 
-// Macro to create variants of a function with 3 arguments
+// If there exists a function is f_t1_t2_t3(x: T, y: S, z: V) -> U, this creates
+// seven functions:
+// - f_t1_t2_t3N(x: T, y: S, z: Option<V>) -> Option<U>
+// - f_t1_t2N_t2(x: T, y: Option<S>, z: V) -> Option<U>
+// - etc.
+// The resulting functions return Some only if all arguments are 'Some'.
+#[macro_export]
+macro_rules! some_polymorphic_function3 {
+    ($func_name:ident,
+     $type_name0: ident, $arg_type0:ty,
+     $type_name1: ident, $arg_type1:ty,
+     $type_name2: ident, $arg_type2: ty,
+     $ret_type:ty) => {
+        ::paste::paste! {
+            pub fn [<$func_name _ $type_name0 _ $type_name1 _ $type_name2 N>](
+                arg0: $arg_type0,
+                arg1: $arg_type1,
+                arg2: Option<$arg_type2>
+            ) -> Option<$ret_type> {
+                let arg2 = arg2?;
+                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _ $type_name0 _ $type_name1 N _ $type_name2>](
+                arg0: $arg_type0,
+                arg1: Option<$arg_type1>,
+                arg2: $arg_type2
+            ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _ $type_name0 _ $type_name1 N _ $type_name2 N>](
+                arg0: $arg_type0,
+                arg1: Option<$arg_type1>,
+                arg2: Option<$arg_type2>
+            ) -> Option<$ret_type> {
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _ $type_name0 N _ $type_name1 _ $type_name2>](
+                arg0: Option<$arg_type0>,
+                arg1: $arg_type1,
+                arg2: $arg_type2
+            ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _ $type_name0 N _ $type_name1 _ $type_name2 N>](
+                arg0: Option<$arg_type0>,
+                arg1: $arg_type1,
+                arg2: Option<$arg_type2>
+            ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg2 = arg2?;
+                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _ $type_name0 N _ $type_name1 N _ $type_name2>](
+                arg0: Option<$arg_type0>,
+                arg1: Option<$arg_type1>,
+                arg2: $arg_type2
+            ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
+            }
+
+            pub fn [<$func_name _ $type_name0 N _ $type_name1 N _ $type_name2 N>](
+                arg0: Option<$arg_type0>,
+                arg1: Option<$arg_type1>,
+                arg2: Option<$arg_type2>
+            ) -> Option<$ret_type> {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                let arg2 = arg2?;
+                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
+            }
+        }
+    };
+}
+
 // If there exists a function is f___(x: T, y: S, z: V) -> U, this creates
 // seven functions:
 // - f__N(x: T, y: S, z: Option<V>) -> Option<U>

@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
@@ -35,7 +34,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -68,28 +66,25 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     join
                     fulfillment
                     on part_order.id = fulfillment.part_order""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
-        Assert.assertFalse(compiler.hasErrors());
-        this.addRustTestCase("ComplexQueriesTest.testDateDiff", compiler, getCircuit(compiler));
+        this.compileRustTestCase(sql);
     }
 
-    /*
     @Test @Ignore("Not yet tested")
     public void testCrossApply() {
-        String query = " select d.DocumentID, ds.Status, ds.DateCreated \n" +
-                " from Documents as d \n" +
-                " cross apply \n" +
-                "     (select top 1 Status, DateCreated\n" +
-                "      from DocumentStatusLogs \n" +
-                "      where DocumentID = d.DocumentId\n" +
-                "      order by DateCreated desc) as ds";
+        String query = """
+                select d.DocumentID, ds.Status, ds.DateCreated\s
+                 from Documents as d\s
+                 cross apply\s
+                     (select top 1 Status, DateCreated
+                      from DocumentStatusLogs\s
+                      where DocumentID = d.DocumentId
+                      order by DateCreated desc) as ds""";
+        this.compileRustTestCase(query);
     }
-     */
 
     @Test
     public void smallTaxiTest() {
-        String ddl = """
+        String statements = """
                 CREATE TABLE green_tripdata
                 (
                   lpep_pickup_datetime TIMESTAMP NOT NULL,
@@ -98,23 +93,16 @@ public class ComplexQueriesTest extends BaseSQLTests {
                   dropoff_location_id BIGINT NOT NULL,
                   trip_distance DOUBLE PRECISION,
                   fare_amount DOUBLE PRECISION
-                )""";
-        String query =
-                """
-                        SELECT
-                        *,
-                        COUNT(*) OVER(
-                           PARTITION BY  pickup_location_id
-                           ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
-                           -- 1 hour is 3600  seconds
-                           RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip
-                        FROM green_tripdata""";
-        DBSPCompiler compiler = this.testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
-        Assert.assertFalse(compiler.hasErrors());
-        this.addRustTestCase("ComplexQueriesTest.smallTaxiTest", compiler, getCircuit(compiler));
+                );
+                CREATE VIEW V AS SELECT
+                *,
+                COUNT(*) OVER(
+                   PARTITION BY  pickup_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
+                   -- 1 hour is 3600  seconds
+                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip
+                FROM green_tripdata;""";
+        this.compileRustTestCase(statements);
     }
 
     @Test
@@ -246,15 +234,12 @@ public class ComplexQueriesTest extends BaseSQLTests {
     @Test
     public void primaryKeyTest() {
         String sql = "CREATE TABLE event_t ( id BIGINT NOT NULL PRIMARY KEY, local_event_dt DATE )";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(sql);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(sql, compiler, circuit);
+        this.compileRustTestCase(sql);
     }
 
     @Test
     public void taxiTest() {
-        String ddl = """
+        String sql = """
                 CREATE TABLE green_tripdata
                 (
                         lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
@@ -263,40 +248,33 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         dropoff_location_id BIGINT NOT NULL,
                         trip_distance DOUBLE PRECISION,
                         fare_amount DOUBLE PRECISION
-                )""";
-        String query =
-                """
-                        SELECT
-                        *,
-                        COUNT(*) OVER(
-                           PARTITION BY  pickup_location_id
-                           ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
-                           -- 1 hour is 3600  seconds
-                           RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,
-                        AVG(fare_amount) OVER(
-                           PARTITION BY  pickup_location_id
-                           ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
-                           -- 1 hour is 3600  seconds
-                           RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,
-                        COUNT(*) OVER(
-                           PARTITION BY  dropoff_location_id
-                           ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) )
-                           -- 0.5 hour is 1800  seconds
-                           RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,
-                        case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5      then 1 else 0 end as dropoff_is_weekend
-                        FROM green_tripdata""";
-        DBSPCompiler compiler = testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase("ComplexQueriesTest.taxiTest", compiler, circuit);
+                );
+                CREATE VIEW V AS SELECT
+                *,
+                COUNT(*) OVER(
+                   PARTITION BY  pickup_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
+                   -- 1 hour is 3600  seconds
+                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,
+                AVG(fare_amount) OVER(
+                   PARTITION BY  pickup_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
+                   -- 1 hour is 3600  seconds
+                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,
+                COUNT(*) OVER(
+                   PARTITION BY  dropoff_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) )
+                   -- 0.5 hour is 1800  seconds
+                   RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,
+                case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5      then 1 else 0 end as dropoff_is_weekend
+                FROM green_tripdata""";
+        this.compileRustTestCase(sql);
     }
 
     @Test
     public void fraudDetectionTest() {
         // fraudDetection-352718.cc_data.demo_
-        String ddl0 = """
+        String sql = """
                 CREATE TABLE demographics (
                  cc_num FLOAT64 NOT NULL,
                  first STRING,
@@ -310,8 +288,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                  city_pop INTEGER,
                  job STRING,
                  dob DATE
-                )""";
-        String ddl1 = """
+                );
                 CREATE TABLE transactions (
                  trans_date_trans_time TIMESTAMP NOT NULL,
                  cc_num FLOAT64,
@@ -323,9 +300,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                  merch_lat FLOAT64,
                  merch_long FLOAT64,
                  is_fraud INTEGER
-                )""";
-        String query = """
-                SELECT
+                );
+                CREATE VIEW V AS SELECT
                     DAYOFWEEK(trans_date_trans_time) AS d,
                     TIMESTAMPDIFF(YEAR, trans_date_trans_time, CAST(dob as TIMESTAMP)) AS age,
                     ST_DISTANCE(ST_POINT(long,lat), ST_POINT(merch_long,merch_lat)) AS distance,
@@ -363,11 +339,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
                           FROM  transactions AS t1
                           LEFT JOIN  demographics AS t2
                           ON t1.cc_num =t2.cc_num)""";
-        DBSPCompiler compiler = testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
-        compiler.compileStatement(ddl0);
-        compiler.compileStatement(ddl1);
-        compiler.compileStatement(query);
-        this.addRustTestCase("ComplexQueriesTest.fraudDetectionTest", compiler, getCircuit(compiler));
+        this.compileRustTestCase(sql);
     }
 }

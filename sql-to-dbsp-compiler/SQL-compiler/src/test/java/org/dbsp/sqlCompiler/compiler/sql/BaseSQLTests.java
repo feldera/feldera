@@ -137,7 +137,7 @@ public class BaseSQLTests {
             testNumber++;
         }
         writer.writeAndClose();
-        Utilities.compileAndTestRust(rustDirectory, true, extraArgs);
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true, extraArgs);
         testsToRun.clear();
     }
 
@@ -146,6 +146,14 @@ public class BaseSQLTests {
         compiler.messages.clear();
         TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, null, streams);
         testsToRun.add(test);
+    }
+
+    /** Add a test case without inputs */
+    public void compileRustTestCase(String statements) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(statements);
+        Assert.assertFalse(compiler.hasErrors());
+        this.addRustTestCase(this.currentTestInformation, compiler, getCircuit(compiler));
     }
 
     protected void addFailingRustTestCase(String name, String message, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {

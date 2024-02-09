@@ -156,9 +156,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("Timestamp::new(");
-        this.builder.append(Long.toString(Objects.requireNonNull(literal.value)));
-        this.builder.append(")");
+        this.builder.append("Timestamp::new(")
+                .append(Long.toString(Objects.requireNonNull(literal.value)))
+                .append("/*")
+                .append(Objects.requireNonNull(literal.getTimestampString()).toString())
+                .append("*/")
+                .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
         return VisitDecision.STOP;
@@ -170,9 +173,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("Date::new(");
-        this.builder.append(Integer.toString(Objects.requireNonNull(literal.value)));
-        this.builder.append(")");
+        this.builder.append("Date::new(")
+                .append(Integer.toString(Objects.requireNonNull(literal.value)))
+                .append("/*")
+                .append(Objects.requireNonNull(literal.getDateString()).toString())
+                .append("*/")
+                .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
         return VisitDecision.STOP;
@@ -184,11 +190,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("Time::new(");
         TimeString ts = Objects.requireNonNull(literal.value);
-        // Why doesn't Calcite TimeString provide these methods?
-        this.builder.append(Utilities.timeStringToNanoseconds(ts));
-        this.builder.append(")");
+        this.builder.append("Time::new(")
+                .append(Utilities.timeStringToNanoseconds(ts))
+                .append("/*")
+                .append(ts.toString())
+                .append("*/")
+                .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
         return VisitDecision.STOP;
@@ -200,9 +208,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("LongInterval::new(");
-        this.builder.append(Integer.toString(Objects.requireNonNull(literal.value)));
-        this.builder.append(")");
+        this.builder.append("LongInterval::new(")
+                .append(Integer.toString(Objects.requireNonNull(literal.value)))
+                .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
         return VisitDecision.STOP;
@@ -214,9 +222,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
-        this.builder.append("ShortInterval::new(");
-        this.builder.append(Long.toString(Objects.requireNonNull(literal.value)));
-        this.builder.append(")");
+        this.builder.append("ShortInterval::new(")
+                .append(Long.toString(Objects.requireNonNull(literal.value)))
+                .append(")");
         if (literal.mayBeNull())
             this.builder.append(")");
         return VisitDecision.STOP;
@@ -307,7 +315,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPRealLiteral literal) {
         if (literal.isNull)
             return this.doNull(literal);
-        Float value = Objects.requireNonNull(literal.value);
+        float value = Objects.requireNonNull(literal.value);
         String val = Float.toString(value);
         if (Float.isNaN(value))
             val = "std::f32::NAN";

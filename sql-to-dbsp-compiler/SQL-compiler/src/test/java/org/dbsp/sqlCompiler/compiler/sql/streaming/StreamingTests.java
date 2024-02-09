@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -13,7 +15,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -38,37 +43,76 @@ public class StreamingTests extends BaseSQLTests {
         return options;
     }
 
+    InputOutputPair fromTSTSTS(String... ts) {
+        DBSPZSetLiteral.Contents input = new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPTimestampLiteral(ts[0], false)));
+        DBSPZSetLiteral.Contents output;
+        if (ts.length > 1)
+            output = new DBSPZSetLiteral.Contents(
+                    new DBSPTupleExpression(
+                            new DBSPTimestampLiteral(ts[1], false),
+                            new DBSPTimestampLiteral(ts[2], false)));
+        else
+            output = DBSPZSetLiteral.Contents.emptyWithElementType(
+                    new DBSPTypeTuple(
+                            new DBSPTypeTimestamp(CalciteObject.EMPTY, false),
+                            new DBSPTypeTimestamp(CalciteObject.EMPTY, false)
+                    ));
+
+        return new InputOutputPair(input, output);
+    }
+
+    @Test
+    public void tumblingTestLimits() {
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 3);
+        String sql = """
+               CREATE TABLE series (
+                   pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
+               );
+               CREATE VIEW V AS
+               SELECT TUMBLE_START(pickup, INTERVAL '30' MINUTES, TIME '00:12:00'),
+                      TUMBLE_END(pickup, INTERVAL '30' MINUTES, TIME '00:12:00')
+               FROM series
+               GROUP BY TUMBLE(pickup, INTERVAL '30' MINUTES, TIME '00:12:00');""";
+
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        InputOutputPair[] data = new InputOutputPair[4];
+        data[0] = this.fromTSTSTS("2024-02-08 10:00:00", "2024-02-08 09:42:00", "2024-02-08 10:12:00");
+        data[1] = this.fromTSTSTS("2024-02-08 10:10:00"); // same group
+        data[2] = this.fromTSTSTS("2024-02-08 10:12:00", "2024-02-08 10:12:00", "2024-02-08 10:42:00");
+        data[3] = this.fromTSTSTS("2024-02-08 10:30:00"); // same group as before
+        this.addRustTestCase("tumblingTestLimits", compiler, getCircuit(compiler), data);
+    }
+
+    DBSPZSetLiteral.Contents fromDoubleTimestamp(double d, String ts) {
+        return new DBSPZSetLiteral.Contents(
+                new DBSPTupleExpression(
+                        new DBSPDoubleLiteral(d, true),
+                        new DBSPTimestampLiteral(ts, false)));
+    }
+
     @Test
     public void tumblingTest() {
-        String ddl = """
+        String sql = """
                 CREATE TABLE series (
                         distance DOUBLE,
                         pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
-                )""";
-        String query =
-                "SELECT AVG(distance), TUMBLE_START(pickup, INTERVAL '1' DAY) FROM series" +
-                        " GROUP BY TUMBLE(pickup, INTERVAL '1' DAY)";
+                );
+                CREATE VIEW V AS
+                SELECT AVG(distance), TUMBLE_START(pickup, INTERVAL '1' DAY) FROM series
+                GROUP BY TUMBLE(pickup, INTERVAL '1' DAY)""";
         DBSPCompiler compiler = testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
+        compiler.compileStatements(sql);
         InputOutputPair[] data = new InputOutputPair[6];
         data[0] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-12-30 10:00:00", false))),
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)
-                        )));
+                this.fromDoubleTimestamp(10.0, "2023-12-30 10:00:00"),
+                this.fromDoubleTimestamp(10.0, "2023-12-30 00:00:00")
+        );
         // Insert tuple before waterline, should be dropped
         data[1] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-12-29 10:00:00", false))),
+                this.fromDoubleTimestamp(10.0, "2023-12-29 10:00:00"),
                 DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
@@ -80,17 +124,11 @@ public class StreamingTests extends BaseSQLTests {
                 new DBSPDoubleLiteral(10.0, true),
                 new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), -1);
         data[2] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(20.0, true),
-                                new DBSPTimestampLiteral("2023-12-30 10:10:00", false))),
+                this.fromDoubleTimestamp(20.0, "2023-12-30 10:10:00"),
                 addSub);
         // Insert tuple before last waterline, should be dropped
         data[3] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-12-29 09:10:00", false))),
+                this.fromDoubleTimestamp(10.0,"2023-12-29 09:10:00"),
                 DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
         // Insert tuple in the past, but before the last waterline
         addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
@@ -101,22 +139,12 @@ public class StreamingTests extends BaseSQLTests {
                 new DBSPDoubleLiteral(15.0, true),
                 new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), -1);
         data[4] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-12-30 10:00:00", false))),
+                this.fromDoubleTimestamp(10.0, "2023-12-30 10:00:00"),
                 addSub);
         // Insert tuple in the next tumbling window
         data[5] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-13-30 10:00:00", false))),
-                new DBSPZSetLiteral.Contents(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-13-30 00:00:00", false)
-                        )));
+                this.fromDoubleTimestamp(10.0, "2023-13-30 10:00:00"),
+                this.fromDoubleTimestamp(10.0, "2023-13-30 00:00:00"));
         this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
     }
 
@@ -349,7 +377,6 @@ public class StreamingTests extends BaseSQLTests {
         add.accept(new InputOutputPair(
                 DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
                 new DBSPZSetLiteral.Contents(zero)));
-
         add.accept(new InputOutputPair(
                 DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
                 DBSPZSetLiteral.Contents.emptyWithElementType(one.getType())));
