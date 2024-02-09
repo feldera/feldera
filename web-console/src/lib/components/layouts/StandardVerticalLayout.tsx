@@ -3,7 +3,7 @@
 import VerticalNavItems from '$lib/functions/navigation/vertical'
 import { ReactNode } from 'react'
 import { useSettings } from 'src/@core/hooks/useSettings'
-import VerticalLayout from 'src/@core/layouts/VerticalLayout'
+import { VerticalLayout } from 'src/@core/layouts/VerticalLayout'
 
 import { Theme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
@@ -15,7 +15,7 @@ interface Props {
   children: ReactNode
 }
 
-const StandardVerticalLayout = ({ children }: Props) => {
+export const StandardVerticalLayout = ({ children }: Props) => {
   const { settings, saveSettings } = useSettings()
 
   /**
@@ -50,5 +50,3 @@ const StandardVerticalLayout = ({ children }: Props) => {
     </VerticalLayout>
   )
 }
-
-export default StandardVerticalLayout

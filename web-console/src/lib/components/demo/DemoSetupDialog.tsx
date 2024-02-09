@@ -28,9 +28,9 @@ import {
 import { useQuery } from '@tanstack/react-query'
 
 const stageNumbers = {
-  programs: 0,
-  connectors: 1,
-  pipelines: 2
+  program: 0,
+  connector: 1,
+  pipeline: 2
 }
 
 const getStageNumber = (progress: DemoSetupProgress | undefined) =>
@@ -47,10 +47,14 @@ const DemoSetupFormContent = ({
   useEffect(() => {
     setProgress(undefined)
   }, [prefix, setProgress])
-  const setupScope = useQuery({
-    queryKey: ['demo/setup', prefix],
+  const { refetch, ...setupScope } = useQuery({
+    queryKey: ['demo/setup'],
     queryFn: () => runDemoSetup({ prefix: prefix, steps: props.demo.setup.steps })
   })
+  useEffect(() => {
+    refetch()
+  }, [refetch, prefix])
+  console.log('setupScope', setupScope.data)
   const progressBar = match(props.progress)
     .with(undefined, () => ({ description: '\xa0', ratio: 0 }))
     .with({ ratio: P._ }, p => p)
@@ -93,8 +97,8 @@ const DemoSetupFormContent = ({
   }
   const hasConflict = (setupScope.data?.entities ?? []).some(e => e.exists)
   return (
-    <>
-      <DialogTitle>Setup {props.demo.name} demo</DialogTitle>
+    <Box sx={{ width: 550 }}>
+      <DialogTitle>Setup {props.demo.name} demo Pipeline</DialogTitle>
       <DialogContent>
         <DialogContentText>This prefix will be added to the name of every item in the demo.</DialogContentText>
       </DialogContent>
@@ -124,16 +128,26 @@ const DemoSetupFormContent = ({
       <DialogContent>
         <Stepper activeStep={getStageNumber(props.progress)} orientation='vertical'>
           {[
-            { label: 'Create programs', type: 'program' as const },
-            { label: 'Create connectors', type: 'connector' as const },
-            { label: 'Create pipelines', type: 'pipeline' as const }
+            { label: 'Create SQL Programs', type: 'program' as const },
+            { label: 'Create Connectors', type: 'connector' as const },
+            { label: 'Create Pipelines', type: 'pipeline' as const }
           ].map(step => (
-            <Step key={step.label} sx={{ m: 0 }} expanded active>
+            <Step
+              key={step.label}
+              sx={{
+                m: 0,
+                '.Mui-disabled': { color: 'text.primary' },
+                '& .MuiStepLabel-iconContainer .Mui-completed': {
+                  color: 'success.main'
+                }
+              }}
+              expanded
+            >
               <StepLabel sx={{ display: 'flex' }}>
                 <Box sx={{ display: 'flex' }}>{step.label}</Box>
               </StepLabel>
               <StepContent>
-                <span>
+                <Box component='span'>
                   {intersperse(
                     setupScope.data?.entities
                       .filter(e => e.type === step.type)
@@ -148,11 +162,13 @@ const DemoSetupFormContent = ({
                           {prefix + e.name}
                         </Typography>
                       )) ?? [],
-                    i => <Typography key={i} component='span' color='text.secondary'>
-                      ,{' '}
-                    </Typography>
+                    i => (
+                      <Typography key={i} component='span' color='text.secondary'>
+                        ,{' '}
+                      </Typography>
+                    )
                   )}
-                </span>
+                </Box>
               </StepContent>
             </Step>
           ))}
@@ -172,7 +188,7 @@ const DemoSetupFormContent = ({
                 href={'/streaming/management/#' + resultEntities.pipeline.name}
                 LinkComponent={Link}
               >
-                Go to pipeline
+                Go to Pipeline
               </Button>
             ) : resultEntities.program ? (
               <Button
@@ -180,7 +196,7 @@ const DemoSetupFormContent = ({
                 href={'/analytics/editor/?program_name=' + resultEntities.program.name}
                 LinkComponent={Link}
               >
-                See program
+                See SQL Program
               </Button>
             ) : (
               <Button variant='contained' onClick={props.onClose} LinkComponent={Link}>
@@ -195,7 +211,7 @@ const DemoSetupFormContent = ({
           ))
           .exhaustive()}
       </DialogActions>
-    </>
+    </Box>
   )
 }
 

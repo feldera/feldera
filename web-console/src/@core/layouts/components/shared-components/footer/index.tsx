@@ -2,10 +2,11 @@ import { ReactNode } from 'react'
 import { Settings } from 'src/@core/context/settingsTypes'
 
 import Box from '@mui/material/Box'
-import { useTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 
 import FooterContent from './FooterContent'
 
+import type { Theme } from '@mui/material/styles'
 interface Props {
   settings: Settings
   saveSettings: (values: Settings) => void
@@ -14,15 +15,19 @@ interface Props {
 
 const Footer = (props: Props) => {
   const { settings, footerContent: userFooterContent } = props
-  const theme = useTheme()
   const { contentWidth } = settings
+  const fixedFooter = useMediaQuery((theme: Theme) => theme.breakpoints.up('md'))
 
   return (
     <Box
       component='footer'
       className='layout-footer'
       sx={{
+        position: fixedFooter ? 'fixed' : undefined,
+        bottom: 0,
+        right: 0,
         zIndex: 10,
+        width: '100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center'
@@ -31,10 +36,11 @@ const Footer = (props: Props) => {
       <Box
         className='footer-content-container'
         sx={{
+          display: 'flex',
           width: '100%',
-          borderTopLeftRadius: 14,
-          borderTopRightRadius: 14,
-          padding: theme.spacing(4, 6),
+          px: 6,
+          py: 4,
+          justifyContent: 'end',
           ...(contentWidth === 'boxed' && { '@media (min-width:1440px)': { maxWidth: 1440 } })
         }}
       >

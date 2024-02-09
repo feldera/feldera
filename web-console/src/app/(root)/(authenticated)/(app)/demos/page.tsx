@@ -7,8 +7,8 @@ import { DemoSetupDialog } from '$lib/components/demo/DemoSetupDialog'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { Fragment, useState } from 'react'
 import { DemoSetup } from 'src/lib/types/demo'
-import IconBrush from '~icons/bx/brush'
 import IconChevronRight from '~icons/bx/chevron-right'
+import IconTrashAlt from '~icons/bx/trash-alt'
 
 import { Box, Button, Card, CardActions, CardContent, Grid, IconButton, Typography } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
@@ -23,8 +23,8 @@ const DemoTile = (props: { name: string; desc: string; onSetup: () => void; onCl
         <Typography variant='body1'>{props.desc}</Typography>
       </CardContent>
       <CardActions sx={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
-        <IconButton onClick={props.onCleanup} sx={{ transform: 'rotate(180deg)' }}>
-          <IconBrush fontSize={20} />
+        <IconButton onClick={props.onCleanup}>
+          <IconTrashAlt fontSize={20} />
         </IconButton>
         <Button onClick={props.onSetup} variant='contained' sx={{ px: '1rem' }} endIcon={<IconChevronRight />}>
           Try
@@ -43,13 +43,7 @@ export default function () {
   const [setupDemo, setSetupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
   const [cleanupDemo, setCleanupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
   const queryDemos = useQuery(usePipelineManagerQuery().getDemos())
-  const demos = [
-    {
-      group: 'easy',
-      label: 'Simple demos',
-      demos: queryDemos.data ?? []
-    }
-  ]
+  const demos = queryDemos.data ?? []
   return (
     <>
       <Breadcrumbs.Header>
@@ -58,29 +52,22 @@ export default function () {
         </Breadcrumbs.Link>
       </Breadcrumbs.Header>
       <Box>
-        <Typography variant='body1' sx={{mb: '2rem'}}>
-          Setup and explore pre-made demos on your running Feldera instance
+        <Typography variant='body1' sx={{ mb: '2rem' }}>
+          Setup and explore pre-made demos on this Feldera instance
         </Typography>
-        {demos.map(group => (
-          <Fragment key={group.group}>
-            <Typography variant='h6' gutterBottom>
-              {group.label}
-            </Typography>
-            <Grid container spacing={2}>
-              <GridItems xs={6} sm={4} md={3}>
-                {group.demos.map(demo => (
-                  <DemoTile
-                    key={demo.title}
-                    name={demo.title}
-                    desc={demo.description}
-                    onSetup={() => fetchDemoSetup(demo).then(setup => setSetupDemo({ name: demo.title, setup }))}
-                    onCleanup={() => fetchDemoSetup(demo).then(setup => setCleanupDemo({ name: demo.title, setup }))}
-                  ></DemoTile>
-                ))}
-              </GridItems>
-            </Grid>
-          </Fragment>
-        ))}
+        <Grid container spacing={2}>
+          <GridItems xs={6} sm={4} md={3}>
+            {demos.map(demo => (
+              <DemoTile
+                key={demo.title}
+                name={demo.title}
+                desc={demo.description}
+                onSetup={() => fetchDemoSetup(demo).then(setup => setSetupDemo({ name: demo.title, setup }))}
+                onCleanup={() => fetchDemoSetup(demo).then(setup => setCleanupDemo({ name: demo.title, setup }))}
+              ></DemoTile>
+            ))}
+          </GridItems>
+        </Grid>
       </Box>
       <DemoSetupDialog demo={setupDemo} onClose={() => setSetupDemo(undefined)}></DemoSetupDialog>
       <DemoCleanupDialog demo={cleanupDemo} onClose={() => setCleanupDemo(undefined)}></DemoCleanupDialog>

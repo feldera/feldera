@@ -1,12 +1,14 @@
 // The main menu that shows up on the left side of the screen.
 import { VerticalNavItemsType } from 'src/@core/layouts/types'
 import IconAlignLeft from '~icons/bx/align-left'
+import IconEnvelope from '~icons/bx/envelope'
 import IconFile from '~icons/bx/file'
 import IconGitRepoForked from '~icons/bx/git-repo-forked'
 import IconHomeCircle from '~icons/bx/home-circle'
+import IconRocket from '~icons/bx/rocket'
 import IconUnite from '~icons/bx/unite'
+import IconSlack from '~icons/bxl/slack'
 import CogOutline from '~icons/mdi/cog-outline'
-import IconHardHat from '~icons/mdi/hard-hat'
 
 const navigation = (): VerticalNavItemsType => {
   return [
@@ -19,7 +21,7 @@ const navigation = (): VerticalNavItemsType => {
     {
       title: 'Demos',
       path: '/demos',
-      icon: IconHardHat
+      icon: IconRocket
     },
     {
       sectionTitle: 'Analytics'
@@ -87,6 +89,20 @@ const navigation = (): VerticalNavItemsType => {
       icon: IconFile,
       openInNewTab: true,
       testid: 'button-vertical-nav-documentation'
+    },
+    {
+      title: 'Email',
+      path: 'mailto:learnmore@feldera.com',
+      icon: IconEnvelope,
+      openInNewTab: true,
+      testid: 'button-vertical-nav-email'
+    },
+    {
+      title: 'Slack',
+      path: 'https://felderacommunity.slack.com',
+      icon: IconSlack,
+      openInNewTab: true,
+      testid: 'button-vertical-nav-slack'
     }
   ]
 }

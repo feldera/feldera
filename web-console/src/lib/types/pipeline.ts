@@ -46,7 +46,7 @@ export enum PipelineStatus {
   // Shouldn't happen, means we haven't put it in the map
   UNKNOWN = 'Unknown',
   // Maps to PipelineStatus.SHUTDOWN
-  SHUTDOWN = 'Inactive',
+  SHUTDOWN = 'Ready to run',
   // Maps to PipelineStatus.PROVISIONING
   PROVISIONING = 'Provisioning …',
   // Maps to PipelineStatus.INITIALIZING
