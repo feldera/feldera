@@ -1,7 +1,7 @@
 {
-  "title": "Warehouse",
-  "description": "Use case of a warehouse that stores product items which are bought and sold.",
-  "prefix": "warehouse-",
+  "title": "Product Orders",
+  "description": "A demonstration of aggregating Product and Items as they are constantly updated.",
+  "prefix": "productitems-",
   "steps": [
     {
       "name": "setup",
@@ -10,15 +10,15 @@
           "type": "program",
           "name": "program",
           "body": {
-            "description": "Warehouse program",
-            "code": "-- Product\nCREATE TABLE product (\n    id INT PRIMARY KEY,\n    name VARCHAR NOT NULL,\n    description VARCHAR NOT NULL\n);\n\n-- Each item is of a certain product\nCREATE TABLE item (\n    id INT PRIMARY KEY,\n    product_id INT NOT NULL,\n    manufactured_at TIMESTAMP NOT NULL,\n    bought_at TIMESTAMP NOT NULL,\n    sold_at TIMESTAMP\n);\n\n-- Total number of products\nCREATE VIEW product_count AS\n    SELECT COUNT(*) AS num_products FROM product;\n\n-- Total number of items\nCREATE VIEW item_count AS\n    SELECT COUNT(*) AS num_items FROM item;\n\n-- For each product, count the number of items\nCREATE VIEW items_per_product AS\n    SELECT product.id AS product_id, product.name AS product_name, COUNT(*) AS num_items\n    FROM product LEFT JOIN item ON product.id = item.product_id\n    GROUP BY (product.id, product.name);\n"
+            "description": "ProductItems program",
+            "code": "-- Product\nCREATE TABLE product (\n    id INT PRIMARY KEY,\n    name VARCHAR NOT NULL,\n    description VARCHAR NOT NULL\n);\n\n-- Items belong to a Product\nCREATE TABLE item (\n    id INT PRIMARY KEY,\n    product_id INT NOT NULL FOREIGN KEY REFERENCES product(id),\n    manufactured_at TIMESTAMP NOT NULL,\n    bought_at TIMESTAMP NOT NULL,\n    sold_at TIMESTAMP\n);\n\n-- Total number of products\nCREATE VIEW product_count AS\nSELECT COUNT(*) AS num_products\nFROM   product;\n\n-- Total number of items\nCREATE VIEW item_count AS\nSELECT COUNT(*) AS num_items\nFROM   item;\n\n-- For each product, count the number of items\nCREATE VIEW items_per_product AS\nSELECT product.id AS product_id\n,      product.name AS product_name\n,      COUNT(*) AS num_items\nFROM   product LEFT JOIN item ON product.id = item.product_id\nGROUP BY product.id\n,        product.name;\n"
           }
         },
         {
           "type": "connector",
           "name": "product-in",
           "body": {
-            "description": "Warehouse URL input connector for product table",
+            "description": "ProductItems URL input connector for product table",
             "config": {
               "transport": {
                 "name": "url",
@@ -40,7 +40,7 @@
           "type": "connector",
           "name": "item-in",
           "body": {
-            "description": "Warehouse URL input connector for item table",
+            "description": "ProductItems URL input connector for item table",
             "config": {
               "transport": {
                 "name": "url",
@@ -62,7 +62,7 @@
           "type": "pipeline",
           "name": "pipeline",
           "body": {
-            "description": "Warehouse pipeline",
+            "description": "ProductItems pipeline",
             "config": {"workers": 6},
             "program_name": "program",
             "connectors": [

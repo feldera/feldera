@@ -5,10 +5,10 @@ CREATE TABLE product (
     description VARCHAR NOT NULL
 );
 
--- Each item is of a certain product
+-- Items belong to a Product
 CREATE TABLE item (
     id INT PRIMARY KEY,
-    product_id INT NOT NULL,
+    product_id INT NOT NULL FOREIGN KEY REFERENCES product(id),
     manufactured_at TIMESTAMP NOT NULL,
     bought_at TIMESTAMP NOT NULL,
     sold_at TIMESTAMP
@@ -16,14 +16,19 @@ CREATE TABLE item (
 
 -- Total number of products
 CREATE VIEW product_count AS
-    SELECT COUNT(*) AS num_products FROM product;
+SELECT COUNT(*) AS num_products
+FROM   product;
 
 -- Total number of items
 CREATE VIEW item_count AS
-    SELECT COUNT(*) AS num_items FROM item;
+SELECT COUNT(*) AS num_items
+FROM   item;
 
 -- For each product, count the number of items
 CREATE VIEW items_per_product AS
-    SELECT product.id AS product_id, product.name AS product_name, COUNT(*) AS num_items
-    FROM product LEFT JOIN item ON product.id = item.product_id
-    GROUP BY (product.id, product.name);
+SELECT product.id AS product_id
+,      product.name AS product_name
+,      COUNT(*) AS num_items
+FROM   product LEFT JOIN item ON product.id = item.product_id
+GROUP BY product.id
+,        product.name;
