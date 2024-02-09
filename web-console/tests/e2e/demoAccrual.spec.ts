@@ -47,7 +47,7 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
     await expect(page).toHaveScreenshot('compiling-program-binary.png')
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Inactive`).waitFor({ timeout: 180000 })
+    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor({ timeout: 180000 })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
     await page.getByTestId(`box-pipeline-${pipelineName}-status-Running`).waitFor({ timeout: 10000 })
   })
@@ -203,7 +203,7 @@ test('Accrual demo test', async ({ page, request }) => {
       )
     })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-shutdown').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Inactive`).waitFor()
+    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor()
   })
 
   await test.step('Cleanup: Delete pipeline', async () => {
