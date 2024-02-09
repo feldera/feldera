@@ -4503,7 +4503,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Use a JWT token obtained via an OAuth2/OIDC \n                               login workflow or an API key obtained via\n                               the `/v0/api-keys` endpoint."
+        "description": "Use a JWT token obtained via an OAuth2/OIDC\n                               login workflow or an API key obtained via\n                               the `/v0/api-keys` endpoint."
       }
     }
   },
