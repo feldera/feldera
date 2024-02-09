@@ -39,6 +39,8 @@ const VerticalNavSectionTitle = (props: Props) => {
       className='nav-section-title'
       sx={{
         px: 0,
+        m: 0,
+        mt: 2,
         py: 1.75,
         color: theme.palette.text.disabled,
         '& .MuiDivider-root:before, & .MuiDivider-root:after, & hr': {

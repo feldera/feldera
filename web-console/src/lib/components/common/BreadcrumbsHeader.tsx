@@ -8,7 +8,7 @@ export const Breadcrumbs = {
   Header: (props: { children: ReactNode }) => (
     <PageHeader
       title={
-        <MUIBreadcrumbs separator={<IconChevronRight fontSize={24} />} aria-label='breadcrumb'>
+        <MUIBreadcrumbs separator={<IconChevronRight fontSize={20} />} aria-label='breadcrumb'>
           {props.children}
         </MUIBreadcrumbs>
       }
@@ -16,6 +16,6 @@ export const Breadcrumbs = {
   ),
   Link: (props: LinkProps) => {
     const theme = useTheme()
-    return <Link color={theme.palette.text.primary} fontSize={24} fontWeight={300} {...props} />
+    return <Link color={theme.palette.text.primary} fontSize={20} fontWeight={300} {...props} />
   }
 }

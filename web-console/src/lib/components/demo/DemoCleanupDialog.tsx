@@ -24,9 +24,9 @@ import {
 import { useQuery } from '@tanstack/react-query'
 
 const stageNumbers = {
-  programs: 0,
-  connectors: 1,
-  pipelines: 2
+  program: 1,
+  connector: 2,
+  pipeline: 0
 }
 
 const getStageNumber = (progress: DemoSetupProgress | undefined) =>
@@ -43,10 +43,13 @@ const DemoCleanupFormContent = ({
   useEffect(() => {
     setProgress(undefined)
   }, [prefix, setProgress])
-  const cleanupScope = useQuery({
-    queryKey: ['demo/cleanup', prefix],
+  const { refetch, ...cleanupScope } = useQuery({
+    queryKey: ['demo/cleanup'],
     queryFn: () => runDemoCleanup({ prefix: prefix, steps: props.demo.setup.steps })
   })
+  useEffect(() => {
+    refetch()
+  }, [refetch, prefix])
   const progressBar = match(props.progress)
     .with(undefined, () => ({ description: '\xa0', ratio: 0 }))
     .with({ ratio: P._ }, p => p)
@@ -69,7 +72,7 @@ const DemoCleanupFormContent = ({
       cleanupScope.data.related.connectors.length +
       cleanupScope.data.related.programs.length
   return (
-    <>
+    <Box sx={{ width: 550 }}>
       <DialogTitle>Clean up after {props.demo.name} demo</DialogTitle>
       <DialogContent>
         <DialogContentText>Every item with this prefix will be removed.</DialogContentText>
@@ -97,11 +100,21 @@ const DemoCleanupFormContent = ({
           <>
             <Stepper activeStep={getStageNumber(props.progress)} orientation='vertical'>
               {[
-                { label: 'Delete pipelines', related: 'pipelines' as const },
-                { label: 'Delete connectors', related: 'connectors' as const },
-                { label: 'Delete programs', related: 'programs' as const }
+                { label: 'Delete Pipelines', related: 'pipelines' as const },
+                { label: 'Delete Connectors', related: 'connectors' as const },
+                { label: 'Delete SQL Programs', related: 'programs' as const }
               ].map(step => (
-                <Step key={step.label} sx={{ m: 0 }} expanded active>
+                <Step
+                  key={step.label}
+                  sx={{
+                    m: 0,
+                    '.Mui-disabled': { color: 'text.primary' },
+                    '& .MuiStepLabel-iconContainer .Mui-completed': {
+                      color: 'success.main'
+                    }
+                  }}
+                  expanded
+                >
                   <StepLabel>
                     <Box sx={{ display: 'flex' }}>{step.label}</Box>
                   </StepLabel>
@@ -145,7 +158,7 @@ const DemoCleanupFormContent = ({
           ))
           .exhaustive()}
       </DialogActions>
-    </>
+    </Box>
   )
 }
 

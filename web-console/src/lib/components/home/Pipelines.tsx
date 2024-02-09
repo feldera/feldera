@@ -39,7 +39,7 @@ const Pipelines = () => {
         </Stack>
       </CardContent>
       <Accordion disableGutters>
-        <AccordionSummary expandIcon={<IconChevronDown fontSize={32} />} data-testid='button-expand-inactive-pipelines'>
+        <AccordionSummary expandIcon={<IconChevronDown fontSize={24} />} data-testid='button-expand-inactive-pipelines'>
           <Typography color='text.secondary'>and {inactive.length} inactive</Typography>
         </AccordionSummary>
         <AccordionDetails>

@@ -195,7 +195,7 @@ const Health = () => {
       >
         <CardHeader title='Feldera Health'></CardHeader>
         <Accordion disableGutters>
-          <AccordionSummary expandIcon={<IconChevronDown fontSize={32} />} data-testid='button-expand-errors'>
+          <AccordionSummary expandIcon={<IconChevronDown fontSize={24} />} data-testid='button-expand-errors'>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
               <IconErrorCircle fontSize={20} />
               <Typography>Platform errors</Typography>
@@ -277,7 +277,7 @@ const Health = () => {
           )}
         </Accordion>
         <Accordion disableGutters>
-          <AccordionSummary expandIcon={<IconChevronDown fontSize={32} />} data-testid='button-expand-warnings'>
+          <AccordionSummary expandIcon={<IconChevronDown fontSize={24} />} data-testid='button-expand-warnings'>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
               <IconErrorCircle fontSize={20} />
               <Typography>Platform warnings</Typography>

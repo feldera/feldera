@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import { Settings } from 'src/@core/context/settingsTypes'
 
+import { Box, Typography } from '@mui/material'
 import { styled, useTheme } from '@mui/material/styles'
 import MuiSwipeableDrawer, { SwipeableDrawerProps } from '@mui/material/SwipeableDrawer'
 
@@ -68,6 +69,9 @@ const Drawer = (props: Props) => {
       }}
     >
       {children}
+      <Box sx={{ px: 6, py: 2 }}>
+        <Typography>{`© 2024 Feldera`}</Typography>
+      </Box>
     </SwipeableDrawer>
   )
 }

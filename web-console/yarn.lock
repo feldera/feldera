@@ -1259,6 +1259,13 @@
   dependencies:
     "@iconify/types" "*"
 
+"@iconify-json/bxl@^1.1.10":
+  version "1.1.10"
+  resolved "https://registry.yarnpkg.com/@iconify-json/bxl/-/bxl-1.1.10.tgz#f7ab43028727bff36763986d556e00f315a960c0"
+  integrity sha512-/+9L0XBI7vvP8tU2NVfqr45BjUndbTEaDuU6PERn9zKH0Rtsi9GDpaba7FY8PgA91ugGIpuwUPsFLCofkYreNg==
+  dependencies:
+    "@iconify/types" "*"
+
 "@iconify-json/mdi@^1.1.54":
   version "1.1.64"
   resolved "https://registry.yarnpkg.com/@iconify-json/mdi/-/mdi-1.1.64.tgz#ef734e33161106485e36b0f92222babe506d3a8d"

@@ -43,6 +43,7 @@
     "@faker-js/faker": "^8.0.2",
     "@hookform/resolvers": "^3.2.0",
     "@iconify-json/bx": "^1.1.7",
+    "@iconify-json/bxl": "^1.1.10",
     "@iconify-json/mdi": "^1.1.54",
     "@iconify-json/svg-spinners": "^1.1.2",
     "@iconify-json/tabler": "^1.1.95",
