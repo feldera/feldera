@@ -276,7 +276,9 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
                 this.set(expression, result);
             }
 
-            if (name.startsWith("datediff_") || name.startsWith("timestamp_diff_")) {
+            if (name.startsWith("tumble_")
+                    || name.startsWith("datediff_")
+                    || name.startsWith("timestamp_diff_")) {
                 MonotoneValue arg1 = this.maybeGet(expression.arguments[1]);
                 if (arg1 != null && arg1.is(MonotoneConstant.class)) {
                     MonotoneValue result = new MonotoneScalar(expression.replaceArguments(arguments));

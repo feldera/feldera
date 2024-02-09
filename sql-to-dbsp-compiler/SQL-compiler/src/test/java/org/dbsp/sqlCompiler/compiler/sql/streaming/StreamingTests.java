@@ -38,6 +38,88 @@ public class StreamingTests extends BaseSQLTests {
         return options;
     }
 
+    @Test
+    public void tumblingTest() {
+        String ddl = """
+                CREATE TABLE series (
+                        distance DOUBLE,
+                        pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
+                )""";
+        String query =
+                "SELECT AVG(distance), TUMBLE_START(pickup, INTERVAL '1' DAY) FROM series" +
+                        " GROUP BY TUMBLE(pickup, INTERVAL '1' DAY)";
+        DBSPCompiler compiler = testCompiler();
+        query = "CREATE VIEW V AS (" + query + ")";
+        compiler.compileStatement(ddl);
+        compiler.compileStatement(query);
+        InputOutputPair[] data = new InputOutputPair[6];
+        data[0] = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(10.0, true),
+                                new DBSPTimestampLiteral("2023-12-30 10:00:00", false))),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(10.0, true),
+                                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)
+                        )));
+        // Insert tuple before waterline, should be dropped
+        data[1] = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(10.0, true),
+                                new DBSPTimestampLiteral("2023-12-29 10:00:00", false))),
+                DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
+        // Insert tuple after waterline, should change average.
+        // Waterline is advanced
+        DBSPZSetLiteral.Contents addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
+        addSub.add(new DBSPTupleExpression(
+                new DBSPDoubleLiteral(15.0, true),
+                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)));
+        addSub.add(new DBSPTupleExpression(
+                new DBSPDoubleLiteral(10.0, true),
+                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), -1);
+        data[2] = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(20.0, true),
+                                new DBSPTimestampLiteral("2023-12-30 10:10:00", false))),
+                addSub);
+        // Insert tuple before last waterline, should be dropped
+        data[3] = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(10.0, true),
+                                new DBSPTimestampLiteral("2023-12-29 09:10:00", false))),
+                DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
+        // Insert tuple in the past, but before the last waterline
+        addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
+        addSub.add(new DBSPTupleExpression(
+                new DBSPDoubleLiteral(13.333333333333334, true),
+                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), 1);
+        addSub.add(new DBSPTupleExpression(
+                new DBSPDoubleLiteral(15.0, true),
+                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), -1);
+        data[4] = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(10.0, true),
+                                new DBSPTimestampLiteral("2023-12-30 10:00:00", false))),
+                addSub);
+        // Insert tuple in the next tumbling window
+        data[5] = new InputOutputPair(
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(10.0, true),
+                                new DBSPTimestampLiteral("2023-13-30 10:00:00", false))),
+                new DBSPZSetLiteral.Contents(
+                        new DBSPTupleExpression(
+                                new DBSPDoubleLiteral(10.0, true),
+                                new DBSPTimestampLiteral("2023-13-30 00:00:00", false)
+                        )));
+        this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
+    }
+
     @Test 
     public void latenessTest() {
         String ddl = """
