@@ -792,4 +792,11 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             }
         }
     }
+
+    @Test
+    public void rustFmt() throws IOException, InterruptedException {
+        // Check that the rust library is properly formatted
+        Utilities.runProcess(BaseSQLTests.projectDirectory + "/lib/sqllib",
+                "cargo", "+nightly", "fmt", "--check");
+    }
 }

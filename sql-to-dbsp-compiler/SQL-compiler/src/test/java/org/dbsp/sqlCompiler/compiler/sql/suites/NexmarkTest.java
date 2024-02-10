@@ -270,7 +270,7 @@ CREATE VIEW Q7 AS
 SELECT B.auction, B.price, B.bidder, B."dateTime", B.extra
 from bid B
 JOIN (
-  SELECT MAX(B1.price) AS maxprice, TUMBLE_ROWTIME(B1."dateTime", INTERVAL '10' SECOND) as "dateTime"
+  SELECT MAX(B1.price) AS maxprice, TUMBLE_START(B1."dateTime", INTERVAL '10' SECOND) as "dateTime"
   FROM bid B1
   GROUP BY TUMBLE(B1."dateTime", INTERVAL '10' SECOND)
 ) B1
@@ -592,7 +592,7 @@ SELECT
         Set<Integer> unsupported = new HashSet<>() {{
             add(5); // hop
             add(6); // group-by
-            add(7); // tumble
+            //add(7); // tumble
             add(8); // tumble
             add(11); // session
             add(12); // proctime
@@ -607,7 +607,6 @@ SELECT
         int index = 0;
         for (String query: queries) {
             if (!unsupported.contains(index)) {
-                System.out.println("Q" + index);
                 compiler.compileStatement(query);
             }
             index++;

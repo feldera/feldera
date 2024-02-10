@@ -947,7 +947,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case TRIM: {
                 return this.compileKeywordFunction(call, node, null, type, ops, 0, 3);
             }
+            case TUMBLE:
+                return this.compilePolymorphicFunction(
+                        "tumble", node, type, ops, 2, 3);
             case DOT:
+            case HOP:
             default:
                 throw new UnimplementedException(node);
         }

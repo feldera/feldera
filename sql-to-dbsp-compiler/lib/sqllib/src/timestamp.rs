@@ -18,8 +18,8 @@ use std::{
 
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
-    some_existing_operator, some_function2, some_operator, some_polymorphic_function1,
-    some_polymorphic_function2,
+    polymorphic_return_function2, some_existing_operator, some_function2, some_operator,
+    some_polymorphic_function1, some_polymorphic_function2, some_polymorphic_function3,
 };
 
 /// Similar to a unix timestamp: a positive time interval between Jan 1 1970 and
@@ -180,23 +180,29 @@ pub fn minus_Timestamp_Timestamp_ShortInterval(left: Timestamp, right: Timestamp
     ShortInterval::from(left.milliseconds() - right.milliseconds())
 }
 
-pub fn minus_TimestampN_Timestamp_ShortIntervalN(
-    left: Option<Timestamp>,
-    right: Timestamp,
-) -> Option<ShortInterval> {
-    left.map(|l| minus_Timestamp_Timestamp_ShortInterval(l, right))
-}
+polymorphic_return_function2!(
+    minus,
+    Timestamp,
+    Timestamp,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval
+);
 
 pub fn minus_Timestamp_ShortInterval_Timestamp(left: Timestamp, right: ShortInterval) -> Timestamp {
     Timestamp::new(left.milliseconds() - right.milliseconds())
 }
 
-pub fn minus_Timestamp_TimestampN_ShortIntervalN(
-    left: Timestamp,
-    right: Option<Timestamp>,
-) -> Option<ShortInterval> {
-    right.map(|r| ShortInterval::from(left.milliseconds() - r.milliseconds()))
-}
+polymorphic_return_function2!(
+    minus,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval,
+    Timestamp,
+    Timestamp
+);
 
 pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp) -> LongInterval {
     let ldate = left.to_dateTime();
@@ -217,12 +223,15 @@ pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp)
     LongInterval::from((ly - ry) * 12 + lm - rm)
 }
 
-pub fn minus_TimestampN_Timestamp_LongIntervalN(
-    left: Option<Timestamp>,
-    right: Timestamp,
-) -> Option<LongInterval> {
-    left.map(|l| minus_Timestamp_Timestamp_LongInterval(l, right))
-}
+polymorphic_return_function2!(
+    minus,
+    Timestamp,
+    Timestamp,
+    Timestamp,
+    Timestamp,
+    LongInterval,
+    LongInterval
+);
 
 pub fn extract_year_Timestamp(value: Timestamp) -> i64 {
     let date = value.to_dateTime();
@@ -358,6 +367,41 @@ pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
 }
 
 some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
+
+pub fn tumble_Timestamp_ShortInterval(ts: Timestamp, i: ShortInterval) -> Timestamp {
+    let ts_ms = ts.milliseconds();
+    let i_ms = i.milliseconds();
+    let round = ts_ms - ts_ms % i_ms;
+    Timestamp::new(round)
+}
+
+some_polymorphic_function2!(
+    tumble,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval,
+    Timestamp
+);
+
+pub fn tumble_Timestamp_ShortInterval_Time(ts: Timestamp, i: ShortInterval, t: Time) -> Timestamp {
+    let t_ms = (t.nanoseconds() / 1000000) as i64;
+    let ts_ms = ts.milliseconds() - t_ms;
+    let i_ms = i.milliseconds();
+    let round = ts_ms - ts_ms % i_ms;
+    Timestamp::new(round + t_ms)
+}
+
+some_polymorphic_function3!(
+    tumble,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval,
+    Time,
+    Time,
+    Timestamp
+);
 
 //////////////////////////// Date
 
@@ -721,6 +765,10 @@ const BILLION: u64 = 1000000000;
 impl Time {
     pub const fn new(nanoseconds: u64) -> Self {
         Self { nanoseconds }
+    }
+
+    pub fn nanoseconds(&self) -> u64 {
+        self.nanoseconds
     }
 
     pub fn from_time(time: NaiveTime) -> Self {
