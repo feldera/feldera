@@ -85,6 +85,7 @@ features = ["formatting", "macros", "serde", "serde-human-readable"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.150"
+nix = { version = "0.27.1", features = ["uio"] }
 
 [dev-dependencies]
 rand = "0.8.5"

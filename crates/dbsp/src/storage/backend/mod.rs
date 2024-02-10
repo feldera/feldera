@@ -30,7 +30,9 @@ use uuid::Uuid;
 use crate::storage::buffer_cache::FBuf;
 pub mod metrics;
 
+pub mod memory_impl;
 pub mod monoio_impl;
+pub mod posixio_impl;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -292,3 +294,5 @@ pub trait StorageExecutor {
 }
 
 pub use monoio_impl::MonoioBackend as DefaultBackend;
+//pub use memory_impl::MemoryBackend as DefaultBackend;
+//pub use posixio_impl::PosixBackend as DefaultBackend;
