@@ -45,7 +45,7 @@ const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
           width: '100%',
           borderRadius: '0 100px 100px 0',
           color: theme.palette.text.primary,
-          padding: theme.spacing(2.25, 3.5),
+          py: 1,
           transition: 'opacity .25s ease-in-out',
           '&.active, &.active:hover': {
             boxShadow: theme.shadows[3],
