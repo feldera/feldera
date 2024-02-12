@@ -541,18 +541,19 @@ export default function PipelineTable() {
       return
     }
     setExpandedRows(expandedRows =>
-      (expandedRows.includes(anchorPipelineId) ? expandedRows : [...expandedRows, anchorPipelineId]).filter(row =>
-        data?.find(
-          p =>
-            p.descriptor.pipeline_id === row &&
-            [
-              PipelineStatus.PROVISIONING,
-              PipelineStatus.INITIALIZING,
-              PipelineStatus.PAUSED,
-              PipelineStatus.RUNNING,
-              PipelineStatus.SHUTTING_DOWN
-            ].includes(p.state.current_status)
-        )
+      (expandedRows.includes(anchorPipelineId) ? expandedRows : [...expandedRows, anchorPipelineId]).filter(
+        row =>
+          data?.find(
+            p =>
+              p.descriptor.pipeline_id === row &&
+              [
+                PipelineStatus.PROVISIONING,
+                PipelineStatus.INITIALIZING,
+                PipelineStatus.PAUSED,
+                PipelineStatus.RUNNING,
+                PipelineStatus.SHUTTING_DOWN
+              ].includes(p.state.current_status)
+          )
       )
     )
   }, [anchorPipelineId, setExpandedRows, data])

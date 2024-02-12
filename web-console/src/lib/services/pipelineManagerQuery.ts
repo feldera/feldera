@@ -478,13 +478,16 @@ export const programQueryCacheUpdate = (
 
   setQueryData(queryClient, PipelineManagerQueryKey.programStatus(programName), updateCache)
 
-  setQueryData(queryClient, PipelineManagerQueryKey.programs(), oldDatas =>
-    oldDatas?.map(oldData => {
-      if (oldData.name !== programName) {
-        return oldData
-      }
-      return updateCache(oldData)
-    })
+  setQueryData(
+    queryClient,
+    PipelineManagerQueryKey.programs(),
+    oldDatas =>
+      oldDatas?.map(oldData => {
+        if (oldData.name !== programName) {
+          return oldData
+        }
+        return updateCache(oldData)
+      })
   )
 }
 
@@ -500,13 +503,16 @@ const pipelineStatusQueryCacheUpdate = (
     }
     return { ...oldData, state: { ...oldData.state, [field]: status } }
   }
-  setQueryData(queryClient, PipelineManagerQueryKey.pipelines(), oldDatas =>
-    oldDatas?.map(oldData => {
-      if (oldData.descriptor.name !== pipelineName) {
-        return oldData
-      }
-      return updateCache(oldData)
-    })
+  setQueryData(
+    queryClient,
+    PipelineManagerQueryKey.pipelines(),
+    oldDatas =>
+      oldDatas?.map(oldData => {
+        if (oldData.descriptor.name !== pipelineName) {
+          return oldData
+        }
+        return updateCache(oldData)
+      })
   )
   setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), updateCache)
 }
@@ -536,12 +542,15 @@ export const pipelineQueryCacheUpdate = (
   }
   setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), updateCache)
 
-  setQueryData(queryClient, PipelineManagerQueryKey.pipelines(), oldDatas =>
-    oldDatas?.map(oldData => {
-      if (oldData.descriptor.name !== pipelineName) {
-        return oldData
-      }
-      return updateCache(oldData)
-    })
+  setQueryData(
+    queryClient,
+    PipelineManagerQueryKey.pipelines(),
+    oldDatas =>
+      oldDatas?.map(oldData => {
+        if (oldData.descriptor.name !== pipelineName) {
+          return oldData
+        }
+        return updateCache(oldData)
+      })
   )
 }
