@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API: endpoint to get a list of demo URLs
   ([#1385](https://github.com/feldera/feldera/pull/1385))
 - WebConsole: Add functionality that would enable setting up demos in the sandbox (#1321)
+- WebConsole: Add Swagger link to navbar, make navbar more compact
 
 ### Changed
 

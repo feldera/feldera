@@ -1,6 +1,8 @@
+import { OpenAPI } from '$lib/services/manager'
 // The main menu that shows up on the left side of the screen.
 import { VerticalNavItemsType } from 'src/@core/layouts/types'
 import IconAlignLeft from '~icons/bx/align-left'
+import IconCodeCurly from '~icons/bx/code-curly'
 import IconEnvelope from '~icons/bx/envelope'
 import IconFile from '~icons/bx/file'
 import IconGitRepoForked from '~icons/bx/git-repo-forked'
@@ -89,6 +91,13 @@ const navigation = (): VerticalNavItemsType => {
       icon: IconFile,
       openInNewTab: true,
       testid: 'button-vertical-nav-documentation'
+    },
+    {
+      title: 'Swagger',
+      path: OpenAPI.BASE + '/swagger-ui/',
+      icon: IconCodeCurly,
+      openInNewTab: true,
+      testid: 'button-vertical-nav-swagger'
     },
     {
       title: 'Email',

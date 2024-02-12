@@ -115,7 +115,7 @@ const Navigation = (props: Props) => {
             {userVerticalNavMenuContent ? (
               userVerticalNavMenuContent(props)
             ) : (
-              <List sx={{ transition: 'padding .25s ease', pr: 4.5 }}>
+              <List sx={{ transition: 'padding .25s ease', pr: 4.5 }} disablePadding>
                 <VerticalNavItems
                   groupActive={groupActive}
                   setGroupActive={setGroupActive}
@@ -128,7 +128,7 @@ const Navigation = (props: Props) => {
           </Box>
         </ScrollWrapper>
       </Box>
-      {afterVerticalNavMenuContent ? <Box sx={{ pb: 4 }}>{afterVerticalNavMenuContent(props)}</Box> : null}
+      {afterVerticalNavMenuContent ? afterVerticalNavMenuContent(props) : null}
     </Drawer>
   )
 }
