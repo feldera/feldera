@@ -7,7 +7,7 @@ export const getCaseIndependentName = (entity: CaseDependentName) =>
   entity.case_sensitive ? `"${entity.name}"` : entity.name
 
 // TODO: update implementation when double quotes become a legal symbol in a name
-export const caseDependentName = (caseIndependentName: string) => {
+export const getCaseDependentName = (caseIndependentName: string) => {
   return {
     name: caseIndependentName.replaceAll('"', ''),
     case_sensitive: caseIndependentName.includes('"')

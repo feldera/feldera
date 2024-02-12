@@ -10,7 +10,7 @@ import { useDataGridPresentationLocalStorage } from '$lib/compositions/persisten
 import { getDefaultValue } from '$lib/compositions/streaming/import/useDefaultRows'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { getValueFormatter, Row } from '$lib/functions/ddl'
-import { caseDependentName, caseDependentNameEq, getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -59,8 +59,8 @@ const useInsertionTable = (props: {
     }
 
     const program = newPipelineRevision.program
-    const tables = program.schema?.inputs.find(caseDependentNameEq(caseDependentName(props.caseIndependentName)))
-    const views = program.schema?.outputs.find(caseDependentNameEq(caseDependentName(props.caseIndependentName)))
+    const tables = program.schema?.inputs.find(caseDependentNameEq(getCaseDependentName(props.caseIndependentName)))
+    const views = program.schema?.outputs.find(caseDependentNameEq(getCaseDependentName(props.caseIndependentName)))
     const relation = tables || views // name is unique in the schema
     if (!relation) {
       return

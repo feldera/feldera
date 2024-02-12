@@ -12,7 +12,7 @@ import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTable
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
 import { Row, rowToAnchor } from '$lib/functions/ddl'
-import { caseDependentName, caseDependentNameEq, getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline } from '$lib/types/pipeline'
@@ -84,8 +84,8 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
 
     const pipelineRevision = pipelineRevisionQuery.data
     const program = pipelineRevision.program
-    const tables = program.schema?.inputs.find(caseDependentNameEq(caseDependentName(caseIndependentName)))
-    const views = program.schema?.outputs.find(caseDependentNameEq(caseDependentName(caseIndependentName)))
+    const tables = program.schema?.inputs.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
+    const views = program.schema?.outputs.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
     const relation = tables || views // name is unique in the schema
     if (!relation) {
       return

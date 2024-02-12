@@ -6,7 +6,7 @@ import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
-import { caseDependentName, caseDependentNameEq, getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { Relation } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
@@ -172,7 +172,7 @@ export default () => {
       if (
         caseIndependentName &&
         views &&
-        views.find(caseDependentNameEq(caseDependentName(caseIndependentName))) &&
+        views.find(caseDependentNameEq(getCaseDependentName(caseIndependentName))) &&
         tab === 'insert'
       ) {
         setTab('browse')
@@ -184,11 +184,11 @@ export default () => {
   }
   const { tables, views } = pipelineRevision
   const relationType = (() => {
-    const validTable = tables.find(caseDependentNameEq(caseDependentName(caseIndependentName)))
+    const validTable = tables.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
     if (validTable) {
       return 'table'
     }
-    const validView = views.find(caseDependentNameEq(caseDependentName(caseIndependentName)))
+    const validView = views.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
     if (validView) {
       return 'view'
     }
