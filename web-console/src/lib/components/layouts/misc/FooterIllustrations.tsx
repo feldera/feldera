@@ -1,18 +1,9 @@
 'use client'
 
 import Image from 'next/image'
-import { Fragment } from 'react'
 
-import { styled, useTheme } from '@mui/material/styles'
+import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
-
-// Styled Components
-const MaskImg = styled(Image)(() => ({
-  bottom: 0,
-  zIndex: -1,
-  width: '100%',
-  position: 'absolute'
-}))
 
 const FooterIllustrations = () => {
   const theme = useTheme()
@@ -20,15 +11,23 @@ const FooterIllustrations = () => {
   const hidden = useMediaQuery(theme.breakpoints.down('md'))
   const mask = theme.palette.mode === 'light' ? '/images/pages/misc-mask-light.png' : '/images/pages/misc-mask-dark.png'
 
-  if (!hidden) {
-    return (
-      <Fragment>
-        <MaskImg alt='mask' src={mask} priority />
-      </Fragment>
-    )
-  } else {
+  if (hidden) {
     return null
   }
+  return (
+    <>
+      <Image
+        alt='mask'
+        src={mask}
+        fill={true}
+        style={{
+          zIndex: -1,
+          position: 'absolute'
+        }}
+        priority
+      />
+    </>
+  )
 }
 
 export default FooterIllustrations
