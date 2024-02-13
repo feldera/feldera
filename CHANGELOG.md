@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebConsole: Move some footer links to navigation drawer
 - WebConsole: Make Introduction video inline on jome page, optionally collapsible
 - WebConsole: Show the entire generated API key
+- WebConsole: If AWS Cognito is used as an auth provider, when login is needed a redirect to Cognito Hosted UI happens automatically (#1364)
 
 ## [0.9.0] - 2024-02-06
 
