@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -20,7 +19,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -69,7 +67,6 @@ public class StreamingTests extends BaseSQLTests {
 
     @Test
     public void tumblingTestLimits() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 3);
         String sql = """
                CREATE TABLE series (
                    pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
