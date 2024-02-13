@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
 import * as va from 'valibot'
+import IconCopy from '~icons/bx/copy'
 import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
@@ -21,7 +22,6 @@ import {
   IconButton,
   List,
   ListItem,
-  ListItemButton,
   ListItemText,
   Stack,
   Typography,
@@ -62,7 +62,7 @@ export const CreateApiKeyDialog = () => {
     router.back()
   }
   return (
-    <Dialog open={show} onClose={handleClose}>
+    <Dialog open={show} onClose={handleClose} fullWidth>
       <DialogTitle>Generate a new API key</DialogTitle>
       <DialogContent>
         <IconButton size='small' onClick={handleClose} sx={{ position: 'absolute', right: '1rem', top: '1rem' }}>
@@ -78,7 +78,7 @@ export const CreateApiKeyDialog = () => {
             <DialogContentText color={theme.palette.warning.contrastText}>
               You will be shown the generated API key only once.
               <br />
-              You will not be able view it afterwards.
+              You will not be able to view it afterwards.
               <br />
               Please store it securely.
             </DialogContentText>
@@ -95,12 +95,16 @@ export const CreateApiKeyDialog = () => {
           {generatedKeys.map(key => (
             <ListItem
               key={key.api_key_id}
-              secondaryAction={<ListItemButton onClick={() => copy(key.api_key)}>Copy secret</ListItemButton>}
+              secondaryAction={
+                <IconButton onClick={() => copy(key.api_key)}>
+                  <IconCopy fontSize={20} />
+                </IconButton>
+              }
             >
               <ListItemText
                 primary={key.name}
-                secondary={'...' + key.api_key.slice(-5)}
-                sx={{ mr: 'auto' }}
+                secondary={key.api_key}
+                sx={{ wordWrap: 'break-word', pr: 2 }}
               ></ListItemText>
             </ListItem>
           ))}

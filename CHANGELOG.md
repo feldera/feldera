@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebConsole: Make Breadcrumb links larger, remove blue color
 - WebConsole: Move some footer links to navigation drawer
 - WebConsole: Make Introduction video inline on jome page, optionally collapsible
+- WebConsole: Show the entire generated API key
 
 ## [0.9.0] - 2024-02-06
 

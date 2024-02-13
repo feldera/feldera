@@ -12,7 +12,7 @@ export const AuthenticationSettings = () => {
     <></>
   ) : (
     <>
-      <Typography variant='h5'>Authentication</Typography>
+      <Typography variant='h6'>Authentication</Typography>
       <Card>
         <CardContent>
           <Grid container spacing={4}>
