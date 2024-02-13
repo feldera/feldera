@@ -37,7 +37,6 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -59,7 +58,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
-import org.dbsp.util.FreshName;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -83,10 +81,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -124,13 +120,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 Circuit circuit0 {
                     // DBSPSourceMultisetOperator 53
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
-                    let T = T();
+                    let stream53 = T();
                     // DBSPMapOperator 76
-                    let stream0: stream<OrdZSet<Tup1<b>, Weight>> = T.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
+                    let stream76: stream<OrdZSet<Tup1<b>, Weight>> = stream53.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let V: stream<OrdZSet<Tup1<b>, Weight>> = stream0;
+                    let stream83: stream<OrdZSet<Tup1<b>, Weight>> = stream76;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -451,9 +447,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
-        // Check that the output type does not include a vector.
-        DBSPTypeZSet outputType = circuit.getOutputType(0).to(DBSPTypeZSet.class);
-        DBSPTypeZSet inputType = circuit.getInputType(0).to(DBSPTypeZSet.class);
+        DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
+        DBSPOperator source = circuit.getInput("T");
+        Assert.assertNotNull(source);
+        DBSPTypeZSet inputType = source.getType().to(DBSPTypeZSet.class);
         Assert.assertTrue(inputType.sameType(outputType));
     }
 
@@ -468,7 +465,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         compiler.compileStatements(query);
         compiler.optimize();
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
-        DBSPOperator sink = circuit.circuit.getOperator("V");
+        DBSPOperator sink = circuit.circuit.getOutput("V");
         Assert.assertNotNull(sink);
         Assert.assertEquals(1, sink.inputs.size());
         DBSPOperator op = sink.inputs.get(0);
@@ -747,24 +744,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(message.exitCode, 0);
         Assert.assertTrue(file.exists());
         ImageIO.read(new File(png.getPath()));
-    }
-
-    @Test
-    public void testFreshName() {
-        String query = "CREATE VIEW V AS SELECT T.COL1 FROM T WHERE T.COL2 > 0";
-        DBSPCompiler compiler = this.compileDef();
-        compiler.compileStatement(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        Set<String> used = new HashSet<>();
-        CollectIdentifiers ci = new CollectIdentifiers(testCompiler(), used);
-        ci.getCircuitVisitor().apply(circuit);
-        Assert.assertTrue(used.contains("T")); // table name
-        Assert.assertTrue(used.contains("V")); // view name
-        FreshName gen = new FreshName(used);
-        String t0 = gen.freshName("T");
-        Assert.assertEquals(t0, "T_0");
-        String t1 = gen.freshName("T");
-        Assert.assertEquals(t1, "T_1");
     }
 
     @Test

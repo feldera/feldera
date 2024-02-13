@@ -104,8 +104,8 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
             return this.elementType;
         }
 
-        public void add(DBSPExpression expression) {
-            this.add(expression, 1);
+        public Contents add(DBSPExpression expression) {
+            return this.add(expression, 1);
         }
 
         public Contents map(Function<DBSPExpression, DBSPExpression> map, DBSPType elementType) {
@@ -117,7 +117,7 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
             return result;
         }
 
-        public void add(DBSPExpression expression, long weight) {
+        public Contents add(DBSPExpression expression, long weight) {
             // We expect the expression to be a constant value (a literal)
             if (expression.getType().code != this.getElementType().code)
                 throw new InternalCompilerError("Added element type " +
@@ -129,16 +129,18 @@ public class DBSPZSetLiteral extends DBSPLiteral implements IDBSPContainer {
                     this.data.remove(expression);
                 else
                     this.data.put(expression, weight + oldWeight);
-                return;
+                return this;
             }
             this.data.put(expression, weight);
+            return this;
         }
 
-        public void add(Contents other) {
+        public Contents add(Contents other) {
             if (!this.elementType.sameType(other.elementType))
                 throw new InternalCompilerError("Added zsets do not have the same type " +
                         this.getElementType() + " vs " + other.getElementType(), this.elementType);
             other.data.forEach(this::add);
+            return this;
         }
 
         public Contents negate() {

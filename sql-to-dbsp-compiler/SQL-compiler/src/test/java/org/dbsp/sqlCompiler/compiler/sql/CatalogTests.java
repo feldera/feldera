@@ -39,7 +39,6 @@ public class CatalogTests extends BaseSQLTests {
 
     @Test
     public void testComplex() {
-        Logger.INSTANCE.setLoggingLevel(CircuitCloneVisitor.class, 2);
         String statements = """
                 -- Git repository.
                 create table repository (

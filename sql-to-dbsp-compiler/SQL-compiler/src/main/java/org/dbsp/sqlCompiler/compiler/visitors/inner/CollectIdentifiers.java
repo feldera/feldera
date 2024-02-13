@@ -28,7 +28,6 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
@@ -99,7 +98,7 @@ public class CollectIdentifiers extends InnerVisitor {
 
         @Override
         public VisitDecision preorder(DBSPOperator operator) {
-            this.identifiers.add(operator.outputName);
+            this.identifiers.add(operator.getOutputName());
             return super.preorder(operator);
         }
     }

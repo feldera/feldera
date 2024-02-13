@@ -5,21 +5,23 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -65,7 +67,6 @@ public class StreamingTests extends BaseSQLTests {
 
     @Test
     public void tumblingTestLimits() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 3);
         String sql = """
                CREATE TABLE series (
                    pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
@@ -128,7 +129,7 @@ public class StreamingTests extends BaseSQLTests {
                 addSub);
         // Insert tuple before last waterline, should be dropped
         data[3] = new InputOutputPair(
-                this.fromDoubleTimestamp(10.0,"2023-12-29 09:10:00"),
+                this.fromDoubleTimestamp(10.0, "2023-12-29 09:10:00"),
                 DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
         // Insert tuple in the past, but before the last waterline
         addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
@@ -146,6 +147,55 @@ public class StreamingTests extends BaseSQLTests {
                 this.fromDoubleTimestamp(10.0, "2023-13-30 10:00:00"),
                 this.fromDoubleTimestamp(10.0, "2023-13-30 00:00:00"));
         this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
+    }
+
+    @Test
+    public void blogTest() {
+        String statements = """
+                CREATE TABLE CUSTOMER(name VARCHAR NOT NULL, zipcode INT NOT NULL);
+                                
+                CREATE VIEW DENSITY AS
+                SELECT zipcode, COUNT(name)
+                FROM CUSTOMER
+                GROUP BY zipcode
+                """;
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(statements);
+        Assert.assertFalse(compiler.hasErrors());
+        DBSPExpression bob = new DBSPTupleExpression(new DBSPStringLiteral("Bob"), new DBSPI32Literal(1000));
+        DBSPType outputType = new DBSPTypeTuple(
+                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
+                new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
+        InputOutputPair[] data = new InputOutputPair[] {
+                new InputOutputPair(
+                        DBSPZSetLiteral.Contents.emptyWithElementType(bob.getType()),
+                        DBSPZSetLiteral.Contents.emptyWithElementType(outputType)
+                ),
+                new InputOutputPair(
+                        new DBSPZSetLiteral.Contents(
+                                bob,
+                                new DBSPTupleExpression(new DBSPStringLiteral("Pam"), new DBSPI32Literal(2000)),
+                                new DBSPTupleExpression(new DBSPStringLiteral("Sue"), new DBSPI32Literal(3000)),
+                                new DBSPTupleExpression(new DBSPStringLiteral("Mike"), new DBSPI32Literal(1000))
+                        ),
+                        new DBSPZSetLiteral.Contents(
+                                new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(2)),
+                                new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(1)),
+                                new DBSPTupleExpression(new DBSPI32Literal(3000), new DBSPI64Literal(1))
+                        )
+                ),
+                new InputOutputPair(
+                        DBSPZSetLiteral.Contents.emptyWithElementType(bob.getType())
+                                .add(bob, -1)
+                                .add(new DBSPTupleExpression(new DBSPStringLiteral("Bob"), new DBSPI32Literal(2000))),
+                        DBSPZSetLiteral.Contents.emptyWithElementType(outputType)
+                                .add(new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(2)), -1)
+                                .add(new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(1)), -1)
+                                .add(new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(2)), 1)
+                                .add(new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(1)), 1)
+                )
+        };
+        this.addRustTestCase("ivm blog post", compiler, getCircuit(compiler), data);
     }
 
     @Test 

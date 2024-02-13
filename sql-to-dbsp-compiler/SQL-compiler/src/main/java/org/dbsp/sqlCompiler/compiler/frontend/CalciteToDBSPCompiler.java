@@ -400,20 +400,27 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<String> name = scan.getTable().getQualifiedName();
         String tableName = name.get(name.size() - 1);
         @Nullable
-        DBSPOperator source = this.circuit.getOperator(tableName);
+        DBSPOperator source = this.circuit.getInput(tableName);
         // The inputs should have been created while parsing the CREATE TABLE statements.
-        if (source == null)
-            throw new InternalCompilerError("Could not find input for table " + tableName, node);
-
-        if (source.is(DBSPSinkOperator.class)) {
-            // We do this because sink operators do not have outputs.
-            // A table scan for a sink operator can appear because of
-            // a VIEW that is an input to a query.
-            Utilities.putNew(this.nodeOperator, scan, source.to(DBSPSinkOperator.class).input());
-        } else {
+        if (source != null) {
             // Multiple queries can share an input.
             // Or the input may have been created by a CREATE TABLE statement.
             Utilities.putNew(this.nodeOperator, scan, source);
+        } else {
+            // Try a view if no table with this name exists.
+            source = this.circuit.getOutput(tableName);
+            if (source != null) {
+                // We add the sink's source because sink operators do not have outputs.
+                // A table scan for a sink operator can appear because of
+                // a VIEW that is an input to a query.
+                Utilities.putNew(this.nodeOperator, scan, source.to(DBSPSinkOperator.class).input());
+            } else {
+                // Try a noop
+                source = this.circuit.getNoop(tableName);
+                if (source == null)
+                    throw new InternalCompilerError("Could not find operator for " + tableName, node);
+                Utilities.putNew(this.nodeOperator, scan, source);
+            }
         }
     }
 
@@ -1358,11 +1365,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class).rename(view.relationName);
                 o = new DBSPSinkOperator(
                         view.getCalciteObject(), view.relationName,
-                        view.relationName, view.statement,
+                        view.statement,
                         struct, statement.comment, op);
             } else {
                 // We may already have a node for this output
-                DBSPOperator previous = this.circuit.getOperator(view.relationName);
+                DBSPOperator previous = this.circuit.getOutput(view.relationName);
                 if (previous != null)
                     return previous;
                 o = new DBSPNoopOperator(view.getCalciteObject(), op, statement.comment, view.relationName);

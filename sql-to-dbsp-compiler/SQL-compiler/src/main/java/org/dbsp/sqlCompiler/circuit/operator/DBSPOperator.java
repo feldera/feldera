@@ -36,10 +36,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
-import org.dbsp.util.IHasName;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
-import org.dbsp.util.NameGen;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -55,15 +53,13 @@ import java.util.Objects;
  * to a method starting with "stream_*".
  * Some operators compute correctly both over deltas and aver whole sets, e.g. Map.
  */
-public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasType, IDBSPOuterNode {
+public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOuterNode {
     public final List<DBSPOperator> inputs;
     /** Operation that is invoked on inputs; corresponds to a DBSP operator name, e.g., join. */
     public final String operation;
     /** Computation invoked by the operator, usually a closure. */
     @Nullable
     public final DBSPExpression function;
-    /** Output assigned to this variable. */
-    public final String outputName;
     /** Type of output produced. */
     public final DBSPType outputType;
     /** True if the output of the operator is a multiset. */
@@ -76,12 +72,11 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
 
     protected DBSPOperator(CalciteObject node, String operation,
                            @Nullable DBSPExpression function, DBSPType outputType,
-                           boolean isMultiset, @Nullable String comment, String outputName) {
+                           boolean isMultiset, @Nullable String comment) {
         super(node);
         this.inputs = new ArrayList<>();
         this.operation = operation;
         this.function = function;
-        this.outputName = outputName;
         this.outputType = outputType;
         this.isMultiset = isMultiset;
         this.comment = comment;
@@ -94,6 +89,10 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
             throw new InternalCompilerError("Operator output type is unexpected " + outputType);
     }
 
+    public String getOutputName() {
+        return "stream" + this.getId();
+    }
+
     public String getIdString() {
         String result = Long.toString(this.id);
         if (this.derivedFrom >= 0)
@@ -104,8 +103,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
     public DBSPOperator(CalciteObject node, String operation,
                         @Nullable DBSPExpression function,
                         DBSPType outputType, boolean isMultiset) {
-        this(node, operation, function, outputType, isMultiset, null,
-                new NameGen("stream").nextName());
+        this(node, operation, function, outputType, isMultiset, null);
     }
 
     public void setDerivedFrom(long id) {
@@ -203,11 +201,6 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
     }
 
     @Override
-    public String getName() {
-        return this.outputName;
-    }
-
-    @Override
     public DBSPType getType() {
         return this.outputType;
     }
@@ -271,12 +264,12 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
     public IIndentStream toString(IIndentStream builder) {
         this.writeComments(builder)
                 .append("let ")
-                .append(this.getName())
+                .append(this.getOutputName())
                 .append(": ")
                 .append(this.outputStreamType)
                 .append(" = ");
         if (!this.inputs.isEmpty())
-            builder.append(this.inputs.get(0).getName())
+            builder.append(this.inputs.get(0).getOutputName())
                     .append(".");
         builder.append(this.operation)
                 .append("(");
@@ -284,7 +277,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasName, IHasTyp
             if (i > 1)
                 builder.append(",");
             builder.append("&")
-                    .append(this.inputs.get(i).getName());
+                    .append(this.inputs.get(i).getOutputName());
         }
         if (this.function != null) {
             if (this.inputs.size() > 1)

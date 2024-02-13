@@ -53,11 +53,11 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     public IIndentStream toString(IIndentStream builder) {
         this.writeComments(builder)
                 .append("let ")
-                .append(this.getName())
+                .append(this.getOutputName())
                 .append(": ")
                 .append(this.outputStreamType)
                 .append(" = ")
-                .append(this.input().getName())
+                .append(this.input().getOutputName())
                 .append(".")
                 .append(this.operation)
                 .append("(");

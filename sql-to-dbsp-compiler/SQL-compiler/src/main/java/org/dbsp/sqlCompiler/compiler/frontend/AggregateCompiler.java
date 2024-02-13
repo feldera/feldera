@@ -191,7 +191,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression agg = this.getAggregatedValue();
             if (agg.getType().mayBeNull)
                 argument = new DBSPUnaryExpression(node, this.resultType.setMayBeNull(false),
-                        DBSPOpcode.INDICATOR, agg);
+                        DBSPOpcode.INDICATOR, agg.borrow());
             else
                 argument = one;
         }
@@ -373,8 +373,9 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
 
         if (aggregatedValueType.mayBeNull)
-            plusOne = new DBSPUnaryExpression(node, new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
-                    DBSPOpcode.INDICATOR, aggregatedValue.deepCopy()).cast(intermediateResultTypeNonNull);
+            plusOne = new DBSPUnaryExpression(node,
+                    new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
+                    DBSPOpcode.INDICATOR, aggregatedValue.deepCopy().borrow()).cast(intermediateResultTypeNonNull);
         if (this.isDistinct) {
             count = this.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD,
