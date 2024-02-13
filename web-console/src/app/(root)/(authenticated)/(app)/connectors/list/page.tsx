@@ -3,7 +3,7 @@
 import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import DataSourceTable from '$lib/components/connectors/DataSourceTable'
 
-const SqlPrograms = () => {
+export default () => {
   return (
     <>
       <Breadcrumbs.Header>
@@ -13,5 +13,3 @@ const SqlPrograms = () => {
     </>
   )
 }
-
-export default SqlPrograms
