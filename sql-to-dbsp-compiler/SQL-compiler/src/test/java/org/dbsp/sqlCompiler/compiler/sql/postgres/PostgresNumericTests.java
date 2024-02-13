@@ -921,6 +921,53 @@ public class PostgresNumericTests extends SqlIoTest {
     }
 
     @Test
+    public void testExp() {
+        this.qs("""
+                --
+                -- Tests for EXP()
+                --
+                -- special cases
+                select exp(0.0);
+                        exp
+                --------------------
+                 1.0000000000000000
+                (1 row)
+                                
+                select exp(1.0);
+                        exp
+                --------------------
+                 2.7182818284590452
+                (1 row)
+                                
+                select exp(1.0::numeric(25, 10)); -- changed the precision and scale
+                        exp
+                --------------------
+                 2.7182818284590452
+                (1 row)
+                                
+                select exp(-32.999);
+                         exp
+                -----------------------
+                 4.663547361468238E-15
+                (1 row)
+
+                select exp(-123.456);
+                                                   exp
+                -------------------------------------------------------------------------
+                 0.000000000000000000000000000000000000000000000000000002419582541264601
+                (1 row)
+
+                -- big test
+                select exp(1234.5678);
+                 exp
+                -----
+                 Infinity
+                (1 row)
+                """
+        );
+    }
+
+    @Test
     public void testSqrtError() {
         this.qf("SELECT sqrt('-1'::numeric)", "Unable to compute sqrt of -1");
     }

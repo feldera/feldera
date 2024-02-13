@@ -653,28 +653,36 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 -------------
                  -2147483648
                 (1 row)
-                """
-        );
-    }
-
-/*
-                -- check edge cases for exp --> we don't support exp yet
+                
+                -- check edge cases for exp
                 SELECT exp('inf'::float8), exp('-inf'::float8), exp('nan'::float8);
                    exp    | exp | exp
                 ----------+-----+-----
                  Infinity |   0 | NaN
                 (1 row)
-
+                
+                select exp(123.456::float8);
+                          exp
+                -----------------------
+                 4.132944352778106e+53
+                (1 row)
+                
+                -- the values have been slightly changed to account for fp errors
                 -- take exp of ln(f.f1)
                 SELECT f.f1, exp(ln(f.f1)) AS exp_ln_f1
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
                           f1          |       exp_ln_f1
                 ----------------------+-----------------------
-                               1004.3 |                1004.3
-                 1.2345678901234e+200 | 1.23456789012338e+200
-                 1.2345678901234e-200 | 1.23456789012339e-200
+                               1004.3 |      1004.3000000000004
+                 1.2345678901234e+200 |  1.234567890123379e+200
+                 1.2345678901234e-200 | 1.2345678901233948e-200
                 (3 rows)
+                """
+        );
+    }
+
+/*
 
 -- error functions -> not supported by calcite
                 SELECT x,

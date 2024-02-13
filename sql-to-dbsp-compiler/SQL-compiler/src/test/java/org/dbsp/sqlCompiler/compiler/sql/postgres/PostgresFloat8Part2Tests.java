@@ -79,6 +79,16 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
                                -Infinity
                                      NaN
                 (5 rows)
+                
+                SELECT exp(f.f1) from FLOAT8_TBL f;
+                            f1
+                -------------------------
+                                       0
+                                       0
+                                       1
+                                       1
+                 0.0000000000000007399123060905129
+                (5 rows)
                 """
         );
     }
