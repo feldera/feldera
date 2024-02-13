@@ -424,8 +424,6 @@ public class ToRustVisitor extends CircuitVisitor {
             DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
-                    .append(Utilities.doubleQuote(operator.getTableName()))
-                    .append(", ")
                     .append(operator.getOutputName())
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -534,8 +532,6 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(", ");
             operator.getOutputIndexedZSetType().weightType.accept(this.innerVisitor);
             this.builder.append(", _, _>(")
-                    .append(Utilities.doubleQuote(operator.getTableName()))
-                    .append(", ")
                     .append(operator.getOutputName())
                     .append(".clone(), ")
                     .append(this.handleName(operator))
@@ -650,8 +646,6 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("catalog.register_output_zset::<_, ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
-                    .append(Utilities.doubleQuote(operator.viewName))
-                    .append(", ")
                     .append(operator.input().getOutputName())
                     .append(".clone()")
                     .append(", ");
