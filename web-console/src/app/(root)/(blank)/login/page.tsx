@@ -5,11 +5,10 @@ import { PublicPipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
 import { jwtDecode, JwtPayload } from 'jwt-decode'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
-import { ReactNode } from 'react'
 import { match, P } from 'ts-pattern'
 import IconLockAlt from '~icons/bx/lock-alt'
 
-import { Box, Button, Grid, Typography, useTheme } from '@mui/material'
+import { Box, Grid } from '@mui/material'
 import { CredentialResponse, GoogleLogin, TokenResponse } from '@react-oauth/google'
 import { useQuery } from '@tanstack/react-query'
 
@@ -28,11 +27,7 @@ export default () => {
           {match(authConfig)
             .with(undefined, () => <></>)
             .with({ AwsCognito: P.select() }, config => (
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <AwsLoginButton loginUrl={config.login_url} logoutUrl={config.logout_url}>
-                  Login with AWS Cognito
-                </AwsLoginButton>
-              </Box>
+              <AwsCognitoRedirect loginUrl={config.login_url} logoutUrl={config.logout_url} />
             ))
             .with({ GoogleIdentity: P._ }, () => <GoogleLoginButton></GoogleLoginButton>)
             .with('NoAuth', () => {
@@ -45,22 +40,14 @@ export default () => {
   )
 }
 
-const AwsLoginButton = (props: { loginUrl: string; logoutUrl: string; children: ReactNode }) => {
-  const theme = useTheme()
+const AwsCognitoRedirect = (props: { loginUrl: string; logoutUrl: string }) => {
   const url = (props.loginUrl + '&redirect_uri={redirectUri}&state={state}')
     .replace('{redirectUri}', encodeURIComponent(window.location.origin + '/auth/aws/'))
     .replace(
       '{state}',
       Buffer.from(props.logoutUrl + '&redirect_uri={redirectUri}&state={state}', 'utf8').toString('base64')
     )
-  return (
-    <Button href={url} variant='outlined' sx={{ gap: 8, backgroundColor: theme.palette.background.paper }}>
-      <Image src={'/icons/vendors/aws-cognito-icon.png'} width={27} height={32} alt='AWS Cognito logo' />
-      <Typography variant='body1' style={{ textTransform: 'none' }}>
-        {props.children}
-      </Typography>{' '}
-    </Button>
-  )
+  redirect(url)
 }
 
 const useOnGoogleLogin = () => {
