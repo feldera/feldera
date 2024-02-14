@@ -111,6 +111,7 @@
     "react-hook-form": "^7.45.4",
     "react-hook-form-mui": "^6.6.1",
     "react-keyed-flatten-children": "^2.2.1",
+    "react-markdown": "^9.0.1",
     "react-perfect-scrollbar": "^1.5.8",
     "react-popper": "^2.3.0",
     "react-redux": "^8.1.2",

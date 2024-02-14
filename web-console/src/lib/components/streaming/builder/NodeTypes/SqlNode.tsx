@@ -121,7 +121,7 @@ export function SqlNode({ id, data }: NodeProps<{ label: string; program: Progra
               sx={{ color: 'text.secondary' }}
               onClick={showDeleteDialog(
                 'Remove',
-                `${data.program.name || 'unnamed'} program`,
+                `${data.program.name} program`,
                 onDelete,
                 'You can add it back later.'
               )}

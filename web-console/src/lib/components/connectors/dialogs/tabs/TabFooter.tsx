@@ -7,16 +7,24 @@ import IconRightArrowAlt from '~icons/bx/right-arrow-alt'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 
-const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: string[]; submitButton: JSX.Element }) => {
-  const { activeTab, setActiveTab, tabsArr } = props
-
-  const prevTab = tabsArr[tabsArr.indexOf(activeTab) - 1]
-  const nextTab = tabsArr[tabsArr.indexOf(activeTab) + 1]
-  const onLastTab = activeTab === tabsArr[tabsArr.length - 1]
-  const onFirstTab = activeTab === tabsArr[0]
+export const TabFooter = ({
+  activeTab,
+  setActiveTab,
+  tabs,
+  submitButton
+}: {
+  activeTab: string
+  setActiveTab: any
+  tabs: readonly string[]
+  submitButton: JSX.Element
+}) => {
+  const prevTab = tabs[tabs.indexOf(activeTab) - 1]
+  const nextTab = tabs[tabs.indexOf(activeTab) + 1]
+  const onLastTab = activeTab === tabs[tabs.length - 1]
+  const onFirstTab = activeTab === tabs[0]
 
   const nextOrSaveButton = onLastTab ? (
-    props.submitButton
+    submitButton
   ) : (
     <Button
       variant='contained'
@@ -32,7 +40,7 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
   )
 
   return (
-    <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Box sx={{ display: 'flex', width: '100%', mt: 'auto', pt: 4, justifyContent: 'space-between' }}>
       <Button
         variant='outlined'
         color='secondary'
@@ -47,5 +55,3 @@ const TabFooter = (props: { activeTab: string; setActiveTab: any; tabsArr: strin
     </Box>
   )
 }
-
-export default TabFooter

@@ -6,7 +6,7 @@ import Grid from '@mui/material/Grid'
 
 export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
   const watch = useWatch<DebeziumInputSchema>()
-  const selectedFormat = watch.config!['format_name']
+  const selectedFormat = watch.format!.format_name
 
   return (
     <Grid container spacing={4}>
@@ -14,7 +14,7 @@ export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
         {selectedFormat === 'json' && (
           <>
             <SelectElement
-              name='config.json_flavor'
+              name='format.json_flavor'
               label='Source database'
               size='small'
               options={[
@@ -51,7 +51,7 @@ export const DebeziumInputFormatDetails = (props: { disabled?: boolean }) => {
           </>
         )}
         <SelectElement
-          name='config.format_name'
+          name='format.format_name'
           label='Data Format'
           size='small'
           options={[

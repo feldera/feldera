@@ -8,7 +8,7 @@ export const SnowflakeOutputFormatDetails = (props: { disabled?: boolean }) => {
     <Grid container spacing={4}>
       <GridItems xs={12}>
         <SelectElement
-          name='config.format_name'
+          name='format.format_name'
           label='Data Format'
           size='small'
           options={[

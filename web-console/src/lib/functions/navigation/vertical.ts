@@ -8,6 +8,7 @@ import IconFile from '~icons/bx/file'
 import IconGitRepoForked from '~icons/bx/git-repo-forked'
 import IconHomeCircle from '~icons/bx/home-circle'
 import IconRocket from '~icons/bx/rocket'
+import IconServer from '~icons/bx/server'
 import IconUnite from '~icons/bx/unite'
 import IconSlack from '~icons/bxl/slack'
 import CogOutline from '~icons/mdi/cog-outline'
@@ -39,9 +40,6 @@ const navigation = (): VerticalNavItemsType => {
       icon: IconAlignLeft,
       testid: 'button-vertical-nav-sql-programs'
     },
-    {
-      sectionTitle: 'Streaming'
-    },
     // {
     //   title: 'Pipeline Builder',
     //   path: '/streaming/builder',
@@ -67,7 +65,13 @@ const navigation = (): VerticalNavItemsType => {
     //   icon: 'bx:coin-stack'
     // },
     {
-      title: 'Connectors', // 'Existing Connectors',
+      title: 'Services',
+      path: ['/services/list', '/services/create'],
+      icon: IconServer,
+      testid: 'button-vertical-nav-services'
+    },
+    {
+      title: 'Connectors',
       path: ['/connectors/list', '/connectors/create'],
       icon: IconUnite,
       testid: 'button-vertical-nav-connectors'

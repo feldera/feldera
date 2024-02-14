@@ -3,15 +3,15 @@ import { SelectElement, SwitchElement, useWatch } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'
 
-const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
+export const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
   const watch = useWatch()
-  const selectedFormat = watch.config['format_name']
+  const selectedFormat = watch.format.format_name
 
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
         <SelectElement
-          name='config.format_name'
+          name='format.format_name'
           label='Data Format'
           size='small'
           options={[
@@ -33,7 +33,7 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
         {selectedFormat === 'json' && (
           <>
             <SelectElement
-              name='config.update_format'
+              name='format.update_format'
               label='Update Format'
               size='small'
               options={[
@@ -63,7 +63,7 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
             ></SelectElement>
             <SwitchElement
               label='Records wrapped in an array'
-              name='config.json_array'
+              name='format.json_array'
               defaultValue={'false'}
               disabled={props.disabled}
               data-testid='input-is-wrapped'
@@ -74,5 +74,3 @@ const TabGenericInputFormatDetails = (props: { disabled?: boolean }) => {
     </Grid>
   )
 }
-
-export default TabGenericInputFormatDetails

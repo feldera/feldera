@@ -1,13 +1,13 @@
 // A create/update dialog for a Kafka input connector.
 'use client'
 
-import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
-import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
+import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import { connectorTransportName, parseUrlSchema } from '$lib/functions/connectors'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { ConnectorType } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
@@ -28,16 +28,16 @@ import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
-import TabGenericInputFormatDetails from './tabs/TabGenericInputFormatDetails'
+import { TabGenericInputFormatDetails } from './tabs/TabGenericInputFormatDetails'
 import Transition from './tabs/Transition'
 
 const schema = va.object({
-  name: va.nonOptional(va.string()),
+  name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
   config: va.object({
     url: va.nonOptional(va.string()),
-    format_name: va.nonOptional(va.enumType(['json', 'csv'])),
-    update_format: va.optional(va.enumType(['raw', 'insert_delete']), 'raw'),
+    format_name: va.nonOptional(va.picklist(['json', 'csv'])),
+    update_format: va.optional(va.picklist(['raw', 'insert_delete']), 'raw'),
     json_array: va.nonOptional(va.boolean())
   })
 })
@@ -45,7 +45,8 @@ const schema = va.object({
 export type UrlSchema = va.Input<typeof schema>
 
 export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
-  const [activeTab, setActiveTab] = useState<string>('detailsTab')
+  const tabs = ['detailsTab', 'formatTab'] as const
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<UrlSchema | undefined>(undefined)
 
   // Initialize the form either with default or values from the passed in connector
@@ -67,7 +68,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   }
 
   const handleClose = () => {
-    setActiveTab(tabList[0])
+    setActiveTab(tabs[0])
     props.setShow(false)
   }
 
@@ -110,11 +111,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('formatTab')
     }
   }
-
-  const tabList = ['detailsTab', 'formatTab']
-  const tabFooter = (
-    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabsArr={tabList} />
-  )
+  const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
   return (
     <Dialog
       fullWidth
@@ -158,7 +155,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
             <TabContext value={activeTab}>
               <TabList
                 orientation='vertical'
-                onChange={(e, newValue: string) => setActiveTab(newValue)}
+                onChange={(e, newValue: (typeof tabs)[number]) => setActiveTab(newValue)}
                 sx={{
                   border: 0,
                   minWidth: 200,

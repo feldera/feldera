@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1515](https://github.com/feldera/feldera/pull/1515))
 - Added basic support to ingest and export data in the parquet format
   ([#1510](https://github.com/feldera/feldera/pull/1510))
+- WebConsole: Services page, Kafka service edit dialog (#1233)
 
 ## [0.11.0] - 2024-03-05
 

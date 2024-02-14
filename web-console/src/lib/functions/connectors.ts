@@ -10,6 +10,7 @@ import ImageHttpGet from '$public/images/generic/http-get.svg'
 import DebeziumLogo from '$public/images/vendors/debezium-logo-color.svg'
 import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
+import { fromKafkaConfig } from 'src/lib/functions/kafka/librdkafkaOptions'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 import iconBoilingFlask from '~icons/generic/boiling-flask'
@@ -55,29 +56,30 @@ export const parseConnectorDescrWith =
     return {
       name: connector.name,
       description: connector.description,
-      config: parseConfig(connector.config)
+      ...parseConfig(connector.config)
     }
   }
 
-// Given an existing ConnectorDescr return the KafkaInputSchema
-// if connector is of type KAFKA_IN.
-export const parseKafkaInputSchemaConfig = (config: ConnectorDescr['config']): KafkaInputSchema['config'] => {
+/**
+ * Given an existing ConnectorDescr return the KafkaInputSchema
+ * if connector is of type KAFKA_IN.
+ */
+export const parseKafkaInputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(connectorDescrToType(config) === ConnectorType.KAFKA_IN)
   invariant(config.transport.config)
 
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
-    transport_user_config: config.transport.config,
-    format_user_config: config.format.config,
-    bootstrap_servers: config.transport.config['bootstrap.servers'],
-    auto_offset_reset: config.transport.config['auto.offset.reset'],
-    group_id: config.transport.config['group.id'] || undefined,
-    topics: config.transport.config.topics,
-    format_name: assertUnion(['json', 'csv'] as const, config.format.name),
-    update_format: config.format.config?.update_format || 'raw',
-    json_array: config.format.config?.array || false,
-    ...authConfig
+    transport: {
+      ...fromKafkaConfig(config.transport.config),
+      ...authConfig
+    } as KafkaInputSchema['transport'],
+    format: {
+      format_name: assertUnion(['json', 'csv'] as const, config.format.name),
+      update_format: config.format.config?.update_format || 'raw',
+      json_array: config.format.config?.array || false
+    }
   }
 }
 
@@ -85,19 +87,20 @@ export const parseKafkaInputSchema = parseConnectorDescrWith(parseKafkaInputSche
 
 // Given an existing ConnectorDescr return the KafkaOutputSchema
 // if connector is of type KAFKA_OUT.
-export const parseKafkaOutputSchemaConfig = (config: ConnectorDescr['config']): KafkaOutputSchema['config'] => {
+export const parseKafkaOutputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(connectorDescrToType(config) === ConnectorType.KAFKA_OUT)
   invariant(config.transport.config)
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
-    transport_user_config: config.transport.config,
-    format_user_config: config.format.config,
-    bootstrap_servers: config.transport.config['bootstrap.servers'],
-    topic: config.transport.config.topic,
-    format_name: assertUnion(['json', 'csv'] as const, config.format.name),
-    json_array: config.format.config?.array || false,
-    ...authConfig
+    transport: {
+      ...fromKafkaConfig(config.transport.config),
+      ...authConfig
+    } as KafkaOutputSchema['transport'],
+    format: {
+      format_name: assertUnion(['json', 'csv'] as const, config.format.name),
+      json_array: config.format.config?.array || false
+    }
   }
 }
 
@@ -105,41 +108,41 @@ export const parseKafkaOutputSchema = parseConnectorDescrWith(parseKafkaOutputSc
 
 // Given an existing ConnectorDescr return the DebeziumInputSchema
 // if connector is of type DEBEZIUM_IN.
-export const parseDebeziumInputSchemaConfig = (config: ConnectorDescr['config']): DebeziumInputSchema['config'] => {
+export const parseDebeziumInputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(connectorDescrToType(config) === ConnectorType.DEBEZIUM_IN)
   invariant(config.transport.config)
 
   const authConfig = parseAuthParams(config.transport.config)
   return {
-    transport_user_config: config.transport.config,
-    format_user_config: config.format.config,
-    bootstrap_servers: config.transport.config['bootstrap.servers'],
-    auto_offset_reset: config.transport.config['auto.offset.reset'],
-    group_id: config.transport.config['group.id'] || undefined,
-    topics: config.transport.config.topics,
-    format_name: assertUnion(['json'] as const, config.format.name),
-    update_format: assertUnion(['debezium'] as const, config.format!.config!.update_format),
-    json_flavor: assertUnion(['debezium_mysql'] as const, config.format!.config!.json_flavor),
-    ...authConfig
+    transport: {
+      ...fromKafkaConfig(config.transport.config),
+      ...authConfig
+    } as DebeziumInputSchema['transport'],
+    format: {
+      format_name: assertUnion(['json'] as const, config.format.name),
+      update_format: assertUnion(['debezium'] as const, config.format!.config!.update_format),
+      json_flavor: assertUnion(['debezium_mysql'] as const, config.format!.config!.json_flavor)
+    }
   }
 }
 
 export const parseDebeziumInputSchema = parseConnectorDescrWith(parseDebeziumInputSchemaConfig)
 
-export const parseSnowflakeOutputSchemaConfig = (config: ConnectorDescr['config']): SnowflakeOutputSchema['config'] => {
+export const parseSnowflakeOutputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(connectorDescrToType(config) === ConnectorType.SNOWFLAKE_OUT)
   invariant(config.transport.config)
 
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
-    transport_user_config: config.transport.config,
-    format_user_config: config.format.config,
-    bootstrap_servers: config.transport.config['bootstrap.servers'],
-    topic: config.transport.config.topic,
-    format_name: assertUnion(['json', 'avro'] as const, config.format.name),
-    update_format: assertUnion(['snowflake'] as const, config.format!.config!.update_format),
-    ...authConfig
+    transport: {
+      ...fromKafkaConfig(config.transport.config),
+      ...authConfig
+    } as SnowflakeOutputSchema['transport'],
+    format: {
+      format_name: assertUnion(['json', 'avro'] as const, config.format.name),
+      update_format: assertUnion(['snowflake'] as const, config.format!.config!.update_format)
+    }
   }
 }
 
@@ -147,15 +150,17 @@ export const parseSnowflakeOutputSchema = parseConnectorDescrWith(parseSnowflake
 
 // Given an existing ConnectorDescr return the CsvFileSchema
 // if connector is of type FILE.
-export const parseUrlSchemaConfig = (config: ConnectorDescr['config']): UrlSchema['config'] => {
+export const parseUrlSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(connectorDescrToType(config) === ConnectorType.URL)
   invariant(config.transport.config)
 
   return {
-    url: config.transport.config.path,
-    format_name: assertUnion(['json', 'csv'] as const, config.format.name),
-    update_format: config.format.config?.update_format || 'raw',
-    json_array: config.format.config?.array || false
+    config: {
+      url: config.transport.config.path,
+      format_name: assertUnion(['json', 'csv'] as const, config.format.name),
+      update_format: config.format.config?.update_format || 'raw',
+      json_array: config.format.config?.array || false
+    } as UrlSchema['config']
   }
 }
 

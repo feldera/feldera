@@ -30,7 +30,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 const schema = va.object({
-  name: va.nonOptional(va.string([va.minLength(1, 'API key name cannot be empty')]))
+  name: va.nonOptional(va.string([va.minLength(1, 'Specify API key name')]))
 })
 
 export type ApiKeyGeneratorSchema = va.Input<typeof schema>

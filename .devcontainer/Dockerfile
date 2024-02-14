@@ -67,6 +67,10 @@ ENV HOME /home/$USERNAME
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="$HOME/.cargo/bin:$PATH"
 
+## Install Bun.js
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="$HOME/.bun/bin:$PATH"
+
 RUN \
    rustup install nightly && \
    rustup component add rustfmt && \

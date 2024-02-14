@@ -1,6 +1,3 @@
-// Contains the name and description form elements for kafka input and output
-// connectors.
-
 import { GridItems } from '$lib/components/common/GridItems'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
@@ -8,7 +5,12 @@ import { TextFieldElement } from 'react-hook-form-mui'
 
 import { Grid } from '@mui/material'
 
-const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: boolean }) => {
+/**
+ * Contains the name and description form elements for kafka input and output connectors.
+ * @param props
+ * @returns
+ */
+export const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: boolean }) => {
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
@@ -40,5 +42,3 @@ const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: boolean }
     </Grid>
   )
 }
-
-export default TabKafkaNameAndDesc

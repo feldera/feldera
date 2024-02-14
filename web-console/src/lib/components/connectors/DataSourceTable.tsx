@@ -98,7 +98,7 @@ const DataSourceTable = () => {
   }, [])
 
   const { showDeleteDialog } = useDeleteDialog()
-  const deleteConnector = showDeleteDialog('Delete', row => `${row.name || 'unnamed'} connector`, deleteSource)
+  const deleteConnector = showDeleteDialog('Delete', row => `${row.name} connector`, deleteSource)
 
   // Definition of the table columns
   const columns: GridColDef[] = [
