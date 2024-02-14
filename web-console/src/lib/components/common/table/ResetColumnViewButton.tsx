@@ -16,8 +16,8 @@ export const ResetColumnViewButton = (props: {
     props.setColumnVisibilityModel?.call(undefined, {}, {})
   }
   return (
-    <Tooltip title='Reset column headers'>
-      <IconButton onClick={resetColumnView} data-testid='button-reset-columns'>
+    <Tooltip title='Reset columns'>
+      <IconButton onClick={resetColumnView} data-testid='button-reset-columns' size='small'>
         <IconMoveHorizontal />
       </IconButton>
     </Tooltip>

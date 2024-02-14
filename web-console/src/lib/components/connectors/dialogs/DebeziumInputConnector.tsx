@@ -2,24 +2,20 @@
 'use client'
 
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
-import TabKafkaInputDetails from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaInputDetails'
-import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
-import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
-import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
+import { TabKafkaInputDetails } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaInputDetails'
+import { TabKafkaNameAndDesc } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
+import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import {
   connectorTransportName,
   parseDebeziumInputSchema,
   parseDebeziumInputSchemaConfig
 } from '$lib/functions/connectors'
-import {
-  authFields,
-  authParamsSchema,
-  defaultUiAuthParams,
-  prepareAuthData
-} from '$lib/functions/kafka/authParamsSchema'
+import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
+import { LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer } from 'react-hook-form-mui'
@@ -47,11 +43,15 @@ import { TabKafkaAuth } from './tabs/kafka/TabKafkaAuth'
 import Transition from './tabs/Transition'
 
 const schema = va.object({
-  name: va.nonOptional(va.string()),
+  name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
-  config: va.intersect([
+  transport: va.intersect([
     va.object({
-      bootstrap_servers: va.nonOptional(va.string()),
+      bootstrap_servers: va.nonOptional(
+        va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+          va.minLength(1, 'Specify at least one server')
+        ])
+      ),
       auto_offset_reset: va.optional(
         va.picklist(['smallest', 'earliest', 'beginning', 'largest', 'latest', 'end', 'error'], 'Invalid enum value'),
         'earliest'
@@ -64,21 +64,22 @@ const schema = va.object({
         va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
           va.minLength(1, 'Provide at least one topic')
         ])
-      ),
-      format_name: va.nonOptional(va.enumType(['json'])),
-      update_format: va.literal('debezium'),
-      json_flavor: va.enumType(['debezium_mysql']),
-      transport_user_config: va.optional(va.any()),
-      format_user_config: va.optional(va.any())
+      )
     }),
     authParamsSchema
-  ])
+  ]),
+  format: va.object({
+    format_name: va.nonOptional(va.picklist(['json'])),
+    update_format: va.literal('debezium'),
+    json_flavor: va.picklist(['debezium_mysql'])
+  })
 })
 export type DebeziumInputSchema = va.Input<typeof schema>
 
 export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
+  const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab'] as const
   const [rawJSON, setRawJSON] = useState(false)
-  const [activeTab, setActiveTab] = useState<string>('detailsTab')
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<DebeziumInputSchema | undefined>(undefined)
 
   // Initialize the form either with default or values from the passed in connector
@@ -91,20 +92,22 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
   const defaultValues: DebeziumInputSchema = {
     name: '',
     description: '',
-    config: {
-      bootstrap_servers: '',
+    transport: {
+      bootstrap_servers: [''],
       auto_offset_reset: 'earliest',
       topics: [],
+      group_id: undefined,
+      ...defaultLibrdkafkaAuthOptions
+    },
+    format: {
       format_name: 'json',
       update_format: 'debezium',
-      json_flavor: 'debezium_mysql',
-      group_id: undefined,
-      ...defaultUiAuthParams
+      json_flavor: 'debezium_mysql'
     }
   }
 
   const handleClose = () => {
-    setActiveTab(tabList[0])
+    setActiveTab(tabs[0])
     props.setShow(false)
   }
 
@@ -112,29 +115,24 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
   const prepareData = (data: DebeziumInputSchema) => ({
     name: data.name,
     description: data.description,
-    config: normalizeConfig(data.config)
+    config: normalizeConfig(data)
   })
 
-  const normalizeConfig = (data: DebeziumInputSchema['config']) => ({
+  const normalizeConfig = (data: {
+    transport: Record<string, LibrdkafkaOptionType>
+    format: Record<string, string | boolean>
+  }) => ({
     transport: {
       name: connectorTransportName(ConnectorType.DEBEZIUM_IN),
-      config: {
-        ...data.transport_user_config,
-        'bootstrap.servers': data.bootstrap_servers,
-        'auto.offset.reset': data.auto_offset_reset,
-        'group.id': data.group_id,
-        topics: data.topics,
-        ...prepareAuthData(data)
-      }
+      config: toKafkaConfig(data.transport)
     },
     format: {
-      name: data.format_name,
+      name: data.format.format_name,
       config: {
-        ...data.format_user_config,
-        ...(data.format_name === 'json'
+        ...(data.format.format_name === 'json'
           ? {
-              update_format: data.update_format,
-              json_flavor: data.json_flavor
+              update_format: data.format.update_format,
+              json_flavor: data.format.json_flavor
             }
           : {})
       }
@@ -144,25 +142,26 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, config }: FieldErrors<DebeziumInputSchema>) => {
+  const handleErrors = ({ name, description, transport, format }: FieldErrors<DebeziumInputSchema>) => {
     if (!props.show) {
       return
     }
     if (name || description) {
       setActiveTab('detailsTab')
-    } else if (config?.bootstrap_servers || config?.topics || config?.['auto_offset_reset'] || config?.['group_id']) {
+    } else if (
+      transport?.bootstrap_servers ||
+      transport?.topics ||
+      transport?.['auto_offset_reset'] ||
+      transport?.['group_id']
+    ) {
       setActiveTab('sourceTab')
-    } else if (config && authFields.some(f => f in config)) {
+    } else if (transport && authFields.some(f => f in transport)) {
       setActiveTab('authTab')
-    } else if (config?.format_name || config?.update_format) {
+    } else if (format?.format_name || format?.update_format) {
       setActiveTab('formatTab')
     }
   }
-
-  const tabList = ['detailsTab', 'sourceTab', 'authTab', 'formatTab']
-  const tabFooter = (
-    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabsArr={tabList} />
-  )
+  const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
   const jsonSwitch = (
     <Box sx={{ pl: 2, marginTop: { xs: '0', md: '-4rem' } }}>
       <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> Edit JSON
@@ -227,7 +226,7 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
                   {jsonSwitch}
                   <TabList
                     orientation='vertical'
-                    onChange={(e, newValue: string) => setActiveTab(newValue)}
+                    onChange={(e, newValue: (typeof tabs)[number]) => setActiveTab(newValue)}
                     sx={{
                       border: 0,
                       minWidth: 200,
@@ -307,14 +306,14 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
                   value='sourceTab'
                   sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
                 >
-                  <TabKafkaInputDetails disabled={props.disabled} />
+                  <TabKafkaInputDetails disabled={props.disabled} parentName='transport' />
                   {tabFooter}
                 </TabPanel>
                 <TabPanel
                   value='authTab'
                   sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
                 >
-                  <TabKafkaAuth disabled={props.disabled} />
+                  <TabKafkaAuth disabled={props.disabled} parentName={'transport'} />
                   {tabFooter}
                 </TabPanel>
                 <TabPanel

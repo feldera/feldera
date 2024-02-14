@@ -5,7 +5,7 @@ import { appOrigin } from '../playwright.config'
 const deleteRows = async (page: Page, regex: RegExp) => {
   while (true) {
     try {
-      // Wait for atleast one row, if timed out - no rows left
+      // Wait for at least one row, if timed out - no rows left
       await page.getByTestId(regex).waitFor({ timeout: 2000 })
     } catch {}
     const buttonDelete = await page.getByTestId(regex).first().getByTestId('button-delete')

@@ -13,6 +13,8 @@ import {
   ConnectorsService,
   NewPipelineRequest,
   NewPipelineResponse,
+  NewServiceRequest,
+  NewServiceResponse,
   PipelinesService,
   PipelineStatus as RawPipelineStatus,
   ProgramDescr,
@@ -25,7 +27,9 @@ import {
   UpdatePipelineRequest,
   UpdatePipelineResponse,
   UpdateProgramRequest,
-  UpdateProgramResponse
+  UpdateProgramResponse,
+  UpdateServiceRequest,
+  UpdateServiceResponse
 } from '$lib/services/manager'
 import { Arguments } from '$lib/types/common/function'
 import { ControllerStatus, Pipeline, PipelineStatus } from '$lib/types/pipeline'
@@ -126,7 +130,6 @@ const PipelineManagerApi = {
   getApiKey: ApiKeysService.getApiKey,
   listServices: ServicesService.listServices,
   getService: ServicesService.getService,
-  newService: ServicesService.newService,
   getDemos: () =>
     ConfigurationService.getDemos().then(demos =>
       Promise.all(
@@ -437,6 +440,35 @@ export const invalidatePipeline = (queryClient: QueryClient, pipelineName: strin
   invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineValidate(pipelineName))
   invalidateQuery(queryClient, PipelineManagerQueryKey.pipelines())
 }
+
+export const mutationCreateService = (
+  queryClient: QueryClient
+): UseMutationOptions<NewServiceResponse, ApiError, NewServiceRequest> => ({
+  mutationFn: ServicesService.newService,
+  onSuccess(_data, _variables, _context) {
+    invalidateQuery(queryClient, PipelineManagerQueryKey.listServices())
+  }
+})
+
+export const mutationUpdateService = (
+  queryClient: QueryClient
+): UseMutationOptions<UpdateServiceResponse, ApiError, { serviceName: string; request: UpdateServiceRequest }> => ({
+  mutationFn: args => ServicesService.updateService(args.serviceName, args.request),
+  onSuccess(_data, variables, _context) {
+    invalidateQuery(queryClient, PipelineManagerQueryKey.listServices())
+    invalidateQuery(queryClient, PipelineManagerQueryKey.getService(variables.serviceName))
+  }
+})
+
+export const mutationDeleteService = (
+  queryClient: QueryClient
+): UseMutationOptions<void, ApiError, { serviceName: string }> => ({
+  mutationFn: args => ServicesService.deleteService(args.serviceName),
+  onSuccess(_data, variables, _context) {
+    invalidateQuery(queryClient, PipelineManagerQueryKey.listServices())
+    invalidateQuery(queryClient, PipelineManagerQueryKey.getService(variables.serviceName))
+  }
+})
 
 // Updates just the program status in the query cache.
 export const programStatusCacheUpdate = (queryClient: QueryClient, programName: string, newStatus: ProgramStatus) => {

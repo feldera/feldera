@@ -8,7 +8,7 @@ import Transition from '$lib/components/connectors/dialogs/tabs/Transition'
 import { parseEditorSchema } from '$lib/functions/connectors'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { Direction } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FormContainer } from 'react-hook-form-mui'
 import * as va from 'valibot'
@@ -24,7 +24,7 @@ import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 
 const schema = va.object({
-  name: va.nonOptional(va.string([va.minLength(2)])),
+  name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
   config: va.nonOptional(va.any())
 })

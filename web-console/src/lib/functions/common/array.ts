@@ -98,3 +98,19 @@ export const intersperse = <T>(arr: T[], separator: T | ((i: number) => T)) => {
   const getSeparator = separator instanceof Function ? separator : () => separator
   return Array.from({ length: Math.max(0, arr.length * 2 - 1) }, (_, i) => (i % 2 ? getSeparator(i) : arr[i >> 1]))
 }
+
+export const groupBy = <T, K extends keyof any>(list: T[], getKey: (item: T) => K) => {
+  if (!list.length) {
+    return []
+  }
+  const items = list.map(item => [getKey(item), item] as [K, T])
+  items.sort()
+  let lastKeyIndex = 0
+  const groups = [] as [K, T[]][]
+  while (lastKeyIndex < list.length) {
+    const lastIndex = items.findLastIndex(item => item[0] === items[lastKeyIndex][0]) + 1
+    groups.push([items[lastKeyIndex][0], items.slice(lastKeyIndex, lastIndex).map(item => item[1])])
+    lastKeyIndex = lastIndex
+  }
+  return groups
+}

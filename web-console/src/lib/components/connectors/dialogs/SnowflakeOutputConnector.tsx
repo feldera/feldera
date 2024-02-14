@@ -2,26 +2,22 @@
 'use client'
 
 import { TabKafkaAuth } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaAuth'
-import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
-import TabkafkaOutputDetails from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaOutputDetails'
+import { TabKafkaNameAndDesc } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
+import { TabKafkaOutputDetails } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaOutputDetails'
 import { SnowflakeOutputFormatDetails } from '$lib/components/connectors/dialogs/tabs/snowflake/SnowflakeOutputFormatDetails'
-import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
-import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
+import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import Transition from '$lib/components/connectors/dialogs/tabs/Transition'
 import {
   connectorTransportName,
   parseSnowflakeOutputSchema,
   parseSnowflakeOutputSchemaConfig
 } from '$lib/functions/connectors'
-import {
-  authFields,
-  authParamsSchema,
-  defaultUiAuthParams,
-  prepareAuthData
-} from '$lib/functions/kafka/authParamsSchema'
+import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
+import { LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer } from 'react-hook-form-mui'
@@ -47,25 +43,30 @@ import Typography from '@mui/material/Typography'
 import { GenericEditorForm } from './tabs/GenericConnectorForm'
 
 const schema = va.object({
-  name: va.nonOptional(va.string()),
+  name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
-  config: va.intersect([
+  transport: va.intersect([
     va.object({
-      bootstrap_servers: va.nonOptional(va.string()),
-      topic: va.nonOptional(va.string([va.minLength(1, 'Topic name should not be empty')])),
-      format_name: va.nonOptional(va.enumType(['json', 'avro'])),
-      update_format: va.literal('snowflake'),
-      transport_user_config: va.optional(va.any()),
-      format_user_config: va.optional(va.any())
+      bootstrap_servers: va.nonOptional(
+        va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+          va.minLength(1, 'Specify at least one server')
+        ])
+      ),
+      topic: va.nonOptional(va.string([va.minLength(1, 'Topic name should not be empty')]))
     }),
     authParamsSchema
-  ])
+  ]),
+  format: va.object({
+    format_name: va.nonOptional(va.picklist(['json', 'avro'])),
+    update_format: va.literal('snowflake')
+  })
 })
 export type SnowflakeOutputSchema = va.Input<typeof schema>
 
 export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
+  const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab'] as const
   const [rawJSON, setRawJSON] = useState(false)
-  const [activeTab, setActiveTab] = useState<string>('detailsTab')
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<SnowflakeOutputSchema | undefined>(undefined)
 
   // Initialize the form either with values from the passed in connector
@@ -78,17 +79,19 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const defaultValues: SnowflakeOutputSchema = {
     name: '',
     description: '',
-    config: {
-      bootstrap_servers: '',
+    transport: {
+      bootstrap_servers: [''],
       topic: '',
+      ...defaultLibrdkafkaAuthOptions
+    },
+    format: {
       format_name: 'json',
-      update_format: 'snowflake',
-      ...defaultUiAuthParams
+      update_format: 'snowflake'
     }
   }
 
   const handleClose = () => {
-    setActiveTab(tabList[0])
+    setActiveTab(tabs[0])
     props.setShow(false)
   }
 
@@ -96,24 +99,21 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const prepareData = (data: SnowflakeOutputSchema) => ({
     name: data.name,
     description: data.description,
-    config: normalizeConfig(data.config)
+    config: normalizeConfig(data)
   })
 
-  const normalizeConfig = (data: SnowflakeOutputSchema['config']) => ({
+  const normalizeConfig = (data: {
+    transport: Record<string, LibrdkafkaOptionType>
+    format: Record<string, string | boolean>
+  }) => ({
     transport: {
       name: connectorTransportName(ConnectorType.SNOWFLAKE_OUT),
-      config: {
-        ...data.transport_user_config,
-        'bootstrap.servers': data.bootstrap_servers,
-        topic: data.topic,
-        ...prepareAuthData(data)
-      }
+      config: toKafkaConfig(data.transport)
     },
     format: {
-      name: data.format_name,
+      name: data.format.format_name,
       config: {
-        ...data.format_user_config,
-        update_format: data.update_format
+        update_format: data.format.update_format
       }
     }
   })
@@ -121,24 +121,23 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, config }: FieldErrors<SnowflakeOutputSchema>) => {
+  const handleErrors = ({ name, description, transport, format }: FieldErrors<SnowflakeOutputSchema>) => {
     if (!props.show) {
       return
     }
     if (name || description) {
       setActiveTab('detailsTab')
-    } else if (config?.bootstrap_servers || config?.topic) {
+    } else if (transport?.bootstrap_servers || transport?.topic) {
       setActiveTab('sourceTab')
-    } else if (config && authFields.some(f => f in config)) {
+    } else if (transport && authFields.some(f => f in transport)) {
       setActiveTab('authTab')
-    } else if (config?.format_name) {
+    } else if (format?.format_name) {
       setActiveTab('formatTab')
     }
   }
 
-  const tabList = ['detailsTab', 'sourceTab', 'authTab', 'formatTab']
   const tabFooter = (
-    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabsArr={tabList} />
+    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabs={tabs} />
   )
 
   const jsonSwitch = (
@@ -202,7 +201,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   {jsonSwitch}
                   <TabList
                     orientation='vertical'
-                    onChange={(e, newValue: string) => setActiveTab(newValue)}
+                    onChange={(e, newValue: (typeof tabs)[number]) => setActiveTab(newValue)}
                     sx={{
                       border: 0,
                       minWidth: 200,
@@ -281,14 +280,14 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   value='sourceTab'
                   sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
                 >
-                  <TabkafkaOutputDetails disabled={props.disabled} />
+                  <TabKafkaOutputDetails disabled={props.disabled} parentName='transport' />
                   {tabFooter}
                 </TabPanel>
                 <TabPanel
                   value='authTab'
                   sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
                 >
-                  <TabKafkaAuth disabled={props.disabled} />
+                  <TabKafkaAuth disabled={props.disabled} parentName={'transport'} />
                   {tabFooter}
                 </TabPanel>
                 <TabPanel

@@ -102,7 +102,7 @@ export const TableSqlPrograms = () => {
     [queryClient, deleteMutation, rows, pushMessage]
   )
 
-  const deleteProgram = showDeleteDialog('Delete', row => `${row.name || 'unnamed'} program`, deleteProject)
+  const deleteProgram = showDeleteDialog('Delete', row => `${row.name} program`, deleteProject)
 
   // Table columns
   const columns: GridColDef[] = [

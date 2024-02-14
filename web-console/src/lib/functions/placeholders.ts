@@ -6,5 +6,7 @@ export const PLACEHOLDER_VALUES = {
   connector_name: 'House Price Data',
   connector_description: 'House price data from the UK Land Registry',
   pipeline_name: 'Price Checker',
-  pipeline_description: 'Analyze e-commerce prices'
+  pipeline_description: 'Analyze e-commerce prices',
+  service_name: 'Warehouse Server',
+  service_description: 'Production data source for warehouse activity'
 }

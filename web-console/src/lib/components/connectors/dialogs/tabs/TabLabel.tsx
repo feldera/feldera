@@ -14,7 +14,7 @@ export interface TabLabelProps {
   icon: ReactElement
 }
 
-const TabLabel = (props: TabLabelProps) => {
+export const TabLabel = (props: TabLabelProps) => {
   const { icon, title, subtitle, active } = props
 
   return (
@@ -41,5 +41,3 @@ const TabLabel = (props: TabLabelProps) => {
     </div>
   )
 }
-
-export default TabLabel

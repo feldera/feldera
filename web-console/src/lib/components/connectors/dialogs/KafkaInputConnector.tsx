@@ -3,22 +3,18 @@
 
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
 import { TabKafkaAuth } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaAuth'
-import TabKafkaInputDetails from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaInputDetails'
-import TabKafkaNameAndDesc from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
-import TabFooter from '$lib/components/connectors/dialogs/tabs/TabFooter'
-import TabGenericInputFormatDetails from '$lib/components/connectors/dialogs/tabs/TabGenericInputFormatDetails'
-import TabLabel from '$lib/components/connectors/dialogs/tabs/TabLabel'
+import { TabKafkaInputDetails } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaInputDetails'
+import { TabKafkaNameAndDesc } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
+import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import { TabGenericInputFormatDetails } from '$lib/components/connectors/dialogs/tabs/TabGenericInputFormatDetails'
+import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import Transition from '$lib/components/connectors/dialogs/tabs/Transition'
 import { connectorTransportName, parseKafkaInputSchema, parseKafkaInputSchemaConfig } from '$lib/functions/connectors'
-import {
-  authFields,
-  authParamsSchema,
-  defaultUiAuthParams,
-  prepareAuthData
-} from '$lib/functions/kafka/authParamsSchema'
+import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
+import { LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import ConnectorDialogProps from '$lib/types/connectors/ConnectorDialogProps'
+import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer } from 'react-hook-form-mui'
@@ -42,39 +38,42 @@ import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
 const schema = va.object({
-  name: va.nonOptional(va.string()),
+  name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
-  config: va.intersect([
+  transport: va.intersect([
     va.object({
-      bootstrap_servers: va.nonOptional(va.string()),
+      bootstrap_servers: va.nonOptional(
+        va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+          va.minLength(1, 'Specify at least one server')
+        ])
+      ),
       auto_offset_reset: va.optional(
         va.picklist(['smallest', 'earliest', 'beginning', 'largest', 'latest', 'end', 'error', 'Invalid enum value']),
         'earliest'
       ),
-      group_id: va.coerce(
-        va.optional(va.string([va.minLength(1, 'group.id should not be empty')])),
-        v => v || undefined
-      ),
+      group_id: va.optional(va.string([va.minLength(1, 'group.id should not be empty')])),
       topics: va.nonOptional(
         va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
           va.minLength(1, 'Provide at least one topic')
         ])
-      ),
-      format_name: va.nonOptional(va.enumType(['json', 'csv'])),
-      update_format: va.optional(va.enumType(['raw', 'insert_delete']), 'raw'),
-      json_array: va.nonOptional(va.boolean()),
-      transport_user_config: va.optional(va.any()),
-      format_user_config: va.optional(va.any())
+      )
     }),
     authParamsSchema
-  ])
+  ]),
+  format: va.object({
+    format_name: va.nonOptional(va.picklist(['json', 'csv'])),
+    update_format: va.optional(va.picklist(['raw', 'insert_delete']), 'raw'),
+    json_array: va.nonOptional(va.boolean())
+  })
 })
 export type KafkaInputSchema = va.Input<typeof schema>
 
 export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
+  const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab'] as const
   const [rawJSON, setRawJSON] = useState(false)
-  const [activeTab, setActiveTab] = useState<string>('detailsTab')
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<KafkaInputSchema | undefined>(undefined)
+  console.log('curValues', curValues)
 
   // Initialize the form either with default or values from the passed in connector
   useEffect(() => {
@@ -86,43 +85,39 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   const defaultValues: KafkaInputSchema = {
     name: '',
     description: '',
-    config: {
-      bootstrap_servers: '',
+    transport: {
+      bootstrap_servers: [''],
       auto_offset_reset: 'earliest',
       topics: [],
+      ...defaultLibrdkafkaAuthOptions
+    },
+    format: {
       format_name: 'json',
       update_format: 'raw',
-      json_array: false,
-      group_id: undefined,
-      ...defaultUiAuthParams
+      json_array: false
     }
   }
 
   const handleClose = () => {
-    setActiveTab(tabList[0])
+    setActiveTab(tabs[0])
     props.setShow(false)
   }
 
-  const normalizeConfig = (data: KafkaInputSchema['config']) => ({
+  const normalizeConfig = (data: {
+    transport: Record<string, LibrdkafkaOptionType>
+    format: Record<string, string | boolean>
+  }) => ({
     transport: {
       name: connectorTransportName(ConnectorType.KAFKA_IN),
-      config: {
-        ...data.transport_user_config,
-        'bootstrap.servers': data.bootstrap_servers,
-        'auto.offset.reset': data.auto_offset_reset,
-        'group.id': data.group_id,
-        topics: data.topics,
-        ...prepareAuthData(data)
-      }
+      config: toKafkaConfig(data.transport)
     },
     format: {
-      name: data.format_name,
+      name: data.format.format_name,
       config: {
-        ...data.format_user_config,
-        ...(data.format_name === 'json'
+        ...(data.format.format_name === 'json'
           ? {
-              update_format: data.update_format,
-              array: data.json_array
+              update_format: data.format.update_format,
+              array: data.format.json_array
             }
           : {})
       }
@@ -133,31 +128,33 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   const prepareData = (data: KafkaInputSchema) => ({
     name: data.name,
     description: data.description,
-    config: normalizeConfig(data.config)
+    config: normalizeConfig(data)
   })
 
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, config }: FieldErrors<KafkaInputSchema>) => {
+  const handleErrors = ({ name, description, transport, format }: FieldErrors<KafkaInputSchema>) => {
     if (!props.show) {
       return
     }
     if (name || description) {
       setActiveTab('detailsTab')
-    } else if (config?.bootstrap_servers || config?.topics || config?.['auto_offset_reset'] || config?.['group_id']) {
+    } else if (
+      transport?.bootstrap_servers ||
+      transport?.topics ||
+      transport?.['auto_offset_reset'] ||
+      transport?.['group_id']
+    ) {
       setActiveTab('sourceTab')
-    } else if (config && authFields.some(f => f in config)) {
+    } else if (transport && authFields.some(f => f in transport)) {
       setActiveTab('authTab')
-    } else if (config?.format_name || config?.json_array || config?.update_format) {
+    } else if (format?.format_name || format?.json_array || format?.update_format) {
       setActiveTab('formatTab')
     }
   }
 
-  const tabList = ['detailsTab', 'sourceTab', 'authTab', 'formatTab']
-  const tabFooter = (
-    <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabsArr={tabList} />
-  )
+  const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
   const jsonSwitch = (
     <Box sx={{ pl: 2, marginTop: { xs: '0', md: '-4rem' } }}>
       <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> Edit JSON
@@ -185,7 +182,8 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
             pr: { xs: 5, sm: 12 },
             pb: { xs: 5, sm: 9.5 },
             pl: { xs: 4, sm: 11 },
-            position: 'relative'
+            position: 'relative',
+            height: '80vh'
           }}
         >
           <IconButton
@@ -210,8 +208,8 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
               <GenericEditorForm
                 disabled={props.disabled}
                 direction={Direction.INPUT}
-                configFromText={t => parseKafkaInputSchemaConfig(JSON.parse(t))}
-                configToText={c => JSON.stringify(normalizeConfig(c as any), undefined, '\t')}
+                configFromText={text => parseKafkaInputSchemaConfig(JSON.parse(text))}
+                configToText={config => JSON.stringify(normalizeConfig(config), undefined, '\t')}
               />
               <Box sx={{ display: 'flex', justifyContent: 'end' }}>{props.submitButton}</Box>
             </Box>
@@ -222,7 +220,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                   {jsonSwitch}
                   <TabList
                     orientation='vertical'
-                    onChange={(e, newValue: string) => setActiveTab(newValue)}
+                    onChange={(e, newValue: (typeof tabs)[number]) => setActiveTab(newValue)}
                     sx={{
                       border: 0,
                       minWidth: 200,
@@ -301,14 +299,14 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                   value='sourceTab'
                   sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
                 >
-                  <TabKafkaInputDetails disabled={props.disabled} />
+                  <TabKafkaInputDetails disabled={props.disabled} parentName='transport' />
                   {tabFooter}
                 </TabPanel>
                 <TabPanel
                   value='authTab'
                   sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
                 >
-                  <TabKafkaAuth disabled={props.disabled} />
+                  <TabKafkaAuth disabled={props.disabled} parentName={'transport'} />
                   {tabFooter}
                 </TabPanel>
                 <TabPanel

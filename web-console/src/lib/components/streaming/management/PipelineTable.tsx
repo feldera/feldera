@@ -902,7 +902,7 @@ const PipelineActions = (params: { row: Pipeline }) => {
           size='small'
           onClick={showDeleteDialog(
             'Delete',
-            `${pipeline.name.replace(/^[Pp]ipeline\s+|\s+[Pp]ipeline$/, '') || 'unnamed'} pipeline`,
+            `${pipeline.name.replace(/^[Pp]ipeline\s+|\s+[Pp]ipeline$/, '')} pipeline`,
             () => deletePipelineClick(pipeline.name)
           )}
           data-testid='button-delete'

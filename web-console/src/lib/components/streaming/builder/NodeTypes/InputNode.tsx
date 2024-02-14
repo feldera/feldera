@@ -80,12 +80,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           size='small'
           aria-label='close'
           sx={{ color: 'text.secondary' }}
-          onClick={showDeleteDialog(
-            'Remove',
-            `${data.connector.name || 'unnamed'} input`,
-            onDelete,
-            'You can add it back later.'
-          )}
+          onClick={showDeleteDialog('Remove', `${data.connector.name} input`, onDelete, 'You can add it back later.')}
         >
           <IconX fontSize={20} />
         </IconButton>
