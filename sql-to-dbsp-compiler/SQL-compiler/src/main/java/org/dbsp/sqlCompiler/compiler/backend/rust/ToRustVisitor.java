@@ -42,12 +42,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.InputTableDescription;
 import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
-import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -420,7 +419,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(">();").newline();
         if (!this.useHandles) {
             this.builder.append("catalog.register_input_zset::<_, ");
-            InputTableDescription tableDescription = this.metadata.getTableDescription(operator.metadata.tableName);
+            IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
@@ -515,7 +514,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
         this.builder.decrease().append(");").newline();
         if (!this.useHandles) {
-            InputTableDescription tableDescription = this.metadata.getTableDescription(operator.metadata.tableName);
+            IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
             this.builder.append("catalog.register_input_map::<");
             keyStructType.toTuple().accept(this.innerVisitor);
@@ -641,7 +640,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.generateFromTrait(type);
         this.generateRenameMacro(operator.viewName, type, null);
         if (!this.useHandles) {
-            OutputViewDescription description = this.metadata.getViewDescription(operator.viewName);
+            IHasSchema description = this.metadata.getViewDescription(operator.viewName);
             DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);
             this.builder.append("catalog.register_output_zset::<_, ");
             operator.originalRowType.accept(this.innerVisitor);

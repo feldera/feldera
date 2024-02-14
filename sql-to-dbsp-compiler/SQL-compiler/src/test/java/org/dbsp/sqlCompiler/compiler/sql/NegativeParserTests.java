@@ -10,6 +10,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.sql.SQLException;
 
 /**
  * Parser tests that are expected to fail.
@@ -166,7 +167,7 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     @Test
-    public void errorTest() throws IOException {
+    public void errorTest() throws IOException, SQLException {
         String[] statements = new String[]{
                 "This is not SQL"
         };
@@ -203,7 +204,7 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     @Test
-    public void compilerError() throws IOException {
+    public void compilerError() throws IOException, SQLException {
         String statement = "CREATE TABLE T (\n" +
                 "  COL1 INT NOT NULL" +
                 ", COL2 GARBAGE";
@@ -216,7 +217,7 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     @Test
-    public void warningTest() throws IOException {
+    public void warningTest() throws IOException, SQLException {
         String statements = """
                 CREATE TABLE T (COL1 INT);
                 CREATE TABLE S (COL1 INT);

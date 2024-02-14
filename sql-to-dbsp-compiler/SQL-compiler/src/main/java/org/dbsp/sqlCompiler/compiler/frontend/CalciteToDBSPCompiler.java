@@ -23,51 +23,140 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import org.apache.calcite.adapter.jdbc.JdbcTableScan;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
-import org.apache.calcite.rel.core.*;
-import org.apache.calcite.rel.logical.*;
+import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.JoinRelType;
+import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.core.Uncollect;
+import org.apache.calcite.rel.core.Window;
+import org.apache.calcite.rel.logical.LogicalAggregate;
+import org.apache.calcite.rel.logical.LogicalCorrelate;
+import org.apache.calcite.rel.logical.LogicalFilter;
+import org.apache.calcite.rel.logical.LogicalIntersect;
+import org.apache.calcite.rel.logical.LogicalJoin;
+import org.apache.calcite.rel.logical.LogicalMinus;
+import org.apache.calcite.rel.logical.LogicalProject;
+import org.apache.calcite.rel.logical.LogicalSort;
+import org.apache.calcite.rel.logical.LogicalTableScan;
+import org.apache.calcite.rel.logical.LogicalUnion;
+import org.apache.calcite.rel.logical.LogicalValues;
+import org.apache.calcite.rel.logical.LogicalWindow;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
-import org.apache.calcite.rex.*;
-import org.apache.calcite.sql.*;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexFieldAccess;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexOver;
+import org.apache.calcite.rex.RexWindowBound;
+import org.apache.calcite.sql.SqlInsert;
+import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlOperator;
+import org.apache.calcite.sql.SqlRankFunction;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.ir.DBSPNode;
-import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.*;
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
-import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
-import org.dbsp.sqlCompiler.ir.type.*;
-import org.dbsp.sqlCompiler.ir.type.primitive.*;
-import org.dbsp.util.*;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
+import org.dbsp.util.ICastable;
+import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.*;
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /**
  * The compiler is stateful: it compiles a sequence of SQL statements
@@ -89,6 +178,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     final DBSPCompiler compiler;
     /** Keep track of position in RelNode tree */
     final List<RelNode> ancestors;
+    final ProgramMetadata metadata;
 
     /**
      * Create a compiler that translated from calcite to DBSP circuits.
@@ -97,13 +187,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * @param compiler            Parent compiler; used to report errors.
      */
     public CalciteToDBSPCompiler(boolean trackTableContents,
-                                 CompilerOptions options, DBSPCompiler compiler) {
+                                 CompilerOptions options, DBSPCompiler compiler,
+                                 ProgramMetadata metadata) {
         this.circuit = new DBSPPartialCircuit(compiler, compiler.metadata);
         this.compiler = compiler;
         this.nodeOperator = new HashMap<>();
         this.tableContents = new TableContents(compiler, trackTableContents);
         this.options = options;
         this.ancestors = new ArrayList<>();
+        this.metadata = metadata;
     }
 
     @Override
@@ -395,7 +487,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    public void visitScan(LogicalTableScan scan) {
+    public void visitScan(TableScan scan, boolean create) {
         CalciteObject node = CalciteObject.create(scan);
         List<String> name = scan.getTable().getQualifiedName();
         String tableName = name.get(name.size() - 1);
@@ -417,8 +509,25 @@ public class CalciteToDBSPCompiler extends RelVisitor
             } else {
                 // Try a noop
                 source = this.circuit.getNoop(tableName);
-                if (source == null)
-                    throw new InternalCompilerError("Could not find operator for " + tableName, node);
+                if (source == null) {
+                    if (!create)
+                        throw new InternalCompilerError("Could not find operator for table " + tableName, node);
+
+                    // Create external tables table
+                    JdbcTableScan jscan = (JdbcTableScan) scan;
+                    RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.frontend.typeFactory);
+                    DBSPTypeStruct originalRowType = this.convertType(tableRowType, true).to(DBSPTypeStruct.class);
+                    DBSPType rowType = originalRowType.toTuple();
+                    HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, false, tableRowType);
+                    this.metadata.addTable(withSchema);
+                    InputTableMetadata tableMeta = new InputTableMetadata(
+                            Linq.map(withSchema.getColumns(), this::convertMetadata));
+                    source = new DBSPSourceMultisetOperator(
+                            node, CalciteObject.EMPTY,
+                            this.makeZSet(rowType), originalRowType,
+                            null, tableMeta, tableName);
+                    this.circuit.addOperator(source);
+                }
                 Utilities.putNew(this.nodeOperator, scan, source);
             }
         }
@@ -1317,7 +1426,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // Synthesize current node
         boolean success =
-                this.visitIfMatches(node, LogicalTableScan.class, this::visitScan) ||
+                this.visitIfMatches(node, LogicalTableScan.class, l -> this.visitScan(l, false)) ||
+                this.visitIfMatches(node, JdbcTableScan.class, l -> this.visitScan(l, true)) ||
                 this.visitIfMatches(node, LogicalProject.class, this::visitProject) ||
                 this.visitIfMatches(node, LogicalUnion.class, this::visitUnion) ||
                 this.visitIfMatches(node, LogicalMinus.class, this::visitMinus) ||
@@ -1361,6 +1471,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPOperator op = this.getOperator(rel);
             DBSPOperator o;
             if (this.generateOutputForNextView) {
+                this.metadata.addView(view);
                 DBSPType originalRowType = this.convertType(view.getRelNode().getRowType(), true);
                 DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class).rename(view.relationName);
                 o = new DBSPSinkOperator(
@@ -1394,11 +1505,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     identifier = CalciteObject.create(sct.name);
                 }
                 List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
-                InputTableMetadata tableMeta = new InputTableMetadata(tableName, def, metadata);
+                InputTableMetadata tableMeta = new InputTableMetadata(metadata);
                 DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                         create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
                         def.statement, tableMeta, tableName);
                 this.circuit.addOperator(result);
+                this.metadata.addTable(create);
             }
             return null;
         } else if (statement.is(TableModifyStatement.class)) {

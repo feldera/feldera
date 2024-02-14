@@ -26,6 +26,9 @@ package org.dbsp.sqlCompiler;
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.ParameterException;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.calcite.adapter.jdbc.JdbcSchema;
+import org.apache.calcite.jdbc.CalciteConnection;
+import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -36,6 +39,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
+import javax.sql.DataSource;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,6 +47,9 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.Map;
 
 /**
@@ -108,11 +115,25 @@ public class CompilerMain {
         }
     }
 
+    static int schemaCount = 0;
+
     /**
      * Run compiler, return exit code.
      */
-    CompilerMessages run() {
+    CompilerMessages run() throws SQLException {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
+        String conn = this.options.ioOptions.metadataSource;
+        if (!conn.isEmpty()) {
+            // This requires the JDBC drivers for the respective databases to be loaded
+            DataSource mockDataSource = JdbcSchema.dataSource(conn, null, null, null);
+            Connection executorConnection = DriverManager.getConnection("jdbc:calcite:");
+            CalciteConnection calciteConnection = executorConnection.unwrap(CalciteConnection.class);
+            SchemaPlus rootSchema = calciteConnection.getRootSchema();
+            String schemaName = "schema";
+            JdbcSchema schema = JdbcSchema.create(rootSchema, schemaName, mockDataSource, null, null);
+            compiler.addSchemaSource(schemaName, schema);
+        }
+
         try {
             InputStream input = this.getInputFile(this.options.ioOptions.inputFile);
             compiler.setEntireInput(this.options.ioOptions.inputFile, input);
@@ -191,13 +212,13 @@ public class CompilerMain {
         return compiler.messages;
     }
 
-    public static CompilerMessages execute(String... argv) {
+    public static CompilerMessages execute(String... argv) throws SQLException {
         CompilerMain main = new CompilerMain();
         main.parseOptions(argv);
         return main.run();
     }
 
-    public static void main(String[] argv) {
+    public static void main(String[] argv) throws SQLException {
         CompilerMessages messages = execute(argv);
         messages.show(System.err);
         System.exit(messages.exitCode);

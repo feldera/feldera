@@ -23,7 +23,11 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
+import org.apache.calcite.schema.Schema;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
@@ -46,6 +50,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -133,7 +138,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.messages = new CompilerMessages(this);
         this.metadata = new ProgramMetadata();
         this.frontend = new CalciteCompiler(options, this);
-        this.midend = new CalciteToDBSPCompiler(true, options, this);
+        this.midend = new CalciteToDBSPCompiler(true, options,
+                this, this.metadata);
         this.sources = new SourceFileContents();
         this.circuit = null;
         this.typeCompiler = new TypeCompiler(this);
@@ -202,6 +208,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.inputSources = source;
     }
 
+    /** Add a new source which can provide schema information about input tables */
+    public void addSchemaSource(String name, Schema schema) {
+        this.frontend.addSchemaSource(name, schema);
+    }
+
     private void compileInternal(String statements, boolean many, @Nullable String comment) {
         if (this.inputSources != InputSource.File) {
             // If we read from file we already have read the entire data.
@@ -255,8 +266,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             for (SqlNode node : parsed) {
                 if (node.getKind().equals(SqlKind.CREATE_FUNCTION))
                     continue;
-                FrontEndStatement fe = this.frontend.compile(
-                        node.toString(), node, comment, this.metadata);
+                FrontEndStatement fe = this.frontend.compile(node.toString(), node, comment);
                 if (fe == null)
                     // error during compilation
                     continue;
@@ -294,6 +304,20 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 throw e;
             }
         }
+    }
+
+    public ObjectNode getIOMetadataAsJson() {
+        ObjectMapper mapper = new ObjectMapper();
+        ArrayNode inputs = mapper.createArrayNode();
+        for (IHasSchema input: this.metadata.inputTables.values())
+            inputs.add(input.asJson());
+        ArrayNode outputs = mapper.createArrayNode();
+        for (IHasSchema output: this.metadata.outputViews.values())
+            outputs.add(output.asJson());
+        ObjectNode ios = mapper.createObjectNode();
+        ios.set("inputs", inputs);
+        ios.set("outputs", outputs);
+        return ios;
     }
 
     public void compileStatement(String statement, @Nullable String comment) {
