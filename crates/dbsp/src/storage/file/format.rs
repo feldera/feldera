@@ -69,6 +69,15 @@ use num_traits::FromPrimitive;
 /// Increment this on each incompatible change.
 pub const VERSION_NUMBER: u32 = 1;
 
+/// Magic number for data blocks.
+pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
+
+/// Magic number for index blocks.
+pub const INDEX_BLOCK_MAGIC: [u8; 4] = *b"LFIB";
+
+/// Magic number for the file trailer block.
+pub const FILE_TRAILER_BLOCK_MAGIC: [u8; 4] = *b"LFFT";
+
 /// 8-byte header at the beginning of each block.
 ///
 /// A block does not identify its own size, so any reference to a block must
@@ -102,7 +111,7 @@ impl BlockHeader {
 #[derive(Debug)]
 pub struct FileTrailer {
     /// Block header with "LFFT" magic.
-    #[brw(assert(&header.magic == b"LFFT", "file trailer has bad magic"))]
+    #[brw(assert(header.magic == FILE_TRAILER_BLOCK_MAGIC, "file trailer has bad magic"))]
     pub header: BlockHeader,
 
     /// Currently, must be [`VERSION_NUMBER`].  In the future, this allows for
@@ -168,7 +177,7 @@ pub(crate) trait FixedLen {
 #[binrw]
 pub struct IndexBlockHeader {
     /// Block header with "LFIB" magic.
-    #[brw(assert(&header.magic == b"LFIB", "index block has bad magic"))]
+    #[brw(assert(header.magic == INDEX_BLOCK_MAGIC, "index block has bad magic"))]
     pub header: BlockHeader,
 
     /// Offset, in bytes from the beginning of the block, to the bound map.
@@ -213,7 +222,7 @@ impl FixedLen for IndexBlockHeader {
 #[binrw]
 pub struct DataBlockHeader {
     /// Block header with `LFDB` magic.
-    #[brw(assert(&header.magic == b"LFDB", "data block has bad magic"))]
+    #[brw(assert(header.magic == DATA_BLOCK_MAGIC, "data block has bad magic"))]
     pub header: BlockHeader,
 
     /// Number of values (rows) in the block.

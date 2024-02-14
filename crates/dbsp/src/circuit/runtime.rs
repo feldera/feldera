@@ -1,7 +1,11 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
-use crate::{storage::buffer_cache::TinyLfuCache, trace::ord::file::StorageBackend, DetailedError};
+use crate::{
+    storage::{buffer_cache::BufferCache, file::cache::FileCacheEntry},
+    trace::ord::file::StorageBackend,
+    DetailedError,
+};
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use once_cell::sync::Lazy;
@@ -413,8 +417,7 @@ impl Runtime {
     }
 
     /// Returns the (thread-local) storage backend.
-    pub fn storage() -> Rc<StorageBackend> {
-        static LFU_CACHE: Lazy<Arc<TinyLfuCache>> = Lazy::new(|| Arc::new(TinyLfuCache::default()));
+    pub fn backend() -> Rc<StorageBackend> {
         thread_local! {
             pub static TEMPDIR: tempfile::TempDir = tempfile::tempdir().unwrap();
             pub static DEFAULT_BACKEND: Rc<StorageBackend> = {
@@ -425,12 +428,19 @@ impl Runtime {
                     // This else case exists because some nexmark tests run without a runtime :/
                     crate::storage::backend::DefaultBackend::with_base(TEMPDIR.with(|dir| dir.path().to_path_buf()))
                 };
-
-                let sb = StorageBackend::with_backend_lfu(io_backend, LFU_CACHE.clone());
-                Rc::new(sb)
+                Rc::new(io_backend)
             };
         }
         DEFAULT_BACKEND.with(|rc| rc.clone())
+    }
+
+    /// Returns the (thread-local) storage backend.
+    pub fn storage() -> Rc<BufferCache<StorageBackend, FileCacheEntry>> {
+        thread_local! {
+            pub static CACHE: Rc<BufferCache<StorageBackend, FileCacheEntry>> =
+                Rc::new(BufferCache::new(Runtime::backend()));
+        }
+        CACHE.with(|rc| rc.clone())
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.

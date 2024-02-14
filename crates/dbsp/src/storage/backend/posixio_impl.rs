@@ -41,7 +41,7 @@ struct FileMetaData {
     file: File,
     path: PathBuf,
 
-    buffers: Vec<Arc<FBuf>>,
+    buffers: Vec<Rc<FBuf>>,
     offset: u64,
     len: u64,
 }
@@ -75,7 +75,7 @@ impl FileMetaData {
         Ok(())
     }
 
-    fn write_at(&mut self, buffer: &Arc<FBuf>, offset: u64) -> Result<(), StorageError> {
+    fn write_at(&mut self, buffer: &Rc<FBuf>, offset: u64) -> Result<(), StorageError> {
         if self.len >= 1024 * 1024 || (!self.buffers.is_empty() && self.offset + self.len != offset)
         {
             self.flush()?;
@@ -197,8 +197,8 @@ impl StorageWrite for PosixBackend {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
-        let block = Arc::new(data);
+    ) -> Result<Rc<FBuf>, StorageError> {
+        let block = Rc::new(data);
 
         let mut files = self.files.write().unwrap();
         let request_start = Instant::now();
@@ -238,7 +238,7 @@ impl StorageRead for PosixBackend {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let mut buffer = FBuf::with_capacity(size);
         buffer.resize(size, 0);
 
@@ -250,7 +250,7 @@ impl StorageRead for PosixBackend {
                 counter!(TOTAL_BYTES_READ).increment(buffer.len() as u64);
                 histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
                 counter!(READS_SUCCESS).increment(1);
-                Ok(Arc::new(buffer))
+                Ok(Rc::new(buffer))
             }
             Err(e) => {
                 counter!(READS_FAILED).increment(1);

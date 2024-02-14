@@ -1,5 +1,5 @@
-//! An implementation of a custom buffer type that works with our read/write
-//! APIs and the buffer-cache.
+//! A custom buffer type that works with our read/write APIs and the
+//! buffer-cache.
 
 // The code in this file is originally derived from the rkyv `AlignedVec`
 // type, and adapted for use within the Feldera storage engine.
@@ -29,7 +29,7 @@ use rkyv::{
 };
 use rkyv::{vec::VecResolver, ArchiveUnsized, Fallible, Infallible, RelPtr};
 
-/// This is a custom buffer type that works with our read/write APIs and the
+/// A custom buffer type that works with our read/write APIs and the
 /// buffer-cache.
 ///
 /// # Invariants
@@ -736,7 +736,7 @@ unsafe impl Sync for FBuf {}
 
 impl Unpin for FBuf {}
 
-/// A serializer made specifically to work with [`FBuf`].
+/// An [`rkyv`] serializer made specifically to work with [`FBuf`].
 ///
 /// This serializer makes it easier for the compiler to perform emplacement
 /// optimizations and may give better performance than a basic

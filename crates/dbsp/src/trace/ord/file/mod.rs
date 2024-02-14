@@ -10,5 +10,4 @@ pub use key_batch::{FileKeyBatch, FileKeyBatchFactories};
 pub use val_batch::{FileValBatch, FileValBatchFactories};
 pub use zset_batch::{FileZSet, FileZSetFactories};
 
-pub type StorageBackend =
-    crate::storage::buffer_cache::BufferCache<crate::storage::backend::DefaultBackend>;
+pub type StorageBackend = crate::storage::backend::DefaultBackend;

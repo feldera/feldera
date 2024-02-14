@@ -28,7 +28,7 @@ use feldera_storage::backend::glommio_impl::GlommioBackend;
 
 use feldera_storage::backend::monoio_impl::MonoioBackend;
 use feldera_storage::backend::{AtomicIncrementOnlyI64, StorageControl, StorageRead, StorageWrite};
-use feldera_storage::buffer_cache::{BufferCache, FBuf, TinyLfuCache};
+use feldera_storage::buffer_cache::FBuf;
 
 #[derive(Debug, Clone, Default)]
 struct ThreadBenchResult {
@@ -309,17 +309,12 @@ fn glommio_main(args: Args) -> BenchResult {
 }
 
 fn monoio_main(args: Args) -> BenchResult {
-    let lfu_cache: Option<Arc<TinyLfuCache>> = args
-        .cache
-        .map(|cap| Arc::new(TinyLfuCache::with_capacity(cap)));
-
     let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
     let barrier = Arc::new(Barrier::new(args.threads));
     // spawn n-1 threads
     let threads: Vec<_> = (1..args.threads)
         .map(|_| {
             let args = args.clone();
-            let lfu_cache = lfu_cache.clone();
             let barrier = barrier.clone();
             let counter = counter.clone();
             thread::spawn(move || {
@@ -330,14 +325,7 @@ fn monoio_main(args: Args) -> BenchResult {
                     .with_entries(4096)
                     .build()
                     .expect("Failed building the Runtime");
-                if let Some(lfu_cache) = lfu_cache {
-                    rt.block_on(benchmark(
-                        BufferCache::with_backend_lfu(monoio_backend, lfu_cache),
-                        barrier,
-                    ))
-                } else {
-                    rt.block_on(benchmark(monoio_backend, barrier))
-                }
+                rt.block_on(benchmark(monoio_backend, barrier))
             })
         })
         .collect();
@@ -351,14 +339,7 @@ fn monoio_main(args: Args) -> BenchResult {
         .expect("Failed building the Runtime");
 
     let mut br = BenchResult::default();
-    let main_res = if let Some(lfu_cache) = lfu_cache {
-        rt.block_on(benchmark(
-            BufferCache::with_backend_lfu(monoio_backend, lfu_cache),
-            barrier,
-        ))
-    } else {
-        rt.block_on(benchmark(monoio_backend, barrier))
-    };
+    let main_res = rt.block_on(benchmark(monoio_backend, barrier));
     br.times.push(main_res);
 
     // Wait for other n-1 threads

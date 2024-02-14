@@ -84,6 +84,7 @@ use std::{any::Any, sync::Arc};
 
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
 
+pub mod cache;
 pub mod format;
 mod item;
 pub mod reader;
@@ -285,10 +286,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::rc::Rc;
-
     use crate::storage::{
-        backend::{DefaultBackend, StorageControl, StorageExecutor, StorageRead, StorageWrite},
+        backend::{StorageControl, StorageExecutor, StorageRead, StorageWrite},
+        buffer_cache::BufferCache,
         test::init_test_logger,
     };
 
@@ -328,7 +328,7 @@ mod test {
         after: &K,
         mut aux: A,
     ) where
-        S: StorageRead + StorageControl + StorageExecutor,
+        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -404,7 +404,7 @@ mod test {
         before: &K,
         after: &K,
     ) where
-        S: StorageRead + StorageControl + StorageExecutor,
+        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -438,7 +438,7 @@ mod test {
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
-        S: StorageRead + StorageControl + StorageExecutor,
+        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -523,7 +523,7 @@ mod test {
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
-        S: StorageRead + StorageControl + StorageExecutor,
+        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -539,18 +539,17 @@ mod test {
         })
     }
 
-    fn test_two_columns<S, T>(storage: &Rc<S>, parameters: Parameters)
+    fn test_two_columns<T>(parameters: Parameters)
     where
-        S: StorageControl + StorageRead + StorageWrite + StorageExecutor,
         T: TwoColumns,
     {
         let factories0 = Factories::<DynData, DynData>::new::<T::K0, T::A0>();
         let factories1 = Factories::<DynData, DynData>::new::<T::K1, T::A1>();
 
-        let mut layer_file = Writer2::<_, DynData, DynData, DynData, DynData>::new(
+        let mut layer_file = Writer2::new(
             &factories0,
             &factories1,
-            storage,
+            &BufferCache::default_for_thread(),
             parameters,
         )
         .unwrap();
@@ -585,10 +584,7 @@ mod test {
         }
     }
 
-    fn test_2_columns_helper<S>(storage: &Rc<S>, parameters: Parameters)
-    where
-        S: StorageControl + StorageRead + StorageWrite + StorageExecutor,
-    {
+    fn test_2_columns_helper(parameters: Parameters) {
         struct TwoInts;
         impl TwoColumns for TwoInts {
             type K0 = i32;
@@ -625,46 +621,32 @@ mod test {
             }
         }
 
-        test_two_columns::<_, TwoInts>(storage, parameters);
+        test_two_columns::<TwoInts>(parameters);
     }
 
     #[test]
     fn test_2_columns() {
         init_test_logger();
-        test_2_columns_helper(&DefaultBackend::default_for_thread(), Parameters::default());
-    }
-
-    #[cfg(feature = "glommio")]
-    #[test]
-    fn test_2_columns_glommio() {
-        use crate::backend::glommio_impl::GlommioBackend;
-
-        init_test_logger();
-        test_2_columns_helper(&GlommioBackend::default_for_thread(), Parameters::default());
+        test_2_columns_helper(Parameters::default());
     }
 
     #[test]
     fn test_2_columns_max_branch_2() {
         init_test_logger();
-        test_2_columns_helper(
-            &DefaultBackend::default_for_thread(),
-            Parameters::with_max_branch(2),
-        );
+        test_2_columns_helper(Parameters::with_max_branch(2));
     }
 
-    fn test_one_column<S, K, A>(
-        storage: &Rc<S>,
+    fn test_one_column<K, A>(
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
         parameters: Parameters,
     ) where
-        S: StorageControl + StorageRead + StorageWrite + StorageExecutor,
         K: DBData,
         A: DBData,
     {
         let factories = Factories::<DynData, DynData>::new::<K, A>();
-
-        let mut writer = Writer1::new(&factories, storage, parameters).unwrap();
+        let mut writer =
+            Writer1::new(&factories, &BufferCache::default_for_thread(), parameters).unwrap();
         for row in 0..n {
             let (_before, key, _after, aux) = expected(row);
             writer.write0((&key, &aux)).unwrap();
@@ -678,7 +660,6 @@ mod test {
     fn test_i64_helper(parameters: Parameters) {
         init_test_logger();
         test_one_column(
-            &DefaultBackend::default_for_thread(),
             1000,
             |row| (row as u64 * 2, row as u64 * 2 + 1, row as u64 * 2 + 2, ()),
             parameters,
@@ -713,7 +694,6 @@ mod test {
 
         init_test_logger();
         test_one_column(
-            &DefaultBackend::default_for_thread(),
             1000,
             |row| (f(row * 2), f(row * 2 + 1), f(row * 2 + 2), ()),
             Parameters::default(),
@@ -724,7 +704,6 @@ mod test {
     fn test_tuple() {
         init_test_logger();
         test_one_column(
-            &DefaultBackend::default_for_thread(),
             1000,
             |row| {
                 (
@@ -745,7 +724,6 @@ mod test {
         }
         init_test_logger();
         test_one_column(
-            &DefaultBackend::default_for_thread(),
             500,
             |row| (v(row * 2), v(row * 2 + 1), v(row * 2 + 2), ()),
             Parameters::default(),
