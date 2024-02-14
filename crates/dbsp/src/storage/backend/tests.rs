@@ -10,10 +10,8 @@ use std::{
     fmt::{self, Debug},
     iter,
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicI64, Ordering},
-        Arc,
-    },
+    rc::Rc,
+    sync::atomic::{AtomicI64, Ordering},
 };
 
 use proptest::prelude::*;
@@ -165,12 +163,12 @@ impl<const ALLOW_OVERWRITE: bool> StorageWrite for InMemoryBackend<ALLOW_OVERWRI
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let mut files = self.files.borrow_mut();
         let file = files.get(&fd.0).unwrap();
         let new_file = insert_slice_at_offset(file, offset as usize, &data, ALLOW_OVERWRITE)?;
         files.insert(fd.0, new_file);
-        Ok(Arc::new(data))
+        Ok(Rc::new(data))
     }
 
     async fn complete(
@@ -191,7 +189,7 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let files = self.immutable_files.borrow();
         let file = files.get(&fd.0).unwrap();
         let offset = offset as usize;
@@ -208,7 +206,7 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
             .map(|x| x.unwrap_or_default())
             .collect();
         buf.extend_from_slice(&slice);
-        Ok(Arc::new(buf))
+        Ok(Rc::new(buf))
     }
 
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {

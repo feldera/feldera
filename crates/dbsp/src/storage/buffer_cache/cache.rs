@@ -1,306 +1,320 @@
-//! The buffer cache implementation, just implements the same storage traits
-//! as the backends ([`StorageControl`], [`StorageRead`], [`StorageWrite`]).
+//! A buffer-cache based on LRU eviction.
 //!
-//! It forwards requests to a storage backend, but it also adds a buffer cache
-//! in front of the backend to serve reads faster if they are cached.
-
+//! This is a layer over a storage backend that adds a cache of a
+//! client-provided function of the blocks.
 use std::{
     cell::RefCell,
-    collections::HashMap,
-    env,
+    collections::BTreeMap,
     future::Future,
-    ops::{Deref, Range},
+    ops::Range,
     path::{Path, PathBuf},
-    sync::Arc,
-    time::Instant,
+    rc::Rc,
 };
 
-use metrics::{counter, histogram};
-use moka::future::Cache;
-use sysinfo::System;
+use crc32c::crc32c;
+use metrics::counter;
 
-#[cfg(test)]
-use crate::storage::test::init_test_logger;
-use crate::storage::{
-    backend::{
-        metrics::{BUFFER_CACHE_HIT, BUFFER_CACHE_LATENCY, BUFFER_CACHE_MISS, WRITES_FAILED},
+use crate::{
+    storage::backend::{
+        metrics::{BUFFER_CACHE_HIT, BUFFER_CACHE_MISS},
         FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageExecutor,
         StorageRead, StorageWrite,
     },
-    buffer_cache::FBuf,
+    storage::buffer_cache::FBuf,
 };
 
-/// The key for the cache is a tuple of (file_handle, offset, size), and
-/// identifies a slice in a file.
-type CacheKey = (i64, u64, usize);
+use crate::storage::file::reader::{CorruptionError, Error};
 
-/// CachedFBuf (the values of the cache) are reference-counted buffers.
-type CachedFBuf = Arc<FBuf>;
-
-pub struct TinyLfuCache(Cache<CacheKey, CachedFBuf>);
-
-impl Deref for TinyLfuCache {
-    type Target = Cache<CacheKey, CachedFBuf>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Default for TinyLfuCache {
-    /// A default instance of the LruCache will check if the environment
-    /// variable `FELDERA_BUFFER_CACHE_BYTES` is set to determine the amount of
-    /// bytes to cache.
-    /// If not set, it will fall back to use approx. 1/3 of the system memory.
-    fn default() -> Self {
-        let bytes_from_env: Option<u64> = env::var_os("FELDERA_BUFFER_CACHE_BYTES")
-            .and_then(|v| v.into_string().ok().and_then(|s| s.parse::<u64>().ok()));
-        let cache_capacity = bytes_from_env.unwrap_or_else(|| {
-            let mut sys = System::new_all();
-            sys.refresh_all();
-            sys.total_memory() / 3
-        });
-
-        TinyLfuCache::with_capacity(cache_capacity as usize)
-    }
-}
-
-impl TinyLfuCache {
-    const BLOCK_SIZE: usize = 512;
-
-    /// Builds a TinyLFU cache with the given capacity.
-    ///
-    /// The capacity here is given in how many bytes of DRAM the sum of all
-    /// stored buffers should take up before we start to evict from it.
-    pub fn with_capacity(capacity: usize) -> Self {
-        TinyLfuCache(
-            Cache::builder()
-                .weigher(|_, fbuf: &CachedFBuf| {
-                    // This weigher API wants us to return u32. We might have buffers bigger than
-                    // `u32::MAX`. But they're also at least 512 bytes. So if we divide by 512
-                    // it gives us a max relative size we can represent of two TiB per buffer.
-                    (fbuf.len() / Self::BLOCK_SIZE) as u32
-                })
-                // This now corresponds to what is returned by weigher, so if we want it
-                // to hold `n` bytes `max_capacity` is `n / 512`.
-                .max_capacity(capacity as u64 / Self::BLOCK_SIZE as u64)
-                .build(),
-        )
-    }
-}
-
-/// Adds a buffer-cache to a storage backend which is supposed to contain
-/// the most recently used buffers and evict least recently used ones to save
-/// memory.
+/// A key for the block cache.
 ///
-/// The strategy is to cache on (successful) writes, since it is likely that
-/// we will read the same data again soon. However, due to this we need to
-/// ensure that we do not put the cache in an inconsistent state.
-/// e.g., if we have two writes to overlapping regions the cache needs
-/// to still be correct (or at least reject the last write, which is easier and
-/// what we do since our storage format is append-only).
-pub struct BufferCache<B> {
-    cache: Arc<TinyLfuCache>,
-    /// A list of written ranges per file. It's important that the vector is
-    /// sorted by the start of the range, since we binary search it.
-    blocks: RefCell<HashMap<i64, Vec<Range<u64>>>>,
-    /// The IO backend that handles reads/writes from disk.
-    backend: B,
+/// The block size could be part of the key, but we'll never read a given offset
+/// with more than one size so it's also not necessary.
+///
+/// It's important that the sort order is by `fd` first and `offset` second, so
+/// that [`CacheKey::fd_range`] can work.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct CacheKey {
+    /// File being cached.
+    fd: i64,
+
+    /// Offset in file.
+    offset: u64,
 }
 
-impl<B> BufferCache<B> {
-    pub fn with_backend_lfu(backend: B, cache: Arc<TinyLfuCache>) -> Self {
+impl CacheKey {
+    /// Returns a range that would contain all of the blocks for the specified
+    /// `fd`.
+    fn fd_range(fd: i64) -> Range<CacheKey> {
+        Self { fd, offset: 0 }..Self {
+            fd: fd + 1,
+            offset: 0,
+        }
+    }
+}
+
+impl From<(&FileHandle, u64)> for CacheKey {
+    fn from(source: (&FileHandle, u64)) -> Self {
         Self {
-            cache,
-            blocks: Default::default(),
+            fd: source.0.into(),
+            offset: source.1,
+        }
+    }
+}
+
+impl From<(&ImmutableFileHandle, u64)> for CacheKey {
+    fn from(source: (&ImmutableFileHandle, u64)) -> Self {
+        Self {
+            fd: source.0.into(),
+            offset: source.1,
+        }
+    }
+}
+
+/// A value in the block cache.
+struct CacheValue<E>
+where
+    E: CacheEntry,
+{
+    /// Cached interpretation of `block`.
+    aux: E,
+
+    /// Serial number for LRU purposes.  Blocks with higher serial numbers have
+    /// been used more recently.
+    serial: u64,
+}
+
+pub trait CacheEntry: Clone
+where
+    Self: Sized,
+{
+    fn cost(&self) -> usize;
+    fn from_read(raw: Rc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
+    fn from_write(raw: Rc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
+}
+
+struct CacheInner<E>
+where
+    E: CacheEntry,
+{
+    /// Cache contents.
+    cache: BTreeMap<CacheKey, CacheValue<E>>,
+
+    /// Map from LRU serial number to cache key.  The element with the smallest
+    /// serial number was least recently used.
+    lru: BTreeMap<u64, CacheKey>,
+
+    /// Serial number to use the next time we touch a block.
+    next_serial: u64,
+
+    /// Sum over `cache[*].block.cost()`.
+    cur_cost: usize,
+
+    /// Maximum `size`, in bytes.
+    max_cost: usize,
+}
+
+impl<E> CacheInner<E>
+where
+    E: CacheEntry,
+{
+    fn new() -> Self {
+        Self {
+            cache: BTreeMap::new(),
+            lru: BTreeMap::new(),
+            next_serial: 0,
+            cur_cost: 0,
+            max_cost: 1024 * 1024 * 128,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn check_invariants(&self) {
+        assert_eq!(self.cache.len(), self.lru.len());
+        let mut cost = 0;
+        for (key, value) in self.cache.iter() {
+            assert_eq!(self.lru.get(&value.serial), Some(key));
+            cost += value.aux.cost();
+        }
+        for (serial, key) in self.lru.iter() {
+            assert_eq!(self.cache.get(key).unwrap().serial, *serial);
+        }
+        assert_eq!(cost, self.cur_cost);
+    }
+
+    fn debug_check_invariants(&self) {
+        #[cfg(debug_assertions)]
+        self.check_invariants()
+    }
+
+    fn delete_file(&mut self, fd: i64) {
+        let offsets: Vec<_> = self
+            .cache
+            .range(CacheKey::fd_range(fd))
+            .map(|(k, v)| (k.offset, v.serial))
+            .collect();
+        for (offset, serial) in offsets {
+            self.lru.remove(&serial).unwrap();
+            self.cur_cost -= self
+                .cache
+                .remove(&CacheKey { fd, offset })
+                .unwrap()
+                .aux
+                .cost();
+        }
+        self.debug_check_invariants();
+    }
+
+    fn get(&mut self, key: CacheKey) -> Option<&E> {
+        if let Some(value) = self.cache.get_mut(&key) {
+            self.lru.remove(&value.serial);
+            value.serial = self.next_serial;
+            self.lru.insert(value.serial, key);
+            self.next_serial += 1;
+            Some(&value.aux)
+        } else {
+            None
+        }
+    }
+
+    fn evict_to(&mut self, max_size: usize) {
+        while self.cur_cost > max_size {
+            let (_key, value) = self.cache.pop_first().unwrap();
+            self.lru.remove(&value.serial);
+            self.cur_cost -= value.aux.cost();
+        }
+        self.debug_check_invariants();
+    }
+
+    fn insert(&mut self, key: CacheKey, aux: E) {
+        let cost = aux.cost();
+        self.evict_to(self.max_cost.saturating_sub(cost));
+        if let Some(old_value) = self.cache.insert(
+            key,
+            CacheValue {
+                aux,
+                serial: self.next_serial,
+            },
+        ) {
+            self.lru.remove(&old_value.serial);
+            self.cur_cost -= old_value.aux.cost();
+        }
+        self.lru.insert(self.next_serial, key);
+        self.cur_cost += cost;
+        self.next_serial += 1;
+        self.debug_check_invariants();
+    }
+}
+
+/// A cache on top of a storage [backend](crate::backend).
+pub struct BufferCache<B, E>
+where
+    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    E: CacheEntry,
+{
+    backend: Rc<B>,
+    inner: RefCell<CacheInner<E>>,
+}
+
+impl<B, E> BufferCache<B, E>
+where
+    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    E: CacheEntry,
+{
+    /// Creates a new cache on top of `backend`.
+    ///
+    /// It's best to use a single `StorageCache` for all uses of a given
+    /// `backend`, because otherwise the cache will end up with duplicates.  The
+    /// easiest way is to get the cache from
+    /// [`BufferCache::default_for_thread()`].
+    pub fn new(backend: Rc<B>) -> Self {
+        Self {
             backend,
+            inner: RefCell::new(CacheInner::new()),
         }
     }
 
-    async fn get(&self, key: &CacheKey) -> Option<CachedFBuf> {
-        self.cache.get(key).await
-    }
-
-    async fn insert(&self, key: CacheKey, value: CachedFBuf) {
-        self.cache.insert(key, value).await;
-    }
-
-    fn overlaps_with_previous_write(&self, fd: &FileHandle, range: Range<u64>) -> bool {
-        fn overlaps(r1: &Range<u64>, r2: &Range<u64>) -> bool {
-            r1.start < r2.end && r2.start < r1.end
-        }
-
-        let blocks_ht = self.blocks.borrow();
-        let blocks = blocks_ht.get(&fd.into()).unwrap();
-        if blocks.is_empty() {
-            return false;
-        }
-
-        match blocks.binary_search_by(|probe| probe.start.cmp(&range.start)) {
-            Ok(_) => {
-                // If for whatever reason this function changes in the future,
-                // it's important to return true if the range is already in the list.
-                // (or change the logic that assumes it in [`write_block`] accordingly).
-                true
-            }
-            Err(i) if i > 0 => {
-                overlaps(&blocks[i - 1], &range)
-                    || blocks.len() > i && overlaps(&blocks[i], &range)
-                    || blocks.len() > i + 1 && overlaps(&blocks[i + 1], &blocks[i])
-            }
-            Err(_) => {
-                // i == 0
-                overlaps(&blocks[0], &range)
-            }
-        }
-    }
-}
-
-#[test]
-fn overlaps_with_previous_write_check() {
-    use crate::storage::backend::tests::InMemoryBackend;
-
-    init_test_logger();
-
-    let mut blocks = HashMap::new();
-    blocks.insert(1, vec![0..10, 20..30, 40..50]);
-    let blocks = RefCell::new(blocks);
-    let mut cache = BufferCache::with_backend_lfu(
-        InMemoryBackend::<true>::default(),
-        Arc::new(TinyLfuCache::default()),
-    );
-    cache.blocks = blocks;
-
-    let fd = &FileHandle::new(1);
-    assert!(cache.overlaps_with_previous_write(fd, 5..15));
-    assert!(cache.overlaps_with_previous_write(fd, 0..10));
-    assert!(cache.overlaps_with_previous_write(fd, 0..30));
-    assert!(cache.overlaps_with_previous_write(fd, 20..30));
-    assert!(cache.overlaps_with_previous_write(fd, 39..51));
-    assert!(cache.overlaps_with_previous_write(fd, 49..51));
-    assert!(!cache.overlaps_with_previous_write(fd, 10..20));
-    assert!(!cache.overlaps_with_previous_write(fd, 30..40));
-    assert!(!cache.overlaps_with_previous_write(fd, 50..60));
-
-    let mut blocks = HashMap::new();
-    #[allow(clippy::single_range_in_vec_init)]
-    blocks.insert(1, vec![1024..(1024 + 2048)]);
-    let blocks = RefCell::new(blocks);
-    let mut cache = BufferCache::with_backend_lfu(
-        InMemoryBackend::<true>::default(),
-        Arc::new(TinyLfuCache::default()),
-    );
-    cache.blocks = blocks;
-    let fd = &FileHandle::new(1);
-    assert!(cache.overlaps_with_previous_write(fd, 512..(1024 + 512)));
-}
-
-impl<B: StorageControl> StorageControl for BufferCache<B> {
-    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
-        let fd = self.backend.create_named(name).await?;
-        let fid = (&fd).into();
-        self.blocks.borrow_mut().insert(fid, Vec::new());
-        Ok(fd)
-    }
-
-    async fn create(&self) -> Result<FileHandle, StorageError> {
-        let fd = self.backend.create().await?;
-        let fid = (&fd).into();
-        self.blocks.borrow_mut().insert(fid, Vec::new());
-        Ok(fd)
-    }
-
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.backend.delete(fd).await
-    }
-
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        let fid = (&fd).into();
-        self.backend.delete_mut(fd).await?;
-        self.blocks.borrow_mut().remove(&fid);
-        Ok(())
-    }
-}
-
-impl<B: StorageRead> StorageRead for BufferCache<B> {
-    async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {}
-
-    async fn read_block(
+    pub async fn read<F, T>(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<CachedFBuf, StorageError> {
-        let request_start = Instant::now();
-        if let Some(buf) = self.get(&(fd.into(), offset, size)).await {
+        convert: F,
+    ) -> Result<T, Error>
+    where
+        F: Fn(&E) -> Result<T, ()>,
+    {
+        let key = CacheKey::from((fd, offset));
+        if let Some(aux) = self.inner.borrow_mut().get(key) {
             counter!(BUFFER_CACHE_HIT).increment(1);
-            histogram!(BUFFER_CACHE_LATENCY).record(request_start.elapsed().as_secs_f64());
-            Ok(buf)
-        } else {
-            counter!(BUFFER_CACHE_MISS).increment(1);
-            match self.backend.read_block(fd, offset, size).await {
-                Ok(buf) => {
-                    self.insert((fd.into(), offset, size), buf.clone()).await;
-                    Ok(buf)
-                }
-                Err(e) => Err(e),
-            }
+            return convert(aux)
+                .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
         }
+
+        counter!(BUFFER_CACHE_MISS).increment(1);
+
+        let block = self.backend.read_block(fd, offset, size).await?;
+        let aux = E::from_read(block, offset, size)?;
+        let retval = convert(&aux)
+            .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
+        self.inner.borrow_mut().insert(key, aux.clone());
+        retval
     }
 
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+    pub async fn write(
+        &self,
+        fd: &FileHandle,
+        offset: u64,
+        mut data: FBuf,
+    ) -> Result<(), StorageError> {
+        let checksum = crc32c(&data[4..]).to_le_bytes();
+        data[..4].copy_from_slice(checksum.as_slice());
+
+        let data = self.backend.write_block(fd, offset, data).await?;
+        let size = data.len();
+        let aux = E::from_write(data, offset, size).unwrap();
+        self.inner
+            .borrow_mut()
+            .insert(CacheKey::from((fd, offset)), aux);
+        Ok(())
+    }
+
+    pub async fn complete(
+        &self,
+        fd: FileHandle,
+    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+        self.backend.complete(fd).await
+    }
+
+    pub async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         self.backend.get_size(fd).await
     }
 }
 
-impl<B: StorageWrite> StorageWrite for BufferCache<B> {
-    /// The BufferCache `write_block` function is more restrictive than the
-    /// trait definition. It does not allow overlapping writes.
-    /// This is to allow to fill the cache on writes.
-    async fn write_block(
-        &self,
-        fd: &FileHandle,
-        offset: u64,
-        data: FBuf,
-    ) -> Result<CachedFBuf, StorageError> {
-        if self.overlaps_with_previous_write(fd, offset..offset + data.len() as u64) {
-            counter!(WRITES_FAILED).increment(1);
-            return Err(StorageError::OverlappingWrites);
-        }
-        let res = self.backend.write_block(fd, offset, data).await;
-        match res {
-            Ok(buf) => {
-                self.insert((fd.into(), offset, buf.len()), buf.clone())
-                    .await;
-
-                // !overlaps_with_previous_write => range not in the list yet
-                let mut blocks = self.blocks.borrow_mut();
-                let block_vector = blocks.get_mut(&fd.into()).unwrap();
-                let new_range = offset..offset + buf.len() as u64;
-                let pos = block_vector
-                    .binary_search_by(|probe| probe.start.cmp(&new_range.start))
-                    .unwrap_or_else(|e| e);
-                block_vector.insert(pos, new_range);
-                Ok(buf)
-            }
-            Err(e) => Err(e),
-        }
+impl<B, E> StorageControl for BufferCache<B, E>
+where
+    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    E: CacheEntry,
+{
+    async fn create(&self) -> Result<FileHandle, StorageError> {
+        self.backend.create().await
     }
-
-    async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        let fid = (&fd).into();
-        let (fd, path) = self.backend.complete(fd).await?;
-        self.blocks.borrow_mut().remove(&fid);
-        Ok((fd, path))
+    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+        self.backend.create_named(name).await
+    }
+    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+        self.inner.borrow_mut().delete_file((&fd).into());
+        self.backend.delete(fd).await
+    }
+    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+        self.inner.borrow_mut().delete_file((&fd).into());
+        self.backend.delete_mut(fd).await
     }
 }
 
-impl<B: StorageExecutor> StorageExecutor for BufferCache<B>
+impl<B, E> StorageExecutor for BufferCache<B, E>
 where
-    B: StorageExecutor,
+    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    E: CacheEntry,
 {
     fn block_on<F>(&self, future: F) -> F::Output
     where

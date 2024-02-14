@@ -40,9 +40,6 @@ pub const BUFFER_CACHE_HIT: &str = "disk.buffer_cache_hit";
 /// Total number of buffer cache misses.
 pub const BUFFER_CACHE_MISS: &str = "disk.buffer_cache_miss";
 
-/// Histogram of buffer cache lookup latency.
-pub const BUFFER_CACHE_LATENCY: &str = "disk.buffer_cache_latency";
-
 /// Adds descriptions for the metrics we expose.
 pub(super) fn describe_disk_metrics() {
     // Storage backend metrics.
@@ -70,9 +67,4 @@ pub(super) fn describe_disk_metrics() {
     // Buffer cache metrics.
     describe_counter!(BUFFER_CACHE_HIT, "total number of buffer cache hits");
     describe_counter!(BUFFER_CACHE_MISS, "total number of buffer cache misses");
-    describe_histogram!(
-        BUFFER_CACHE_LATENCY,
-        Unit::Seconds,
-        "Buffer cache lookup latency"
-    );
 }

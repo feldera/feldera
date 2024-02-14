@@ -169,7 +169,7 @@ impl StorageWrite for MonoioBackend {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let files = self.files.read().await;
         let request_start = Instant::now();
         let fm = files.get(&fd.0).unwrap();
@@ -182,7 +182,7 @@ impl StorageWrite for MonoioBackend {
         counter!(WRITES_SUCCESS).increment(1);
         histogram!(WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
 
-        Ok(Arc::new(buf))
+        Ok(Rc::new(buf))
     }
 
     async fn complete(
@@ -210,7 +210,7 @@ impl StorageRead for MonoioBackend {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let buffer = FBuf::with_capacity(size);
 
         let files = self.files.read().await;
@@ -226,7 +226,7 @@ impl StorageRead for MonoioBackend {
                     Err(StorageError::ShortRead)
                 } else {
                     counter!(READS_SUCCESS).increment(1);
-                    Ok(Arc::new(buf))
+                    Ok(Rc::new(buf))
                 }
             }
             Err(e) => {

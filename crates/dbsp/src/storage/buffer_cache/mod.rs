@@ -5,8 +5,5 @@ mod cache;
 /// A file-backed buffer.
 mod fbuf;
 
-#[cfg(test)]
-mod tests;
-
-pub use cache::{BufferCache, TinyLfuCache};
+pub use cache::{BufferCache, CacheEntry};
 pub use fbuf::{FBuf, FBufSerializer};
