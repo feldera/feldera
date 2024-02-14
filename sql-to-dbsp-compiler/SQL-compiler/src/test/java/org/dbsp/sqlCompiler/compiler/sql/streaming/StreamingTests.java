@@ -32,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -268,7 +269,7 @@ public class StreamingTests extends BaseSQLTests {
         this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
     }
 
-    Long[] profile(String program) throws IOException, InterruptedException {
+    Long[] profile(String program) throws IOException, InterruptedException, SQLException {
         // Rust program which profiles the circuit.
         String main = """
                use dbsp::{
@@ -354,7 +355,7 @@ public class StreamingTests extends BaseSQLTests {
     }
 
     @Test
-    public void profileLateness() throws IOException, InterruptedException {
+    public void profileLateness() throws IOException, InterruptedException, SQLException {
         String ddlLateness = """
                 CREATE TABLE series (
                         distance DOUBLE,

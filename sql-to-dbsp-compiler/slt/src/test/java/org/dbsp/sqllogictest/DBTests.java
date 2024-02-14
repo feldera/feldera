@@ -25,9 +25,11 @@ public class DBTests {
         String jdbcUrl = "jdbc:hsqldb:mem:db";
         Connection connection = DriverManager.getConnection(jdbcUrl, "", "");
         try (Statement s = connection.createStatement()) {
-            s.execute("create table mytable(" +
-                    "id integer not null primary key," +
-                    "strcol varchar(25))");
+            s.execute("""
+                    create table mytable(
+                    id integer not null primary key,
+                    strcol varchar(25))
+                    """);
 
             s.execute("insert into mytable values(0, 'str0')");
             s.execute("insert into mytable values(1, 'str1')");

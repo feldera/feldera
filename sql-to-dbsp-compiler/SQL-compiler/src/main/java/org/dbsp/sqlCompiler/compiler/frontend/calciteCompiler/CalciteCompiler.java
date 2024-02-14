@@ -54,6 +54,7 @@ import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.runtime.MapEntry;
+import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
 import org.apache.calcite.sql.SqlDataTypeSpec;
@@ -92,9 +93,6 @@ import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.InputTableDescription;
-import org.dbsp.sqlCompiler.compiler.OutputViewDescription;
-import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -306,6 +304,10 @@ public class CalciteCompiler implements IWritesLogs {
         this.validateTypes = null;
         this.converter = null;
         this.addOperatorTable(operatorTable);
+    }
+
+    public void addSchemaSource(String name, Schema schema) {
+        this.rootSchema.add(name, schema);
     }
 
     /** Add a new set of operators to the operator table.  Creates a new validator, converter */
@@ -791,14 +793,12 @@ public class CalciteCompiler implements IWritesLogs {
      * @param node         Compiled version of the SQL statement.
      * @param sqlStatement SQL statement as a string to compile.
      * @param comment      Additional information about the compiled statement.
-     * @param metadata     Add here descriptions of the program metadata.
      */
     @Nullable
     public FrontEndStatement compile(
             String sqlStatement,
             SqlNode node,
-            @Nullable String comment,
-            ProgramMetadata metadata) {
+            @Nullable String comment) {
         CalciteObject object = CalciteObject.create(node);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("Compiling ")
@@ -838,7 +838,6 @@ public class CalciteCompiler implements IWritesLogs {
                         tableName, table.getEmulatedTable(), this.errorReporter, table);
                 if (!success)
                     return null;
-                metadata.addTable(new InputTableDescription(table));
                 return table;
             } else if (node.getKind().equals(SqlKind.CREATE_VIEW)) {
                 SqlToRelConverter converter = this.getConverter();
@@ -863,8 +862,6 @@ public class CalciteCompiler implements IWritesLogs {
                 boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
                 if (!success)
                     return null;
-                if (this.generateOutputForNextView)
-                    metadata.addView(new OutputViewDescription(view));
                 return view;
             }
         }

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SQL: Allow tables definitions to be retrieved from JDBC data sources
+  ([#1416](https://github.com/feldera/feldera/pull/1416))
 - SQL: support for TUMBLE streaming windows
   ([#1404](https://github.com/feldera/feldera/pull/1404))
 - API: endpoint to get a list of demo URLs

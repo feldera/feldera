@@ -126,6 +126,8 @@ public class CompilerOptions {
         public int verbosity = 0;
         @Parameter(names = "--handles", description = "Use handles (true) or Catalog (false) in the emitted Rust code")
         public boolean emitHandles = false;
+        @Parameter(names = "--jdbcSource", description = "Connection string to a database that contains table metadata")
+        public String metadataSource = "";
 
         /** Only compare fields that matter. */
         public boolean same(IO ignoredIo) {
@@ -136,6 +138,7 @@ public class CompilerOptions {
         public String toString() {
             return "IO{" +
                     "outputFile=" + Utilities.singleQuote(this.outputFile) +
+                    ", metadataSource=" + this.metadataSource +
                     ", emitJpeg=" + this.emitJpeg +
                     ", emitPng=" + this.emitPng +
                     ", emitJsonErrors=" + this.emitJsonErrors +

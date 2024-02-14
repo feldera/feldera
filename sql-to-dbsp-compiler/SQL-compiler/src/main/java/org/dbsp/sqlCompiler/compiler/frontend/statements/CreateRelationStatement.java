@@ -23,38 +23,24 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.Enumerable;
-import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
-import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.util.JsonBuilder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Base class for CreateTableStatement and CreateViewStatement.
  */
-public abstract class CreateRelationStatement extends FrontEndStatement {
+public abstract class CreateRelationStatement extends FrontEndStatement implements IHasSchema {
     public final String relationName;
     public final boolean nameIsQuoted;
     public final List<RelColumnMetadata> columns;
@@ -92,29 +78,12 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
         return new EmulatedTable();
     }
 
-    /**
-     * Return the index of the specified column.
-     */
-    public int getColumnIndex(SqlIdentifier id) {
-        for (int i = 0; i < this.columns.size(); i++) {
-            if (this.columns.get(i).getName().equals(id.toString()))
-                return i;
-        }
-        throw new InternalCompilerError("Column not found", CalciteObject.create(id));
+    public String getName() {
+        return this.relationName;
     }
 
-    public DBSPTypeTuple getRowTypeAsTuple(TypeCompiler compiler) {
-        return this.getRowTypeAsStruct(compiler).toTuple();
-    }
-
-    public DBSPTypeStruct getRowTypeAsStruct(TypeCompiler compiler) {
-        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-        for (RelColumnMetadata col: this.columns) {
-            DBSPType fType = compiler.convertType(col.getType(), true);
-            fields.add(new DBSPTypeStruct.Field(
-                    this.getCalciteObject(), col.getName(), col.getName(), fType, col.nameIsQuoted));
-        }
-        return new DBSPTypeStruct(this.getCalciteObject(), this.relationName, this.relationName, fields);
+    public List<RelColumnMetadata> getColumns() {
+        return this.columns;
     }
 
     @Override
@@ -125,35 +94,12 @@ public abstract class CreateRelationStatement extends FrontEndStatement {
                 '}';
     }
 
-    public JsonNode getDefinedObjectSchema() {
-        ObjectMapper mapper = new ObjectMapper();
-        ObjectNode result = mapper.createObjectNode();
-        result.put("name", this.relationName);
-        result.put("case_sensitive", this.nameIsQuoted);
-        ArrayNode fields = result.putArray("fields");
-        ArrayNode keyFields = mapper.createArrayNode();
-        boolean hasKey = false;
-        for (RelColumnMetadata col: this.columns) {
-            ObjectNode column = fields.addObject();
-            column.put("name", col.getName());
-            column.put("case_sensitive", col.nameIsQuoted);
-            if (col.isPrimaryKey) {
-                keyFields.add(col.getName());
-                hasKey = true;
-            }
-            Object object = RelJson.create().withJsonBuilder(new JsonBuilder())
-                    .toJson(col.getType());
-            try {
-                // Is there a better way to do this?
-                String json = mapper.writeValueAsString(object);
-                JsonNode repr = mapper.readTree(json);
-                column.set("columntype", repr);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        if (hasKey)
-            result.set("primary_key", keyFields);
-        return result;
+    @Override
+    public boolean nameIsQuoted() {
+        return this.nameIsQuoted;
+    }
+
+    public CalciteObject getNode() {
+        return this.getCalciteObject();
     }
 }

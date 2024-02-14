@@ -25,10 +25,15 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.calcite.adapter.jdbc.JdbcSchema;
+import org.apache.calcite.jdbc.CalciteConnection;
+import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
@@ -37,6 +42,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -58,16 +64,20 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
+import org.dbsp.util.FreshName;
+import org.dbsp.util.HSQDBManager;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
+import org.hsqldb.server.ServerAcl;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.imageio.ImageIO;
+import javax.sql.DataSource;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -81,8 +91,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -114,10 +126,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
-        DBSPCircuit circuit = getCircuit(compiler);
+        compiler.optimize();
+        // Deterministically name the circuit function.
+        DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         String str = circuit.toString();
         String expected = """
-                Circuit circuit0 {
+                Circuit circuit {
                     // DBSPSourceMultisetOperator 53
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
                     let stream53 = T();
@@ -163,7 +177,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
     // Test the -T command-line parameter
     @Test
-    public void loggingParameter() throws IOException, InterruptedException {
+    public void loggingParameter() throws IOException, InterruptedException, SQLException {
         StringBuilder builder = new StringBuilder();
         Appendable save = Logger.INSTANCE.setDebugStream(builder);
         String[] statements = new String[]{
@@ -187,7 +201,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
     // Test the --unquotedCasing command-line parameter
     @Test
-    public void casing() throws IOException, InterruptedException {
+    public void casing() throws IOException, InterruptedException, SQLException {
         String[] statements = new String[]{
                 "CREATE TABLE \"T\" (\n" +
                         "COL1 INT NOT NULL" +
@@ -201,7 +215,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         };
         File file = createInputScript(statements);
         CompilerMessages messages = CompilerMain.execute("--unquotedCasing", "lower",
-                "-o", BaseSQLTests.testFilePath, file.getPath());
+                "-q", "-o", BaseSQLTests.testFilePath, file.getPath());
         System.out.println(messages);
         Assert.assertEquals(0, messages.errorCount());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
@@ -209,8 +223,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
     // Test illegal values for the --unquotedCasing command-line parameter
     @Test
-    public void illegalCasing() throws IOException, InterruptedException {
-        String[] statements = new String[]{
+    public void illegalCasing() throws IOException, SQLException {
+        String[] statements = new String[] {
                 "CREATE TABLE T (\n" +
                         "COL1 INT NOT NULL" +
                         ", COL2 DOUBLE NOT NULL" +
@@ -222,6 +236,65 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 "-o", BaseSQLTests.testFilePath, file.getPath());
         Assert.assertTrue(messages.errorCount() > 0);
         Assert.assertTrue(messages.toString().contains("Illegal value for option --unquotedCasing"));
+    }
+
+    // Test that schema for a table can be retrieved from a JDBC data source
+    @Test
+    public void jdbcSchemaTest() throws ClassNotFoundException, SQLException {
+        // Create a table in HSQLDB
+        Class.forName("org.hsqldb.jdbcDriver");
+        String jdbcUrl = "jdbc:hsqldb:mem:db";
+        Connection connection = DriverManager.getConnection(jdbcUrl, "", "");
+        try (Statement s = connection.createStatement()) {
+            s.execute("""
+                    create table mytable(
+                    id integer not null primary key,
+                    strcol varchar(25))
+                    """);
+        }
+
+        // Create a schema that retrieves data from HSQLDB
+        DataSource mockDataSource = JdbcSchema.dataSource(jdbcUrl, "org.hsqldb.jdbcDriver", "", "");
+        Connection executorConnection = DriverManager.getConnection("jdbc:calcite:");
+        CalciteConnection calciteConnection = executorConnection.unwrap(CalciteConnection.class);
+        SchemaPlus rootSchema = calciteConnection.getRootSchema();
+        JdbcSchema hsql = JdbcSchema.create(rootSchema, "schema", mockDataSource, null, null);
+
+        CompilerOptions options = new CompilerOptions();
+        options.languageOptions.throwOnError = true;
+        DBSPCompiler compiler = new DBSPCompiler(options);
+        compiler.addSchemaSource("schema", hsql);
+        compiler.compileStatement("CREATE VIEW V AS SELECT * FROM mytable");
+        this.addRustTestCase("jdbc", compiler, getCircuit(compiler));
+        ObjectNode node = compiler.getIOMetadataAsJson();
+        String json = node.toPrettyString();
+        Assert.assertTrue(json.contains("MYTABLE"));
+    }
+
+    // Test that a schema for a table can be retrieved from a JDBC data source
+    // in a separate process using a JDBC connection.
+    @Test
+    public void jdbcSchemaTest2() throws SQLException, IOException, InterruptedException,
+            ServerAcl.AclFormatException, ClassNotFoundException {
+        HSQDBManager manager = new HSQDBManager(BaseSQLTests.rustDirectory);
+        manager.start();
+        Connection connection = manager.getConnection();
+        try (Statement s = connection.createStatement()) {
+            s.execute("DROP TABLE mytable IF EXISTS");
+            s.execute("""
+                    create table mytable(
+                    id integer not null primary key,
+                    strcol varchar(25))
+                    """);
+        }
+
+        File script = createInputScript("CREATE VIEW V AS SELECT * FROM mytable");
+        CompilerMessages messages = CompilerMain.execute(
+                "--jdbcSource", manager.getConnectionString(), "-o", BaseSQLTests.testFilePath, script.getPath());
+        manager.stop();
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
     }
 
     @Test
@@ -347,7 +420,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testWith() throws IOException, InterruptedException {
+    public void testWith() throws IOException, InterruptedException, SQLException {
         String statement =
                 """
                         create table VENDOR (
@@ -376,7 +449,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testUDFWarning() throws IOException {
+    public void testUDFWarning() throws IOException, SQLException {
         File file = createInputScript("CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR",
                 "CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', CAST(5 AS INTEGER))");
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
@@ -385,7 +458,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testUDFTypeError() throws IOException {
+    public void testUDFTypeError() throws IOException, SQLException {
         File file = createInputScript("CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR NOT NULL",
                 "CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5')");
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
@@ -396,7 +469,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testUDF() throws IOException, InterruptedException {
+    public void testUDF() throws IOException, InterruptedException, SQLException {
         File file = createInputScript(
                 "CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL",
                 "CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5)",
@@ -424,7 +497,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testProjectFiles() throws IOException, InterruptedException {
+    public void testProjectFiles() throws IOException, InterruptedException, SQLException {
         // Compiles all the programs in the tests directory
         final String projectsDirectory = "../../demo/";
         File dir = new File(projectsDirectory);
@@ -480,7 +553,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testRustCompiler() throws IOException, InterruptedException {
+    public void testRustCompiler() throws IOException, InterruptedException, SQLException {
         String[] statements = new String[]{
                 "CREATE TABLE T (\n" +
                         "COL1 INT NOT NULL" +
@@ -496,7 +569,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testDefaultColumnValueCompiler() throws IOException, InterruptedException {
+    public void testDefaultColumnValueCompiler() throws IOException, InterruptedException, SQLException {
         String[] statements = new String[]{
                 """
                 CREATE TABLE T (
@@ -514,7 +587,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
     
     @Test
-    public void testSchema() throws IOException {
+    public void testSchema() throws IOException, SQLException {
         String[] statements = new String[]{
                 "CREATE TABLE T (\n" +
                         "COL1 INT NOT NULL" +
@@ -537,86 +610,88 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
         String jsonContents  = Utilities.readFile(json.toPath());
-        Assert.assertEquals("{\n" +
-                "  \"inputs\" : [ {\n" +
-                "    \"name\" : \"T\",\n" +
-                "    \"case_sensitive\" : false,\n" +
-                "    \"fields\" : [ {\n" +
-                "      \"name\" : \"COL1\",\n" +
-                "      \"case_sensitive\" : false,\n" +
-                "      \"columntype\" : {\n" +
-                "        \"type\" : \"INTEGER\",\n" +
-                "        \"nullable\" : false\n" +
-                "      }\n" +
-                "    }, {\n" +
-                "      \"name\" : \"COL2\",\n" +
-                "      \"case_sensitive\" : false,\n" +
-                "      \"columntype\" : {\n" +
-                "        \"type\" : \"DOUBLE\",\n" +
-                "        \"nullable\" : false\n" +
-                "      }\n" +
-                "    }, {\n" +
-                "      \"name\" : \"COL3\",\n" +
-                "      \"case_sensitive\" : false,\n" +
-                "      \"columntype\" : {\n" +
-                "        \"type\" : \"VARCHAR\",\n" +
-                "        \"nullable\" : true,\n" +
-                "        \"precision\" : 3\n" +
-                "      }\n" +
-                "    }, {\n" +
-                "      \"name\" : \"COL4\",\n" +
-                "      \"case_sensitive\" : false,\n" +
-                "      \"columntype\" : {\n" +
-                "        \"type\" : \"ARRAY\",\n" +
-                "        \"nullable\" : true,\n" +
-                "        \"component\" : {\n" +
-                "          \"type\" : \"VARCHAR\",\n" +
-                "          \"nullable\" : false,\n" +
-                "          \"precision\" : 3\n" +
-                "        }\n" +
-                "      }\n" +
-                "    } ],\n" +
-                "    \"primary_key\" : [ \"COL3\" ]\n" +
-                "  } ],\n" +
-                "  \"outputs\" : [ {\n" +
-                "    \"name\" : \"V\",\n" +
-                "    \"case_sensitive\" : false,\n" +
-                "    \"fields\" : [ {\n" +
-                "      \"name\" : \"xCol\",\n" +
-                // TODO: the following should probably be 'true'
-                "      \"case_sensitive\" : false,\n" +
-                "      \"columntype\" : {\n" +
-                "        \"type\" : \"INTEGER\",\n" +
-                "        \"nullable\" : false\n" +
-                "      }\n" +
-                "    } ]\n" +
-                "  }, {\n" +
-                "    \"name\" : \"V1\",\n" +
-                "    \"case_sensitive\" : false,\n" +
-                "    \"fields\" : [ {\n" +
-                "      \"name\" : \"yCol\",\n" +
-                "      \"case_sensitive\" : true,\n" +
-                "      \"columntype\" : {\n" +
-                "        \"type\" : \"INTEGER\",\n" +
-                "        \"nullable\" : false\n" +
-                "      }\n" +
-                "    } ]\n" +
-                "  } ]\n" +
-                "}", jsonContents);
+        Assert.assertEquals("""
+                {
+                  "inputs" : [ {
+                    "name" : "T",
+                    "case_sensitive" : false,
+                    "fields" : [ {
+                      "name" : "COL1",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "type" : "INTEGER",
+                        "nullable" : false
+                      }
+                    }, {
+                      "name" : "COL2",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "type" : "DOUBLE",
+                        "nullable" : false
+                      }
+                    }, {
+                      "name" : "COL3",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "type" : "VARCHAR",
+                        "nullable" : true,
+                        "precision" : 3
+                      }
+                    }, {
+                      "name" : "COL4",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "type" : "ARRAY",
+                        "nullable" : true,
+                        "component" : {
+                          "type" : "VARCHAR",
+                          "nullable" : false,
+                          "precision" : 3
+                        }
+                      }
+                    } ],
+                    "primary_key" : [ "COL3" ]
+                  } ],
+                  "outputs" : [ {
+                    "name" : "V",
+                    "case_sensitive" : false,
+                    "fields" : [ {
+                      "name" : "xCol",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "type" : "INTEGER",
+                        "nullable" : false
+                      }
+                    } ]
+                  }, {
+                    "name" : "V1",
+                    "case_sensitive" : false,
+                    "fields" : [ {
+                      "name" : "yCol",
+                      "case_sensitive" : true,
+                      "columntype" : {
+                        "type" : "INTEGER",
+                        "nullable" : false
+                      }
+                    } ]
+                  } ]
+                }""", jsonContents);
     }
 
     @Test @Ignore("Only run if we want to preserve casing for names")
-    public void testCaseSensitive() throws IOException {
+    public void testCaseSensitive() throws IOException, SQLException {
         String[] statements = new String[]{
-                "CREATE TABLE MYTABLE (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
+                """
+                CREATE TABLE MYTABLE (
+                COL1 INT NOT NULL
+                , COL2 DOUBLE NOT NULL
+                )""",
                 "CREATE VIEW V AS SELECT COL1 FROM MYTABLE",
-                "CREATE TABLE yourtable (\n" +
-                        "  column1 INT NOT NULL" +
-                        ", column2 DOUBLE NOT NULL" +
-                        ")",
+                """
+                CREATE TABLE yourtable (
+                  column1 INT NOT NULL
+                , column2 DOUBLE NOT NULL
+                )""",
                 "CREATE VIEW V2 AS SELECT column2 FROM yourtable"
         };
         File file = createInputScript(statements);
@@ -638,7 +713,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testCompilerExample() throws IOException, InterruptedException {
+    public void testCompilerExample() throws IOException, InterruptedException, SQLException {
         // The example in docs/contributors/compiler.md
         String sql = """
                 -- define Person table
@@ -733,7 +808,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testCompilerToPng() throws IOException {
+    public void testCompilerToPng() throws IOException, SQLException {
         if (!Utilities.isDotInstalled())
             return;
         String[] statements = new String[]{
@@ -752,8 +827,25 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         ImageIO.read(new File(png.getPath()));
     }
 
+    public void testFreshName() {
+        String query = "CREATE VIEW V AS SELECT T.COL1 FROM T WHERE T.COL2 > 0";
+        DBSPCompiler compiler = this.compileDef();
+        compiler.compileStatement(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        Set<String> used = new HashSet<>();
+        CollectIdentifiers ci = new CollectIdentifiers(testCompiler(), used);
+        ci.getCircuitVisitor().apply(circuit);
+        Assert.assertTrue(used.contains("T")); // table name
+        Assert.assertTrue(used.contains("V")); // view name
+        FreshName gen = new FreshName(used);
+        String t0 = gen.freshName("T");
+        Assert.assertEquals(t0, "T_0");
+        String t1 = gen.freshName("T");
+        Assert.assertEquals(t1, "T_1");
+    }
+
     @Test
-    public void jsonErrorTest() throws IOException {
+    public void jsonErrorTest() throws IOException, SQLException {
         String[] statements = new String[] {
                 "CREATE VIEW V AS SELECT * FROM T"
         };

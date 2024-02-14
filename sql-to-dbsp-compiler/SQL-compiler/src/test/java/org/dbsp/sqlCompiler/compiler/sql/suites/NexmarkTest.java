@@ -613,6 +613,7 @@ SELECT
         }
 
         Assert.assertFalse(compiler.hasErrors());
+        Assert.assertFalse(compiler.hasWarnings());
         this.addRustTestCase("NexmarkTest", compiler, getCircuit(compiler));
     }
 }
