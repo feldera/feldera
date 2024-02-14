@@ -13,12 +13,13 @@ import CardContent from '@mui/material/CardContent'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 
-const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
+export const AnalyticsPipelineTput = (metrics: { global: GlobalMetrics[]; periodMs: number }) => {
   const theme = useTheme()
 
-  const totalProcessed = discreteDerivative(props.metrics, m => m.total_processed_records).filter(x => x != 0)
+  const perSecond = metrics.periodMs / 1000
+  const totalProcessed = discreteDerivative(metrics.global, m => m.total_processed_records).filter(x => x != 0)
   const throughput = discreteDerivative(totalProcessed, (n1, n0) => n1 - n0)
-  const smoothTput = discreteDerivative(throughput, (n1, n0) => n1 * 0.6 + 0.4 * n0)
+  const smoothTput = discreteDerivative(throughput, (n1, n0) => (n1 * 0.6) / perSecond + (n0 * 0.4) / perSecond)
 
   const series = [
     {
@@ -113,5 +114,3 @@ const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
     </Card>
   )
 }
-
-export default AnalyticsPipelineTput

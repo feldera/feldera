@@ -10,8 +10,8 @@ import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { TextIcon } from '$lib/components/common/TextIcon'
-import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
-import PipelineMemoryGraph from '$lib/components/streaming/management/PipelineMemoryGraph'
+import { AnalyticsPipelineTput } from '$lib/components/streaming/management/AnalyticsPipelineTput'
+import { PipelineMemoryGraph } from '$lib/components/streaming/management/PipelineMemoryGraph'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
@@ -312,10 +312,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           </Card>
         </Grid>
         <Grid item xs={5}>
-          <AnalyticsPipelineTput metrics={metrics.global} />
+          <AnalyticsPipelineTput {...metrics} />
         </Grid>
         <Grid item xs={3}>
-          <PipelineMemoryGraph metrics={metrics.global} />
+          <PipelineMemoryGraph {...metrics} />
         </Grid>
         <Grid item xs={12}>
           <Paper>

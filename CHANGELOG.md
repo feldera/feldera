@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- WebConsole: Fix metrics values depend on polling period
+
 ### Added
 
 - JDBC sink support via Debezium JDBC sink connector

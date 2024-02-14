@@ -26,7 +26,9 @@ export function usePipelineMetrics(props: {
   const pipelineStatsQuery = useQuery({
     ...pipelineManagerQuery.pipelineStats(props.pipelineName),
     enabled: props.status == PipelineStatus.RUNNING,
-    refetchInterval: props.refetchMs
+    refetchInterval: props.refetchMs,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false
   })
 
   useEffect(() => {
@@ -70,5 +72,5 @@ export function usePipelineMetrics(props: {
     props.refetchMs
   ])
 
-  return metrics
+  return { ...metrics, periodMs: props.refetchMs }
 }
