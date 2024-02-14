@@ -52,6 +52,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --ignoreOrder
       Ignore ORDER BY clauses at the end
       Default: false
+    --jdbcSource
+      Connection string to a database that contains table metadata
+      Default: <empty string>
     --lenient
       Lenient SQL validation.  If true it allows duplicate column names in a
       view
