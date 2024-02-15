@@ -1,0 +1,103 @@
+{
+  "title": "Product Items",
+  "description": "A demonstration of aggregating Product and Items as they are constantly updated.",
+  "prefix": "productitems-",
+  "steps": [
+    {
+      "name": "setup",
+      "entities": [
+        {
+          "type": "program",
+          "name": "program",
+          "body": {
+            "description": "ProductItems program",
+            "code": "[REPLACE:PROGRAM-CODE]"
+          }
+        },
+        {
+          "type": "connector",
+          "name": "product-in",
+          "body": {
+            "description": "ProductItems Kafka input connector for product table",
+            "config": {
+              "transport": {
+                "name": "kafka",
+                "config": {
+                  "bootstrap.servers": "${secret:productitems-bootstrap-servers}",
+                  "security.protocol": "SASL_PLAINTEXT",
+                  "sasl.mechanism": "SCRAM-SHA-256",
+                  "sasl.username": "${secret:productitems-consume-sasl-username}",
+                  "sasl.password": "${secret:productitems-consume-sasl-password}",
+                  "topics": [
+                    "demo-productitems-product"
+                  ],
+                  "auto.offset.reset": "earliest"
+                }
+              },
+              "format": {
+                "name": "json",
+                "config": {
+                  "update_format": "insert_delete",
+                  "array": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "connector",
+          "name": "item-in",
+          "body": {
+            "description": "ProductItems Kafka input connector for item table",
+            "config": {
+              "transport": {
+                "name": "kafka",
+                "config": {
+                  "bootstrap.servers": "${secret:productitems-bootstrap-servers}",
+                  "security.protocol": "SASL_PLAINTEXT",
+                  "sasl.mechanism": "SCRAM-SHA-256",
+                  "sasl.username": "${secret:productitems-consume-sasl-username}",
+                  "sasl.password": "${secret:productitems-consume-sasl-password}",
+                  "topics": [
+                    "demo-productitems-item"
+                  ],
+                  "auto.offset.reset": "earliest"
+                }
+              },
+              "format": {
+                "name": "json",
+                "config": {
+                  "update_format": "insert_delete",
+                  "array": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "pipeline",
+          "name": "pipeline",
+          "body": {
+            "description": "ProductItems pipeline",
+            "config": {"workers": 6},
+            "program_name": "program",
+            "connectors": [
+              {
+                "connector_name": "product-in",
+                "is_input": true,
+                "name": "product-in",
+                "relation_name": "PRODUCT"
+              },
+              {
+                "connector_name": "item-in",
+                "is_input": true,
+                "name": "item-in",
+                "relation_name": "ITEM"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
