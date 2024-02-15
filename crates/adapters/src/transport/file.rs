@@ -112,7 +112,7 @@ impl FileInputReader {
                             consumer.error(true, AnyError::from(e));
                             return;
                         }
-                        Ok(data) if data.is_empty() => {
+                        Ok([]) => {
                             if !follow {
                                 let _ = consumer.eoi();
                                 return;

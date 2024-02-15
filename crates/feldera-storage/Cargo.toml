@@ -24,6 +24,7 @@ log = { version = "0.4", features = [] }
 moka = { version = "0.12", features = ["future"] }
 sysinfo = { version = "0.30" }
 rlimit = "0.10.1"
+serde = { version = "1.0", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 glommio = { version = "0.8.0", optional = true }

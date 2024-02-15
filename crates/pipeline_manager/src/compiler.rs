@@ -188,8 +188,8 @@ pub struct Compiler {}
 /// crate.
 const MAIN_FUNCTION: &str = r#"
 fn main() {
-    dbsp_adapters::server::server_main(|workers| {
-        circuit(workers)
+    dbsp_adapters::server::server_main(|cconfig| {
+        circuit(cconfig)
             .map(|(dbsp, catalog)| {
                 (
                     Box::new(dbsp) as Box<dyn dbsp_adapters::DbspCircuitHandle>,

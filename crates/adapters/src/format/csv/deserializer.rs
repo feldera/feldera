@@ -429,7 +429,7 @@ impl<'a, 'de: 'a, T: DeRecord<'de>> Deserializer<'de> for &'a mut DeRecordWrap<T
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
         match self.peek_field() {
             None => visitor.visit_none(),
-            Some(f) if f.is_empty() => {
+            Some([]) => {
                 self.next_field().expect("empty field");
                 visitor.visit_none()
             }
@@ -813,7 +813,7 @@ mod tests {
             Foo {
                 x: "hi".into(),
                 y: 42,
-                z: 1.3
+                z: 1.3,
             }
         );
     }
@@ -827,7 +827,7 @@ mod tests {
             y: i32,
             x: String,
         }
-        assert!(de_headers::<Foo>(&["a", "x", "y", "z"], &["foo", "hi", "42", "1.3"],).is_err());
+        assert!(de_headers::<Foo>(&["a", "x", "y", "z"], &["foo", "hi", "42", "1.3"]).is_err());
     }
 
     #[test]
@@ -838,7 +838,7 @@ mod tests {
             y: i32,
             x: String,
         }
-        assert!(de_headers::<Foo>(&["y", "z"], &["42", "1.3"],).is_err());
+        assert!(de_headers::<Foo>(&["y", "z"], &["42", "1.3"]).is_err());
     }
 
     #[test]
@@ -856,7 +856,7 @@ mod tests {
             Foo {
                 x: None,
                 y: 42,
-                z: 1.3
+                z: 1.3,
             }
         );
     }
@@ -919,7 +919,7 @@ mod tests {
             Foo {
                 x: "hi".into(),
                 y: 42,
-                z: 1.3
+                z: 1.3,
             }
         );
     }
@@ -1027,7 +1027,7 @@ mod tests {
             got,
             Foo {
                 label: "foo".into(),
-                xs: vec![1, 5, 10]
+                xs: vec![1, 5, 10],
             }
         );
     }
@@ -1080,7 +1080,7 @@ mod tests {
             got,
             Row {
                 label: Label::Bar,
-                x: 5.0
+                x: 5.0,
             }
         );
     }
@@ -1129,7 +1129,7 @@ mod tests {
             Foo {
                 a: None,
                 b: "foo".into(),
-                c: Some(5)
+                c: Some(5),
             }
         );
     }
@@ -1152,7 +1152,7 @@ mod tests {
             Foo {
                 a: None,
                 b: None,
-                c: Some(5)
+                c: Some(5),
             }
         );
     }
@@ -1174,7 +1174,7 @@ mod tests {
             Foo {
                 a: "foo",
                 b: 5,
-                c: "bar"
+                c: "bar",
             }
         );
     }
@@ -1234,7 +1234,7 @@ mod tests {
                 input: Input { x: 1.0, y: 2.0 },
                 properties: Properties {
                     prop1: 3.0,
-                    prop2: 4.0
+                    prop2: 4.0,
                 },
             }
         );

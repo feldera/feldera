@@ -1,5 +1,6 @@
 use crate::{RuntimeError, SchedulerError};
 use anyhow::Error as AnyError;
+use feldera_storage::backend::StorageError;
 use log::Level;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
@@ -22,6 +23,7 @@ pub enum Error {
     Runtime(RuntimeError),
     IO(IOError),
     Constructor(AnyError),
+    Storage(StorageError),
 }
 
 impl DetailedError for Error {
@@ -31,6 +33,7 @@ impl DetailedError for Error {
             Self::Runtime(error) => Cow::from(format!("RuntimeError.{}", error.error_code())),
             Self::IO(_) => Cow::from("IOError"),
             Self::Constructor(_) => Cow::from("CircuitConstructorError"),
+            Self::Storage(_) => Cow::from("StorageError"),
         }
     }
 }
@@ -52,6 +55,7 @@ impl Serialize for Error {
             Self::Constructor(_) => serializer
                 .serialize_struct("CircuitConstructorError", 0)?
                 .end(),
+            Self::Storage(error) => error.serialize(serializer),
         }
     }
 }
@@ -73,6 +77,9 @@ impl Display for Error {
             Self::Constructor(error) => {
                 write!(f, "circuit construction error: {error}")
             }
+            Self::Storage(error) => {
+                write!(f, "storage error: {error}")
+            }
         }
     }
 }
@@ -92,5 +99,11 @@ impl From<SchedulerError> for Error {
 impl From<RuntimeError> for Error {
     fn from(error: RuntimeError) -> Self {
         Self::Runtime(error)
+    }
+}
+
+impl From<StorageError> for Error {
+    fn from(error: StorageError) -> Self {
+        Self::Storage(error)
     }
 }

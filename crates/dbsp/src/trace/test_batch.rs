@@ -474,7 +474,7 @@ where
     fn new_batcher(time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(None),
+            result: TestBatch::new(None, ""),
         }
     }
 
@@ -523,7 +523,7 @@ where
     fn new_builder(time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(None),
+            result: TestBatch::new(None, ""),
         }
     }
 
@@ -925,7 +925,7 @@ where
 {
     type Batch = Self;
 
-    fn new(_activator: Option<Activator>) -> Self {
+    fn new<S: AsRef<str>>(_activator: Option<Activator>, _persistent_id: S) -> Self {
         Self {
             data: BTreeMap::new(),
             lower_key_bound: None,

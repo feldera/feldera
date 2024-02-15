@@ -606,8 +606,8 @@ where
     B: Batch,
 {
     type ValueConsumer<'a> = SpineValueConsumer<'a, B>
-    where
-        Self: 'a;
+        where
+            Self: 'a;
 
     fn key_valid(&self) -> bool {
         todo!()
@@ -650,17 +650,6 @@ where
     }
 }
 
-impl<B> Default for Spine<B>
-where
-    B: Batch,
-    B::Key: Ord,
-    B::Val: Ord,
-{
-    fn default() -> Self {
-        <Self as Trace>::new(None)
-    }
-}
-
 impl<B> Trace for Spine<B>
 where
     B: Batch,
@@ -669,7 +658,7 @@ where
 {
     type Batch = B;
 
-    fn new(activator: Option<Activator>) -> Self {
+    fn new<S: AsRef<str>>(activator: Option<Activator>, _persistent_id: S) -> Self {
         Self::with_effort(1, activator)
     }
 
@@ -1461,7 +1450,7 @@ mod test {
     proptest! {
         #[test]
         fn test_truncate_key_bounded_memory(batches in kvr_batches_monotone_keys(100, 20, 50, 20, 500)) {
-            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None, "");
 
             for (i, tuples) in batches.into_iter().enumerate() {
                 let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
@@ -1477,7 +1466,7 @@ mod test {
 
         #[test]
         fn test_truncate_value_bounded_memory(batches in kvr_batches_monotone_values(50, 100, 20, 20, 500)) {
-            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None, "");
 
             for (i, tuples) in batches.into_iter().enumerate() {
                 let batch = OrdIndexedZSet::from_tuples((), tuples.clone());
@@ -1493,10 +1482,10 @@ mod test {
 
         #[test]
         fn test_zset_spine(batches in kr_batches(50, 2, 100, 20), seed in 0..u64::max_value()) {
-            let mut trace1: Spine<OrdZSet<i32, i32>> = Spine::new(None);
-            let mut trace2: Spine<OrdZSet<i32, i32>> = Spine::new(None);
+            let mut trace1: Spine<OrdZSet<i32, i32>> = Spine::new(None, "");
+            let mut trace2: Spine<OrdZSet<i32, i32>> = Spine::new(None, "");
 
-            let mut ref_trace: TestBatch<i32, (), (), i32> = TestBatch::new(None);
+            let mut ref_trace: TestBatch<i32, (), (), i32> = TestBatch::new(None, "");
 
             let mut kbound = 0;
             for (tuples, bound) in batches.into_iter() {
@@ -1534,10 +1523,10 @@ mod test {
 
         #[test]
         fn test_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), seed in 0..u64::max_value()) {
-            let mut trace1: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
-            let mut trace2: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
+            let mut trace1: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None, "");
+            let mut trace2: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None, "");
 
-            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
+            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None, "");
 
             let mut bound = 0;
             let mut kbound = 0;
@@ -1587,8 +1576,8 @@ mod test {
         // Like `test_indexed_zset_spine` but keeps even values only.
         #[test]
         fn test_indexed_zset_spine_even_values(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None, "");
+            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None, "");
 
             trace.retain_values(Box::new(move |val| *val % 2 == 0));
             ref_trace.retain_values(Box::new(move |val| *val % 2 == 0));
@@ -1624,8 +1613,8 @@ mod test {
 
         #[test]
         fn test_indexed_zset_spine_even_keys(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdIndexedZSet<i32, i32, i32>> = Spine::new(None, "");
+            let mut ref_trace: TestBatch<i32, i32, (), i32> = TestBatch::new(None, "");
 
             trace.retain_keys(Box::new(move |val| *val % 2 == 0));
             ref_trace.retain_keys(Box::new(move |val| *val % 2 == 0));
@@ -1661,9 +1650,9 @@ mod test {
 
         #[test]
         fn test_zset_trace_spine(batches in kr_batches(100, 2, 500, 20), seed in 0..u64::max_value()) {
-            let mut trace1: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None);
-            let mut trace2: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, (), u32, i32> = TestBatch::new(None);
+            let mut trace1: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None, "");
+            let mut trace2: Spine<OrdKeyBatch<i32, u32, i32>> = Spine::new(None, "");
+            let mut ref_trace: TestBatch<i32, (), u32, i32> = TestBatch::new(None, "");
 
             let mut kbound = 0;
             for (time, (tuples, bound)) in batches.into_iter().enumerate() {
@@ -1696,9 +1685,9 @@ mod test {
         fn test_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
             // `trace1` uses `truncate_keys_below`.
             // `trace2` uses `retain_keys`.
-            let mut trace1: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
-            let mut trace2: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
+            let mut trace1: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None, "");
+            let mut trace2: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None, "");
+            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None, "");
 
             let mut bound = 0;
             let mut kbound = 0;
@@ -1741,8 +1730,8 @@ mod test {
         // Like `test_indexed_zset_trace_spine` but keeps even values only.
         #[test]
         fn test_indexed_zset_trace_spine_retain_even_values(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None, "");
+            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None, "");
 
             trace.retain_values(Box::new(move |val| *val % 2 == 0));
             ref_trace.retain_values(Box::new(move |val| *val % 2 == 0));
@@ -1772,8 +1761,8 @@ mod test {
 
         #[test]
         fn test_indexed_zset_trace_spine_retain_even_keys(batches in kvr_batches(100, 5, 2, 300, 10), seed in 0..u64::max_value()) {
-            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None);
-            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None);
+            let mut trace: Spine<OrdValBatch<i32, i32, u32, i32>> = Spine::new(None, "");
+            let mut ref_trace: TestBatch<i32, i32, u32, i32> = TestBatch::new(None, "");
 
             trace.retain_keys(Box::new(move |key| *key % 2 == 0));
             ref_trace.retain_keys(Box::new(move |key| *key % 2 == 0));

@@ -13,12 +13,13 @@ use crate::{
         layers::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
         ord::file::StorageBackend,
     },
-    DBData, DBWeight, NumEntries,
+    DBData, DBWeight, NumEntries, Runtime,
 };
 use std::{
     cmp::{min, Ordering},
     fmt::Debug,
     ops::{Add, AddAssign, Neg, Range},
+    path::PathBuf,
 };
 
 #[derive(Clone)]
@@ -75,6 +76,10 @@ where
         unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
         self.truncate_below(cursor.absolute_position() as usize);
     }
+
+    pub fn path(&self) -> PathBuf {
+        self.file.path()
+    }
 }
 
 impl<K, V, R> FileOrderedLayer<K, V, R>
@@ -85,7 +90,7 @@ where
 {
     pub fn empty() -> Self {
         Self {
-            file: Reader::empty(&StorageBackend::default_for_thread()).unwrap(),
+            file: Reader::empty(&Runtime::storage()).unwrap(),
             lower_bound: 0,
         }
     }
@@ -384,7 +389,7 @@ where
     }
 
     fn with_key_capacity(_capacity: usize) -> Self {
-        Self(Writer2::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap())
+        Self(Writer2::new(&Runtime::storage(), Parameters::default()).unwrap())
     }
 
     fn reserve(&mut self, _additional: usize) {}
@@ -464,8 +469,7 @@ where
 
     fn new() -> Self {
         Self {
-            writer: Writer2::new(&StorageBackend::default_for_thread(), Parameters::default())
-                .unwrap(),
+            writer: Writer2::new(&Runtime::storage(), Parameters::default()).unwrap(),
             key: None,
         }
     }
@@ -580,8 +584,8 @@ where
     type Key = K;
 
     type Item<'k> = &'k K
-    where
-        Self: 'k;
+        where
+            Self: 'k;
 
     type ValueCursor = FileOrderedValueCursor<'s, K, V, R>;
 
@@ -724,8 +728,8 @@ where
     type Key = V;
 
     type Item<'k> = (&'k V, &'k R)
-    where
-        Self: 'k;
+        where
+            Self: 'k;
 
     type ValueCursor = ();
 

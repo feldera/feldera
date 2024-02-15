@@ -64,6 +64,7 @@ paste = "1"
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
 feldera-storage = { path = "../feldera-storage" }
 ouroboros = "0.18.1"
+tempfile = "3.10.0"
 
 [dev-dependencies]
 csv = "1.2.2"
@@ -79,9 +80,10 @@ rand_xoshiro = "0.6.0"
 indicatif = "0.17.0-rc.11"
 clap = { version = "3.2.8", features = ["derive", "env"] }
 reqwest = { version = "0.11.11", features = ["blocking"] }
-serde_json = "1.0.87"
 # Go back to a version once commit containing 849932 is released:
 chrono = { git = "https://github.com/chronotope/chrono", rev = "849932", features = ["rkyv-64", "serde"] }
+env_logger = { version = "0.11.1" }
+serde_json = "1.0.87"
 
 [dependencies.time]
 version = "0.3.20"

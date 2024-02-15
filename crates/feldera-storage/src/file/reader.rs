@@ -7,6 +7,7 @@ use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
     ops::{Bound, Range, RangeBounds},
+    path::PathBuf,
     rc::Rc,
     sync::Arc,
 };
@@ -259,6 +260,7 @@ struct VarintReader {
     start: usize,
     count: usize,
 }
+
 impl VarintReader {
     fn new(buf: &FBuf, varint: Varint, start: usize, count: usize) -> Result<Self, Error> {
         let block_size = buf.len();
@@ -860,7 +862,7 @@ impl Column {
                     return Err(Error::Corruption(CorruptionError::InvalidColumnRoot {
                         node_offset,
                         node_size,
-                    }))
+                    }));
                 }
             };
             Some(TreeNode {
@@ -889,6 +891,7 @@ where
     S: StorageControl + StorageExecutor,
 {
     storage: Rc<S>,
+    path: PathBuf,
     file_handle: Option<ImmutableFileHandle>,
 }
 
@@ -896,9 +899,10 @@ impl<S> ImmutableFileRef<S>
 where
     S: StorageControl + StorageExecutor,
 {
-    pub(crate) fn new(storage: &Rc<S>, file_handle: ImmutableFileHandle) -> Self {
+    pub(crate) fn new(storage: &Rc<S>, file_handle: ImmutableFileHandle, path: PathBuf) -> Self {
         Self {
             storage: Rc::clone(storage),
+            path,
             file_handle: Some(file_handle),
         }
     }
@@ -968,11 +972,13 @@ pub trait ColumnSpec {
     /// Returns the number of columns in this `ColumnSpec`.
     fn n_columns() -> usize;
 }
+
 impl ColumnSpec for () {
     fn n_columns() -> usize {
         0
     }
 }
+
 impl<K, A, N> ColumnSpec for (K, A, N)
 where
     K: Rkyv,
@@ -1058,9 +1064,9 @@ where
         S: StorageControl + StorageWrite + StorageExecutor,
     {
         let file_handle = storage.block_on(storage.create())?;
-        let file_handle = storage.block_on(storage.complete(file_handle))?;
+        let (file_handle, path) = storage.block_on(storage.complete(file_handle))?;
         Ok(Self(Arc::new(ReaderInner {
-            file: Rc::new(ImmutableFileRef::new(storage, file_handle)),
+            file: Rc::new(ImmutableFileRef::new(storage, file_handle, path)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })))
@@ -1081,6 +1087,12 @@ where
     /// in the previous column.
     pub fn n_rows(&self, column: usize) -> u64 {
         self.0.columns[column].n_rows
+    }
+
+    /// Returns the path on persistent storage for the file of the underlying
+    /// reader.
+    pub fn path(&self) -> PathBuf {
+        self.0.file.as_ref().path.clone()
     }
 }
 
@@ -1796,7 +1808,7 @@ where
                             row: data_block.first_row + child_idx as u64,
                             indexes,
                             data: data_block,
-                        }))
+                        }));
                 }
             }
         }

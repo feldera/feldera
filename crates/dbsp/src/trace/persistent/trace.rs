@@ -66,7 +66,7 @@ where
     B: Batch,
 {
     fn default() -> Self {
-        PersistentTrace::new(None)
+        PersistentTrace::new(None, "")
     }
 }
 
@@ -472,7 +472,7 @@ where
     ///
     /// # Arguments
     /// - `activator`: This is not used, None should be supplied.
-    fn new(_activator: Option<Activator>) -> Self {
+    fn new<S: AsRef<str>>(_activator: Option<Activator>, _persistent_id: S) -> Self {
         // Create a new column family for the Trace
         let cf_name = Uuid::new_v4().to_string();
         let mut cf_options = Options::default();

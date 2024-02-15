@@ -7,6 +7,7 @@ use crate::circuit::{
     metadata::{OperatorLocation, OperatorMeta},
     OwnershipPreference, Scope,
 };
+use crate::Error;
 use std::borrow::Cow;
 
 /// Minimal requirements for values exchanged by operators.
@@ -194,6 +195,13 @@ pub trait Operator: 'static {
     /// of the fixed point computation, but not as part of an integrator circuit
     /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
     fn fixedpoint(&self, scope: Scope) -> bool;
+
+    /// Instructors operator to checkpoint its state to persistent storage.
+    ///
+    /// In most cases (except for traces) this method is a no-op.
+    fn commit(&self, _cid: u64) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// A source operator that injects data from the outside world or from the

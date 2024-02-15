@@ -14,7 +14,7 @@
 //!     inside the circuit, and then it returns the circuit. The circuit's
 //!     structure is fixed at construction and can't be changed afterward.
 //!
-//!   * Streams are represented by struct [`Stream<C,D>`], which is a stream
+//!   * Streams are represented by struct [`Stream<C, D>`], which is a stream
 //!     that carries values of type `D` within a circuit of type `C`.  Methods
 //!     and traits on `Stream` are the main way to assemble the structure of a
 //!     circuit within the [`RootCircuit::build`] callback.
@@ -50,7 +50,7 @@ use crate::{
     circuit_cache_key,
     operator::communication::Exchange,
     time::{Timestamp, UnitTimestamp},
-    Error as DBSPError, Runtime,
+    Error as DBSPError, Error, Runtime,
 };
 use anyhow::Error as AnyError;
 use serde::Serialize;
@@ -790,6 +790,10 @@ pub trait Node {
     fn fixedpoint(&self, scope: Scope) -> bool;
 
     fn map_nodes_recursive(&self, _f: &mut dyn FnMut(&dyn Node)) {}
+
+    /// Instructs the node to commit the state of its inner operator to
+    /// persistent storage.
+    fn commit(&self, cid: u64) -> Result<(), DBSPError>;
 }
 
 /// Id of an operator, guaranteed to be unique within a circuit.
@@ -894,6 +898,16 @@ impl GlobalNodeId {
     /// Get the path from global.
     pub fn path(&self) -> &[NodeId] {
         &self.0
+    }
+
+    /// Generate unique id for use in persistent storage.
+    pub(crate) fn persistent_id(&self) -> String {
+        let mut pid = String::with_capacity(3 + self.0.len() * 3);
+        pid += format!("{}", Runtime::worker_index()).as_str();
+        for e in &self.0 {
+            pid += format!("-{}", &e.0.to_string()).as_str();
+        }
+        pid
     }
 }
 
@@ -3169,6 +3183,10 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
     }
+
+    fn commit(&self, cid: u64) -> Result<(), DBSPError> {
+        self.operator.commit(cid)
+    }
 }
 
 struct SourceNode<C, O, Op> {
@@ -3244,6 +3262,10 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
+    }
+
+    fn commit(&self, cid: u64) -> Result<(), DBSPError> {
+        self.operator.commit(cid)
     }
 }
 
@@ -3327,6 +3349,10 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
     }
+
+    fn commit(&self, cid: u64) -> Result<(), DBSPError> {
+        self.operator.commit(cid)
+    }
 }
 
 struct SinkNode<C, I, Op> {
@@ -3401,6 +3427,10 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
+    }
+
+    fn commit(&self, cid: u64) -> Result<(), DBSPError> {
+        self.operator.commit(cid)
     }
 }
 
@@ -3496,6 +3526,10 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
+    }
+
+    fn commit(&self, cid: u64) -> Result<(), DBSPError> {
+        self.operator.commit(cid)
     }
 }
 
@@ -3611,6 +3645,10 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
+    }
+
+    fn commit(&self, cid: u64) -> Result<(), Error> {
+        self.operator.commit(cid)
     }
 }
 
@@ -3730,6 +3768,10 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
+    }
+
+    fn commit(&self, cid: u64) -> Result<(), Error> {
+        self.operator.commit(cid)
     }
 }
 
@@ -3868,6 +3910,10 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
     }
+
+    fn commit(&self, cid: u64) -> Result<(), Error> {
+        self.operator.commit(cid)
+    }
 }
 
 struct NaryNode<C, I, O, Op>
@@ -3990,6 +4036,10 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.operator.fixedpoint(scope)
     }
+
+    fn commit(&self, cid: u64) -> Result<(), Error> {
+        self.operator.commit(cid)
+    }
 }
 
 // The output half of a feedback node.  We implement a feedback node using a
@@ -4094,6 +4144,10 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         unsafe { (*self.operator.get()).fixedpoint(scope) }
     }
+
+    fn commit(&self, cid: u64) -> Result<(), Error> {
+        unsafe { (*self.operator.get()).commit(cid) }
+    }
 }
 
 /// The input half of a feedback node
@@ -4169,6 +4223,16 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         unsafe { (*self.operator.get()).fixedpoint(scope) }
+    }
+
+    fn commit(&self, _cid: u64) -> Result<(), Error> {
+        // The Z-1 operator consists of two logical parts.
+        // The first part gets invoked at the start of a clock cycle to retrieve the
+        // state stored at the previous clock tick. The second one gets invoked
+        // to store the updated state inside the operator. We only want to
+        // invoke commit on one of them, doesn't matter which (so we
+        // do it in FeedbackOutputNode)
+        Ok(())
     }
 }
 
@@ -4313,6 +4377,10 @@ where
     fn map_nodes_recursive(&self, f: &mut dyn FnMut(&dyn Node)) {
         self.circuit.map_nodes_recursive(f);
     }
+
+    fn commit(&self, _cid: u64) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// Top-level circuit with executor.
@@ -4358,6 +4426,13 @@ impl CircuitHandle {
         // operator.
 
         self.executor.run(&self.circuit)
+    }
+
+    pub fn commit(&mut self, cid: u64) -> Result<(), SchedulerError> {
+        self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
+            node.commit(cid).expect("committed");
+        });
+        Ok(())
     }
 
     /// Attach a scheduler event handler to the circuit.

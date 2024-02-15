@@ -15,11 +15,15 @@
 #![warn(missing_docs)]
 
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use metrics::{describe_counter, describe_histogram, Unit};
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::buffer_cache::FBuf;
 
@@ -58,6 +62,7 @@ impl AtomicIncrementOnlyI64 {
 
 /// A file-descriptor we can write to.
 pub struct FileHandle(i64);
+
 #[cfg(test)]
 impl FileHandle {
     /// Creating arbitrary file-handles is only necessary for testing, and
@@ -110,6 +115,23 @@ pub enum StorageError {
     /// Read ended before the full request length.
     #[error("The read would have returned less data than requested.")]
     ShortRead,
+}
+
+impl Serialize for StorageError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::StdIo(error) => {
+                let mut ser = serializer.serialize_struct("IOError", 2)?;
+                ser.serialize_field("kind", &error.kind().to_string())?;
+                ser.serialize_field("os_error", &error.raw_os_error())?;
+                ser.end()
+            }
+            error => error.serialize(serializer),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -185,13 +207,20 @@ impl Eq for StorageError {}
 /// A trait for a storage backend to implement so client can create/delete
 /// files.
 pub trait StorageControl {
+    /// Create a new file. See also [`create`](Self::create).
+    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError>;
+
     /// Creates a new persistent file used for writing data.
     ///
     /// Returns a file-descriptor that can be used for writing data.
     /// Note that it is not possible to read from this file until
     /// [`StorageWrite::complete`] is called and the [`FileHandle`] is
     /// converted to an [`ImmutableFileHandle`].
-    async fn create(&self) -> Result<FileHandle, StorageError>;
+    async fn create(&self) -> Result<FileHandle, StorageError> {
+        let uuid = Uuid::now_v7();
+        let name = uuid.to_string() + ".feldera";
+        self.create_named(&name).await
+    }
 
     /// Deletes a previously completed file.
     ///
@@ -248,9 +277,13 @@ pub trait StorageWrite {
     /// - `fd` is the file-handle to complete.
     ///
     /// ## Returns
-    /// A file-descriptor that can be used for reading data. See also
+    /// - A file-descriptor that can be used for reading data. See also
     /// [`StorageRead`].
-    async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError>;
+    /// - The on-disk location of the file.
+    async fn complete(
+        &self,
+        fd: FileHandle,
+    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError>;
 }
 
 /// A trait for a storage backend to implement so clients can read from files.

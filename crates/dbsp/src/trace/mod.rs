@@ -57,11 +57,12 @@ use crate::{
     algebra::{HasZero, MonoidValue},
     circuit::Activator,
     time::{AntichainRef, Timestamp},
-    NumEntries,
+    Error, NumEntries,
 };
 use rand::Rng;
 use rkyv::{archived_root, Archive, Archived, Deserialize, Infallible, Serialize};
 use size_of::SizeOf;
+use std::path::PathBuf;
 use std::{fmt::Debug, hash::Hash};
 
 /// Trait for data stored in batches.
@@ -158,10 +159,12 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
 /// `DBWeight` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::R: DBWeight`.
 pub trait DBWeight: DBData + MonoidValue {}
+
 impl<T> DBWeight for T where T: DBData + MonoidValue {}
 
 /// Trait for data types used as logical timestamps.
 pub trait DBTimestamp: DBData + Timestamp {}
+
 impl<T> DBTimestamp for T where T: DBData + Timestamp {}
 
 pub trait FilterFunc<V>: Fn(&V) -> bool {
@@ -191,7 +194,7 @@ pub trait Trace: BatchReader {
     type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>;
 
     /// Allocates a new empty trace.
-    fn new(activator: Option<Activator>) -> Self;
+    fn new<S: AsRef<str>>(activator: Option<Activator>, persistent_id: S) -> Self;
 
     /// Pushes all timestamps in the trace back to `frontier` or less, by
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This
@@ -262,6 +265,9 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
+    fn commit(&self, _cid: u64) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// A set of `(key, value, time, diff)` tuples whose contents may be read in
@@ -442,6 +448,10 @@ where
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  See
     /// [`Trace::recede_to`].
     fn recede_to(&mut self, frontier: &Self::Time);
+
+    fn persistent_id(&self) -> Option<PathBuf> {
+        None
+    }
 }
 
 impl<B> HasZero for B

@@ -48,16 +48,16 @@ use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
 };
+use dbsp::circuit::{CircuitConfig, Layout};
 use log::trace;
 use log::{debug, error, info};
 use pipeline_types::query::OutputQuery;
 use std::collections::HashMap;
-use std::sync::Condvar;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
     },
     thread::{spawn, JoinHandle},
     time::{Duration, Instant},
@@ -134,7 +134,7 @@ impl Controller {
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(
-                usize,
+                CircuitConfig,
             )
                 -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
             + Send
@@ -147,7 +147,7 @@ impl Controller {
         let backpressure_thread_unparker = backpressure_thread_parker.unparker().clone();
 
         let inner = Arc::new(ControllerInner::new(
-            &config.global,
+            config,
             circuit_thread_unparker,
             backpressure_thread_unparker,
             error_cb,
@@ -413,13 +413,17 @@ impl Controller {
     ) -> Result<(), ControllerError>
     where
         F: FnOnce(
-            usize,
+            CircuitConfig,
         )
             -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>,
     {
         let mut start: Option<Instant> = None;
 
-        let mut circuit = match circuit_factory(controller.status.global_config.workers as usize) {
+        let config = CircuitConfig {
+            layout: Layout::new_solo(controller.status.pipeline_config.global.workers as usize),
+            storage: controller.status.pipeline_config.storage_location.clone(),
+        };
+        let mut circuit = match circuit_factory(config) {
             Ok((circuit, catalog)) => {
                 // Complete initialization before sending back the confirmation to
                 // prevent a race.
@@ -433,15 +437,24 @@ impl Controller {
             }
         };
 
-        if controller.status.global_config.cpu_profiler {
+        if controller.status.pipeline_config.global.cpu_profiler {
             circuit.enable_cpu_profiler().unwrap_or_else(|e| {
                 error!("Failed to enable CPU profiler: {e}");
             });
         }
 
-        let max_buffering_delay =
-            Duration::from_micros(controller.status.global_config.max_buffering_delay_usecs);
-        let min_batch_size_records = controller.status.global_config.min_batch_size_records;
+        let max_buffering_delay = Duration::from_micros(
+            controller
+                .status
+                .pipeline_config
+                .global
+                .max_buffering_delay_usecs,
+        );
+        let min_batch_size_records = controller
+            .status
+            .pipeline_config
+            .global
+            .min_batch_size_records;
 
         let mut step = 0;
 
@@ -827,12 +840,12 @@ struct ControllerInner {
 
 impl ControllerInner {
     fn new(
-        global_config: &RuntimeConfig,
+        config: &PipelineConfig,
         circuit_thread_unparker: Unparker,
         backpressure_thread_unparker: Unparker,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> Self {
-        let status = Arc::new(ControllerStatus::new(global_config));
+        let status = Arc::new(ControllerStatus::new(config));
         let dump_profile_request = AtomicBool::new(false);
 
         Self {
@@ -1330,7 +1343,7 @@ impl InputProbe {
             self.endpoint_id,
             data.len(),
             num_records,
-            &self.controller.status.global_config,
+            &self.controller.status.pipeline_config.global,
             &self.circuit_thread_unparker,
             &self.backpressure_thread_unparker,
         );
@@ -1545,11 +1558,10 @@ outputs:
             println!("input file: {}", temp_input_file.path().to_str().unwrap());
             println!("output file: {output_path}");
             let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
-
             let controller = Controller::with_config(
-                |workers| Ok(test_circuit(workers)),
-                &config,
-                Box::new(|e| panic!("error: {e}")),
+                    |circuit_config| Ok(test_circuit(circuit_config)),
+                    &config,
+                    Box::new(|e| panic!("error: {e}")),
                 )
                 .unwrap();
 

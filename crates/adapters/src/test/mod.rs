@@ -28,12 +28,14 @@ pub use data::{
     generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
     test_struct_schema, TestStruct,
 };
+use dbsp::circuit::CircuitConfig;
 pub use mock_dezset::{MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
 use pipeline_types::program_schema::Relation;
 
 pub struct TestLogger;
+
 pub static TEST_LOGGER: TestLogger = TestLogger;
 
 pub static DEFAULT_TIMEOUT_MS: u128 = 600_000;
@@ -127,8 +129,10 @@ where
 /// Create a simple test circuit that passes the input stream right through to
 /// the output.
 // TODO: parameterize with the number (and types?) of input and output streams.
-pub fn test_circuit(workers: usize) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>) {
-    let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
+pub fn test_circuit(
+    config: CircuitConfig,
+) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>) {
+    let (circuit, catalog) = Runtime::init_circuit(config, |circuit| {
         let mut catalog = Catalog::new();
         let (input, hinput) = circuit.add_input_zset::<TestStruct, i32>();
 
