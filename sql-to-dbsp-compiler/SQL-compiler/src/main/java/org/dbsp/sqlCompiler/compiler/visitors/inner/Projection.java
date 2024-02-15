@@ -189,7 +189,7 @@ public class Projection extends InnerVisitor {
         );
 
         DBSPType elementType = null;
-        for (Map.Entry<DBSPExpression, Long> entry: before.data.data.entrySet()) {
+        for (Map.Entry<DBSPExpression, Long> entry: before.data.entrySet()) {
             DBSPExpression row = entry.getKey();
             DBSPExpression apply = new DBSPApplyExpression(this.expression, row);
             DBSPExpression simplified = inner.apply(apply).to(DBSPExpression.class);
@@ -197,8 +197,7 @@ public class Projection extends InnerVisitor {
                 elementType = simplified.getType();
             result.put(simplified, entry.getValue());
         }
-        return new DBSPZSetLiteral(before.zsetType.weightType,
-                new DBSPZSetLiteral.Contents(result, Objects.requireNonNull(elementType)));
+        return new DBSPZSetLiteral(result, Objects.requireNonNull(elementType));
     }
 }
 

@@ -49,13 +49,13 @@ public class TimeTests extends BaseSQLTests {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
         DBSPCircuit circuit = getCircuit(compiler);
-        DBSPZSetLiteral.Contents expectedOutput = new DBSPZSetLiteral.Contents(new DBSPTupleExpression(fields));
+        DBSPZSetLiteral expectedOutput = new DBSPZSetLiteral(new DBSPTupleExpression(fields));
         InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
         this.addRustTestCase(query, compiler, circuit, streams);
     }
 
-    public DBSPZSetLiteral.Contents createInput() {
-        return new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPTimestampLiteral(100)));
+    public DBSPZSetLiteral createInput() {
+        return new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPTimestampLiteral(100)));
     }
 
     @Test

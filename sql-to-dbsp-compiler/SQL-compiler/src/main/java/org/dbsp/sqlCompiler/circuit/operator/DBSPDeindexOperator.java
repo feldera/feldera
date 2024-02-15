@@ -19,7 +19,7 @@ import java.util.List;
  */
 public class DBSPDeindexOperator extends DBSPUnaryOperator {
     static DBSPType outputType(DBSPTypeIndexedZSet ix) {
-        return TypeCompiler.makeZSet(ix.elementType, ix.weightType);
+        return TypeCompiler.makeZSet(ix.elementType);
     }
 
     static DBSPExpression function(DBSPType inputType) {

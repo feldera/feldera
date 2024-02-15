@@ -47,17 +47,17 @@ public class StreamingTests extends BaseSQLTests {
     }
 
     InputOutputPair fromTSTSTS(String... ts) {
-        DBSPZSetLiteral.Contents input = new DBSPZSetLiteral.Contents(
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPTimestampLiteral(ts[0], false)));
-        DBSPZSetLiteral.Contents output;
+        DBSPZSetLiteral output;
         if (ts.length > 1)
-            output = new DBSPZSetLiteral.Contents(
+            output = new DBSPZSetLiteral(
                     new DBSPTupleExpression(
                             new DBSPTimestampLiteral(ts[1], false),
                             new DBSPTimestampLiteral(ts[2], false)));
         else
-            output = DBSPZSetLiteral.Contents.emptyWithElementType(
+            output = DBSPZSetLiteral.emptyWithElementType(
                     new DBSPTypeTuple(
                             new DBSPTypeTimestamp(CalciteObject.EMPTY, false),
                             new DBSPTypeTimestamp(CalciteObject.EMPTY, false)
@@ -88,8 +88,8 @@ public class StreamingTests extends BaseSQLTests {
         this.addRustTestCase("tumblingTestLimits", compiler, getCircuit(compiler), data);
     }
 
-    DBSPZSetLiteral.Contents fromDoubleTimestamp(double d, String ts) {
-        return new DBSPZSetLiteral.Contents(
+    DBSPZSetLiteral fromDoubleTimestamp(double d, String ts) {
+        return new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPDoubleLiteral(d, true),
                         new DBSPTimestampLiteral(ts, false)));
@@ -115,10 +115,10 @@ public class StreamingTests extends BaseSQLTests {
         // Insert tuple before waterline, should be dropped
         data[1] = new InputOutputPair(
                 this.fromDoubleTimestamp(10.0, "2023-12-29 10:00:00"),
-                DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
+                DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
-        DBSPZSetLiteral.Contents addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
+        DBSPZSetLiteral addSub = DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType);
         addSub.add(new DBSPTupleExpression(
                 new DBSPDoubleLiteral(15.0, true),
                 new DBSPTimestampLiteral("2023-12-30 00:00:00", false)));
@@ -131,9 +131,9 @@ public class StreamingTests extends BaseSQLTests {
         // Insert tuple before last waterline, should be dropped
         data[3] = new InputOutputPair(
                 this.fromDoubleTimestamp(10.0, "2023-12-29 09:10:00"),
-                DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
+                DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType));
         // Insert tuple in the past, but before the last waterline
-        addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
+        addSub = DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType);
         addSub.add(new DBSPTupleExpression(
                 new DBSPDoubleLiteral(13.333333333333334, true),
                 new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), 1);
@@ -169,27 +169,27 @@ public class StreamingTests extends BaseSQLTests {
                 new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
         InputOutputPair[] data = new InputOutputPair[] {
                 new InputOutputPair(
-                        DBSPZSetLiteral.Contents.emptyWithElementType(bob.getType()),
-                        DBSPZSetLiteral.Contents.emptyWithElementType(outputType)
+                        DBSPZSetLiteral.emptyWithElementType(bob.getType()),
+                        DBSPZSetLiteral.emptyWithElementType(outputType)
                 ),
                 new InputOutputPair(
-                        new DBSPZSetLiteral.Contents(
+                        new DBSPZSetLiteral(
                                 bob,
                                 new DBSPTupleExpression(new DBSPStringLiteral("Pam"), new DBSPI32Literal(2000)),
                                 new DBSPTupleExpression(new DBSPStringLiteral("Sue"), new DBSPI32Literal(3000)),
                                 new DBSPTupleExpression(new DBSPStringLiteral("Mike"), new DBSPI32Literal(1000))
                         ),
-                        new DBSPZSetLiteral.Contents(
+                        new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(2)),
                                 new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(1)),
                                 new DBSPTupleExpression(new DBSPI32Literal(3000), new DBSPI64Literal(1))
                         )
                 ),
                 new InputOutputPair(
-                        DBSPZSetLiteral.Contents.emptyWithElementType(bob.getType())
+                        DBSPZSetLiteral.emptyWithElementType(bob.getType())
                                 .add(bob, -1)
                                 .add(new DBSPTupleExpression(new DBSPStringLiteral("Bob"), new DBSPI32Literal(2000))),
-                        DBSPZSetLiteral.Contents.emptyWithElementType(outputType)
+                        DBSPZSetLiteral.emptyWithElementType(outputType)
                                 .add(new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(2)), -1)
                                 .add(new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(1)), -1)
                                 .add(new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(2)), 1)
@@ -214,25 +214,25 @@ public class StreamingTests extends BaseSQLTests {
         compiler.compileStatement(query);
         InputOutputPair[] data = new InputOutputPair[5];
         data[0] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral(
                         new DBSPTupleExpression(
                                 new DBSPDoubleLiteral(10.0, true),
                                 new DBSPTimestampLiteral("2023-12-30 10:00:00", false))),
-                new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral(
                         new DBSPTupleExpression(
                                 new DBSPDoubleLiteral(10.0, true),
                                 new DBSPDateLiteral("2023-12-30")
                         )));
         // Insert tuple before waterline, should be dropped
         data[1] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral(
                         new DBSPTupleExpression(
                                 new DBSPDoubleLiteral(10.0, true),
                                 new DBSPTimestampLiteral("2023-12-29 10:00:00", false))),
-                DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
+                DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
-        DBSPZSetLiteral.Contents addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
+        DBSPZSetLiteral addSub = DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType);
         addSub.add(new DBSPTupleExpression(
                 new DBSPDoubleLiteral(15.0, true),
                 new DBSPDateLiteral("2023-12-30")));
@@ -240,20 +240,20 @@ public class StreamingTests extends BaseSQLTests {
                 new DBSPDoubleLiteral(10.0, true),
                 new DBSPDateLiteral("2023-12-30")), -1);
         data[2] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral(
                         new DBSPTupleExpression(
                                 new DBSPDoubleLiteral(20.0, true),
                                 new DBSPTimestampLiteral("2023-12-30 10:10:00", false))),
                 addSub);
         // Insert tuple before last waterline, should be dropped
         data[3] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral(
                         new DBSPTupleExpression(
                                 new DBSPDoubleLiteral(10.0, true),
                                 new DBSPTimestampLiteral("2023-12-29 09:10:00", false))),
-                DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType));
+                DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType));
         // Insert tuple in the past, but before the last waterline
-        addSub = DBSPZSetLiteral.Contents.emptyWithElementType(data[0].outputs[0].elementType);
+        addSub = DBSPZSetLiteral.emptyWithElementType(data[0].outputs[0].elementType);
         addSub.add(new DBSPTupleExpression(
                 new DBSPDoubleLiteral(13.333333333333334, true),
                 new DBSPDateLiteral("2023-12-30")), 1);
@@ -261,7 +261,7 @@ public class StreamingTests extends BaseSQLTests {
                 new DBSPDoubleLiteral(15.0, true),
                 new DBSPDateLiteral("2023-12-30")), -1);
         data[4] = new InputOutputPair(
-                new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral(
                         new DBSPTupleExpression(
                                 new DBSPDoubleLiteral(10.0, true),
                                 new DBSPTimestampLiteral("2023-12-30 10:00:00", false))),
@@ -426,26 +426,26 @@ public class StreamingTests extends BaseSQLTests {
         Consumer<InputOutputPair> add = data::add;
 
         add.accept(new InputOutputPair(
-                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
-                new DBSPZSetLiteral.Contents(zero)));
+                DBSPZSetLiteral.emptyWithElementType(one.getType()),
+                new DBSPZSetLiteral(zero)));
         add.accept(new InputOutputPair(
-                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
-                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType())));
+                DBSPZSetLiteral.emptyWithElementType(one.getType()),
+                DBSPZSetLiteral.emptyWithElementType(one.getType())));
 
-        DBSPZSetLiteral.Contents expected1 = new DBSPZSetLiteral.Contents(one);
+        DBSPZSetLiteral expected1 = new DBSPZSetLiteral(one);
         expected1.add(zero, -1);
         add.accept(new InputOutputPair(
-                new DBSPZSetLiteral.Contents(one),
+                new DBSPZSetLiteral(one),
                 expected1));
 
         add.accept(new InputOutputPair(
-                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType()),
-                DBSPZSetLiteral.Contents.emptyWithElementType(one.getType())));
-        DBSPZSetLiteral.Contents expected3 = new DBSPZSetLiteral.Contents(two);
+                DBSPZSetLiteral.emptyWithElementType(one.getType()),
+                DBSPZSetLiteral.emptyWithElementType(one.getType())));
+        DBSPZSetLiteral expected3 = new DBSPZSetLiteral(two);
         expected3.add(one, -1);
 
         add.accept(new InputOutputPair(
-                new DBSPZSetLiteral.Contents(two),
+                new DBSPZSetLiteral(two),
                 expected3));
 
         InputOutputPair[] array = data.toArray(new InputOutputPair[0]);

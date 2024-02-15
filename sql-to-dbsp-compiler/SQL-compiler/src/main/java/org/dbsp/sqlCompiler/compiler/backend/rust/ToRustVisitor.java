@@ -200,9 +200,8 @@ public class ToRustVisitor extends CircuitVisitor {
                 .increase();
         boolean first = true;
         for (DBSPTypeStruct.Field field: type.fields.values()) {
-            boolean isOption = false;
             DBSPTypeUser user = field.type.as(DBSPTypeUser.class);
-            isOption = user != null && user.name.equals("Option");
+            boolean isOption = user != null && user.name.equals("Option");
             if (!first)
                 this.builder.append(",").newline();
             first = false;
@@ -344,7 +343,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 if (zset != null) {
                     type = new DBSPTypeUser(
                             zset.getNode(), DBSPTypeCode.USER, "CollectionHandle", false,
-                            zset.elementType, zset.weightType);
+                            zset.elementType, new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false));
                 } else {
                     DBSPTypeIndexedZSet ix = input.outputType.to(DBSPTypeIndexedZSet.class);
                     type = new DBSPTypeUser(
@@ -414,8 +413,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
         DBSPTypeZSet zsetType = operator.getType().to(DBSPTypeZSet.class);
         zsetType.elementType.accept(this.innerVisitor);
-        this.builder.append(", ");
-        zsetType.weightType.accept(this.innerVisitor);
+        this.builder.append(", Weight");
         this.builder.append(">();").newline();
         if (!this.useHandles) {
             this.builder.append("catalog.register_input_zset::<_, ");
@@ -481,8 +479,7 @@ public class ToRustVisitor extends CircuitVisitor {
         ix.elementType.accept(this.innerVisitor);
         this.builder.append(", ");
         upsertStruct.toTuple().accept(this.innerVisitor);
-        this.builder.append(", ");
-        ix.weightType.accept(this.innerVisitor);
+        this.builder.append(", Weight");
         this.builder.append(">(").increase();
         {
             // Upsert update function
@@ -528,8 +525,7 @@ public class ToRustVisitor extends CircuitVisitor {
             upsertStruct.toTuple().accept(this.innerVisitor);
             this.builder.append(", ");
             upsertStruct.accept(this.innerVisitor);
-            this.builder.append(", ");
-            operator.getOutputIndexedZSetType().weightType.accept(this.innerVisitor);
+            this.builder.append(", Weight");
             this.builder.append(", _, _>(")
                     .append(operator.getOutputName())
                     .append(".clone(), ")
@@ -967,7 +963,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("if Runtime::worker_index() == 0 {");
         operator.function.accept(this.innerVisitor);
         this.builder.append("} else {");
-        DBSPZSetLiteral empty = new DBSPZSetLiteral(operator.getType());
+        DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(operator.getType());
         empty.accept(this.innerVisitor);
         this.builder.append("}));");
         return VisitDecision.STOP;

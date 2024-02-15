@@ -1,21 +1,21 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
@@ -47,7 +47,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         DBSPExpression expression = operator.getFunction();
         if (expression.is(DBSPZSetLiteral.class)) {
             DBSPZSetLiteral lit = expression.to(DBSPZSetLiteral.class);
-            if (lit.size() == 0)
+            if (lit.isEmpty())
                 this.emptySources.add(operator);
         }
         super.postorder(operator);
@@ -55,7 +55,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     DBSPLiteral emptyLiteral(DBSPType type) {
         if (type.is(DBSPTypeZSet.class))
-            return new DBSPZSetLiteral(type);
+            return DBSPZSetLiteral.emptyWithElementType(type);
         else
             return new DBSPIndexedZSetLiteral(type.getNode(), type);
     }

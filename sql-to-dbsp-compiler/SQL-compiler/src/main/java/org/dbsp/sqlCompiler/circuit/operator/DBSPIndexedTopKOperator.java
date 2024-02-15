@@ -47,7 +47,7 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         if (outputProducer == null)
             return sourceType;
         return new DBSPTypeIndexedZSet(sourceType.getNode(), sourceType.keyType,
-                outputProducer.getResultType(), sourceType.weightType);
+                outputProducer.getResultType());
     }
 
     /**

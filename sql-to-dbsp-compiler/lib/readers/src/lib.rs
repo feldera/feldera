@@ -1,4 +1,4 @@
-//! Readers that can read OrdZSet data from various sources.
+//! Readers that can read WSet data from various sources.
 
 #![allow(unused_imports)]
 #![allow(non_snake_case)]
@@ -16,17 +16,18 @@ use paste::paste;
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::*;
+use sqllib::{Weight, WSet};
 use sqlx::{
     any::AnyRow, migrate::MigrateDatabase, sqlite::SqliteConnection, sqlite::SqliteRow,
     AnyConnection, Connection, Executor, Row,
 };
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::{fs::File, io::BufReader, path::Path};
+use std::ops::{Add, Neg};
 
-pub fn read_csv<T, Weight>(source_file_path: &str) -> OrdZSet<T, Weight>
+pub fn read_csv<T>(source_file_path: &str) -> WSet<T>
 where
     T: DBData + for<'de> serde::Deserialize<'de>,
-    Weight: DBWeight + HasOne,
 {
     let path = Path::new(source_file_path);
     let file =
@@ -42,17 +43,16 @@ where
         .deserialize()
         .map(|x| (x.unwrap(), Weight::one()))
         .collect();
-    OrdZSet::<T, Weight>::from_keys((), vec)
+    WSet::<T>::from_keys((), vec)
 }
 
-pub fn read_db<T, Weight>(
+pub fn read_db<T>(
     conn_str: &str,
     table_name: &str,
     mapper: impl Fn(&AnyRow) -> T,
-) -> OrdZSet<T, Weight>
+) -> WSet<T>
 where
     T: DBData + for<'de> serde::Deserialize<'de>,
-    Weight: DBWeight + HasOne,
 {
     let rows = task::block_on(async move {
         let mut conn = AnyConnection::connect(conn_str).await.unwrap();
@@ -67,7 +67,7 @@ where
         .iter()
         .map(|row| (mapper(row), Weight::one()))
         .collect();
-    OrdZSet::from_keys((), vec)
+    WSet::from_keys((), vec)
 }
 
 #[cfg(test)]

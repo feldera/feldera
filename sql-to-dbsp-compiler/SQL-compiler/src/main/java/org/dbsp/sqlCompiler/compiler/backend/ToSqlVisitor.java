@@ -8,9 +8,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
@@ -104,7 +104,7 @@ public class ToSqlVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPZSetLiteral literal) {
-        for (Map.Entry<DBSPExpression, Long> entry: literal.data.data.entrySet()) {
+        for (Map.Entry<DBSPExpression, Long> entry: literal.data.entrySet()) {
             DBSPExpression key = entry.getKey();
             long value = entry.getValue();
             if (value < 0)

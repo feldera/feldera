@@ -6,7 +6,14 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
-import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
@@ -39,7 +46,7 @@ public class TableValue {
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tup type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
-        DBSPTypeTuple tupleType = this.contents.zsetType.elementType.to(DBSPTypeTuple.class);
+        DBSPTypeTuple tupleType = this.contents.elementType.to(DBSPTypeTuple.class);
         final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
         for (int i = 0; i < tupleType.tupFields.length; i++) {
             DBSPApplyMethodExpression rowGet =
@@ -51,7 +58,7 @@ public class TableValue {
         DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
         DBSPClosureExpression mapClosure = new DBSPClosureExpression(CalciteObject.EMPTY, tuple,
                 rowVariable.asParameter());
-        return new DBSPApplyExpression("read_db", this.contents.zsetType,
+        return new DBSPApplyExpression("read_db", this.contents.getType(),
                 new DBSPStrLiteral(connectionString), new DBSPStrLiteral(this.tableName),
                 mapClosure);
     }

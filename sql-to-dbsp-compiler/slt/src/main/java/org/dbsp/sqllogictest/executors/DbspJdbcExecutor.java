@@ -15,7 +15,7 @@
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * AUTHORS OR COPYRIGHT HERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
@@ -39,7 +39,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.TableValue;
 
 import javax.annotation.Nullable;
@@ -149,8 +148,8 @@ public class DbspJdbcExecutor extends DBSPExecutor {
             }
             rs.close();
             if (rows.isEmpty())
-                return new DBSPZSetLiteral(new DBSPTypeTuple(colTypes), new DBSPTypeWeight());
-            return new DBSPZSetLiteral(new DBSPTypeWeight(), rows.toArray(new DBSPExpression[0]));
+                return DBSPZSetLiteral.emptyWithElementType(new DBSPTypeTuple(colTypes));
+            return new DBSPZSetLiteral(rows.toArray(new DBSPExpression[0]));
         }
     }
 

@@ -30,14 +30,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 public class DBSPTypeIndexedZSet extends DBSPTypeUser {
     public final DBSPType keyType;
     public final DBSPType elementType;
-    public final DBSPType weightType;
 
     public DBSPTypeIndexedZSet(CalciteObject node, DBSPType keyType,
-                               DBSPType elementType, DBSPType weightType) {
-        super(node, DBSPTypeCode.INDEXED_ZSET, "OrdIndexedZSet", false, keyType, elementType, weightType);
+                               DBSPType elementType) {
+        super(node, DBSPTypeCode.INDEXED_ZSET, "IndexedWSet", false, keyType, elementType);
         this.keyType = keyType;
         this.elementType = elementType;
-        this.weightType = weightType;
     }
 
     public DBSPTypeRawTuple getKVRefType() {
@@ -55,7 +53,6 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         visitor.push(this);
         this.keyType.accept(visitor);
         this.elementType.accept(visitor);
-        this.weightType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

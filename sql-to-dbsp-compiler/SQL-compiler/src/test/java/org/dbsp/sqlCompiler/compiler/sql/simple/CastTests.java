@@ -58,8 +58,8 @@ public class CastTests extends BaseSQLTests {
         return compiler;
     }
 
-    public DBSPZSetLiteral.Contents createInput() {
-        return new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
+    public DBSPZSetLiteral createInput() {
+        return new DBSPZSetLiteral(new DBSPTupleExpression(
                 new DBSPI32Literal(10),
                 new DBSPDoubleLiteral(12.0),
                 new DBSPStringLiteral("100100"),
@@ -67,7 +67,7 @@ public class CastTests extends BaseSQLTests {
                 new DBSPDecimalLiteral(tenFour, new BigDecimal(100103))));
     }
 
-    public void testQuery(String query, DBSPZSetLiteral.Contents expectedOutput) {
+    public void testQuery(String query, DBSPZSetLiteral expectedOutput) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
         DBSPCircuit circuit = getCircuit(compiler);
@@ -78,7 +78,7 @@ public class CastTests extends BaseSQLTests {
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6168")
     public void testTinyInt() {
         String query = "SELECT CAST(256 AS TINYINT)";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression()));
+        this.testQuery(query, new DBSPZSetLiteral(new DBSPTupleExpression()));
     }
 
     @Test
@@ -90,27 +90,27 @@ public class CastTests extends BaseSQLTests {
     @Test
     public void intAndString() {
         String query = "SELECT '1' + 2";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
+        this.testQuery(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(new DBSPI32Literal(3))));
     }
 
     @Test
     public void intAndStringTable() {
         String query = "SELECT T.COL1 + T.COL3 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(
+        this.testQuery(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(new DBSPI32Literal(100110))));
     }
 
     @Test
     public void castNull() {
         String query = "SELECT CAST(NULL AS INTEGER)";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPI32Literal())));
+        this.testQuery(query, new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI32Literal())));
     }
 
     @Test
     public void castFromFPTest() {
         String query = "SELECT T.COL1 + T.COL2 + T.COL3 + T.COL5 FROM T";
-        this.testQuery(query, new DBSPZSetLiteral.Contents(new DBSPTupleExpression(new DBSPDoubleLiteral(200225.0))));
+        this.testQuery(query, new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPDoubleLiteral(200225.0))));
     }
 
     @Test

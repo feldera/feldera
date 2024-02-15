@@ -21,18 +21,24 @@ pub use timestamp::Date;
 pub use timestamp::Time;
 pub use timestamp::Timestamp;
 
-use dbsp::algebra::{AddByRef, HasZero, NegByRef, Semigroup, SemigroupValue, ZRingValue, F32, F64};
-use dbsp::trace::{Batch, BatchReader, Builder, Cursor};
 use dbsp::{
-    utils::*, CollectionHandle, DBData, DBWeight, OrdIndexedZSet, OrdZSet, OutputHandle,
-    UpsertHandle,
+    algebra::{
+        AddByRef, HasOne, HasZero, NegByRef, Semigroup, SemigroupValue, ZRingValue, F32, F64,
+    },
+    trace::{Batch, BatchReader, Builder, Cursor},
+    utils::*,
+    CollectionHandle, DBData, OrdIndexedZSet, OrdZSet, OutputHandle, UpsertHandle,
 };
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ops::Index;
+use std::ops::{Add, Index, Neg};
 use std::str::FromStr;
+
+pub type Weight = i64; // Default weight type
+pub type WSet<D> = OrdZSet<D, Weight>;
+pub type IndexedWSet<K, D> = OrdIndexedZSet<K, D, Weight>;
 
 #[derive(Clone)]
 pub struct DefaultOptSemigroup<T>(PhantomData<T>);
@@ -1400,14 +1406,13 @@ pub fn print_opt(str: Option<String>) {
     }
 }
 
-pub fn zset_map<D, T, W, F>(data: &OrdZSet<D, W>, mapper: F) -> OrdZSet<T, W>
+pub fn zset_map<D, T, F>(data: &WSet<D>, mapper: F) -> WSet<T>
 where
     D: DBData + 'static,
-    W: DBWeight + 'static,
     T: DBData + 'static,
     F: Fn(&D) -> T,
 {
-    let mut builder = <OrdZSet<T, W> as Batch>::Builder::with_capacity((), data.len());
+    let mut builder = <WSet<T> as Batch>::Builder::with_capacity((), data.len());
     let mut cursor = data.cursor();
     while cursor.key_valid() {
         let item = cursor.key();
@@ -1418,18 +1423,13 @@ where
     builder.done()
 }
 
-pub fn zset_filter_comparator<D, T, W, F>(
-    data: &OrdZSet<D, W>,
-    value: &T,
-    comparator: F,
-) -> OrdZSet<D, W>
+pub fn zset_filter_comparator<D, T, F>(data: &WSet<D>, value: &T, comparator: F) -> WSet<D>
 where
     D: DBData + 'static,
-    W: DBWeight + 'static,
     T: 'static,
     F: Fn(&D, &T) -> bool,
 {
-    let mut builder = <OrdZSet<D, W> as Batch>::Builder::with_capacity((), data.len());
+    let mut builder = <WSet<D> as Batch>::Builder::with_capacity((), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
@@ -1442,19 +1442,18 @@ where
     builder.done()
 }
 
-pub fn indexed_zset_filter_comparator<K, D, T, W, F>(
-    data: &OrdIndexedZSet<K, D, W>,
+pub fn indexed_zset_filter_comparator<K, D, T, F>(
+    data: &IndexedWSet<K, D>,
     value: &T,
     comparator: F,
-) -> OrdIndexedZSet<K, D, W>
+) -> IndexedWSet<K, D>
 where
     K: DBData + 'static,
     D: DBData + 'static,
-    W: DBWeight + 'static,
     T: 'static,
     F: Fn((&K, &D), &T) -> bool,
 {
-    let mut builder = <OrdIndexedZSet<K, D, W> as Batch>::Builder::with_capacity((), data.len());
+    let mut builder = <IndexedWSet<K, D> as Batch>::Builder::with_capacity((), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
@@ -1472,10 +1471,9 @@ where
     builder.done()
 }
 
-pub fn append_to_upsert_handle<K, W>(data: &OrdZSet<K, W>, handle: &UpsertHandle<K, bool>)
+pub fn append_to_upsert_handle<K>(data: &WSet<K>, handle: &UpsertHandle<K, bool>)
 where
     K: DBData,
-    W: DBWeight + ZRingValue,
 {
     let mut cursor = data.cursor();
     while cursor.key_valid() {
@@ -1488,16 +1486,15 @@ where
         while !w.le0() {
             let key = cursor.key();
             handle.push(key.clone(), insert);
-            w = w.add(W::neg(W::one()));
+            w = w.add(Weight::neg(Weight::one()));
         }
         cursor.step_key();
     }
 }
 
-pub fn append_to_collection_handle<K, W>(data: &OrdZSet<K, W>, handle: &CollectionHandle<K, W>)
+pub fn append_to_collection_handle<K>(data: &WSet<K>, handle: &CollectionHandle<K, Weight>)
 where
     K: DBData,
-    W: DBWeight + ZRingValue,
 {
     let mut cursor = data.cursor();
     while cursor.key_valid() {
@@ -1506,10 +1503,9 @@ where
     }
 }
 
-pub fn read_output_handle<K, W>(handle: &OutputHandle<OrdZSet<K, W>>) -> OrdZSet<K, W>
+pub fn read_output_handle<K>(handle: &OutputHandle<WSet<K>>) -> WSet<K>
 where
     K: DBData,
-    W: DBWeight,
 {
     handle.consolidate()
 }
@@ -1517,10 +1513,9 @@ where
 // Check that two zsets are equal.  If yes, returns true.
 // If not, print a diff of the zsets and returns false.
 // Assumes that the zsets are positive (all weights are positive).
-pub fn must_equal<K, W>(left: &OrdZSet<K, W>, right: &OrdZSet<K, W>) -> bool
+pub fn must_equal<K>(left: &WSet<K>, right: &WSet<K>) -> bool
 where
     K: DBData + Clone,
-    W: DBWeight + ZRingValue,
 {
     let diff = left.add_by_ref(&right.neg_by_ref());
     if diff.is_zero() {

@@ -138,7 +138,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -208,11 +207,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     private DBSPTypeZSet makeZSet(DBSPType type) {
-        return TypeCompiler.makeZSet(type, new DBSPTypeWeight());
+        return TypeCompiler.makeZSet(type);
     }
 
     private DBSPTypeIndexedZSet makeIndexedZSet(DBSPType keyType, DBSPType valueType) {
-        return TypeCompiler.makeIndexedZSet(keyType, valueType, new DBSPTypeWeight());
+        return TypeCompiler.makeIndexedZSet(keyType, valueType);
     }
 
     /** Gets the circuit produced so far and starts a new one. */
@@ -362,7 +361,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFlatmap flatmap = new DBSPFlatmap(node, leftElementType, arrayFieldIndex,
                 allFields, indexType);
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(uncollectNode,
-                flatmap, TypeCompiler.makeZSet(type, new DBSPTypeWeight()), left);
+                flatmap, TypeCompiler.makeZSet(type), left);
         this.assignOperator(correlate, flatMap);
     }
 
@@ -386,7 +385,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, 0,
                 indexes, indexType);
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node, function,
-                TypeCompiler.makeZSet(type, new DBSPTypeWeight()), opInput);
+                TypeCompiler.makeZSet(type), opInput);
         this.assignOperator(uncollect, flatMap);
     }
 
@@ -474,7 +473,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPOperator neg = new DBSPNegateOperator(node, map1);
                 this.circuit.addOperator(neg);
                 DBSPOperator constant = new DBSPConstantOperator(
-                        node, new DBSPZSetLiteral(new DBSPTypeWeight(), fold.defaultZero()), false);
+                        node, new DBSPZSetLiteral(fold.defaultZero()), false);
                 this.circuit.addOperator(constant);
                 DBSPOperator sum = new DBSPSumOperator(node, Linq.list(constant, neg, map));
                 this.assignOperator(aggregate, sum);
@@ -906,7 +905,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             resultType = sourceType;
         }
 
-        DBSPZSetLiteral result = new DBSPZSetLiteral(resultType, new DBSPTypeWeight());
+        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(resultType);
         for (List<RexLiteral> t : values.getTuples()) {
             List<DBSPExpression> expressions = new ArrayList<>();
             if (t.size() != sourceType.size())
@@ -1527,14 +1526,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 LogicalTableScan scan = (LogicalTableScan) modify.rel;
                 List<String> name = scan.getTable().getQualifiedName();
                 String sourceTable = name.get(name.size() - 1);
-                DBSPZSetLiteral.Contents data = this.tableContents.getTableContents(sourceTable);
+                DBSPZSetLiteral data = this.tableContents.getTableContents(sourceTable);
                 this.tableContents.addToTable(modify.tableName, data);
                 this.modifyTableTranslation = null;
-                return new DBSPZSetLiteral(new DBSPTypeWeight(), data);
+                return new DBSPZSetLiteral(data);
             } else if (modify.rel instanceof LogicalValues) {
                 this.go(modify.rel);
                 DBSPZSetLiteral result = this.modifyTableTranslation.getTranslation();
-                this.tableContents.addToTable(modify.tableName, result.getContents());
+                this.tableContents.addToTable(modify.tableName, result);
                 this.modifyTableTranslation = null;
                 return result;
             }

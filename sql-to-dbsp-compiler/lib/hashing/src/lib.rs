@@ -1,11 +1,13 @@
-use core::{cmp::Ordering, fmt::Debug};
+use core::{cmp::Ordering};
 use dbsp::{
-    algebra::{MulByRef, ZRingValue, ZSet},
-    trace::{cursor::Cursor, ord::OrdZSet, BatchReader},
-    zset, DBData, DBWeight,
+    algebra::{HasOne, MulByRef, ZRingValue, ZSet},
+    trace::{cursor::Cursor, BatchReader},
+    DBData,
 };
 
+use sqllib::{Weight, WSet};
 use sqlvalue::*;
+use std::ops::{Add, Neg};
 
 #[derive(Eq, PartialEq)]
 pub enum SortOrder {
@@ -34,12 +36,9 @@ where
 /// Elements with > 1 weights will generate multiple SqlRows
 /// # Panics
 /// if any of the zset weights is negative
-pub fn zset_to_rows<K, W>(set: &OrdZSet<K, W>) -> Vec<SqlRow>
+pub fn zset_to_rows<K>(set: &WSet<K>) -> Vec<SqlRow>
 where
     K: DBData + ToSqlRow,
-    W: DBWeight + ZRingValue,
-    usize: TryFrom<W>,
-    <usize as TryFrom<W>>::Error: Debug,
 {
     let mut result = Vec::with_capacity(set.weighted_count().try_into().unwrap());
     let mut cursor = set.cursor();
@@ -51,7 +50,7 @@ where
         while !w.le0() {
             let row_vec = cursor.key().to_row();
             result.push(row_vec);
-            w = w.add(W::neg(W::one()));
+            w = w.add(Weight::neg(Weight::one()));
         }
         cursor.step_key();
     }
@@ -99,16 +98,13 @@ impl<'a> DataRows<'a> {
 }
 
 /// The format is from the SqlLogicTest query output string format
-pub fn zset_to_strings<K, W>(
-    set: &OrdZSet<K, W>,
+pub fn zset_to_strings<K>(
+    set: &WSet<K>,
     format: String,
     order: SortOrder,
 ) -> Vec<Vec<String>>
 where
     K: DBData + ToSqlRow,
-    W: DBWeight + ZRingValue,
-    usize: TryFrom<W>,
-    <usize as TryFrom<W>>::Error: Debug,
 {
     let rows = zset_to_rows(set);
     let mut data_rows = DataRows::with_capacity(&format, &order, rows.len());
@@ -120,20 +116,19 @@ where
 
 /// Version of hash that takes the result of orderby: a zset that is expected
 /// to contain a single vector with all the data.
-pub fn zset_of_vectors_to_strings<K, W>(
-    set: &OrdZSet<Vec<K>, W>,
+pub fn zset_of_vectors_to_strings<K>(
+    set: &WSet<Vec<K>>,
     format: String,
     order: SortOrder,
 ) -> Vec<Vec<String>>
 where
     K: DBData + ToSqlRow,
-    W: DBWeight + ZRingValue,
 {
     let mut data_rows = DataRows::new(&format, &order);
     let mut cursor = set.cursor();
     while cursor.key_valid() {
         let w = cursor.weight();
-        if w != W::one() {
+        if w != Weight::one() {
             panic!("Weight is not one!");
         }
         let row_vec: Vec<K> = cursor.key().to_vec();
@@ -146,33 +141,13 @@ where
     data_rows.get()
 }
 
-/// Blow up a zset into multiple zsets, one for each "element"
-pub fn to_elements<K, W>(set: &OrdZSet<K, W>) -> Vec<OrdZSet<K, W>>
-where
-    K: DBData,
-    W: DBWeight,
-{
-    let mut cursor = set.cursor();
-    let mut result = Vec::new();
-    while cursor.key_valid() {
-        let w = cursor.weight();
-        let k = cursor.key();
-        result.push(zset!(k.clone() => w));
-        cursor.step_key();
-    }
-    result
-}
-
 /// This function mimics the md5 checksum computation from SqlLogicTest
 /// The format is from the SqlLogicTest query output string format
-pub fn hash<K, W>(set: &OrdZSet<K, W>, format: String, order: SortOrder) -> String
+pub fn hash<K>(set: &WSet<K>, format: String, order: SortOrder) -> String
 where
     K: DBData + ToSqlRow,
-    W: DBWeight + ZRingValue,
-    usize: TryFrom<W>,
-    <usize as TryFrom<W>>::Error: Debug,
 {
-    let vec = zset_to_strings::<K, W>(set, format, order);
+    let vec = zset_to_strings::<K>(set, format, order);
     let mut builder = String::default();
     for row in vec {
         for col in row {
@@ -186,17 +161,16 @@ where
 
 /// Version of hash that takes the result of orderby: a zset that is expected
 /// to contain a single vector with all the data.
-pub fn hash_vectors<K, W>(set: &OrdZSet<Vec<K>, W>, format: String, order: SortOrder) -> String
+pub fn hash_vectors<K>(set: &WSet<Vec<K>>, format: String, order: SortOrder) -> String
 where
     K: DBData + ToSqlRow,
-    W: DBWeight + ZRingValue,
 {
     // Result of orderby - there should be at most one row in the set.
     let mut builder = String::default();
     let mut cursor = set.cursor();
     while cursor.key_valid() {
         let w = cursor.weight();
-        if w != W::one() {
+        if w != Weight::one() {
             panic!("Weight is not one!");
         }
         let row_vec: Vec<K> = cursor.key().to_vec();
@@ -220,11 +194,9 @@ where
 // The count of elements in a zset that contains a vector is
 // given by the count of the elements of the vector times the
 // weight of the vector.
-pub fn weighted_vector_count<K, W>(set: &OrdZSet<Vec<K>, W>) -> isize
+pub fn weighted_vector_count<K>(set: &WSet<Vec<K>>) -> isize
 where
     K: DBData + ToSqlRow,
-    W: DBWeight + ZRingValue,
-    isize: MulByRef<W, Output = isize>,
 {
     let mut sum: isize = 0;
     let mut cursor = set.cursor();

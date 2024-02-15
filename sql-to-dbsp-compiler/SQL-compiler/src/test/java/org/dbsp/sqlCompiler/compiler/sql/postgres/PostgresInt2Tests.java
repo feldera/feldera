@@ -255,13 +255,13 @@ public class PostgresInt2Tests extends SqlIoTest {
         this.q(
                 """
                         SELECT x, x::int2 AS int2_value FROM (VALUES
-                                (-2.9::numeric(2, 1)), 
-                                (-2.5::numeric(2, 1)), 
-                                (-1.5::numeric(2, 1)), 
-                                (-0.5::numeric(2, 1)), 
-                                (0.0::numeric(2, 1)), 
-                                (0.5::numeric(2, 1)), 
-                                (1.5::numeric(2, 1)), 
+                                (-2.9::numeric(2, 1)),
+                                (-2.5::numeric(2, 1)),
+                                (-1.5::numeric(2, 1)),
+                                (-0.5::numeric(2, 1)),
+                                (0.0::numeric(2, 1)),
+                                (0.5::numeric(2, 1)),
+                                (1.5::numeric(2, 1)),
                                 (2.5::numeric(2, 1)))
                         t(x);
                           x   | int2_value

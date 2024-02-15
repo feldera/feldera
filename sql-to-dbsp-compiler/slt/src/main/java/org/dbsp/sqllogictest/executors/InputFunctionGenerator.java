@@ -53,7 +53,7 @@ class InputFunctionGenerator {
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tuple type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
-        DBSPTypeTuple tupleType = tableValue.contents.zsetType.elementType.to(DBSPTypeTuple.class);
+        DBSPTypeTuple tupleType = tableValue.contents.elementType.to(DBSPTypeTuple.class);
         final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
         for (int i = 0; i < tupleType.tupFields.length; i++) {
             DBSPApplyMethodExpression rowGet =
@@ -65,7 +65,7 @@ class InputFunctionGenerator {
         DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
         DBSPClosureExpression mapClosure = new DBSPClosureExpression(CalciteObject.EMPTY, tuple,
                 rowVariable.asParameter());
-        return new DBSPApplyExpression("read_db", tableValue.contents.zsetType,
+        return new DBSPApplyExpression("read_db", tableValue.contents.getType(),
                 new DBSPStrLiteral(this.connectionString), new DBSPStrLiteral(tableValue.tableName),
                 mapClosure);
     }

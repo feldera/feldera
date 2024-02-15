@@ -932,8 +932,8 @@ public class PostgresDateTests extends SqlIoTest {
                 //-1475115L
         };
         // TODO: why is the output an integer instead of an interval in Postgres?
-        DBSPZSetLiteral.Contents result =
-                new DBSPZSetLiteral.Contents(Linq.map(results,
+        DBSPZSetLiteral result =
+                new DBSPZSetLiteral(Linq.map(results,
                         l -> new DBSPTupleExpression(new DBSPIntervalMillisLiteral(
                                 l * 86400 * 1000, true)), DBSPExpression.class));
         this.compare(query, result, true);

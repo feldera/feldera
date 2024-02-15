@@ -173,7 +173,7 @@ public class ToCsvVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPZSetLiteral literal) {
-        for (Map.Entry<DBSPExpression, Long> entry: literal.data.data.entrySet()) {
+        for (Map.Entry<DBSPExpression, Long> entry: literal.data.entrySet()) {
             DBSPExpression key = entry.getKey();
             long value = entry.getValue();
             if (value < 0)

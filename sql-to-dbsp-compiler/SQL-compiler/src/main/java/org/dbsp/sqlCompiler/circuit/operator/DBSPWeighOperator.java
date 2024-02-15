@@ -13,7 +13,7 @@ import java.util.List;
 @NonCoreIR
 public class DBSPWeighOperator extends DBSPUnaryOperator {
     static DBSPTypeZSet outputType(DBSPTypeIndexedZSet sourceType) {
-        return new DBSPTypeZSet(sourceType.keyType, sourceType.elementType);
+        return new DBSPTypeZSet(sourceType.elementType);
     }
 
     public DBSPWeighOperator(CalciteObject node, DBSPExpression function, DBSPOperator source) {

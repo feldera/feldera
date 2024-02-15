@@ -16,6 +16,7 @@ sqlx = { version = "0.6", features = ["runtime-async-std-native-tls", "sqlite", 
 async-std = { version = "1.12.0", features = ["attributes"] }
 rkyv = { version = "0.7.42", default-features = false, features = ["size_64"] }
 dbsp_adapters = { path = "../../../crates/adapters" }
+sqllib = { path = "../sqllib" }
 
 [dev-dependencies]
 dbsp_adapters = { path = "../../../crates/adapters" }

@@ -70,78 +70,78 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testUnnest() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5])";
-        DBSPZSetLiteral.Contents result = null;
+        DBSPZSetLiteral result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(i));
             if (i == 1)
-                result = new DBSPZSetLiteral.Contents(tuple);
+                result = new DBSPZSetLiteral(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
 
         this.testQuery("", query, new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
+                new DBSPZSetLiteral[0], new DBSPZSetLiteral[]{ result }));
     }
 
     @Test
     public void testUnnestDuplicate() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 1, 1])";
-        DBSPZSetLiteral.Contents result = null;
+        DBSPZSetLiteral result = null;
         for (int i = 1; i < 4; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(1));
             if (i == 1)
-                result = new DBSPZSetLiteral.Contents(tuple);
+                result = new DBSPZSetLiteral(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
 
         this.testQuery("", query, new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
+                new DBSPZSetLiteral[0], new DBSPZSetLiteral[]{ result }));
     }
 
     @Test
     public void testUnnestNull() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, NULL])";
-        DBSPZSetLiteral.Contents result = null;
+        DBSPZSetLiteral result = null;
         for (int i = 1; i < 5; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(new DBSPI32Literal(i, true));
             if (i == 1)
-                result = new DBSPZSetLiteral.Contents(tuple);
+                result = new DBSPZSetLiteral(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
         result.add(new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
         this.testQuery("", query, new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
+                new DBSPZSetLiteral[0], new DBSPZSetLiteral[]{ result }));
     }
 
     @Test
     public void testUnnestOrdinality() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5]) WITH ORDINALITY";
-        DBSPZSetLiteral.Contents result = null;
+        DBSPZSetLiteral result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i),
                     new DBSPI32Literal(i));
             if (i == 1)
-                result = new DBSPZSetLiteral.Contents(tuple);
+                result = new DBSPZSetLiteral(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
         this.testQuery("", query, new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
+                new DBSPZSetLiteral[0], new DBSPZSetLiteral[]{ result }));
     }
 
     @Test
     public void testUnnestOrdinalityNull() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5, NULL]) WITH ORDINALITY";
-        DBSPZSetLiteral.Contents result = null;
+        DBSPZSetLiteral result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i, true),
                     new DBSPI32Literal(i));
             if (i == 1)
-                result = new DBSPZSetLiteral.Contents(tuple);
+                result = new DBSPZSetLiteral(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
@@ -150,26 +150,26 @@ public class ArrayTests extends BaseSQLTests {
                 new DBSPI32Literal(6)));
 
         this.testQuery("", query, new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
+                new DBSPZSetLiteral[0], new DBSPZSetLiteral[]{ result }));
     }
 
     @Test @Ignore("UNNEST with 2 arguments not yet implemented")
     public void testUnnest2() {
         String query = "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5], ARRAY[3, 2, 1])";
-        DBSPZSetLiteral.Contents result = null;
+        DBSPZSetLiteral result = null;
         for (int i = 1; i < 6; i++) {
             DBSPTupleExpression tuple = new DBSPTupleExpression(
                     new DBSPI32Literal(i),
                     i < 4 ? new DBSPI32Literal(4 - 1, true) :
                             DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)));
             if (i == 1)
-                result = new DBSPZSetLiteral.Contents(tuple);
+                result = new DBSPZSetLiteral(tuple);
             else
                 Objects.requireNonNull(result).add(tuple);
         }
 
         this.testQuery("", query, new InputOutputPair(
-                new DBSPZSetLiteral.Contents[0], new DBSPZSetLiteral.Contents[]{ result }));
+                new DBSPZSetLiteral[0], new DBSPZSetLiteral[]{ result }));
     }
 
     @Test
@@ -179,7 +179,7 @@ public class ArrayTests extends BaseSQLTests {
                 + "ID INTEGER NOT NULL)";
         String query = "SELECT VAL, ID FROM " +
                 "ARR_TABLE, UNNEST(VALS) AS VAL";
-        DBSPZSetLiteral.Contents input = new DBSPZSetLiteral.Contents(
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPVecLiteral(
                                 new DBSPI32Literal(1),
@@ -193,7 +193,7 @@ public class ArrayTests extends BaseSQLTests {
                                 new DBSPI32Literal(3)),
                         new DBSPI32Literal(7))
                 );
-        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(
+        DBSPZSetLiteral result = new DBSPZSetLiteral(
                 new DBSPTupleExpression(new DBSPI32Literal(1), new DBSPI32Literal(6)),
                 new DBSPTupleExpression(new DBSPI32Literal(2), new DBSPI32Literal(6)),
                 new DBSPTupleExpression(new DBSPI32Literal(3), new DBSPI32Literal(6)),
@@ -212,7 +212,7 @@ public class ArrayTests extends BaseSQLTests {
                 + "ID INTEGER NOT NULL)";
         String query = "SELECT VAL0, VAL1, ID FROM " +
                 "ARR_TABLE, UNNEST(VALS0) AS VAL0, UNNEST(VALS1) AS VAL1";
-        DBSPZSetLiteral.Contents input = new DBSPZSetLiteral.Contents(
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPVecLiteral(
                                 new DBSPI32Literal(1),
@@ -234,7 +234,7 @@ public class ArrayTests extends BaseSQLTests {
                                 new DBSPI32Literal(13)),
                         new DBSPI32Literal(14))
         );
-        DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(
+        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(
             new DBSPTypeTuple(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false), new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
         );
         for (int i = 1; i < 4; i++)
@@ -269,8 +269,8 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testConstants() {
         String query = "SELECT ARRAY[2,3][2], CARDINALITY(ARRAY[2,3]), ELEMENT(ARRAY[2])";
-        this.testQuery("", query, new InputOutputPair(new DBSPZSetLiteral.Contents[0],
-                new DBSPZSetLiteral.Contents[]{ new DBSPZSetLiteral.Contents(
+        this.testQuery("", query, new InputOutputPair(new DBSPZSetLiteral[0],
+                new DBSPZSetLiteral[]{ new DBSPZSetLiteral(
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(3, true),
                                 new DBSPI32Literal(2),
@@ -280,8 +280,8 @@ public class ArrayTests extends BaseSQLTests {
 
     @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6227")
     public void testElementNull() {
-        this.testQuery("", "SELECT ELEMENT(NULL)", new InputOutputPair(new DBSPZSetLiteral.Contents[0],
-                new DBSPZSetLiteral.Contents[]{ new DBSPZSetLiteral.Contents(
+        this.testQuery("", "SELECT ELEMENT(NULL)", new InputOutputPair(new DBSPZSetLiteral[0],
+                new DBSPZSetLiteral[]{ new DBSPZSetLiteral(
                         new DBSPTupleExpression(new DBSPNullLiteral())) }));
     }
 

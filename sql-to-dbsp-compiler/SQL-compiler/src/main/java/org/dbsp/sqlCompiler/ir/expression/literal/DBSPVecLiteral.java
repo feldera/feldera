@@ -93,12 +93,13 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
         return this.vecType.getTypeArg(0);
     }
 
-    public void add(DBSPExpression expression) {
+    public IDBSPContainer add(DBSPExpression expression) {
         // We expect the expression to be a constant value (a literal)
         if (!expression.getType().sameType(this.getElementType()))
             throw new InternalCompilerError("Added element " + expression + " type " +
                     expression.getType() + " does not match vector type " + this.getElementType(), this);
         Objects.requireNonNull(this.data).add(expression);
+        return this;
     }
 
     public void add(DBSPVecLiteral other) {
