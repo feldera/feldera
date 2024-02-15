@@ -24,5 +24,5 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 public interface IDBSPContainer {
-    void add(DBSPExpression expression);
+    IDBSPContainer add(DBSPExpression expression);
 }

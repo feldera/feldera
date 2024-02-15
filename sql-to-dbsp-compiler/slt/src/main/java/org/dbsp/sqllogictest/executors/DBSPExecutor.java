@@ -74,7 +74,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.sqllogictest.Main;
 import org.dbsp.sqllogictest.SqlTestPrepareInput;
 import org.dbsp.sqllogictest.SqlTestPrepareTables;
@@ -139,8 +138,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         TableValue[] tableValues = new TableValue[tables.tablesCreated.size()];
         for (int i = 0; i < tableValues.length; i++) {
             String table = tables.tablesCreated.get(i);
-            tableValues[i] = new TableValue(table,
-                    new DBSPZSetLiteral(new DBSPTypeWeight(), tables.getTableContents(table)));
+            tableValues[i] = new TableValue(table, tables.getTableContents(table));
         }
         return tableValues;
     }
@@ -232,9 +230,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             elementType = elementType.to(DBSPTypeVec.class).getElementType();
             DBSPVecLiteral vec = new DBSPVecLiteral(elementType);
             container = vec;
-            result = new DBSPZSetLiteral(new DBSPTypeWeight(), vec);
+            result = new DBSPZSetLiteral(vec);
         } else {
-            result = new DBSPZSetLiteral(outputType.getElementType(), new DBSPTypeWeight());
+            result = DBSPZSetLiteral.emptyWithElementType(outputType.getElementType());
             container = result;
         }
         DBSPTypeTuple outputElementType = elementType.to(DBSPTypeTuple.class);
@@ -483,9 +481,9 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                         outputStatement.getVarReference());
             }
             list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
-                            new DBSPAsExpression(count, new DBSPTypeWeight()), new DBSPAsExpression(
-                                    new DBSPI32Literal(description.getExpectedOutputSize()),
-                            new DBSPTypeWeight())).toStatement());
+                            new DBSPAsExpression(count,
+                                    new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false)),
+                                    new DBSPI32Literal(description.getExpectedOutputSize())).toStatement());
         }
         if (output != null) {
             if (description.columnTypes != null) {
@@ -502,8 +500,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 }
                 DBSPExpression zset_to_strings = new DBSPQualifyTypeExpression(
                         DBSPTypeAny.getDefault().var(functionProducingStrings),
-                        elementType,
-                        oType.weightType
+                        elementType
                 );
                 list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
                                 new DBSPApplyExpression(functionProducingStrings, DBSPTypeAny.getDefault(),

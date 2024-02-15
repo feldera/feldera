@@ -56,7 +56,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
                                 
                 SELECT 'infinity'::float8;
-                  float8 
+                  float8
                 ----------
                  Infinity
                 (1 row)

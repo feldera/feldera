@@ -63,7 +63,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.FreshName;
 import org.dbsp.util.HSQDBManager;
 import org.dbsp.util.IWritesLogs;
@@ -135,12 +134,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // DBSPSourceMultisetOperator 53
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
                     let stream53 = T();
-                    // DBSPMapOperator 76
-                    let stream76: stream<OrdZSet<Tup1<b>, Weight>> = stream53.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
+                    // DBSPMapOperator 75
+                    let stream75: stream<WSet<Tup1<b>>> = stream53.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream83: stream<OrdZSet<Tup1<b>, Weight>> = stream76;
+                    let stream82: stream<WSet<Tup1<b>>> = stream75;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -300,7 +299,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral s = new DBSPZSetLiteral(new DBSPTypeWeight(), EndToEndTests.e0, EndToEndTests.e1);
+        DBSPZSetLiteral s = new DBSPZSetLiteral(EndToEndTests.e0, EndToEndTests.e1);
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
         visitor.traverse(s);
@@ -315,7 +314,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void rustCsvTest() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetLiteral data = new DBSPZSetLiteral(new DBSPTypeWeight(), EndToEndTests.e0, EndToEndTests.e1);
+        DBSPZSetLiteral data = new DBSPZSetLiteral(EndToEndTests.e0, EndToEndTests.e1);
         File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
         file.deleteOnExit();
         ToCsvVisitor.toCsv(compiler, file, data);
@@ -350,8 +349,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         connection.close();
         DBSPCompiler compiler = testCompiler();
 
-        DBSPZSetLiteral data = new DBSPZSetLiteral(
-                new DBSPTypeWeight(), EndToEndTests.e0NoDouble, EndToEndTests.e1NoDouble);
+        DBSPZSetLiteral data = new DBSPZSetLiteral(EndToEndTests.e0NoDouble, EndToEndTests.e1NoDouble);
         List<DBSPStatement> list = new ArrayList<>();
 
         String connectionString = "sqlite://" + filepath;
@@ -392,10 +390,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     public void rustCsvTest2() throws IOException, InterruptedException {
         DBSPCompiler compiler = this.testCompiler();
         DBSPZSetLiteral data = new DBSPZSetLiteral(
-                new DBSPTypeWeight(),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(2, true)),
-                new DBSPTupleExpression(DBSPI32Literal.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))
+                new DBSPTupleExpression(DBSPI32Literal.none(
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))
         );
         File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.rustDirectory));
         file.deleteOnExit();
@@ -827,6 +825,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         ImageIO.read(new File(png.getPath()));
     }
 
+    @Test
     public void testFreshName() {
         String query = "CREATE VIEW V AS SELECT T.COL1 FROM T WHERE T.COL2 > 0";
         DBSPCompiler compiler = this.compileDef();

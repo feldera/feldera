@@ -44,13 +44,13 @@ public class TypeCompiler implements ICompilerComponent {
         this.compiler = parent;
     }
 
-    public static DBSPTypeZSet makeZSet(DBSPType elementType, DBSPType weightType) {
-        return new DBSPTypeZSet(elementType.getNode(), elementType, weightType);
+    public static DBSPTypeZSet makeZSet(DBSPType elementType) {
+        return new DBSPTypeZSet(elementType.getNode(), elementType);
     }
 
     public static DBSPTypeIndexedZSet makeIndexedZSet(
-            DBSPType keyType, DBSPType elementType, DBSPType weightType) {
-        return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType, weightType);
+            DBSPType keyType, DBSPType elementType) {
+        return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType);
     }
 
     private static final NameGen structNameGen = new NameGen("$");

@@ -52,12 +52,12 @@ public class MultiViewTests extends BaseSQLTests {
 
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[] { EndToEndTests.createInput() },
-                new DBSPZSetLiteral.Contents[] {
-                        new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral[] { EndToEndTests.createInput() },
+                new DBSPZSetLiteral[] {
+                        new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                                 new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral.Contents(
+                        new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPDoubleLiteral(12.0)),
                                 new DBSPTupleExpression(new DBSPDoubleLiteral(1.0)))
                 }
@@ -80,12 +80,12 @@ public class MultiViewTests extends BaseSQLTests {
 
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[] { EndToEndTests.createInput() },
-                new DBSPZSetLiteral.Contents[] {
-                        new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral[] { EndToEndTests.createInput() },
+                new DBSPZSetLiteral[] {
+                        new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                                 new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral.Contents(
+                        new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                                 new DBSPTupleExpression(new DBSPBoolLiteral(false)))
                 }
@@ -108,12 +108,12 @@ public class MultiViewTests extends BaseSQLTests {
 
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral.Contents[] { EndToEndTests.createInput() },
-                new DBSPZSetLiteral.Contents[] {
-                        new DBSPZSetLiteral.Contents(
+                new DBSPZSetLiteral[] { EndToEndTests.createInput() },
+                new DBSPZSetLiteral[] {
+                        new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                                 new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral.Contents(
+                        new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPI32Literal(10)))
                 }
         );

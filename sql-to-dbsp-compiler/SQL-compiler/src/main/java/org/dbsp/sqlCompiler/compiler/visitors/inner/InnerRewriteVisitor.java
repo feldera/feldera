@@ -187,9 +187,8 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType keyType = this.transform(type.keyType);
         DBSPType elementType = this.transform(type.elementType);
-        DBSPType weightType = this.transform(type.weightType);
         this.pop(type);
-        DBSPType result = new DBSPTypeIndexedZSet(type.getNode(), keyType, elementType, weightType);
+        DBSPType result = new DBSPTypeIndexedZSet(type.getNode(), keyType, elementType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -284,9 +283,8 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPTypeZSet type) {
         this.push(type);
         DBSPType elementType = this.transform(type.elementType);
-        DBSPType weightType = this.transform(type.weightType);
         this.pop(type);
-        DBSPType result = new DBSPTypeZSet(type.getNode(), elementType, weightType);
+        DBSPType result = new DBSPTypeZSet(type.getNode(), elementType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -532,14 +530,13 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
         DBSPTypeZSet zType = type.to(DBSPTypeZSet.class);
-        DBSPZSetLiteral.Contents newContents =
-                DBSPZSetLiteral.Contents.emptyWithElementType(zType.getElementType());
-        for (Map.Entry<DBSPExpression, Long> entry: expression.data.data.entrySet()) {
+        DBSPZSetLiteral result =
+                DBSPZSetLiteral.emptyWithElementType(zType.getElementType());
+        for (Map.Entry<DBSPExpression, Long> entry: expression.data.entrySet()) {
             DBSPExpression row = this.transform(entry.getKey());
-            newContents.add(row, entry.getValue());
+            result.add(row, entry.getValue());
         }
         this.pop(expression);
-        DBSPExpression result = new DBSPZSetLiteral(expression.getNode(), type, newContents);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

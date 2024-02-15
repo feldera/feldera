@@ -37,11 +37,11 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Override
-    public void testQuery(String query, DBSPZSetLiteral.Contents firstOutput) {
-        DBSPZSetLiteral.Contents input = createInput();
-        DBSPZSetLiteral.Contents secondOutput = DBSPZSetLiteral.Contents.emptyWithElementType(
+    public void testQuery(String query, DBSPZSetLiteral firstOutput) {
+        DBSPZSetLiteral input = createInput();
+        DBSPZSetLiteral secondOutput = DBSPZSetLiteral.emptyWithElementType(
                 firstOutput.getElementType());
-        DBSPZSetLiteral.Contents thirdOutput = secondOutput.minus(firstOutput);
+        DBSPZSetLiteral thirdOutput = secondOutput.minus(firstOutput);
         this.invokeTestQueryBase(query,
                 // Add first input
                 new InputOutputPair(input, firstOutput),
@@ -53,9 +53,9 @@ public class NaiveIncrementalTests extends EndToEndTests {
     }
 
     @Override
-    void testConstantOutput(String query, DBSPZSetLiteral.Contents output) {
-        DBSPZSetLiteral.Contents input = createInput();
-        DBSPZSetLiteral.Contents e = DBSPZSetLiteral.Contents.emptyWithElementType(output.getElementType());
+    void testConstantOutput(String query, DBSPZSetLiteral output) {
+        DBSPZSetLiteral input = createInput();
+        DBSPZSetLiteral e = DBSPZSetLiteral.emptyWithElementType(output.getElementType());
         this.invokeTestQueryBase(query,
                 // Add first input
                 new InputOutputPair(input, output),
@@ -68,12 +68,12 @@ public class NaiveIncrementalTests extends EndToEndTests {
 
     @Override
     void testAggregate(String query,
-                       DBSPZSetLiteral.Contents firstOutput,
-                       DBSPZSetLiteral.Contents outputForEmptyInput) {
-        DBSPZSetLiteral.Contents input = createInput();
-        DBSPZSetLiteral.Contents secondOutput = DBSPZSetLiteral.Contents.emptyWithElementType(
+                       DBSPZSetLiteral firstOutput,
+                       DBSPZSetLiteral outputForEmptyInput) {
+        DBSPZSetLiteral input = createInput();
+        DBSPZSetLiteral secondOutput = DBSPZSetLiteral.emptyWithElementType(
                 firstOutput.getElementType());
-        DBSPZSetLiteral.Contents thirdOutput = outputForEmptyInput.minus(firstOutput);
+        DBSPZSetLiteral thirdOutput = outputForEmptyInput.minus(firstOutput);
         this.invokeTestQueryBase(query,
                 // Add first input
                 new InputOutputPair(input, firstOutput),

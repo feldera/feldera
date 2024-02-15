@@ -198,8 +198,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                                 ON t1.cc_num = t2.cc_num);""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(script);
-        DBSPZSetLiteral.Contents[] inputs = new DBSPZSetLiteral.Contents[] {
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
+        DBSPZSetLiteral[] inputs = new DBSPZSetLiteral[] {
+                new DBSPZSetLiteral(new DBSPTupleExpression(
                         new DBSPDoubleLiteral(0.0),
                         new DBSPStringLiteral("First", true),
                         new DBSPStringLiteral("Male", true),
@@ -214,7 +214,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPStringLiteral("Job", true),
                         new DBSPStringLiteral("2020-02-20", true)
                         )),
-                new DBSPZSetLiteral.Contents(new DBSPTupleExpression(
+                new DBSPZSetLiteral(new DBSPTupleExpression(
                         new DBSPTimestampLiteral("2020-02-20 10:00:00", false),
                         new DBSPDoubleLiteral(0.0, false),
                         new DBSPStringLiteral("Merchant", true),
@@ -227,7 +227,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPI32Literal(0, true)
                 ))
         };
-        DBSPZSetLiteral.Contents[] outputs = new DBSPZSetLiteral.Contents[] {};
+        DBSPZSetLiteral[] outputs = new DBSPZSetLiteral[] {};
         InputOutputPair ip = new InputOutputPair(inputs, outputs);
         this.addRustTestCase("ComplexQueriesTest.demographicsTest", compiler, getCircuit(compiler), ip);
     }

@@ -53,9 +53,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -107,11 +106,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     /**
-     * Default implementation of the weight type.
-     * Can be changed by command-line flags.
-     */
-    private final DBSPType weightTypeImplementation;
-    /**
      * Variable that refers to the weight of the row in the z-set.
      */
     public final DBSPVariablePath weightVar;
@@ -143,16 +137,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.sources = new SourceFileContents();
         this.circuit = null;
         this.typeCompiler = new TypeCompiler(this);
-        this.weightTypeImplementation = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false);
-        this.weightVar = new DBSPTypeWeight().var("w");
-    }
-
-    /**
-     * Warning: in general you don't want to use this function except when you
-     * generate very low-level code.  In general, you should use weightType.
-     */
-    public DBSPType getWeightTypeImplementation() {
-        return this.weightTypeImplementation;
+        this.weightVar = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false).var("w");
     }
 
     public boolean hasWarnings() {

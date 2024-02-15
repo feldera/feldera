@@ -192,8 +192,8 @@ public class BaseSQLTests {
     }
 
     protected InputOutputPair getEmptyIOPair() {
-        return new InputOutputPair(new DBSPZSetLiteral.Contents[0],
-                new DBSPZSetLiteral.Contents[0]);
+        return new InputOutputPair(new DBSPZSetLiteral[0],
+                new DBSPZSetLiteral[0]);
     }
 
     protected void runtimeFail(String query, String message, InputOutputPair... data) {

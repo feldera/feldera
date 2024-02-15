@@ -35,7 +35,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;
@@ -124,8 +123,8 @@ class ModifyTableTranslation implements ICompilerComponent {
         assert this.resultType != null;
         if (this.columnPermutation == null)
             return source;
-        DBSPZSetLiteral result = new DBSPZSetLiteral(this.resultType, new DBSPTypeWeight());
-        for (Map.Entry<DBSPExpression, Long> e : source.data.data.entrySet()) {
+        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(this.resultType);
+        for (Map.Entry<DBSPExpression, Long> e : source.data.entrySet()) {
             DBSPExpression perm = this.permuteColumns(e.getKey());
             result.add(perm, e.getValue());
         }

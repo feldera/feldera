@@ -421,9 +421,9 @@ public abstract class SqlIoTest extends BaseSQLTests {
         return new DBSPTupleExpression(values);
     }
 
-    public DBSPZSetLiteral.Contents parseTable(String table, DBSPType outputType) {
+    public DBSPZSetLiteral parseTable(String table, DBSPType outputType) {
         DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
-        DBSPZSetLiteral.Contents result = DBSPZSetLiteral.Contents.emptyWithElementType(zset.elementType);
+        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(zset.elementType);
         DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
 
         // We parse tables in three formats:
@@ -489,18 +489,18 @@ public abstract class SqlIoTest extends BaseSQLTests {
         return result;
     }
 
-    public DBSPZSetLiteral.Contents[] getPreparedInputs(DBSPCompiler compiler) {
-        DBSPZSetLiteral.Contents[] inputs = new DBSPZSetLiteral.Contents[
+    public DBSPZSetLiteral[] getPreparedInputs(DBSPCompiler compiler) {
+        DBSPZSetLiteral[] inputs = new DBSPZSetLiteral[
                 compiler.getTableContents().tablesCreated.size()];
         int index = 0;
         for (String table: compiler.getTableContents().tablesCreated) {
-            DBSPZSetLiteral.Contents data = compiler.getTableContents().getTableContents(table.toUpperCase());
+            DBSPZSetLiteral data = compiler.getTableContents().getTableContents(table.toUpperCase());
             inputs[index++] = data;
         }
         return inputs;
     }
 
-    public void compare(String query, DBSPZSetLiteral.Contents expected, boolean optimize) {
+    public void compare(String query, DBSPZSetLiteral expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareData(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
@@ -510,7 +510,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair streams = new InputOutputPair(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral.Contents[] { expected }
+                new DBSPZSetLiteral[] { expected }
         );
         this.addRustTestCase(query, compiler, circuit, streams);
     }
@@ -526,10 +526,10 @@ public abstract class SqlIoTest extends BaseSQLTests {
         if (!compiler.messages.isEmpty())
             System.out.println(compiler.messages);
         DBSPType outputType = circuit.getSingleOutputType();
-        DBSPZSetLiteral.Contents result = this.parseTable(expected, outputType);
+        DBSPZSetLiteral result = this.parseTable(expected, outputType);
         InputOutputPair streams = new InputOutputPair(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral.Contents[] { result }
+                new DBSPZSetLiteral[] { result }
         );
         this.addRustTestCase(query, compiler, circuit, streams);
     }
@@ -639,10 +639,10 @@ public abstract class SqlIoTest extends BaseSQLTests {
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPType outputType = circuit.getSingleOutputType();
-        DBSPZSetLiteral.Contents result = new DBSPZSetLiteral.Contents(Collections.emptyMap(), outputType);
+        DBSPZSetLiteral result = new DBSPZSetLiteral(Collections.emptyMap(), outputType);
         InputOutputPair streams = new InputOutputPair(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral.Contents[]{ result }
+                new DBSPZSetLiteral[]{ result }
         );
         this.addFailingRustTestCase(query, panicMessage, compiler, circuit, streams);
     }

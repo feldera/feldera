@@ -57,7 +57,7 @@ public class DBSPCompilerTests {
         compiler.compileStatement(DDL);
         compiler.compileStatement(insert);
         TableContents tableContents = compiler.getTableContents();
-        DBSPZSetLiteral.Contents t = tableContents.getTableContents("T");
+        DBSPZSetLiteral t = tableContents.getTableContents("T");
         Assert.assertNotNull(t);
         Assert.assertEquals(1, t.size());
     }

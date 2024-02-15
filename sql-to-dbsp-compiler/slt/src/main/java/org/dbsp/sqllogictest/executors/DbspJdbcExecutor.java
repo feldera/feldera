@@ -39,7 +39,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.TableValue;
 
 import javax.annotation.Nullable;
@@ -149,8 +148,8 @@ public class DbspJdbcExecutor extends DBSPExecutor {
             }
             rs.close();
             if (rows.isEmpty())
-                return new DBSPZSetLiteral(new DBSPTypeTuple(colTypes), new DBSPTypeWeight());
-            return new DBSPZSetLiteral(new DBSPTypeWeight(), rows.toArray(new DBSPExpression[0]));
+                return DBSPZSetLiteral.emptyWithElementType(new DBSPTypeTuple(colTypes));
+            return new DBSPZSetLiteral(rows.toArray(new DBSPExpression[0]));
         }
     }
 

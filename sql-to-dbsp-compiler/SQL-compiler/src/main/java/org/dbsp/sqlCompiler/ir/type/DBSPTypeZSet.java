@@ -31,16 +31,14 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
 
 public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     public final DBSPType elementType;
-    public final DBSPType weightType;
 
-    public DBSPTypeZSet(CalciteObject node, DBSPType elementType, DBSPType weightType) {
-        super(node, ZSET, "OrdZSet", false, elementType, weightType);
+    public DBSPTypeZSet(CalciteObject node, DBSPType elementType) {
+        super(node, ZSET, "WSet", false, elementType);
         this.elementType = elementType;
-        this.weightType = weightType;
     }
 
-    public DBSPTypeZSet(DBSPType elementType, DBSPType weightType) {
-        this(elementType.getNode(), elementType, weightType);
+    public DBSPTypeZSet(DBSPType elementType) {
+        this(elementType.getNode(), elementType);
     }
 
     @Override
@@ -49,7 +47,6 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
         if (decision.stop()) return;
         visitor.push(this);
         this.elementType.accept(visitor);
-        this.weightType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }

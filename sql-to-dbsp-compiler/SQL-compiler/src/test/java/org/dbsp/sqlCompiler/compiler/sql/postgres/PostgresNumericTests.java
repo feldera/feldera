@@ -524,8 +524,8 @@ public class PostgresNumericTests extends SqlIoTest {
         DBSPCircuit circuit = getCircuit(compiler);
         InputOutputPair streams = new InputOutputPair(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral.Contents[] {
-                        DBSPZSetLiteral.Contents.emptyWithElementType(new DBSPTypeTuple(
+                new DBSPZSetLiteral[] {
+                        DBSPZSetLiteral.emptyWithElementType(new DBSPTypeTuple(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false),
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
                     new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false),

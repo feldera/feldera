@@ -130,7 +130,7 @@ class TestCase {
                         "mvn test -Dtest=" + this.javaTestName +
                         System.lineSeparator() + this.name;
 
-                DBSPType rowType = outputs[i].data.getElementType();
+                DBSPType rowType = outputs[i].getElementType();
                 boolean foundFp = false;
                 DBSPExpression[] converted = null;
                 DBSPVariablePath var = null;

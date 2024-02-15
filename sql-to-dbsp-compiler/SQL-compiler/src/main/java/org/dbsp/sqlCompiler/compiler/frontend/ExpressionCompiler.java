@@ -817,7 +817,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compileFunction(call, node, type, ops, 1, 2);
                     case "overlay": {
                         // case "regexp_replace":
-                        String module_prefix = "";
+                        String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
                         } else {
@@ -867,7 +867,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                             throw new UnimplementedException(node);
                         DBSPType baseType = ops.get(0).getType();
                         String functionName = opName + baseType.nullableSuffix();
-                        String module_prefix = "";
+                        String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
                         } else {
@@ -903,7 +903,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return this.compileFunction(call, node, type, ops, 2);
             }
             case POSITION: {
-                String module_prefix = "";
+                String module_prefix;
                 if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                     module_prefix = "binary::";
                 } else {

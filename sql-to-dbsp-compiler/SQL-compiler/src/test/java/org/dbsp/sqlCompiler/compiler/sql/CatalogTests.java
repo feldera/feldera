@@ -3,8 +3,6 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
-import org.dbsp.util.Logger;
 import org.junit.Test;
 
 /** Tests that emit Rust code using the catalog. */

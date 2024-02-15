@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeWeight;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ProgramAndTester;
@@ -312,12 +311,6 @@ public class RustFileWriter {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
         stream.append(rustPreamble)
-                .newline();
-        stream.append("type ")
-                .append(new DBSPTypeWeight().getRustString())
-                .append(" = ")
-                .append(compiler.getWeightTypeImplementation().toString())
-                .append(";")
                 .newline();
         this.generateStructures(used, stream);
 
