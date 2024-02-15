@@ -55,7 +55,7 @@ Data generation is as follows:
 4. **Start Feldera:** start the Feldera instance providing as argument
    how to reach the generated *demo.json*:
    ```
-   ... --demos https://raw.githubusercontent.com/feldera/feldera/productitems-continuous/demo/demos/productitems-continuous/demo.json
+   ... --demos https://raw.githubusercontent.com/feldera/feldera/main/demo/demos/productitems-continuous/demo.json
    ```
 
 5. **Data generation**
