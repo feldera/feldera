@@ -17,6 +17,7 @@ use crate::{
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
+use std::path::PathBuf;
 use std::{
     fmt::{self, Debug, Display},
     ops::{Add, AddAssign, Neg},
@@ -324,6 +325,9 @@ where
         Self {
             layer: FileOrderedLayer::empty(),
         }
+    }
+    fn persistent_id(&self) -> Option<PathBuf> {
+        Some(self.layer.path())
     }
 }
 

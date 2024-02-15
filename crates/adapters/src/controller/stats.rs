@@ -39,6 +39,7 @@ use anyhow::Error as AnyError;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use log::error;
 use num_traits::FromPrimitive;
+use pipeline_types::config::PipelineConfig;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use psutil::process::{Process, ProcessError};
 use serde::{Serialize, Serializer};
@@ -186,7 +187,7 @@ where
 #[derive(Serialize)]
 pub struct ControllerStatus {
     /// Global controller configuration.
-    pub global_config: RuntimeConfig,
+    pub pipeline_config: PipelineConfig,
 
     /// Global controller metrics.
     pub global_metrics: GlobalControllerMetrics,
@@ -201,9 +202,9 @@ pub struct ControllerStatus {
 }
 
 impl ControllerStatus {
-    pub fn new(global_config: &RuntimeConfig) -> Self {
+    pub fn new(pipeline_config: &PipelineConfig) -> Self {
         Self {
-            global_config: global_config.clone(),
+            pipeline_config: pipeline_config.clone(),
             global_metrics: GlobalControllerMetrics::new(),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
@@ -415,8 +416,8 @@ impl ControllerStatus {
         // final number of inputs records when all endpoints are marked as
         // finished.
         let old = self.global_metrics.input_batch(num_records);
-        if old < self.global_config.min_batch_size_records
-            && old + num_records >= self.global_config.min_batch_size_records
+        if old < self.pipeline_config.global.min_batch_size_records
+            && old + num_records >= self.pipeline_config.global.min_batch_size_records
         {
             circuit_thread_unparker.unpark();
         }

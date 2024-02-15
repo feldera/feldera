@@ -63,6 +63,7 @@ csv-core = "0.1.10"
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 rand = "0.8.5"
 regex = "1.10.2"
+tempfile = "3.10.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 psutil = "3.2.2"

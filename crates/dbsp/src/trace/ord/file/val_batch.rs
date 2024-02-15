@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter},
@@ -23,7 +24,7 @@ use crate::{
         ord::merge_batcher::MergeBatcher, Batch, BatchReader, Builder, Consumer, Cursor, Filter,
         Merger, ValueConsumer,
     },
-    DBData, DBTimestamp, DBWeight, NumEntries, Rkyv,
+    DBData, DBTimestamp, DBWeight, NumEntries, Rkyv, Runtime,
 };
 
 use super::StorageBackend;
@@ -193,8 +194,7 @@ where
     fn recede_to(&mut self, frontier: &T) {
         // Nothing to do if the batch is entirely before the frontier.
         if !self.upper().less_equal(frontier) {
-            let mut writer =
-                Writer2::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap();
+            let mut writer = Writer2::new(&Runtime::storage(), Parameters::default()).unwrap();
             let mut key_cursor = self.file.rows().first().unwrap();
             while key_cursor.has_value() {
                 let mut val_cursor = key_cursor.next_column().unwrap().first().unwrap();
@@ -217,6 +217,10 @@ where
             }
             self.file = writer.into_reader().unwrap();
         }
+    }
+
+    fn persistent_id(&self) -> Option<PathBuf> {
+        Some(self.file.path())
     }
 }
 
@@ -408,8 +412,7 @@ where
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<V>>,
     ) -> RawValBatch<K, V, T, R> {
-        let mut output =
-            Writer2::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap();
+        let mut output = Writer2::new(&Runtime::storage(), Parameters::default()).unwrap();
         let mut cursor1 = source1.file.rows().nth(source1.lower_bound as u64).unwrap();
         let mut cursor2 = source2.file.rows().nth(source2.lower_bound as u64).unwrap();
         loop {
@@ -472,7 +475,7 @@ where
             file: self
                 .result
                 .take()
-                .unwrap_or(Reader::empty(&StorageBackend::default_for_thread()).unwrap()),
+                .unwrap_or(Reader::empty(&Runtime::storage()).unwrap()),
             lower_bound: 0,
             lower: self.lower,
             upper: self.upper,
@@ -714,8 +717,7 @@ where
     fn new_builder(time: T) -> Self {
         Self {
             time,
-            writer: Writer2::new(&StorageBackend::default_for_thread(), Parameters::default())
-                .unwrap(),
+            writer: Writer2::new(&Runtime::storage(), Parameters::default()).unwrap(),
             cur_key: None,
         }
     }
@@ -777,8 +779,8 @@ pub struct FileValConsumer<K, V, T, R> {
 
 impl<K, V, T, R> Consumer<K, V, R, T> for FileValConsumer<K, V, T, R> {
     type ValueConsumer<'a> = FileValValueConsumer<'a, K, V, T, R>
-    where
-        Self: 'a;
+        where
+            Self: 'a;
 
     fn key_valid(&self) -> bool {
         todo!()

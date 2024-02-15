@@ -61,8 +61,12 @@ where
         circuit.region("update_set", || {
             let bounds = <TraceBounds<K, ()>>::unbounded();
 
-            let (local, z1feedback) =
-                circuit.add_feedback(Z1Trace::new(false, circuit.root_scope(), bounds.clone()));
+            let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                false,
+                circuit.root_scope(),
+                bounds.clone(),
+                self.origin_node_id().persistent_id(),
+            ));
             local.mark_sharded_if(self);
 
             let delta = circuit
@@ -147,8 +151,12 @@ where
         circuit.region("upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();
 
-            let (local, z1feedback) =
-                circuit.add_feedback(Z1Trace::new(false, circuit.root_scope(), bounds.clone()));
+            let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
+                false,
+                circuit.root_scope(),
+                bounds.clone(),
+                self.origin_node_id().persistent_id(),
+            ));
             local.mark_sharded_if(self);
 
             let delta = circuit

@@ -1,11 +1,15 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
+use crate::trace::ord::file::StorageBackend;
 use crate::DetailedError;
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
+use feldera_storage::buffer_cache::TinyLfuCache;
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::path::Path;
+use std::rc::Rc;
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
@@ -14,6 +18,7 @@ use std::{
     fmt,
     fmt::{Debug, Display, Error as FmtError, Formatter},
     panic::{self, Location, PanicInfo},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
@@ -22,7 +27,7 @@ use std::{
 };
 use typedmap::{TypedDashMap, TypedMapKey};
 
-use super::dbsp_handle::{IntoLayout, Layout};
+use super::dbsp_handle::{IntoCircuitConfig, Layout};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
@@ -169,29 +174,82 @@ impl WorkerPanicInfo {
 
 struct RuntimeInner {
     layout: Layout,
+    storage: StorageLocation,
     store: LocalStore,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
+}
+
+impl Drop for RuntimeInner {
+    fn drop(&mut self) {
+        match &self.storage {
+            StorageLocation::Temporary(path) => {
+                let did_runtime_panick = self
+                    .panic_info
+                    .iter()
+                    .any(|info| info.read().map_or_else(|_| true, |i| i.is_some()));
+                if std::thread::panicking() || did_runtime_panick {
+                    eprintln!("Preserved runtime storage at: {:?} due to panic", path);
+                } else {
+                    let _ = std::fs::remove_dir_all(path);
+                }
+            }
+            StorageLocation::Permanent(_) => {}
+        }
+    }
+}
+
+/// The location where the runtime stores its data.
+#[derive(Debug, Clone)]
+enum StorageLocation {
+    Temporary(PathBuf),
+    Permanent(PathBuf),
+}
+
+impl AsRef<Path> for StorageLocation {
+    fn as_ref(&self) -> &Path {
+        match self {
+            Self::Temporary(path) => path.as_ref(),
+            Self::Permanent(path) => path.as_ref(),
+        }
+    }
+}
+
+impl From<StorageLocation> for PathBuf {
+    fn from(location: StorageLocation) -> PathBuf {
+        match location {
+            StorageLocation::Temporary(path) => path,
+            StorageLocation::Permanent(path) => path,
+        }
+    }
 }
 
 impl Debug for RuntimeInner {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuntimeInner")
             .field("layout", &self.layout)
+            .field("storage", &self.storage)
             .finish()
     }
 }
 
 impl RuntimeInner {
-    fn new(layout: Layout) -> Self {
+    fn new(layout: Layout, storage: Option<String>) -> Self {
         let local_workers = layout.local_workers().len();
         let mut panic_info = Vec::with_capacity(local_workers);
         for _ in 0..local_workers {
             panic_info.push(RwLock::new(None));
         }
+        let storage = storage.map_or_else(
+            // Note that we use into_path() here which avoids deleting the temporary directory
+            // we still clean it up when the runtime is dropped -- but keep it around on panic.
+            || StorageLocation::Temporary(tempfile::tempdir().unwrap().into_path()),
+            |s| StorageLocation::Permanent(PathBuf::from(s)),
+        );
 
         Self {
             layout,
+            storage,
             store: TypedDashMap::new(),
             panic_info,
         }
@@ -284,14 +342,15 @@ impl Runtime {
     /// hruntime.join().unwrap();
     /// # }
     /// ```
-    pub fn run<F>(layout: impl IntoLayout, circuit: F) -> RuntimeHandle
+    pub fn run<F>(cconf: impl IntoCircuitConfig, circuit: F) -> RuntimeHandle
     where
         F: FnOnce() + Clone + Send + 'static,
     {
-        let layout = layout.into_layout();
+        let storage = cconf.storage();
+        let layout = cconf.layout();
         let workers = layout.local_workers();
         let nworkers = workers.len();
-        let runtime = Self(Arc::new(RuntimeInner::new(layout)));
+        let runtime = Self(Arc::new(RuntimeInner::new(layout, storage)));
 
         // Install custom panic hook.
         let default_hook = default_panic_hook();
@@ -310,7 +369,7 @@ impl Runtime {
                 .spawn(move || {
                     // Set the worker's runtime handle and index
                     RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
-                    WORKER_INDEX.with(|idx| idx.set(worker_index));
+                    WORKER_INDEX.set(worker_index);
 
                     // Send the main thread our parker and kill signal
                     // TODO: Share a single kill signal across all workers
@@ -354,11 +413,32 @@ impl Runtime {
         RUNTIME.with(|rt| rt.borrow().clone())
     }
 
+    /// Returns the (thread-local) storage backend.
+    pub fn storage() -> Rc<StorageBackend> {
+        static LFU_CACHE: Lazy<Arc<TinyLfuCache>> = Lazy::new(|| Arc::new(TinyLfuCache::default()));
+        thread_local! {
+            pub static TEMPDIR: tempfile::TempDir = tempfile::tempdir().unwrap();
+            pub static DEFAULT_BACKEND: Rc<StorageBackend> = {
+                let rt = Runtime::runtime();
+                let io_backend = if let Some(rt) = rt {
+                    feldera_storage::backend::DefaultBackend::with_base(rt.inner().storage.clone())
+                } else {
+                    // This else case exists because some nexmark tests run without a runtime :/
+                    feldera_storage::backend::DefaultBackend::with_base(TEMPDIR.with(|dir| dir.path().to_path_buf()))
+                };
+
+                let sb = StorageBackend::with_backend_lfu(io_backend, LFU_CACHE.clone());
+                Rc::new(sb)
+            };
+        }
+        DEFAULT_BACKEND.with(|rc| rc.clone())
+    }
+
     /// Returns 0-based index of the current worker thread within its runtime.
     /// For threads that run without a runtime, this method returns `0`.  In a
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
-        WORKER_INDEX.with(|index| index.get())
+        WORKER_INDEX.get()
     }
 
     fn inner(&self) -> &RuntimeInner {
@@ -383,11 +463,16 @@ impl Runtime {
     /// This low-level mechanism can be used by various services that
     /// require common state shared across all workers on a host.
     ///
-    /// The [`LocalStore`] type is an alias to [`typedmap::TypedDashMap`], a
+    /// The [`LocalStore`] type is an alias to [`TypedDashMap`], a
     /// concurrent map type that can store key/value pairs of different
     /// types.  See `typedmap` crate documentation for details.
     pub fn local_store(&self) -> &LocalStore {
         &self.inner().store
+    }
+
+    /// Returns the path to the storage directory for this runtime.
+    pub fn storage_path(&self) -> PathBuf {
+        self.inner().storage.clone().into()
     }
 
     /// A per-worker sequential counter.
@@ -554,11 +639,13 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 #[cfg(test)]
 mod tests {
     use super::Runtime;
+    use crate::circuit::{CircuitConfig, Layout};
     use crate::{
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         operator::Generator,
         Circuit, RootCircuit,
     };
+    use std::sync::{Arc, Mutex};
     use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
 
     #[test]
@@ -571,6 +658,70 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn test_runtime_dynamic() {
         test_runtime::<DynamicScheduler>();
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn storage_no_cleanup() {
+        // Case 1: storage specified, runtime should not clean up storage when exiting
+        let path = tempfile::tempdir().unwrap().into_path();
+        let path_clone = path.clone();
+        let cconf = CircuitConfig {
+            layout: Layout::new_solo(4),
+            storage: Some(path.to_str().unwrap().to_string()),
+        };
+
+        let hruntime = Runtime::run(cconf, move || {
+            let runtime = Runtime::runtime().unwrap();
+            assert_eq!(runtime.storage_path(), path_clone);
+        });
+        hruntime.join().unwrap();
+        assert!(path.exists(), "persistent storage is not cleaned up");
+    }
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn storage_temp_cleanup() {
+        // Case 2: no storage specified, runtime should use temporary storage
+        // and clean it up
+        let storage_path = Arc::new(Mutex::new(None));
+        let cconf = CircuitConfig {
+            layout: Layout::new_solo(4),
+            storage: None,
+        };
+        let storage_path_clone = storage_path.clone();
+        let hruntime = Runtime::run(cconf, move || {
+            let runtime = Runtime::runtime().unwrap();
+            *storage_path_clone.lock().unwrap() = Some(runtime.storage_path());
+        });
+
+        hruntime.join().unwrap();
+        let storage_path = storage_path.lock().unwrap().take().unwrap();
+        assert!(!storage_path.exists(), "temporary storage is cleaned up");
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn storage_no_cleanup_on_panic() {
+        // Case 3: if we panic, keep state around, even if temporary
+        let storage_path = Arc::new(Mutex::new(None));
+        let cconf = CircuitConfig {
+            layout: Layout::new_solo(4),
+            storage: None,
+        };
+        let storage_path_clone = storage_path.clone();
+        let hruntime = Runtime::run(cconf, move || {
+            let runtime = Runtime::runtime().unwrap();
+            *storage_path_clone.lock().unwrap() = Some(runtime.storage_path());
+            panic!("oh no");
+        });
+        sleep(Duration::from_millis(100));
+        hruntime.kill().expect_err("kill shouldn't have worked");
+
+        let storage_path = storage_path.lock().unwrap().take().unwrap();
+        assert!(
+            storage_path.exists(),
+            "temporary storage is not cleaned up on panic"
+        );
     }
 
     fn test_runtime<S>()

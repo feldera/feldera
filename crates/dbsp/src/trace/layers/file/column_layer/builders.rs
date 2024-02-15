@@ -5,7 +5,7 @@ use crate::{
         },
         ord::file::StorageBackend,
     },
-    DBData, DBWeight,
+    DBData, DBWeight, Runtime,
 };
 use feldera_storage::file::writer::{Parameters, Writer1};
 use size_of::SizeOf;
@@ -47,7 +47,7 @@ where
     }
 
     fn with_key_capacity(_capacity: usize) -> Self {
-        Self(Writer1::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap())
+        Self(Writer1::new(&Runtime::storage(), Parameters::default()).unwrap())
     }
 
     fn reserve(&mut self, _additional: usize) {}
@@ -134,7 +134,7 @@ where
     type Item = (K, R);
 
     fn new() -> Self {
-        Self(Writer1::new(&StorageBackend::default_for_thread(), Parameters::default()).unwrap())
+        Self(Writer1::new(&Runtime::storage(), Parameters::default()).unwrap())
     }
 
     fn with_capacity(_capacity: usize) -> Self {

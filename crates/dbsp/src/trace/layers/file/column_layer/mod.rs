@@ -8,6 +8,7 @@ use rkyv::ser::Serializer;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::ops::AddAssign;
+use std::path::PathBuf;
 use std::{
     cmp::min,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -17,7 +18,7 @@ use std::{
 use crate::algebra::{AddAssignByRef, AddByRef, NegByRef};
 use crate::trace::layers::{Builder, Trie, TupleBuilder};
 use crate::trace::ord::file::StorageBackend;
-use crate::{DBData, DBWeight, NumEntries};
+use crate::{DBData, DBWeight, NumEntries, Runtime};
 
 pub use self::builders::FileColumnLayerBuilder;
 pub use self::cursor::FileColumnLayerCursor;
@@ -44,7 +45,7 @@ where
 
     pub fn empty() -> Self {
         Self {
-            file: Reader::empty(&StorageBackend::default_for_thread()).unwrap(),
+            file: Reader::empty(&Runtime::storage()).unwrap(),
             lower_bound: 0,
         }
     }
@@ -84,6 +85,10 @@ where
         let mut cursor = self.file.rows().before();
         unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
         self.truncate_below(cursor.absolute_position() as usize);
+    }
+
+    pub(crate) fn path(&self) -> PathBuf {
+        self.file.path()
     }
 }
 

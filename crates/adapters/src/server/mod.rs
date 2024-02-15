@@ -18,6 +18,7 @@ use actix_web::{
 };
 use clap::Parser;
 use colored::Colorize;
+use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use log::{debug, error, info, warn};
@@ -26,6 +27,7 @@ use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::io::Write;
+use std::path::PathBuf;
 use std::{
     borrow::Cow,
     net::TcpListener,
@@ -110,7 +112,7 @@ impl ServerState {
     }
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerArgs {
     /// Pipeline configuration YAML file
@@ -120,6 +122,12 @@ pub struct ServerArgs {
     /// Pipeline metadata JSON file
     #[arg(short, long)]
     metadata_file: Option<String>,
+
+    /// Persistent Storage location.
+    ///
+    /// If no default is specified, a temporary directory is used.
+    #[arg(short, long)]
+    pub(crate) storage_location: Option<PathBuf>,
 
     /// TCP bind address
     #[arg(short, long, default_value = "0.0.0.0")]
@@ -150,7 +158,7 @@ pub struct ServerArgs {
 pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
 where
     F: FnOnce(
-            usize,
+            CircuitConfig,
         )
             -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
         + Send
@@ -167,7 +175,7 @@ where
 pub fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
 where
     F: FnOnce(
-            usize,
+            CircuitConfig,
         )
             -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
         + Send
@@ -263,7 +271,7 @@ fn bootstrap<F>(
     loginit_sender: StdSender<()>,
 ) where
     F: FnOnce(
-            usize,
+            CircuitConfig,
         )
             -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
         + Send
@@ -329,7 +337,7 @@ fn do_bootstrap<F>(
 ) -> Result<(), ControllerError>
 where
     F: FnOnce(
-            usize,
+            CircuitConfig,
         )
             -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
         + Send
@@ -362,10 +370,10 @@ where
         });
     let _ = loginit_sender.send(());
 
-    *state.metadata.write().unwrap() = match args.metadata_file {
+    *state.metadata.write().unwrap() = match &args.metadata_file {
         None => String::new(),
         Some(metadata_file) => {
-            let meta = std::fs::read(&metadata_file).map_err(|e| {
+            let meta = std::fs::read(metadata_file).map_err(|e| {
                 ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), e)
             })?;
             String::from_utf8(meta).map_err(|e| {
@@ -950,6 +958,7 @@ outputs:
             metadata_file: None,
             bind_address: "127.0.0.1".to_string(),
             default_port: None,
+            storage_location: None,
         };
         thread::spawn(move || {
             bootstrap(

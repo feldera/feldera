@@ -251,7 +251,7 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
             .await
             .expect("write failed");
     }
-    let ih = backend.complete(file).await.expect("complete failed");
+    let (ih, _path) = backend.complete(file).await.expect("complete failed");
     let write_time = start_write.elapsed();
 
     barrier.wait_blocking();

@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::env;
 use std::future::Future;
 use std::ops::{Deref, Range};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -191,6 +192,13 @@ fn overlaps_with_previous_write_check() {
 }
 
 impl<B: StorageControl> StorageControl for BufferCache<B> {
+    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+        let fd = self.backend.create_named(name).await?;
+        let fid = (&fd).into();
+        self.blocks.borrow_mut().insert(fid, Vec::new());
+        Ok(fd)
+    }
+
     async fn create(&self) -> Result<FileHandle, StorageError> {
         let fd = self.backend.create().await?;
         let fid = (&fd).into();
@@ -275,11 +283,14 @@ impl<B: StorageWrite> StorageWrite for BufferCache<B> {
         }
     }
 
-    async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError> {
+    async fn complete(
+        &self,
+        fd: FileHandle,
+    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let fid = (&fd).into();
-        let fd = self.backend.complete(fd).await?;
+        let (fd, path) = self.backend.complete(fd).await?;
         self.blocks.borrow_mut().remove(&fid);
-        Ok(fd)
+        Ok((fd, path))
     }
 }
 

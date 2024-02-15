@@ -101,7 +101,7 @@ public class RustFileWriter {
                              UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
                              AddAssignByRef,
                         },
-                        circuit::{Circuit, Stream},
+                        circuit::{Circuit, CircuitConfig, Stream},
                         operator::{
                             Generator,
                             FilterMap,

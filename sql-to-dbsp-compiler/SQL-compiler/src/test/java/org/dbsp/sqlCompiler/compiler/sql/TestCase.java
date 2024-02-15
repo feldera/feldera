@@ -81,7 +81,7 @@ class TestCase {
             list.add(new DBSPComment(this.name));
         boolean useHandles = this.compiler.options.ioOptions.emitHandles;
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
-        circuitArguments[0] = new DBSPUSizeLiteral(2);  // workers
+        circuitArguments[0] = new DBSPApplyExpression("CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2));
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
                 new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).unwrap(),
                 true);

@@ -39,6 +39,13 @@ pub struct PipelineConfig {
     /// Pipeline name
     pub name: Option<String>,
 
+    /// Storage location.
+    ///
+    /// An identifier for location where the pipeline's state is stored.
+    /// If not set, the pipeline's state is not persisted across
+    /// restarts.
+    pub storage_location: Option<String>,
+
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
 

@@ -17,6 +17,7 @@ use crate::{
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::path::PathBuf;
 use std::{
     cmp::max,
     fmt::{self, Debug, Display},
@@ -319,6 +320,10 @@ where
         Self {
             layer: FileColumnLayer::empty(),
         }
+    }
+
+    fn persistent_id(&self) -> Option<PathBuf> {
+        Some(self.layer.path())
     }
 }
 

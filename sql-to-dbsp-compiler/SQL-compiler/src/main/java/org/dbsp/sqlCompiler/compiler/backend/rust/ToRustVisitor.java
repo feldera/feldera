@@ -363,12 +363,12 @@ public class ToRustVisitor extends CircuitVisitor {
         }
 
         this.builder
-                .append("(workers: usize) -> Result<(DBSPHandle, ")
+                .append("(cconf: CircuitConfig) -> Result<(DBSPHandle, ")
                 .append(signature.toString())
                 .append("), DBSPError> {")
                 .increase()
                 .newline()
-                .append("let (circuit, streams) = Runtime::init_circuit(workers, |circuit| {")
+                .append("let (circuit, streams) = Runtime::init_circuit(cconf, |circuit| {")
                 .increase();
         if (!this.useHandles)
             this.builder.append("let mut catalog = Catalog::new();").newline();

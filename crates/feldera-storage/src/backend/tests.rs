@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::iter;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
@@ -166,10 +167,13 @@ impl<const ALLOW_OVERWRITE: bool> StorageWrite for InMemoryBackend<ALLOW_OVERWRI
         Ok(Arc::new(data))
     }
 
-    async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError> {
+    async fn complete(
+        &self,
+        fd: FileHandle,
+    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let file = self.files.borrow_mut().remove(&fd.0).unwrap();
         self.immutable_files.borrow_mut().insert(fd.0, file);
-        Ok(ImmutableFileHandle(fd.0))
+        Ok((ImmutableFileHandle(fd.0), PathBuf::from("")))
     }
 }
 

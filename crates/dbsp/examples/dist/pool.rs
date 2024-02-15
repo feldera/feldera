@@ -3,7 +3,7 @@ use chrono::Datelike;
 use clap::Parser;
 use dbsp::utils::{Tup2, Tup3};
 use dbsp::{
-    circuit::{IntoLayout, Layout},
+    circuit::{IntoCircuitConfig, Layout},
     operator::FilterMap,
     CollectionHandle, DBSPHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
 };
@@ -76,7 +76,7 @@ struct Inner {
 }
 
 impl Inner {
-    fn new(layout: impl IntoLayout) -> AnyResult<Inner> {
+    fn new(layout: impl IntoCircuitConfig) -> AnyResult<Inner> {
         let (circuit, (input_handle, output_handle)) =
             Runtime::init_circuit(layout, build_circuit)?;
         Ok(Inner {
@@ -97,7 +97,7 @@ impl Server {
     fn inner(&self) -> MutexGuard<'_, Option<Inner>> {
         self.0.lock().unwrap()
     }
-    fn replace(&self, layout: impl IntoLayout) {
+    fn replace(&self, layout: impl IntoCircuitConfig) {
         let mut inner = self.inner();
 
         // First clear the old server, if any, and clean up.  It's important to

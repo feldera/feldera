@@ -7,6 +7,7 @@ use core::fmt;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use itertools::Either;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::{
     collections::HashSet,
     error::Error as StdError,
@@ -201,21 +202,55 @@ impl Display for LayoutError {
 
 impl StdError for LayoutError {}
 
-/// Convenience trait that allows specifying a [`Layout`] as a `usize` for a
-/// single-machine layout with the specified number of worker threads,
-pub trait IntoLayout {
-    fn into_layout(self) -> Layout;
+/// A config for instantiating a multithreaded/multihost runtime to execute
+/// circuits.
+///
+/// As opposed to `RuntimeConfig`, this struct stores state about which hosts
+/// run the circuit and where they store data, e.g., state typically not
+/// tunable/exposed by the user.
+pub struct CircuitConfig {
+    pub layout: Layout,
+    pub storage: Option<String>,
 }
 
-impl IntoLayout for usize {
-    fn into_layout(self) -> Layout {
-        Layout::new_solo(self)
+impl CircuitConfig {
+    pub fn with_workers(n: usize) -> Self {
+        Self {
+            layout: Layout::new_solo(n),
+            storage: None,
+        }
     }
 }
 
-impl IntoLayout for Layout {
-    fn into_layout(self) -> Layout {
-        self
+impl IntoCircuitConfig for CircuitConfig {
+    fn layout(&self) -> Layout {
+        self.layout.clone()
+    }
+
+    fn storage(&self) -> Option<String> {
+        self.storage.clone()
+    }
+}
+
+/// Convenience trait that allows specifying a [`Layout`] as a `usize` for a
+/// single-machine layout with the specified number of worker threads,
+pub trait IntoCircuitConfig {
+    fn layout(&self) -> Layout;
+
+    fn storage(&self) -> Option<String> {
+        None
+    }
+}
+
+impl IntoCircuitConfig for usize {
+    fn layout(&self) -> Layout {
+        Layout::new_solo(*self)
+    }
+}
+
+impl IntoCircuitConfig for Layout {
+    fn layout(&self) -> Layout {
+        self.clone()
     }
 }
 
@@ -254,14 +289,14 @@ impl Runtime {
     /// TODO: Document other requirements.  Not all operators are currently
     /// thread-safe.
     pub fn init_circuit<F, T>(
-        layout: impl IntoLayout,
+        cconf: impl IntoCircuitConfig,
         constructor: F,
     ) -> Result<(DBSPHandle, T), DBSPError>
     where
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError> + Clone + Send + 'static,
         T: Send + 'static,
     {
-        let layout = layout.into_layout();
+        let layout = cconf.layout();
         let nworkers = layout.local_workers().len();
         let worker_ofs = layout.local_workers().start;
 
@@ -279,7 +314,7 @@ impl Runtime {
         let (status_senders, status_receivers): (Vec<_>, Vec<_>) =
             (0..nworkers).map(|_| bounded(1)).unzip();
 
-        let runtime = Self::run(layout, move || {
+        let runtime = Self::run(cconf, move || {
             let worker_index = Runtime::worker_index() - worker_ofs;
 
             // Drop all but one channels.  This makes sure that if one of the worker panics
@@ -288,10 +323,11 @@ impl Runtime {
             let status_sender = status_senders.into_iter().nth(worker_index).unwrap();
             let command_receiver = command_receivers.into_iter().nth(worker_index).unwrap();
 
-            let (circuit, profiler) = match RootCircuit::build(|circuit| {
+            let circuit_fn = |circuit: &mut RootCircuit| {
                 let profiler = Profiler::new(circuit);
                 constructor(circuit).map(|res| (res, profiler))
-            }) {
+            };
+            let (mut circuit, profiler) = match RootCircuit::build(circuit_fn) {
                 Ok((circuit, (res, profiler))) => {
                     if init_sender.send(Ok(res)).is_err() {
                         return;
@@ -338,6 +374,12 @@ impl Runtime {
                             .send(Ok(Response::Profile(profiler.profile())))
                             .is_err()
                         {
+                            return;
+                        }
+                    }
+                    Ok(Command::Commit(cid)) => {
+                        circuit.commit(cid).expect("commit failed");
+                        if status_sender.send(Ok(Response::CheckpointCreated)).is_err() {
                             return;
                         }
                     }
@@ -404,12 +446,14 @@ enum Command {
     EnableProfiler,
     DumpProfile,
     RetrieveProfile,
+    Commit(u64),
 }
 
 enum Response {
     Unit,
     ProfileDump(String),
     Profile(WorkerProfile),
+    CheckpointCreated,
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -423,6 +467,8 @@ pub struct DBSPHandle {
     // Channels used to receive command completion status from
     // workers.
     status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
+    step_id: u64,
+    checkpoint_list: VecDeque<u64>,
 }
 
 impl DBSPHandle {
@@ -436,6 +482,8 @@ impl DBSPHandle {
             runtime: Some(runtime),
             command_senders,
             status_receivers,
+            step_id: 0,
+            checkpoint_list: VecDeque::new(),
         }
     }
 
@@ -513,7 +561,29 @@ impl DBSPHandle {
 
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DBSPError> {
+        self.step_id += 1;
         self.broadcast_command(Command::Step, |_, _| {})
+    }
+
+    /// Create a new checkpoint by taking consistent snapshot of the state in
+    /// dbsp.
+    ///
+    /// ## Returns
+    /// The ID of the new checkpoint.
+    pub fn commit(&mut self) -> Result<u64, DBSPError> {
+        self.broadcast_command(Command::Commit(self.step_id), |_, _| {})?;
+        // TODO: I think broadcast_command is synchronous, we can just return
+        // `self.step_id` directly.
+        // TODO: we need to handle the case where the commit fails in one of the
+        // worker threads. The `handler` seemed awkward to use so I ignored it for now.
+
+        self.checkpoint_list.push_back(self.step_id);
+        Ok(self.step_id)
+    }
+
+    /// List all currently available checkpoints.
+    pub fn list_checkpoints(&mut self) -> Result<Vec<u64>, DBSPError> {
+        Ok(self.checkpoint_list.clone().into())
     }
 
     /// Enable CPU profiler.

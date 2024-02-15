@@ -18,7 +18,6 @@ use monoio::fs::{File, OpenOptions};
 use monoio::IoUringDriver;
 use monoio::{FusionDriver, FusionRuntime, LegacyDriver, RuntimeBuilder};
 use tempfile::TempDir;
-use uuid::Uuid;
 
 use crate::backend::{
     describe_disk_metrics, AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl,
@@ -85,6 +84,17 @@ impl MonoioBackend {
         }
     }
 
+    /// See [`MonoioBackend::new`]. This function is a convenience function that
+    /// creates a new backend with global unique file-handle counter.
+    pub fn with_base<P: AsRef<Path>>(base: P) -> Self {
+        Self::new(
+            base,
+            NEXT_FILE_HANDLE
+                .get_or_init(|| Arc::new(Default::default()))
+                .clone(),
+        )
+    }
+
     /// Helper function to delete (mutable and immutable) files.
     async fn delete_inner(&self, fd: i64) -> Result<(), StorageError> {
         let fm = self.files.write().await.remove(&fd).unwrap();
@@ -113,16 +123,16 @@ impl MonoioBackend {
 }
 
 impl StorageControl for MonoioBackend {
-    async fn create(&self) -> Result<FileHandle, StorageError> {
-        let file_counter = self.next_file_id.increment();
-        let name = Uuid::now_v7();
-        let path = self.base.join(name.to_string() + ".feldera");
+    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+        let path = self.base.join(name);
         let file = open_as_direct(
             &path,
             OpenOptions::new().create_new(true).write(true).read(true),
         )
         .await?;
         let mut files = self.files.write().await;
+
+        let file_counter = self.next_file_id.increment();
         files.insert(
             file_counter,
             FileMetaData {
@@ -171,14 +181,18 @@ impl StorageWrite for MonoioBackend {
         Ok(Arc::new(buf))
     }
 
-    async fn complete(&self, fd: FileHandle) -> Result<ImmutableFileHandle, StorageError> {
+    async fn complete(
+        &self,
+        fd: FileHandle,
+    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let mut files = self.files.write().await;
 
         let fm = files.remove(&fd.0).unwrap();
         fm.file.sync_all().await?;
+        let path = fm.path.clone();
         files.insert(fd.0, fm);
 
-        Ok(ImmutableFileHandle(fd.0))
+        Ok((ImmutableFileHandle(fd.0), path))
     }
 }
 

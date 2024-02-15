@@ -434,7 +434,7 @@ mod test {
             let (mut dbsp, (sample_size_handle, input_handle, output_sample_handle, output_quantile_handle)) =
                 Runtime::init_circuit(4, test_circuit).unwrap();
 
-            let mut ref_trace = TestBatch::new(None);
+            let mut ref_trace = TestBatch::new(None, "");
 
             for (batch, sample_size) in trace.into_iter() {
 

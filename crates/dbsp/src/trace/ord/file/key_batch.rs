@@ -17,6 +17,7 @@ use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug, Display};
+use std::path::PathBuf;
 
 /// A batch of keys with weights and times.
 ///
@@ -147,6 +148,10 @@ where
             // TODO: Optimize case where self.upper()==self.lower().
             self.do_recede_to(frontier);
         }
+    }
+
+    fn persistent_id(&self) -> Option<PathBuf> {
+        Some(self.layer.path())
     }
 }
 

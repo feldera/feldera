@@ -10,7 +10,7 @@ use crate::{
     },
     circuit_cache_key,
     trace::{cursor::Cursor, Batch, BatchReader, Builder, Filter, Spine, Trace},
-    DBData, Timestamp,
+    DBData, Error, Runtime, Timestamp,
 };
 use crate::{DBTimestamp, IndexedZSet};
 use size_of::SizeOf;
@@ -274,11 +274,17 @@ where
                 let circuit = self.circuit();
                 let bounds = TraceBounds::new();
 
+                let persistent_id = format!(
+                    "{}-{:?}",
+                    Runtime::worker_index(),
+                    self.origin_node_id().clone()
+                );
                 circuit.region("trace", || {
                     let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
                         false,
                         circuit.root_scope(),
                         bounds.clone(),
+                        persistent_id,
                     ));
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<ValSpine<B, C>, B, C>>::new(circuit.clone()),
@@ -511,6 +517,7 @@ where
                             true,
                             circuit.root_scope(),
                             bounds.clone(),
+                            self.origin_node_id().persistent_id(),
                         ));
 
                     let trace = circuit.add_binary_operator_with_preference(
@@ -634,7 +641,12 @@ pub trait TraceFeedback: Circuit {
         T: Trace<Time = ()> + Clone,
     {
         let (ExportStream { local, export }, feedback) =
-            self.add_feedback_with_export(Z1Trace::new(true, self.root_scope(), bounds.clone()));
+            self.add_feedback_with_export(Z1Trace::new(
+                true,
+                self.root_scope(),
+                bounds.clone(),
+                self.global_node_id().persistent_id(),
+            ));
 
         TraceFeedbackConnector {
             feedback,
@@ -813,16 +825,18 @@ pub struct Z1Trace<T: Trace> {
     reset_on_clock_start: bool,
     bounds: TraceBounds<T::Key, T::Val>,
     effective_key_bound: Option<T::Key>,
+    persistent_id: String,
 }
 
 impl<T> Z1Trace<T>
 where
     T: Trace,
 {
-    pub fn new(
+    pub fn new<S: AsRef<str>>(
         reset_on_clock_start: bool,
         root_scope: Scope,
         bounds: TraceBounds<T::Key, T::Val>,
+        persistent_id: S,
     ) -> Self {
         Self {
             time: T::Time::clock_start(),
@@ -832,6 +846,7 @@ where
             reset_on_clock_start,
             bounds,
             effective_key_bound: None,
+            persistent_id: persistent_id.as_ref().to_string(),
         }
     }
 }
@@ -849,7 +864,7 @@ where
 
         if scope == 0 && self.trace.is_none() {
             // TODO: use T::with_effort with configurable effort?
-            self.trace = Some(T::new(None));
+            self.trace = Some(T::new(None, &self.persistent_id));
         }
     }
 
@@ -886,6 +901,13 @@ where
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         !self.dirty[scope as usize]
+    }
+
+    fn commit(&self, cid: u64) -> Result<(), Error> {
+        self.trace
+            .as_ref()
+            .map(|trace| trace.commit(cid))
+            .unwrap_or(Ok(()))
     }
 }
 

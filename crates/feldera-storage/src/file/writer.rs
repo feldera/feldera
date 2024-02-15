@@ -4,6 +4,7 @@
 //! 2-column layer file.  To write more columns, either add another `Writer<N>`
 //! struct, which is easily done, or mark the currently private `Writer` as
 //! `pub`.
+use std::path::PathBuf;
 use std::{
     marker::PhantomData,
     mem::{replace, take},
@@ -45,6 +46,7 @@ struct VarintWriter {
     start: usize,
     count: usize,
 }
+
 impl VarintWriter {
     fn new(varint: Varint, start: usize, count: usize) -> Self {
         Self {
@@ -842,7 +844,7 @@ where
         }
     }
 
-    fn complete(mut self) -> Result<ImmutableFileHandle, StorageError> {
+    fn complete(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         self.storage
             .block_on(self.storage.complete(self.file_handle.take().unwrap()))
     }
@@ -944,7 +946,7 @@ where
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<ImmutableFileHandle, StorageError> {
+    pub fn close(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the file trailer block.
@@ -1027,7 +1029,7 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<ImmutableFileHandle, StorageError> {
+    pub fn close(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1043,8 +1045,8 @@ where
         S: StorageRead,
     {
         let storage = self.storage().clone();
-        let file_handle = self.close()?;
-        Reader::new(Rc::new(ImmutableFileRef::new(&storage, file_handle)))
+        let (file_handle, path) = self.close()?;
+        Reader::new(Rc::new(ImmutableFileRef::new(&storage, file_handle, path)))
     }
 }
 
@@ -1132,7 +1134,7 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<ImmutableFileHandle, StorageError> {
+    pub fn close(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()
@@ -1150,7 +1152,7 @@ where
         S: StorageRead,
     {
         let storage = self.storage().clone();
-        let file_handle = self.close()?;
-        Reader::new(Rc::new(ImmutableFileRef::new(&storage, file_handle)))
+        let (file_handle, path) = self.close()?;
+        Reader::new(Rc::new(ImmutableFileRef::new(&storage, file_handle, path)))
     }
 }

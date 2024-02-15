@@ -861,6 +861,7 @@
                     "memory_mb_min": null,
                     "storage_mb_max": null
                   },
+                  "storage_location": null,
                   "workers": 8
                 }
               }
@@ -3021,8 +3022,7 @@
             "description": "Name of the program to create a pipeline for.",
             "nullable": true
           }
-        },
-        "additionalProperties": false
+        }
       },
       "CreateOrReplacePipelineResponse": {
         "type": "object",
@@ -3619,8 +3619,7 @@
             "description": "Name of the program to create a pipeline for.",
             "nullable": true
           }
-        },
-        "additionalProperties": false
+        }
       },
       "NewPipelineResponse": {
         "type": "object",
@@ -3816,6 +3815,11 @@
                 "additionalProperties": {
                   "$ref": "#/components/schemas/OutputEndpointConfig"
                 }
+              },
+              "storage_location": {
+                "type": "string",
+                "description": "Storage location.\n\nAn identifier for location where the pipeline's state is stored.\nIf not set, the pipeline's state is not persisted across\nrestarts.",
+                "nullable": true
               }
             }
           }
@@ -4405,8 +4409,7 @@
             "description": "New program to create a pipeline for. If absent, program will be set to\nNULL.",
             "nullable": true
           }
-        },
-        "additionalProperties": false
+        }
       },
       "UpdatePipelineResponse": {
         "type": "object",
