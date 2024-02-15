@@ -22,8 +22,8 @@ use sqlx::{
     AnyConnection, Connection, Executor, Row,
 };
 use std::fmt::{Debug, Formatter, Result as FmtResult};
-use std::{fs::File, io::BufReader, path::Path};
 use std::ops::{Add, Neg};
+use std::{fs::File, io::BufReader, path::Path};
 
 pub fn read_csv<T>(source_file_path: &str) -> WSet<T>
 where
@@ -46,11 +46,7 @@ where
     WSet::<T>::from_keys((), vec)
 }
 
-pub fn read_db<T>(
-    conn_str: &str,
-    table_name: &str,
-    mapper: impl Fn(&AnyRow) -> T,
-) -> WSet<T>
+pub fn read_db<T>(conn_str: &str, table_name: &str, mapper: impl Fn(&AnyRow) -> T) -> WSet<T>
 where
     T: DBData + for<'de> serde::Deserialize<'de>,
 {
