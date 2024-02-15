@@ -1462,7 +1462,7 @@ where
             let w = cursor.weight();
             let item = cursor.val();
             if comparator((&key, item), value) {
-                builder.push(((key.clone(), item.clone()), w.clone()));
+                builder.push(((key.clone(), item.clone()), w));
             }
             cursor.step_val();
         }
