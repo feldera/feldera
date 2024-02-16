@@ -8,7 +8,7 @@ Apache Calcite compiler infrastructure <https://calcite.apache.org/>
 
 The code has been tested on Windows 10/11 and Linux.
 
-You need Java 8 or later to build the compiler, and the maven (mvn)
+You need Java 19 or later to build the compiler, and the maven (mvn)
 Java build program.  Maven will take care of installing all required
 Java dependencies.
 
