@@ -137,7 +137,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   const metrics = usePipelineMetrics({
     pipelineName: descriptor.name,
     status: state.current_status,
-    refetchMs: 3000
+    refetchMs: 1000,
+    keepMs: 31000
   })
 
   function getRelationColumns(direction: InputOrOutput): GridColDef<ConnectorData>[] {
@@ -170,7 +171,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               (direction === 'input'
                 ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_records
                 : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_records) || 0
-            return format(records > 1000 ? '.3s' : '~s')(records)
+            return format(records >= 1000 ? '.3s' : '~s')(records)
           } else {
             // TODO: we need to count records also when relation doesn't have
             // connections in the backend.
@@ -312,10 +313,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           </Card>
         </Grid>
         <Grid item xs={5}>
-          <AnalyticsPipelineTput {...metrics} />
+          <AnalyticsPipelineTput metrics={metrics} keepMs={30000} />
         </Grid>
         <Grid item xs={3}>
-          <PipelineMemoryGraph {...metrics} />
+          <PipelineMemoryGraph metrics={metrics} keepMs={30000} />
         </Grid>
         <Grid item xs={12}>
           <Paper>

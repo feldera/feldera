@@ -54,7 +54,6 @@ const DemoSetupFormContent = ({
   useEffect(() => {
     refetch()
   }, [refetch, prefix])
-  console.log('setupScope', setupScope.data)
   const progressBar = match(props.progress)
     .with(undefined, () => ({ description: '\xa0', ratio: 0 }))
     .with({ ratio: P._ }, p => p)

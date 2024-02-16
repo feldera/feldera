@@ -1,20 +1,25 @@
-import { discreteDerivative } from '$lib/functions/common/math'
 import { humanSize } from '$lib/functions/common/string'
+import { tuple } from '$lib/functions/common/tuple'
 import { GlobalMetrics } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
 
+import { Box } from '@mui/material'
 import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 
-export const PipelineMemoryGraph = (metrics: { global: GlobalMetrics[]; periodMs: number }) => {
+export const PipelineMemoryGraph = (props: {
+  metrics: { global: (GlobalMetrics & { timeMs: number })[] }
+  keepMs: number
+}) => {
   const theme = useTheme()
 
-  const perSecond = metrics.periodMs / 1000
-  const memUsed = metrics.global.map(m => m.rss_bytes ?? 0)
-  const smoothMemUsed = discreteDerivative(memUsed, (n1, n0) => (n1 * 0.6) / perSecond + (n0 * 0.4) / perSecond)
+  const memUsed = props.metrics.global.map(m => tuple(m.timeMs, m.rss_bytes ?? 0))
+  const smoothMemUsed = ((n1, n0) => n1[1] * 0.5 + n0[1] * 0.5)(
+    memUsed.at(-2) ?? tuple(0, 0),
+    memUsed.at(-1) ?? tuple(0, 0)
+  )
 
   const series = [
     {
@@ -22,10 +27,17 @@ export const PipelineMemoryGraph = (metrics: { global: GlobalMetrics[]; periodMs
     }
   ]
 
+  const valueMax = memUsed.length ? Math.max(...memUsed.map(v => v[1])) : 0
+  const yMaxStep = Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25) / 1) * 1)
+  const yMax = valueMax !== 0 ? yMaxStep : 1024 * 2048
+  const yMin = 0
   const options: ApexOptions = {
     chart: {
       parentHeightOffset: 0,
-      toolbar: { show: false }
+      toolbar: { show: false },
+      animations: {
+        enabled: false
+      }
     },
     tooltip: { enabled: false },
     dataLabels: { enabled: false },
@@ -35,11 +47,10 @@ export const PipelineMemoryGraph = (metrics: { global: GlobalMetrics[]; periodMs
       lineCap: 'round'
     },
     grid: {
-      show: false,
+      show: true,
       padding: {
-        left: 0,
-        top: -25,
-        right: 17
+        left: 20,
+        right: 20
       }
     },
     fill: {
@@ -74,40 +85,37 @@ export const PipelineMemoryGraph = (metrics: { global: GlobalMetrics[]; periodMs
       }
     },
     xaxis: {
-      labels: { show: false },
-      axisTicks: { show: false },
-      axisBorder: { show: false }
+      type: 'numeric',
+      labels: { show: true, formatter: v => (n => (n < 0 ? '' : Math.round(n / 1000).toString()))(Number(v)) },
+      tickAmount: 3,
+      axisTicks: { show: true },
+      axisBorder: { show: false },
+      range: props.keepMs
     },
-    yaxis: { show: false },
-    markers: {
-      size: 1,
-      offsetY: 2,
-      offsetX: -4,
-      strokeWidth: 4,
-      strokeOpacity: 1,
-      colors: ['transparent'],
-      strokeColors: 'transparent',
-      discrete: [
-        {
-          size: 6,
-          seriesIndex: 0,
-          fillColor: theme.palette.common.white,
-          strokeColor: theme.palette.primary.main,
-          dataPointIndex: series[0].data.length - 1
+    yaxis: {
+      show: true,
+      min: yMin,
+      max: yMax,
+      axisBorder: { show: false },
+      tickAmount: 2,
+      labels: {
+        show: true,
+        formatter(val) {
+          return humanSize(val)
         }
-      ]
+      }
     }
   }
 
   return (
     <Card>
-      <CardContent>
+      <Box sx={{ px: '1rem', pt: '0.5rem' }}>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Memory used</Typography>
-        <Typography variant='h5'>{humanSize(smoothMemUsed[smoothMemUsed.length - 1] ?? 0)}</Typography>
-      </CardContent>
+        <Typography variant='h5'>{humanSize(smoothMemUsed)}</Typography>
+      </Box>
       <ReactApexcharts
         type='area'
-        height={110}
+        height={140}
         width='100%'
         options={options}
         series={series}

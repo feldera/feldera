@@ -1,4 +1,17 @@
-import { Pipeline as RawPipeline, PipelineRuntimeState } from '$lib/services/manager'
+import {
+  InputEndpointConfig,
+  OutputEndpointConfig,
+  Pipeline as RawPipeline,
+  PipelineRuntimeState,
+  RuntimeConfig
+} from '$lib/services/manager'
+
+export type ControllerStatus = {
+  global_config: RuntimeConfig
+  global_metrics: GlobalMetrics
+  inputs: InputEndpointStatus[]
+  outputs: OutputEndpointStatus[]
+}
 
 export interface GlobalConfig {
   workers: number
@@ -15,7 +28,14 @@ export interface GlobalMetrics {
   pipeline_complete: boolean
 }
 
-export interface InputConnectorMetrics {
+export type InputEndpointStatus = {
+  endpoint_name: string
+  config: InputEndpointConfig
+  metrics: InputEndpointMetrics
+  is_fault_tolerant: boolean
+}
+
+export interface InputEndpointMetrics {
   total_bytes: number
   total_records: number
   buffered_bytes: number
@@ -25,7 +45,14 @@ export interface InputConnectorMetrics {
   end_of_input: boolean
 }
 
-export interface OutputConnectorMetrics {
+export type OutputEndpointStatus = {
+  endpoint_name: string
+  config: OutputEndpointConfig
+  metrics: OutputEndpointMetrics
+  is_fault_tolerant: boolean
+}
+
+export interface OutputEndpointMetrics {
   transmitted_records: number
   transmitted_bytes: number
   buffered_records: number
@@ -38,7 +65,7 @@ export interface OutputConnectorMetrics {
 export interface ConnectorStatus {
   endpoint_name: string
   config: object
-  metrics: InputConnectorMetrics | OutputConnectorMetrics
+  metrics: InputEndpointMetrics | OutputEndpointMetrics
   fatal_error: string | null
 }
 

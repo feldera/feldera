@@ -28,7 +28,7 @@ import {
   UpdateProgramResponse
 } from '$lib/services/manager'
 import { Arguments } from '$lib/types/common/function'
-import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
+import { ControllerStatus, Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { leftJoin } from 'array-join'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
@@ -116,7 +116,8 @@ const PipelineManagerApi = {
     p.then(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
   ),
   pipelineConfig: PipelinesService.getPipelineConfig,
-  pipelineStats: PipelinesService.pipelineStats,
+  pipelineStats: (pipelineName: string) =>
+    PipelinesService.pipelineStats(pipelineName) as unknown as CancelablePromise<ControllerStatus>,
   pipelineLastRevision: PipelinesService.pipelineDeployed,
   pipelineValidate: PipelinesService.pipelineValidate,
   connectors: () => ConnectorsService.listConnectors(),
@@ -288,6 +289,9 @@ export const mutationShutdownPipeline = (queryClient: QueryClient) =>
     },
     onSettled: (_data, _error, pipelineName) => {
       invalidatePipeline(queryClient, pipelineName)
+    },
+    onSuccess: (_data, variables, _context) => {
+      setQueryData(queryClient, PipelineManagerQueryKey.pipelineStats(variables), null)
     },
     onError: (_error, pipelineName) => {
       pipelineStatusQueryCacheUpdate(queryClient, pipelineName, 'current_status', PipelineStatus.PAUSED)

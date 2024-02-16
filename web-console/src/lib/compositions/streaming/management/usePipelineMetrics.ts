@@ -1,15 +1,22 @@
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { nonNull } from '$lib/functions/common/function'
-import {
-  ConnectorStatus,
-  GlobalMetrics,
-  InputConnectorMetrics,
-  OutputConnectorMetrics,
-  PipelineStatus
-} from '$lib/types/pipeline'
-import { useEffect, useState } from 'react'
+import { tuple } from '$lib/functions/common/tuple'
+import { ControllerStatus, InputEndpointMetrics, OutputEndpointMetrics, PipelineStatus } from '$lib/types/pipeline'
+import { useState } from 'react'
 
 import { useQuery } from '@tanstack/react-query'
+
+const toMetrics = (data: ControllerStatus, { timeMs }: { timeMs: number }) => ({
+  input: new Map(data.inputs.map(cs => tuple(cs.config.stream, cs.metrics))),
+  output: new Map(data.outputs.map(cs => tuple(cs.config.stream, cs.metrics))),
+  global: [{ ...data.global_metrics, timeMs }]
+})
+
+const emptyData = {
+  input: new Map<string, InputEndpointMetrics>(),
+  output: new Map<string, OutputEndpointMetrics>(),
+  global: []
+}
 
 export function usePipelineMetrics(props: {
   pipelineName: string
@@ -17,60 +24,39 @@ export function usePipelineMetrics(props: {
   refetchMs: number
   keepMs?: number
 }) {
-  const [metrics, setMetrics] = useState({
-    global: [] as GlobalMetrics[],
-    input: new Map<string, InputConnectorMetrics>(),
-    output: new Map<string, OutputConnectorMetrics>()
-  })
   const pipelineManagerQuery = usePipelineManagerQuery()
+  const [lastTimestamp, setLastTimestamp] = useState<number>()
   const pipelineStatsQuery = useQuery({
     ...pipelineManagerQuery.pipelineStats(props.pipelineName),
-    enabled: props.status == PipelineStatus.RUNNING,
+    enabled: props.status === PipelineStatus.RUNNING,
     refetchInterval: props.refetchMs,
     refetchIntervalInBackground: true,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: false,
+    structuralSharing: (oldData: any, _newData: any) => {
+      if (!_newData) {
+        setLastTimestamp(undefined)
+        return emptyData
+      }
+      const now = Date.now()
+      if (!lastTimestamp) {
+        setLastTimestamp(now)
+      }
+      const newData = toMetrics(_newData, { timeMs: lastTimestamp ? now - lastTimestamp : 0 })
+      const oldGlobal = oldData?.global ?? []
+
+      const keepElems = nonNull(props.keepMs) ? Math.ceil(props.keepMs / props.refetchMs) : oldGlobal.length
+      return {
+        input: newData.input,
+        output: newData.output,
+        // global includes one more element than needed to satisfy keepMs
+        global: [...oldGlobal.slice(-keepElems), newData.global[0]]
+      } as any
+    }
+    // select: x => x as unknown as ReturnType<typeof toMetrics>
   })
 
-  useEffect(() => {
-    if (!pipelineStatsQuery.isPending && !pipelineStatsQuery.isError) {
-      const metrics = pipelineStatsQuery.data['global_metrics']
-
-      const newInputMetrics = new Map<string, InputConnectorMetrics>()
-      pipelineStatsQuery.data['inputs'].forEach((cs: ConnectorStatus) => {
-        // @ts-ignore (config is untyped needs backend fix)
-        newInputMetrics.set(cs.config['stream'], cs.metrics as InputConnectorMetrics)
-      })
-
-      const newOutputMetrics = new Map<string, OutputConnectorMetrics>()
-      pipelineStatsQuery.data['outputs'].forEach((cs: ConnectorStatus) => {
-        // @ts-ignore (config is untyped needs backend fix)
-        newOutputMetrics.set(cs.config['stream'], cs.metrics as OutputConnectorMetrics)
-      })
-
-      setMetrics(old => {
-        const keepElems = nonNull(props.keepMs) ? Math.ceil(props.keepMs / props.refetchMs) - 1 : old.global.length
-        return {
-          global: [...old.global.slice(-keepElems), metrics],
-          input: newInputMetrics,
-          output: newOutputMetrics
-        }
-      })
-    }
-    if (props.status == PipelineStatus.SHUTDOWN) {
-      setMetrics({
-        global: [],
-        input: new Map(),
-        output: new Map()
-      })
-    }
-  }, [
-    pipelineStatsQuery.isPending,
-    pipelineStatsQuery.isError,
-    pipelineStatsQuery.data,
-    props.status,
-    props.keepMs,
-    props.refetchMs
-  ])
-
-  return { ...metrics, periodMs: props.refetchMs }
+  if (!pipelineStatsQuery.data) {
+    return emptyData
+  }
+  return pipelineStatsQuery.data as unknown as ReturnType<typeof toMetrics>
 }

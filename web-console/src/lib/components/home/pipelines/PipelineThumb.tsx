@@ -2,7 +2,7 @@
 
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { discreteDerivative } from '$lib/functions/common/math'
-import { InputConnectorMetrics, OutputConnectorMetrics, Pipeline, PipelineStatus } from '$lib/types/pipeline'
+import { InputEndpointMetrics, OutputEndpointMetrics, Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { format } from 'numerable'
 import { useState } from 'react'
@@ -38,7 +38,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
   const [sqlHover, setSqlHover] = useState(false)
 
   const errorsNumber = (aggregate => aggregate(metrics.input) + aggregate(metrics.output))(
-    (map: Map<string, InputConnectorMetrics | OutputConnectorMetrics>) =>
+    (map: Map<string, InputEndpointMetrics | OutputEndpointMetrics>) =>
       Array.from(map.values()).reduce(
         (acc, cur) =>
           acc +

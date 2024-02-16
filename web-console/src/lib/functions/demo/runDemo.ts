@@ -115,9 +115,7 @@ export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
         }
         ++entityNumber
         await sleep(500)
-        console.log('start pipelineDelete')
         await PipelinesService.pipelineDelete(pipeline.descriptor.name)
-        console.log('end pipelineDelete')
       }
       for (const program of related.programs) {
         yield {
@@ -127,9 +125,7 @@ export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
         }
         ++entityNumber
         await sleep(500)
-        console.log('start deleteProgram')
         await ProgramsService.deleteProgram(program.name)
-        console.log('end deleteProgram')
       }
       for (const connector of related.connectors) {
         yield {
@@ -139,9 +135,7 @@ export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
         }
         ++entityNumber
         await sleep(150)
-        console.log('start deleteConnector')
         await ConnectorsService.deleteConnector(connector.name)
-        console.log('end deleteConnector')
       }
     }
   }
