@@ -42,7 +42,6 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.CollectIdentifiers;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -63,7 +62,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
-import org.dbsp.util.FreshName;
 import org.dbsp.util.HSQDBManager;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
@@ -90,10 +88,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
@@ -823,24 +819,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Assert.assertEquals(message.exitCode, 0);
         Assert.assertTrue(file.exists());
         ImageIO.read(new File(png.getPath()));
-    }
-
-    @Test
-    public void testFreshName() {
-        String query = "CREATE VIEW V AS SELECT T.COL1 FROM T WHERE T.COL2 > 0";
-        DBSPCompiler compiler = this.compileDef();
-        compiler.compileStatement(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        Set<String> used = new HashSet<>();
-        CollectIdentifiers ci = new CollectIdentifiers(testCompiler(), used);
-        ci.getCircuitVisitor().apply(circuit);
-        Assert.assertTrue(used.contains("T")); // table name
-        Assert.assertTrue(used.contains("V")); // view name
-        FreshName gen = new FreshName(used);
-        String t0 = gen.freshName("T");
-        Assert.assertEquals(t0, "T_0");
-        String t1 = gen.freshName("T");
-        Assert.assertEquals(t1, "T_1");
     }
 
     @Test

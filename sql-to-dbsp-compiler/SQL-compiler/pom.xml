@@ -19,6 +19,13 @@
         <calcite.version>1.36.0</calcite.version>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven</url>
+        </repository>
+    </repositories>
+
     <build>
         <finalName>sql2dbsp</finalName>
         <plugins>
@@ -170,7 +177,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-csv</artifactId>
-            <version>2.12.2</version>
+            <version>2.16.1</version>
             <scope>test</scope>
         </dependency>
         <!-- used by other dependencies -->
@@ -237,6 +244,11 @@
             <artifactId>hsqldb</artifactId>
             <version>2.7.2</version>
             <classifier>jdk8</classifier>
+        </dependency>
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-schema-registry-client</artifactId>
+            <version>7.6.0</version>
         </dependency>
     </dependencies>
 </project>

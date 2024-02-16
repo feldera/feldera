@@ -23,16 +23,10 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
-import org.apache.calcite.DataContext;
-import org.apache.calcite.linq4j.Enumerable;
-import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rel.type.RelDataTypeFactory;
-import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlNode;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -54,28 +48,8 @@ public abstract class CreateRelationStatement extends FrontEndStatement implemen
         this.columns = columns;
     }
 
-    public class EmulatedTable extends AbstractTable implements ScannableTable {
-        @Override
-        public Enumerable<Object[]> scan(DataContext root) {
-            // We don't plan to use this method, but the optimizer requires this API
-            throw new UnsupportedException(CalciteObject.create(node));
-        }
-
-        @Override
-        public RelDataType getRowType(RelDataTypeFactory typeFactory) {
-            RelDataTypeFactory.Builder builder = typeFactory.builder();
-            for (RelColumnMetadata meta: CreateRelationStatement.this.columns)
-                builder.add(meta.field);
-            return builder.build();
-        }
-
-        public String getStatement() {
-            return CreateRelationStatement.this.statement;
-        }
-    }
-
     public AbstractTable getEmulatedTable() {
-        return new EmulatedTable();
+        return new CalciteTableDescription(this);
     }
 
     public String getName() {
