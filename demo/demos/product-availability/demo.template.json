@@ -1,0 +1,139 @@
+{
+  "title": "Product Availability",
+  "description": "A demonstration of product availability across warehouses as it is constantly updated.",
+  "prefix": "product-availability-",
+  "steps": [
+    {
+      "name": "setup",
+      "entities": [
+        {
+          "type": "program",
+          "name": "program",
+          "body": {
+            "description": "Program of the Product Availability demo.",
+            "code": "[REPLACE:PROGRAM-CODE]"
+          }
+        },
+        {
+          "type": "connector",
+          "name": "warehouse-in",
+          "body": {
+            "description": "Kafka input connector for the warehouse table of the Product Availability demo.",
+            "config": {
+              "transport": {
+                "name": "kafka",
+                "config": {
+                  "bootstrap.servers": "${secret:product-availability-bootstrap-servers}",
+                  "security.protocol": "SASL_PLAINTEXT",
+                  "sasl.mechanism": "SCRAM-SHA-256",
+                  "sasl.username": "${secret:product-availability-consume-sasl-username}",
+                  "sasl.password": "${secret:product-availability-consume-sasl-password}",
+                  "topics": [
+                    "demo-product-availability-warehouse"
+                  ],
+                  "auto.offset.reset": "earliest"
+                }
+              },
+              "format": {
+                "name": "json",
+                "config": {
+                  "update_format": "insert_delete",
+                  "array": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "connector",
+          "name": "product-in",
+          "body": {
+            "description": "Kafka input connector for the product table of the Product Availability demo.",
+            "config": {
+              "transport": {
+                "name": "kafka",
+                "config": {
+                  "bootstrap.servers": "${secret:product-availability-bootstrap-servers}",
+                  "security.protocol": "SASL_PLAINTEXT",
+                  "sasl.mechanism": "SCRAM-SHA-256",
+                  "sasl.username": "${secret:product-availability-consume-sasl-username}",
+                  "sasl.password": "${secret:product-availability-consume-sasl-password}",
+                  "topics": [
+                    "demo-product-availability-product"
+                  ],
+                  "auto.offset.reset": "earliest"
+                }
+              },
+              "format": {
+                "name": "json",
+                "config": {
+                  "update_format": "insert_delete",
+                  "array": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "connector",
+          "name": "storage-in",
+          "body": {
+            "description": "Kafka input connector for the storage table of the Product Availability demo.",
+            "config": {
+              "transport": {
+                "name": "kafka",
+                "config": {
+                  "bootstrap.servers": "${secret:product-availability-bootstrap-servers}",
+                  "security.protocol": "SASL_PLAINTEXT",
+                  "sasl.mechanism": "SCRAM-SHA-256",
+                  "sasl.username": "${secret:product-availability-consume-sasl-username}",
+                  "sasl.password": "${secret:product-availability-consume-sasl-password}",
+                  "topics": [
+                    "demo-product-availability-storage"
+                  ],
+                  "auto.offset.reset": "earliest"
+                }
+              },
+              "format": {
+                "name": "json",
+                "config": {
+                  "update_format": "insert_delete",
+                  "array": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "pipeline",
+          "name": "pipeline",
+          "body": {
+            "description": "Pipeline to run the Product Availability demo.",
+            "config": {"workers": 6},
+            "program_name": "program",
+            "connectors": [
+              {
+                "connector_name": "warehouse-in",
+                "is_input": true,
+                "name": "warehouse-in",
+                "relation_name": "WAREHOUSE"
+              },
+              {
+                "connector_name": "product-in",
+                "is_input": true,
+                "name": "product-in",
+                "relation_name": "PRODUCT"
+              },
+              {
+                "connector_name": "storage-in",
+                "is_input": true,
+                "name": "storage-in",
+                "relation_name": "STORAGE"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
