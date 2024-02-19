@@ -5,8 +5,11 @@ import { GridItems } from '$lib/components/common/GridItems'
 import { DemoCleanupDialog } from '$lib/components/demo/DemoCleanupDialog'
 import { DemoSetupDialog } from '$lib/components/demo/DemoSetupDialog'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
-import { Fragment, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Suspense, use } from 'react'
+import { useHashPart } from 'src/lib/compositions/useHashPart'
 import { DemoSetup } from 'src/lib/types/demo'
+import { match } from 'ts-pattern'
 import IconChevronRight from '~icons/bx/chevron-right'
 import IconTrashAlt from '~icons/bx/trash-alt'
 
@@ -39,11 +42,52 @@ const _fetchStaticDemoSetup = (demo: { import: string }) =>
 
 const fetchDemoSetup = (demo: { url: string }) => fetch(demo.url).then(r => r.json()) as Promise<DemoSetup>
 
+const fetchDemoByTitle = async (
+  demos: {
+    url: string
+    title: any
+    description: any
+  }[],
+  title: string
+) => {
+  const demo = demos.find(demo => demo.title === title)
+  if (!demo) {
+    return undefined
+  }
+  const setup = await fetchDemoSetup(demo)
+  return {
+    name: title,
+    setup
+  }
+}
+
+const DemoActionDialogs = (props: {
+  demos: {
+    url: string
+    title: any
+    description: any
+  }[]
+}) => {
+  const [hash, setWantedDemoAction] = useHashPart()
+  const wantedDemoAction = decodeURI(hash)
+  const action = /^(\w+)\//.exec(wantedDemoAction)?.[1] as 'setup' | 'cleanup' | undefined
+  const demoTitle = /\/([\w ]+)$/.exec(wantedDemoAction)?.[1]
+  console.log('looking for', wantedDemoAction, demoTitle, props.demos)
+  if (!demoTitle || !action) {
+    return <></>
+  }
+  const demo = use(fetchDemoByTitle(props.demos, demoTitle))
+  return match(action)
+    .with('setup', () => <DemoSetupDialog demo={demo} onClose={() => setWantedDemoAction('')}></DemoSetupDialog>)
+    .with('cleanup', () => <DemoCleanupDialog demo={demo} onClose={() => setWantedDemoAction('')}></DemoCleanupDialog>)
+    .exhaustive()
+}
+
 export default function () {
-  const [setupDemo, setSetupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
-  const [cleanupDemo, setCleanupDemo] = useState<{ name: string; setup: DemoSetup } | undefined>()
   const queryDemos = useQuery(usePipelineManagerQuery().getDemos())
+
   const demos = queryDemos.data ?? []
+  const router = useRouter()
   return (
     <>
       <Breadcrumbs.Header>
@@ -62,15 +106,16 @@ export default function () {
                 key={demo.title}
                 name={demo.title}
                 desc={demo.description}
-                onSetup={() => fetchDemoSetup(demo).then(setup => setSetupDemo({ name: demo.title, setup }))}
-                onCleanup={() => fetchDemoSetup(demo).then(setup => setCleanupDemo({ name: demo.title, setup }))}
+                onSetup={() => router.push('#setup/' + demo.title)}
+                onCleanup={() => router.push('#cleanup/' + demo.title)}
               ></DemoTile>
             ))}
           </GridItems>
         </Grid>
       </Box>
-      <DemoSetupDialog demo={setupDemo} onClose={() => setSetupDemo(undefined)}></DemoSetupDialog>
-      <DemoCleanupDialog demo={cleanupDemo} onClose={() => setCleanupDemo(undefined)}></DemoCleanupDialog>
+      <Suspense>
+        <DemoActionDialogs demos={demos}></DemoActionDialogs>
+      </Suspense>
     </>
   )
 }
