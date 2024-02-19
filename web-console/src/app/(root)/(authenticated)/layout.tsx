@@ -15,11 +15,11 @@ export default (props: { children: ReactNode }) => {
   })
   const { auth } = useAuth()
   if (auth === 'Unauthenticated') {
-    setRedirectUrl(window.location.pathname + window.location.hash)
+    setRedirectUrl(window.location.pathname + window.location.search + window.location.hash)
     redirect('/login')
   }
   const redirectUrl = window.sessionStorage.getItem(LS_PREFIX + 'redirect')?.slice(1, -1) // Trim quotes of a raw string
-  if (redirectUrl && redirectUrl === window.location.pathname + window.location.hash) {
+  if (redirectUrl && redirectUrl === window.location.pathname + window.location.search + window.location.hash) {
     clearRedirectUrl()
   }
 
