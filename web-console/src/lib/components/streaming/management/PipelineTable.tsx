@@ -10,8 +10,8 @@ import DataGridSearch from '$lib/components/common/table/DataGridSearch'
 import DataGridToolbar from '$lib/components/common/table/DataGridToolbar'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { TextIcon } from '$lib/components/common/TextIcon'
-import AnalyticsPipelineTput from '$lib/components/streaming/management/AnalyticsPipelineTput'
-import PipelineMemoryGraph from '$lib/components/streaming/management/PipelineMemoryGraph'
+import { AnalyticsPipelineTput } from '$lib/components/streaming/management/AnalyticsPipelineTput'
+import { PipelineMemoryGraph } from '$lib/components/streaming/management/PipelineMemoryGraph'
 import { PipelineRevisionStatusChip } from '$lib/components/streaming/management/RevisionStatus'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
@@ -114,6 +114,8 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
   })
 }
 
+const keepMetricsMs = 30000
+
 const DetailPanelContent = (props: { row: Pipeline }) => {
   const theme = useTheme()
   const [inputs, setInputs] = useState<ConnectorData[]>([])
@@ -137,7 +139,8 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
   const metrics = usePipelineMetrics({
     pipelineName: descriptor.name,
     status: state.current_status,
-    refetchMs: 3000
+    refetchMs: 1000,
+    keepMs: keepMetricsMs + 1000
   })
 
   function getRelationColumns(direction: InputOrOutput): GridColDef<ConnectorData>[] {
@@ -170,7 +173,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
               (direction === 'input'
                 ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_records
                 : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_records) || 0
-            return format(records > 1000 ? '.3s' : '~s')(records)
+            return format(records >= 1000 ? '.3s' : '~s')(records)
           } else {
             // TODO: we need to count records also when relation doesn't have
             // connections in the backend.
@@ -312,10 +315,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           </Card>
         </Grid>
         <Grid item xs={5}>
-          <AnalyticsPipelineTput metrics={metrics.global} />
+          <AnalyticsPipelineTput metrics={metrics} keepMs={keepMetricsMs} />
         </Grid>
         <Grid item xs={3}>
-          <PipelineMemoryGraph metrics={metrics.global} />
+          <PipelineMemoryGraph metrics={metrics} keepMs={keepMetricsMs} />
         </Grid>
         <Grid item xs={12}>
           <Paper>

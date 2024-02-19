@@ -2,24 +2,24 @@
 //
 // Also smooths the throughput over a few seconds.
 
-import { discreteDerivative } from '$lib/functions/common/math'
+import { calcPipelineThroughput } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { GlobalMetrics } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { format } from 'd3-format'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
 
+import { Box } from '@mui/material'
 import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
 import { useTheme } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 
-const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
+export const AnalyticsPipelineTput = (props: {
+  metrics: { global: (GlobalMetrics & { timeMs: number })[] }
+  keepMs: number
+}) => {
   const theme = useTheme()
 
-  const totalProcessed = discreteDerivative(props.metrics, m => m.total_processed_records).filter(x => x != 0)
-  const throughput = discreteDerivative(totalProcessed, (n1, n0) => n1 - n0)
-  const smoothTput = discreteDerivative(throughput, (n1, n0) => n1 * 0.6 + 0.4 * n0)
-
+  const { throughput, smoothTput, yMin, yMax } = calcPipelineThroughput(props.metrics)
   const series = [
     {
       data: throughput
@@ -28,8 +28,12 @@ const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
 
   const options: ApexOptions = {
     chart: {
+      id: 'chart',
       parentHeightOffset: 0,
-      toolbar: { show: false }
+      toolbar: { show: false },
+      animations: {
+        enabled: false
+      }
     },
     tooltip: { enabled: false },
     dataLabels: { enabled: false },
@@ -39,11 +43,10 @@ const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
       lineCap: 'round'
     },
     grid: {
-      show: false,
+      show: true,
       padding: {
-        left: 0,
-        top: -25,
-        right: 17
+        left: 20,
+        right: 20
       }
     },
     fill: {
@@ -78,40 +81,61 @@ const AnalyticsPipelineTput = (props: { metrics: GlobalMetrics[] }) => {
       }
     },
     xaxis: {
-      labels: { show: false },
-      axisTicks: { show: false },
-      axisBorder: { show: false }
-    },
-    yaxis: { show: false },
-    markers: {
-      size: 1,
-      offsetY: 2,
-      offsetX: -4,
-      strokeWidth: 4,
-      strokeOpacity: 1,
-      colors: ['transparent'],
-      strokeColors: 'transparent',
-      discrete: [
-        {
-          size: 6,
-          seriesIndex: 0,
-          fillColor: theme.palette.common.white,
-          strokeColor: theme.palette.success.main,
-          dataPointIndex: series[0].data.length - 1
+      type: 'numeric',
+      labels: {
+        show: true,
+        formatter: v => {
+          const n = Number(v)
+          if (n < 0) {
+            return ''
+          }
+          const offset = throughput.at(-1)?.[0]
+          if (!offset) {
+            return ''
+          }
+          const ms = offset - n
+          if (ms === 0) {
+            return '00:00'
+          }
+          const time = new Date(0)
+          time.setMilliseconds(ms)
+          return '-' + time.toISOString().substring(14, 19)
         }
-      ]
+      },
+      tickAmount: 3,
+      axisTicks: { show: true },
+      axisBorder: { show: false },
+      range: props.keepMs
+    },
+    yaxis: {
+      show: true,
+      min: yMin,
+      max: yMax,
+      axisBorder: { show: false },
+      tickAmount: 2,
+      labels: {
+        show: true,
+        formatter(val) {
+          return format(val >= 1000 ? '.3s' : '.0f')(val)
+        }
+      }
     }
   }
 
   return (
     <Card>
-      <CardContent>
+      <Box sx={{ px: '1rem', pt: '0.5rem' }}>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Throughput</Typography>
-        <Typography variant='h5'>{format('.1s')(smoothTput[smoothTput.length - 1] || 0)} rows/sec</Typography>
-      </CardContent>
-      <ReactApexcharts type='area' height={110} width='100%' options={options} series={series} />
+        <Typography variant='h5'>{format(smoothTput >= 1000 ? '.3s' : '.0f')(smoothTput)} rows/s</Typography>
+      </Box>
+      <ReactApexcharts
+        type='area'
+        height={140}
+        width='100%'
+        options={options}
+        series={series}
+        data-testid='box-pipeline-throughput-graph'
+      />
     </Card>
   )
 }
-
-export default AnalyticsPipelineTput

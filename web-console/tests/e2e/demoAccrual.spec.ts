@@ -162,9 +162,14 @@ test('Accrual demo test', async ({ page, request }) => {
   await test.step('Expand pipeline and open data browser', async () => {
     await page.getByTestId(`button-expand-pipeline-${pipelineName}`).click()
     await expect(page).toHaveScreenshot('pipeline details.png', {
-      mask: ['box-pipeline-id', 'box-pipeline-date-created', 'box-pipeline-port', 'box-pipeline-memory-graph'].map(id =>
-        page.getByTestId(id)
-      )
+      mask: [
+        'box-pipeline-id',
+        'box-pipeline-date-created',
+        'box-pipeline-port',
+        'box-pipeline-throughput-graph',
+        'box-pipeline-memory-graph',
+        'box-pipeline-memory-value'
+      ].map(id => page.getByTestId(id))
     })
     await page
       .getByTestId(`box-details-${pipelineName}`)
@@ -198,9 +203,14 @@ test('Accrual demo test', async ({ page, request }) => {
   await test.step('Stop the pipeline', async () => {
     await page.getByTestId('button-current-pipeline').click()
     await expect(page).toHaveScreenshot('pipeline details final.png', {
-      mask: ['box-pipeline-id', 'box-pipeline-date-created', 'box-pipeline-port', 'box-pipeline-memory-graph'].map(id =>
-        page.getByTestId(id)
-      )
+      mask: [
+        'box-pipeline-id',
+        'box-pipeline-date-created',
+        'box-pipeline-port',
+        'box-pipeline-throughput-graph',
+        'box-pipeline-memory-graph',
+        'box-pipeline-memory-value'
+      ].map(id => page.getByTestId(id))
     })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-shutdown').click()
     await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor()

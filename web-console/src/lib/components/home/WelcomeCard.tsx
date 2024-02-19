@@ -14,9 +14,9 @@ const WelcomeCard = () => {
   })
   return (
     <>
-      <Accordion expanded={welcomed} onChange={() => setWelcomed(!welcomed)} disableGutters sx={{}}>
+      <Accordion expanded={!welcomed} onChange={() => setWelcomed(!welcomed)} disableGutters sx={{}}>
         <AccordionSummary
-          expandIcon={welcomed ? <IconClose fontSize={24} /> : <IconExpandMore fontSize={24} />}
+          expandIcon={!welcomed ? <IconClose fontSize={24} /> : <IconExpandMore fontSize={24} />}
           aria-controls='panel1-content'
           id='panel1-header'
           sx={{
@@ -29,7 +29,7 @@ const WelcomeCard = () => {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', width: '100%' }}>
             <Typography
               variant='h6'
-              sx={{ px: 3, mr: 'auto', mt: '0.1rem', display: 'flex', xs: { width: '100%' }, sm: { width: 'auto' } }}
+              sx={{ px: 3, mr: 'auto', my: 4, display: 'flex', xs: { width: '100%' }, sm: { width: 'auto' } }}
             >
               Welcome to Feldera!
             </Typography>
