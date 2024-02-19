@@ -2,6 +2,7 @@
 
 import { useAuthStore } from '$lib/compositions/auth/useAuth'
 import { useHashPart } from '$lib/compositions/useHashPart'
+import { LS_PREFIX } from '$lib/types/localStorage'
 import { jwtDecode, JwtPayload } from 'jwt-decode'
 import { redirect } from 'next/navigation'
 
@@ -33,6 +34,10 @@ export default () => {
         signOutUrl: logoutUrl
       }
     })
+  }
+  const redirectUrl = window.sessionStorage.getItem(LS_PREFIX + 'redirect')?.slice(1, -1) // Trim quotes of a raw string
+  if (redirectUrl) {
+    return redirect(redirectUrl)
   }
   redirect('/home')
 }
