@@ -14,7 +14,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "mysql -h localhost -u $$MYSQL_USER -p$$MYSQL_PASSWORD -e 'USE inventory;'"]
       interval: 5s
-      timeout: 20s
+      timeout: 5s
       # MySQL can be _very_ slow to start.
       retries: 40
 
@@ -37,4 +37,4 @@ services:
     command:
       - bash
       - -c
-      - "sleep 5 && cd demo/project_demo05-DebeziumMySQL/ && python3 run.py --api-url http://pipeline-manager:8080 --start"
+      - "sleep 20 && cd demo/project_demo05-DebeziumMySQL/ && python3 run.py --api-url http://pipeline-manager:8080 --start"
