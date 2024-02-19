@@ -12,7 +12,7 @@ services:
       MYSQL_USER: mysqluser
       MYSQL_PASSWORD: mysqlpw
     healthcheck:
-      test: ["CMD-SHELL", "mysql -h localhost -u $$MYSQL_USER -p$$MYSQL_PASSWORD -e 'USE inventory;'"]
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u $$MYSQL_USER -p$$MYSQL_PASSWORD -e 'USE inventory;'"]
       interval: 5s
       timeout: 5s
       # MySQL can be _very_ slow to start.
