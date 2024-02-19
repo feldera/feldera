@@ -1536,9 +1536,48 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.tableContents.addToTable(modify.tableName, result);
                 this.modifyTableTranslation = null;
                 return result;
+            } else if (modify.rel instanceof LogicalProject) {
+                // The Calcite optimizer is not able to convert a projection
+                // of a VALUES statement that contains ARRAY constructors,
+                // because there is no array literal in Calcite.  These expressions
+                // are left as projections in the code.  We only handle
+                // the case where all project expressions are "constants".
+                DBSPZSetLiteral result = this.compileConstantProject((LogicalProject) modify.rel);
+                this.tableContents.addToTable(modify.tableName, result);
+                this.modifyTableTranslation = null;
+                return result;
             }
         }
         throw new UnimplementedException(statement.getCalciteObject());
+    }
+
+    private DBSPZSetLiteral compileConstantProject(LogicalProject project) {
+        // Specialization of the visitor's visit method for LogicalProject
+        // Does not produce a DBSPOperator, but only a literal.
+        CalciteObject node = CalciteObject.create(project);
+        DBSPType outputElementType = this.convertType(project.getRowType(), false);
+        DBSPTypeTuple tuple = outputElementType.to(DBSPTypeTuple.class);
+        DBSPType inputType = this.convertType(project.getInput().getRowType(), false);
+        DBSPVariablePath row = inputType.ref().var("t");  // should not be used
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
+        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(outputElementType);
+
+        List<DBSPExpression> resultColumns = new ArrayList<>();
+        int index = 0;
+        for (RexNode column : project.getProjects()) {
+            DBSPExpression exp = expressionCompiler.compile(column);
+            DBSPType expectedType = tuple.getFieldType(index);
+            if (!exp.getType().sameType(expectedType)) {
+                // Calcite's optimizations do not preserve types!
+                exp = exp.applyCloneIfNeeded().cast(expectedType);
+            }
+            resultColumns.add(exp);
+            index++;
+        }
+
+        DBSPExpression exp = new DBSPTupleExpression(node, resultColumns);
+        result.add(exp);
+        return result;
     }
 
     public TableContents getTableContents() {
