@@ -366,7 +366,7 @@ test-debezium-mysql:
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --pull debezium/example-mysql:2.3 \
+                --pull debezium/example-mysql:2.5 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
