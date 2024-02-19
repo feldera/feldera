@@ -114,6 +114,8 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
   })
 }
 
+const keepMetricsMs = 30000
+
 const DetailPanelContent = (props: { row: Pipeline }) => {
   const theme = useTheme()
   const [inputs, setInputs] = useState<ConnectorData[]>([])
@@ -138,7 +140,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
     pipelineName: descriptor.name,
     status: state.current_status,
     refetchMs: 1000,
-    keepMs: 31000
+    keepMs: keepMetricsMs + 1000
   })
 
   function getRelationColumns(direction: InputOrOutput): GridColDef<ConnectorData>[] {
@@ -313,10 +315,10 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
           </Card>
         </Grid>
         <Grid item xs={5}>
-          <AnalyticsPipelineTput metrics={metrics} keepMs={30000} />
+          <AnalyticsPipelineTput metrics={metrics} keepMs={keepMetricsMs} />
         </Grid>
         <Grid item xs={3}>
-          <PipelineMemoryGraph metrics={metrics} keepMs={30000} />
+          <PipelineMemoryGraph metrics={metrics} keepMs={keepMetricsMs} />
         </Grid>
         <Grid item xs={12}>
           <Paper>

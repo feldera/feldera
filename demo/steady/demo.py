@@ -14,7 +14,7 @@ EXAMPLE_SQL = os.path.join(SCRIPT_DIR, "program.sql")
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", required=True,
-                        help="Feldera REST API URL (e.g., http://localhost:8080 or https://sandbox-staging.feldera.com")
+                        help="Feldera REST API URL (e.g., http://localhost:8080")
     parser.add_argument('--num-total', required=False, default=10000000000000000000000000)
     parser.add_argument('--target-rate-per-second', required=True)
     parser.add_argument("--with-bearer-token", required=False,

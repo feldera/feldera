@@ -1,27 +1,27 @@
 'use client'
 
-import { usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
-import { discreteDerivative } from '$lib/functions/common/math'
+import { calcPipelineThroughput, usePipelineMetrics } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { InputEndpointMetrics, OutputEndpointMetrics, Pipeline, PipelineStatus } from '$lib/types/pipeline'
-import { ApexOptions } from 'apexcharts'
-import { format } from 'numerable'
+import { format } from 'd3-format'
 import { useState } from 'react'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
+import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 import IconDotsVerticalRounded from '~icons/bx/dots-vertical-rounded'
 
 import { Box, Button, Collapse, Link, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 
-export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) => {
+const keepMetricsMs = 30000
+
+export const PipelineThumb = (props: Pipeline) => {
   const metrics = usePipelineMetrics({
     pipelineName: props.descriptor.name,
     status: props.state.current_status,
-    refetchMs: 3000,
-    keepMs: 30000
+    refetchMs: 2000,
+    keepMs: keepMetricsMs
   })
 
-  const totalProcessed = discreteDerivative(metrics.global, m => m.total_processed_records).filter(x => x != 0)
-  const throughput = discreteDerivative(totalProcessed, (n1, n0) => n1 - n0)
+  const { throughput, yMin, yMax } = calcPipelineThroughput(metrics)
 
   const series = [
     {
@@ -31,7 +31,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
   const item = {
     name: props.descriptor.name,
     description: props.descriptor.description,
-    tput: throughput.at(-1) || 0,
+    tput: throughput.at(-1) || [0, 0],
     chartColor: 'secondary',
     active: props.state.current_status === PipelineStatus.RUNNING
   }
@@ -49,6 +49,51 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
       )
   )
   const theme = useTheme()
+  const apexOptions = {
+    chart: {
+      parentHeightOffset: 0,
+      toolbar: { show: false },
+      animations: {
+        enabled: false
+      }
+    },
+    grid: {
+      show: false,
+      padding: {
+        top: -30,
+        left: -10,
+        bottom: -30
+      }
+    },
+    tooltip: { enabled: false },
+    colors: [hexToRGBA(theme.palette.primary.main, 1)],
+    markers: {
+      size: 6,
+      offsetX: -2,
+      offsetY: -1,
+      strokeWidth: 5,
+      strokeOpacity: 1,
+      colors: ['transparent'],
+      strokeColors: 'transparent'
+    },
+    stroke: {
+      width: 3,
+      curve: 'smooth',
+      lineCap: 'round'
+    },
+    xaxis: {
+      type: 'numeric',
+      labels: { show: false },
+      axisTicks: { show: false },
+      axisBorder: { show: false },
+      range: keepMetricsMs
+    },
+    yaxis: {
+      labels: { show: false },
+      min: yMin,
+      max: yMax
+    }
+  }
 
   return (
     <Box sx={item.active ? { border: 1, borderColor: alpha(theme.palette.grey[500], 0.5), borderRadius: 1.5 } : {}}>
@@ -56,7 +101,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
         <Box sx={{ display: 'flex' }}>
           {item.active && (
             <Box sx={{ display: 'flex', position: 'relative', alignItems: 'center' }}>
-              <ReactApexcharts type='line' width={80} height={40} options={props.apexOptions} series={series} />
+              <ReactApexcharts type='line' width={80} height={40} options={apexOptions} series={series} />
             </Box>
           )}
           <Box
@@ -83,7 +128,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             <>
               <Button
                 variant={sqlHover ? 'outlined' : 'text'}
-                sx={{ textTransform: 'none', flex: 'none', minWidth: '7rem', width: 'auto' }}
+                sx={{ textTransform: 'none', flex: 'none', minWidth: '9rem', width: 'auto' }}
                 disabled={!props.descriptor.program_name}
                 size='small'
                 href={`/analytics/editor/?program_name=${props.descriptor.program_name}`}
@@ -93,7 +138,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
                 <Collapse orientation='horizontal' in={!sqlHover}>
                   <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center' }}>
                     <Typography sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
-                      {format(item.tput, '0.0 ar', { zeroFormat: '0 r' }) + 'ows/s'}
+                      {format(item.tput[1] >= 1000 ? '.3s' : '.0f')(item.tput[1]) + ' rows/s'}
                     </Typography>
                     <IconDotsVerticalRounded fontSize={28} style={{ margin: -4, marginRight: -16 }} />
                   </Box>
@@ -126,7 +171,7 @@ export const PipelineThumb = (props: Pipeline & { apexOptions: ApexOptions }) =>
             <Typography color={'gray'} component={'span'}>
               connector errors:{' '}
             </Typography>
-            <Typography component={'span'}>{format(errorsNumber, '0,0')}</Typography>
+            <Typography component={'span'}>{format(',.0f')(errorsNumber)}</Typography>
           </Box>
         ) : (
           <Box

@@ -85,9 +85,14 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   const pipelineUUID = await test.step('Part 1: Populate PART table', async () => {
     await page.getByTestId(`button-expand-pipeline-${pipelineName}`).click()
     await expect(page).toHaveScreenshot('pipeline details.png', {
-      mask: ['box-pipeline-id', 'box-pipeline-date-created', 'box-pipeline-port', 'box-pipeline-memory-graph'].map(id =>
-        page.getByTestId(id)
-      )
+      mask: [
+        'box-pipeline-id',
+        'box-pipeline-date-created',
+        'box-pipeline-port',
+        'box-pipeline-throughput-graph',
+        'box-pipeline-memory-graph',
+        'box-pipeline-memory-value'
+      ].map(id => page.getByTestId(id))
     })
     await page
       .getByTestId(`box-details-${pipelineName}`)

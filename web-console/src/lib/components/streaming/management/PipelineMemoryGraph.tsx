@@ -28,7 +28,7 @@ export const PipelineMemoryGraph = (props: {
   ]
 
   const valueMax = memUsed.length ? Math.max(...memUsed.map(v => v[1])) : 0
-  const yMaxStep = Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25) / 1) * 1)
+  const yMaxStep = Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25)))
   const yMax = valueMax !== 0 ? yMaxStep : 1024 * 2048
   const yMin = 0
   const options: ApexOptions = {
@@ -86,8 +86,27 @@ export const PipelineMemoryGraph = (props: {
     },
     xaxis: {
       type: 'numeric',
-      labels: { show: true, formatter: v => (n => (n < 0 ? '' : Math.round(n / 1000).toString()))(Number(v)) },
-      tickAmount: 3,
+      labels: {
+        show: true,
+        formatter: v => {
+          const n = Number(v)
+          if (n < 0) {
+            return ''
+          }
+          const offset = memUsed.at(-1)?.[0]
+          if (!offset) {
+            return ''
+          }
+          const ms = offset - n
+          if (ms === 0) {
+            return '00:00'
+          }
+          const time = new Date(0)
+          time.setMilliseconds(ms)
+          return '-' + time.toISOString().substring(14, 19)
+        }
+      },
+      tickAmount: 2,
       axisTicks: { show: true },
       axisBorder: { show: false },
       range: props.keepMs
@@ -111,7 +130,9 @@ export const PipelineMemoryGraph = (props: {
     <Card>
       <Box sx={{ px: '1rem', pt: '0.5rem' }}>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Memory used</Typography>
-        <Typography variant='h5'>{humanSize(smoothMemUsed)}</Typography>
+        <Typography variant='h5' data-testid='box-pipeline-memory-value'>
+          {humanSize(smoothMemUsed)}
+        </Typography>
       </Box>
       <ReactApexcharts
         type='area'

@@ -2,8 +2,7 @@
 //
 // Also smooths the throughput over a few seconds.
 
-import { discreteDerivative } from '$lib/functions/common/math'
-import { tuple } from '$lib/functions/common/tuple'
+import { calcPipelineThroughput } from '$lib/compositions/streaming/management/usePipelineMetrics'
 import { GlobalMetrics } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { format } from 'd3-format'
@@ -20,24 +19,13 @@ export const AnalyticsPipelineTput = (props: {
 }) => {
   const theme = useTheme()
 
-  const totalProcessed = props.metrics.global.map(m => tuple(m.timeMs, m.total_processed_records))
-  const throughput = discreteDerivative(totalProcessed, (n1, n0) =>
-    tuple(n1[0], ((n1[1] - n0[1]) * 1000) / (n1[0] - n0[0]))
-  )
-  const smoothTput = ((n1, n0) => n1[1] * 0.5 + n0[1] * 0.5)(
-    throughput.at(-2) ?? throughput.at(-1) ?? tuple(0, 0),
-    throughput.at(-1) ?? tuple(0, 0)
-  )
+  const { throughput, smoothTput, yMin, yMax } = calcPipelineThroughput(props.metrics)
   const series = [
     {
       data: throughput
     }
   ]
 
-  const valueMax = throughput.length ? Math.max(...throughput.map(v => v[1])) : 0
-  const yMaxStep = Math.pow(10, Math.ceil(Math.log10(valueMax))) / 5
-  const yMax = valueMax !== 0 ? Math.ceil((valueMax * 1.25) / yMaxStep) * yMaxStep : 100
-  const yMin = 0
   const options: ApexOptions = {
     chart: {
       id: 'chart',
@@ -94,8 +82,27 @@ export const AnalyticsPipelineTput = (props: {
     },
     xaxis: {
       type: 'numeric',
-      labels: { show: true, formatter: v => (n => (n < 0 ? '' : Math.round(n / 1000).toString()))(Number(v)) },
-      tickAmount: 6,
+      labels: {
+        show: true,
+        formatter: v => {
+          const n = Number(v)
+          if (n < 0) {
+            return ''
+          }
+          const offset = throughput.at(-1)?.[0]
+          if (!offset) {
+            return ''
+          }
+          const ms = offset - n
+          if (ms === 0) {
+            return '00:00'
+          }
+          const time = new Date(0)
+          time.setMilliseconds(ms)
+          return '-' + time.toISOString().substring(14, 19)
+        }
+      },
+      tickAmount: 3,
       axisTicks: { show: true },
       axisBorder: { show: false },
       range: props.keepMs
@@ -119,9 +126,16 @@ export const AnalyticsPipelineTput = (props: {
     <Card>
       <Box sx={{ px: '1rem', pt: '0.5rem' }}>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Throughput</Typography>
-        <Typography variant='h5'>{format(smoothTput >= 1000 ? '.3s' : '.0f')(smoothTput)} rows/sec</Typography>
+        <Typography variant='h5'>{format(smoothTput >= 1000 ? '.3s' : '.0f')(smoothTput)} rows/s</Typography>
       </Box>
-      <ReactApexcharts type='area' height={140} width='100%' options={options} series={series} />
+      <ReactApexcharts
+        type='area'
+        height={140}
+        width='100%'
+        options={options}
+        series={series}
+        data-testid='box-pipeline-throughput-graph'
+      />
     </Card>
   )
 }
