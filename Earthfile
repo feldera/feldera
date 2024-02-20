@@ -491,17 +491,23 @@ benchmark:
     SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
 
 all-tests:
-    BUILD +formatting-check
-    BUILD +machete
-    BUILD +clippy
-    BUILD +test-rust
-    BUILD +test-python
-    BUILD +openapi-checker
-    BUILD +test-sql
-    BUILD +test-docker-compose
-    BUILD +test-docker-compose-stable
-    BUILD +test-debezium-mysql
-    BUILD +test-debezium-jdbc-sink
-    BUILD +test-snowflake
-    BUILD +integration-tests
-    BUILD +ui-playwright-tests
+    WAIT
+        BUILD +formatting-check
+        BUILD +machete
+        BUILD +clippy
+        BUILD +test-rust
+        BUILD +test-python
+        BUILD +openapi-checker
+        BUILD +test-sql
+        BUILD +integration-tests
+    END
+    WAIT
+        BUILD +ui-playwright-tests
+    END
+    WAIT
+        BUILD +test-docker-compose
+        BUILD +test-docker-compose-stable
+        BUILD +test-debezium-mysql
+        BUILD +test-debezium-jdbc-sink
+        BUILD +test-snowflake
+    END
