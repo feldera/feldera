@@ -330,6 +330,12 @@ impl TestConfig {
     }
 
     async fn quantiles_csv(&self, name: &str, table: &str) -> String {
+        // this is a workaround for the fact that the server may not have processed the
+        // request before the response is returned and may return
+        // wrong/inconsistent results for future queries e.g., post data then do
+        // quantiles
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
         let mut resp = self
             .post_no_body(format!(
                 "/v0/pipelines/{name}/egress/{table}?query=quantiles&mode=snapshot&format=csv"
@@ -341,6 +347,12 @@ impl TestConfig {
     }
 
     async fn quantiles_json(&self, name: &str, table: &str) -> String {
+        // this is a workaround for the fact that the server may not have processed the
+        // request before the response is returned and may return
+        // wrong/inconsistent results for future queries e.g., post data then do
+        // quantiles
+        tokio::time::sleep(Duration::from_millis(800)).await;
+
         let mut resp = self
             .post_no_body(format!(
                 "/v0/pipelines/{name}/egress/{table}?query=quantiles&mode=snapshot&format=json"

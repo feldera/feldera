@@ -19,7 +19,7 @@ const deleteRows = async (page: Page, regex: RegExp) => {
 }
 
 setup('Global prepare', async ({ page }) => {
-  await page.goto(appOrigin)
+  await page.goto(appOrigin, { timeout: 3000 })
 
   await setup.step('Prepare: Delete pipelines', async () => {
     await page.getByTestId('button-vertical-nav-pipelines').click()
