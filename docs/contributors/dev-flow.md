@@ -114,10 +114,10 @@ cargo run --manifest-path simulator/Cargo.toml --release -- 300000
 
 Use `dbsp` python library to create and compile SQL Program, and prepare the Pipeline that utilizes them.
 ```bash
-python3 run.py --dbsp_url http://localhost:8080 --actions prepare
+python3 run.py --api-url http://localhost:8080
 ```
 
-> You should update `--dbsp_url` depending on where Pipeline Manager is getting served from.
+> You should update `--api-url` depending on where Pipeline Manager is getting served from.
 
 <br/>
 

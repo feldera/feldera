@@ -1,4 +1,6 @@
 #!/bin/python3
+# Run locally with:
+# python3 demo/steady/demo.py --api-url http://localhost:8080 --target-rate-per-second=10
 
 import os
 import time

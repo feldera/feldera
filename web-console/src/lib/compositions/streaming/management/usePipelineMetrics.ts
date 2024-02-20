@@ -49,14 +49,21 @@ export function usePipelineMetrics(props: {
         setLastTimestamp(now)
       }
       const newData = toMetrics(_newData, { timeMs: lastTimestamp ? now - lastTimestamp : 0 })
-      const oldGlobal = oldData?.global ?? []
+      const oldGlobal: (GlobalMetrics & { timeMs: number })[] = oldData?.global ?? []
 
-      const keepElems = nonNull(props.keepMs) ? Math.ceil(props.keepMs / props.refetchMs) : oldGlobal.length
+      // clear metrics history if we get a timestamp that overwrites existing data point
+      const isOverwritingTimestamp = !!oldGlobal.find(m => m.timeMs >= newData.global[0].timeMs)
+
+      const sliceAt = isOverwritingTimestamp
+        ? oldGlobal.length
+        : nonNull(props.keepMs)
+          ? -Math.ceil(props.keepMs / props.refetchMs)
+          : -oldGlobal.length
       return {
         input: newData.input,
         output: newData.output,
         // global includes one more element than needed to satisfy keepMs when applying dicreteDerivative to data series
-        global: [...oldGlobal.slice(-keepElems), newData.global[0]]
+        global: [...oldGlobal.slice(sliceAt), newData.global[0]]
       } as any
     }
   })
