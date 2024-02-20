@@ -1,10 +1,44 @@
 package org.dbsp.sqlCompiler.compiler.sql.functions;
 
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
 public class FunctionsTest extends SqlIoTest {
+    @Override
+    public void prepareData(DBSPCompiler compiler) {
+        String ddl = "CREATE TABLE ARR_TABLE (VALS INTEGER ARRAY NOT NULL,ID INTEGER NOT NULL)";
+        String insert = """
+                INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 6);
+                INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 7);
+                """;
+        compiler.compileStatement(ddl);
+        compiler.compileStatements(insert);
+    }
+
+    @Test
+    public void testUnnest() {
+        this.q("""
+                select * from arr_table;
+                  vals   | id
+                ---------+----
+                 {1,2,3} |  6
+                 {1,2,3} |  7"""
+        );
+        this.q("""
+                SELECT VAL FROM ARR_TABLE, UNNEST(VALS) AS VAL;
+                 val
+                -----
+                 1
+                 2
+                 3
+                 1
+                 2
+                 3"""
+        );
+    }
+
     @Test
     public void testLeft() {
         this.q("""
