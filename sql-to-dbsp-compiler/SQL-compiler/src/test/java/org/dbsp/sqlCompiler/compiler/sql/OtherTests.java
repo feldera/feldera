@@ -856,5 +856,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         // Check that the rust library is properly formatted
         Utilities.runProcess(BaseSQLTests.projectDirectory + "/lib/sqllib",
                 "cargo", "+nightly", "fmt", "--check");
+        Utilities.runProcess(BaseSQLTests.projectDirectory + "/lib/sqllib",
+                "cargo", "clippy", "--", "-D", "warnings");
     }
 }

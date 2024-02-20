@@ -63,6 +63,22 @@ public class FunctionsTest extends SqlIoTest {
                 \s""");
     }
 
+    @Test
+    public void testArrayAppend() {
+        this.q("""
+                SELECT array_append(ARRAY [1, 2], null::int);
+                 array_append
+                --------------
+                 {1, 2, NULL}"""
+        );
+        this.q("""
+                SELECT array_append(ARRAY [1, 2], 3);
+                 array_append
+                --------------
+                 {1, 2, 3}"""
+        );
+    }
+
     @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6210")
     public void testSubstring2() {
         this.qs(

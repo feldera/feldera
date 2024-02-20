@@ -142,6 +142,7 @@ public class RustFileWriter {
                     use dbsp::declare_tuples;
                     use sqllib::{
                         *,
+                        array::*,
                         casts::*,
                         binary::*,
                         geopoint::*,

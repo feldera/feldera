@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 pub mod aggregates;
+pub mod array;
 pub mod binary;
 pub mod casts;
 pub mod geopoint;
@@ -33,7 +34,7 @@ use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ops::{Add, Index, Neg};
+use std::ops::{Add, Neg};
 use std::str::FromStr;
 
 pub type Weight = i64; // Default weight type
@@ -960,27 +961,6 @@ pub fn round_d(left: F64) -> F64 {
 
 some_polymorphic_function1!(round, d, F64, F64);
 
-pub fn element<T>(array: Vec<T>) -> Option<T>
-where
-    T: Clone,
-{
-    if array.is_empty() {
-        None
-    } else if array.len() == 1 {
-        Some(array[0].clone())
-    } else {
-        panic!("'ELEMENT()' called on array that does not have exactly 1 element");
-    }
-}
-
-pub fn elementN<T>(array: Option<Vec<T>>) -> Option<T>
-where
-    T: Clone,
-{
-    let array = array?;
-    element(array)
-}
-
 pub fn power_i32_d(left: i32, right: F64) -> F64 {
     F64::new((left as f64).powf(right.into_inner()))
 }
@@ -1338,54 +1318,6 @@ some_polymorphic_function1!(is_nan, d, F64, bool);
 some_polymorphic_function1!(is_nan, f, F32, bool);
 
 ////////////////////////////////////////////////
-
-pub fn cardinality_<T>(value: Vec<T>) -> i32 {
-    value.len() as i32
-}
-
-pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
-    let value = value?;
-    Some(value.len() as i32)
-}
-
-pub fn index__<T>(value: &Vec<T>, index: usize) -> T
-where
-    T: Clone,
-{
-    (*value.index(index)).clone()
-}
-
-pub fn index__N<T>(value: &Vec<T>, index: Option<usize>) -> T
-where
-    T: Clone,
-{
-    index__(value, index.unwrap())
-}
-
-pub fn index_N_<T>(value: &Option<Vec<T>>, index: usize) -> Option<T>
-where
-    T: Clone,
-{
-    value.as_ref().map(|value| index__(value, index))
-}
-
-pub fn index_N_N<T>(value: &Option<Vec<T>>, index: Option<usize>) -> Option<T>
-where
-    T: Clone,
-{
-    value.as_ref().map(|value| index__N(value, index))
-}
-
-pub fn array<T>() -> Vec<T> {
-    vec![]
-}
-
-pub fn limit<T>(vector: &[T], limit: usize) -> Vec<T>
-where
-    T: Clone,
-{
-    vector[0..limit].to_vec()
-}
 
 pub fn dump<T>(prefix: String, data: &T) -> T
 where

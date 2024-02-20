@@ -23,15 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
@@ -39,46 +36,14 @@ import org.dbsp.util.Linq;
  * Function application expression.
  * Note: the type of the expression is the type of the result returned by the function.
  */
-public class DBSPApplyExpression extends DBSPExpression {
-    public final DBSPExpression function;
-    public final DBSPExpression[] arguments;
-
-    void checkArgs() {
-        DBSPType[] parameterTypes = null;
-        if (this.function.getType().is(DBSPTypeFunction.class)) {
-            DBSPTypeFunction funcType = this.function.getType().to(DBSPTypeFunction.class);
-            assert funcType.argumentTypes.length == this.arguments.length:
-                    "Has " + funcType.argumentTypes.length + " parameters, but only " +
-                            this.arguments.length + " arguments";
-            parameterTypes = funcType.argumentTypes;
-        }
-        int index = 0;
-        for (DBSPExpression arg: this.arguments) {
-            if (arg == null) {
-                throw new InternalCompilerError("Null arg", this);
-            }
-            assert parameterTypes == null || parameterTypes[index].sameType(arg.getType()) :
-                "Argument " + arg + " does not match paramter type " + parameterTypes[index];
-            index++;
-        }
-    }
-
+public class DBSPApplyExpression extends DBSPApplyBaseExpression {
     public DBSPApplyExpression(CalciteObject node, String function, DBSPType returnType, DBSPExpression... arguments) {
-        super(node, returnType);
-        this.function = new DBSPPathExpression(DBSPTypeAny.getDefault(), new DBSPPath(function));
-        this.arguments = arguments;
-        this.checkArgs();
+        super(node, new DBSPPath(function).toExpression(), returnType, arguments);
+        this.checkArgs(false);
     }
 
     public DBSPApplyExpression(String function, DBSPType returnType, DBSPExpression... arguments) {
         this(CalciteObject.EMPTY, function, returnType, arguments);
-    }
-
-    public static DBSPType getReturnType(DBSPType type) {
-        if (type.is(DBSPTypeAny.class))
-            return type;
-        DBSPTypeFunction func = type.to(DBSPTypeFunction.class);
-        return func.resultType;
     }
 
     public DBSPApplyExpression(DBSPExpression function, DBSPExpression... arguments) {
@@ -86,10 +51,8 @@ public class DBSPApplyExpression extends DBSPExpression {
     }
 
     public DBSPApplyExpression(DBSPExpression function, DBSPType returnType, DBSPExpression... arguments) {
-        super(CalciteObject.EMPTY, returnType);
-        this.function = function;
-        this.arguments = arguments;
-        this.checkArgs();
+        super(CalciteObject.EMPTY, function, returnType, arguments);
+        this.checkArgs(false);
     }
 
     @Override
