@@ -58,21 +58,21 @@ public class CastTests extends BaseSQLTests {
         return compiler;
     }
 
-    public DBSPZSetLiteral createInput() {
-        return new DBSPZSetLiteral(new DBSPTupleExpression(
+    public Change createInput() {
+        return new Change(new DBSPZSetLiteral(new DBSPTupleExpression(
                 new DBSPI32Literal(10),
                 new DBSPDoubleLiteral(12.0),
                 new DBSPStringLiteral("100100"),
                 DBSPLiteral.none(tenTwo),
-                new DBSPDecimalLiteral(tenFour, new BigDecimal(100103))));
+                new DBSPDecimalLiteral(tenFour, new BigDecimal(100103)))));
     }
 
     public void testQuery(String query, DBSPZSetLiteral expectedOutput) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
         DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
-        this.addRustTestCase(query, compiler, circuit, streams);
+        InputOutputChange streams = new InputOutputChange(this.createInput(), new Change(expectedOutput));
+        this.addRustTestCase(query, compiler, circuit, streams.toStream());
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6168")
@@ -117,6 +117,6 @@ public class CastTests extends BaseSQLTests {
     public void decimalOutOfRange() {
         this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
                 "cannot represent 100103123 as DECIMAL(10, 4)",
-                this.getEmptyIOPair());
+                this.emptyInputOutputChangeStream());
     }
 }

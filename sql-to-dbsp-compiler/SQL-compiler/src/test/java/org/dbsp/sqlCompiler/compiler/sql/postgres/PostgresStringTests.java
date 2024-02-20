@@ -10,7 +10,7 @@ import org.junit.Test;
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresStringTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String data =
                 "CREATE TABLE CHAR_TBL(f1 char(4));\n" +
                 "INSERT INTO CHAR_TBL (f1) VALUES\n" +

@@ -7,7 +7,7 @@ import org.junit.Test;
 // https://github.com/postgres/postgres/blob/master/src/test/regress/expected/aggregates.out#L779
 public class PostgresAggregatesTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         // Changed BIT(4) to BINARY(1)
         String setup = """
                 CREATE TABLE bitwise_test(

@@ -11,7 +11,7 @@ import org.junit.Test;
  */
 public class PivotTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         compiler.compileStatements("""
                 Create Table GG (
                 CourseName varchar,

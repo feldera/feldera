@@ -24,10 +24,11 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -44,7 +45,7 @@ public class PostgresNumericTests extends SqlIoTest {
     protected static final int WIDTH = 28;
 
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String createTables = "CREATE TABLE num_data (id int4, val numeric(" + WIDTH + ",10));\n" +
                 "CREATE TABLE num_exp_add (id1 int4, id2 int4, expected numeric(" + WIDTH + ",10));\n" +
                 "CREATE TABLE num_exp_sub (id1 int4, id2 int4, expected numeric(" + WIDTH + ",10));\n" +
@@ -515,24 +516,22 @@ public class PostgresNumericTests extends SqlIoTest {
      */
     public void testTwoViews(String intermediate, String last) {
         DBSPCompiler compiler = new DBSPCompiler(this.getOptions(true));
-        this.prepareData(compiler);
+        this.prepareInputs(compiler);
         compiler.generateOutputForNextView(false);
         compiler.compileStatement(intermediate);
         compiler.generateOutputForNextView(true);
         compiler.compileStatement(last);
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair streams = new InputOutputPair(
+        InputOutputChange streams = new InputOutputChange(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral[] {
+                new Change(
                         DBSPZSetLiteral.emptyWithElementType(new DBSPTypeTuple(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false),
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
-                    new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false),
-                    new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false))
-                )}
-        );
-        this.addRustTestCase(last, compiler, circuit, streams);
+                                new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false),
+                                new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false)))));
+        this.addRustTestCase(last, compiler, circuit, streams.toStream());
     }
 
     @Test

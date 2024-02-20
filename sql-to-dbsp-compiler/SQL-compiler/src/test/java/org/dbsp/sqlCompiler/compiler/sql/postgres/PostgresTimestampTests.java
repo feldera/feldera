@@ -24,13 +24,16 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Test;
@@ -54,7 +57,7 @@ public class PostgresTimestampTests extends SqlIoTest {
     // INSERT INTO TIMESTAMP_TBL VALUES ('infinity');
 
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String data =
                 "CREATE TABLE TIMESTAMP_TBL (d1 timestamp(2) without time zone)\n;" +
                 // -- Postgres v6.0 standard output format
@@ -137,13 +140,13 @@ public class PostgresTimestampTests extends SqlIoTest {
         compiler.compileStatements(data);
     }
 
-    void testQuery(String query, DBSPZSetLiteral expectedOutput) {
+    void testQuery(String query, Change expectedOutput) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, true);
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral input = compiler.getTableContents().getTableContents("TIMESTAMP_TBL");
-        InputOutputPair streams = new InputOutputPair(input, expectedOutput);
-        this.addRustTestCase(query, compiler, circuit, streams);
+        InputOutputChange streams = new InputOutputChange(new Change(input), expectedOutput);
+        this.addRustTestCase(query, compiler, circuit, streams.toStream());
     }
 
     @Test
@@ -555,7 +558,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                         new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d) / 60000), true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
-        this.testQuery(query, new DBSPZSetLiteral(results));
+        this.testQuery(query, new Change(new DBSPZSetLiteral(results)));
     }
 
     @Test
@@ -658,7 +661,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         DBSPExpression[] results = Linq.map(data, d ->
                 new DBSPTupleExpression(d == null ? DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)) :
                         new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d)/1000), true)), DBSPExpression.class);
-        this.testQuery(query, new DBSPZSetLiteral(results));
+        this.testQuery(query, new Change(new DBSPZSetLiteral(results)));
     }
 
     @Test

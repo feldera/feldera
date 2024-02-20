@@ -8,7 +8,7 @@ import org.junit.Test;
 // https://github.com/postgres/postgres/blob/master/src/test/regress/expected/float4.out
 public class PostgresFloat4Tests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         compiler.compileStatements("""
                 CREATE TABLE FLOAT4_TBL (f1  float4);
                 INSERT INTO FLOAT4_TBL(f1) VALUES ('    0.0');

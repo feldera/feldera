@@ -8,7 +8,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
@@ -16,7 +17,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
@@ -39,10 +40,10 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -76,7 +77,7 @@ import java.util.regex.Pattern;
 public abstract class SqlIoTest extends BaseSQLTests {
     /** Override this method to prepare the tables on
      * which the tests are built. */
-    public void prepareData(DBSPCompiler compiler) {}
+    public void prepareInputs(DBSPCompiler compiler) {}
 
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
@@ -96,7 +97,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
 
     public DBSPCompiler compileQuery(String query, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
-        this.prepareData(compiler);
+        this.prepareInputs(compiler);
         compiler.compileStatement(query);
         if (!compiler.options.languageOptions.throwOnError) {
             compiler.throwIfErrorsOccurred();
@@ -108,7 +109,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
     static final SimpleDateFormat[] TIMESTAMP_INPUT_FORMAT = {
             new SimpleDateFormat("EEE MMM d HH:mm:ss.SSS yyyy"),
             new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy G"),
-            new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy")
+            new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy"),
+            new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
     };
     static final SimpleDateFormat TIMESTAMP_OUTPUT_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.S");
 
@@ -421,7 +423,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         return new DBSPTupleExpression(values);
     }
 
-    public DBSPZSetLiteral parseTable(String table, DBSPType outputType) {
+    public Change parseTable(String table, DBSPType outputType) {
         DBSPTypeZSet zset = outputType.to(DBSPTypeZSet.class);
         DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(zset.elementType);
         DBSPTypeTuple tuple = zset.elementType.to(DBSPTypeTuple.class);
@@ -486,10 +488,10 @@ public abstract class SqlIoTest extends BaseSQLTests {
         }
         if (inHeader)
             throw new RuntimeException("Could not find end of header for table");
-        return result;
+        return new Change(result);
     }
 
-    public DBSPZSetLiteral[] getPreparedInputs(DBSPCompiler compiler) {
+    public Change getPreparedInputs(DBSPCompiler compiler) {
         DBSPZSetLiteral[] inputs = new DBSPZSetLiteral[
                 compiler.getTableContents().tablesCreated.size()];
         int index = 0;
@@ -497,27 +499,27 @@ public abstract class SqlIoTest extends BaseSQLTests {
             DBSPZSetLiteral data = compiler.getTableContents().getTableContents(table.toUpperCase());
             inputs[index++] = data;
         }
-        return inputs;
+        return new Change(inputs);
     }
 
     public void compare(String query, DBSPZSetLiteral expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
-        this.prepareData(compiler);
+        this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair streams = new InputOutputPair(
+        InputOutputChange iochange = new InputOutputChange(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral[] { expected }
+                new Change(expected)
         );
-        this.addRustTestCase(query, compiler, circuit, streams);
+        this.addRustTestCase(query, compiler, circuit, iochange.toStream());
     }
 
     public void compare(String query, String expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
-        this.prepareData(compiler);
+        this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
@@ -526,12 +528,12 @@ public abstract class SqlIoTest extends BaseSQLTests {
         if (!compiler.messages.isEmpty())
             System.out.println(compiler.messages);
         DBSPType outputType = circuit.getSingleOutputType();
-        DBSPZSetLiteral result = this.parseTable(expected, outputType);
-        InputOutputPair streams = new InputOutputPair(
+        Change result = this.parseTable(expected, outputType);
+        InputOutputChange streams = new InputOutputChange(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral[] { result }
+                result
         );
-        this.addRustTestCase(query, compiler, circuit, streams);
+        this.addRustTestCase(query, compiler, circuit, streams.toStream());
     }
 
     /**
@@ -563,7 +565,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public void shouldFail(String query, String messageFragment) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
-        this.prepareData(compiler);
+        this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         compiler.optimize();
         Assert.assertTrue(compiler.messages.exitCode != 0);
@@ -579,7 +581,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public void shouldWarn(String query, String messageFragment) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
-        this.prepareData(compiler);
+        this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         compiler.optimize();
         Assert.assertTrue(compiler.hasWarnings);
@@ -632,19 +634,19 @@ public abstract class SqlIoTest extends BaseSQLTests {
      */
     public void qf(String query, String panicMessage, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
-        this.prepareData(compiler);
+        this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         compiler.optimize();
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPType outputType = circuit.getSingleOutputType();
-        DBSPZSetLiteral result = new DBSPZSetLiteral(Collections.emptyMap(), outputType);
-        InputOutputPair streams = new InputOutputPair(
+        Change result = new Change(new DBSPZSetLiteral(Collections.emptyMap(), outputType));
+        InputOutputChange ioChange = new InputOutputChange(
                 this.getPreparedInputs(compiler),
-                new DBSPZSetLiteral[]{ result }
+                result
         );
-        this.addFailingRustTestCase(query, panicMessage, compiler, circuit, streams);
+        this.addFailingRustTestCase(query, panicMessage, compiler, circuit, ioChange.toStream());
     }
 
     /**

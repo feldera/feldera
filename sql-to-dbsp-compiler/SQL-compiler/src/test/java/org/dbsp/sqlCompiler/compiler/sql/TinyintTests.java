@@ -6,7 +6,7 @@ import org.junit.Test;
 
 public class TinyintTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT_TBL(f1 tinyint)";
 
         String insert = """

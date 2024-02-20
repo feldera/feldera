@@ -9,7 +9,7 @@ import org.junit.Test;
 // This test seems complete (covering all test cases from Postgres).
 public class PostgresTimeTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         // Calcite format is much stricter.  Converted to the right format
         compiler.compileStatements("""
                 CREATE TABLE TIME_TBL (f1 time(2));

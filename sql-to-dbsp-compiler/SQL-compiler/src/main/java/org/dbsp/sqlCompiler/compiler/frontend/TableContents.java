@@ -114,4 +114,8 @@ public class TableContents implements ICompilerComponent {
     public DBSPCompiler getCompiler() {
         return this.compiler;
     }
+
+    public int getTableCount() {
+        return this.tablesCreated.size();
+    }
 }

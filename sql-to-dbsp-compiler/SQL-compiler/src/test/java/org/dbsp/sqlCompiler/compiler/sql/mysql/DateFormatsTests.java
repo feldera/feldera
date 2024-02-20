@@ -8,7 +8,7 @@ import org.junit.Test;
 // https://github.com/mysql/mysql-server/blob/trunk/mysql-test/r/date_formats.result
 public class DateFormatsTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         compiler.compileStatements("""
                 -- initially named T1
                 create table t2 (d date);

@@ -50,12 +50,12 @@ public class TimeTests extends BaseSQLTests {
         DBSPCompiler compiler = this.compileQuery(query);
         DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral expectedOutput = new DBSPZSetLiteral(new DBSPTupleExpression(fields));
-        InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
-        this.addRustTestCase(query, compiler, circuit, streams);
+        InputOutputChange streams = new InputOutputChange(this.createInput(), new Change(expectedOutput));
+        this.addRustTestCase(query, compiler, circuit, streams.toStream());
     }
 
-    public DBSPZSetLiteral createInput() {
-        return new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPTimestampLiteral(100)));
+    public Change createInput() {
+        return new Change(new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
     }
 
     @Test

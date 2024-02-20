@@ -11,7 +11,7 @@ import org.junit.Test;
 public class FoodmartBaseTests extends SqlIoTest {
     // https://github.com/apache/calcite/blob/bdfb17029f7e205f895dc3dfd0f37c8ff2520823/innodb/src/test/resources/scott.sq
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         compiler.compileStatements("""
                 DROP TABLE IF EXISTS DEPT;
                 CREATE TABLE DEPT(

@@ -10,7 +10,7 @@ import org.junit.Test;
  */
 public class PostgresFloat8Part2Tests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String prepareQuery = """
                 CREATE TABLE FLOAT8_TBL(f1 float8);
                 INSERT INTO FLOAT8_TBL(f1) VALUES ('    0.0   ');

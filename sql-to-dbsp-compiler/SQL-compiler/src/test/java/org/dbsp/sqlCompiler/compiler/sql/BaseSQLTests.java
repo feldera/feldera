@@ -27,8 +27,9 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
@@ -141,11 +142,17 @@ public class BaseSQLTests {
         testsToRun.clear();
     }
 
-    protected void addRustTestCase(String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
+    protected void addRustTestCase(
+            String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputChangeStream streams) {
         compiler.messages.show(System.err);
         compiler.messages.clear();
         TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, null, streams);
         testsToRun.add(test);
+    }
+
+    protected void addRustTestCase(
+            String name, DBSPCompiler compiler, DBSPCircuit circuit) {
+        this.addRustTestCase(name, compiler, circuit, new InputOutputChangeStream());
     }
 
     /** Add a test case without inputs */
@@ -153,10 +160,11 @@ public class BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(statements);
         Assert.assertFalse(compiler.hasErrors());
-        this.addRustTestCase(this.currentTestInformation, compiler, getCircuit(compiler));
+        this.addRustTestCase(this.currentTestInformation, compiler, getCircuit(compiler), new InputOutputChangeStream());
     }
 
-    protected void addFailingRustTestCase(String name, String message, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputPair... streams) {
+    protected void addFailingRustTestCase(
+            String name, String message, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputChangeStream streams) {
         compiler.messages.show(System.err);
         compiler.messages.clear();
         TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, message, streams);
@@ -191,12 +199,12 @@ public class BaseSQLTests {
         return compiler.getFinalCircuit(name);
     }
 
-    protected InputOutputPair getEmptyIOPair() {
-        return new InputOutputPair(new DBSPZSetLiteral[0],
-                new DBSPZSetLiteral[0]);
+    protected InputOutputChangeStream emptyInputOutputChangeStream() {
+        return new InputOutputChangeStream().addChange(
+                new InputOutputChange(new Change(), new Change()));
     }
 
-    protected void runtimeFail(String query, String message, InputOutputPair... data) {
+    protected void runtimeFail(String query, String message, InputOutputChangeStream data) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(query);
@@ -206,6 +214,6 @@ public class BaseSQLTests {
 
     /** Run a test that fails at runtime without needing any inputs */
     protected void runtimeConstantFail(String query, String message) {
-        this.runtimeFail(query, message, this.getEmptyIOPair());
+        this.runtimeFail(query, message, this.emptyInputOutputChangeStream());
     }
 }

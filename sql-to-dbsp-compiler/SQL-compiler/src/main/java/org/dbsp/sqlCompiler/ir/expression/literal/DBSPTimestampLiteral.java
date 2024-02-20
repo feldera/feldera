@@ -33,6 +33,8 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
 public class DBSPTimestampLiteral extends DBSPLiteral {
@@ -48,7 +50,11 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
     }
 
     public DBSPTimestampLiteral(long value) {
-        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, false), value);
+        this(value, false);
+    }
+
+    public DBSPTimestampLiteral(long value, boolean mayBeNull) {
+        this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, mayBeNull), value);
     }
 
     public DBSPTimestampLiteral() {
@@ -57,6 +63,12 @@ public class DBSPTimestampLiteral extends DBSPLiteral {
 
     public DBSPTimestampLiteral(String string, boolean mayBeNull) {
         this(CalciteObject.EMPTY, new DBSPTypeTimestamp(CalciteObject.EMPTY, mayBeNull), createTimestampString(string));
+    }
+
+    private static final String INSTANT_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
+
+    public DBSPTimestampLiteral(Instant instant, boolean mayBeNull) {
+        this(DateTimeFormatter.ofPattern(INSTANT_FORMAT).format(instant), mayBeNull);
     }
 
     static TimestampString createTimestampString(String timestamp) {

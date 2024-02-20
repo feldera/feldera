@@ -38,49 +38,39 @@ public class NaiveIncrementalTests extends EndToEndTests {
 
     @Override
     public void testQuery(String query, DBSPZSetLiteral firstOutput) {
-        DBSPZSetLiteral input = createInput();
-        DBSPZSetLiteral secondOutput = DBSPZSetLiteral.emptyWithElementType(
-                firstOutput.getElementType());
-        DBSPZSetLiteral thirdOutput = secondOutput.minus(firstOutput);
+        Change input = createInput();
+        Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
+        Change thirdOutput = new Change(secondOutput.getSet(0).minus(firstOutput));
         this.invokeTestQueryBase(query,
-                // Add first input
-                new InputOutputPair(input, firstOutput),
-                // Add an empty input
-                new InputOutputPair(empty, secondOutput),
-                // Subtract the first input
-                new InputOutputPair(input.negate(), thirdOutput)
+                new InputOutputChangeStream()
+                        .addPair(input, new Change(firstOutput))  // Add first input
+                        .addPair(new Change(empty), secondOutput) // Add an empty input
+                        .addPair(new Change(input.getSet(0).negate()), thirdOutput) // Subtract the first input
         );
     }
 
     @Override
     void testConstantOutput(String query, DBSPZSetLiteral output) {
-        DBSPZSetLiteral input = createInput();
-        DBSPZSetLiteral e = DBSPZSetLiteral.emptyWithElementType(output.getElementType());
+        Change input = createInput();
+        Change e = Change.singleEmptyWithElementType(output.getElementType());
         this.invokeTestQueryBase(query,
-                // Add first input
-                new InputOutputPair(input, output),
-                // Add an empty input
-                new InputOutputPair(NaiveIncrementalTests.empty, e),
-                // Subtract the first input
-                new InputOutputPair(input.negate(), e)
-        );
+                new InputOutputChangeStream()
+                        .addPair(input, new Change(output))                  // Add first input
+                        .addPair(new Change(NaiveIncrementalTests.empty), e) // Add an empty input
+                        .addPair(new Change(input.getSet(0).negate()), e));  // Subtract the first input
     }
 
     @Override
     void testAggregate(String query,
                        DBSPZSetLiteral firstOutput,
                        DBSPZSetLiteral outputForEmptyInput) {
-        DBSPZSetLiteral input = createInput();
-        DBSPZSetLiteral secondOutput = DBSPZSetLiteral.emptyWithElementType(
-                firstOutput.getElementType());
-        DBSPZSetLiteral thirdOutput = outputForEmptyInput.minus(firstOutput);
+        Change input = createInput();
+        Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
+        Change thirdOutput = new Change(outputForEmptyInput.minus(firstOutput));
         this.invokeTestQueryBase(query,
-                // Add first input
-                new InputOutputPair(input, firstOutput),
-                // Add an empty input
-                new InputOutputPair(empty, secondOutput),
-                // Subtract the first input
-                new InputOutputPair(input.negate(), thirdOutput)
-        );
+                new InputOutputChangeStream()
+                        .addPair(input, new Change(firstOutput))    // Add first input
+                        .addPair(new Change(empty), secondOutput)  // Add an empty input
+                        .addPair(new Change(input.getSet(0).negate()), thirdOutput));  // Subtract the first input
     }
 }

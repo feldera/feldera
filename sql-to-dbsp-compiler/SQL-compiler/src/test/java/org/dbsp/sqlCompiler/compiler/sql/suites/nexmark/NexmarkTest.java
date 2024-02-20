@@ -21,13 +21,14 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.sql.suites;
+package org.dbsp.sqlCompiler.compiler.sql.suites.nexmark;
 
 import org.apache.calcite.config.Lex;
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
-import org.junit.Assert;
+import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
 import org.junit.Test;
 
 import java.util.HashSet;
@@ -38,75 +39,42 @@ import java.util.Set;
  * https://github.com/nexmark/nexmark/tree/master/nexmark-flink/src/main/resources/queries
  */
 @SuppressWarnings("JavadocLinkAsPlainText")
-public class NexmarkTest extends BaseSQLTests {
-    static final String table = """
-            CREATE TABLE NEXMARK_TABLE (
-            event_type int,
-            "person.id"  BIGINT,
-            "person.name"  VARCHAR,
-            "person.emailAddress"  VARCHAR,
-            "person.creditCard"  VARCHAR,
-            "person.city"  VARCHAR,
-            "person.state"  VARCHAR,
-            "person.dateTime" TIMESTAMP(3),
-            "person.extra"  VARCHAR,
-            "auction.id"  BIGINT,
-            "auction.itemName"  VARCHAR,
-            "auction.description"  VARCHAR,
-            "auction.initialBid"  BIGINT,
-            "auction.reserve"  BIGINT,
-            "auction.dateTime"  TIMESTAMP(3),
-            "auction.expires"  TIMESTAMP(3),
-            "auction.seller"  BIGINT,
-            "auction.category"  BIGINT,
-            "auction.extra"  VARCHAR,
-            "bid.auction"  BIGINT,
-            "bid.bidder"  BIGINT,
-            "bid.price"  BIGINT,
-            "bid.channel"  VARCHAR,
-            "bid.url"  VARCHAR,
-            "bid.dateTime"  TIMESTAMP(3),
-            "bid.extra"  VARCHAR)
-            """;
-
-    static final String[] views = {
+public class NexmarkTest extends StreamingTest {
+    static final String[] tables = {
             """
-CREATE VIEW person AS
-SELECT
-    "person.id" as id,
-    "person.name" as name,
-    "person.emailAddress" as emailAddress,
-    "person.creditCard" as creditCard,
-    "person.city" as city,
-    "person.state" as state,
-    "person.dateTime" AS "dateTime",
-    "person.extra" as extra
-FROM NEXMARK_TABLE WHERE event_type = 0""",
+CREATE TABLE person (
+    id BIGINT,
+    name VARCHAR,
+    emailAddress VARCHAR,
+    creditCard VARCHAR,
+    city VARCHAR,
+    state VARCHAR,
+    date_time TIMESTAMP(3),
+    extra  VARCHAR
+)""",
             """
-CREATE VIEW auction AS
-SELECT
-    "auction.id" as id,
-    "auction.itemName" as itemName,
-    "auction.description" as description,
-    "auction.initialBid" as initialBid,
-    "auction.reserve" as reserve,
-    "auction.dateTime" AS "dateTime",
-    "auction.expires" AS expires,
-    "auction.seller" as seller,
-    "auction.category" as category,
-    "auction.extra" as extra
-FROM NEXMARK_TABLE WHERE event_type = 1""",
+CREATE TABLE auction (
+    id  BIGINT,
+    itemName  VARCHAR,
+    description  VARCHAR,
+    initialBid  BIGINT,
+    reserve  BIGINT,
+    date_time  TIMESTAMP(3),
+    expires  TIMESTAMP(3),
+    seller  BIGINT,
+    category  BIGINT,
+    extra  VARCHAR
+)""",
             """
-CREATE VIEW bid AS
-SELECT
-    "bid.auction" AS auction,
-    "bid.bidder" AS bidder,
-    "bid.price" AS price,
-    "bid.channel" AS channel,
-    "bid.url" AS url,
-    "bid.dateTime" AS "dateTime",
-    "bid.extra" as extra
-FROM NEXMARK_TABLE WHERE event_type = 2"""
+CREATE TABLE bid (
+    auction  BIGINT,
+    bidder  BIGINT,
+    price  BIGINT,
+    channel  VARCHAR,
+    url  VARCHAR,
+    date_time  TIMESTAMP(3),
+    extra  VARCHAR
+)"""
     };
 
     static final String[] queries = {
@@ -118,7 +86,7 @@ FROM NEXMARK_TABLE WHERE event_type = 2"""
 -- Using `bid` events here, as they are most numerous with default configuration.
 -- -------------------------------------------------------------------------------------------------
 
-CREATE VIEW q0 AS SELECT auction, bidder, price, "dateTime", extra FROM bid""",
+CREATE VIEW q0 AS SELECT auction, bidder, price, date_time, extra FROM bid""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -132,7 +100,7 @@ SELECT
     auction,
     bidder,
     0.908 * price as price, -- convert dollar to euro
-    "dateTime",
+    date_time,
     extra
 FROM bid""",
 
@@ -184,7 +152,7 @@ SELECT
 FROM (
     SELECT MAX(B.price) AS final, A.category
     FROM auction A, bid B
-    WHERE A.id = B.auction AND B."dateTime" BETWEEN A."dateTime" AND A.expires
+    WHERE A.id = B.auction AND B.date_time BETWEEN A.date_time AND A.expires
     GROUP BY A.id, A.category
 ) Q
 GROUP BY Q.category""",
@@ -207,12 +175,12 @@ SELECT AuctionBids.auction, AuctionBids.num
    SELECT
      B1.auction,
      count(*) AS num,
-     HOP_START(B1."dateTime", INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS starttime,
-     HOP_END(B1."dateTime", INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS endtime
+     HOP_START(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS starttime,
+     HOP_END(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS endtime
    FROM bid B1
    GROUP BY
      B1.auction,
-     HOP(B1."dateTime", INTERVAL '2' SECOND, INTERVAL '10' SECOND)
+     HOP(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND)
  ) AS AuctionBids
  JOIN (
    SELECT
@@ -222,12 +190,12 @@ SELECT AuctionBids.auction, AuctionBids.num
    FROM (
      SELECT
        count(*) AS num,
-       HOP_START(B2."dateTime", INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS starttime,
-       HOP_END(B2."dateTime", INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS endtime
+       HOP_START(B2.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS starttime,
+       HOP_END(B2.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS endtime
      FROM bid B2
      GROUP BY
        B2.auction,
-       HOP(B2."dateTime", INTERVAL '2' SECOND, INTERVAL '10' SECOND)
+       HOP(B2.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND)
      ) AS CountBids
    GROUP BY CountBids.starttime, CountBids.endtime
  ) AS MaxBids
@@ -247,11 +215,11 @@ CREATE VIEW Q6 AS
 SELECT
     Q.seller,
     AVG(Q.final) OVER
-        (PARTITION BY Q.seller ORDER BY Q."dateTime" ROWS BETWEEN 10 PRECEDING AND CURRENT ROW)
+        (PARTITION BY Q.seller ORDER BY Q.date_time ROWS BETWEEN 10 PRECEDING AND CURRENT ROW)
 FROM (
-    SELECT MAX(B.price) AS final, A.seller, B."dateTime"
+    SELECT MAX(B.price) AS final, A.seller, B.date_time
     FROM auction AS A, bid AS B
-    WHERE A.id = B.auction and B."dateTime" between A."dateTime" and A.expires
+    WHERE A.id = B.auction and B.date_time between A.date_time and A.expires
     GROUP BY A.id, A.seller
 ) AS Q""",
 
@@ -267,15 +235,15 @@ FROM (
 -- -------------------------------------------------------------------------------------------------
 
 CREATE VIEW Q7 AS
-SELECT B.auction, B.price, B.bidder, B."dateTime", B.extra
+SELECT B.auction, B.price, B.bidder, B.date_time, B.extra
 from bid B
 JOIN (
-  SELECT MAX(B1.price) AS maxprice, TUMBLE_START(B1."dateTime", INTERVAL '10' SECOND) as "dateTime"
+  SELECT MAX(B1.price) AS maxprice, TUMBLE_START(B1.date_time, INTERVAL '10' SECOND) as date_time
   FROM bid B1
-  GROUP BY TUMBLE(B1."dateTime", INTERVAL '10' SECOND)
+  GROUP BY TUMBLE(B1.date_time, INTERVAL '10' SECOND)
 ) B1
 ON B.price = B1.maxprice
-WHERE B."dateTime" BETWEEN B1."dateTime"  - INTERVAL '10' SECOND AND B1."dateTime"
+WHERE B.date_time BETWEEN B1.date_time  - INTERVAL '10' SECOND AND B1.date_time
 """,
             """
 -- -------------------------------------------------------------------------------------------------
@@ -292,17 +260,17 @@ CREATE VIEW Q8 AS
 SELECT P.id, P.name, P.starttime
 FROM (
   SELECT P.id, P.name,
-         TUMBLE_START(P."dateTime", INTERVAL '10' SECOND) AS starttime,
-         TUMBLE_END(P."dateTime", INTERVAL '10' SECOND) AS endtime
+         TUMBLE_START(P.date_time, INTERVAL '10' SECOND) AS starttime,
+         TUMBLE_END(P.date_time, INTERVAL '10' SECOND) AS endtime
   FROM person P
-  GROUP BY P.id, P.name, TUMBLE(P."dateTime", INTERVAL '10' SECOND)
+  GROUP BY P.id, P.name, TUMBLE(P.date_time, INTERVAL '10' SECOND)
 ) P
 JOIN (
   SELECT A.seller,
-         TUMBLE_START(A."dateTime", INTERVAL '10' SECOND) AS starttime,
-         TUMBLE_END(A."dateTime", INTERVAL '10' SECOND) AS endtime
+         TUMBLE_START(A.date_time, INTERVAL '10' SECOND) AS starttime,
+         TUMBLE_END(A.date_time, INTERVAL '10' SECOND) AS endtime
   FROM auction A
-  GROUP BY A.seller, TUMBLE(A."dateTime", INTERVAL '10' SECOND)
+  GROUP BY A.seller, TUMBLE(A.date_time, INTERVAL '10' SECOND)
 ) A
 ON P.id = A.seller AND P.starttime = A.starttime AND P.endtime = A.endtime""",
 
@@ -315,13 +283,13 @@ ON P.id = A.seller AND P.starttime = A.starttime AND P.endtime = A.endtime""",
 
 CREATE VIEW Q9 AS
 SELECT
-    id, itemName, description, initialBid, reserve, "dateTime", expires, seller, category, extra,
+    id, itemName, description, initialBid, reserve, date_time, expires, seller, category, extra,
     auction, bidder, price, bid_dateTime, bid_extra
 FROM (
-   SELECT A.*, B.auction, B.bidder, B.price, B."dateTime" AS bid_dateTime, B.extra AS bid_extra,
-     ROW_NUMBER() OVER (PARTITION BY A.id ORDER BY B.price DESC, B."dateTime" ASC) AS rownum
+   SELECT A.*, B.auction, B.bidder, B.price, B.date_time AS bid_dateTime, B.extra AS bid_extra,
+     ROW_NUMBER() OVER (PARTITION BY A.id ORDER BY B.price DESC, B.date_time ASC) AS rownum
    FROM auction A, bid B
-   WHERE A.id = B.auction AND B."dateTime" BETWEEN A."dateTime" AND A.expires
+   WHERE A.id = B.auction AND B.date_time BETWEEN A.date_time AND A.expires
 )
 WHERE rownum <= 1""",
 
@@ -335,7 +303,7 @@ WHERE rownum <= 1""",
 -- -------------------------------------------------------------------------------------------------
 
 CREATE VIEW Q10 AS -- PARTITIONED BY (dt, hm) AS
-SELECT auction, bidder, price, "dateTime", extra, FORMAT_DATE('yyyy-MM-dd', "dateTime"), FORMAT_DATE('HH:mm', "dateTime")
+SELECT auction, bidder, price, date_time, extra, FORMAT_DATE('yyyy-MM-dd', date_time), FORMAT_DATE('HH:mm', date_time)
 FROM bid""",
 
             """
@@ -352,10 +320,10 @@ CREATE VIEW Q11 AS
 SELECT
     B.bidder,
     count(*) as bid_count,
-    SESSION_START(B."dateTime", INTERVAL '10' SECOND) as starttime,
-    SESSION_END(B."dateTime", INTERVAL '10' SECOND) as endtime
+    SESSION_START(B.date_time, INTERVAL '10' SECOND) as starttime,
+    SESSION_END(B.date_time, INTERVAL '10' SECOND) as endtime
 FROM bid B
-GROUP BY B.bidder, SESSION(B."dateTime", INTERVAL '10' SECOND)""",
+GROUP BY B.bidder, SESSION(B.date_time, INTERVAL '10' SECOND)""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -389,7 +357,7 @@ SELECT
     B.auction,
     B.bidder,
     B.price,
-    B."dateTime",
+    B.date_time,
     S.value
 FROM (SELECT *, PROCTIME() as p_time FROM bid) B
 JOIN side_input FOR SYSTEM_TIME AS OF B.p_time AS S
@@ -411,11 +379,11 @@ SELECT
     bidder,
     0.908 * price as price,
     CASE
-        WHEN HOUR("dateTime") >= 8 AND HOUR("dateTime") <= 18 THEN 'dayTime'
-        WHEN HOUR("dateTime") <= 6 OR HOUR("dateTime") >= 20 THEN 'nightTime'
+        WHEN HOUR(date_time) >= 8 AND HOUR(date_time) <= 18 THEN 'dayTime'
+        WHEN HOUR(date_time) <= 6 OR HOUR(date_time) >= 20 THEN 'nightTime'
         ELSE 'otherTime'
     END AS bidTimeType,
-    "dateTime",
+    date_time,
     extra,
     count_char(extra, 'c') AS c_counts
 FROM bid
@@ -431,7 +399,7 @@ WHERE 0.908 * price > 1000000 AND 0.908 * price < 50000000""",
 
 CREATE VIEW Q15 AS
 SELECT
-     FORMAT_DATE('yyyy-MM-dd', "dateTime") as 'day',
+     FORMAT_DATE('yyyy-MM-dd', date_time) as 'day',
      count(*) AS total_bids,
      count(*) filter (where price < 10000) AS rank1_bids,
      count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -445,7 +413,7 @@ SELECT
      count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,
      count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
 FROM bid
-GROUP BY FORMAT_DATE('yyyy-MM-dd', "dateTime")""",
+GROUP BY FORMAT_DATE('yyyy-MM-dd', date_time)""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -458,8 +426,8 @@ GROUP BY FORMAT_DATE('yyyy-MM-dd', "dateTime")""",
 CREATE VIEW Q16 AS
 SELECT
     channel,
-    format_date('yyyy-MM-dd', "dateTime") as 'day',
-    max(format_date('HH:mm', "dateTime")) as 'minute',
+    format_date('yyyy-MM-dd', date_time) as 'day',
+    max(format_date('HH:mm', date_time)) as 'minute',
     count(*) AS total_bids,
     count(*) filter (where price < 10000) AS rank1_bids,
     count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -473,7 +441,7 @@ SELECT
     count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,
     count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
 FROM bid
-GROUP BY channel, format_date('yyyy-MM-dd', "dateTime")""",
+GROUP BY channel, format_date('yyyy-MM-dd', date_time)""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -486,7 +454,7 @@ GROUP BY channel, format_date('yyyy-MM-dd', "dateTime")""",
 CREATE VIEW Q17 AS
 SELECT
      auction,
-     format_date('yyyy-MM-dd', "dateTime") as 'day',
+     format_date('yyyy-MM-dd', date_time) as 'day',
      count(*) AS total_bids,
      count(*) filter (where price < 10000) AS rank1_bids,
      count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -496,7 +464,7 @@ SELECT
      avg(price) AS avg_price,
      sum(price) AS sum_price
 FROM bid
-GROUP BY auction, format_date('yyyy-MM-dd', "dateTime")""",
+GROUP BY auction, format_date('yyyy-MM-dd', date_time)""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -507,8 +475,8 @@ GROUP BY auction, format_date('yyyy-MM-dd', "dateTime")""",
 -- -------------------------------------------------------------------------------------------------
 
 CREATE VIEW Q18 AS
-SELECT auction, bidder, price, channel, url, "dateTime", extra
- FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bidder, auction ORDER BY "dateTime" DESC) AS rank_number
+SELECT auction, bidder, price, channel, url, date_time, extra
+ FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bidder, auction ORDER BY date_time DESC) AS rank_number
        FROM bid)
  WHERE rank_number <= 1""",
 
@@ -535,8 +503,8 @@ WHERE rank_number <= 10""",
 
 CREATE VIEW Q20 AS
 SELECT
-    auction, bidder, price, channel, url, B."dateTime", B.extra,
-    itemName, description, initialBid, reserve, A."dateTime" as AdateTime, expires, seller, category, A.extra as Aextra
+    auction, bidder, price, channel, url, B.date_time, B.extra,
+    itemName, description, initialBid, reserve, A.date_time as AdateTime, expires, seller, category, A.extra as Aextra
 FROM
     bid AS B INNER JOIN auction AS A on B.auction = A.id
 WHERE A.category = 10""",
@@ -579,16 +547,59 @@ SELECT
     SPLIT_INDEX(url, '/', 5) as dir3 FROM bid"""
     };
 
-    @Test
-    public void testCompile() {
+    @Override
+    public void prepareInputs(DBSPCompiler compiler) {
+        for (String input: tables)
+            compiler.compileStatement(input);
+
+    }
+
+    @Override
+    public DBSPCompiler testCompiler(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.languageOptions.lexicalRules = Lex.ORACLE;
         options.languageOptions.throwOnError = true;
-        DBSPCompiler compiler = new DBSPCompiler(options);
-        compiler.compileStatement(table);
-        for (String view: views)
-            compiler.compileStatement(view);
+        options.languageOptions.generateInputForEveryTable = false;
+        options.ioOptions.emitHandles = true;
+        return new DBSPCompiler(options);
+    }
 
+    @Test
+    public void q0Test() {
+        DBSPCompiler compiler = this.testCompiler();
+        this.prepareInputs(compiler);
+        compiler.compileStatements(queries[0]);
+
+        InputOutputChangeStream stream = new InputOutputChangeStream();
+        String script0 = """
+INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
+INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
+INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""";
+        DBSPCircuit circuit = getCircuit(compiler);
+
+        this.addStep(circuit, stream, script0,
+                """
+                auction | bidder | price | date_time           | extra
+                --------------------------------------------------------
+                 1      | 1      | 80    | 2020-01-01 10:00:00 |\s
+                 1      | 1      | 100   | 2020-01-01 20:00:00 |\s""");
+
+        String script1 = """
+INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
+INSERT INTO Bid VALUES(2, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
+INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""";
+        this.addStep(circuit, stream, script1,
+                """
+                auction | bidder | price | date_time           | extra
+                --------------------------------------------------------
+                 2      | 1      | 80    | 2020-01-01 10:00:00 |\s
+                 2      | 1      | 100   | 2020-01-01 20:00:00 |\s""");
+
+        this.addRustTestCase("q0", compiler, circuit, stream);
+    }
+
+    public void testCompile() {
+        DBSPCompiler compiler = this.testCompiler(true);
         Set<Integer> unsupported = new HashSet<>() {{
             add(5); // hop
             add(6); // group-by
@@ -609,11 +620,6 @@ SELECT
             if (!unsupported.contains(index)) {
                 compiler.compileStatement(query);
             }
-            index++;
         }
-
-        Assert.assertFalse(compiler.hasErrors());
-        Assert.assertFalse(compiler.hasWarnings());
-        this.addRustTestCase("NexmarkTest", compiler, getCircuit(compiler));
     }
 }

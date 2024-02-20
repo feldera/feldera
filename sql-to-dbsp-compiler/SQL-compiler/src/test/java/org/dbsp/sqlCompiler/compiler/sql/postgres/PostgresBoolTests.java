@@ -9,7 +9,7 @@ import org.junit.Test;
  */
 public class PostgresBoolTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         compiler.compileStatements(
                         // "CREATE TABLE BOOLTBL1 (f1 bool);\n" +
                         // "INSERT INTO BOOLTBL1 (f1) VALUES (bool 't');\n" +

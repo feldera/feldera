@@ -22,7 +22,7 @@ rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf"
 serde_json = { version = "1.0.89" }
 chrono = { version = "0.4.31" }
 rkyv = { version = "0.7", default-features = false, features = ["std", "size_64"] }
-num = "0.4.1"
+num = { version = "0.4.1" }
 
 [dev-dependencies]
 hashing = { path = "../lib/hashing" }
@@ -33,11 +33,9 @@ sqlx = { version = "0.6", features = ["runtime-async-std-native-tls", "sqlite", 
 path = "src/lib.rs"
 doctest = false
 
-# Incremental builds sometimes crash the compiler
+# Incremental builds sometimes crash the Rust compiler
 [profile.test]
 incremental = false
-# Without this in debug builds overflows cause panics
-overflow-checks = false
 
 [patch.crates-io]
 rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86" }

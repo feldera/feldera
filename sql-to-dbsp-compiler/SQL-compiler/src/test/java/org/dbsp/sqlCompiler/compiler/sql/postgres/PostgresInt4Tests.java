@@ -12,7 +12,7 @@ import org.junit.Test;
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresInt4Tests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT4_TBL(f1 int4)";
 
         String insert =
