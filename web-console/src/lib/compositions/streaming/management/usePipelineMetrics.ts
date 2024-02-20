@@ -24,7 +24,7 @@ const emptyData = {
 type PipelineMetrics = typeof emptyData
 
 /**
- * Accumulate metrics history, accounting for desired time window, dropping previous data if the new data overwrites it
+ * Accumulate metrics history, accounting for the desired time window, dropping the previous data if the new data overwrites it
  * @param keepMs Time window of metrics age to be kept
  */
 const reconcileHistoricData = (
@@ -42,7 +42,7 @@ const reconcileHistoricData = (
       // clear metrics history if we get a timestamp that overwrites existing data point
       return oldData.length
     }
-    // return one more element than needed to satisfy keepMs when applying dicreteDerivative to result data series
+    // return one more element than needed to satisfy keepMs when applying discreteDerivative() to result data series
     return -Math.ceil(keepMs / refetchMs)
   })()
   return [...oldData.slice(sliceAt), newData]
