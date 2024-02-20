@@ -1,5 +1,5 @@
 import { randomString } from '$lib/functions/common/string'
-import { escapeRelationName, getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { caseDependentNameEq, escapeRelationName, getCaseDependentName } from '$lib/functions/felderaRelation'
 import { AttachedConnector, ProgramSchema } from '$lib/services/manager'
 import { ConnectorDescr } from '$lib/services/manager/models/ConnectorDescr'
 import { useCallback } from 'react'
@@ -14,7 +14,8 @@ export function connectorConnects(schema: ProgramSchema | null | undefined, ac: 
   if (!schema) {
     return false
   }
-  return (ac.is_input ? schema.inputs : schema.outputs).some(view => ac.relation_name === getCaseIndependentName(view))
+  const acCaseDependentName = getCaseDependentName(ac.relation_name)
+  return (ac.is_input ? schema.inputs : schema.outputs).some(caseDependentNameEq(acCaseDependentName))
 }
 
 /**
@@ -71,7 +72,7 @@ export function useAddConnector() {
       const sqlNode = getNode('sql')
       const ourNode = getNode(ac.name)
       const sqlPrefix = ac.is_input ? 'table-' : 'view-'
-      const connectorHandle = sqlPrefix + escapeRelationName(ac.relation_name)
+      const connectorHandle = sqlPrefix + escapeRelationName(getCaseDependentName(ac.relation_name))
       const hasAnEdge = ac.relation_name !== ''
 
       if (!(hasAnEdge && sqlNode && ourNode)) {

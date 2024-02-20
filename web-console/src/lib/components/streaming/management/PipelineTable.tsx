@@ -22,7 +22,7 @@ import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQue
 import { humanSize } from '$lib/functions/common/string'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { tuple } from '$lib/functions/common/tuple'
-import { getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ApiError, AttachedConnector, ConnectorDescr, PipelineRevision, Relation } from '$lib/services/manager'
 import {
   mutationDeletePipeline,
@@ -103,7 +103,7 @@ function getConnectorData(revision: PipelineRevision, direction: InputOrOutput):
 
   return relations.map(relation => {
     const connections = attachedConnectors
-      .filter(ac => ac.relation_name === getCaseIndependentName(relation))
+      .filter(ac => caseDependentNameEq(getCaseDependentName(ac.relation_name))(relation))
       .map(ac => {
         const connector = connectors.find(c => c.name === ac?.connector_name)
         invariant(connector, 'Attached connector has no connector.') // This can't happen in a revision
