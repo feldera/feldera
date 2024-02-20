@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::iter;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
@@ -106,7 +106,7 @@ impl<const ALLOW_OVERWRITE: bool> Clone for InMemoryBackend<ALLOW_OVERWRITE> {
 }
 
 impl<const ALLOW_OVERWRITE: bool> StorageControl for InMemoryBackend<ALLOW_OVERWRITE> {
-    async fn create(&self) -> Result<FileHandle, StorageError> {
+    async fn create_named<P: AsRef<Path>>(&self, _name: P) -> Result<FileHandle, StorageError> {
         let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
         self.files.borrow_mut().insert(file_counter, Vec::new());
         Ok(FileHandle(file_counter))
