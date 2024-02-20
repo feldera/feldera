@@ -27,8 +27,6 @@ use uuid::Uuid;
 
 use crate::buffer_cache::FBuf;
 
-#[cfg(feature = "glommio")]
-pub mod glommio_impl;
 pub mod monoio_impl;
 
 #[cfg(test)]
@@ -99,11 +97,6 @@ impl From<&ImmutableFileHandle> for i64 {
 /// An error that can occur when using the storage backend.
 #[derive(Error, Debug)]
 pub enum StorageError {
-    /// I/O error from `glommio` backend.
-    #[cfg(feature = "glommio")]
-    #[error("Got IO error during glommio operation")]
-    Io(#[from] glommio::GlommioError<()>),
-
     /// I/O error from `monoio` backend.
     #[error("Got IO error during monoio operation")]
     StdIo(#[from] std::io::Error),
