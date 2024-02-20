@@ -49,7 +49,7 @@ function SqlTableNode(props: { relation: Relation }) {
       />
       {/* The table- prefix is important for the isValidConnection logic */}
       <Handle
-        id={'table-' + escapeRelationName(getCaseIndependentName(props.relation))}
+        id={'table-' + escapeRelationName(props.relation)}
         type='target'
         position={Position.Left}
         isConnectable={true}
@@ -87,7 +87,7 @@ function SqlViewNode(props: { relation: Relation }) {
       />
       {/* The view- prefix is important for the isValidConnection functions */}
       <Handle
-        id={'view-' + escapeRelationName(getCaseIndependentName(props.relation))}
+        id={'view-' + escapeRelationName(props.relation)}
         type='source'
         position={Position.Right}
         isConnectable={true}
