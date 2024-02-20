@@ -1,5 +1,5 @@
 VERSION --try 0.8
-IMPORT github.com/earthly/lib/rust:f2ffdb8380f6fc5ed7f4f3e1b30fc693b21984fa AS rust
+IMPORT github.com/earthly/lib/rust:1a4a008e271c7a5583e7bd405da8fd3624c05610 AS rust
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install --yes sudo
@@ -491,23 +491,17 @@ benchmark:
     SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
 
 all-tests:
-    WAIT
-        BUILD +formatting-check
-        BUILD +machete
-        BUILD +clippy
-        BUILD +test-rust
-        BUILD +test-python
-        BUILD +openapi-checker
-        BUILD +test-sql
-        BUILD +integration-tests
-    END
-    WAIT
-        BUILD +ui-playwright-tests
-    END
-    WAIT
-        BUILD +test-docker-compose
-        BUILD +test-docker-compose-stable
-        BUILD +test-debezium-mysql
-        BUILD +test-debezium-jdbc-sink
-        BUILD +test-snowflake
-    END
+    BUILD +formatting-check
+    BUILD +machete
+    BUILD +clippy
+    BUILD +test-rust
+    BUILD +test-python
+    BUILD +openapi-checker
+    BUILD +test-sql
+    BUILD +integration-tests
+    BUILD +ui-playwright-tests
+    BUILD +test-docker-compose
+    BUILD +test-docker-compose-stable
+    BUILD +test-debezium-mysql
+    BUILD +test-debezium-jdbc-sink
+    BUILD +test-snowflake

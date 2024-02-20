@@ -722,7 +722,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String rustHandlesTest = """
                 #[test]
                 pub fn test() {
-                    let (mut circuit, (person, adult) ) = circuit(2).unwrap();
+                    let (mut circuit, (person, adult) ) = circuit(CircuitConfig::with_workers(2)).unwrap();
                     // Feed two input records to the circuit.
                     // First input has a count of "1"
                     person.push( ("Bob".to_string(), Some(12), Some(true)).into(), 1 );
@@ -741,7 +741,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 pub fn test() {
                     use dbsp_adapters::{CircuitCatalog, RecordFormat};
                                 
-                    let (mut circuit, catalog) = circuit(2)
+                    let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(2))
                         .expect("Failed to build circuit");
                     let persons = catalog
                         .input_collection_handle("PERSON")

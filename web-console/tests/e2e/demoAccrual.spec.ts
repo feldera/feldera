@@ -195,9 +195,6 @@ test('Accrual demo test', async ({ page, request }) => {
     ]) {
       await page.getByTestId('button-expand-relations').click()
       await page.getByTestId('box-relation-options').getByTestId(`button-option-relation-${relation}`).click()
-      await page.waitForTimeout(5000)
-      //await page.getByTitle("Walter LLC").waitFor({ timeout: 10000 })
-
       await page.getByTestId('box-relation-options').waitFor({ state: 'hidden' })
       await expect(page).toHaveScreenshot(`relation ${relation}.png`)
     }
