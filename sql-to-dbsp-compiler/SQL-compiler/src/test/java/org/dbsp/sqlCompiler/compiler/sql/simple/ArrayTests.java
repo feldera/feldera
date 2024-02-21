@@ -331,7 +331,8 @@ public class ArrayTests extends BaseSQLTests {
                 )
         );
 
-        this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL", new InputOutputPair(input, result));
+        this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
 
     @Test
@@ -369,7 +370,8 @@ public class ArrayTests extends BaseSQLTests {
                 )
         );
 
-        this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL", new InputOutputPair(input, result));
+        this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6275")
@@ -411,6 +413,7 @@ public class ArrayTests extends BaseSQLTests {
                 )
         );
 
-        this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL", new InputOutputPair(input, result));
+        this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
 }

@@ -20,11 +20,19 @@ public class StreamingTest extends SqlIoTest {
         return new Change(tableContents);
     }
 
+    /** Add a step to a change stream with many input tables but one single output view.
+     * A step is described as an input-output pair.
+     * @param circuit  Circuit that is tested.
+     * @param stream   The input and output data are added to this stream.
+     * @param script   SQL script that describes insertions and deletions into the input tables.
+     * @param expected A text representation of the output produced for this step with an extra last
+     *                 column that contains weights.
+     */
     public void addStep(
             DBSPCircuit circuit, InputOutputChangeStream stream, String script, String expected) {
         Change input = this.toChange(script);
         DBSPType outputType = circuit.getSingleOutputType();
-        Change output = this.parseTable(expected, outputType);
+        Change output = this.parseChangeTable(expected, outputType);
         stream.addPair(input, output);
     }
 }

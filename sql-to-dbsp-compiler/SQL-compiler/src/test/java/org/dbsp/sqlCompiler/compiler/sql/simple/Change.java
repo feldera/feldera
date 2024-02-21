@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 
 public class Change implements IChange {
-    final DBSPZSetLiteral[] sets;
+    public final DBSPZSetLiteral[] sets;
 
     public Change(DBSPZSetLiteral... sets) {
         this.sets = sets;

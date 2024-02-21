@@ -564,38 +564,63 @@ SELECT
         return new DBSPCompiler(options);
     }
 
-    @Test
-    public void q0Test() {
+    void createTest(int query, String... scriptsAndTables) {
+        assert scriptsAndTables.length % 2 == 0;
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
-        compiler.compileStatements(queries[0]);
-
-        InputOutputChangeStream stream = new InputOutputChangeStream();
-        String script0 = """
-INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
-INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""";
+        compiler.compileStatements(queries[query]);
         DBSPCircuit circuit = getCircuit(compiler);
 
-        this.addStep(circuit, stream, script0,
-                """
-                auction | bidder | price | date_time           | extra
-                --------------------------------------------------------
-                 1      | 1      | 80    | 2020-01-01 10:00:00 |\s
-                 1      | 1      | 100   | 2020-01-01 20:00:00 |\s""");
+        InputOutputChangeStream stream = new InputOutputChangeStream();
+        for (int i = 0; i < scriptsAndTables.length; i += 2)
+            this.addStep(circuit, stream, scriptsAndTables[i], scriptsAndTables[i + 1]);
+        this.addRustTestCase("q" + query, compiler, circuit, stream);
+    }
 
-        String script1 = """
+    @Test
+    public void q0Test() {
+        this.createTest(0,
+                """
+                INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
+                INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
+                INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                """
+                auction | bidder | price | date_time           | extra | weight
+                ----------------------------------------------------------------
+                 1      | 1      | 80    | 2020-01-01 10:00:00 | | 1
+                 1      | 1      | 100   | 2020-01-01 20:00:00 | | 1""",
+                """
 INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
 INSERT INTO Bid VALUES(2, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""";
-        this.addStep(circuit, stream, script1,
+INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
                 """
-                auction | bidder | price | date_time           | extra
-                --------------------------------------------------------
-                 2      | 1      | 80    | 2020-01-01 10:00:00 |\s
-                 2      | 1      | 100   | 2020-01-01 20:00:00 |\s""");
+                auction | bidder | price | date_time           | extra | weight
+                ----------------------------------------------------------------
+                 2      | 1      | 80    | 2020-01-01 10:00:00 | | 1
+                 2      | 1      | 100   | 2020-01-01 20:00:00 | | 1""");
+    }
 
-        this.addRustTestCase("q0", compiler, circuit, stream);
+    @Test
+    public void q1Test() {
+        this.createTest(1,
+"""
+INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
+INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
+INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                """
+                auction | bidder | price | date_time           | extra | weight
+                ----------------------------------------------------------------
+                 1      | 1      | 72.64  | 2020-01-01 10:00:00 | | 1
+                 1      | 1      | 90.8   | 2020-01-01 20:00:00 | | 1""",
+                """
+INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
+INSERT INTO Bid VALUES(2, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
+INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                """
+                auction | bidder | price | date_time           | extra | weight
+                ----------------------------------------------------------------
+                 2      | 1      | 72.64  | 2020-01-01 10:00:00 | | 1
+                 2      | 1      | 90.8   | 2020-01-01 20:00:00 | | 1""");
     }
 
     public void testCompile() {

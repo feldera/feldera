@@ -59,6 +59,8 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -421,6 +423,49 @@ public abstract class SqlIoTest extends BaseSQLTests {
             values[i] = this.parseValue(fieldType, columns[i]);
         }
         return new DBSPTupleExpression(values);
+    }
+
+    /** A Z-set that has the last column as a weight is converted into
+     * a Z-set that uses the weight for the rest of the row.
+     * For example, the Z-set:
+     * (a, b, 2) -> 2
+     * (c, d, -1) -> 1
+     * Is converted into
+     * (a, b) -> 4
+     * (c, d) -> -1
+     */
+    DBSPZSetLiteral extractWeight(DBSPZSetLiteral data) {
+        DBSPTypeTuple rowType = data.getElementType().to(DBSPTypeTuple.class);
+        DBSPType resultType = rowType.slice(0, rowType.size() - 1);
+        int rowSize = rowType.size();
+        DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(resultType);
+
+        for (Map.Entry<DBSPExpression, Long> entry: data.data.entrySet()) {
+            Long weight = entry.getValue();
+            DBSPExpression row = entry.getKey();
+            DBSPTupleExpression tuple = row.to(DBSPTupleExpression.class);
+            DBSPExpression[] prefix = new DBSPExpression[rowSize - 1];
+            for (int i = 0; i < prefix.length; i++)
+                prefix[i] = tuple.field(i);
+            DBSPExpression rowWeight = tuple.fields[rowSize - 1];
+            weight *= rowWeight.to(DBSPI64Literal.class).value;
+            DBSPExpression newRow = new DBSPTupleExpression(prefix);
+            result.add(newRow, weight);
+        }
+        return result;
+    }
+
+    /** Parse a change table.  A change table is like a table, but has an extra
+     * integer column that contains the weights.
+     */
+    public Change parseChangeTable(String table, DBSPType outputType) {
+        List<DBSPType> extraFields =
+                Linq.list(outputType.to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class).tupFields);
+        extraFields.add(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
+        DBSPType extraOutputType = new DBSPTypeTuple(extraFields);
+        Change change = this.parseTable(table, new DBSPTypeZSet(extraOutputType));
+        DBSPZSetLiteral[] extracted = Linq.map(change.sets, this::extractWeight, DBSPZSetLiteral.class);
+        return new Change(extracted);
     }
 
     public Change parseTable(String table, DBSPType outputType) {
