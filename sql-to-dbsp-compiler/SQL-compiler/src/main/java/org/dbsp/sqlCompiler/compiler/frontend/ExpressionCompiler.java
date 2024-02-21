@@ -951,8 +951,31 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case TUMBLE:
                 return this.compilePolymorphicFunction(
                         "tumble", node, type, ops, 2, 3);
-            case DOT:
+            case ARRAY_APPEND: {
+                if (call.operands.size() != 2)
+                    throw new UnimplementedException(node);
+                DBSPTypeVec vec = type.to(DBSPTypeVec.class);
+                // Ensure that both arguments have the type expected by the result
+                DBSPType elemType = vec.getElementType();
+                DBSPExpression arg0 = ops.get(0);
+                DBSPExpression arg1 = ops.get(1).cast(elemType);
+                DBSPTypeVec arg0type = arg0.getType().to(DBSPTypeVec.class);
+                DBSPType arg0ElemType = arg0type.getElementType();
+                if (!arg0ElemType.sameType(elemType)) {
+                    // Apply a cast to every element of the vector
+                    DBSPVariablePath var = new DBSPVariablePath("v", arg0ElemType.ref());
+                    DBSPExpression cast = var.deref().cast(elemType).closure(var.asParameter());
+                    arg0 = new DBSPApplyExpression("map", type, arg0.borrow(), cast);
+                }
+
+                String method = "array_append";
+                if (arg0type.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, arg0, arg1);
+            }
             case HOP:
+            case DOT:
             default:
                 throw new UnimplementedException(node);
         }

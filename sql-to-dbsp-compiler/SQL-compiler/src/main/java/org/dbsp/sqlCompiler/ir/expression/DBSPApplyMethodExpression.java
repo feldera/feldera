@@ -35,18 +35,14 @@ import org.dbsp.util.Linq;
 /**
  * Function application expression.
  */
-public class DBSPApplyMethodExpression extends DBSPExpression {
-    public final DBSPExpression function;
+public class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
     public final DBSPExpression self;
-    public final DBSPExpression[] arguments;
 
     public DBSPApplyMethodExpression(CalciteObject node,
             String function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
-        super(node, returnType);
-        this.function = new DBSPPath(function).toExpression();
+        super(node, new DBSPPath(function).toExpression(), returnType, arguments);
         this.self = self;
-        this.arguments = arguments;
     }
 
     public DBSPApplyMethodExpression(String function, DBSPType returnType,
@@ -57,10 +53,9 @@ public class DBSPApplyMethodExpression extends DBSPExpression {
     public DBSPApplyMethodExpression(
             DBSPExpression function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
-        super(CalciteObject.EMPTY, returnType);
-        this.function = function;
+        super(CalciteObject.EMPTY, function, returnType, arguments);
         this.self = self;
-        this.arguments = arguments;
+        this.checkArgs(true);
     }
 
     @Override
