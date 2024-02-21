@@ -475,8 +475,8 @@ ui-playwright-tests:
                 && exit $exit_code
         END
     FINALLY
-        SAVE ARTIFACT --if-exists playwright-report.zip AS LOCAL ./playwright-artifacts/
-        SAVE ARTIFACT --if-exists test-results.zip      AS LOCAL ./playwright-artifacts/
+        SAVE ARTIFACT --if-exists /dbsp/playwright-report.zip AS LOCAL ./playwright-artifacts/
+        SAVE ARTIFACT --if-exists /dbsp/test-results.zip      AS LOCAL ./playwright-artifacts/
     END
 
 benchmark:
