@@ -84,33 +84,38 @@ might appear in a different order):
 
 ```json
 {
-  "sequence_number": 36,
+  "sequence_number": 9,
   "json_data": [
     {
       "insert": {
-        "PART_ID": 1,
-        "PART_NAME": "Flux Capacitor",
-        "VENDOR_ID": 2,
-        "VENDOR_NAME": "HyperDrive Innovations",
-        "PRICE": "10000"
+        "part_id": 1,
+        "part_name": "Flux Capacitor",
+        "vendor_id": 2,
+        "vendor_name": "HyperDrive Innovations",
+        "price": "10000"
+      }
+    }
+  ]
+}
+{
+  "sequence_number": 10,
+  "json_data": [
+    {
+      "insert": {
+        "part_id": 2,
+        "part_name": "Warp Core",
+        "vendor_id": 1,
+        "vendor_name": "Gravitech Dynamics",
+        "price": "15000"
       }
     },
     {
       "insert": {
-        "PART_ID": 2,
-        "PART_NAME": "Warp Core",
-        "VENDOR_ID": 1,
-        "VENDOR_NAME": "Gravitech Dynamics",
-        "PRICE": "15000"
-      }
-    },
-    {
-      "insert": {
-        "PART_ID": 3,
-        "PART_NAME": "Kyber Crystal",
-        "VENDOR_ID": 3,
-        "VENDOR_NAME": "DarkMatter Devices",
-        "PRICE": "9000"
+        "part_id": 3,
+        "part_name": "Kyber Crystal",
+        "vendor_id": 3,
+        "vendor_name": "DarkMatter Devices",
+        "price": "9000"
       }
     }
   ]
