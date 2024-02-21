@@ -2,6 +2,7 @@ import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQue
 import { nonNull } from '$lib/functions/common/function'
 import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
+import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import {
   ControllerStatus,
   GlobalMetrics,
@@ -76,8 +77,8 @@ export function usePipelineMetrics(props: {
       const globalWithTimestamp = { ...newData.global_metrics, timeMs: lastTimestamp ? now - lastTimestamp : 0 }
 
       return {
-        input: new Map(newData.inputs.map(cs => tuple(cs.config.stream, cs.metrics))),
-        output: new Map(newData.outputs.map(cs => tuple(cs.config.stream, cs.metrics))),
+        input: new Map(newData.inputs.map(cs => tuple(normalizeCaseIndependentName(cs.config.stream), cs.metrics))),
+        output: new Map(newData.outputs.map(cs => tuple(normalizeCaseIndependentName(cs.config.stream), cs.metrics))),
         global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, props.refetchMs, props.keepMs)
       } as any
     }

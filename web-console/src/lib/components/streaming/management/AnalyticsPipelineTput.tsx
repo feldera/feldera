@@ -46,8 +46,7 @@ export const AnalyticsPipelineTput = (props: {
       show: true,
       padding: {
         left: 20,
-        right: 20,
-        bottom: -15
+        right: 20
       }
     },
     fill: {
@@ -131,7 +130,7 @@ export const AnalyticsPipelineTput = (props: {
       </Box>
       <ReactApexcharts
         type='area'
-        height={125}
+        height={140}
         width='100%'
         options={options}
         series={series}
