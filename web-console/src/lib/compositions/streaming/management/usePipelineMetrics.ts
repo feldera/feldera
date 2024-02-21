@@ -5,24 +5,47 @@ import { tuple } from '$lib/functions/common/tuple'
 import {
   ControllerStatus,
   GlobalMetrics,
+  GlobalMetricsTimestamp,
   InputEndpointMetrics,
   OutputEndpointMetrics,
   PipelineStatus
 } from '$lib/types/pipeline'
 import { useState } from 'react'
+import invariant from 'tiny-invariant'
 
 import { useQuery } from '@tanstack/react-query'
-
-const toMetrics = (data: ControllerStatus, { timeMs }: { timeMs: number }) => ({
-  input: new Map(data.inputs.map(cs => tuple(cs.config.stream, cs.metrics))),
-  output: new Map(data.outputs.map(cs => tuple(cs.config.stream, cs.metrics))),
-  global: [{ ...data.global_metrics, timeMs }]
-})
 
 const emptyData = {
   input: new Map<string, InputEndpointMetrics>(),
   output: new Map<string, OutputEndpointMetrics>(),
-  global: []
+  global: [] as GlobalMetricsTimestamp[]
+}
+
+type PipelineMetrics = typeof emptyData
+
+/**
+ * Accumulate metrics history, accounting for the desired time window, dropping the previous data if the new data overwrites it
+ * @param keepMs Time window of metrics age to be kept
+ */
+const reconcileHistoricData = (
+  oldData: GlobalMetricsTimestamp[],
+  newData: GlobalMetricsTimestamp,
+  refetchMs: number,
+  keepMs?: number
+) => {
+  const sliceAt = (() => {
+    if (!nonNull(keepMs)) {
+      return -oldData.length
+    }
+    const isOverwritingTimestamp = !!oldData.find(m => m.timeMs >= newData.timeMs)
+    if (isOverwritingTimestamp) {
+      // clear metrics history if we get a timestamp that overwrites existing data point
+      return oldData.length
+    }
+    // return one more element than needed to satisfy keepMs when applying discreteDerivative() to result data series
+    return -Math.ceil(keepMs / refetchMs)
+  })()
+  return [...oldData.slice(sliceAt), newData]
 }
 
 export function usePipelineMetrics(props: {
@@ -39,8 +62,10 @@ export function usePipelineMetrics(props: {
     refetchInterval: props.refetchMs,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
-    structuralSharing: (oldData: any, _newData: any) => {
-      if (!_newData) {
+    structuralSharing: (oldData: any, newData: any) => {
+      invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
+      invariant(((v: any): v is ControllerStatus | null => true)(newData))
+      if (!newData) {
         setLastTimestamp(undefined)
         return emptyData
       }
@@ -48,15 +73,12 @@ export function usePipelineMetrics(props: {
       if (!lastTimestamp) {
         setLastTimestamp(now)
       }
-      const newData = toMetrics(_newData, { timeMs: lastTimestamp ? now - lastTimestamp : 0 })
-      const oldGlobal = oldData?.global ?? []
+      const globalWithTimestamp = { ...newData.global_metrics, timeMs: lastTimestamp ? now - lastTimestamp : 0 }
 
-      const keepElems = nonNull(props.keepMs) ? Math.ceil(props.keepMs / props.refetchMs) : oldGlobal.length
       return {
-        input: newData.input,
-        output: newData.output,
-        // global includes one more element than needed to satisfy keepMs when applying dicreteDerivative to data series
-        global: [...oldGlobal.slice(-keepElems), newData.global[0]]
+        input: new Map(newData.inputs.map(cs => tuple(cs.config.stream, cs.metrics))),
+        output: new Map(newData.outputs.map(cs => tuple(cs.config.stream, cs.metrics))),
+        global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, props.refetchMs, props.keepMs)
       } as any
     }
   })
@@ -64,7 +86,7 @@ export function usePipelineMetrics(props: {
   if (!pipelineStatsQuery.data) {
     return emptyData
   }
-  return pipelineStatsQuery.data as unknown as ReturnType<typeof toMetrics>
+  return pipelineStatsQuery.data as unknown as PipelineMetrics
 }
 
 export const calcPipelineThroughput = (metrics: { global: (GlobalMetrics & { timeMs: number })[] }) => {

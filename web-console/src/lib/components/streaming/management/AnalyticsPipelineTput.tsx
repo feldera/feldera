@@ -46,7 +46,8 @@ export const AnalyticsPipelineTput = (props: {
       show: true,
       padding: {
         left: 20,
-        right: 20
+        right: 20,
+        bottom: -15
       }
     },
     fill: {
@@ -123,14 +124,14 @@ export const AnalyticsPipelineTput = (props: {
   }
 
   return (
-    <Card>
+    <Card sx={{ height: '100%' }}>
       <Box sx={{ px: '1rem', pt: '0.5rem' }}>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Throughput</Typography>
         <Typography variant='h5'>{format(smoothTput >= 1000 ? '.3s' : '.0f')(smoothTput)} rows/s</Typography>
       </Box>
       <ReactApexcharts
         type='area'
-        height={140}
+        height={125}
         width='100%'
         options={options}
         series={series}

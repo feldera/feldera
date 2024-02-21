@@ -264,9 +264,9 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
 
   return (
     <Box display='flex' sx={{ m: 2 }} justifyContent='center' data-testid={`box-details-${props.row.descriptor.name}`}>
-      <Grid container spacing={3} sx={{ height: 1, width: '95%' }} alignItems='stretch'>
+      <Grid container spacing={3} sx={{ height: 1 }} alignItems='stretch'>
         <Grid item xs={4}>
-          <Card>
+          <Card sx={{ height: '100%' }}>
             <List subheader={<ListSubheader>Configuration</ListSubheader>} dense>
               <ListItem>
                 <ListItemIcon>

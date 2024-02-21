@@ -28,6 +28,10 @@ export interface GlobalMetrics {
   pipeline_complete: boolean
 }
 
+export type GlobalMetricsTimestamp = GlobalMetrics & {
+  timeMs: number
+}
+
 export type InputEndpointStatus = {
   endpoint_name: string
   config: InputEndpointConfig

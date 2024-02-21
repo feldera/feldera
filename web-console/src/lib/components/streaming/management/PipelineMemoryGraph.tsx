@@ -50,7 +50,8 @@ export const PipelineMemoryGraph = (props: {
       show: true,
       padding: {
         left: 20,
-        right: 20
+        right: 20,
+        bottom: -15
       }
     },
     fill: {
@@ -106,7 +107,7 @@ export const PipelineMemoryGraph = (props: {
           return '-' + time.toISOString().substring(14, 19)
         }
       },
-      tickAmount: 2,
+      tickAmount: 1,
       axisTicks: { show: true },
       axisBorder: { show: false },
       range: props.keepMs
@@ -127,7 +128,7 @@ export const PipelineMemoryGraph = (props: {
   }
 
   return (
-    <Card>
+    <Card sx={{ height: '100%' }}>
       <Box sx={{ px: '1rem', pt: '0.5rem' }}>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Memory used</Typography>
         <Typography variant='h5' data-testid='box-pipeline-memory-value'>
@@ -136,7 +137,7 @@ export const PipelineMemoryGraph = (props: {
       </Box>
       <ReactApexcharts
         type='area'
-        height={140}
+        height={125}
         width='100%'
         options={options}
         series={series}
