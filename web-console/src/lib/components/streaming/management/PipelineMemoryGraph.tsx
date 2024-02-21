@@ -50,7 +50,8 @@ export const PipelineMemoryGraph = (props: {
       show: true,
       padding: {
         left: 20,
-        right: 20
+        right: 20,
+        bottom: -15
       }
     },
     fill: {
@@ -136,7 +137,7 @@ export const PipelineMemoryGraph = (props: {
       </Box>
       <ReactApexcharts
         type='area'
-        height={140}
+        height={125}
         width='100%'
         options={options}
         series={series}
