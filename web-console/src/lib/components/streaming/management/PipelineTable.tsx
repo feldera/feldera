@@ -274,6 +274,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 </ListItemIcon>
                 <ListItemText
                   primary={props.row.descriptor.program_name || 'not set'}
+                  secondary={props.row.descriptor.pipeline_id || 'not set'}
                   secondaryTypographyProps={
                     {
                       'data-testid': 'box-pipeline-id',
@@ -281,7 +282,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                       variant: 'caption'
                     } as any
                   }
-                  secondary={props.row.descriptor.pipeline_id || 'not set'}
+                  sx={{ mr: '-1rem' }}
                 />
               </ListItem>
               {state.current_status == PipelineStatus.RUNNING && (
