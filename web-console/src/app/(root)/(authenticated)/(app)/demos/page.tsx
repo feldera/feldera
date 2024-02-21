@@ -72,7 +72,7 @@ const DemoActionDialogs = (props: {
   const wantedDemoAction = decodeURI(hash)
   const action = /^(\w+)\//.exec(wantedDemoAction)?.[1] as 'setup' | 'cleanup' | undefined
   const demoTitle = /\/([\w ]+)$/.exec(wantedDemoAction)?.[1]
-  console.log('looking for', wantedDemoAction, demoTitle, props.demos)
+
   if (!demoTitle || !action) {
     return <></>
   }
