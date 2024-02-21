@@ -18,8 +18,18 @@ const deleteRows = async (page: Page, regex: RegExp) => {
   }
 }
 
-setup('Global prepare', async ({ page }) => {
-  await page.goto(appOrigin, { timeout: 3000 })
+setup('Global prepare', async ({ page, request }) => {
+  for (let i = 0; i < 5; ++i) {
+    // Try to ping Feldera instance before opening the WebConsole,
+    // which may sporadically fail the first time (transient CI issue)
+    try {
+      await page.waitForTimeout(1000)
+      await request.get(appOrigin + 'config/authentication').then(r => r.json())
+      break
+    } catch {}
+  }
+
+  await page.goto(appOrigin)
 
   await setup.step('Prepare: Delete pipelines', async () => {
     await page.getByTestId('button-vertical-nav-pipelines').click()

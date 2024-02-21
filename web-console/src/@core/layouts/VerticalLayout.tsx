@@ -46,6 +46,7 @@ export const VerticalLayout = (props: LayoutProps) => {
       <Box
         sx={{
           height: '100%',
+          width: '100vw', // Ignore the global vertical scrollbar
           display: 'flex'
         }}
       >
