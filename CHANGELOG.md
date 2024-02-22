@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2024-02-22
+
 ### Fixed
 
 - WebConsole: Fix metrics values depend on polling period
-- WebConsole: Improve WebConsole throughput and memory graphs (#491)
+- WebConsole: Improve WebConsole throughput and memory graphs
+  ([#491](https://github.com/feldera/feldera/pull/491))
 
 ### Added
 
@@ -28,19 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1404](https://github.com/feldera/feldera/pull/1404))
 - API: endpoint to get a list of demo URLs
   ([#1385](https://github.com/feldera/feldera/pull/1385))
-- WebConsole: Add functionality that would enable setting up demos in the sandbox (#1321)
+- WebConsole: Add functionality that would enable setting up demos in the sandbox 
+  ([#1321](https://github.com/feldera/feldera/pull/1321))
 - WebConsole: Add Swagger link to navbar, make navbar more compact
 
 ### Changed
 
 - SQL: Illegal date literals and parsing illegal dates cause runtime
-  errors instead of producing `NULL`  ([#1398](https://github.com/feldera/feldera/pull/1398))
-- WebConsole: Make Breadcrumb links larger, remove blue color
-- WebConsole: Move some footer links to navigation drawer
-- WebConsole: Make Introduction video inline on jome page, optionally collapsible
+  errors instead of producing `NULL` ([#1398](https://github.com/feldera/feldera/pull/1398))
+- WebConsole: Various design adjustments
 - WebConsole: Show the entire generated API key
-- WebConsole: If AWS Cognito is used as an auth provider, when login is needed a redirect to Cognito Hosted UI happens automatically (#1364)
-- WebConsole: Now user is redirected to the desired page after a successful login
+- WebConsole: Improve login UX with AWS Cognito (redirect to desired page after successful login) 
+  ([#1364](https://github.com/feldera/feldera/pull/1364))
 
 ## [0.9.0] - 2024-02-06
 
