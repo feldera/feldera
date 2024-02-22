@@ -29,8 +29,6 @@ public enum DBSPOpcode {
     GT(">", false),
     LTE("<=", false),
     GTE(">=", false),
-    SHR(">>", false),
-    SHL("<<", false),
     AND("&&", false),
     BW_AND("&", false),
     MUL_WEIGHT("mul_weight", false),

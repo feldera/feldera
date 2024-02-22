@@ -327,6 +327,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
         if (needCommonType(opcode, type, leftType, rightType)) {
             DBSPType commonBase = reduceType(leftType, rightType);
+            if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB ||
+                    opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV ||
+                    // not MOD, Calcite is too smart and it uses the right type for mod
+                    opcode == DBSPOpcode.BW_AND ||
+                    opcode == DBSPOpcode.BW_OR || opcode == DBSPOpcode.XOR ||
+                    opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN) {
+                // Use the inferred Calcite type for the output
+                commonBase = type.setMayBeNull(false);
+            }
             if (commonBase.is(DBSPTypeNull.class)) {
                 // Result is always NULL.
                 return DBSPLiteral.none(type);
@@ -1010,11 +1019,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         for (int i = 0; i < converted.size(); i++)
             arguments[i+1] = converted.get(i);
         return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).unwrap();
-    }
-
-    private DBSPExpression castTo(DBSPExpression expression, DBSPType type) {
-        DBSPType originalType = expression.type;
-        return expression.cast(type.setMayBeNull(originalType.mayBeNull));
     }
 
     DBSPExpression compile(RexNode expression) {
