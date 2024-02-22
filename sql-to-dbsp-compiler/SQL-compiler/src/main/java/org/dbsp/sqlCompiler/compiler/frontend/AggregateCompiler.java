@@ -51,7 +51,6 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.NameGen;
@@ -239,11 +238,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPType type, DBSPExpression left, DBSPExpression right, @Nullable DBSPExpression filter) {
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
-        DBSPType commonBase = ExpressionCompiler.reduceType(leftType, rightType);
-        if (commonBase.is(DBSPTypeNull.class)) {
-            return DBSPLiteral.none(type);
-        }
-        DBSPType resultType = commonBase.setMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
+        DBSPType resultType = type.setMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
         DBSPExpression binOp = new DBSPConditionalAggregateExpression(node, op, resultType, left, right, filter);
         return binOp.cast(type);
     }

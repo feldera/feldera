@@ -18,6 +18,15 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testIssue1450() {
+        this.q("""
+                SELECT 0.809 * 100;
+                 result
+                ---------
+                80.9""");
+    }
+
+    @Test
     public void testUnnest() {
         this.q("""
                 select * from arr_table;

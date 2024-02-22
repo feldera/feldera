@@ -53,14 +53,15 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
     static class EqualityTest {
         public final int leftColumn;
         public final int rightColumn;
-        public final DBSPType resultType;
+        public final DBSPType commonType;
 
-        EqualityTest(int leftColumn, int rightColumn, DBSPType resultType) {
+        EqualityTest(int leftColumn, int rightColumn, DBSPType commonType) {
             this.leftColumn = leftColumn;
             this.rightColumn = rightColumn;
-            this.resultType = resultType;
+            this.commonType = commonType;
             if (leftColumn < 0 || rightColumn < 0)
-                throw new InternalCompilerError("Illegal column number " + leftColumn + ":" + rightColumn, resultType);
+                throw new InternalCompilerError("Illegal column number " +
+                        leftColumn + ":" + rightColumn, commonType);
         }
     }
 
@@ -84,12 +85,12 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
             this.leftOver = leftOver;
         }
 
-        public void addEquality(RexNode left, RexNode right, DBSPType resultType) {
+        public void addEquality(RexNode left, RexNode right, DBSPType commonType) {
             RexInputRef ref = Objects.requireNonNull(asInputRef(left));
             int l = ref.getIndex();
             ref = Objects.requireNonNull(asInputRef(right));
             int r = ref.getIndex() - JoinConditionAnalyzer.this.leftTableColumnCount;
-            this.comparisons.add(new EqualityTest(l, r, resultType));
+            this.comparisons.add(new EqualityTest(l, r, commonType));
         }
 
         void validate() {
@@ -176,11 +177,11 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
                 }
                 DBSPType leftType = this.typeCompiler.convertType(left.getType(), true);
                 DBSPType rightType = this.typeCompiler.convertType(right.getType(), true);
-                DBSPType resultType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(false);
+                DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(false);
                 if (leftIsLeft) {
-                    this.result.addEquality(left, right, resultType);
+                    this.result.addEquality(left, right, commonType);
                 } else {
-                    this.result.addEquality(right, left, resultType);
+                    this.result.addEquality(right, left, commonType);
                 }
                 return null;
             default:
