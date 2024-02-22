@@ -431,10 +431,11 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             @Nullable DBSPZSetLiteral output,
             SqlTestQueryOutputDescription description) {
         List<DBSPStatement> list = new ArrayList<>();
+        DBSPExpression arg = new DBSPApplyExpression(
+                "CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2)); // workers
         DBSPLetStatement cas = new DBSPLetStatement("circ",
-                new DBSPApplyExpression(circuit.getNode(), circuit.name, DBSPTypeAny.getDefault(),
-                        new DBSPUSizeLiteral(2) // workers
-                ).unwrap(), true);
+                new DBSPApplyExpression(
+                        circuit.getNode(), circuit.name, DBSPTypeAny.getDefault(), arg).unwrap(), true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
         list.add(streams);
