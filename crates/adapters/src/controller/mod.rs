@@ -1036,6 +1036,8 @@ impl ControllerInner {
             ep.disconnect_flag.store(true, Ordering::Release);
             ep.unparker.unpark();
             self.status.remove_output(endpoint_id);
+            // The circuit thread may be waiting for output buffer space.
+            self.unpark_circuit();
         }
     }
 
