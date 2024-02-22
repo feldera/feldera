@@ -396,6 +396,9 @@ const InspectionTableImpl = ({
                 setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel(defaultColumnVisibility)}
               />
             ]
+          },
+          row: {
+            'data-testid': 'box-relation-row'
           }
         }}
         loading={isPending}
