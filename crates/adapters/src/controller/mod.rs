@@ -219,6 +219,7 @@ impl Controller {
         endpoint_name: &str,
         config: &InputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
+        debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
         self.inner.connect_input(endpoint_name, config)
     }
 
@@ -227,6 +228,8 @@ impl Controller {
     /// This method is asynchronous and may return before all endpoint
     /// threads have terminated.
     pub fn disconnect_input(&self, endpoint_id: &EndpointId) {
+        debug!("Disconnecting input endpoint {endpoint_id}");
+
         self.inner.disconnect_input(endpoint_id)
     }
 
@@ -248,6 +251,8 @@ impl Controller {
         endpoint_config: InputEndpointConfig,
         endpoint: Box<dyn InputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
+        debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
+
         self.inner
             .add_input_endpoint(endpoint_name, endpoint_config, endpoint)
     }
@@ -257,6 +262,8 @@ impl Controller {
     /// This method is asynchronous and may return before all endpoint
     /// threads have terminated.
     pub fn disconnect_output(&self, endpoint_id: &EndpointId) {
+        debug!("Disconnecting output endpoint {endpoint_id}");
+
         self.inner.disconnect_output(endpoint_id)
     }
 
@@ -279,6 +286,8 @@ impl Controller {
         endpoint_config: &OutputEndpointConfig,
         endpoint: Box<dyn OutputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
+        debug!("Adding output endpoint '{endpoint_name}'; config: {endpoint_config:?}");
+
         self.inner
             .add_output_endpoint(endpoint_name, endpoint_config, endpoint)
     }
@@ -344,6 +353,8 @@ impl Controller {
     ///
     /// Start streaming data through all connected input endpoints.
     pub fn start(&self) {
+        debug!("Starting the pipeline");
+
         self.inner.start();
     }
 
@@ -354,6 +365,7 @@ impl Controller {
     /// method is asynchronous and may return before all endpoints have been
     /// fully paused.
     pub fn pause(&self) {
+        debug!("Pausing the pipeline");
         self.inner.pause();
     }
 
@@ -369,12 +381,15 @@ impl Controller {
     }
 
     pub fn dump_profile(&self) {
+        debug!("Generating DBSP profile dump");
         self.inner.dump_profile();
     }
 
     /// Terminate the controller, stop all input endpoints and destroy the
     /// circuit.
     pub fn stop(self) -> Result<(), ControllerError> {
+        debug!("Stopping the circuit");
+
         self.inner.stop();
         self.circuit_thread_handle
             .join()
