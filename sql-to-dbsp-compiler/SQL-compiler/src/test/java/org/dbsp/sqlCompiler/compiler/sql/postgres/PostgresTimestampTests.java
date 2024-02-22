@@ -23,10 +23,10 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.TableParser;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -143,10 +143,11 @@ public class PostgresTimestampTests extends SqlIoTest {
     void testQuery(String query, Change expectedOutput) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, true);
-        DBSPCircuit circuit = getCircuit(compiler);
         DBSPZSetLiteral input = compiler.getTableContents().getTableContents("TIMESTAMP_TBL");
-        InputOutputChange streams = new InputOutputChange(new Change(input), expectedOutput);
-        this.addRustTestCase(query, compiler, circuit, streams.toStream());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        InputOutputChange change = new InputOutputChange(new Change(input), expectedOutput);
+        ccs.addChange(change);
+        this.addRustTestCase(query, ccs);
     }
 
     @Test
@@ -554,8 +555,9 @@ public class PostgresTimestampTests extends SqlIoTest {
         };
 
         DBSPExpression[] results = Linq.map(data, d ->
-                new DBSPTupleExpression(d == null ? DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)) :
-                        new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d) / 60000), true)), DBSPExpression.class);
+                new DBSPTupleExpression(d == null ?
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)) :
+                        new DBSPI32Literal(-(int)(TableParser.shortIntervalToMilliseconds(d) / 60000), true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
         this.testQuery(query, new Change(new DBSPZSetLiteral(results)));
@@ -660,7 +662,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         };
         DBSPExpression[] results = Linq.map(data, d ->
                 new DBSPTupleExpression(d == null ? DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)) :
-                        new DBSPI32Literal(-(int)(shortIntervalToMilliseconds(d)/1000), true)), DBSPExpression.class);
+                        new DBSPI32Literal(-(int)(TableParser.shortIntervalToMilliseconds(d)/1000), true)), DBSPExpression.class);
         this.testQuery(query, new Change(new DBSPZSetLiteral(results)));
     }
 

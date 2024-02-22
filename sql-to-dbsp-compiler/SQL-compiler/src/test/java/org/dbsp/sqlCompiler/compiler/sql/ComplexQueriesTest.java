@@ -229,7 +229,9 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 ))
         };
         InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());
-        this.addRustTestCase("ComplexQueriesTest.demographicsTest", compiler, getCircuit(compiler), ip.toStream());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.addChange(ip);
+        this.addRustTestCase("ComplexQueriesTest.demographicsTest", ccs);
     }
 
     // Test for https://github.com/feldera/feldera/issues/1151

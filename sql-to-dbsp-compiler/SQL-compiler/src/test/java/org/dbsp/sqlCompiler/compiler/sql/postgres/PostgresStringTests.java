@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
@@ -1082,8 +1081,8 @@ public class PostgresStringTests extends SqlIoTest {
                     """;
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(sql);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(sql, compiler, circuit);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase(sql, ccs);
     }
 
     // TODO: bytea computations

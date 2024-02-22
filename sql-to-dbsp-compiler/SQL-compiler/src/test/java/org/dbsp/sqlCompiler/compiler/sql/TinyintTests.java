@@ -8,7 +8,6 @@ public class TinyintTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT_TBL(f1 tinyint)";
-
         String insert = """
                 INSERT INTO INT_TBL(f1) VALUES
                   (0),
@@ -273,7 +272,6 @@ public class TinyintTests extends SqlIoTest {
                           127 |   63
                          -127 |  -63
                         (5 rows)
-                        
                         """
         );
     }

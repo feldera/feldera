@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.junit.Test;
@@ -32,7 +31,8 @@ public class CatalogTests extends BaseSQLTests {
                 create view v1 as select * from t1;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(statements);
-        this.addRustTestCase("docTest", compiler, getCircuit(compiler));
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("docTest", ccs);
     }
 
     @Test
@@ -184,7 +184,8 @@ public class CatalogTests extends BaseSQLTests {
                 -- create view k8scluster_vulnerability_stats ();""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
-        this.addRustTestCase("docTest", compiler, getCircuit(compiler));
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("docTest", ccs);
     }
 
     // Test for https://github.com/feldera/feldera/issues/1151
@@ -195,8 +196,8 @@ public class CatalogTests extends BaseSQLTests {
         String sql = "CREATE TABLE event_t ( id BIGINT NOT NULL PRIMARY KEY, local_event_dt DATE )";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(sql);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(sql, compiler, circuit);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase(sql, ccs);
     }
 
     @Test
@@ -212,7 +213,7 @@ public class CatalogTests extends BaseSQLTests {
                             primary key(id1, id2))""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(sql);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(sql, compiler, circuit);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase(sql, ccs);
     }
 }

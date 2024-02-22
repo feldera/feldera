@@ -1,15 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.IChange;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -47,25 +41,16 @@ class TestCase {
     public final String name;
     /** Name of the Java test that is being run. */
     public final String javaTestName;
-    /** Compiler used to compile the test case.
-     * Used for code generation. */
-    public final DBSPCompiler compiler;
-    /** Circuit that is being tested. */
-    public final DBSPCircuit circuit;
-    /** Supplied inputs and expected corresponding outputs for the circuit. */
-    public final InputOutputChangeStream data;
+    public final BaseSQLTests.CompilerCircuitStream ccs;
     /** Non-null if the test is supposed to panic.  In that case this
      * contains the expected panic message. */
     @Nullable
     public final String message;
 
-    TestCase(String name, String javaTestName, DBSPCompiler compiler,
-             DBSPCircuit circuit, @Nullable String message, InputOutputChangeStream data) {
+    TestCase(String name, String javaTestName, BaseSQLTests.CompilerCircuitStream ccs, @Nullable String message) {
         this.name = name;
         this.javaTestName = javaTestName;
-        this.circuit = circuit;
-        this.data = data;
-        this.compiler = compiler;
+        this.ccs = ccs;
         this.message = message;
     }
 
@@ -76,23 +61,23 @@ class TestCase {
      * input and tests the produced output.
      */
     DBSPFunction createTesterCode(int testNumber,
-                                  @SuppressWarnings("SameParameterValue") String codeDirectory) throws IOException {
+                                  @SuppressWarnings("SameParameterValue")
+                                  String codeDirectory) throws IOException {
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
-        boolean useHandles = this.compiler.options.ioOptions.emitHandles;
+        boolean useHandles = this.ccs.compiler.options.ioOptions.emitHandles;
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
         circuitArguments[0] = new DBSPApplyExpression("CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2));
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
-                new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).unwrap(),
+                new DBSPApplyExpression(this.ccs.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).unwrap(),
                 true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
         list.add(streams);
 
-        Simplify simplify = new Simplify(new StderrErrorReporter());
         int pair = 0;
-        for (InputOutputChange changes : this.data.changes) {
+        for (InputOutputChange changes : this.ccs.stream.changes) {
             IChange inputs = changes.getInputs().simplify();
             IChange outputs = changes.getOutputs().simplify();
 

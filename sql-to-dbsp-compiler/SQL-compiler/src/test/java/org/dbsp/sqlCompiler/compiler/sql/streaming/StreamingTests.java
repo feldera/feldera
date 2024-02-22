@@ -1,11 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.CompilerMain;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
@@ -21,7 +21,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -38,34 +37,7 @@ import java.sql.SQLException;
 import java.util.List;
 
 /** Tests that exercise streaming features. */
-public class StreamingTests extends BaseSQLTests {
-    @Override
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        CompilerOptions options = super.testOptions(incremental, optimize);
-        options.languageOptions.incrementalize = true;
-        return options;
-    }
-
-    InputOutputChange fromTSTSTS(String... ts) {
-        DBSPZSetLiteral input = new DBSPZSetLiteral(
-                new DBSPTupleExpression(
-                        new DBSPTimestampLiteral(ts[0], false)));
-        DBSPZSetLiteral output;
-        if (ts.length > 1)
-            output = new DBSPZSetLiteral(
-                    new DBSPTupleExpression(
-                            new DBSPTimestampLiteral(ts[1], false),
-                            new DBSPTimestampLiteral(ts[2], false)));
-        else
-            output = DBSPZSetLiteral.emptyWithElementType(
-                    new DBSPTypeTuple(
-                            new DBSPTypeTimestamp(CalciteObject.EMPTY, false),
-                            new DBSPTypeTimestamp(CalciteObject.EMPTY, false)
-                    ));
-
-        return new InputOutputChange(new Change(input), new Change(output));
-    }
-
+public class StreamingTests extends StreamingTest {
     @Test
     public void tumblingTestLimits() {
         String sql = """
@@ -80,12 +52,35 @@ public class StreamingTests extends BaseSQLTests {
 
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+
+        ccs.step("INSERT INTO series VALUES('2024-02-08 10:00:00')",
+                """
+                 start               | end                 | weight
+                ----------------------------------------------------
+                 2024-02-08 09:42:00 | 2024-02-08 10:12:00 | 1""");
+        ccs.step("INSERT INTO series VALUES('2024-02-08 10:10:00')",
+                """
+                start              | end                 | weight
+                ---------------------------------------------------"""); // same group
+        ccs.step( "INSERT INTO series VALUES('2024-02-08 10:12:00')",
+                """
+                 start               | end                 | weight
+                ----------------------------------------------------
+                 2024-02-08 10:12:00 | 2024-02-08 10:42:00 | 1""");
+        ccs.step("INSERT INTO series VALUES('2024-02-08 10:30:00')",
+                """
+                start              | end                 | weight
+                ---------------------------------------------------"""); // same group as before
+
+        /*
         InputOutputChangeStream data = new InputOutputChangeStream();
         data.addChange(this.fromTSTSTS("2024-02-08 10:00:00", "2024-02-08 09:42:00", "2024-02-08 10:12:00"));
         data.addChange(this.fromTSTSTS("2024-02-08 10:10:00")); // same group
         data.addChange(this.fromTSTSTS("2024-02-08 10:12:00", "2024-02-08 10:12:00", "2024-02-08 10:42:00"));
         data.addChange(this.fromTSTSTS("2024-02-08 10:30:00")); // same group as before
-        this.addRustTestCase("tumblingTestLimits", compiler, getCircuit(compiler), data);
+         */
+        this.addRustTestCase("tumblingTestLimits", ccs);
     }
 
     Change fromDoubleTimestamp(double d, String ts) {
@@ -148,7 +143,9 @@ public class StreamingTests extends BaseSQLTests {
         data.addChange(new InputOutputChange(
                 this.fromDoubleTimestamp(10.0, "2023-13-30 10:00:00"),
                 this.fromDoubleTimestamp(10.0, "2023-13-30 00:00:00")));
-        this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
+
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
+        this.addRustTestCase("latenessTest", ccs);
     }
 
     @Test
@@ -199,7 +196,9 @@ public class StreamingTests extends BaseSQLTests {
                                 .add(new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(2)), 1)
                                 .add(new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(1)), 1))
                 ));
-        this.addRustTestCase("ivm blog post", compiler, getCircuit(compiler), data);
+
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
+        this.addRustTestCase("ivm blog post", ccs);
     }
 
     @Test 
@@ -273,7 +272,8 @@ public class StreamingTests extends BaseSQLTests {
                                 new DBSPDoubleLiteral(10.0, true),
                                 new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(addSub)));
-        this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
+        this.addRustTestCase("latenessTest", ccs);
     }
 
     Long[] profile(String program) throws IOException, InterruptedException, SQLException {
@@ -408,8 +408,8 @@ public class StreamingTests extends BaseSQLTests {
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatements(ddl);
         compiler.compileStatement(query);
-        InputOutputChangeStream data = new InputOutputChangeStream();
-        this.addRustTestCase("latenessTest", compiler, getCircuit(compiler), data);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("latenessTest", ccs);
     }
 
     @Test
@@ -454,6 +454,7 @@ public class StreamingTests extends BaseSQLTests {
                 new Change(new DBSPZSetLiteral(two)),
                 new Change(expected3)));
 
-        this.addRustTestCase("testAggregate", compiler, getCircuit(compiler), data);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
+        this.addRustTestCase("testAggregate", ccs);
     }
 }

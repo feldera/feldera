@@ -364,11 +364,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return result;
     }
 
-    /**
-     * Get the contents of the tables as a result of all the INSERT statements compiled.
-     */
+    /** Get the contents of the tables as a result of all the INSERT statements compiled. */
     public TableContents getTableContents() {
         return this.midend.getTableContents();
+    }
+
+    /** Empty the contents of all tables that were populated by INSERT or DELETE statements */
+    public void clearTables() {
+        this.midend.clearTables();
     }
 
     public void showErrors(PrintStream stream) {

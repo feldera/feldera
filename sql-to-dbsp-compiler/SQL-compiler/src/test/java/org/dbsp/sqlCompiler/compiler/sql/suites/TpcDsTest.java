@@ -18,8 +18,8 @@ public class TpcDsTest extends BaseSQLTests {
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.outputsAreSets = true;
         compiler.compileStatements(tpch);
-        System.err.println(compiler.messages);
-        compiler.throwIfErrorsOccurred();
-        this.addRustTestCase("tpcds", compiler, getCircuit(compiler));
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.showErrors();
+        this.addRustTestCase("tpcds", ccs);
     }
 }

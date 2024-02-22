@@ -27,9 +27,11 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
@@ -50,10 +52,64 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Base class for SQL-based tests.
- */
+/** Base class for SQL-based tests. */
 public class BaseSQLTests {
+    /** Helper class for testing.  Holds together
+     * - the compiler that is used to compile a program,
+     * - the circuit, and
+     * - the input/output data that is used to test the circuit.
+     */
+    public static class CompilerCircuitStream {
+        final DBSPCompiler compiler;
+        final DBSPCircuit circuit;
+        final InputOutputChangeStream stream;
+
+        public CompilerCircuitStream(DBSPCompiler compiler) {
+            this(compiler, new InputOutputChangeStream());
+        }
+
+        public CompilerCircuitStream(DBSPCompiler compiler, InputOutputChangeStream streams) {
+            this.compiler = compiler;
+            this.circuit = BaseSQLTests.getCircuit(compiler);
+            this.stream = streams;
+        }
+
+        public void showErrors() {
+            compiler.messages.show(System.err);
+            compiler.messages.clear();
+        }
+
+        /** Compiles a SQL script composed of INSERT and DELETE statements.
+         * into a Change. */
+        public Change toChange(DBSPCompiler compiler, String script) {
+            compiler.clearTables();
+            compiler.compileStatements(script);
+            TableContents tableContents = compiler.getTableContents();
+            return new Change(tableContents);
+        }
+
+        /** Add a step to a change stream with many input tables but one single output view.
+         * A step is described as an input-output pair.
+         * @param script   SQL script that describes insertions and deletions into the input tables.
+         * @param expected A text representation of the output produced for this step with an extra last
+         *                 column that contains weights.
+         */
+        public void step(String script, String expected) {
+            Change input = this.toChange(compiler, script);
+            DBSPType outputType = circuit.getSingleOutputType();
+            Change output = TableParser.parseChangeTable(expected, outputType);
+            stream.addPair(input, output);
+        }
+
+        public void addChange(InputOutputChange ioChange) {
+            this.stream.addChange(ioChange);
+        }
+
+        public void addPair(Change inputChange, Change outputChange) {
+            this.stream.addPair(inputChange, outputChange);
+        }
+    }
+
     @Rule
     public TestName currentTestName = new TestName();
 
@@ -122,17 +178,17 @@ public class BaseSQLTests {
             return;
         PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
         // Use the compiler from the first test case.
-        DBSPCompiler firstCompiler = testsToRun.get(0).compiler;
+        DBSPCompiler firstCompiler = testsToRun.get(0).ccs.compiler;
         RustFileWriter writer = new RustFileWriter(outputStream);
         int testNumber = 0;
         String[] extraArgs = new String[0];
         for (TestCase test: testsToRun) {
-            if (!test.compiler.options.same(firstCompiler.options))
+            if (!test.ccs.compiler.options.same(firstCompiler.options))
                 throw new RuntimeException("Tests are not compiled with the same options: "
-                        + test.compiler.options + " and " + firstCompiler.options);
+                        + test.ccs.compiler.options + " and " + firstCompiler.options);
             ProgramAndTester pt;
             // Standard test
-            pt = new ProgramAndTester(test.circuit, test.createTesterCode(testNumber, rustDirectory));
+            pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
             testsExecuted++;
             writer.add(pt);
             testNumber++;
@@ -142,17 +198,12 @@ public class BaseSQLTests {
         testsToRun.clear();
     }
 
-    protected void addRustTestCase(
-            String name, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputChangeStream streams) {
-        compiler.messages.show(System.err);
-        compiler.messages.clear();
-        TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, null, streams);
+    public void addRustTestCase(
+            String name, CompilerCircuitStream ccs) {
+        ccs.compiler.messages.show(System.err);
+        ccs.compiler.messages.clear();
+        TestCase test = new TestCase(name, this.currentTestInformation, ccs, null);
         testsToRun.add(test);
-    }
-
-    protected void addRustTestCase(
-            String name, DBSPCompiler compiler, DBSPCircuit circuit) {
-        this.addRustTestCase(name, compiler, circuit, new InputOutputChangeStream());
     }
 
     /** Add a test case without inputs */
@@ -160,14 +211,14 @@ public class BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(statements);
         Assert.assertFalse(compiler.hasErrors());
-        this.addRustTestCase(this.currentTestInformation, compiler, getCircuit(compiler), new InputOutputChangeStream());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase(this.currentTestInformation, ccs);
     }
 
     protected void addFailingRustTestCase(
-            String name, String message, DBSPCompiler compiler, DBSPCircuit circuit, InputOutputChangeStream streams) {
-        compiler.messages.show(System.err);
-        compiler.messages.clear();
-        TestCase test = new TestCase(name, this.currentTestInformation, compiler, circuit, message, streams);
+            String name, String message, CompilerCircuitStream ccs) {
+        ccs.showErrors();
+        TestCase test = new TestCase(name, this.currentTestInformation, ccs, message);
         testsToRun.add(test);
     }
 
@@ -193,13 +244,13 @@ public class BaseSQLTests {
         return new DBSPCompiler(options);
     }
 
-    public static DBSPCircuit getCircuit(DBSPCompiler compiler) {
+    static DBSPCircuit getCircuit(DBSPCompiler compiler) {
         compiler.optimize();
         String name = "circuit" + testsToRun.size();
         return compiler.getFinalCircuit(name);
     }
 
-    protected InputOutputChangeStream emptyInputOutputChangeStream() {
+    protected InputOutputChangeStream streamWithEmptyChanges() {
         return new InputOutputChangeStream().addChange(
                 new InputOutputChange(new Change(), new Change()));
     }
@@ -208,12 +259,12 @@ public class BaseSQLTests {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addFailingRustTestCase(query, message, compiler, circuit, data);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
+        this.addFailingRustTestCase(query, message, ccs);
     }
 
     /** Run a test that fails at runtime without needing any inputs */
     protected void runtimeConstantFail(String query, String message) {
-        this.runtimeFail(query, message, this.emptyInputOutputChangeStream());
+        this.runtimeFail(query, message, this.streamWithEmptyChanges());
     }
 }

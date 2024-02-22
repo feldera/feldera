@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
@@ -70,9 +69,10 @@ public class CastTests extends BaseSQLTests {
     public void testQuery(String query, DBSPZSetLiteral expectedOutput) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputChange streams = new InputOutputChange(this.createInput(), new Change(expectedOutput));
-        this.addRustTestCase(query, compiler, circuit, streams.toStream());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
+        ccs.addChange(change);
+        this.addRustTestCase(query, ccs);
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6168")
@@ -117,6 +117,6 @@ public class CastTests extends BaseSQLTests {
     public void decimalOutOfRange() {
         this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
                 "cannot represent 100103123 as DECIMAL(10, 4)",
-                this.emptyInputOutputChangeStream());
+                this.streamWithEmptyChanges());
     }
 }

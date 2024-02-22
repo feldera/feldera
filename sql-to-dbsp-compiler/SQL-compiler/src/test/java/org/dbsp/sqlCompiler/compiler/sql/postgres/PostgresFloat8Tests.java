@@ -952,12 +952,12 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
 
     @Test
     public void testLogFail() {
-        this.runtimeFail("select ln(-1)", "Unable to calculate ln for -1", this.emptyInputOutputChangeStream());
-        this.runtimeFail("select log10(-1)", "Unable to calculate log10 for -1", this.emptyInputOutputChangeStream());
-        this.runtimeFail("select log(-1)", "Unable to calculate ln for -1", this.emptyInputOutputChangeStream());
-        this.runtimeFail("select log(0, -1)", "Unable to calculate log(0, -1)", this.emptyInputOutputChangeStream());
-        this.runtimeFail("select log(-1, 0)", "Unable to calculate log(-1, 0)", this.emptyInputOutputChangeStream());
-        this.runtimeFail("select log(-1, -1)", "Unable to calculate log(-1, -1)", this.emptyInputOutputChangeStream());
+        this.runtimeFail("select ln(-1)", "Unable to calculate ln for -1", this.streamWithEmptyChanges());
+        this.runtimeFail("select log10(-1)", "Unable to calculate log10 for -1", this.streamWithEmptyChanges());
+        this.runtimeFail("select log(-1)", "Unable to calculate ln for -1", this.streamWithEmptyChanges());
+        this.runtimeFail("select log(0, -1)", "Unable to calculate log(0, -1)", this.streamWithEmptyChanges());
+        this.runtimeFail("select log(-1, 0)", "Unable to calculate log(-1, 0)", this.streamWithEmptyChanges());
+        this.runtimeFail("select log(-1, -1)", "Unable to calculate log(-1, -1)", this.streamWithEmptyChanges());
     }
 
     // Moved here from `PostgresNumericTests`

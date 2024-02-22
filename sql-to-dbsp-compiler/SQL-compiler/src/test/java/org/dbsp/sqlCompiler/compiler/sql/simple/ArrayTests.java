@@ -23,10 +23,9 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -52,8 +51,8 @@ public class ArrayTests extends BaseSQLTests {
     void testQuery(String statements, String query, InputOutputChangeStream streams) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(statements, query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(query, compiler, circuit, streams);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, streams);
+        this.addRustTestCase(query, ccs);
     }
 
     private void testQuery(String statements, String query) {

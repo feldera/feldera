@@ -25,7 +25,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
@@ -80,8 +79,8 @@ public class EndToEndTests extends BaseSQLTests {
     void testQueryBase(String query, InputOutputChangeStream streams) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(query, compiler, circuit, streams);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, streams);
+        this.addRustTestCase(query, ccs);
     }
 
     public void invokeTestQueryBase(String query, InputOutputChangeStream streams) {

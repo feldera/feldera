@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
@@ -521,9 +520,8 @@ public class PostgresNumericTests extends SqlIoTest {
         compiler.compileStatement(intermediate);
         compiler.generateOutputForNextView(true);
         compiler.compileStatement(last);
-        compiler.optimize();
-        DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputChange streams = new InputOutputChange(
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        InputOutputChange change = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 new Change(
                         DBSPZSetLiteral.emptyWithElementType(new DBSPTypeTuple(
@@ -531,7 +529,8 @@ public class PostgresNumericTests extends SqlIoTest {
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
                                 new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false),
                                 new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false)))));
-        this.addRustTestCase(last, compiler, circuit, streams.toStream());
+        ccs.addChange(change);
+        this.addRustTestCase(last, ccs);
     }
 
     @Test

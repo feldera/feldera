@@ -24,11 +24,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.suites.nexmark;
 
 import org.apache.calcite.config.Lex;
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
 import org.junit.Test;
 
 import java.util.HashSet;
@@ -569,12 +567,10 @@ SELECT
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.compileStatements(queries[query]);
-        DBSPCircuit circuit = getCircuit(compiler);
-
-        InputOutputChangeStream stream = new InputOutputChangeStream();
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         for (int i = 0; i < scriptsAndTables.length; i += 2)
-            this.addStep(circuit, stream, scriptsAndTables[i], scriptsAndTables[i + 1]);
-        this.addRustTestCase("q" + query, compiler, circuit, stream);
+            ccs.step(scriptsAndTables[i], scriptsAndTables[i + 1]);
+        this.addRustTestCase("q" + query, ccs);
     }
 
     @Test
@@ -623,12 +619,102 @@ INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-
                  2      | 1      | 90.8   | 2020-01-01 20:00:00 | | 1""");
     }
 
+    @Test
+    public void q2Test() {
+        this.createTest(2,
+                """
+                INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
+                INSERT INTO Bid VALUES(123, 1, 111, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');
+                INSERT INTO Bid VALUES(124, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                """
+                auction | price | weight
+                -------------------------------
+                 123    | 111   | 1""",
+                """
+INSERT INTO Bid VALUES(271, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
+INSERT INTO Bid VALUES(492, 1, 222, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                """
+                auction | price | weight
+                -----------------------------
+                 492    | 222   | 1""");
+    }
+
+    @Test
+    public void q3Test() {
+        this.createTest(3,
+                """
+INSERT INTO Person VALUES(1, 'NL Seller', 'AAABBB@example.com', '1111 2222 3333 4444', 'Phoenix', 'NL', '2020-01-01 00:00:00', '');
+INSERT INTO Person VALUES(2, 'CA Seller', 'AAABBB@example.com', '1111 2222 3333 4444', 'Phoenix', 'CA', '2020-01-01 00:00:00', '');
+INSERT INTO Person VALUES(3, 'ID Seller', 'AAABBB@example.com', '1111 2222 3333 4444', 'Phoenix', 'ID', '2020-01-01 00:00:00', '');
+INSERT INTO Auction VALUES(999, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 2, 10, '');
+INSERT INTO Auction VALUES(452, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 3, 10, '');
+""",
+                """
+                 name     | city   | state | id | weight
+                -----------------------------------------
+                 CA Seller| Phoenix| CA| 999 | 1
+                 ID Seller| Phoenix| ID| 452 | 1""",
+                """
+INSERT INTO Person VALUES(4, 'OR Seller', 'AAABBB@example.com', '1111 2222 3333 4444', 'Phoenix', 'PR', '2020-01-01 00:00:00', '');
+INSERT INTO Auction VALUES(999, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 4, 11, '');
+INSERT INTO Person VALUES(5, 'OR Seller', 'AAABBB@example.com', '1111 2222 3333 4444', 'Phoenix', 'OR', '2020-01-01 00:00:00', '');
+INSERT INTO Auction VALUES(333, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 5, 10, '');""",
+                """
+                 name     | city   | state | id | weight
+                ------------------------------------------
+                 OR Seller| Phoenix| OR| 333 | 1"""
+                );
+    }
+
+    @Test
+    public void q4Test() {
+        this.createTest(4,
+                """
+INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-01 02:00:00', 1, 1, '');
+INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-02 00:00:00', 1, 1, '');
+INSERT INTO Auction VALUES(3, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-02 00:00:00', 1, 2, '');
+-- Winning bid for auction 1 (category 1).
+INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 01:10:00', '');
+-- This bid would have one but isn't included as it came in too late.
+INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 01:50:00', '');
+-- Max bid for auction 2 (category 1).
+INSERT INTO Bid VALUES(2, 1, 300, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
+INSERT INTO Bid VALUES(2, 1, 200, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
+-- Only bid for auction 3 (category 2)
+INSERT INTO Bid VALUES(3, 1, 20, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
+""",
+                """
+                 category | final | weight
+                ----------------------------
+                 1        | 200   | 1
+                 2        | 20    | 1""",
+                """
+--  Another bid for auction 3 that should update the winning bid for category 2.
+INSERT INTO Bid VALUES(3, 1, 30, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
+                        """,
+                """
+                 category | final | weight
+                ----------------------------
+                 2        | 20    | -1
+                 2        | 30    | 1""",
+                """
+-- Another auction with a single winning bid in category 2.
+INSERT INTO Auction VALUES(4, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-01 02:00:00', 1, 2, '');
+INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
+                        """,
+                """
+                 category | final | weight
+                ----------------------------
+                 2        | 30    | -1
+                 2        | 45    | 1"""
+        );
+    }
+
     public void testCompile() {
         DBSPCompiler compiler = this.testCompiler(true);
         Set<Integer> unsupported = new HashSet<>() {{
             add(5); // hop
             add(6); // group-by
-            //add(7); // tumble
             add(8); // tumble
             add(11); // session
             add(12); // proctime
