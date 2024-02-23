@@ -124,7 +124,7 @@ export const AnalyticsPipelineTput = (props: {
 
   return (
     <Card sx={{ height: '100%' }}>
-      <Box sx={{ px: '1rem', pt: '0.5rem' }}>
+      <Box sx={{ px: '1rem', pt: '0.5rem', width: '100%' }} data-testid='box-pipeline-throughput-value'>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Throughput</Typography>
         <Typography variant='h5'>{format(smoothTput >= 1000 ? '.3s' : '.0f')(smoothTput)} rows/s</Typography>
       </Box>
