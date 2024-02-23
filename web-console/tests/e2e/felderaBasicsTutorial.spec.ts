@@ -90,6 +90,7 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
         'box-pipeline-date-created',
         'box-pipeline-port',
         'box-pipeline-throughput-graph',
+        'box-pipeline-throughput-value',
         'box-pipeline-memory-graph',
         'box-pipeline-memory-value'
       ].map(id => page.getByTestId(id))

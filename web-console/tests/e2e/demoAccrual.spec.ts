@@ -167,6 +167,7 @@ test('Accrual demo test', async ({ page, request }) => {
         'box-pipeline-date-created',
         'box-pipeline-port',
         'box-pipeline-throughput-graph',
+        'box-pipeline-throughput-value',
         'box-pipeline-memory-graph',
         'box-pipeline-memory-value'
       ].map(id => page.getByTestId(id))
@@ -209,6 +210,7 @@ test('Accrual demo test', async ({ page, request }) => {
         'box-pipeline-date-created',
         'box-pipeline-port',
         'box-pipeline-throughput-graph',
+        'box-pipeline-throughput-value',
         'box-pipeline-memory-graph',
         'box-pipeline-memory-value'
       ].map(id => page.getByTestId(id))
