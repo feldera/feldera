@@ -663,7 +663,7 @@ impl Drop for DBSPHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::sync::{Arc, Barrier};
 
     use crate::{operator::Generator, Circuit, Error as DBSPError, Runtime, RuntimeError};
     use anyhow::anyhow;
@@ -735,17 +735,21 @@ mod tests {
 
     #[test]
     fn test_panic_no_deadlock() {
-        let (mut handle, _) = Runtime::init_circuit(4, |circuit| {
-            circuit.add_source(Generator::new(|| {
-                if Runtime::worker_index() == 1 {
-                    panic!()
-                } else {
-                    std::thread::sleep(Duration::MAX)
-                }
-            }));
-            Ok(())
-        })
-        .unwrap();
+        let barrier = Arc::new(Barrier::new(4));
+        let (mut handle, _) = {
+            let barrier = barrier.clone();
+            Runtime::init_circuit(4, move |circuit| {
+                circuit.add_source(Generator::new(move || {
+                    if Runtime::worker_index() == 1 {
+                        panic!()
+                    } else {
+                        barrier.wait();
+                    }
+                }));
+                Ok(())
+            })
+            .unwrap()
+        };
 
         if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
             // println!("error: {err}");
@@ -753,6 +757,7 @@ mod tests {
         } else {
             panic!();
         }
+        barrier.wait();
     }
 
     // Kill the runtime.
