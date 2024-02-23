@@ -153,7 +153,7 @@ public class RustSqlRuntimeLibrary {
             map = this.booleanFunctions;
         } else if (ltype.is(IsDateType.class)) {
             map = this.dateFunctions;
-            if (opcode.equals(DBSPOpcode.SUB)) {
+            if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
                 if (ltype.is(DBSPTypeTimestamp.class) || ltype.is(DBSPTypeDate.class)) {
                     assert expectedReturnType != null;
                     returnType = expectedReturnType;

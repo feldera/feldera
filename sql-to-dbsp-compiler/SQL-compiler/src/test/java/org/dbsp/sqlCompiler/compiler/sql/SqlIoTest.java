@@ -96,8 +96,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
      */
     static DBSPZSetLiteral extractWeight(DBSPZSetLiteral data) {
         DBSPTypeTuple rowType = data.getElementType().to(DBSPTypeTuple.class);
-        DBSPType resultType = rowType.slice(0, rowType.size() - 1);
         int rowSize = rowType.size();
+        DBSPType resultType = rowType.slice(0, rowSize - 1);
         DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(resultType);
 
         for (Map.Entry<DBSPExpression, Long> entry: data.data.entrySet()) {
@@ -105,8 +105,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
             DBSPExpression row = entry.getKey();
             DBSPTupleExpression tuple = row.to(DBSPTupleExpression.class);
             DBSPExpression[] prefix = new DBSPExpression[rowSize - 1];
-            for (int i = 0; i < prefix.length; i++)
-                prefix[i] = tuple.field(i);
+            System.arraycopy(tuple.fields, 0, prefix, 0, prefix.length);
             DBSPExpression rowWeight = tuple.fields[rowSize - 1];
             weight *= rowWeight.to(DBSPI64Literal.class).value;
             DBSPExpression newRow = new DBSPTupleExpression(prefix);

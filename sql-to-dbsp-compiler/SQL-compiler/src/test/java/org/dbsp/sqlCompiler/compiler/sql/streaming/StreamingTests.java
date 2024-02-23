@@ -8,22 +8,22 @@ import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneOperators;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -73,21 +73,7 @@ public class StreamingTests extends StreamingTest {
                 start              | end                 | weight
                 ---------------------------------------------------"""); // same group as before
 
-        /*
-        InputOutputChangeStream data = new InputOutputChangeStream();
-        data.addChange(this.fromTSTSTS("2024-02-08 10:00:00", "2024-02-08 09:42:00", "2024-02-08 10:12:00"));
-        data.addChange(this.fromTSTSTS("2024-02-08 10:10:00")); // same group
-        data.addChange(this.fromTSTSTS("2024-02-08 10:12:00", "2024-02-08 10:12:00", "2024-02-08 10:42:00"));
-        data.addChange(this.fromTSTSTS("2024-02-08 10:30:00")); // same group as before
-         */
         this.addRustTestCase("tumblingTestLimits", ccs);
-    }
-
-    Change fromDoubleTimestamp(double d, String ts) {
-        return new Change(new DBSPZSetLiteral(
-                new DBSPTupleExpression(
-                        new DBSPDoubleLiteral(d, true),
-                        new DBSPTimestampLiteral(ts, false))));
     }
 
     @Test
@@ -102,50 +88,45 @@ public class StreamingTests extends StreamingTest {
                 GROUP BY TUMBLE(pickup, INTERVAL '1' DAY)""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(sql);
-        InputOutputChangeStream data = new InputOutputChangeStream();
-        data.addChange(new InputOutputChange(
-                this.fromDoubleTimestamp(10.0, "2023-12-30 10:00:00"),
-                this.fromDoubleTimestamp(10.0, "2023-12-30 00:00:00")
-        ));
-        DBSPType elementType = data.changes.get(0).outputs.getSet(0).elementType;
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step(
+                "INSERT INTO series VALUES(10.0, '2023-12-30 10:00:00');",
+                """
+                 avg  | start | weight
+                ----------------------
+                 10.0 | 2023-12-30 00:00:00 | 1""");
         // Insert tuple before waterline, should be dropped
-        data.addChange(new InputOutputChange(
-                this.fromDoubleTimestamp(10.0, "2023-12-29 10:00:00"),
-                Change.singleEmptyWithElementType(elementType)));
+        ccs.step("INSERT INTO series VALUES(10.0, '2023-12-29 10:00:00');",
+                """
+                avg  | start | weight
+                ----------------------""");
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
-        DBSPZSetLiteral addSub = DBSPZSetLiteral.emptyWithElementType(elementType);
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(15.0, true),
-                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)));
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(10.0, true),
-                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), -1);
-        data.addChange(new InputOutputChange(
-                this.fromDoubleTimestamp(20.0, "2023-12-30 10:10:00"),
-                new Change(addSub)));
+        ccs.step("INSERT INTO series VALUES(20.0, '2023-12-30 10:10:00');",
+                """
+                 avg  | start | weight
+                ----------------------
+                 15.0 | 2023-12-30 00:00:00 | 1
+                 10.0 | 2023-12-30 00:00:00 | -1""");
         // Insert tuple before last waterline, should be dropped
-        data.addChange(new InputOutputChange(
-                this.fromDoubleTimestamp(10.0, "2023-12-29 09:10:00"),
-                Change.singleEmptyWithElementType(elementType)));
+        ccs.step("INSERT INTO series VALUES(10.0, '2023-12-29 09:10:00');",
+                """
+                avg  | start | weight
+                ----------------------""");
         // Insert tuple in the past, but before the last waterline
-        addSub = DBSPZSetLiteral.emptyWithElementType(elementType);
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(13.333333333333334, true),
-                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), 1);
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(15.0, true),
-                new DBSPTimestampLiteral("2023-12-30 00:00:00", false)), -1);
-        data.addChange(new InputOutputChange(
-                this.fromDoubleTimestamp(10.0, "2023-12-30 10:00:00"),
-                new Change(addSub)));
+        ccs.step("INSERT INTO series VALUES(10.0, '2023-12-30 10:00:00');",
+                """
+                avg  | start | weight
+                ----------------------
+                13.333333333333334 | 2023-12-30 00:00:00 | 1
+                15.0               | 2023-12-30 00:00:00 | -1""");
         // Insert tuple in the next tumbling window
-        data.addChange(new InputOutputChange(
-                this.fromDoubleTimestamp(10.0, "2023-13-30 10:00:00"),
-                this.fromDoubleTimestamp(10.0, "2023-13-30 00:00:00")));
-
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
-        this.addRustTestCase("latenessTest", ccs);
+        ccs.step("INSERT INTO series VALUES(10.0, '2023-12-31 10:00:00');",
+                """
+                avg  | start | weight
+                ----------------------
+                10.0 | 2023-12-31 00:00:00 | 1""");
+        this.addRustTestCase("tumblingTest", ccs);
     }
 
     @Test
@@ -161,31 +142,28 @@ public class StreamingTests extends StreamingTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(statements);
         Assert.assertFalse(compiler.hasErrors());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("",
+                """
+                 zipcode | count | weight
+                --------------------------""");
+        ccs.step("""
+                 INSERT INTO customer VALUES('Bob', 1000);
+                 INSERT INTO customer VALUES('Pam', 2000);
+                 INSERT INTO customer VALUES('Sue', 3000);
+                 INSERT INTO customer VALUES('Mike', 1000);""",
+                """
+                 zipcode | count | weight
+                --------------------------
+                 1000    | 2     | 1
+                 2000    | 1     | 1
+                 3000    | 1     | 1""");
+        // No DELETE statement supported yet
         DBSPExpression bob = new DBSPTupleExpression(new DBSPStringLiteral("Bob"), new DBSPI32Literal(1000));
         DBSPType outputType = new DBSPTypeTuple(
                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
                 new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
-        InputOutputChangeStream data = new InputOutputChangeStream()
-            .addChange(
-                new InputOutputChange(
-                        Change.singleEmptyWithElementType(bob.getType()),
-                        Change.singleEmptyWithElementType(outputType)
-                ))
-            .addChange(
-                new InputOutputChange(
-                        new Change(new DBSPZSetLiteral(
-                                bob,
-                                new DBSPTupleExpression(new DBSPStringLiteral("Pam"), new DBSPI32Literal(2000)),
-                                new DBSPTupleExpression(new DBSPStringLiteral("Sue"), new DBSPI32Literal(3000)),
-                                new DBSPTupleExpression(new DBSPStringLiteral("Mike"), new DBSPI32Literal(1000))
-                        )),
-                        new Change(new DBSPZSetLiteral(
-                                new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(2)),
-                                new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(1)),
-                                new DBSPTupleExpression(new DBSPI32Literal(3000), new DBSPI64Literal(1))
-                        ))
-                ))
-            .addChange(
+        ccs.addChange(
                 new InputOutputChange(
                         new Change(DBSPZSetLiteral.emptyWithElementType(bob.getType())
                                 .add(bob, -1)
@@ -197,7 +175,6 @@ public class StreamingTests extends StreamingTest {
                                 .add(new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(1)), 1))
                 ));
 
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
         this.addRustTestCase("ivm blog post", ccs);
     }
 
@@ -214,65 +191,37 @@ public class StreamingTests extends StreamingTest {
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatement(ddl);
         compiler.compileStatement(query);
-        InputOutputChangeStream data = new InputOutputChangeStream()
-                .addChange(
-                        new InputOutputChange(
-                                new Change(new DBSPZSetLiteral(
-                                        new DBSPTupleExpression(
-                                                new DBSPDoubleLiteral(10.0, true),
-                                                new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
-                                new Change(new DBSPZSetLiteral(
-                                        new DBSPTupleExpression(
-                                                new DBSPDoubleLiteral(10.0, true),
-                                                new DBSPDateLiteral("2023-12-30")
-                        )))));
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
+                """
+                         avg  | date       | weight
+                        ---------------------------
+                         10.0 | 2023-12-30 | 1""");
         // Insert tuple before waterline, should be dropped
-        DBSPType elementType = data.changes.get(0).outputs.getSet(0).elementType;
-        data.addChange(new InputOutputChange(
-                        new Change(
-                                new DBSPZSetLiteral(
-                                        new DBSPTupleExpression(
-                                                new DBSPDoubleLiteral(10.0, true),
-                                                new DBSPTimestampLiteral("2023-12-29 10:00:00", false)))),
-                        Change.singleEmptyWithElementType(elementType)));
+        ccs.step("INSERT INTO series VALUES(10, '2023-12-29 10:00:00');",
+                """
+                         avg  | date       | weight
+                        ---------------------------""");
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
-        DBSPZSetLiteral addSub = DBSPZSetLiteral.emptyWithElementType(elementType);
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(15.0, true),
-                new DBSPDateLiteral("2023-12-30")));
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(10.0, true),
-                new DBSPDateLiteral("2023-12-30")), -1);
-        data.addChange(new InputOutputChange(
-                new Change(
-                        new DBSPZSetLiteral(
-                                new DBSPTupleExpression(
-                                        new DBSPDoubleLiteral(20.0, true),
-                                        new DBSPTimestampLiteral("2023-12-30 10:10:00", false)))),
-                new Change(addSub)))
+        ccs.step("INSERT INTO series VALUES(20, '2023-12-30 10:10:00');",
+                """
+                         avg  | date        | weight
+                        ---------------------------
+                         15.0 | 2023-12-30 | 1
+                         10.0 | 2023-12-30 | -1""");
         // Insert tuple before last waterline, should be dropped
-                .addChange(new InputOutputChange(
-                        new Change(new DBSPZSetLiteral(
-                                new DBSPTupleExpression(
-                                        new DBSPDoubleLiteral(10.0, true),
-                                        new DBSPTimestampLiteral("2023-12-29 09:10:00", false)))),
-                        Change.singleEmptyWithElementType(elementType)));
+        ccs.step("INSERT INTO series VALUES(10, '2023-12-29 09:10:00');",
+                        """
+                         avg  | date       | weight
+                        ---------------------------""");
         // Insert tuple in the past, but before the last waterline
-        addSub = DBSPZSetLiteral.emptyWithElementType(elementType);
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(13.333333333333334, true),
-                new DBSPDateLiteral("2023-12-30")), 1);
-        addSub.add(new DBSPTupleExpression(
-                new DBSPDoubleLiteral(15.0, true),
-                new DBSPDateLiteral("2023-12-30")), -1);
-        data.addChange(new InputOutputChange(
-                new Change(new DBSPZSetLiteral(
-                        new DBSPTupleExpression(
-                                new DBSPDoubleLiteral(10.0, true),
-                                new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
-                new Change(addSub)));
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
+        ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
+                """
+                         avg  | date        | weight
+                        ---------------------------
+                         15.0 | 2023-12-30 | -1
+                         13.333333333333334 | 2023-12-30 | 1""");
         this.addRustTestCase("latenessTest", ccs);
     }
 
@@ -403,13 +352,38 @@ public class StreamingTests extends StreamingTest {
             );
             """;
         String query =
-                "SELECT metadata, person FROM series JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call";
+                "SELECT metadata, person FROM series " +
+                        "JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call";
         DBSPCompiler compiler = testCompiler();
         query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatements(ddl);
         compiler.compileStatement(query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase("latenessTest", ccs);
+        this.addRustTestCase("testJoin", ccs);
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1462")
+    public void testJoinNonMonotoneColumn() {
+        Logger.INSTANCE.setLoggingLevel(MonotoneFunctions.class, 3);
+        Logger.INSTANCE.setLoggingLevel(MonotoneOperators.class, 3);
+        String script = """
+            CREATE TABLE series (
+                    metadata VARCHAR NOT NULL,
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
+            );
+            
+            CREATE TABLE shift(
+                    person VARCHAR NOT NULL,
+                    on_call DATE
+            );
+        
+            CREATE VIEW V AS
+            (SELECT * FROM series JOIN shift ON series.metadata = shift.person);
+            """;
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(script);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("testJoinNonMonotoneColumn", ccs);
     }
 
     @Test
@@ -426,35 +400,32 @@ public class StreamingTests extends StreamingTest {
                 ;""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(sql);
-        InputOutputChangeStream data = new InputOutputChangeStream();
-
-        DBSPTupleExpression zero = new DBSPTupleExpression(new DBSPI64Literal(0));
-        DBSPExpression one = new DBSPTupleExpression(new DBSPI64Literal(1));
-        DBSPExpression two = new DBSPTupleExpression(new DBSPI64Literal(2));
-
-        data.addChange(new InputOutputChange(
-                Change.singleEmptyWithElementType(one.getType()),
-                        new Change(new DBSPZSetLiteral(zero))))
-                .addChange(new InputOutputChange(
-                        Change.singleEmptyWithElementType(one.getType()),
-                        Change.singleEmptyWithElementType(one.getType())));
-
-        DBSPZSetLiteral expected1 = new DBSPZSetLiteral(one);
-        expected1.add(zero, -1);
-        data.addChange(new InputOutputChange(
-                new Change(new DBSPZSetLiteral(one)),
-                        new Change(expected1)))
-                .addChange(new InputOutputChange(
-                        Change.singleEmptyWithElementType(one.getType()),
-                        Change.singleEmptyWithElementType(one.getType())));
-        DBSPZSetLiteral expected3 = new DBSPZSetLiteral(two);
-        expected3.add(one, -1);
-
-        data.addChange(new InputOutputChange(
-                new Change(new DBSPZSetLiteral(two)),
-                new Change(expected3)));
-
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, data);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("",
+                """
+                 event_type_count | weight
+                ---------------------------
+                 0                | 1""");
+        ccs.step("",
+                """
+                 event_type_count | weight
+                ---------------------------""");
+        ccs.step("INSERT INTO event_t VALUES(1);",
+                 """
+                 event_type_count | weight
+                ---------------------------
+                 0                | -1
+                 1                | 1""");
+        ccs.step("",
+                """
+                 event_type_count | weight
+                ---------------------------""");
+        ccs.step("INSERT INTO event_t VALUES(2);",
+                """
+                 event_type_count | weight
+                ---------------------------
+                 1                | -1
+                 2                | 1""");
         this.addRustTestCase("testAggregate", ccs);
     }
 }

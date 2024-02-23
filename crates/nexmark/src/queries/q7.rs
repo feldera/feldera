@@ -1,7 +1,7 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
-    operator::{FilterMap, Min},
+    operator::{FilterMap, Max},
     utils::{Tup4, Tup5},
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
@@ -84,14 +84,10 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     // Find the maximum bid across all bids.
     windowed_bids
         .map_index(|(_date_time, Tup4(_auction, _bidder, price, _extra))| {
-            // Negate price, so we can use the more efficient `Min` aggregate
-            // instead of `Max`.
-            // TODO: we can go back to using `Max` once we have an efficient implementation
-            // using reverse cursors.
-            ((), -(*price as i64))
+            ((), *price)
         })
-        .aggregate(Min)
-        .map(|((), price)| ((-*price) as u64))
+        .aggregate(Max)
+        .map(|((), price)| *price)
         // Find _all_ bids with computed max price.
         .join(&bids_by_price, |_price, &(), tuple| tuple.clone())
 }

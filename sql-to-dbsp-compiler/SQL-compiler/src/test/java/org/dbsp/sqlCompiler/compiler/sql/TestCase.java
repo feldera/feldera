@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.IChange;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -78,11 +78,11 @@ class TestCase {
 
         int pair = 0;
         for (InputOutputChange changes : this.ccs.stream.changes) {
-            IChange inputs = changes.getInputs().simplify();
-            IChange outputs = changes.getOutputs().simplify();
+            Change inputs = changes.getInputs().simplify();
+            Change outputs = changes.getOutputs().simplify();
 
-            TableValue[] tableValues = new TableValue[inputs.setCount()];
-            for (int i = 0; i < inputs.setCount(); i++)
+            TableValue[] tableValues = new TableValue[inputs.getSetCount()];
+            for (int i = 0; i < inputs.getSetCount(); i++)
                 tableValues[i] = new TableValue("t" + i, inputs.getSet(i));
             String functionName = "input" + pair;
             DBSPFunction inputFunction = TableValue.createInputFunction(
@@ -94,7 +94,7 @@ class TestCase {
             if (!useHandles)
                 throw new UnimplementedException();
 
-            for (int i = 0; i < inputs.setCount(); i++) {
+            for (int i = 0; i < inputs.getSetCount(); i++) {
                 String function;
                 if (inputs.getSetType(i).is(DBSPTypeZSet.class))
                     function = "append_to_collection_handle";
@@ -109,7 +109,7 @@ class TestCase {
                     "step", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).unwrap());
             list.add(step);
 
-            for (int i = 0; i < changes.outputs.setCount(); i++) {
+            for (int i = 0; i < changes.outputs.getSetCount(); i++) {
                 String message = System.lineSeparator() +
                         "mvn test -Dtest=" + this.javaTestName +
                         System.lineSeparator() + this.name;
@@ -139,7 +139,7 @@ class TestCase {
 
                 DBSPExpression expected = outputs.getSet(i);
                 DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
-                        streams.getVarReference().field(changes.inputs.setCount() + i).borrow());
+                        streams.getVarReference().field(changes.inputs.getSetCount() + i).borrow());
                 if (foundFp) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
                     DBSPExpression converter = convertedValue.closure(var.asParameter());

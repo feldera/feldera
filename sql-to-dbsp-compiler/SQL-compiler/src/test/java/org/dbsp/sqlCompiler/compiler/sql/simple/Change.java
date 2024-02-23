@@ -7,7 +7,9 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 
-public class Change implements IChange {
+/** A Change is a collection of Z-sets literals.
+ * It represents an atomic change that is applied to a set of tables or views. */
+public class Change {
     public final DBSPZSetLiteral[] sets;
 
     public Change(DBSPZSetLiteral... sets) {
@@ -31,12 +33,14 @@ public class Change implements IChange {
         return new Change(simplified);
     }
 
+    /** Create a Change for a single ZSet, representing an empty ZSet
+     * with the specified element type. */
     public static Change singleEmptyWithElementType(DBSPType elementType) {
         return new Change(DBSPZSetLiteral.emptyWithElementType(elementType));
     }
 
     /** Number of Z-sets in this change */
-    public int setCount() {
+    public int getSetCount() {
         return this.sets.length;
     }
 
@@ -52,5 +56,15 @@ public class Change implements IChange {
             builder.append(System.lineSeparator());
         }
         return builder.toString();
+    }
+
+    /** Get the type of a set in the change */
+    public DBSPType getSetType(int index) {
+        return this.getSet(index).getType();
+    }
+
+    /** Get the type of an element of a set in the change */
+    public DBSPType getSetElementType(int index) {
+        return this.getSet(index).getElementType();
     }
 }

@@ -79,7 +79,7 @@ public class BaseSQLTests {
             compiler.messages.clear();
         }
 
-        /** Compiles a SQL script composed of INSERT and DELETE statements.
+        /** Compiles a SQL script composed of INSERT statements.
          * into a Change. */
         public Change toChange(DBSPCompiler compiler, String script) {
             compiler.clearTables();

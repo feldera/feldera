@@ -27,6 +27,8 @@ import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.HashSet;
@@ -47,7 +49,7 @@ CREATE TABLE person (
     creditCard VARCHAR,
     city VARCHAR,
     state VARCHAR,
-    date_time TIMESTAMP(3),
+    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
 )""",
             """
@@ -57,7 +59,7 @@ CREATE TABLE auction (
     description  VARCHAR,
     initialBid  BIGINT,
     reserve  BIGINT,
-    date_time  TIMESTAMP(3),
+    date_time  TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
     expires  TIMESTAMP(3),
     seller  BIGINT,
     category  BIGINT,
@@ -70,7 +72,7 @@ CREATE TABLE bid (
     price  BIGINT,
     channel  VARCHAR,
     url  VARCHAR,
-    date_time  TIMESTAMP(3),
+    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
 )"""
     };
@@ -549,7 +551,6 @@ SELECT
     public void prepareInputs(DBSPCompiler compiler) {
         for (String input: tables)
             compiler.compileStatement(input);
-
     }
 
     @Override
@@ -710,12 +711,86 @@ INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-0
         );
     }
 
+    @Test @Ignore("The results are wrong, must investigate")
+    public void testQ7() {
+        this.createTest(7,
+        // The rust code has transposed columns 'price' and 'bidder' in the output
+        """
+-- The latest bid is at t=32_000, so the watermark as at t=28_000
+-- and the tumbled window is from 10_000 - 20_000.
+INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020-01-01 00:00:09', '');
+INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '2020-01-01 00:00:11', '');
+INSERT INTO bid VALUES(1, 1, 90, 'my-channel', 'https://example.com', '2020-01-01 00:00:14', '');
+INSERT INTO bid VALUES(1, 1, 70, 'my-channel', 'https://example.com', '2020-01-01 00:00:16', '');
+INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020-01-01 00:00:21', '');
+INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020-01-01 00:00:32', '');""",
+                """
+                 auction | price | bidder | date_time           | extra | weight
+                -----------------------------------------------------------------
+                 1       | 90     | 1     | 2020-01-01 00:00:14 | | 1""");
+    }
+
+    @Test
+    public void testQ8() {
+        this.createTest(8, "", """
+                 id | name | starttime | weight
+                --------------------------------""");
+    }
+
+    @Test
+    public void testQ9() {
+        this.createTest(9, "", """
+ id | item | description | initialBid | reserve | date_time | expires | seller | category | extra | auction | bidder | price | bid_datetime | bid_extra | weight
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void testQ10() {
+        this.createTest(10, "",
+                """
+ auction | bidder | price | date_time | extra | date | time | weight
+---------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void testQ17() {
+        this.createTest(17, "",
+                """
+ auction | date | total_bids | rank1_bids | rank2_bids | rank3_bids | min_price | max_price | avg_price | sum_price | weight
+-----------------------------------------------------------------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void testQ18() {
+        this.createTest(18, "",
+                """
+ auction | bidder | price | channel | url | date_time | extra | weight
+-----------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void testQ19() {
+        this.createTest(19, "",
+                """
+ auction | bidder | price | channel | url | date_time | extra | row_number | weight
+------------------------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void testQ20() {
+        this.createTest(19, "",
+                """
+ auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+    }
+
+    @Test
     public void testCompile() {
-        DBSPCompiler compiler = this.testCompiler(true);
+        DBSPCompiler compiler = this.testCompiler();
+        this.prepareInputs(compiler);
         Set<Integer> unsupported = new HashSet<>() {{
             add(5); // hop
-            add(6); // group-by
-            add(8); // tumble
+            add(6); // group-by problem
             add(11); // session
             add(12); // proctime
             add(13); // proctime
@@ -731,6 +806,12 @@ INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-0
             if (!unsupported.contains(index)) {
                 compiler.compileStatement(query);
             }
+            index++;
         }
+
+        Assert.assertFalse(compiler.hasErrors());
+        Assert.assertFalse(compiler.hasWarnings());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("NexmarkTest", ccs);
     }
 }

@@ -125,7 +125,8 @@ public class TableParser {
     static DBSPExpression parseTime(@Nullable String time, boolean mayBeNull) {
         if (time == null || time.isEmpty() || time.equalsIgnoreCase("null"))
             return DBSPLiteral.none(new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull));
-        return new DBSPTimeLiteral(CalciteObject.EMPTY, new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull), new TimeString(time));
+        return new DBSPTimeLiteral(CalciteObject.EMPTY,
+                new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull), new TimeString(time));
     }
 
     static int longIntervalToMonths(String interval) {
