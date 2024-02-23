@@ -1,5 +1,3 @@
--*-text-mode-*-
-
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -31,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1404](https://github.com/feldera/feldera/pull/1404))
 - API: endpoint to get a list of demo URLs
   ([#1385](https://github.com/feldera/feldera/pull/1385))
-- WebConsole: Add functionality that would enable setting up demos in the sandbox 
+- WebConsole: Add functionality that would enable setting up demos in the sandbox
   ([#1321](https://github.com/feldera/feldera/pull/1321))
 - WebConsole: Add Swagger link to navbar, make navbar more compact
 
@@ -41,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors instead of producing `NULL` ([#1398](https://github.com/feldera/feldera/pull/1398))
 - WebConsole: Various design adjustments
 - WebConsole: Show the entire generated API key
-- WebConsole: Improve login UX with AWS Cognito (redirect to desired page after successful login) 
+- WebConsole: Improve login UX with AWS Cognito (redirect to desired page after successful login)
   ([#1364](https://github.com/feldera/feldera/pull/1364))
 
 ## [0.9.0] - 2024-02-06
@@ -50,7 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Compiler option for handling unquoted identifiers
   ([#1360](https://github.com/feldera/feldera/pull/1360))
-- SQL: Support for `is_inf`, `is_nan` and `log` methods for double ([#1344](https://github.com/feldera/feldera/pull/1344))
+- SQL: Support for `is_inf`, `is_nan` and `log` methods for
+  double ([#1344](https://github.com/feldera/feldera/pull/1344))
 
 ### Changed
 
@@ -61,7 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API: name and description are optional for connector PATCH endpoint.
   OpenAPI documentation for program, connector and service is more consistent.
   ([#1315](https://github.com/feldera/feldera/pull/1315))
-- SQL: check decimal precision while casting between decimal types ([#1300](https://github.com/feldera/feldera/pull/1300))
+- SQL: check decimal precision while casting between decimal
+  types ([#1300](https://github.com/feldera/feldera/pull/1300))
 - pipeline-manager: automatically queue programs for compilation (#1325)
 
 ### Removed
@@ -74,8 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- API: Generalized upsert operation that allows partial modifications to table records ([#1296](https://github.com/feldera/feldera/pull/1296))
-- SQL: Functions on binary string (octet_length, position, overlay, substring) ([#1264](https://github.com/feldera/feldera/pull/1264))
+- API: Generalized upsert operation that allows partial modifications to table
+  records ([#1296](https://github.com/feldera/feldera/pull/1296))
+- SQL: Functions on binary string (octet_length, position, overlay,
+  substring) ([#1264](https://github.com/feldera/feldera/pull/1264))
 - pipeline-manager: add PUT endpoints for Programs, Pipelines, and Connectors (#1248)
 - Documentation: Adding a markdown page for videos (#1126)
 - SQL: Add hyperbolic functions ([#1280](https://github.com/feldera/feldera/pull/1280))
