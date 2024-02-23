@@ -75,16 +75,16 @@ public class BaseSQLTests {
         }
 
         public void showErrors() {
-            compiler.messages.show(System.err);
-            compiler.messages.clear();
+            this.compiler.messages.show(System.err);
+            this.compiler.messages.clear();
         }
 
         /** Compiles a SQL script composed of INSERT statements.
          * into a Change. */
-        public Change toChange(DBSPCompiler compiler, String script) {
-            compiler.clearTables();
-            compiler.compileStatements(script);
-            TableContents tableContents = compiler.getTableContents();
+        public Change toChange(String script) {
+            this.compiler.clearTables();
+            this.compiler.compileStatements(script);
+            TableContents tableContents = this.compiler.getTableContents();
             return new Change(tableContents);
         }
 
@@ -95,7 +95,7 @@ public class BaseSQLTests {
          *                 column that contains weights.
          */
         public void step(String script, String expected) {
-            Change input = this.toChange(compiler, script);
+            Change input = this.toChange(script);
             DBSPType outputType = circuit.getSingleOutputType();
             Change output = TableParser.parseChangeTable(expected, outputType);
             stream.addPair(input, output);

@@ -16,6 +16,7 @@ data: {
       "org.apache.calcite.sql.ddl.SqlCreateType"
       "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration"
+      "org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
@@ -25,6 +26,7 @@ data: {
       "IF"
       "LATENESS"
       "PLANS"
+      "REMOVE"
       "SEED"
       "SEMI"
       "SEQUENCES"
@@ -884,6 +886,7 @@ data: {
     # List of methods for parsing custom SQL statements.
     # Return type of method implementation should be 'SqlNode'.
     statementParserMethods: [
+        "RemoveStatement()"
     ]
 
     # List of methods for parsing custom literals.

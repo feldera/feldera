@@ -3,22 +3,10 @@ package org.dbsp.sqlCompiler.compiler.sql.streaming;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneOperators;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -158,23 +146,16 @@ public class StreamingTests extends StreamingTest {
                  1000    | 2     | 1
                  2000    | 1     | 1
                  3000    | 1     | 1""");
-        // No DELETE statement supported yet
-        DBSPExpression bob = new DBSPTupleExpression(new DBSPStringLiteral("Bob"), new DBSPI32Literal(1000));
-        DBSPType outputType = new DBSPTypeTuple(
-                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
-                new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
-        ccs.addChange(
-                new InputOutputChange(
-                        new Change(DBSPZSetLiteral.emptyWithElementType(bob.getType())
-                                .add(bob, -1)
-                                .add(new DBSPTupleExpression(new DBSPStringLiteral("Bob"), new DBSPI32Literal(2000)))),
-                        new Change(DBSPZSetLiteral.emptyWithElementType(outputType)
-                                .add(new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(2)), -1)
-                                .add(new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(1)), -1)
-                                .add(new DBSPTupleExpression(new DBSPI32Literal(2000), new DBSPI64Literal(2)), 1)
-                                .add(new DBSPTupleExpression(new DBSPI32Literal(1000), new DBSPI64Literal(1)), 1))
-                ));
-
+        ccs.step("""
+                REMOVE FROM customer VALUES('Bob', 1000);
+                INSERT INTO customer VALUES('Bob', 2000);""",
+                """
+                 zipcode | count | weight
+                --------------------------
+                 1000    | 2     | -1
+                 2000    | 1     | -1
+                 2000    | 2     | 1
+                 1000    | 1     | 1""");
         this.addRustTestCase("ivm blog post", ccs);
     }
 

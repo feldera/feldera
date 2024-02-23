@@ -55,6 +55,7 @@ import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlRankFunction;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
@@ -97,6 +98,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -1515,38 +1517,43 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else if (statement.is(TableModifyStatement.class)) {
             TableModifyStatement modify = statement.to(TableModifyStatement.class);
             // The type of the data must be extracted from the modified table
-            if (!(modify.node instanceof SqlInsert))
-                throw new UnimplementedException(statement.getCalciteObject());
-            SqlInsert insert = (SqlInsert) statement.node;
+            boolean isInsert = modify.insert;
+            SqlNodeList targetColumnList;
+            if (isInsert) {
+                SqlInsert insert = (SqlInsert) statement.node;
+                targetColumnList = insert.getTargetColumnList();
+            } else {
+                SqlRemove remove = (SqlRemove) statement.node;
+                targetColumnList = remove.getTargetColumnList();
+            }
             CreateTableStatement def = this.tableContents.getTableDefinition(modify.tableName);
             this.modifyTableTranslation = new ModifyTableTranslation(
-                    modify, def, insert.getTargetColumnList(), this.compiler);
+                    modify, def, targetColumnList, this.compiler);
+            DBSPZSetLiteral result;
             if (modify.rel instanceof LogicalTableScan) {
                 // Support for INSERT INTO table (SELECT * FROM otherTable)
                 LogicalTableScan scan = (LogicalTableScan) modify.rel;
                 List<String> name = scan.getTable().getQualifiedName();
                 String sourceTable = name.get(name.size() - 1);
-                DBSPZSetLiteral data = this.tableContents.getTableContents(sourceTable);
-                this.tableContents.addToTable(modify.tableName, data);
-                this.modifyTableTranslation = null;
-                return new DBSPZSetLiteral(data);
+                result = this.tableContents.getTableContents(sourceTable);
             } else if (modify.rel instanceof LogicalValues) {
                 this.go(modify.rel);
-                DBSPZSetLiteral result = this.modifyTableTranslation.getTranslation();
-                this.tableContents.addToTable(modify.tableName, result);
-                this.modifyTableTranslation = null;
-                return result;
+                result = this.modifyTableTranslation.getTranslation();
             } else if (modify.rel instanceof LogicalProject) {
                 // The Calcite optimizer is not able to convert a projection
                 // of a VALUES statement that contains ARRAY constructors,
                 // because there is no array literal in Calcite.  These expressions
                 // are left as projections in the code.  We only handle
                 // the case where all project expressions are "constants".
-                DBSPZSetLiteral result = this.compileConstantProject((LogicalProject) modify.rel);
-                this.tableContents.addToTable(modify.tableName, result);
-                this.modifyTableTranslation = null;
-                return result;
+                result = this.compileConstantProject((LogicalProject) modify.rel);
+            } else {
+                throw new UnimplementedException(statement.getCalciteObject());
             }
+            if (!isInsert)
+                result = result.negate();
+            this.modifyTableTranslation = null;
+            this.tableContents.addToTable(modify.tableName, result);
+            return result;
         }
         throw new UnimplementedException(statement.getCalciteObject());
     }

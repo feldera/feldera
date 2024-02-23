@@ -152,6 +152,40 @@ void AttributeDef(List<SqlNode> list) :
     }
 }
 
+/** REMOVE FROM TABLE */
+SqlNode RemoveStatement() :
+{
+    final SqlIdentifier tableName;
+    SqlNode tableRef;
+    SqlNode source;
+    final SqlNodeList columnList;
+    final Span s;
+    final Pair<SqlNodeList, SqlNodeList> p;
+}
+{
+    <REMOVE>
+    { s = span(); }
+    <FROM> tableName = CompoundTableIdentifier()
+    { tableRef = tableName; }
+    (
+            LOOKAHEAD(2)
+            p = ParenthesizedCompoundIdentifierList() {
+                if (p.right.size() > 0) {
+                    tableRef = extend(tableRef, p.right);
+                }
+                if (p.left.size() > 0) {
+                    columnList = p.left;
+                } else {
+                    columnList = null;
+                }
+            }
+        |   { columnList = null; }
+    )
+    source = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) {
+        return new SqlRemove(s.end(source), tableRef, source, columnList);
+    }
+}
+
 SqlCreateFunctionDeclaration SqlCreateFunction(Span s, boolean replace) :
 {
     final boolean ifNotExists;
