@@ -8,7 +8,7 @@ import org.junit.Test;
 
 public class TopKTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String sql = """
                 create table DocumentStatusLog (
                     ID int,

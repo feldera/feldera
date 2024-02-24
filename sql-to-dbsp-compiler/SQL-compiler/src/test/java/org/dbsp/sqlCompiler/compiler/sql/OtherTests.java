@@ -260,7 +260,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.addSchemaSource("schema", hsql);
         compiler.compileStatement("CREATE VIEW V AS SELECT * FROM mytable");
-        this.addRustTestCase("jdbc", compiler, getCircuit(compiler));
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("jdbc", ccs);
         ObjectNode node = compiler.getIOMetadataAsJson();
         String json = node.toPrettyString();
         Assert.assertTrue(json.contains("MYTABLE"));

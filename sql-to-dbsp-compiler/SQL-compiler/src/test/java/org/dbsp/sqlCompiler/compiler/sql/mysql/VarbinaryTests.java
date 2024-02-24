@@ -8,7 +8,7 @@ import org.junit.Test;
 // https://github.com/mysql/mysql-server/tree/trunk/mysql-test/r/varbinary.result
 public class VarbinaryTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         // Replaced hex numbers with VARBINARY literals
         String sql = """
                 create TABLE t1(a INT, b VARBINARY(4), c VARBINARY(4));

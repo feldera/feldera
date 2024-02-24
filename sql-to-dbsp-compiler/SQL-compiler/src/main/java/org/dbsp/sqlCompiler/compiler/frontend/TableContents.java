@@ -114,4 +114,17 @@ public class TableContents implements ICompilerComponent {
     public DBSPCompiler getCompiler() {
         return this.compiler;
     }
+
+    public int getTableCount() {
+        return this.tablesCreated.size();
+    }
+
+    /** Clear the contents of all tables */
+    public void clear() {
+        if (this.tableContents == null)
+            return;
+        for (Map.Entry<String, DBSPZSetLiteral> entry: this.tableContents.entrySet()) {
+            entry.setValue(DBSPZSetLiteral.emptyWithElementType(entry.getValue().getElementType()));
+        }
+    }
 }

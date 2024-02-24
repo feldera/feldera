@@ -39,7 +39,7 @@ import org.junit.Test;
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresDateTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String data = "CREATE TABLE DATE_TBL (f1 date);\n" +
                 "INSERT INTO DATE_TBL VALUES ('1957-04-09');\n" +
                 "INSERT INTO DATE_TBL VALUES ('1957-06-13');\n" +

@@ -7,7 +7,7 @@ import org.junit.Test;
 // https://github.com/postgres/postgres/blob/master/src/test/regress/expected/case.out
 public class PostgresCaseTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         compiler.compileStatements("""
                 CREATE TABLE CASE_TBL (
                   i integer,

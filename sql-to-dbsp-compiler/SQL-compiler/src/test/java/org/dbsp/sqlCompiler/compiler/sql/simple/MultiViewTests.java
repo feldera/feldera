@@ -23,9 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
@@ -50,19 +49,17 @@ public class MultiViewTests extends BaseSQLTests {
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 
-        DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral[] { EndToEndTests.createInput() },
-                new DBSPZSetLiteral[] {
-                        new DBSPZSetLiteral(
-                                new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                                new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral(
-                                new DBSPTupleExpression(new DBSPDoubleLiteral(12.0)),
-                                new DBSPTupleExpression(new DBSPDoubleLiteral(1.0)))
-                }
-        );
-        addRustTestCase("MultiViewTest.twoViewTest", compiler, circuit, stream);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        Change inputChange = EndToEndTests.createInput();
+        Change outputChange = new Change(
+                new DBSPZSetLiteral(
+                        new DBSPTupleExpression(new DBSPBoolLiteral(true)),
+                        new DBSPTupleExpression(new DBSPBoolLiteral(false))),
+                new DBSPZSetLiteral(
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(12.0)),
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(1.0))));
+        ccs.addPair(inputChange, outputChange);
+        this.addRustTestCase("MultiViewTest.twoViewTest", ccs);
     }
 
     /**
@@ -77,20 +74,19 @@ public class MultiViewTests extends BaseSQLTests {
         compiler.compileStatement(EndToEndTests.E2E_TABLE);
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
 
-        DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral[] { EndToEndTests.createInput() },
-                new DBSPZSetLiteral[] {
+        InputOutputChange change = new InputOutputChange(
+                EndToEndTests.createInput(),
+                new Change(new DBSPZSetLiteral(
+                        new DBSPTupleExpression(new DBSPBoolLiteral(true)),
+                        new DBSPTupleExpression(new DBSPBoolLiteral(false))),
                         new DBSPZSetLiteral(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                                new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral(
-                                new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                                new DBSPTupleExpression(new DBSPBoolLiteral(false)))
-                }
+                                new DBSPTupleExpression(new DBSPBoolLiteral(false))))
         );
-        this.addRustTestCase("MultiViewTest.nestedViewTest", compiler, circuit, stream);
+        ccs.addChange(change);
+        this.addRustTestCase("MultiViewTest.nestedViewTest", ccs);
     }
 
     /**
@@ -106,17 +102,16 @@ public class MultiViewTests extends BaseSQLTests {
         compiler.compileStatement(query1);
         compiler.compileStatement(query2);
 
-        DBSPCircuit circuit = getCircuit(compiler);
-        InputOutputPair stream = new InputOutputPair(
-                new DBSPZSetLiteral[] { EndToEndTests.createInput() },
-                new DBSPZSetLiteral[] {
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        InputOutputChange change = new InputOutputChange(
+                EndToEndTests.createInput(),
+                new Change(new DBSPZSetLiteral(
+                        new DBSPTupleExpression(new DBSPBoolLiteral(true)),
+                        new DBSPTupleExpression(new DBSPBoolLiteral(false))),
                         new DBSPZSetLiteral(
-                                new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                                new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetLiteral(
-                                new DBSPTupleExpression(new DBSPI32Literal(10)))
-                }
+                                new DBSPTupleExpression(new DBSPI32Literal(10))))
         );
-        this.addRustTestCase("MultiViewTests.multiViewTest", compiler, circuit, stream);
+        ccs.addChange(change);
+        this.addRustTestCase("MultiViewTests.multiViewTest", ccs);
     }
 }

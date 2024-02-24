@@ -25,7 +25,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
@@ -77,27 +76,27 @@ public class EndToEndTests extends BaseSQLTests {
         return compiler;
     }
 
-    void testQueryBase(String query, InputOutputPair... streams) {
+    void testQueryBase(String query, InputOutputChangeStream streams) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
-        DBSPCircuit circuit = getCircuit(compiler);
-        this.addRustTestCase(query, compiler, circuit, streams);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, streams);
+        this.addRustTestCase(query, ccs);
     }
 
-    public void invokeTestQueryBase(String query, InputOutputPair... streams) {
+    public void invokeTestQueryBase(String query, InputOutputChangeStream streams) {
         this.testQueryBase(query, streams);
     }
 
     /** Use this function to test queries whose result does not change when table T is modified. */
     void testConstantOutput(String query, DBSPZSetLiteral output) {
-        this.testQueryBase(query, new InputOutputPair(createInput(), output));
+        this.testQueryBase(query, new InputOutputChange(createInput(), new Change(output)).toStream());
     }
 
     /** Use this function to test queries that compute aggregates */
     void testAggregate(String query,
                        DBSPZSetLiteral firstOutput,
                        DBSPZSetLiteral outputForEmptyInput) {
-        this.testQueryBase(query, new InputOutputPair(createInput(), firstOutput));
+        this.testQueryBase(query, new InputOutputChange(createInput(), new Change(firstOutput)).toStream());
     }
 
     /**
@@ -109,8 +108,8 @@ public class EndToEndTests extends BaseSQLTests {
      * INSERT INTO T VALUES (10, 12, true, 'Hi', NULL, NULL);
      * INSERT INTO T VALUES (10, 1.0, false, 'Hi', 1, 0.0);
      */
-    static DBSPZSetLiteral createInput() {
-        return new DBSPZSetLiteral(e0, e1);
+    static Change createInput() {
+        return new Change(new DBSPZSetLiteral(e0, e1));
     }
 
     public static final DBSPTupleExpression e0 = new DBSPTupleExpression(
@@ -147,8 +146,12 @@ public class EndToEndTests extends BaseSQLTests {
     static final DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(z0.getElementType());
 
     public void testQuery(String query, DBSPZSetLiteral expectedOutput) {
-        DBSPZSetLiteral input = createInput();
-        this.testQueryBase(query, new InputOutputPair(input, expectedOutput));
+        this.testQuery(query, new Change(expectedOutput));
+    }
+
+    public void testQuery(String query, Change expectedOutput) {
+        Change input = createInput();
+        this.testQueryBase(query, new InputOutputChange(input, expectedOutput).toStream());
     }
 
     @Test
@@ -489,9 +492,9 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void unionAllTest() {
         String query = "(SELECT * FROM T) UNION ALL (SELECT * FROM T)";
-        DBSPZSetLiteral output = createInput();
-        output.add(output);
-        this.testQuery(query, output);
+        Change output = createInput();
+        Change doubleOutput = new Change(output.getSet(0).add(output.getSet(0)));
+        this.testQuery(query, doubleOutput);
     }
 
     @Test

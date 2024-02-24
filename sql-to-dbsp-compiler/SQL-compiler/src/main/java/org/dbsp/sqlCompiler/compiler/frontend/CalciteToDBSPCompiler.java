@@ -1583,4 +1583,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
     public TableContents getTableContents() {
         return this.tableContents;
     }
+
+    public void clearTables() {
+        this.tableContents.clear();
+    }
 }

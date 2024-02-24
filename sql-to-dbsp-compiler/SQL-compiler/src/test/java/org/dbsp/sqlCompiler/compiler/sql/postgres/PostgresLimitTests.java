@@ -16,7 +16,7 @@ public class PostgresLimitTests extends SqlIoTest {
     }
 
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         // Replaced 'name' with 'varchar'
         String setup = """
                 CREATE TABLE onek (

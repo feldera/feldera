@@ -25,7 +25,8 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -227,9 +228,10 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPI32Literal(0, true)
                 ))
         };
-        DBSPZSetLiteral[] outputs = new DBSPZSetLiteral[] {};
-        InputOutputPair ip = new InputOutputPair(inputs, outputs);
-        this.addRustTestCase("ComplexQueriesTest.demographicsTest", compiler, getCircuit(compiler), ip);
+        InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.addChange(ip);
+        this.addRustTestCase("ComplexQueriesTest.demographicsTest", ccs);
     }
 
     // Test for https://github.com/feldera/feldera/issues/1151

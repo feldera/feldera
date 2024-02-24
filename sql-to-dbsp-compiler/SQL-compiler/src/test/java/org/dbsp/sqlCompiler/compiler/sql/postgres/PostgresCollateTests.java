@@ -9,7 +9,7 @@ import org.junit.Test;
  */
 public class PostgresCollateTests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         // Per-column collation not supported in Calcite
         String sql = """
                 CREATE TABLE collate_test10 (

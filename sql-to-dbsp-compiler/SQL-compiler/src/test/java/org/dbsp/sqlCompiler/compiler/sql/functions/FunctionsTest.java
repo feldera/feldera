@@ -7,7 +7,7 @@ import org.junit.Test;
 
 public class FunctionsTest extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String ddl = "CREATE TABLE ARR_TABLE (VALS INTEGER ARRAY NOT NULL,ID INTEGER NOT NULL)";
         String insert = """
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 6);

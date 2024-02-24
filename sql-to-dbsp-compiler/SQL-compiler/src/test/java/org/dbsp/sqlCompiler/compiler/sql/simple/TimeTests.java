@@ -23,13 +23,16 @@
 
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.junit.Test;
 
@@ -48,14 +51,15 @@ public class TimeTests extends BaseSQLTests {
         // T contains a date with timestamp '100'.
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
-        DBSPCircuit circuit = getCircuit(compiler);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPZSetLiteral expectedOutput = new DBSPZSetLiteral(new DBSPTupleExpression(fields));
-        InputOutputPair streams = new InputOutputPair(this.createInput(), expectedOutput);
-        this.addRustTestCase(query, compiler, circuit, streams);
+        InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
+        ccs.addChange(change);
+        this.addRustTestCase(query, ccs);
     }
 
-    public DBSPZSetLiteral createInput() {
-        return new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPTimestampLiteral(100)));
+    public Change createInput() {
+        return new Change(new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
     }
 
     @Test

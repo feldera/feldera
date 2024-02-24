@@ -1,12 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputPair;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -16,7 +13,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -29,7 +25,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
-import org.dbsp.util.Linq;
 import org.dbsp.util.TableValue;
 import org.dbsp.util.Utilities;
 
@@ -46,25 +41,16 @@ class TestCase {
     public final String name;
     /** Name of the Java test that is being run. */
     public final String javaTestName;
-    /** Compiler used to compile the test case.
-     * Used for code generation. */
-    public final DBSPCompiler compiler;
-    /** Circuit that is being tested. */
-    public final DBSPCircuit circuit;
-    /** Supplied inputs and expected corresponding outputs for the circuit. */
-    public final InputOutputPair[] data;
+    public final BaseSQLTests.CompilerCircuitStream ccs;
     /** Non-null if the test is supposed to panic.  In that case this
      * contains the expected panic message. */
     @Nullable
     public final String message;
 
-    TestCase(String name, String javaTestName, DBSPCompiler compiler,
-             DBSPCircuit circuit, @Nullable String message, InputOutputPair... data) {
+    TestCase(String name, String javaTestName, BaseSQLTests.CompilerCircuitStream ccs, @Nullable String message) {
         this.name = name;
         this.javaTestName = javaTestName;
-        this.circuit = circuit;
-        this.data = data;
-        this.compiler = compiler;
+        this.ccs = ccs;
         this.message = message;
     }
 
@@ -75,31 +61,29 @@ class TestCase {
      * input and tests the produced output.
      */
     DBSPFunction createTesterCode(int testNumber,
-                                  @SuppressWarnings("SameParameterValue") String codeDirectory) throws IOException {
+                                  @SuppressWarnings("SameParameterValue")
+                                  String codeDirectory) throws IOException {
         List<DBSPStatement> list = new ArrayList<>();
         if (!this.name.isEmpty())
             list.add(new DBSPComment(this.name));
-        boolean useHandles = this.compiler.options.ioOptions.emitHandles;
+        boolean useHandles = this.ccs.compiler.options.ioOptions.emitHandles;
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
         circuitArguments[0] = new DBSPApplyExpression("CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2));
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
-                new DBSPApplyExpression(this.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).unwrap(),
+                new DBSPApplyExpression(this.ccs.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).unwrap(),
                 true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
         list.add(streams);
 
-        Simplify simplify = new Simplify(new StderrErrorReporter());
         int pair = 0;
-        for (InputOutputPair pairs : this.data) {
-            DBSPZSetLiteral[] inputs = pairs.getInputs();
-            inputs = Linq.map(inputs, t -> simplify.apply(t).to(DBSPZSetLiteral.class), DBSPZSetLiteral.class);
-            DBSPZSetLiteral[] outputs = pairs.getOutputs();
-            outputs = Linq.map(outputs, t -> simplify.apply(t).to(DBSPZSetLiteral.class), DBSPZSetLiteral.class);
+        for (InputOutputChange changes : this.ccs.stream.changes) {
+            Change inputs = changes.getInputs().simplify();
+            Change outputs = changes.getOutputs().simplify();
 
-            TableValue[] tableValues = new TableValue[inputs.length];
-            for (int i = 0; i < inputs.length; i++)
-                tableValues[i] = new TableValue("t" + i, inputs[i]);
+            TableValue[] tableValues = new TableValue[inputs.getSetCount()];
+            for (int i = 0; i < inputs.getSetCount(); i++)
+                tableValues[i] = new TableValue("t" + i, inputs.getSet(i));
             String functionName = "input" + pair;
             DBSPFunction inputFunction = TableValue.createInputFunction(
                     functionName, tableValues, codeDirectory, "csv");
@@ -110,9 +94,9 @@ class TestCase {
             if (!useHandles)
                 throw new UnimplementedException();
 
-            for (int i = 0; i < inputs.length; i++) {
+            for (int i = 0; i < inputs.getSetCount(); i++) {
                 String function;
-                if (inputs[i].getType().is(DBSPTypeZSet.class))
+                if (inputs.getSetType(i).is(DBSPTypeZSet.class))
                     function = "append_to_collection_handle";
                 else
                     function = "append_to_upsert_handle";
@@ -125,12 +109,12 @@ class TestCase {
                     "step", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).unwrap());
             list.add(step);
 
-            for (int i = 0; i < pairs.outputs.length; i++) {
+            for (int i = 0; i < changes.outputs.getSetCount(); i++) {
                 String message = System.lineSeparator() +
                         "mvn test -Dtest=" + this.javaTestName +
                         System.lineSeparator() + this.name;
 
-                DBSPType rowType = outputs[i].getElementType();
+                DBSPType rowType = outputs.getSetElementType(i);
                 boolean foundFp = false;
                 DBSPExpression[] converted = null;
                 DBSPVariablePath var = null;
@@ -153,9 +137,9 @@ class TestCase {
                     // Currently we don't have any tests with this case.
                 }
 
-                DBSPExpression expected = outputs[i];
+                DBSPExpression expected = outputs.getSet(i);
                 DBSPExpression actual = new DBSPApplyExpression("read_output_handle", DBSPTypeAny.getDefault(),
-                        streams.getVarReference().field(pairs.inputs.length + i).borrow());
+                        streams.getVarReference().field(changes.inputs.getSetCount() + i).borrow());
                 if (foundFp) {
                     DBSPExpression convertedValue = new DBSPTupleExpression(converted);
                     DBSPExpression converter = convertedValue.closure(var.asParameter());

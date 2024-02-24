@@ -12,7 +12,7 @@ import org.junit.Test;
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class PostgresInt8Tests extends SqlIoTest {
     @Override
-    public void prepareData(DBSPCompiler compiler) {
+    public void prepareInputs(DBSPCompiler compiler) {
         String createTable = "CREATE TABLE INT8_TBL(q1 bigint, q2 bigint)";
 
         String insert = """

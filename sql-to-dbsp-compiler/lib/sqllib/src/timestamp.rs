@@ -178,9 +178,19 @@ impl Add<i64> for Timestamp {
     }
 }
 
-pub fn plus_Timestamp_ShortInterval(left: Timestamp, right: ShortInterval) -> Timestamp {
+pub fn plus_Timestamp_ShortInterval_Timestamp(left: Timestamp, right: ShortInterval) -> Timestamp {
     left.add(right.milliseconds())
 }
+
+polymorphic_return_function2!(
+    plus,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval,
+    Timestamp,
+    Timestamp
+);
 
 pub fn minus_Timestamp_Timestamp_ShortInterval(left: Timestamp, right: Timestamp) -> ShortInterval {
     ShortInterval::from(left.milliseconds() - right.milliseconds())
@@ -584,24 +594,7 @@ pub fn minus_Date_Date_LongInterval(left: Date, right: Date) -> LongInterval {
     LongInterval::from(months * neg)
 }
 
-pub fn minus_DateN_Date_LongIntervaNl(left: Option<Date>, right: Date) -> Option<LongInterval> {
-    left.map(|x| LongInterval::new(x.days() - right.days()))
-}
-
-pub fn minus_Date_DateN_LongInterval(left: Date, right: Option<Date>) -> Option<LongInterval> {
-    right.map(|x| LongInterval::new(left.days() - x.days()))
-}
-
-pub fn minus_DateN_DateN_LongIntervalN(
-    left: Option<Date>,
-    right: Option<Date>,
-) -> Option<LongInterval> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(x), Some(y)) => Some(LongInterval::new(x.days() - y.days())),
-    }
-}
+polymorphic_return_function2!(minus, Date, Date, Date, Date, LongInterval, LongInterval);
 
 pub fn minus_Date_Date_ShortInterval(left: Date, right: Date) -> ShortInterval {
     let ld = left.days() as i64;
@@ -609,24 +602,7 @@ pub fn minus_Date_Date_ShortInterval(left: Date, right: Date) -> ShortInterval {
     ShortInterval::new((ld - rd) * 86400 * 1000)
 }
 
-pub fn minus_DateN_Date_ShortIntervalN(left: Option<Date>, right: Date) -> Option<ShortInterval> {
-    left.map(|x| minus_Date_Date_ShortInterval(x, right))
-}
-
-pub fn minus_Date_DateN_ShortIntervalN(left: Date, right: Option<Date>) -> Option<ShortInterval> {
-    right.map(|x| minus_Date_Date_ShortInterval(left, x))
-}
-
-pub fn minus_DateN_DateN_ShortIntervalN(
-    left: Option<Date>,
-    right: Option<Date>,
-) -> Option<ShortInterval> {
-    match (left, right) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(x), Some(y)) => Some(minus_Date_Date_ShortInterval(x, y)),
-    }
-}
+polymorphic_return_function2!(minus, Date, Date, Date, Date, ShortInterval, ShortInterval);
 
 pub fn extract_year_Date(value: Date) -> i64 {
     let date = value.to_dateTime();
