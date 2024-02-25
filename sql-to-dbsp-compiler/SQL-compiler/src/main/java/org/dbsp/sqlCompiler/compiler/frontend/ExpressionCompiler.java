@@ -847,8 +847,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "cardinality": {
                         this.validateArgCount(node, ops.size(), 1);
                         String name = "cardinality";
+
+                        if (ops.get(0).is(DBSPNullLiteral.class)) {
+                            ops.set(0, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
+                        }
+
                         if (ops.get(0).getType().mayBeNull)
                             name += "N";
+
                         return new DBSPApplyExpression(node, name, type, ops.get(0));
                     }
                     case "writelog":
@@ -960,6 +966,21 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case TUMBLE:
                 return this.compilePolymorphicFunction(
                         "tumble", node, type, ops, 2, 3);
+            case ARRAY_LENGTH:
+            case ARRAY_SIZE: {
+                // same as "cardinality"
+                String name = "cardinality";
+
+                if (ops.get(0).is(DBSPNullLiteral.class)) {
+                    ops.set(0, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
+                }
+
+                if (ops.get(0).getType().mayBeNull)
+                    name += "N";
+
+                return new DBSPApplyExpression(node, name, type, ops.get(0));
+            }
+            case ARRAY_PREPEND:
             case ARRAY_APPEND: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
@@ -977,11 +998,97 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     arg0 = new DBSPApplyExpression("map", type, arg0.borrow(), cast);
                 }
 
-                String method = "array_append";
+                String method = getCallName(call);
                 if (arg0type.mayBeNull)
                     method += "N";
 
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
+            }
+            case SORT_ARRAY: {
+                if (ops.size() == 1) {
+                    ops.add(1, new DBSPBoolLiteral(true));
+                }
+                DBSPExpression arg0 = ops.get(0);
+                DBSPExpression arg1 = ops.size() == 1 ? new DBSPBoolLiteral(true) : ops.get(1);
+
+                return new DBSPApplyExpression(node, getCallName(call), type, arg0, arg1);
+            }
+            case ARRAY_COMPACT: {
+                DBSPTypeVec vec = type.to(DBSPTypeVec.class);
+                DBSPExpression arg0 = ops.get(0);
+
+                DBSPTypeVec arg0type = arg0.getType().to(DBSPTypeVec.class);
+
+                if (arg0type.sameType(vec)) {
+                    // the expected result type is the same as the argument type
+                    // meaning no element in the array can be nullable
+                    // so just return the current argument as is
+                    return arg0;
+                }
+
+                String method = "array_compact";
+                if (arg0type.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, arg0);
+            }
+            case ARRAY_MAX:
+            case ARRAY_MIN:
+            {
+                DBSPExpression arg0 = ops.get(0);
+                DBSPTypeVec vec = arg0.getType().to(DBSPTypeVec.class);
+                DBSPType elemType = vec.getElementType();
+
+                String method = getCallName(call);
+                if (elemType.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, arg0);
+            }
+            case ARRAY_REVERSE:
+            case ARRAY_DISTINCT: {
+                DBSPExpression arg0 = ops.get(0);
+                String method = getCallName(call);
+
+                if (arg0.type.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, arg0);
+            }
+            case ARRAY_CONTAINS:
+            case ARRAY_REMOVE:
+            case ARRAY_POSITION:
+            {
+                DBSPExpression arg0 = ops.get(0);
+                DBSPExpression arg1 = ops.get(1);
+                DBSPTypeVec vec = arg0.getType().to(DBSPTypeVec.class);
+                DBSPType elemType = vec.getElementType();
+
+                String method = getCallName(call);
+
+                // If argument is null for certain, return null
+                if (arg1.type.is(DBSPTypeNull.class)) {
+                    return DBSPNullLiteral.none(type);
+                }
+
+                // if argument maybe null
+                if (arg1.type.mayBeNull) {
+                    arg1 = arg1.cast(elemType.setMayBeNull(true));
+                    method += "N";
+                }
+
+                if (elemType.mayBeNull) {
+                    arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type, arg1);
+                }
+
+                return new DBSPApplyExpression(node, method, type, arg0, arg1);
+            }
+            case ARRAY_REPEAT: {
+                String method = getCallName(call);
+                if (ops.get(1).type.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
             }
             case HOP:
             case DOT:

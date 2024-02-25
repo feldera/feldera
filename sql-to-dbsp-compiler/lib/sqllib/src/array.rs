@@ -1,6 +1,7 @@
 // Array operations
 
-use std::ops::Index;
+use std::hash::Hash;
+use std::{i64, ops::Index};
 
 pub fn element<T>(array: Vec<T>) -> Option<T>
 where
@@ -23,7 +24,7 @@ where
     element(array)
 }
 
-pub fn cardinality_<T>(value: Vec<T>) -> i32 {
+pub fn cardinality<T>(value: Vec<T>) -> i32 {
     value.len() as i32
 }
 
@@ -85,4 +86,149 @@ pub fn array_append<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
 
 pub fn array_appendN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_append(vector?, value))
+}
+
+pub fn array_compact<T>(vector: Vec<Option<T>>) -> Vec<T> {
+    vector.into_iter().flatten().collect()
+}
+
+pub fn array_compactN<T>(vector: Option<Vec<Option<T>>>) -> Option<Vec<T>> {
+    Some(array_compact(vector?))
+}
+
+pub fn array_prepend<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
+    vector.insert(0, value);
+    vector
+}
+
+pub fn array_prependN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
+    Some(array_prepend(vector?, value))
+}
+
+pub fn sort_array<T>(mut vector: Vec<T>, ascending: bool) -> Vec<T>
+where
+    T: Ord,
+{
+    if ascending {
+        vector.sort()
+    } else {
+        vector.sort_by(|a, b| b.cmp(a))
+    };
+
+    vector
+}
+
+pub fn array_max<T>(vector: Vec<T>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().max()
+}
+
+pub fn array_min<T>(vector: Vec<T>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().min()
+}
+
+pub fn array_maxN<T>(vector: Vec<Option<T>>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().max().flatten()
+}
+
+pub fn array_minN<T>(vector: Vec<Option<T>>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().filter(|i| i.is_some()).min().flatten()
+}
+
+pub fn array_position<T>(vector: Vec<T>, element: T) -> i64
+where
+    T: Eq,
+{
+    vector
+        .into_iter()
+        .position(|x| x == element)
+        .map(|v| v + 1)
+        .unwrap_or(0) as i64
+}
+
+pub fn array_positionN<T>(vector: Vec<T>, element: Option<T>) -> Option<i64>
+where
+    T: Eq,
+{
+    Some(array_position(vector, element?))
+}
+
+pub fn array_contains<T>(vector: Vec<T>, element: T) -> bool
+where
+    T: Eq,
+{
+    vector.contains(&element)
+}
+
+pub fn array_containsN<T>(vector: Vec<T>, element: Option<T>) -> Option<bool>
+where
+    T: Eq,
+{
+    Some(array_contains(vector, element?))
+}
+
+pub fn array_distinct<T>(mut vector: Vec<T>) -> Vec<T>
+where
+    T: Eq + Hash + Clone,
+{
+    let mut hset: std::collections::HashSet<T> = std::collections::HashSet::new();
+    vector.retain(|v| hset.insert(v.clone()));
+    vector
+}
+
+pub fn array_distinctN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Hash + Clone,
+{
+    Some(array_distinct(vector?))
+}
+
+pub fn array_reverse<T>(vector: Vec<T>) -> Vec<T> {
+    vector.into_iter().rev().collect()
+}
+
+pub fn array_reverseN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>> {
+    Some(array_reverse(vector?))
+}
+
+pub fn array_repeat<T>(element: T, count: i32) -> Vec<T>
+where
+    T: Clone,
+{
+    std::iter::repeat(element)
+        .take(usize::try_from(count).unwrap_or(0))
+        .collect()
+}
+
+pub fn array_repeatN<T>(element: T, count: Option<i32>) -> Option<Vec<T>>
+where
+    T: Clone,
+{
+    Some(array_repeat(element, count?))
+}
+
+pub fn array_remove<T>(mut vector: Vec<T>, element: T) -> Vec<T>
+where
+    T: Eq,
+{
+    vector.retain(|v| v != &element);
+    vector
+}
+
+pub fn array_removeN<T>(vector: Vec<T>, element: Option<T>) -> Option<Vec<T>>
+where
+    T: Eq,
+{
+    Some(array_remove(vector, element?))
 }
