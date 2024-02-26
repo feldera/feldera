@@ -1,4 +1,4 @@
-# Feldera: REST API
+# Using REST API
 
 :::caution
 

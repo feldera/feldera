@@ -15,18 +15,8 @@
 const sidebars = {
   docsSidebar: [
     'what-is-feldera',
-    'intro',
+    'demo/demo',
     'tour/tour',
-    {
-      type: 'category',
-      label: 'Feldera Cloud',
-      link: { type: 'doc', id: 'cloud/index' },
-      items: [
-        'cloud/assets',
-        'cloud/deployment',
-        'cloud/secret-management'
-      ]
-    },
     {
       type: 'category',
       label: 'Tutorials',
@@ -37,7 +27,7 @@ const sidebars = {
       items: [
           {
               type: 'category',
-              label: 'Feldera: the Basics',
+              label: 'Interactive',
               link: {
                   type: 'doc',
                   id: 'tutorials/basics/index',
@@ -51,10 +41,9 @@ const sidebars = {
           'tutorials/rest_api/index'
       ]
     },
-    'demo/demo',
     {
       type: 'category',
-      label: 'Data Sources and Sinks',
+      label: 'Connectors',
       link: {
         type: 'doc',
         id: 'connectors/index'
@@ -62,7 +51,7 @@ const sidebars = {
       items: [
           {
               type: 'category',
-              label: 'Sources',
+              label: 'Input',
               link: {
                   type: 'doc',
                   id: 'connectors/sources/index',
@@ -76,7 +65,7 @@ const sidebars = {
           },
           {
               type: 'category',
-              label: 'Sinks',
+              label: 'Output',
               link: {
                   type: 'doc',
                   id: 'connectors/sinks/index',
@@ -114,9 +103,20 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'API References',
+      label: 'API Reference',
       items: ['api/rest', 'api/json', 'api/csv', 'api/rust']
     },
+    {
+      type: 'category',
+      label: 'Bring Your Own Cloud',
+      link: { type: 'doc', id: 'cloud/index' },
+      items: [
+        'cloud/assets',
+        'cloud/deployment',
+        'cloud/secret-management'
+      ]
+    },
+    'intro',
     'papers',
     'videos',
     {

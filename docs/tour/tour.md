@@ -1,7 +1,7 @@
 # Tour
 
 Once you've started the Feldera Platform demo, as described in [Get
-Started](../intro), navigate to [localhost:8080](http://localhost:8080)
+Started](/docs/intro), navigate to [localhost:8080](http://localhost:8080)
 in your web browser to view the Feldera Platform user interface.  A status
 dashboard fills most of the home screen, as shown below, and a
 sidebar on the left offers access to tabs for Feldera Platform features:

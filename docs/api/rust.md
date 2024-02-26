@@ -11,4 +11,4 @@ on Github.  We welcome [contributions].
 [crates.io]: https://crates.io/crates/dbsp
 [docs.rs]: https://docs.rs/dbsp
 [repo]: https://github.com/feldera/feldera/tree/main/crates/dbsp
-[contributions]: ../contributors/intro
+[contributions]: /docs/contributors/intro
