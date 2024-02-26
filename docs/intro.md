@@ -1,4 +1,4 @@
-# Get Started
+# Docker Compose Install
 
 These instructions explain how to run the Feldera Platform on a single machine
 in a configuration suitable for demos, development, and testing.  For production

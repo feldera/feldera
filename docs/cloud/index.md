@@ -12,17 +12,17 @@ Please contact us at `learnmore@feldera.com` if you are interested to learn
 more or would like to try out Feldera Cloud. We'd be happy to get you started!
 
 :::tip
-Don't forget to first try out the [Docker demo container](../intro), which requires
+Don't forget to first try out the [Docker demo container](/docs/intro), which requires
 no license key. The Docker demo already showcases many of Feldera's features.
 This documentation is about setting up a distributed cloud deployment.
 :::
 
 ## Setup
 
-1. **[Load assets](assets):** using your license key, load the required assets
+1. **[Load assets](/docs/cloud/assets):** using your license key, load the required assets
    into your cloud environment such that they are available for deployment.
 
-2. **[Deployment](deployment):** start a Kubernetes cluster on which Feldera Cloud 
+2. **[Deployment](/docs/cloud/deployment):** start a Kubernetes cluster on which Feldera Cloud
    is deployed.
 
 ## Usage
@@ -30,15 +30,15 @@ This documentation is about setting up a distributed cloud deployment.
 Once you have completed the setup, you can get started with using Feldera Cloud.
 For example, consider the following resources:
 
-* [Create your first pipeline](../tutorials/basics/part1)
-* Browse our [source/input connectors](../connectors/sources)
-  (such as [Kafka](../connectors/sources/kafka),
-  [MySQL](../connectors/sources/debezium-mysql.md),
-  and [HTTP](../connectors/sources/http))
-* Browse our [sink/output connectors](../connectors/sinks)
-  (such as [Kafka](../connectors/sinks/kafka),
-  [Snowflake](../connectors/sinks/snowflake),
-  and [HTTP](../connectors/sinks/http))
+* [Create your first pipeline](/docs/tutorials/basics/part1)
+* Browse our [source/input connectors](/docs/connectors/sources)
+  (such as [Kafka](/docs/connectors/sources/kafka),
+  [MySQL](/docs/connectors/sources/debezium-mysql),
+  and [HTTP](/docs/connectors/sources/http))
+* Browse our [sink/output connectors](/docs/connectors/sinks)
+  (such as [Kafka](/docs/connectors/sinks/kafka),
+  [Snowflake](/docs/connectors/sinks/snowflake),
+  and [HTTP](/docs/connectors/sinks/http))
 
 ## Supported cloud providers
 

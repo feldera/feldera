@@ -18,6 +18,8 @@ through its user interface and API.
 Feldera Platform's implementation is based on a streaming algebra called "DataBase
 Stream Processor", [DBSP](https://www.feldera.com/vldb23.pdf).
 
+![Analytics](what-is-feldera.svg)
+
 ## Concepts
 
 Feldera Platform processes queries and produces output continuously.  When input
@@ -96,7 +98,7 @@ and monitor it.
 Feldera is the pioneering implementation of a new theory that unifies
 databases, streaming computation, and incremental view maintenance,
 written by the inventors of that theory. See our
-[publications](papers) for all the details.
+[publications](/docs/papers) for all the details.
 
 Feldera code is available on [Github][Feldera] using an MIT open-source
 license. It consists of a Rust runtime and a SQL compiler.
