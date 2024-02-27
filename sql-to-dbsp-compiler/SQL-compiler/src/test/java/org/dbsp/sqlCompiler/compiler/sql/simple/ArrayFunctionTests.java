@@ -55,11 +55,17 @@ public class ArrayFunctionTests extends SqlIoTest {
                 ---------------
                  {}
                 (1 row)
+                
+                SELECT array_compact(NULL);
+                 array_compact
+                ---------------
+                 NULL
+                (1 row)
                 """
         );
     }
 
-    @Test @Ignore("Calcite bug? Probably not, they have a test for this but for us this gets simplified and expects {NULL} instead of {}")
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1472")
     public void testArrayCompact2() {
         this.qs("""
                 SELECT array_compact(ARRAY [NULL]);
@@ -101,15 +107,6 @@ public class ArrayFunctionTests extends SqlIoTest {
         );
     }
 
-    @Test
-    public void testArrayCompactNull() {
-        this.q("""
-                SELECT array_compact(NULL);
-                 array_compact
-                ---------------
-                 NULL"""
-        );
-    }
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/1465")
     public void testArrayAppendNull() {
@@ -512,7 +509,7 @@ public class ArrayFunctionTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("ICE: cannot add expression of different type to set: INTEGER NOT NULL ARRAY NOT NULL -> INTEGER NOT NULL ARRAY")
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1473")
     public void testArrayRepeat2() {
         this.qs("""
                 SELECT array_repeat(123, null);
@@ -524,10 +521,10 @@ public class ArrayFunctionTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("ICE: compilation failure while optimizing")
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1474")
     public void testArrayRepeat3() {
         this.qs("""
-                SELECT array_repeat('a', 6);
+                SELECT array_repeat( 'a', 6);
                  array_repeat
                 --------------
                  { a, a, a, a, a, a}
@@ -584,7 +581,7 @@ public class ArrayFunctionTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("TBD: Should we support implicitly casting here? Snowflake thinks its fine as long as types are comparable")
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1475")
     public void testArrayFnsDiffTypes() {
         this.qs("""
                 SELECT array_position(ARRAY [1, 2, 4, 6], 1e0);

@@ -1,7 +1,9 @@
 // Array operations
 
 use std::hash::Hash;
-use std::{i64, ops::Index};
+use std::ops::Index;
+
+use crate::some_generic_function2;
 
 pub fn element<T>(array: Vec<T>) -> Option<T>
 where
@@ -118,6 +120,13 @@ where
     vector
 }
 
+pub fn sort_arrayN<T>(vector: Option<Vec<T>>, ascending: bool) -> Option<Vec<T>>
+where
+    T: Ord,
+{
+    Some(sort_array(vector?, ascending))
+}
+
 pub fn array_max<T>(vector: Vec<T>) -> Option<T>
 where
     T: Ord,
@@ -136,46 +145,14 @@ pub fn array_maxN<T>(vector: Vec<Option<T>>) -> Option<T>
 where
     T: Ord,
 {
-    vector.into_iter().max().flatten()
+    vector.into_iter().flatten().max()
 }
 
 pub fn array_minN<T>(vector: Vec<Option<T>>) -> Option<T>
 where
     T: Ord,
 {
-    vector.into_iter().filter(|i| i.is_some()).min().flatten()
-}
-
-pub fn array_position<T>(vector: Vec<T>, element: T) -> i64
-where
-    T: Eq,
-{
-    vector
-        .into_iter()
-        .position(|x| x == element)
-        .map(|v| v + 1)
-        .unwrap_or(0) as i64
-}
-
-pub fn array_positionN<T>(vector: Vec<T>, element: Option<T>) -> Option<i64>
-where
-    T: Eq,
-{
-    Some(array_position(vector, element?))
-}
-
-pub fn array_contains<T>(vector: Vec<T>, element: T) -> bool
-where
-    T: Eq,
-{
-    vector.contains(&element)
-}
-
-pub fn array_containsN<T>(vector: Vec<T>, element: Option<T>) -> Option<bool>
-where
-    T: Eq,
-{
-    Some(array_contains(vector, element?))
+    vector.into_iter().flatten().min()
 }
 
 pub fn array_distinct<T>(mut vector: Vec<T>) -> Vec<T>
@@ -218,7 +195,29 @@ where
     Some(array_repeat(element, count?))
 }
 
-pub fn array_remove<T>(mut vector: Vec<T>, element: T) -> Vec<T>
+pub fn array_position__<T>(vector: Vec<T>, element: T) -> i64
+where
+    T: Eq,
+{
+    vector
+        .into_iter()
+        .position(|x| x == element)
+        .map(|v| v + 1)
+        .unwrap_or(0) as i64
+}
+
+some_generic_function2!(array_position, T, Vec<T>, T, Eq, i64);
+
+pub fn array_contains__<T>(vector: Vec<T>, element: T) -> bool
+where
+    T: Eq,
+{
+    vector.contains(&element)
+}
+
+some_generic_function2!(array_contains, T, Vec<T>, T, Eq, bool);
+
+pub fn array_remove__<T>(mut vector: Vec<T>, element: T) -> Vec<T>
 where
     T: Eq,
 {
@@ -226,9 +225,4 @@ where
     vector
 }
 
-pub fn array_removeN<T>(vector: Vec<T>, element: Option<T>) -> Option<Vec<T>>
-where
-    T: Eq,
-{
-    Some(array_remove(vector, element?))
-}
+some_generic_function2!(array_remove, T, Vec<T>, T, Eq, Vec<T>);

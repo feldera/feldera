@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added 
+- SQL: Add support for multiple array related functions ([#1468](https://github.com/feldera/feldera/pull/1468))
+
 ## [0.10.0] - 2024-02-22
 
 ### Fixed

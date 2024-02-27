@@ -433,6 +433,27 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         return result;
     }
 
+    void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
+        if (ops.get(arg).is(DBSPNullLiteral.class)) {
+            ops.set(arg, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
+        }
+    }
+
+    String getArrayCallName(RexCall call, DBSPExpression... ops) {
+        String method = getCallName(call);
+        StringBuilder stringBuilder = new StringBuilder(method);
+
+        for (DBSPExpression op : ops) {
+            if (op.type.mayBeNull) {
+                stringBuilder.append("N");
+            } else {
+                stringBuilder.append("_");
+            }
+        }
+
+        return stringBuilder.toString();
+    }
+
     /**
      * Compile a function call into a Rust function.
      *
@@ -848,9 +869,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         this.validateArgCount(node, ops.size(), 1);
                         String name = "cardinality";
 
-                        if (ops.get(0).is(DBSPNullLiteral.class)) {
-                            ops.set(0, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
-                        }
+                        nullLiteralToNullArray(ops, 0);
 
                         if (ops.get(0).getType().mayBeNull)
                             name += "N";
@@ -971,9 +990,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 // same as "cardinality"
                 String name = "cardinality";
 
-                if (ops.get(0).is(DBSPNullLiteral.class)) {
-                    ops.set(0, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
-                }
+                nullLiteralToNullArray(ops, 0);
 
                 if (ops.get(0).getType().mayBeNull)
                     name += "N";
@@ -1009,9 +1026,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     ops.add(1, new DBSPBoolLiteral(true));
                 }
                 DBSPExpression arg0 = ops.get(0);
-                DBSPExpression arg1 = ops.size() == 1 ? new DBSPBoolLiteral(true) : ops.get(1);
+                DBSPExpression arg1 = ops.get(1);
 
-                return new DBSPApplyExpression(node, getCallName(call), type, arg0, arg1);
+                String method = getCallName(call);
+                if (arg0.type.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, arg0, arg1);
             }
             case ARRAY_COMPACT: {
                 DBSPTypeVec vec = type.to(DBSPTypeVec.class);
@@ -1023,6 +1044,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     // the expected result type is the same as the argument type
                     // meaning no element in the array can be nullable
                     // so just return the current argument as is
+                    String warningMessage =
+                            node + ": no null elements in the array";
+                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
                     return arg0;
                 }
 
@@ -1064,18 +1088,20 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 DBSPTypeVec vec = arg0.getType().to(DBSPTypeVec.class);
                 DBSPType elemType = vec.getElementType();
 
-                String method = getCallName(call);
-
                 // If argument is null for certain, return null
                 if (arg1.type.is(DBSPTypeNull.class)) {
+                    String warningMessage =
+                            node + ": always returns NULL";
+                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
                     return DBSPNullLiteral.none(type);
                 }
 
                 // if argument maybe null
                 if (arg1.type.mayBeNull) {
                     arg1 = arg1.cast(elemType.setMayBeNull(true));
-                    method += "N";
                 }
+
+                String method = getArrayCallName(call, arg0, arg1);
 
                 if (elemType.mayBeNull) {
                     arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type, arg1);
