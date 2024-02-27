@@ -4,13 +4,14 @@
 use futures::{task::noop_waker, Future};
 use metrics::{counter, histogram};
 use std::{
+    cell::RefCell,
     collections::HashMap,
     fs::{File, OpenOptions},
     io::{Error as IoError, Seek},
     os::unix::prelude::FileExt,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::{Arc, RwLock},
+    sync::Arc,
     task::Context,
     time::Instant,
 };
@@ -95,7 +96,7 @@ pub struct PosixBackend {
     /// Directory in which we keep the files.
     base: PathBuf,
     /// Meta-data of all files we created so far.
-    files: RwLock<HashMap<i64, FileMetaData>>,
+    files: RefCell<HashMap<i64, FileMetaData>>,
     /// A global counter to get unique identifiers for file-handles.
     next_file_id: Arc<AtomicIncrementOnlyI64>,
 }
@@ -113,7 +114,7 @@ impl PosixBackend {
         describe_disk_metrics();
         Self {
             base: base.as_ref().to_path_buf(),
-            files: RwLock::new(HashMap::new()),
+            files: RefCell::new(HashMap::new()),
             next_file_id,
         }
     }
@@ -131,7 +132,7 @@ impl PosixBackend {
 
     /// Helper function to delete (mutable and immutable) files.
     fn delete_inner(&self, fd: i64) -> Result<(), StorageError> {
-        let FileMetaData { file: _, path, .. } = self.files.write().unwrap().remove(&fd).unwrap();
+        let FileMetaData { file: _, path, .. } = self.files.borrow_mut().remove(&fd).unwrap();
         std::fs::remove_file(path).unwrap();
         Ok(())
     }
@@ -164,7 +165,7 @@ impl StorageControl for PosixBackend {
             &path,
             OpenOptions::new().create_new(true).write(true).read(true),
         )?;
-        let mut files = self.files.write().unwrap();
+        let mut files = self.files.borrow_mut();
         files.insert(
             file_counter,
             FileMetaData {
@@ -200,7 +201,7 @@ impl StorageWrite for PosixBackend {
     ) -> Result<Rc<FBuf>, StorageError> {
         let block = Rc::new(data);
 
-        let mut files = self.files.write().unwrap();
+        let mut files = self.files.borrow_mut();
         let request_start = Instant::now();
         let fm = files.get_mut(&fd.0).unwrap();
         fm.write_at(&block, offset)?;
@@ -216,7 +217,7 @@ impl StorageWrite for PosixBackend {
         &self,
         fd: FileHandle,
     ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        let mut files = self.files.write().unwrap();
+        let mut files = self.files.borrow_mut();
 
         let mut fm = files.remove(&fd.0).unwrap();
         let path = fm.path.clone();
@@ -242,7 +243,7 @@ impl StorageRead for PosixBackend {
         let mut buffer = FBuf::with_capacity(size);
         buffer.resize(size, 0);
 
-        let files = self.files.read().unwrap();
+        let files = self.files.borrow();
         let fm = files.get(&fd.0).unwrap();
         let request_start = Instant::now();
         match fm.file.read_exact_at(&mut buffer[..], offset) {
@@ -260,7 +261,7 @@ impl StorageRead for PosixBackend {
     }
 
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        let mut files = self.files.write().unwrap();
+        let mut files = self.files.borrow_mut();
         let fm = files.get_mut(&fd.0).unwrap();
         let size = fm.file.seek(std::io::SeekFrom::End(0))?;
         Ok(size)
