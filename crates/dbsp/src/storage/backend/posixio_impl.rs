@@ -8,7 +8,6 @@ use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
     io::{Error as IoError, Seek},
-    os::unix::prelude::FileExt,
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
@@ -241,12 +240,11 @@ impl StorageRead for PosixBackend {
         size: usize,
     ) -> Result<Rc<FBuf>, StorageError> {
         let mut buffer = FBuf::with_capacity(size);
-        buffer.resize(size, 0);
 
         let files = self.files.borrow();
         let fm = files.get(&fd.0).unwrap();
         let request_start = Instant::now();
-        match fm.file.read_exact_at(&mut buffer[..], offset) {
+        match buffer.read_exact_at(&fm.file, offset, size) {
             Ok(()) => {
                 counter!(TOTAL_BYTES_READ).increment(buffer.len() as u64);
                 histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
