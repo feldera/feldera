@@ -103,6 +103,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.IWritesLogs;
@@ -874,7 +875,19 @@ public class CalciteCompiler implements IWritesLogs {
                 if (!(table instanceof SqlIdentifier))
                     throw new UnimplementedException(CalciteObject.create(table));
                 SqlIdentifier id = (SqlIdentifier) table;
-                TableModifyStatement stat = new TableModifyStatement(node, sqlStatement, id.toString(), insert.getSource(), comment);
+                TableModifyStatement stat = new TableModifyStatement(node, true, sqlStatement, id.toString(), insert.getSource(), comment);
+                RelRoot values = converter.convertQuery(stat.data, true, true);
+                values = values.withRel(this.optimize(values.rel));
+                stat.setTranslation(values.rel);
+                return stat;
+            } else if (node instanceof SqlRemove) {
+                SqlToRelConverter converter = this.getConverter();
+                SqlRemove insert = (SqlRemove) node;
+                SqlNode table = insert.getTargetTable();
+                if (!(table instanceof SqlIdentifier))
+                    throw new UnimplementedException(CalciteObject.create(table));
+                SqlIdentifier id = (SqlIdentifier) table;
+                TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource(), comment);
                 RelRoot values = converter.convertQuery(stat.data, true, true);
                 values = values.withRel(this.optimize(values.rel));
                 stat.setTranslation(values.rel);

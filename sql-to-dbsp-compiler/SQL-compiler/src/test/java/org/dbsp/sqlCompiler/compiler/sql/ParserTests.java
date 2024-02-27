@@ -105,10 +105,19 @@ public class ParserTests {
     }
 
     @Test
-    public void SourceNameTest() throws SqlParseException {
+    public void sourceNameTest() throws SqlParseException {
         // Tests that a table can be named 'source'.
         CalciteCompiler calcite = this.getCompiler();
         String ddl = "CREATE TABLE SOURCE (COL INT)";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
+    public void removeTest() throws SqlParseException {
+        // Tests the newly added REMOVE statement
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = "REMOVE FROM SOURCE VALUES(1, 2, 3)";
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
     }

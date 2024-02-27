@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -54,13 +55,16 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.HSQDBManager;
 import org.dbsp.util.IWritesLogs;
@@ -850,6 +854,28 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 }
             }
         }
+    }
+
+    @Test
+    public void testRemove() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatement("CREATE TABLE T(I INTEGER, S VARCHAR)");
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        Change change = ccs.toChange("""
+                INSERT INTO T VALUES(1, 'x');
+                REMOVE FROM T VALUES(2, 'Y');""").simplify();
+        DBSPZSetLiteral expected = DBSPZSetLiteral.emptyWithElementType(
+                new DBSPTypeTuple(
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
+                        DBSPTypeString.varchar(true)));
+        expected.add(new DBSPTupleExpression(
+                new DBSPI32Literal(1, true),
+                new DBSPStringLiteral("x", true)));
+        expected.add(new DBSPTupleExpression(
+                new DBSPI32Literal(2, true),
+                new DBSPStringLiteral("Y", true)), -1);
+        boolean same = change.getSet(0).sameValue(expected);
+        Assert.assertTrue(same);
     }
 
     @Test
