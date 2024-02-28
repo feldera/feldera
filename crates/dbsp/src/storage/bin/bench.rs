@@ -15,6 +15,7 @@
 #![allow(async_fn_in_trait)]
 
 use async_lock::Barrier;
+use libc::timespec;
 use std::fs::create_dir_all;
 use std::sync::Arc;
 use std::thread;
@@ -37,6 +38,7 @@ use feldera_storage::buffer_cache::FBuf;
 struct ThreadBenchResult {
     read_time: Duration,
     write_time: Duration,
+    cpu_time: Duration,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -133,9 +135,21 @@ impl BenchResult {
         .unwrap()
     }
 
+    fn cpu_time_mean(&self) -> f64 {
+        mean(
+            &self
+                .times
+                .iter()
+                .map(|t| t.cpu_time.as_secs_f64())
+                .collect::<Vec<f64>>(),
+        )
+        .unwrap()
+    }
+
     fn display(&self, args: Args) {
         let read_time = self.read_time_mean();
         let write_time = self.write_time_mean();
+        let cpu_time = self.cpu_time_mean();
         const ONE_MIB: f64 = 1024f64 * 1024f64;
 
         if !args.csv {
@@ -151,6 +165,7 @@ impl BenchResult {
                 write_time,
                 self.write_time_std()
             );
+            println!("cpu: {}s (mean))", cpu_time,);
         } else {
             println!(
                 "backend,cache,per_thread_file_size,threads,buffer_size,read_time,read_time_std,write_time,write_time_std",
@@ -192,12 +207,15 @@ impl From<String> for Backend {
 }
 
 /// Simple program to benchmark files.
+///
 /// Spawns multiple threads, each thread writes one file sequentially
 /// and then reads it back.
 ///
-/// The program prints the write and read throughput.
+/// The program prints read and write throughput, and the CPU time used by the
+/// benchmark threads, which includes system and user time for those threads
+/// (but not for other user or kernel threads spawned by them for I/O, if any).
 #[derive(Parser, Debug, Clone)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version)]
 struct Args {
     /// Path to a file or directory
     #[clap(short, long, default_value = "/tmp/feldera-storage")]
@@ -234,6 +252,28 @@ struct Args {
 
 fn allocate_buffer(sz: usize) -> FBuf {
     FBuf::with_capacity(sz)
+}
+
+/// Returns the amount of CPU time (user + system) used by the current thread.
+///
+/// It was difficult to determine that the result includes both user and system
+/// time, so for future reference, see [the original commit] that added support,
+/// which includes:
+///
+/// ```patch
+/// +static inline unsigned long thread_ticks(task_t *p) {
+/// +	return p->utime + current->stime;
+/// +}
+/// ```
+///
+/// [the original commit]: https://git.kernel.org/pub/scm/linux/kernel/git/tglx/history.git/commit/?id=bb82e8a53042a91688fd819d0c475a1c9a2b982a
+fn thread_cpu_time() -> Duration {
+    let mut tp = timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut tp as *mut timespec) };
+    Duration::new(tp.tv_sec as u64, tp.tv_nsec as u32)
 }
 
 async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
@@ -280,6 +320,7 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
     ThreadBenchResult {
         write_time,
         read_time,
+        cpu_time: thread_cpu_time(),
     }
 }
 
