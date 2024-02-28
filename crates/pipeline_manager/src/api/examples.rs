@@ -7,9 +7,7 @@ use pipeline_types::{
     error::ErrorResponse,
 };
 
-use crate::api::{
-    ConnectorConfig, KafkaOutput, KafkaService, ServiceConfig, UrlInput,
-};
+use crate::api::{ConnectorConfig, KafkaOutput, KafkaService, ServiceConfig, UrlInput};
 use crate::{
     db::{
         ConnectorId, DBError, PipelineId, PipelineRevision, PipelineStatus, ProgramId, ServiceId,
