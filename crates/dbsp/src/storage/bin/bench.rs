@@ -27,6 +27,7 @@ use monoio::{FusionDriver, RuntimeBuilder};
 #[cfg(feature = "glommio")]
 use feldera_storage::backend::glommio_impl::GlommioBackend;
 
+use feldera_storage::backend::io_uring_impl::IoUringBackend;
 use feldera_storage::backend::monoio_impl::MonoioBackend;
 use feldera_storage::backend::posixio_impl::PosixBackend;
 use feldera_storage::backend::{
@@ -194,6 +195,7 @@ enum Backend {
     Glommio,
     Monoio,
     Posix,
+    IoUring,
 }
 
 impl From<String> for Backend {
@@ -203,6 +205,7 @@ impl From<String> for Backend {
             "Glommio" => Backend::Glommio,
             "Monoio" => Backend::Monoio,
             "Posix" => Backend::Posix,
+            "IoUring" => Backend::IoUring,
             _ => panic!("invalid backend"),
         }
     }
@@ -268,7 +271,7 @@ fn allocate_buffer(sz: usize) -> FBuf {
 ///
 /// ```patch
 /// +static inline unsigned long thread_ticks(task_t *p) {
-/// +	return p->utime + current->stime;
+/// +       return p->utime + current->stime;
 /// +}
 /// ```
 ///
@@ -438,6 +441,39 @@ fn posixio_main(args: Args) -> BenchResult {
     br
 }
 
+fn io_uring_main(args: Args) -> BenchResult {
+    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
+    let barrier = Arc::new(Barrier::new(args.threads));
+    // spawn n-1 threads
+    let threads: Vec<_> = (1..args.threads)
+        .map(|_| {
+            let args = args.clone();
+            let barrier = barrier.clone();
+            let counter = counter.clone();
+            thread::spawn(move || {
+                let barrier = barrier.clone();
+                let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
+                io_uring_backend.block_on(benchmark(&io_uring_backend, barrier))
+            })
+        })
+        .collect();
+
+    // Run on main thread
+    let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
+
+    let mut br = BenchResult::default();
+    let main_res = io_uring_backend.block_on(benchmark(&io_uring_backend, barrier));
+    br.times.push(main_res);
+
+    // Wait for other n-1 threads
+    threads.into_iter().for_each(|t| {
+        let tres = t.join().expect("thread panicked");
+        br.times.push(tres);
+    });
+
+    br
+}
+
 fn main() {
     let args = Args::parse();
     assert!(args.per_thread_file_size > 0);
@@ -459,6 +495,7 @@ fn main() {
         Backend::Glommio => glommio_main(args.clone()),
         Backend::Monoio => monoio_main(args.clone()),
         Backend::Posix => posixio_main(args.clone()),
+        Backend::IoUring => io_uring_main(args.clone()),
     };
 
     br.display(args.clone());
