@@ -153,12 +153,14 @@ impl BenchResult {
         const ONE_MIB: f64 = 1024f64 * 1024f64;
 
         if !args.csv {
-            println!(
-                "read: {} MiB/s (mean: {}s, std: {}s)",
-                ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / read_time,
-                read_time,
-                self.read_time_std()
-            );
+            if !args.write_only {
+                println!(
+                    "read: {} MiB/s (mean: {}s, std: {}s)",
+                    ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / read_time,
+                    read_time,
+                    self.read_time_std()
+                );
+            }
             println!(
                 "write: {} MiB/s (mean: {}s, std: {}s)",
                 ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / write_time,
@@ -245,6 +247,10 @@ struct Args {
     #[clap(long)]
     cache: Option<usize>,
 
+    /// Write without reading back?
+    #[clap(long, default_value = "false")]
+    write_only: bool,
+
     /// Print data as CSV.
     #[clap(long, default_value = "false")]
     csv: bool,
@@ -301,17 +307,19 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
 
     barrier.wait_blocking();
     let start_read = Instant::now();
-    for i in 0..args.per_thread_file_size / args.buffer_size {
-        let rr = backend
-            .read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size)
-            .await
-            .expect("read failed");
-        if args.verify {
-            assert_eq!(rr.len(), args.buffer_size);
-            assert_eq!(
-                rr.iter().as_slice(),
-                vec![0xffu8; args.buffer_size].as_slice()
-            );
+    if !args.write_only {
+        for i in 0..args.per_thread_file_size / args.buffer_size {
+            let rr = backend
+                .read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size)
+                .await
+                .expect("read failed");
+            if args.verify {
+                assert_eq!(rr.len(), args.buffer_size);
+                assert_eq!(
+                    rr.iter().as_slice(),
+                    vec![0xffu8; args.buffer_size].as_slice()
+                );
+            }
         }
     }
     let read_time = start_read.elapsed();
