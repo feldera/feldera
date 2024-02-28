@@ -8,7 +8,7 @@ use pipeline_types::{
 };
 
 use crate::api::{
-    ConnectorConfig, KafkaOutput, KafkaService, ServiceConfig, ServiceConfigType, UrlInput,
+    ConnectorConfig, KafkaOutput, KafkaService, ServiceConfig, UrlInput,
 };
 use crate::{
     db::{
@@ -164,7 +164,6 @@ pub(crate) fn pipeline_config() -> PipelineConfig {
             bootstrap_servers: vec!["example.com".to_string()],
             options: Default::default(),
         }),
-        config_type: KafkaService::config_type(),
     };
     let mut service_name_to_id = BTreeMap::new();
     service_name_to_id.insert(kafka_service.name.clone(), kafka_service.service_id);

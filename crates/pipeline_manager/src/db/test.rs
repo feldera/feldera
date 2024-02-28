@@ -2887,7 +2887,6 @@ impl Storage for Mutex<DbModel> {
                 name: name.to_owned(),
                 description: description.to_owned(),
                 config: config.to_owned(),
-                config_type: config.config_type(),
             },
         );
         Ok(service_id)
@@ -2909,7 +2908,7 @@ impl Storage for Mutex<DbModel> {
             Some(filter_config_type) => Ok(s
                 .services
                 .iter()
-                .filter(|k| k.0 .0 == tenant_id && k.1.config_type == *filter_config_type)
+                .filter(|k| k.0 .0 == tenant_id && k.1.config.config_type() == *filter_config_type)
                 .map(|k| k.1.clone())
                 .collect()),
         }
@@ -2990,7 +2989,6 @@ impl Storage for Mutex<DbModel> {
         }
         if let Some(config) = config {
             c.config = config.clone();
-            c.config_type = config.config_type();
         }
         Ok(())
     }

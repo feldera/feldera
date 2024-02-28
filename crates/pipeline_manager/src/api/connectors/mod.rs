@@ -25,6 +25,7 @@ pub use url::UrlInput;
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 // snake_case such that the enumeration variants are not capitalized in (de-)serialization
 #[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
 pub enum ConnectorConfig {
     FileInput(FileInput),
     FileOutput(FileOutput),

@@ -27,6 +27,7 @@ pub(crate) struct NewServiceRequest {
     /// Service description.
     description: String,
     /// Service configuration.
+    #[serde(flatten)]
     config: ServiceConfig,
 }
 
@@ -48,6 +49,7 @@ pub struct ListServicesRequest {
     /// If provided, will filter based on exact match of the service name.
     name: Option<String>,
     /// If provided, will filter based on exact match of the configuration type.
+    #[serde(rename = "type")]
     config_type: Option<String>,
 }
 
@@ -61,6 +63,7 @@ pub(crate) struct UpdateServiceRequest {
     description: Option<String>,
     /// New service configuration. If absent, existing configuration will
     /// be kept unmodified.
+    #[serde(flatten)]
     config: Option<ServiceConfig>,
 }
 
@@ -74,6 +77,7 @@ pub(crate) struct CreateOrReplaceServiceRequest {
     /// Service description.
     description: String,
     /// Service configuration.
+    #[serde(flatten)]
     config: ServiceConfig,
 }
 

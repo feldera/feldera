@@ -36,6 +36,7 @@ pub(crate) struct ConnectorDescr {
     pub connector_id: ConnectorId,
     pub name: String,
     pub description: String,
+    #[serde(flatten)]
     pub config: ConnectorConfig,
 }
 

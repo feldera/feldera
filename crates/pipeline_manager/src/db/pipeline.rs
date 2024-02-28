@@ -1363,7 +1363,6 @@ async fn get_services_for_connectors(
                     name: row.get(1),
                     description: row.get(2),
                     config: ServiceConfig::from_yaml_str(row.get(3)),
-                    config_type: row.get(4),
                 });
             } else {
                 return Err(DBError::UnknownName { name: service_name });
