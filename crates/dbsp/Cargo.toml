@@ -64,7 +64,7 @@ num-derive = "0.4.1"
 num-traits = "0.2.17"
 thiserror = "1.0"
 uuid = { version = "1.6.1", features = ["v7"] }
-clap = { version = "4.4.14", features = ["derive", "env"] }
+clap = { version = "4.4.14", features = ["derive", "env", "wrap_help"] }
 fdlimit = { version = "0.3.0" }
 # Waiting for https://github.com/bytedance/monoio/pull/227 to be merged
 monoio = { git = "https://github.com/gz/monoio.git", rev = "9303e02" }
