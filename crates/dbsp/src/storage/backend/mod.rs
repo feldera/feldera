@@ -31,6 +31,7 @@ use uuid::Uuid;
 use crate::storage::buffer_cache::FBuf;
 pub mod metrics;
 
+pub mod io_uring_impl;
 pub mod memory_impl;
 pub mod monoio_impl;
 pub mod posixio_impl;
@@ -277,6 +278,7 @@ pub trait StorageExecutor {
         F: Future;
 }
 
-pub use monoio_impl::MonoioBackend as DefaultBackend;
+//pub use monoio_impl::MonoioBackend as DefaultBackend;
 //pub use memory_impl::MemoryBackend as DefaultBackend;
 //pub use posixio_impl::PosixBackend as DefaultBackend;
+pub use io_uring_impl::IoUringBackend as DefaultBackend;

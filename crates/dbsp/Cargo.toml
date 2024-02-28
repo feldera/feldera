@@ -76,6 +76,7 @@ rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
 pipeline_types = { path = "../pipeline-types" }
+io-uring = "0.6.3"
 
 [dependencies.time]
 version = "0.3.20"

@@ -205,7 +205,7 @@ where
     }
 }
 
-/// A cache on top of a storage [backend](crate::backend).
+/// A cache on top of a storage [backend](crate::storage::backend).
 pub struct BufferCache<B, E>
 where
     B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
