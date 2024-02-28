@@ -451,7 +451,7 @@ mod test {
         deserialize_table_record,
         test::{mock_parser_pipeline, MockUpdate},
         transport::InputConsumer,
-        DeserializeWithContext, FormatConfig, ParseError, SqlSerdeConfig,
+        DeserializeWithContext, ParseError, PipelineFormatConfig, SqlSerdeConfig,
     };
     use log::trace;
     use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -529,7 +529,7 @@ mod test {
     {
         for test in test_cases {
             trace!("test: {test:?}");
-            let format_config = FormatConfig {
+            let format_config = PipelineFormatConfig {
                 name: Cow::from("json"),
                 config: serde_yaml::to_value(test.config).unwrap(),
             };

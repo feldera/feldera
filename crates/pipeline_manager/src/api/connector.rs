@@ -8,7 +8,6 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 use log::info;
-use pipeline_types::config::ConnectorConfig;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -19,6 +18,7 @@ use crate::{
 };
 
 use super::{ManagerError, ServerState};
+use crate::api::ConnectorConfig;
 use uuid::Uuid;
 
 /// Request to create a new connector.

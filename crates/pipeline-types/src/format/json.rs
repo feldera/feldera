@@ -33,7 +33,7 @@ use utoipa::ToSchema;
 /// ```json
 /// [{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct JsonParserConfig {
     /// JSON update format.
     #[serde(default)]

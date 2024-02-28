@@ -15,7 +15,7 @@ use crate::query::OutputQuery;
 /// Default value of `InputEndpointConfig::max_buffered_records`.
 /// It is declared as a function and not as a constant, so it can
 /// be used in `#[serde(default="default_max_buffered_records")]`.
-pub(crate) const fn default_max_buffered_records() -> u64 {
+pub const fn default_max_buffered_records() -> u64 {
     1_000_000
 }
 
@@ -106,17 +106,17 @@ pub struct InputEndpointConfig {
 
     /// Connector configuration.
     #[serde(flatten)]
-    pub connector_config: ConnectorConfig,
+    pub connector_config: PipelineConnectorConfig,
 }
 
 /// A data connector's configuration
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ConnectorConfig {
+pub struct PipelineConnectorConfig {
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
 
     /// Parser configuration.
-    pub format: FormatConfig,
+    pub format: PipelineFormatConfig,
 
     /// Backpressure threshold.
     ///
@@ -131,7 +131,7 @@ pub struct ConnectorConfig {
     pub max_buffered_records: u64,
 }
 
-impl ConnectorConfig {
+impl PipelineConnectorConfig {
     pub fn from_yaml_str(s: &str) -> Self {
         serde_yaml::from_str(s).unwrap()
     }
@@ -154,7 +154,7 @@ pub struct OutputEndpointConfig {
 
     /// Connector configuration.
     #[serde(flatten)]
-    pub connector_config: ConnectorConfig,
+    pub connector_config: PipelineConnectorConfig,
 }
 
 /// Transport endpoint configuration.
@@ -174,7 +174,7 @@ pub struct TransportConfig {
 /// Data format specification used to parse raw data received from the
 /// endpoint or to encode data sent to the endpoint.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct FormatConfig {
+pub struct PipelineFormatConfig {
     /// Format name, e.g., "csv", "json", "bincode", etc.
     pub name: Cow<'static, str>,
 

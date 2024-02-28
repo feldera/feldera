@@ -25,8 +25,10 @@ mod pipeline;
 mod program;
 mod service;
 
+mod connectors;
 mod services;
 
+pub(crate) use connectors::*;
 pub(crate) use services::*;
 
 use crate::auth::JwkCache;
@@ -180,11 +182,10 @@ request is rejected."
         pipeline_types::config::InputEndpointConfig,
         pipeline_types::config::OutputEndpointConfig,
         pipeline_types::config::TransportConfig,
-        pipeline_types::config::FormatConfig,
         pipeline_types::config::RuntimeConfig,
-        pipeline_types::config::ConnectorConfig,
+        pipeline_types::config::PipelineConnectorConfig,
         pipeline_types::config::TransportConfig,
-        pipeline_types::config::FormatConfig,
+        pipeline_types::config::PipelineFormatConfig,
         pipeline_types::config::ResourceConfig,
         pipeline_types::transport::file::FileInputConfig,
         pipeline_types::transport::file::FileOutputConfig,
@@ -239,6 +240,13 @@ request is rejected."
         service::CreateOrReplaceServiceResponse,
         api_key::NewApiKeyRequest,
         api_key::NewApiKeyResponse,
+        ConnectorConfig,
+        FormatConfig,
+        FileInput,
+        FileOutput,
+        UrlInput,
+        KafkaInput,
+        KafkaOutput,
         ServiceConfig,
         KafkaService,
     ),),

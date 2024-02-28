@@ -68,8 +68,8 @@ mod stats;
 
 pub use error::{ConfigError, ControllerError};
 pub use pipeline_types::config::{
-    ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
-    RuntimeConfig, TransportConfig,
+    InputEndpointConfig, OutputEndpointConfig, PipelineConfig, PipelineConnectorConfig,
+    PipelineFormatConfig, RuntimeConfig, TransportConfig,
 };
 use pipeline_types::program_schema::canonical_identifier;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};

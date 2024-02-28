@@ -10,7 +10,7 @@ use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use log::{debug, info};
 use openssl::sha;
 use pipeline_types::{
-    config::{ConnectorConfig, PipelineConfig, RuntimeConfig},
+    config::{PipelineConfig, RuntimeConfig},
     program_schema::ProgramSchema,
 };
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ mod pg_setup;
 pub(crate) mod storage;
 
 mod error;
-use crate::api::ServiceConfig;
+use crate::api::{ConnectorConfig, ServiceConfig};
 pub use error::DBError;
 
 mod embedded {
@@ -1062,7 +1062,15 @@ impl ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<(PipelineDescr, ProgramDescr, Vec<ConnectorDescr>), DBError> {
+    ) -> Result<
+        (
+            PipelineDescr,
+            ProgramDescr,
+            Vec<ConnectorDescr>,
+            Vec<Vec<ServiceDescr>>,
+        ),
+        DBError,
+    > {
         pipeline::is_pipeline_deployable(self, tenant_id, pipeline_id).await
     }
 

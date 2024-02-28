@@ -7,15 +7,19 @@ use super::{
     ApiKeyDescr, ApiKeyId, ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState,
     ProgramSchema,
 };
-use crate::api::{KafkaService, ServiceConfig};
+use crate::api::{
+    ConnectorConfig, ConnectorConfigVariant, FormatConfig, KafkaService, ServiceConfig, UrlInput,
+};
 use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::{ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::Transaction;
 use openssl::sha::{self};
+use pipeline_types::config::default_max_buffered_records;
+use pipeline_types::format::csv::CsvParserConfig;
 use pipeline_types::{
-    config::{ConnectorConfig, ResourceConfig, RuntimeConfig},
+    config::{ResourceConfig, RuntimeConfig},
     program_schema::Relation,
 };
 use pretty_assertions::assert_eq;
@@ -167,17 +171,11 @@ pub(crate) async fn setup_pg() -> (ProjectDB, tokio_postgres::Config) {
 }
 
 pub fn test_connector_config() -> ConnectorConfig {
-    ConnectorConfig::from_yaml_str(
-        r#"
-transport:
-    name: kafka
-    config:
-        auto.offset.reset: "earliest"
-        group.instance.id: "group0"
-        topics: [test_input1]
-format:
-    name: csv"#,
-    )
+    ConnectorConfig::UrlInput(UrlInput {
+        url: "http://example.com/file.csv".to_string(),
+        format: FormatConfig::Csv(CsvParserConfig {}),
+        max_buffered_records: default_max_buffered_records(),
+    })
 }
 
 #[tokio::test]
@@ -810,10 +808,11 @@ async fn versioning() {
         .await
         .unwrap();
     let config1 = test_connector_config();
-    let config2 = ConnectorConfig {
-        max_buffered_records: config1.clone().max_buffered_records + 5,
-        ..config1.clone()
-    };
+    let config2 = ConnectorConfig::UrlInput(UrlInput {
+        url: "http://example.com/file.csv2".to_string(),
+        format: FormatConfig::Csv(CsvParserConfig {}),
+        max_buffered_records: default_max_buffered_records(),
+    });
     let connector_id1: ConnectorId = handle
         .db
         .new_connector(tenant_id, Uuid::now_v7(), "a", "b", &config1, None)
@@ -968,10 +967,11 @@ async fn versioning() {
     assert_ne!(r2, r3, "we got a new revision");
 
     // If we change the connector we can commit again:
-    let config3 = ConnectorConfig {
-        max_buffered_records: config2.max_buffered_records + 5,
-        ..config2
-    };
+    let config3 = ConnectorConfig::UrlInput(UrlInput {
+        url: "http://example.com/file.csv3".to_string(),
+        format: FormatConfig::Csv(CsvParserConfig {}),
+        max_buffered_records: default_max_buffered_records() + 5,
+    });
     handle
         .db
         .update_connector(
@@ -1125,46 +1125,26 @@ pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
     })
 }
 
-/// Generate different connector types
-/// TODO: should we generate more configuration variants?
+/// Generate a connector type
 pub(crate) fn limited_connector() -> impl Strategy<Value = ConnectorConfig> {
     any::<u8>().prop_map(|byte| {
-        ConnectorConfig::from_yaml_str(
-            format!(
-                "
-                transport:
-                    name: kafka
-                    config:
-                        auto.offset.reset: \"earliest\"
-                        group.instance.id: \"group0\"
-                        topics: [test_input{byte}]
-                format:
-                    name: csv"
-            )
-            .as_str(),
-        )
+        ConnectorConfig::UrlInput(UrlInput {
+            url: format!("http://example.com/file{byte}.csv"),
+            format: FormatConfig::Csv(CsvParserConfig {}),
+            max_buffered_records: default_max_buffered_records(),
+        })
     })
 }
 
-/// Generate different connector types
-/// TODO: should we generate more configuration variants?
+/// Generate an optional connector type
 pub(crate) fn limited_option_connector() -> impl Strategy<Value = Option<ConnectorConfig>> {
     any::<Option<u8>>().prop_map(|byte| {
         byte.map(|b| {
-            ConnectorConfig::from_yaml_str(
-                format!(
-                    "
-                transport:
-                    name: kafka
-                    config:
-                        auto.offset.reset: \"earliest\"
-                        group.instance.id: \"group0\"
-                        topics: [test_input{b}]
-                format:
-                    name: csv"
-                )
-                .as_str(),
-            )
+            ConnectorConfig::UrlInput(UrlInput {
+                url: format!("http://example.com/file.csv{b}"),
+                format: FormatConfig::Csv(CsvParserConfig {}),
+                max_buffered_records: default_max_buffered_records(),
+            })
         })
     })
 }
@@ -2165,9 +2145,26 @@ impl Storage for Mutex<DbModel> {
                 })
                 .cloned()
                 .collect::<Vec<ConnectorDescr>>();
+            let mut services_for_connectors = vec![];
+            for connector in &connectors {
+                services_for_connectors.push(
+                    s.services
+                        .values()
+                        .filter(|s| {
+                            connector
+                                .config
+                                .service_names()
+                                .iter()
+                                .any(|attached_service_name| *attached_service_name == s.name)
+                        })
+                        .cloned()
+                        .collect::<Vec<ServiceDescr>>(),
+                );
+            }
 
             let pipeline = pipeline.descriptor.clone();
             let connectors = connectors.clone();
+            let services_for_connectors = services_for_connectors.clone();
             let program_data = program_data.clone();
 
             // Gives an answer if the relevant configuration state for the
@@ -2176,8 +2173,10 @@ impl Storage for Mutex<DbModel> {
                 cur_pipeline: &PipelineDescr,
                 cur_sql: &str,
                 cur_connectors: &Vec<ConnectorDescr>,
+                cur_services_for_connectors: &Vec<Vec<ServiceDescr>>,
                 prev: &PipelineRevision,
             ) -> bool {
+                // TODO: update this comparison with latest
                 cur_sql != &prev.program.code.clone().unwrap()
                     || cur_pipeline.config != prev.pipeline.config
                     || cur_pipeline
@@ -2193,6 +2192,10 @@ impl Storage for Mutex<DbModel> {
                         .iter()
                         .map(|c| &c.config)
                         .ne(prev.connectors.iter().map(|c| &c.config))
+                    || cur_services_for_connectors
+                        .iter()
+                        .map(|c| c.clone())
+                        .ne(prev.services_for_connectors.iter().map(|c| c.clone()))
             }
 
             let prev = s.history.get(&(tenant_id, pipeline_id));
@@ -2202,6 +2205,7 @@ impl Storage for Mutex<DbModel> {
                         &pipeline,
                         &program_data.0.code.clone().unwrap(),
                         &connectors,
+                        &services_for_connectors,
                         prev,
                     ),
                     prev.revision,
@@ -2210,13 +2214,19 @@ impl Storage for Mutex<DbModel> {
             };
 
             if has_changed {
-                PipelineRevision::validate(&pipeline, &connectors, &program_data.0)?;
+                PipelineRevision::validate(
+                    &pipeline,
+                    &connectors,
+                    &services_for_connectors,
+                    &program_data.0,
+                )?;
                 s.history.insert(
                     (tenant_id, pipeline_id),
                     PipelineRevision::new(
                         next_revision,
                         pipeline,
                         connectors,
+                        services_for_connectors,
                         program_data.0.clone(),
                     ),
                 );
@@ -2663,6 +2673,20 @@ impl Storage for Mutex<DbModel> {
             }
         }
 
+        // Each service of the connector must exist
+        if let Some(config) = config {
+            for attached_service_name in config.service_names() {
+                s.services
+                    .iter()
+                    .filter(|k| k.0 .0 == tenant_id)
+                    .map(|k| k.1.clone())
+                    .find(|c| c.name == *attached_service_name)
+                    .ok_or(DBError::UnknownName {
+                        name: attached_service_name.clone(),
+                    })?;
+            }
+        }
+
         let c = s
             .connectors
             .get_mut(&(tenant_id, connector_id))
@@ -2982,6 +3006,33 @@ impl Storage for Mutex<DbModel> {
                 service_name: service_name.to_string(),
             })?;
         let service_id = service_id.clone();
+
+        // Find all connectors which have the service
+        let connectors_with_the_service: Vec<ConnectorDescr> = s
+            .connectors
+            .iter()
+            .filter(|k| {
+                k.1.config
+                    .service_names()
+                    .contains(&service_name.to_string())
+            })
+            .map(|k| k.1.clone())
+            .collect();
+
+        for connector_descr in connectors_with_the_service {
+            // Remove connector from all the pipelines
+            s.pipelines.values_mut().for_each(|c| {
+                c.descriptor
+                    .attached_connectors
+                    .retain(|c| c.name != connector_descr.name);
+            });
+            // Remove connector
+            s.connectors
+                .remove(&(tenant_id, connector_descr.connector_id))
+                .ok_or(DBError::UnknownConnector {
+                    connector_id: connector_descr.connector_id,
+                })?;
+        }
 
         // Remove the service
         s.services

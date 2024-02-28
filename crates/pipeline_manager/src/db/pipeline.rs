@@ -8,9 +8,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::Transaction;
 use futures_util::TryFutureExt;
 use pipeline_types::{
-    config::{
-        ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
-    },
+    config::{InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig},
     error::ErrorResponse,
     query::OutputQuery,
 };
@@ -25,6 +23,8 @@ use super::{
     storage::Storage, ConnectorDescr, ConnectorId, DBError, ProgramDescr, ProgramId, ProjectDB,
     Version,
 };
+use crate::api::{ConnectorConfig, ConnectorConfigVariant, ServiceConfig};
+use crate::db::{ServiceDescr, ServiceId};
 use pipeline_types::program_schema::{canonical_identifier, Relation};
 use serde::{Deserialize, Serialize};
 
@@ -281,6 +281,8 @@ pub struct PipelineRevision {
     pub(crate) pipeline: PipelineDescr,
     /// The versioned connectors.
     pub(crate) connectors: Vec<ConnectorDescr>,
+    /// The versioned services for each connector.
+    pub(crate) services_for_connectors: Vec<Vec<ServiceDescr>>,
     /// The versioned program descriptor.
     pub(crate) program: ProgramDescr,
     /// The generated expanded configuration for the pipeline.
@@ -299,20 +301,28 @@ impl PipelineRevision {
         revision: Revision,
         pipeline: PipelineDescr,
         connectors: Vec<ConnectorDescr>,
+        services_for_connectors: Vec<Vec<ServiceDescr>>,
         program: ProgramDescr,
     ) -> Self {
         assert!(
-            PipelineRevision::validate(&pipeline, &connectors, &program).is_ok(),
+            PipelineRevision::validate(&pipeline, &connectors, &services_for_connectors, &program)
+                .is_ok(),
             "pre-condition: Validate supplied data is a consistent/valid snapshot"
         );
         // This unwrap() will succeed because the pre-conditions above make sure that
         // the config is valid
-        let config = PipelineRevision::generate_pipeline_config(&pipeline, &connectors).unwrap();
+        let config = PipelineRevision::generate_pipeline_config(
+            &pipeline,
+            &connectors,
+            &services_for_connectors,
+        )
+        .unwrap();
 
         PipelineRevision {
             revision,
             pipeline,
             connectors,
+            services_for_connectors,
             program,
             config,
             _private: (),
@@ -326,11 +336,14 @@ impl PipelineRevision {
     /// - The `program` is in Success status and has a schema.
     /// - The `connectors` vector contains all connectors referenced by the
     ///   attached connectors.
+    /// - The `services_for_connectors` vector contains all services referenced
+    ///   by the connectors in their configuration.
     /// - attached connectors only reference table/view names that exist in the
     ///   `program.schema`.
     pub(crate) fn validate(
         pipeline: &PipelineDescr,
         connectors: &[ConnectorDescr],
+        services_for_connectors: &[Vec<ServiceDescr>],
         program: &ProgramDescr,
     ) -> Result<(), DBError> {
         // The program was successfully compiled and has a schema
@@ -393,6 +406,17 @@ impl PipelineRevision {
             });
         }
 
+        assert_eq!(connectors.len(), services_for_connectors.len());
+        for i in 0..connectors.len() {
+            let connector = &connectors[i];
+            let services = &services_for_connectors[i];
+            assert_eq!(
+                HashSet::<String>::from_iter(connector.config.service_names().iter().cloned()),
+                HashSet::from_iter(services.iter().map(|s| s.name.clone())),
+                "pre-condition: supplied all services necessary"
+            );
+        }
+
         Ok(())
     }
 
@@ -403,6 +427,7 @@ impl PipelineRevision {
     pub(crate) fn generate_pipeline_config(
         pipeline: &PipelineDescr,
         connectors: &[ConnectorDescr],
+        services_for_connectors: &[Vec<ServiceDescr>],
     ) -> Result<PipelineConfig, DBError> {
         let pipeline_id = pipeline.pipeline_id;
         // input attached connectors
@@ -423,35 +448,49 @@ impl PipelineRevision {
         // Expand input and output attached connectors
         let mut expanded_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
         for ac in inputs.iter() {
-            let connector = connectors.iter().find(|c| ac.connector_name == c.name);
-            if connector.is_none() {
-                return Err(DBError::UnknownConnectorName {
-                    connector_name: ac.connector_name.clone(),
-                });
+            let idx = connectors.iter().position(|c| ac.connector_name == c.name);
+            match idx {
+                None => {
+                    return Err(DBError::UnknownConnectorName {
+                        connector_name: ac.connector_name.clone(),
+                    });
+                }
+                Some(idx) => {
+                    let connector = connectors[idx].clone();
+                    let input_endpoint_config = InputEndpointConfig {
+                        stream: Cow::from(ac.relation_name.clone()),
+                        connector_config: connector.config.to_pipeline_connector_config(
+                            &services_array_to_map(&services_for_connectors[idx]),
+                        )?,
+                    };
+                    expanded_inputs.insert(Cow::from(ac.name.clone()), input_endpoint_config);
+                }
             }
-            let input_endpoint_config = InputEndpointConfig {
-                stream: Cow::from(ac.relation_name.clone()),
-                connector_config: connector.unwrap().config.clone(),
-            };
-            expanded_inputs.insert(Cow::from(ac.name.clone()), input_endpoint_config);
         }
         let mut expanded_outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> =
             BTreeMap::new();
         for ac in outputs.iter() {
-            let connector = connectors.iter().find(|c| ac.connector_name == c.name);
-            if connector.is_none() {
-                return Err(DBError::UnknownConnectorName {
-                    connector_name: ac.connector_name.clone(),
-                });
+            let idx = connectors.iter().position(|c| ac.connector_name == c.name);
+            match idx {
+                None => {
+                    return Err(DBError::UnknownConnectorName {
+                        connector_name: ac.connector_name.clone(),
+                    });
+                }
+                Some(idx) => {
+                    let connector = connectors[idx].clone();
+                    let output_endpoint_config = OutputEndpointConfig {
+                        stream: Cow::from(ac.relation_name.clone()),
+                        // This field gets skipped during serialization/deserialization,
+                        // so it doesn't matter what value we use here
+                        query: OutputQuery::default(),
+                        connector_config: connector.config.to_pipeline_connector_config(
+                            &services_array_to_map(&services_for_connectors[idx]),
+                        )?,
+                    };
+                    expanded_outputs.insert(Cow::from(ac.name.clone()), output_endpoint_config);
+                }
             }
-            let output_endpoint_config = OutputEndpointConfig {
-                stream: Cow::from(ac.relation_name.clone()),
-                // This field gets skipped during serialization/deserialization,
-                // so it doesn't matter what value we use here
-                query: OutputQuery::default(),
-                connector_config: connector.unwrap().config.clone(),
-            };
-            expanded_outputs.insert(Cow::from(ac.name.clone()), output_endpoint_config);
         }
 
         let pc = PipelineConfig {
@@ -597,10 +636,15 @@ pub(crate) async fn create_pipeline_deployment(
 ) -> Result<Revision, DBError> {
     let mut client = db.pool.get().await?;
     let txn = client.transaction().await?;
-    let (pipeline, program, connectors) =
+    let (pipeline, program, connectors, services_for_connectors) =
         is_pipeline_deployable(db, tenant_id, pipeline_id).await?;
-    let pipeline_revision =
-        PipelineRevision::new(Revision(deployment_id), pipeline, connectors, program);
+    let pipeline_revision = PipelineRevision::new(
+        Revision(deployment_id),
+        pipeline,
+        connectors,
+        services_for_connectors,
+        program,
+    );
 
     let pipeline_config = serde_json::to_string(&pipeline_revision).unwrap();
     let check_deployment = txn
@@ -1205,7 +1249,15 @@ pub(crate) async fn is_pipeline_deployable(
     db: &ProjectDB,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
-) -> Result<(PipelineDescr, ProgramDescr, Vec<ConnectorDescr>), DBError> {
+) -> Result<
+    (
+        PipelineDescr,
+        ProgramDescr,
+        Vec<ConnectorDescr>,
+        Vec<Vec<ServiceDescr>>,
+    ),
+    DBError,
+> {
     let mut client = db.pool.get().await?;
     let txn = client.transaction().await?;
     let pipeline = db
@@ -1219,10 +1271,11 @@ pub(crate) async fn is_pipeline_deployable(
         .get_program_by_name(tenant_id, program_name, true, Some(&txn))
         .await?;
     let connectors = get_connectors_for_pipeline_id(db, tenant_id, pipeline_id, Some(&txn)).await?;
+    let services_for_connectors = get_services_for_connectors(&txn, tenant_id, &connectors).await?;
     txn.commit().await?;
     // Check that this configuration forms a valid snapshot
-    PipelineRevision::validate(&pipeline, &connectors, &program)?;
-    Ok((pipeline, program, connectors))
+    PipelineRevision::validate(&pipeline, &connectors, &services_for_connectors, &program)?;
+    Ok((pipeline, program, connectors, services_for_connectors))
 }
 
 pub(crate) async fn pipeline_config(
@@ -1237,7 +1290,8 @@ pub(crate) async fn pipeline_config(
         .await?;
     let connectors: Vec<ConnectorDescr> =
         get_connectors_for_pipeline_id(db, tenant_id, pipeline.pipeline_id, Some(&txn)).await?;
-    PipelineRevision::generate_pipeline_config(&pipeline, &connectors)
+    let services_for_connectors = get_services_for_connectors(&txn, tenant_id, &connectors).await?;
+    PipelineRevision::generate_pipeline_config(&pipeline, &connectors, &services_for_connectors)
 }
 
 /// Retrieve all connectors referenced by a pipeline.
@@ -1279,6 +1333,57 @@ async fn get_connectors_for_pipeline_id(
             }
         })
         .collect::<Vec<ConnectorDescr>>())
+}
+
+/// Retrieve all services attached to the provided connectors.
+///
+/// TODO: use a join instead of a double nested for-loop
+async fn get_services_for_connectors(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    connectors: &Vec<ConnectorDescr>,
+) -> Result<Vec<Vec<ServiceDescr>>, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "SELECT id, name, description, config, config_type
+            FROM service
+            WHERE name = $1
+            AND tenant_id = $2",
+        )
+        .await?;
+
+    let mut services_for_connectors = vec![];
+    for connector in connectors {
+        let mut services = vec![];
+        for service_name in connector.config.service_names() {
+            let row = txn.query_opt(&stmt, &[&service_name, &tenant_id.0]).await?;
+            if let Some(row) = row {
+                services.push(ServiceDescr {
+                    service_id: ServiceId(row.get(0)),
+                    name: row.get(1),
+                    description: row.get(2),
+                    config: ServiceConfig::from_yaml_str(row.get(3)),
+                    config_type: row.get(4),
+                });
+            } else {
+                return Err(DBError::UnknownName { name: service_name });
+            }
+        }
+        services_for_connectors.push(services)
+    }
+    Ok(services_for_connectors)
+}
+
+/// Converts an array of service descriptions to a mapping
+/// of service name to description. The provided service
+/// descriptions might have duplicates, in which the length
+/// of the map result will be less than the input array.
+fn services_array_to_map(services_array: &Vec<ServiceDescr>) -> BTreeMap<String, ServiceDescr> {
+    let mut services_map = BTreeMap::new();
+    for service in services_array {
+        services_map.insert(service.name.clone(), service.clone());
+    }
+    services_map
 }
 
 /// Attach connector to the pipeline.

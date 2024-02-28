@@ -192,8 +192,9 @@ pub use catalog::{
 pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
 
 pub use controller::{
-    ConfigError, ConnectorConfig, Controller, ControllerError, ControllerStatus, FormatConfig,
-    InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig, TransportConfig,
+    ConfigError, Controller, ControllerError, ControllerStatus, InputEndpointConfig,
+    OutputEndpointConfig, PipelineConfig, PipelineConnectorConfig, PipelineFormatConfig,
+    RuntimeConfig, TransportConfig,
 };
 pub use transport::{
     AsyncErrorCallback, FileInputTransport, InputConsumer, InputEndpoint, InputReader,

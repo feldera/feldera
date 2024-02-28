@@ -1,17 +1,26 @@
+use std::collections::BTreeMap;
 /// Example errors for use in OpenApi docs.
 use std::time::Duration;
 
 use pipeline_types::{
-    config::{ConnectorConfig, PipelineConfig, RuntimeConfig},
+    config::{PipelineConfig, RuntimeConfig},
     error::ErrorResponse,
 };
 
+use crate::api::{
+    ConnectorConfig, KafkaOutput, KafkaService, ServiceConfig, ServiceConfigType, UrlInput,
+};
 use crate::{
     db::{
         ConnectorId, DBError, PipelineId, PipelineRevision, PipelineStatus, ProgramId, ServiceId,
         Version,
     },
     runner::RunnerError,
+};
+use pipeline_types::config::default_max_buffered_records;
+use pipeline_types::format::csv::CsvParserConfig;
+use pipeline_types::transport::kafka::{
+    default_initialization_timeout_secs, default_max_inflight_messages,
 };
 use uuid::uuid;
 
@@ -135,17 +144,11 @@ pub(crate) fn pipeline_config() -> PipelineConfig {
         connector_id: ConnectorId(uuid!("01890c99-376f-743e-ac30-87b6c0ce74ef")),
         name: "Input".into(),
         description: "My Input Connector".into(),
-        config: ConnectorConfig::from_yaml_str(
-            r#"
-transport:
-    name: kafka
-    config:
-        auto.offset.reset: "earliest"
-        group.instance.id: "group0"
-        topics: [test_input1]
-format:
-    name: csv"#,
-        ),
+        config: ConnectorConfig::UrlInput(UrlInput {
+            url: "http://example.com/file.csv".to_string(),
+            format: crate::api::FormatConfig::Csv(CsvParserConfig {}),
+            max_buffered_records: 1000000,
+        }),
     };
     let input = crate::db::AttachedConnector {
         name: "Input-To-Table".into(),
@@ -153,21 +156,33 @@ format:
         connector_name: input_connector.name.clone(),
         relation_name: "my_input_table".into(),
     };
+    let kafka_service = crate::db::ServiceDescr {
+        service_id: ServiceId(uuid!("01890c99-376f-abcd-ac30-87b6c0ce1234")),
+        name: "kafka-example-service".to_string(),
+        description: "Some description".to_string(),
+        config: ServiceConfig::Kafka(KafkaService {
+            bootstrap_servers: vec!["example.com".to_string()],
+            options: Default::default(),
+        }),
+        config_type: KafkaService::config_type(),
+    };
+    let mut service_name_to_id = BTreeMap::new();
+    service_name_to_id.insert(kafka_service.name.clone(), kafka_service.service_id);
     let output_connector = crate::db::ConnectorDescr {
         connector_id: ConnectorId(uuid!("01890c99-3734-7052-9e97-55c0679a5adb")),
         name: "Output ".into(),
         description: "My Output Connector".into(),
-        config: ConnectorConfig::from_yaml_str(
-            r#"
-transport:
-    name: kafka
-    config:
-        auto.offset.reset: "earliest"
-        group.instance.id: "group0"
-        topics: [test_input2]
-format:
-    name: csv"#,
-        ),
+        config: ConnectorConfig::KafkaOutput(KafkaOutput {
+            kafka_service: kafka_service.name.clone(),
+            kafka_options: BTreeMap::new(),
+            topic: "example_topic".to_string(),
+            format: crate::api::FormatConfig::Csv(CsvParserConfig {}),
+            max_buffered_records: default_max_buffered_records(),
+            log_level: None,
+            max_inflight_messages: default_max_inflight_messages(),
+            initialization_timeout_secs: default_initialization_timeout_secs(),
+            fault_tolerance: None,
+        }),
     };
     let output = crate::db::AttachedConnector {
         name: "Output-To-View".into(),
@@ -186,7 +201,9 @@ format:
     };
 
     let connectors = vec![input_connector, output_connector];
-    PipelineRevision::generate_pipeline_config(&pipeline, &connectors).unwrap()
+    let services_for_connectors = vec![vec![], vec![kafka_service]];
+    PipelineRevision::generate_pipeline_config(&pipeline, &connectors, &services_for_connectors)
+        .unwrap()
 }
 
 //
