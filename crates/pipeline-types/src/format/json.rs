@@ -140,6 +140,10 @@ pub enum JsonFlavor {
     /// JSON format accepted by the Kafka Connect `JsonConverter` class.
     #[serde(rename = "kafka_connect_json_converter")]
     KafkaConnectJsonConverter,
+    /// Parquet to-json format.
+    /// (For internal use only)
+    #[serde(skip)]
+    ParquetConverter,
 }
 
 const fn default_buffer_size_records() -> usize {

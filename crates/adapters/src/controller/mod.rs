@@ -570,7 +570,6 @@ impl Controller {
 
                             for (i, endpoint_id) in endpoints.iter().enumerate() {
                                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
-
                                 // If the endpoint has a snapshot stream associated with it,
                                 // then the first output sent to this endpoint must be
                                 // the snapshot.  Subsequent outputs are deltas on top of
@@ -1179,7 +1178,6 @@ impl ControllerInner {
             // Dequeue the next output batch and push it to the encoder.
             if let Some((step, data, processed_records)) = queue.pop() {
                 let num_records = data.iter().map(|b| b.len()).sum();
-
                 encoder.consumer().batch_start(step);
                 encoder
                     .encode(data.as_slice())
@@ -1197,8 +1195,7 @@ impl ControllerInner {
                     &controller.circuit_thread_unparker,
                 );
             } else {
-                // Queue is empty -- wait for the circuit thread to wake us up when
-                // more data is available.
+                trace!("Queue is empty -- wait for the circuit thread to wake us up when more data is available");
                 parker.park();
             }
         }

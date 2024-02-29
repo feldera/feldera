@@ -10,9 +10,10 @@
 //! `SerializeWithContext<SqlSerializerConfig>`.
 
 use pipeline_types::format::json::JsonFlavor;
+use serde_arrow::schema::SerdeArrowSchema;
 
 /// Representation of the SQL `TIME` type.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum TimeFormat {
     // String formatted using the specified format string:
     // See [`chrono` documentation](https://docs.rs/chrono/0.4.31/chrono/format/strftime/)
@@ -22,6 +23,8 @@ pub enum TimeFormat {
     Micros,
     /// Time specified in milliseconds from the start of the day.
     Millis,
+    /// Time specified in nanoseconds from the start of the day.
+    Nanos,
 }
 
 impl Default for TimeFormat {
@@ -31,7 +34,7 @@ impl Default for TimeFormat {
 }
 
 // Representation of the SQL `DATE` type.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DateFormat {
     // String formatted using the specified format:
     // See [`chrono` documentation](https://docs.rs/chrono/0.4.31/chrono/format/strftime/)
@@ -48,7 +51,7 @@ impl Default for DateFormat {
 }
 
 // Representation of the SQL `TIMESTAMP` type.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum TimestampFormat {
     /// String formatted using the specified format:
     /// See [`chrono` documentation](https://docs.rs/chrono/0.4.31/chrono/format/strftime/)
@@ -65,7 +68,7 @@ impl Default for TimestampFormat {
 }
 
 /// Deserializer configuration for parsing SQL records.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct SqlSerdeConfig {
     /// `TIME` format.
     pub time_format: TimeFormat,
@@ -73,6 +76,16 @@ pub struct SqlSerdeConfig {
     pub date_format: DateFormat,
     /// `TIMESTAMP` format.
     pub timestamp_format: TimestampFormat,
+    /// Arrow schema for serialization
+    pub arrow_schema: Option<SerdeArrowSchema>,
+}
+
+impl SqlSerdeConfig {
+    pub(crate) fn from_schema(arrow_schema: SerdeArrowSchema) -> Self {
+        let mut cfg = SqlSerdeConfig::from(JsonFlavor::Default);
+        cfg.arrow_schema = Some(arrow_schema);
+        cfg
+    }
 }
 
 impl From<JsonFlavor> for SqlSerdeConfig {
@@ -83,16 +96,30 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::Millis,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
+                arrow_schema: None,
             },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
+                arrow_schema: None,
             },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
                 date_format: DateFormat::String("%Y-%m-%d"),
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
+                arrow_schema: None,
+            },
+            JsonFlavor::ParquetConverter => Self {
+                time_format: TimeFormat::Nanos,
+                date_format: DateFormat::String("%Y-%m-%d"),
+                // TODO: This should become TimestampFormat::MillisSinceEpoch otherwise we loose the
+                // millisecond precision that parquet stores e.g., because we call to_json_value on
+                // the parquet row it calls this internally:
+                // https://docs.rs/parquet/50.0.0/src/parquet/record/api.rs.html#858
+                // the right way is probably to use serde_arrow for deserialization and serialization
+                timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S %:z"), // 2023-11-04 15:33:47 +00:00
+                arrow_schema: None,
             },
         }
     }

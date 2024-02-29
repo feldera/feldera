@@ -416,8 +416,9 @@ impl ControllerStatus {
         // final number of inputs records when all endpoints are marked as
         // finished.
         let old = self.global_metrics.input_batch(num_records);
-        if old < self.pipeline_config.global.min_batch_size_records
-            && old + num_records >= self.pipeline_config.global.min_batch_size_records
+        if old == 0
+            || old <= self.pipeline_config.global.min_batch_size_records
+                && old + num_records > self.pipeline_config.global.min_batch_size_records
         {
             circuit_thread_unparker.unpark();
         }

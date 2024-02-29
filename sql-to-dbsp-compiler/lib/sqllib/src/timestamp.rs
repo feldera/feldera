@@ -38,9 +38,11 @@ use crate::{
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    serde::Serialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
+#[serde(transparent)]
 pub struct Timestamp {
     // since unix epoch
     milliseconds: i64,
@@ -434,9 +436,11 @@ some_polymorphic_function3!(
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    serde::Serialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
+#[serde(transparent)]
 pub struct Date {
     // since unix epoch
     days: i32,
@@ -735,9 +739,11 @@ some_function2!(format_date, String, Date, String);
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    serde::Serialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
+#[serde(transparent)]
 pub struct Time {
     nanoseconds: u64,
 }
@@ -794,6 +800,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Time {
                 let time = self.to_time();
                 serializer.serialize_str(&time.format(format_string).to_string())
             }
+            TimeFormat::Nanos => serializer.serialize_u64(self.nanoseconds),
             TimeFormat::Micros => serializer.serialize_u64(self.nanoseconds / 1_000),
             TimeFormat::Millis => serializer.serialize_u64(self.nanoseconds / 1_000_000),
         }
@@ -815,6 +822,9 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
                     .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
                 Ok(Self::from_time(time))
             }
+            TimeFormat::Nanos => Ok(Self {
+                nanoseconds: u64::deserialize(deserializer)?,
+            }),
             TimeFormat::Micros => Ok(Self {
                 nanoseconds: u64::deserialize(deserializer)? * 1_000,
             }),
@@ -879,7 +889,7 @@ mod test {
     use lazy_static::lazy_static;
     use pipeline_types::format::json::JsonFlavor;
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, Eq, PartialEq, serde::Serialize)]
     #[allow(non_snake_case)]
     struct TestStruct {
         date: Date,

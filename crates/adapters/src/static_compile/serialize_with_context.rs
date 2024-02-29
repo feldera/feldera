@@ -38,7 +38,7 @@ use serde::{
 
 /// Similar to [`Serialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
-pub trait SerializeWithContext<C>: Sized {
+pub trait SerializeWithContext<C>: Sized + Serialize {
     fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
     where
         S: Serializer;
@@ -291,7 +291,7 @@ macro_rules! serialize_struct {
         #[allow(unused_mut)]
         impl<C, $($arg),*> $crate::SerializeWithContext<C> for $struct<$($arg),*>
         where
-            $($arg: $crate::SerializeWithContext<C>),*
+            $($arg: $crate::SerializeWithContext<C> + serde::Serialize),*
             $($($arg : $bound)?),*
         {
             fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
@@ -342,10 +342,11 @@ mod test {
     use lazy_static::lazy_static;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use serde::{Deserialize, Serialize};
 
     use crate::{SerializationContext, SerializeWithContext, SqlSerdeConfig};
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
     struct TUPLE0;
     serialize_struct!(TUPLE0()[0] {});
 
@@ -370,7 +371,7 @@ mod test {
         assert_eq!(serialize_json_with_default_context(&TUPLE0).unwrap(), "{}");
     }
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, Eq, PartialEq, Serialize)]
     #[allow(non_snake_case)]
     struct Struct2 {
         #[allow(non_snake_case)]
@@ -419,7 +420,7 @@ mod test {
         );
     }
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, Eq, PartialEq, Serialize)]
     #[allow(non_snake_case)]
     struct UnicodeStruct {
         f1: bool,
