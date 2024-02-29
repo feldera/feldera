@@ -67,6 +67,11 @@ rand = "0.8.5"
 regex = "1.10.2"
 tempfile = "3.10.0"
 async-trait = "0.1"
+parquet = { version = "50.0.0", features = ["json"] }
+arrow = "50.0.0"
+#serde_arrow = { version = "0.10.0", features = ["arrow-50"] }
+serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arrow-50"], rev = "7b604f0" }
+bytes = "1.5.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 psutil = "3.2.2"
@@ -89,3 +94,4 @@ reqwest = { version = "0.11.20", features = ["blocking"] }
 serial_test = "2.0.0"
 rust_decimal_macros = "1.32"
 mockall = "0.12.1"
+pretty_assertions = "1.4.0"

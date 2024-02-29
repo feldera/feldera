@@ -10,7 +10,7 @@ use crate::{
     Circuit, DBData, DBWeight, IndexedZSet, NumEntries, OrdIndexedZSet, OrdZSet, RootCircuit,
     Stream,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -70,7 +70,9 @@ pub type Neighborhood<K, V, R> = OrdZSet<Tup2<i64, Tup2<K, V>>, R>;
 ///
 /// The `anchor` value of `None` is equivalent to specifying the
 /// smallest value of type `K`.
-#[derive(Clone, Debug, Default, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf)]
+#[derive(
+    Clone, Debug, Default, Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash, SizeOf,
+)]
 pub struct NeighborhoodDescr<K, V> {
     pub anchor: Option<K>,
     #[serde(default)]

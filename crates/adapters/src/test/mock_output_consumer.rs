@@ -17,10 +17,21 @@ impl MockOutputConsumer {
         Self::with_max_buffer_size_bytes(usize::MAX)
     }
 
+    pub fn state(&self) -> Vec<u8> {
+        self.data.lock().unwrap().clone()
+    }
+
     pub fn with_max_buffer_size_bytes(bytes: usize) -> Self {
         Self {
             data: Arc::new(Mutex::new(Vec::new())),
             max_buffer_size_bytes: bytes,
+        }
+    }
+
+    pub fn with_buffer(data: Arc<Mutex<Vec<u8>>>) -> Self {
+        Self {
+            data,
+            max_buffer_size_bytes: usize::MAX,
         }
     }
 }

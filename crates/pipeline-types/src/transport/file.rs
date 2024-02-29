@@ -24,7 +24,7 @@ pub struct FileInputConfig {
 }
 
 /// Configuration for writing data to a file with `FileOutputTransport`.
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct FileOutputConfig {
     /// File path.
     pub path: String,

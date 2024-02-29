@@ -1,4 +1,5 @@
 use crate::catalog::InputCollectionHandle;
+use crate::format::parquet::{ParquetInputFormat, ParquetOutputFormat};
 use crate::{catalog::SerBatch, transport::Step, ControllerError, FieldParseError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
@@ -17,12 +18,24 @@ use std::{
 
 pub(crate) mod csv;
 mod json;
+mod parquet;
 
 pub use self::csv::{byte_record_deserializer, string_record_deserializer};
 use self::{
     csv::{CsvInputFormat, CsvOutputFormat},
     json::{JsonInputFormat, JsonOutputFormat},
 };
+
+/// The largest weight of a record that can be output using
+/// a format without explicit weights. Such formats require
+/// duplicating the record `w` times, which is expensive
+/// for large weights (and is most likely not what the user
+/// intends).
+const MAX_DUPLICATES: i64 = 1_000_000;
+
+/// When including a long JSON record in an error message,
+/// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
+const MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 
 /// Error parsing input data.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -306,6 +319,10 @@ static INPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn InputFormat>>> = Lazy:
     BTreeMap::from([
         ("csv", Box::new(CsvInputFormat) as Box<dyn InputFormat>),
         ("json", Box::new(JsonInputFormat) as Box<dyn InputFormat>),
+        (
+            "parquet",
+            Box::new(ParquetInputFormat) as Box<dyn InputFormat>,
+        ),
     ])
 });
 
@@ -314,6 +331,10 @@ static OUTPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn OutputFormat>>> = Laz
     BTreeMap::from([
         ("csv", Box::new(CsvOutputFormat) as Box<dyn OutputFormat>),
         ("json", Box::new(JsonOutputFormat) as Box<dyn OutputFormat>),
+        (
+            "parquet",
+            Box::new(ParquetOutputFormat) as Box<dyn OutputFormat>,
+        ),
     ])
 });
 
@@ -366,6 +387,9 @@ impl dyn InputFormat {
 }
 
 /// Parser that converts a raw byte stream into a stream of database records.
+///
+/// Note that the implementation can assume that either `input_fragment` or
+/// `input_chunk` will be called, but not both.
 pub trait Parser: Send {
     /// Push a fragment of the input stream to the parser.
     ///

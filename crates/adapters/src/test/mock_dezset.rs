@@ -137,6 +137,9 @@ where
                 self.clone(),
                 SqlSerdeConfig::from(flavor),
             ))),
+            RecordFormat::Parquet(_) => {
+                todo!()
+            }
         }
     }
 }

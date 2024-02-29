@@ -223,6 +223,7 @@ impl OutputEndpoint for FileOutputEndpoint {
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         self.file.write_all(buffer)?;
+        self.file.sync_all()?;
         Ok(())
     }
 
@@ -251,7 +252,7 @@ mod test {
     use tempfile::NamedTempFile;
 
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
-    struct TestStruct {
+    pub struct TestStruct {
         s: String,
         b: bool,
         i: i64,

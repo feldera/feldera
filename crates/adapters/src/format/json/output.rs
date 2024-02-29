@@ -1,4 +1,5 @@
 use crate::format::json::schema::{build_key_schema, build_value_schema};
+use crate::format::{MAX_DUPLICATES, MAX_RECORD_LEN_IN_ERRMSG};
 use crate::{
     catalog::{CursorWithPolarity, RecordFormat, SerBatch, SerCursor},
     util::truncate_ellipse,
@@ -18,16 +19,6 @@ use std::{borrow::Cow, mem::take, sync::Arc};
 
 /// JSON format encoder.
 pub struct JsonOutputFormat;
-
-/// The largest weight of a record that can be output using
-/// a JSON format without explicit weights.  Such formats require
-/// duplicating the record `w` times, which is expensive for large
-/// weights (and is most likely not what the user intends).
-const MAX_DUPLICATES: i64 = 1_000_000;
-
-/// When including a long JSON record in an error message,
-/// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
-static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 
 impl OutputFormat for JsonOutputFormat {
     fn name(&self) -> Cow<'static, str> {

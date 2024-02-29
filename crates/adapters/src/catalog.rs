@@ -9,10 +9,12 @@ use pipeline_types::program_schema::canonical_identifier;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::query::OutputQuery;
 use serde::{Deserialize, Serialize};
+use serde_arrow::schema::SerdeArrowSchema;
+use serde_arrow::ArrowBuilder;
 
 /// Descriptor that specifies the format in which records are received
 /// or into which they should be encoded before sending.
-#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub enum RecordFormat {
     // TODO: Support different JSON encodings:
     // * Map - the default encoding
@@ -22,9 +24,11 @@ pub enum RecordFormat {
     // tables that store raw JSON or binary data to be parsed using SQL.
     Json(JsonFlavor),
     Csv,
+    Parquet(SerdeArrowSchema),
 }
 
 // Helper type only used to serialize neighborhoods as a map vs tuple.
+#[derive(Deserialize, Serialize, Debug)]
 pub struct NeighborhoodEntry<KD> {
     index: i64,
     key: KD,
@@ -225,6 +229,9 @@ pub trait SerCursor {
     /// Serialize current key. Panics if invalid.
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
+    /// Serialize current key into arrow format. Panics if invalid.
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()>;
+
     /// Serialize the `(key, weight)` tuple.
     ///
     /// FIXME: This only exists to support the CSV serializer, which outputs
@@ -329,6 +336,10 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_key_weight(dst)
+    }
+
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()> {
+        self.cursor.serialize_key_to_arrow(dst)
     }
 
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
