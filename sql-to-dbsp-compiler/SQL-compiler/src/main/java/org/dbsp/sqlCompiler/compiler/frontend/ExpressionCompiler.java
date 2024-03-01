@@ -522,6 +522,47 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             ops.set(argument, arg.cast(new DBSPTypeDouble(arg.getType().getNode(), arg.getType().mayBeNull)));
     }
 
+    void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
+        if (ops.get(arg).is(DBSPNullLiteral.class)) {
+            ops.set(arg, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
+        }
+    }
+
+    String getArrayCallName(RexCall call, DBSPExpression... ops) {
+        String method = getCallName(call);
+        StringBuilder stringBuilder = new StringBuilder(method);
+
+        for (DBSPExpression op : ops) {
+            if (op.getType().mayBeNull) {
+                stringBuilder.append("N");
+            } else {
+                stringBuilder.append("_");
+            }
+        }
+
+        return stringBuilder.toString();
+    }
+
+    /** Ensures that all the elements of this array are of the expectedType
+     *  Casts to the expected type if necessary
+     * @param arg the Array of elements
+     * @param expectedType the expected type of the elements
+     */
+    DBSPExpression ensureArrayElementsOfType(DBSPExpression arg, DBSPType expectedType) {
+        DBSPTypeVec argType = arg.getType().to(DBSPTypeVec.class);
+        DBSPType argElemType = argType.getElementType();
+        DBSPType expectedVecType = new DBSPTypeVec(expectedType, arg.type.mayBeNull);
+
+        if (!argElemType.sameType(expectedType)) {
+            // Apply a cast to every element of the vector
+            DBSPVariablePath var = new DBSPVariablePath("v", argElemType.ref());
+            DBSPExpression cast = var.deref().cast(expectedType).closure(var.asParameter());
+            arg = new DBSPApplyExpression("map", expectedVecType, arg.borrow(), cast);
+        }
+
+        return arg;
+    }
+
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(call);
@@ -847,6 +888,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "cardinality": {
                         this.validateArgCount(node, ops.size(), 1);
                         String name = "cardinality";
+
+                        nullLiteralToNullArray(ops, 0);
+
                         if (ops.get(0).getType().mayBeNull)
                             name += "N";
                         return new DBSPApplyExpression(node, name, type, ops.get(0));
@@ -963,25 +1007,58 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case ARRAY_APPEND: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
-                DBSPTypeVec vec = type.to(DBSPTypeVec.class);
-                // Ensure that both arguments have the type expected by the result
-                DBSPType elemType = vec.getElementType();
-                DBSPExpression arg0 = ops.get(0);
-                DBSPExpression arg1 = ops.get(1).cast(elemType);
-                DBSPTypeVec arg0type = arg0.getType().to(DBSPTypeVec.class);
-                DBSPType arg0ElemType = arg0type.getElementType();
-                if (!arg0ElemType.sameType(elemType)) {
-                    // Apply a cast to every element of the vector
-                    DBSPVariablePath var = new DBSPVariablePath("v", arg0ElemType.ref());
-                    DBSPExpression cast = var.deref().cast(elemType).closure(var.asParameter());
-                    arg0 = new DBSPApplyExpression("map", type, arg0.borrow(), cast);
-                }
 
-                String method = "array_append";
+                DBSPTypeVec vec = type.to(DBSPTypeVec.class);
+                DBSPType elemType = vec.getElementType();
+
+                DBSPExpression arg0 = ops.get(0);
+                DBSPType arg0type = arg0.type;
+                DBSPExpression arg1 = ops.get(1).cast(elemType);
+
+                arg0 = ensureArrayElementsOfType(arg0, elemType);
+
+                String method = getCallName(call);
                 if (arg0type.mayBeNull)
                     method += "N";
 
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
+            }
+            case ARRAY_POSITION:
+            {
+                DBSPExpression arg0 = ops.get(0);
+                DBSPExpression arg1 = ops.get(1);
+                DBSPTypeVec vec = arg0.getType().to(DBSPTypeVec.class);
+                DBSPType elemType = vec.getElementType();
+
+                // If argument is null for certain, return null
+                if (arg1.type.is(DBSPTypeNull.class)) {
+                    String warningMessage =
+                            node + ": always returns NULL";
+                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
+                    return DBSPNullLiteral.none(type);
+                }
+
+                String method = getArrayCallName(call, arg0, arg1);
+
+                // the rust code has signature: (Vec<T>, T)
+                // so if elements of the vector are nullable and T is an Option type
+                // therefore we need to wrap arg1 in Some
+                if (elemType.mayBeNull) {
+                    arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.setMayBeNull(true), arg1);
+                }
+
+                if (!elemType.sameType(arg1.type)) {
+                    // edge case for elements of type null (like ARRAY [null])
+                    if (elemType.is(DBSPTypeNull.class)) {
+                        // cast to type of arg1
+                        arg0 = ensureArrayElementsOfType(arg0, arg1.type.setMayBeNull(true));
+                    } else {
+                        arg1 = arg1.cast(elemType.setMayBeNull(arg1.type.mayBeNull));
+                    }
+                }
+
+                return new DBSPApplyExpression(node, method, type, arg0, arg1);
+
             }
             case HOP:
             case DOT:

@@ -1,5 +1,6 @@
 // Array operations
 
+use crate::some_generic_function2;
 use std::ops::Index;
 
 pub fn element<T>(array: Vec<T>) -> Option<T>
@@ -23,7 +24,7 @@ where
     element(array)
 }
 
-pub fn cardinality_<T>(value: Vec<T>) -> i32 {
+pub fn cardinality<T>(value: Vec<T>) -> i32 {
     value.len() as i32
 }
 
@@ -86,3 +87,16 @@ pub fn array_append<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
 pub fn array_appendN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_append(vector?, value))
 }
+
+pub fn array_position__<T>(vector: Vec<T>, element: T) -> i64
+where
+    T: Eq,
+{
+    vector
+        .into_iter()
+        .position(|x| x == element)
+        .map(|v| v + 1)
+        .unwrap_or(0) as i64
+}
+
+some_generic_function2!(array_position, T, Vec<T>, T, Eq, i64);
