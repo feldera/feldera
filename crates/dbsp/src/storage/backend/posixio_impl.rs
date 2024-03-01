@@ -132,8 +132,8 @@ impl PosixBackend {
 
     /// Helper function to delete (mutable and immutable) files.
     fn delete_inner(&self, fd: i64) -> Result<(), StorageError> {
-        let FileMetaData { file: _, path, .. } = self.files.borrow_mut().remove(&fd).unwrap();
-        std::fs::remove_file(path).unwrap();
+        let FileMetaData { path, .. } = self.files.borrow_mut().remove(&fd).unwrap();
+        std::fs::remove_file(path)?;
         Ok(())
     }
 

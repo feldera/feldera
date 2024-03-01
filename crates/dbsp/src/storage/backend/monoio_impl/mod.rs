@@ -103,7 +103,7 @@ impl MonoioBackend {
     async fn delete_inner(&self, fd: i64) -> Result<(), StorageError> {
         let fm = self.files.write().await.remove(&fd).unwrap();
         fm.file.close().await?;
-        std::fs::remove_file(fm.path).unwrap();
+        std::fs::remove_file(fm.path)?;
         Ok(())
     }
 
