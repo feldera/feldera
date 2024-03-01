@@ -216,18 +216,13 @@ impl StorageRead for MonoioBackend {
         let files = self.files.read().await;
         let fm = files.get(&fd.0).unwrap();
         let request_start = Instant::now();
-        let (res, buf) = fm.file.read_at(buffer, offset).await;
+        let (res, buf) = fm.file.read_exact_at(buffer, offset).await;
         match res {
-            Ok(len) => {
-                counter!(TOTAL_BYTES_READ).increment(len as u64);
+            Ok(()) => {
+                counter!(TOTAL_BYTES_READ).increment(size as u64);
                 histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
-                if size != buf.len() {
-                    counter!(READS_FAILED).increment(1);
-                    Err(StorageError::ShortRead)
-                } else {
-                    counter!(READS_SUCCESS).increment(1);
-                    Ok(Rc::new(buf))
-                }
+                counter!(READS_SUCCESS).increment(1);
+                Ok(Rc::new(buf))
             }
             Err(e) => {
                 counter!(READS_FAILED).increment(1);

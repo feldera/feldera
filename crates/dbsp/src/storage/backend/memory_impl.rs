@@ -7,6 +7,7 @@ use futures::{task::noop_waker, Future};
 use metrics::counter;
 use std::{
     collections::HashMap,
+    io::{Error as IoError, ErrorKind},
     path::{Path, PathBuf},
     rc::Rc,
     sync::{Arc, RwLock},
@@ -168,7 +169,7 @@ impl StorageRead for MemoryBackend {
             }
         }
         counter!(READS_FAILED).increment(1);
-        Err(StorageError::ShortRead)
+        Err(IoError::from(ErrorKind::UnexpectedEof).into())
     }
 
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
