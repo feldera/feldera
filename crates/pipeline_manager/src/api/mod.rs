@@ -196,6 +196,7 @@ request is rejected."
         pipeline_types::transport::kafka::KafkaLogLevel,
         pipeline_types::transport::http::Chunk,
         pipeline_types::transport::http::EgressMode,
+        pipeline_types::transport::s3::S3InputConfig,
         pipeline_types::format::csv::CsvEncoderConfig,
         pipeline_types::format::csv::CsvParserConfig,
         pipeline_types::format::json::JsonEncoderConfig,
