@@ -85,17 +85,13 @@ impl From<&ImmutableFileHandle> for i64 {
 /// An error that can occur when using the storage backend.
 #[derive(Error, Debug)]
 pub enum StorageError {
-    /// I/O error from `monoio` backend.
-    #[error("Got IO error during monoio operation")]
+    /// I/O error.
+    #[error("{0}")]
     StdIo(#[from] std::io::Error),
 
     /// Range to be written overlaps with previous write.
     #[error("The range to be written overlaps with a previous write")]
     OverlappingWrites,
-
-    /// Read ended before the full request length.
-    #[error("The read would have returned less data than requested.")]
-    ShortRead,
 }
 
 impl Serialize for StorageError {
@@ -122,11 +118,14 @@ impl Serialize for StorageError {
 /// implementation.
 impl PartialEq for StorageError {
     fn eq(&self, other: &Self) -> bool {
+        fn is_unexpected_eof(error: &StorageError) -> bool {
+            use std::io::ErrorKind;
+            matches!(error, StorageError::StdIo(error) if error.kind() == ErrorKind::UnexpectedEof)
+        }
         #[allow(clippy::match_like_matches_macro)]
         match (self, other) {
             (Self::OverlappingWrites, Self::OverlappingWrites) => true,
-            (Self::ShortRead, Self::ShortRead) => true,
-            _ => false,
+            _ => is_unexpected_eof(self) && is_unexpected_eof(other),
         }
     }
 }
@@ -249,13 +248,15 @@ pub trait StorageRead {
     ///
     /// ## Post-conditions
     /// - `result.len() == size`: In case we read less than the required size,
-    ///   we return [`StorageError::ShortRead`], as opposed to a partial result.
+    ///   we return [`UnexpectedEof`], as opposed to a partial result.
     ///
     /// API returns an error if any of the above pre/post-conditions are not
     /// met.
     ///
     /// ## Returns
     /// A [`FBuf`] containing the data read from the file.
+    ///
+    /// [`UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
     async fn read_block(
         &self,
         fd: &ImmutableFileHandle,

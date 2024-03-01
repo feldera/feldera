@@ -8,6 +8,7 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     fmt::{self, Debug},
+    io::{Error as IoError, ErrorKind},
     iter,
     path::{Path, PathBuf},
     rc::Rc,
@@ -194,7 +195,7 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
         let file = files.get(&fd.0).unwrap();
         let offset = offset as usize;
         if offset > file.len() || offset + size > file.len() {
-            return Err(StorageError::ShortRead);
+            return Err(IoError::from(ErrorKind::UnexpectedEof).into());
         }
         let end = offset + size;
         debug_assert!(end <= file.len());
