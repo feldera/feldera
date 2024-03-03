@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.sql.foodmart;
+package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
 import org.junit.Ignore;
 import org.junit.Test;
@@ -69,7 +69,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 PIVOT (SUM(sal) AS ss, COUNT(*) AS cc
                    FOR (job, deptno)
                    IN (('CLERK', 20) AS c20, ('MANAGER', 10) AS m10))
-                -- ORDER BY 1 NULLS FIRST;
+                -- ORDER BY 1 NULLS FIRST
+                ;
                 +------+---------+-------+---------+-------+
                 | MGR  | C20_SS  | C20_C | M10_SS  | M10_C |
                 +------+---------+-------+---------+-------+
@@ -90,7 +91,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                   COUNT(*) FILTER (WHERE job = 'MANAGER' AND deptno = 10) AS m10_c
                 FROM emp
                 GROUP BY mgr
-                -- ORDER BY 1 NULLS FIRST;
+                -- ORDER BY 1 NULLS FIRST
+                ;
                 +------+---------+-------+---------+-------+
                 | MGR  | C20_SS  | C20_C | M10_SS  | M10_C |
                 +------+---------+-------+---------+-------+
@@ -111,7 +113,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                   COUNT(CASE WHEN job = 'MANAGER' AND deptno = 10 THEN 1 END) m10_c
                 FROM emp
                 GROUP BY mgr
-                -- ORDER BY 1 NULLS FIRST;
+                -- ORDER BY 1 NULLS FIRST
+                ;
                 +------+---------+-------+---------+-------+
                 | MGR  | C20_SS  | C20_C | M10_SS  | M10_C |
                 +------+---------+-------+---------+-------+
@@ -128,7 +131,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 SELECT *
                 FROM (SELECT deptno, mgr FROM   emp)
                 PIVOT (COUNT(*) AS cc FOR mgr IN (7839, null, 7698))
-                -- ORDER BY deptno;
+                -- ORDER BY deptno
+                ;
                 +--------+--------+--------+--------+
                 | DEPTNO | 7839_C | NULL_C | 7698_C |
                 +--------+--------+--------+--------+
@@ -239,7 +243,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                     deptno, job, sal
                 FROM emp
                 WHERE (job, deptno) IN (('CLERK', 10), ('CLERK', 20), ('ANALYST', 20))
-                -- ORDER BY gender, deptno, job;
+                -- ORDER BY gender, deptno, job
+                ;
                 +--------+--------+---------+---------+
                 | GENDER | DEPTNO | JOB     | SAL     |
                 +--------+--------+---------+---------+

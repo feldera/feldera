@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -120,6 +121,7 @@ public class DBSPTypeStruct extends DBSPType {
     public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName, Collection<Field> args) {
         super(node, STRUCT, false);
         this.sanitizedName = sanitizedName;
+        assert Utilities.isLegalRustIdentifier(sanitizedName);
         this.name = name;
         this.fields = new LinkedHashMap<>();
         for (Field f: args) {

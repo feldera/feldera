@@ -963,7 +963,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("if Runtime::worker_index() == 0 {");
         operator.function.accept(this.innerVisitor);
         this.builder.append("} else {");
-        DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(operator.getType());
+        DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(
+                operator.getOutputZSetElementType());
         empty.accept(this.innerVisitor);
         this.builder.append("}));");
         return VisitDecision.STOP;

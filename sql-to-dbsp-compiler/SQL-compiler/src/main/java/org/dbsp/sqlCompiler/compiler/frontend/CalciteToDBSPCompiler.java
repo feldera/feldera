@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.calcite.adapter.jdbc.JdbcTableScan;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
@@ -60,6 +61,7 @@ import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlRankFunction;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -148,6 +150,8 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -391,100 +395,189 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.assignOperator(uncollect, flatMap);
     }
 
-    public void visitAggregate(LogicalAggregate aggregate) {
+    /** Generate a list of the groupings that have to be evaluated for all aggregates */
+    List<ImmutableBitSet> planGroups(
+            ImmutableBitSet groupSet,
+            ImmutableList<ImmutableBitSet> groupSets) {
+        // Decreasing order of cardinality
+        List<ImmutableBitSet> ordered = new ArrayList<>(groupSets);
+        ordered.sort(Comparator.comparingInt(ImmutableBitSet::cardinality));
+        Collections.reverse(ordered);
+        return new ArrayList<>(ordered);
+    }
+
+    /** Given a list of fields and a tuple t, generate a tuple expression that extracts
+     * all these fields from t.
+     * @param fields Fields of the variable that appear in the key
+     * @param t      Variable whose fields are used to create the key
+     * @param slice  Type expected for produced result */
+    DBSPTupleExpression generateKeyExpression(ImmutableBitSet fields, DBSPVariablePath t, DBSPTypeTuple slice) {
+        DBSPExpression[] keys = new DBSPExpression[fields.cardinality()];
+        int next = 0;
+        for (int index : fields) {
+            keys[next] = t.deref().field(index).applyCloneIfNeeded().cast(slice.getFieldType(index));
+            next++;
+        }
+        return new DBSPTupleExpression(keys);
+    }
+
+    /** Implement one aggregate from a set of rollups described by a LogicalAggregate. */
+    DBSPOperator implementOneAggregate(LogicalAggregate aggregate, ImmutableBitSet localKeys) {
         CalciteObject node = CalciteObject.create(aggregate);
-        DBSPType type = this.convertType(aggregate.getRowType(), false);
-        DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);
         RelNode input = aggregate.getInput();
         DBSPOperator opInput = this.getInputAs(input, true);
+        List<AggregateCall> aggregateCalls = aggregate.getAggCallList();
+
+        DBSPType type = this.convertType(aggregate.getRowType(), false);
+        DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);
         DBSPType inputRowType = this.convertType(input.getRowType(), false);
-        List<AggregateCall> aggregates = aggregate.getAggCallList();
         DBSPVariablePath t = inputRowType.ref().var("t");
+        DBSPTupleExpression globalKeys = this.generateKeyExpression(
+                aggregate.getGroupSet(), t, tuple.slice(0, aggregate.getGroupCount()));
+        DBSPType[] aggTypes = Utilities.arraySlice(tuple.tupFields, aggregate.getGroupCount());
+        DBSPTypeTuple aggType = new DBSPTypeTuple(aggTypes);
+        DBSPAggregate fold = this.createAggregate(aggregate, aggregateCalls, tuple, inputRowType, aggregate.getGroupCount());
+        // The aggregate operator will not return a stream of type aggType, but a stream
+        // with a type given by fd.defaultZero.
+        DBSPTypeTuple typeFromAggregate = fold.defaultZeroType();
+        DBSPTypeIndexedZSet aggregateResultType = this.makeIndexedZSet(globalKeys.getType(), typeFromAggregate);
 
-        if (!aggregates.isEmpty()) {
-            if (aggregate.getGroupType() != org.apache.calcite.rel.core.Aggregate.Group.SIMPLE)
-                throw new UnimplementedException(node);
-            DBSPExpression[] groups = new DBSPExpression[aggregate.getGroupCount()];
-            int next = 0;
-            for (int index: aggregate.getGroupSet()) {
-                groups[next] = t.deref().field(index).applyCloneIfNeeded();
-                next++;
-            }
-            DBSPExpression keyExpression = new DBSPTupleExpression(groups);
-            DBSPType[] aggTypes = Utilities.arraySlice(tuple.tupFields, aggregate.getGroupCount());
-            DBSPTypeTuple aggType = new DBSPTypeTuple(aggTypes);
+        DBSPTupleExpression localKeyExpression = this.generateKeyExpression(localKeys, t, tuple.slice(0, aggregate.getGroupCount()));
+        DBSPClosureExpression makeKeys =
+                new DBSPTupleExpression(
+                        localKeyExpression,
+                        DBSPTupleExpression.flatten(t.deref())).closure(t.asParameter());
+        DBSPType localGroupType = localKeyExpression.getType();
+        DBSPTypeIndexedZSet localGroupAndInput = this.makeIndexedZSet(localGroupType, inputRowType);
+        DBSPIndexOperator createIndex = new DBSPIndexOperator(
+                node, makeKeys, localGroupAndInput, false, opInput);
+        this.circuit.addOperator(createIndex);
+        DBSPTypeIndexedZSet aggregateType = this.makeIndexedZSet(localGroupType, typeFromAggregate);
 
-            DBSPExpression groupKeys =
-                    new DBSPTupleExpression(
-                            keyExpression,
-                            DBSPTupleExpression.flatten(t.deref())).closure(
-                    t.asParameter());
-            DBSPIndexOperator index = new DBSPIndexOperator(
-                    node, groupKeys,
-                    this.makeIndexedZSet(keyExpression.getType(), inputRowType), false, opInput);
-            this.circuit.addOperator(index);
-            DBSPType groupType = keyExpression.getType();
-            DBSPAggregate fold = this.createAggregate(aggregate, aggregates, tuple, inputRowType, aggregate.getGroupCount());
-            // The aggregate operator will not return a stream of type aggType, but a stream
-            // with a type given by fd.defaultZero.
-            DBSPTypeTuple typeFromAggregate = fold.defaultZeroType();
-            DBSPStreamAggregateOperator agg = new DBSPStreamAggregateOperator(node,
-                    this.makeIndexedZSet(groupType, typeFromAggregate), null, fold, index, fold.isLinear());
-
-            // Flatten the resulting set
-            DBSPTypeTupleBase kvType = new DBSPTypeRawTuple(groupType.ref(), typeFromAggregate.ref());
-            DBSPVariablePath kv = kvType.var("kv");
-            DBSPExpression[] flattenFields = new DBSPExpression[aggregate.getGroupCount() + aggType.size()];
-            for (int i = 0; i < aggregate.getGroupCount(); i++)
-                flattenFields[i] = kv.deepCopy().field(0).deref().field(i).applyCloneIfNeeded();
-            for (int i = 0; i < aggType.size(); i++) {
-                DBSPExpression flattenField = kv.deepCopy().field(1).deref().field(i).applyCloneIfNeeded();
-                // Here we correct from the type produced by the Folder (typeFromAggregate) to the
-                // actual expected type aggType (which is the tuple of aggTypes).
-                flattenFields[aggregate.getGroupCount() + i] = flattenField.cast(aggTypes[i]);
-            }
-            DBSPExpression mapper = new DBSPTupleExpression(flattenFields).closure(kv.asParameter());
+        DBSPOperator agg;
+        if (fold.isEmpty()) {
+            // No aggregations: just apply distinct
+            DBSPVariablePath var = new DBSPVariablePath("t", localGroupAndInput.getKVRefType());
+            DBSPExpression addEmpty = new DBSPRawTupleExpression(
+                    var.field(0).deref(),
+                    new DBSPTupleExpression());
+            agg = new DBSPMapIndexOperator(node, addEmpty.closure(var.asParameter()), aggregateType, createIndex);
             this.circuit.addOperator(agg);
-            DBSPMapOperator map = new DBSPMapOperator(node, mapper, this.makeZSet(tuple), agg);
-            if (aggregate.getGroupCount() == 0) {
-                // This almost works, but we have a problem with empty input collections
-                // for aggregates without grouping.
-                // aggregate_stream returns empty collections for empty input collections -- the fold
-                // method is never invoked.
-                // So we need to do some postprocessing step for this case.
-                // The current result is a zset like {}/{c->1}: either the empty set (for an empty input)
-                // or the correct count with a weight of 1.
-                // We need to produce {z->1}/{c->1}, where z is the actual zero of the fold above.
-                // For this we synthesize the following graph:
-                // {}/{c->1}------------------------
-                //    | map (|x| x -> z}           |
-                // {}/{z->1}                       |
-                //    | -                          |
-                // {} {z->-1}   {z->1} (constant)  |
-                //          \  /                  /
-                //           +                   /
-                //         {z->1}/{}  -----------
-                //                 \ /
-                //                  +
-                //              {z->1}/{c->1}
-                this.circuit.addOperator(map);
-                DBSPVariablePath _t = tuple.ref().var("_t");
-                DBSPExpression toZero = fold.defaultZero().closure(_t.asParameter());
-                DBSPOperator map1 = new DBSPMapOperator(node, toZero, this.makeZSet(type), map);
-                this.circuit.addOperator(map1);
-                DBSPOperator neg = new DBSPNegateOperator(node, map1);
-                this.circuit.addOperator(neg);
-                DBSPOperator constant = new DBSPConstantOperator(
-                        node, new DBSPZSetLiteral(fold.defaultZero()), false);
-                this.circuit.addOperator(constant);
-                DBSPOperator sum = new DBSPSumOperator(node, Linq.list(constant, neg, map));
-                this.assignOperator(aggregate, sum);
-            } else {
-                this.assignOperator(aggregate, map);
-            }
+            agg = new DBSPStreamDistinctOperator(node, agg);
         } else {
-            DBSPOperator dist = new DBSPStreamDistinctOperator(node, opInput);
-            this.assignOperator(aggregate, dist);
+            agg = new DBSPStreamAggregateOperator(
+                      node, aggregateType, null, fold, createIndex, fold.isLinear());
+        }
+        this.circuit.addOperator(agg);
+
+        // Adjust the key such that all local groups are converted to have the same keys as the
+        // global group.  This is used as part of the rollup.
+        DBSPOperator adjust;
+        if (localKeys.equals(aggregate.getGroupSet())) {
+            adjust = agg;
+        } else {
+            // Generate a new key where each field that is in the groupKeys but not in the local is a null.
+            DBSPVariablePath reindexVar = new DBSPVariablePath("t", aggregateType.getKVRefType());
+            DBSPExpression[] reindexFields = new DBSPExpression[aggregate.getGroupCount()];
+            int localIndex = 0;
+            for (int globalIndex: aggregate.getGroupSet()) {
+                if (localKeys.get(globalIndex)) {
+                    reindexFields[globalIndex] = reindexVar
+                            .field(0)
+                            .deref()
+                            .field(localIndex)
+                            .applyCloneIfNeeded();
+                    localIndex++;
+                } else {
+                    reindexFields[globalIndex] = DBSPLiteral.none(globalKeys.fields[globalIndex].getType());
+                }
+            }
+            DBSPExpression remap = new DBSPRawTupleExpression(
+                    new DBSPTupleExpression(reindexFields),
+                    reindexVar.field(1).deref());
+            adjust = new DBSPMapIndexOperator(
+                    node, remap.closure(reindexVar.asParameter()), aggregateResultType, agg);
+            this.circuit.addOperator(adjust);
+        }
+
+        // Flatten the resulting set
+        DBSPTypeTupleBase kvType = new DBSPTypeRawTuple(globalKeys.getType().ref(), typeFromAggregate.ref());
+        DBSPVariablePath kv = kvType.var("kv");
+        DBSPExpression[] flattenFields = new DBSPExpression[aggregate.getGroupCount() + aggType.size()];
+        for (int i = 0; i < aggregate.getGroupCount(); i++)
+            flattenFields[i] = kv.deepCopy().field(0).deref().field(i).applyCloneIfNeeded().cast(tuple.getFieldType(i));
+        for (int i = 0; i < aggType.size(); i++) {
+            DBSPExpression flattenField = kv.deepCopy().field(1).deref().field(i).applyCloneIfNeeded();
+            // Here we correct from the type produced by the Folder (typeFromAggregate) to the
+            // actual expected type aggType (which is the tuple of aggTypes).
+            flattenFields[aggregate.getGroupCount() + i] = flattenField.cast(aggTypes[i]);
+        }
+        DBSPExpression mapper = new DBSPTupleExpression(flattenFields).closure(kv.asParameter());
+        DBSPMapOperator map = new DBSPMapOperator(node, mapper, this.makeZSet(tuple), adjust);
+        this.circuit.addOperator(map);
+        if (aggregate.getGroupCount() != 0 || aggregateCalls.isEmpty()) {
+            return map;
+        }
+
+        // This almost works, but we have a problem with empty input collections
+        // for aggregates without grouping or with empty localKeys.
+        // aggregate_stream returns empty collections for empty input collections -- the fold
+        // method is never invoked.
+        // So we need to do some postprocessing step for this case.
+        // The current result is a zset like {}/{c->1}: either the empty set (for an empty input)
+        // or the correct count with a weight of 1.
+        // We need to produce {z->1}/{c->1}, where z is the actual zero of the fold above.
+        // For this we synthesize the following graph:
+        // {}/{c->1}------------------------
+        //    | map (|x| x -> z}           |
+        // {}/{z->1}                       |
+        //    | -                          |
+        // {} {z->-1}   {z->1} (constant)  |
+        //          \  /                  /
+        //           +                   /
+        //         {z->1}/{}  -----------
+        //                 \ /
+        //                  +
+        //              {z->1}/{c->1}
+        DBSPVariablePath _t = tuple.ref().var("_t");
+        DBSPExpression toZero = fold.defaultZero().closure(_t.asParameter());
+        DBSPOperator map1 = new DBSPMapOperator(node, toZero, this.makeZSet(type), map);
+        this.circuit.addOperator(map1);
+        DBSPOperator neg = new DBSPNegateOperator(node, map1);
+        this.circuit.addOperator(neg);
+        DBSPOperator constant = new DBSPConstantOperator(
+                node, new DBSPZSetLiteral(fold.defaultZero()), false);
+        this.circuit.addOperator(constant);
+        DBSPOperator sum = new DBSPSumOperator(node, Linq.list(constant, neg, map));
+        this.circuit.addOperator(sum);
+        return sum;
+    }
+
+    /** Implement a LogicalAggregate.  The LogicalAggregate can contain a rollup,
+     * described by a set of groups.  The aggregate is computed for each group,
+     * and the results are combined.
+     */
+    public void visitAggregate(LogicalAggregate aggregate) {
+        CalciteObject node = CalciteObject.create(aggregate);
+        List<ImmutableBitSet> plan = this.planGroups(
+                aggregate.getGroupSet(), aggregate.getGroupSets());
+
+        // Optimize for the case of
+        // - no aggregates
+        // - no rollup
+        // This is just a DISTINCT call - this is how Calcite represents it.
+        if (aggregate.getAggCallList().isEmpty() && plan.size() == 1) {
+            // No aggregates, this is how DISTINCT is represented.
+            RelNode input = aggregate.getInput();
+            DBSPOperator opInput = this.getInputAs(input, true);
+            DBSPOperator result = new DBSPStreamDistinctOperator(node, opInput);
+            this.assignOperator(aggregate, result);
+        } else {
+            // One aggregate for each group
+            List<DBSPOperator> aggregates = Linq.map(plan, b -> this.implementOneAggregate(aggregate, b));
+            // The result is the sum of all aggregates
+            DBSPOperator sum = new DBSPSumOperator(node, aggregates);
+            this.assignOperator(aggregate, sum);
         }
     }
 

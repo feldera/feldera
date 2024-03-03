@@ -92,6 +92,8 @@ groupItem:
       expression
   |   '(' ')'
   |   '(' expression [, expression ]* ')'
+  |   CUBE '(' expression [, expression ]* ')'
+  |   ROLLUP '(' expression [, expression ]* ')'
 
 columnDecl
   :   column generalType
@@ -188,6 +190,27 @@ it may refer to tables in the `FROM` clause of an enclosing query.
 to `GROUP BY`.
 
 `MINUS` is equivalent to `EXCEPT`.
+
+### Grouping functions
+
+<table>
+  <tr>
+    <th>Function</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+     <td><code>GROUPING(</code>expression, [ expression ]<code>)</code></td>
+     <td>Returns a bit vector of the grouping expressions</td>
+  </tr>
+  <tr>
+     <td><code>GROUP_ID()</code></td>
+     <td>Returns an integer that uniquely identifies the combination of grouping keys</td>
+  </tr>
+  <tr>
+     <td><code>GROUPING_ID(</code>expression, [ expression ]<code>)</code></td>
+     <td>Synonim for <code>GROUPING</code></td>
+  </tr>
+</table>
 
 ### Window aggregates
 
