@@ -8,7 +8,7 @@
 
 
 
-The [Feldera Continuous Analytics Platform](https://www.feldera.com/), or Feldera Platform in short, is a
+The [Feldera Continuous Analytics Platform](https://www.feldera.com), or Feldera Platform in short, is a
 fast computational engine and associated components for *continuous analytics* over data in motion. Feldera Platform
 allows users to configure data pipelines as standing SQL programs (DDLs) that are continuously
 evaluated as new data arrives from various sources. What makes Feldera's engine
@@ -114,8 +114,8 @@ To learn more about Feldera Platform, we recommend going through the
 [documentation](https://www.feldera.com/docs/intro).
 
 * [Getting started](https://www.feldera.com/docs/intro)
-* [UI tour](https://www.feldera.com/docs/tour/)
-* [Tutorials](https://www.feldera.com/docs/tutorials/)
+* [UI tour](https://www.feldera.com/docs/tour)
+* [Tutorials](https://www.feldera.com/docs/tutorials)
 * [Demo](https://www.feldera.com/docs/demo)
 * [SQL reference](https://www.feldera.com/docs/sql/intro)
 * [API reference](https://www.feldera.com/api)
