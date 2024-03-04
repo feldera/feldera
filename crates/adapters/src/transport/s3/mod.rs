@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use log::error;
 use serde::Deserialize;
 use tokio::sync::{
     mpsc,
@@ -62,25 +63,34 @@ struct S3Client {
 #[cfg_attr(test, automock)]
 #[async_trait::async_trait]
 impl S3Api for S3Client {
-    async fn get_object_keys(&self, bucket: &str, prefix: &str) -> anyhow::Result<Vec<String>> {
-        let res: Vec<String> = self
+    async fn get_object_keys(
+        &self,
+        bucket: &str,
+        prefix: &str,
+        continuation_token: Option<String>,
+    ) -> anyhow::Result<(Vec<String>, Option<String>)> {
+        let res: (Vec<String>, Option<String>) = self
             .inner
             .list_objects_v2()
             .bucket(bucket)
             .prefix(prefix)
+            .set_continuation_token(continuation_token)
             .send()
             .await
             .map(|output| {
-                output
-                    .contents()
-                    .iter()
-                    .map(|object| {
-                        object
-                            .key()
-                            .expect("Objects should always have a key")
-                            .to_string()
-                    })
-                    .collect()
+                (
+                    output
+                        .contents()
+                        .iter()
+                        .map(|object| {
+                            object
+                                .key()
+                                .expect("Objects should always have a key")
+                                .to_string()
+                        })
+                        .collect(),
+                    output.next_continuation_token,
+                )
             })?;
         Ok(res)
     }
@@ -99,7 +109,12 @@ impl S3Api for S3Client {
 #[async_trait::async_trait]
 trait S3Api: Send {
     /// Get all object keys inside a bucket
-    async fn get_object_keys(&self, bucket: &str, prefix: &str) -> anyhow::Result<Vec<String>>;
+    async fn get_object_keys(
+        &self,
+        bucket: &str,
+        prefix: &str,
+        continuation_token: Option<String>,
+    ) -> anyhow::Result<(Vec<String>, Option<String>)>;
 
     /// Fetch an object by key within a bucket
     async fn get_object(&self, bucket: &str, key: &str) -> anyhow::Result<GetObjectOutput>;
@@ -168,21 +183,37 @@ impl S3InputReader {
         consumer: &mut Box<dyn InputConsumer>,
         mut receiver: Receiver<PipelineState>,
     ) -> anyhow::Result<()> {
-        let objects_to_fetch = match &config.read_strategy {
-            ReadStrategy::Prefix { prefix } => {
-                client.get_object_keys(&config.bucket_name, prefix).await?
-            }
-            ReadStrategy::SingleKey { key } => vec![key.clone()],
-        };
         // The worker thread fetches objects in the background while already retrieved
         // objects are being fed to the InputConsumer. We use a bounded channel
         // to make it so that no more than 8 objects are fetched while waiting
         // for object processing.
         let (tx, mut rx) = mpsc::channel(8);
         tokio::spawn(async move {
-            for key in &objects_to_fetch {
-                let object = client.get_object(&config.bucket_name, key).await;
-                tx.send(object).await.expect("Enqueue failed");
+            let mut continuation_token = None;
+            loop {
+                let (objects_to_fetch, next_token): (Vec<String>, Option<String>) = match &config
+                    .read_strategy
+                {
+                    ReadStrategy::Prefix { prefix } => {
+                        let result = client
+                            .get_object_keys(&config.bucket_name, prefix, continuation_token.take())
+                            .await;
+                        if result.is_err() {
+                            error!("Could not fetch object keys {result:?}. Bailing.");
+                            break;
+                        }
+                        result.unwrap()
+                    }
+                    ReadStrategy::SingleKey { key } => (vec![key.clone()], None),
+                };
+                continuation_token = next_token;
+                for key in &objects_to_fetch {
+                    let object = client.get_object(&config.bucket_name, key).await;
+                    tx.send(object).await.expect("Enqueue failed");
+                }
+                if continuation_token.is_none() {
+                    break;
+                }
             }
             drop(tx); // We're done. Close the channel.
         });
@@ -345,8 +376,8 @@ format:
     fn single_key_read() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""))
-            .return_once(|_, _| Ok(vec!["obj1".to_string()]));
+            .with(eq("test-bucket"), eq(""), eq(&None))
+            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], None)));
         mock.expect_get_object()
             .with(eq("test-bucket"), eq("obj1"))
             .return_once(|_, _| {
@@ -362,8 +393,8 @@ format:
     fn single_object_with_prefix_read() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""))
-            .return_once(|_, _| Ok(vec!["obj1".to_string()]));
+            .with(eq("test-bucket"), eq(""), eq(&None))
+            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], None)));
         mock.expect_get_object()
             .with(eq("test-bucket"), eq("obj1"))
             .return_once(|_, _| {
@@ -376,11 +407,18 @@ format:
     }
 
     #[test]
-    fn multi_object_read() {
+    fn multi_object_read_with_continuation() {
         let mut mock = super::MockS3Client::default();
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""))
-            .return_once(|_, _| Ok(vec!["obj1".to_string(), "obj2".to_string()]));
+            .with(eq("test-bucket"), eq(""), eq(&None))
+            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
+        mock.expect_get_object_keys()
+            .with(
+                eq("test-bucket"),
+                eq(""),
+                eq(Some("next_token".to_string())),
+            )
+            .return_once(|_, _, _| Ok((vec!["obj2".to_string()], None)));
         mock.expect_get_object()
             .with(eq("test-bucket"), eq("obj1"))
             .return_once(|_, _| {
@@ -414,8 +452,8 @@ format:
                 });
         }
         mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""))
-            .return_once(|_, _| Ok(objs));
+            .with(eq("test-bucket"), eq(""), eq(&None))
+            .return_once(|_, _, _| Ok((objs, None)));
         let test_data: Vec<TestStruct> = (0..1000).map(|i| TestStruct { i }).collect();
         let (reader, _, input_handle) = test_setup(MULTI_KEY_CONFIG_STR, mock);
         reader.start(0).unwrap();
