@@ -184,3 +184,11 @@ where
 {
     array_min_N(vector?)
 }
+
+pub fn array_compact_<T>(vector: Vec<Option<T>>) -> Vec<T> {
+    vector.into_iter().flatten().collect()
+}
+
+pub fn array_compact_N<T>(vector: Option<Vec<Option<T>>>) -> Option<Vec<T>> {
+    Some(array_compact_(vector?))
+}

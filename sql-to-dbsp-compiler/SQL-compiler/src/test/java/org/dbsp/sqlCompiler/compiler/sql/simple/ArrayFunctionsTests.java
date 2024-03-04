@@ -333,4 +333,64 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 """
         );
     }
+
+    @Test
+    public void testArrayCompact() {
+        this.qs("""
+                SELECT array_compact(ARRAY [1, null, 2, null]);
+                 array_compact
+                ---------------
+                 {1, 2}
+                (1 row)
+                
+                SELECT array_compact(ARRAY [1, 2]);
+                 array_compact
+                ---------------
+                 {1, 2}
+                (1 row)
+                
+                SELECT array_compact(NULL);
+                 array_compact
+                ---------------
+                 NULL
+                (1 row)
+                
+                SELECT array_compact(ARRAY [1, 2, 3.1, null]);
+                 array_compact
+                ---------------
+                 {1.0, 2.0, 3.1}
+                (1 row)
+                
+                SELECT array_compact(ARRAY ['a', 'b', null]);
+                 array_compact
+                ---------------
+                 { a, b}
+                (1 row)
+                
+                SELECT array_compact(ARRAY ['1', NULL, '2', NULL]);
+                 array_compact
+                ---------------
+                 { 1, 2}
+                (1 row)
+                
+                SELECT array_compact(ARRAY ['a', 'b']);
+                 array_compact
+                ---------------
+                 { a, b}
+                (1 row)
+                
+                SELECT array_compact(ARRAY [NULL::int]);
+                 array_compact
+                ---------------
+                 {}
+                (1 row)
+                
+                SELECT array_compact(NULL);
+                 array_compact
+                ---------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
 }

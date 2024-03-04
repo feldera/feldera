@@ -1139,6 +1139,26 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
+            case ARRAY_COMPACT: {
+                DBSPTypeVec vec = type.to(DBSPTypeVec.class);
+                DBSPExpression arg0 = ops.get(0);
+
+                DBSPTypeVec arg0type = arg0.getType().to(DBSPTypeVec.class);
+
+                if (arg0type.sameType(vec)) {
+                    // the expected result type is the same as the argument type
+                    // meaning no element in the array can be nullable
+                    // so just return the current argument as is
+                    String warningMessage =
+                            node + ": no null elements in the array";
+                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
+                    return arg0;
+                }
+
+                String method = getArrayCallName(call, arg0);
+
+                return new DBSPApplyExpression(node, method, type, arg0);
+            }
             case HOP:
             case DOT:
             default:
