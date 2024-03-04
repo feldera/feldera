@@ -543,6 +543,33 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         return stringBuilder.toString();
     }
 
+    /**
+     * Creates the method name of the array function with the final character
+     * being "_" (not null) or "N" (nullable) based on the nullability of the array elements
+     * <br>
+     * Example:
+     * <br>
+     * if array_max({1?, 2?, null, 3?}) => array_max_N <br>
+     * if array_max({1?, 2?, null, 3?}?) => array_maxNN
+     * @param call  The call that is being compiled.
+     * @param ops   Translated operands for the call.
+     * @return  The method name with final character considering the nullability of array elements
+     */
+    String getArrayCallNameWithElemNullability(RexCall call, DBSPExpression... ops) {
+        String s = getArrayCallName(call, ops);
+
+        DBSPTypeVec vec = ops[0].type.to(DBSPTypeVec.class);
+        DBSPType elemType = vec.getElementType();
+
+        if (elemType.mayBeNull) {
+            s = s + "N";
+        } else {
+            s = s + "_";
+        }
+
+        return s;
+    }
+
     /** Ensures that all the elements of this array are of the expectedType
      *  Casts to the expected type if necessary
      * @param arg the Array of elements
@@ -1006,6 +1033,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         "tumble", node, type, ops, 2, 3);
             case ARRAY_LENGTH:
             case ARRAY_SIZE: {
+                if (call.operands.size() != 1)
+                    throw new UnimplementedException(node);
+
                 // same as "cardinality"
                 String name = "cardinality";
 
@@ -1048,8 +1078,22 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
             }
+            case ARRAY_MAX:
+            case ARRAY_MIN:
+            {
+                if (call.operands.size() != 1)
+                    throw new UnimplementedException(node);
+
+                DBSPExpression arg0 = ops.get(0);
+                String method = getArrayCallNameWithElemNullability(call, arg0);
+
+                return new DBSPApplyExpression(node, method, type, arg0);
+            }
             case ARRAY_POSITION:
             {
+                if (call.operands.size() != 2)
+                    throw new UnimplementedException(node);
+
                 DBSPExpression arg0 = ops.get(0);
                 DBSPExpression arg1 = ops.get(1);
                 DBSPTypeVec vec = arg0.getType().to(DBSPTypeVec.class);
