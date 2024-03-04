@@ -189,4 +189,40 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 (1 row)
                 """);
     }
+
+    @Test
+    public void testArrayReverse() {
+        this.qs("""
+                SELECT ARRAY_REVERSE(ARRAY [2, 3, 3]);
+                 array_reverse
+                ---------------
+                 {3, 3, 2}
+                (1 row)
+                
+                SELECT array_reverse(null);
+                 array_reverse
+                ---------------
+                 NULL
+                (1 row)
+                
+                SELECT array_reverse(ARRAY [1, 2, 3, null]);
+                 array_reverse
+                ---------------
+                 {NULL, 3, 2, 1}
+                (1 row)
+                
+                SELECT array_reverse(ARRAY [1]);
+                 array_reverse
+                ---------------
+                 {1}
+                (1 row)
+                
+                SELECT array_reverse(ARRAY [NULL]);
+                 array_reverse
+                ---------------
+                 {NULL}
+                (1 row)
+                """
+        );
+    }
 }

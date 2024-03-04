@@ -100,3 +100,11 @@ where
 }
 
 some_generic_function2!(array_position, T, Vec<T>, T, Eq, i64);
+
+pub fn array_reverse_<T>(vector: Vec<T>) -> Vec<T> {
+    vector.into_iter().rev().collect()
+}
+
+pub fn array_reverseN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>> {
+    Some(array_reverse_(vector?))
+}
