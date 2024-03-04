@@ -249,7 +249,7 @@ impl PollerThread {
                 Ok(Some(_)) => {
                     // All of the subscribed partitions should have be broken
                     // off into `PartitionQueue`s.
-                    unreachable!()
+                    warn!("ignoring message received from consumer despite `split_partition_queue`")
                 }
                 Err(error) => {
                     let fatal = error
