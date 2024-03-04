@@ -2,7 +2,10 @@ use std::{borrow::Cow, sync::Arc};
 
 use aws_sdk_s3::operation::get_object::GetObjectOutput;
 use serde::Deserialize;
-use tokio::sync::watch::{channel, Receiver, Sender};
+use tokio::sync::{
+    mpsc,
+    watch::{channel, Receiver, Sender},
+};
 
 use crate::{InputConsumer, InputEndpoint, InputReader, InputTransport, PipelineState};
 #[cfg(test)]
@@ -146,7 +149,8 @@ impl S3InputReader {
         let config_clone = config.clone();
         let receiver_clone = receiver.clone();
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
                 .enable_all()
                 .build()
                 .expect("Could not create Tokio runtime");
@@ -170,31 +174,48 @@ impl S3InputReader {
             }
             ReadStrategy::SingleKey { key } => vec![key.clone()],
         };
-        for key in &objects_to_fetch {
-            let mut object = client.get_object(&config.bucket_name, key).await?;
-            loop {
-                let state = *receiver.borrow();
-                match state {
-                    PipelineState::Paused => {
-                        receiver.changed().await?;
-                    }
-                    PipelineState::Running => {
-                        tokio::select! {
-                            _ = receiver.changed() => (),
-                            result = object.body.next() => {
-                                match result {
+        // The worker thread fetches objects in the background while already retrieved
+        // objects are being fed to the InputConsumer. We use a bounded channel
+        // to make it so that no more than 8 objects are fetched while waiting
+        // for object processing.
+        let (tx, mut rx) = mpsc::channel(8);
+        tokio::spawn(async move {
+            for key in &objects_to_fetch {
+                let object = client.get_object(&config.bucket_name, key).await;
+                tx.send(object).await.expect("Enqueue failed");
+            }
+            drop(tx); // We're done. Close the channel.
+        });
+        loop {
+            let state = *receiver.borrow();
+            match state {
+                PipelineState::Paused => {
+                    receiver.changed().await?;
+                }
+                PipelineState::Running => {
+                    tokio::select! {
+                        // If pipeline status has changed, exit the select
+                        _ = receiver.changed() => (),
+                        // Poll the object stream. If `None`, we have processed all objects.
+                        get_obj = rx.recv() => {
+                            if let Some(get_obj) = get_obj {
+                                let mut object = get_obj?;
+                                match object.body.next().await {
                                     Some(Ok(bytes)) => {
                                         consumer.input_fragment(&bytes);
                                     }
                                     None => break,
                                     Some(Err(e)) => Err(e)?
                                 }
+                            } else {
+                                // Channel is closed. Exit.
+                                break;
                             }
                         }
                     }
-                    PipelineState::Terminated => break,
-                };
-            }
+                }
+                PipelineState::Terminated => break,
+            };
         }
         Ok(())
     }
