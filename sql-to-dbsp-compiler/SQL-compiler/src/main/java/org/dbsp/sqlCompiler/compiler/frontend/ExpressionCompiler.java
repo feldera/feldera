@@ -1023,6 +1023,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
             }
+            case SORT_ARRAY: {
+                if (ops.size() == 1) {
+                    ops.add(1, new DBSPBoolLiteral(true));
+                }
+                DBSPExpression arg0 = ops.get(0);
+                DBSPExpression arg1 = ops.get(1);
+
+                String method = getCallName(call);
+                if (arg0.type.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, arg0, arg1);
+            }
             case ARRAY_POSITION:
             {
                 DBSPExpression arg0 = ops.get(0);
