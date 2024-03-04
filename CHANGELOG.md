@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1491](https://github.com/feldera/feldera/pull/1491))
 - SQL: support for ARRAY_MAX, ARRAY_MIN functions
   ([#1492](https://github.com/feldera/feldera/pull/1492))
+- SQL: support for ARRAY_COMPACT function
+  ([#1493](https://github.com/feldera/feldera/pull/1493))
 
 
 ## [0.11.0] - 2024-03-05
