@@ -634,7 +634,8 @@ public class AggTests extends PostBaseTests {
                 -- GROUPING in SELECT clause of CUBE query
                 select deptno, job, count(*) as c, grouping(deptno) as d,
                   grouping(job) j, grouping(deptno, job) as x
-                from "scott".emp
+                from --"scott". 
+                     emp
                 group by cube(deptno, job);
                 +--------+-----------+----+---+---+---+
                 | DEPTNO | JOB       | C  | D | J | X |
@@ -883,424 +884,432 @@ public class AggTests extends PostBaseTests {
                 (2 rows)""");
     }
 
-    /*
-    TODO: enable more of these tests
-      @Test
-      public void testGrouping() {
-         this.qs("""
-                select deptno, group_id() as g, count(*) as c
-                from "scott".emp
-                group by grouping sets (deptno, (), ());
-                +--------+---+----+
-                | DEPTNO | G | C  |
-                +--------+---+----+
-                |     10 | 0 |  3 |
-                |     20 | 0 |  5 |
-                |     30 | 0 |  6 |
-                |        | 0 | 14 |
-                |        | 1 | 14 |
-                +--------+---+----+
-                (5 rows)
-                                
-                -- Degenerate case: GROUP_ID() without GROUPING SETS
-                select group_id() as g
-                from "scott".emp
-                group by ();
-                +---+
-                | G |
-                +---+
-                | 0 |
-                +---+
-                (1 row)
-                                
-                -- GROUP_ID() does not make a query into an aggregate query
-                -- (maybe it should)
-                select group_id() as g
-                from "scott".emp;
-                GROUP_ID operator may only occur in an aggregate query
-                !error
-                                
-                -- GROUP_ID() does not make a query into an aggregate query
-                select group_id() as g, sum(3) as s3
-                from "scott".emp;
-                +---+----+
-                | G | S3 |
-                +---+----+
-                | 0 | 42 |
-                +---+----+
-                (1 row)
-                                
-                -- Extremely degenerate case: GROUP_ID on an empty table
-                select group_id() as g, sum(3) as s3
-                from "scott".emp
-                where empno < 0;
-                +---+----+
-                | G | S3 |
-                +---+----+
-                | 0 |    |
-                +---+----+
-                (1 row)
-                                
-                -- As above, explicit empty GROUP BY
-                select group_id() as g
-                from "scott".emp
-                where empno < 0
-                group by ();
-                +---+
-                | G |
-                +---+
-                | 0 |
-                +---+
-                (1 row)
-                                
-                -- As above, non-empty GROUP BY
-                select group_id() as g
-                from "scott".emp
-                where empno < 0
-                group by deptno;
-                +---+
-                | G |
-                +---+
-                +---+
-                (0 rows)
-                                
-                -- From http://rwijk.blogspot.com/2008/12/groupid.html
-                select deptno
-                       , job
-                       , empno
-                       , ename
-                       , sum(sal) sumsal
-                       , case grouping_id(deptno,job,empno)
-                           when 0 then 'grouped by deptno,job,empno,ename'
-                           when 1 then 'grouped by deptno,job'
-                           when 3 then 'grouped by deptno'
-                           when 7 then 'grouped by ()'
-                         end gr_text
-                    from "scott".emp
-                   group by rollup(deptno,job,(empno,ename))
-                   order by deptno
-                       , job
-                       , empno;
-                +--------+-----------+-------+--------+----------+-----------------------------------+
-                | DEPTNO | JOB       | EMPNO | ENAME  | SUMSAL   | GR_TEXT                           |
-                +--------+-----------+-------+--------+----------+-----------------------------------+
-                |     10 | CLERK     |  7934 | MILLER |  1300.00 | grouped by deptno,job,empno,ename |
-                |     10 | CLERK     |       |        |  1300.00 | grouped by deptno,job             |
-                |     10 | MANAGER   |  7782 | CLARK  |  2450.00 | grouped by deptno,job,empno,ename |
-                |     10 | MANAGER   |       |        |  2450.00 | grouped by deptno,job             |
-                |     10 | PRESIDENT |  7839 | KING   |  5000.00 | grouped by deptno,job,empno,ename |
-                |     10 | PRESIDENT |       |        |  5000.00 | grouped by deptno,job             |
-                |     10 |           |       |        |  8750.00 | grouped by deptno                 |
-                |     20 | ANALYST   |  7788 | SCOTT  |  3000.00 | grouped by deptno,job,empno,ename |
-                |     20 | ANALYST   |  7902 | FORD   |  3000.00 | grouped by deptno,job,empno,ename |
-                |     20 | ANALYST   |       |        |  6000.00 | grouped by deptno,job             |
-                |     20 | CLERK     |  7369 | SMITH  |   800.00 | grouped by deptno,job,empno,ename |
-                |     20 | CLERK     |  7876 | ADAMS  |  1100.00 | grouped by deptno,job,empno,ename |
-                |     20 | CLERK     |       |        |  1900.00 | grouped by deptno,job             |
-                |     20 | MANAGER   |  7566 | JONES  |  2975.00 | grouped by deptno,job,empno,ename |
-                |     20 | MANAGER   |       |        |  2975.00 | grouped by deptno,job             |
-                |     20 |           |       |        | 10875.00 | grouped by deptno                 |
-                |     30 | CLERK     |  7900 | JAMES  |   950.00 | grouped by deptno,job,empno,ename |
-                |     30 | CLERK     |       |        |   950.00 | grouped by deptno,job             |
-                |     30 | MANAGER   |  7698 | BLAKE  |  2850.00 | grouped by deptno,job,empno,ename |
-                |     30 | MANAGER   |       |        |  2850.00 | grouped by deptno,job             |
-                |     30 | SALESMAN  |  7499 | ALLEN  |  1600.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |  7521 | WARD   |  1250.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |  7654 | MARTIN |  1250.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |  7844 | TURNER |  1500.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |       |        |  5600.00 | grouped by deptno,job             |
-                |     30 |           |       |        |  9400.00 | grouped by deptno                 |
-                |        |           |       |        | 29025.00 | grouped by ()                     |
-                +--------+-----------+-------+--------+----------+-----------------------------------+
-                (27 rows)
-                                
-                -- From http://rwijk.blogspot.com/2008/12/groupid.html
-                select deptno
-                       , job
-                       , empno
-                       , ename
-                       , sum(sal) sumsal
-                       , case grouping_id(deptno,job,empno)
-                           when 0 then 'grouped by deptno,job,empno,ename'
-                           when 1 then 'grouped by deptno,job'
-                           when 3 then 'grouped by deptno, grouping set ' || cast(3+group_id() as varchar)
-                           when 7 then 'grouped by (), grouping set ' || cast(5+group_id() as varchar)
-                         end gr_text
-                    from "scott".emp
-                   group by grouping sets
-                         ( (deptno,job,empno,ename)
-                         , (deptno,job)
-                         , deptno
-                         , deptno
-                         , ()
-                         , ()
-                         )
-                   order by deptno
-                       , job
-                       , empno;
-                +--------+-----------+-------+--------+----------+-----------------------------------+
-                | DEPTNO | JOB       | EMPNO | ENAME  | SUMSAL   | GR_TEXT                           |
-                +--------+-----------+-------+--------+----------+-----------------------------------+
-                |     10 | CLERK     |  7934 | MILLER |  1300.00 | grouped by deptno,job,empno,ename |
-                |     10 | CLERK     |       |        |  1300.00 | grouped by deptno,job             |
-                |     10 | MANAGER   |  7782 | CLARK  |  2450.00 | grouped by deptno,job,empno,ename |
-                |     10 | MANAGER   |       |        |  2450.00 | grouped by deptno,job             |
-                |     10 | PRESIDENT |  7839 | KING   |  5000.00 | grouped by deptno,job,empno,ename |
-                |     10 | PRESIDENT |       |        |  5000.00 | grouped by deptno,job             |
-                |     10 |           |       |        |  8750.00 | grouped by deptno, grouping set 3 |
-                |     10 |           |       |        |  8750.00 | grouped by deptno, grouping set 4 |
-                |     20 | ANALYST   |  7788 | SCOTT  |  3000.00 | grouped by deptno,job,empno,ename |
-                |     20 | ANALYST   |  7902 | FORD   |  3000.00 | grouped by deptno,job,empno,ename |
-                |     20 | ANALYST   |       |        |  6000.00 | grouped by deptno,job             |
-                |     20 | CLERK     |  7369 | SMITH  |   800.00 | grouped by deptno,job,empno,ename |
-                |     20 | CLERK     |  7876 | ADAMS  |  1100.00 | grouped by deptno,job,empno,ename |
-                |     20 | CLERK     |       |        |  1900.00 | grouped by deptno,job             |
-                |     20 | MANAGER   |  7566 | JONES  |  2975.00 | grouped by deptno,job,empno,ename |
-                |     20 | MANAGER   |       |        |  2975.00 | grouped by deptno,job             |
-                |     20 |           |       |        | 10875.00 | grouped by deptno, grouping set 3 |
-                |     20 |           |       |        | 10875.00 | grouped by deptno, grouping set 4 |
-                |     30 | CLERK     |  7900 | JAMES  |   950.00 | grouped by deptno,job,empno,ename |
-                |     30 | CLERK     |       |        |   950.00 | grouped by deptno,job             |
-                |     30 | MANAGER   |  7698 | BLAKE  |  2850.00 | grouped by deptno,job,empno,ename |
-                |     30 | MANAGER   |       |        |  2850.00 | grouped by deptno,job             |
-                |     30 | SALESMAN  |  7499 | ALLEN  |  1600.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |  7521 | WARD   |  1250.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |  7654 | MARTIN |  1250.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |  7844 | TURNER |  1500.00 | grouped by deptno,job,empno,ename |
-                |     30 | SALESMAN  |       |        |  5600.00 | grouped by deptno,job             |
-                |     30 |           |       |        |  9400.00 | grouped by deptno, grouping set 3 |
-                |     30 |           |       |        |  9400.00 | grouped by deptno, grouping set 4 |
-                |        |           |       |        | 29025.00 | grouped by (), grouping set 5     |
-                |        |           |       |        | 29025.00 | grouped by (), grouping set 6     |
-                +--------+-----------+-------+--------+----------+-----------------------------------+
-                (31 rows)
-                                
-                -- There are duplicate GROUPING SETS
-                select deptno, sum(sal) as s
-                from "scott".emp as t
-                group by grouping sets (deptno, deptno);
-                +--------+----------+
-                | DEPTNO | S        |
-                +--------+----------+
-                |     10 |  8750.00 |
-                |     10 |  8750.00 |
-                |     20 | 10875.00 |
-                |     20 | 10875.00 |
-                |     30 |  9400.00 |
-                |     30 |  9400.00 |
-                +--------+----------+
-                (6 rows)
-                                
-                -- Similar, not duplicate GROUPING SETS
-                select deptno, sum(sal) as s
-                from "scott".emp as t
-                group by grouping sets (deptno);
-                +--------+----------+
-                | DEPTNO | S        |
-                +--------+----------+
-                |     10 |  8750.00 |
-                |     20 | 10875.00 |
-                |     30 |  9400.00 |
-                +--------+----------+
-                (3 rows)
-                                
-                -- Complex GROUPING SETS clause that contains duplicates
-                select sum(sal) as s
-                from "scott".emp as t
-                group by job,
-                    grouping sets ( deptno,
-                    grouping sets ( (deptno, comm is null), comm is null),
-                         (comm is null)),
-                    ();
-                +---------+
-                | S       |
-                +---------+
-                | 1300.00 |
-                | 1300.00 |
-                | 2450.00 |
-                | 2450.00 |
-                | 2850.00 |
-                | 2850.00 |
-                | 2975.00 |
-                | 2975.00 |
-                | 5000.00 |
-                | 5000.00 |
-                | 5000.00 |
-                | 5000.00 |
-                | 6000.00 |
-                |  950.00 |
-                |  950.00 |
-                | 1900.00 |
-                | 1900.00 |
-                | 4150.00 |
-                | 4150.00 |
-                | 5600.00 |
-                | 5600.00 |
-                | 5600.00 |
-                | 5600.00 |
-                | 6000.00 |
-                | 6000.00 |
-                | 6000.00 |
-                | 8275.00 |
-                | 8275.00 |
-                +---------+
-                (28 rows)
-                                
-                -- Equivalent query using flat GROUPING SETS
-                select sum(sal) as s
-                from "scott".emp
-                group by grouping sets ((job, deptno, comm is null),
-                  (job, deptno), (job, comm is null), (job, comm is null));
-                +---------+
-                | S       |
-                +---------+
-                | 1300.00 |
-                | 1300.00 |
-                | 2450.00 |
-                | 2450.00 |
-                | 2850.00 |
-                | 2850.00 |
-                | 2975.00 |
-                | 2975.00 |
-                | 5000.00 |
-                | 5000.00 |
-                | 5000.00 |
-                | 5000.00 |
-                | 6000.00 |
-                |  950.00 |
-                |  950.00 |
-                | 1900.00 |
-                | 1900.00 |
-                | 4150.00 |
-                | 4150.00 |
-                | 5600.00 |
-                | 5600.00 |
-                | 5600.00 |
-                | 5600.00 |
-                | 6000.00 |
-                | 6000.00 |
-                | 6000.00 |
-                | 8275.00 |
-                | 8275.00 |
-                +---------+
-                (28 rows)
-                                
-                -- Equivalent query, but with GROUP_ID and GROUPING_ID
-                select sum(sal) as s,
-                  grouping_id(job, deptno, comm is null) as g,
-                  group_id() as i
-                from "scott".emp
-                group by grouping sets ((job, deptno, comm is null),
-                  (job, deptno), (job, comm is null), (job, comm is null))
-                order by g, i, s desc;
-                +---------+---+---+
-                | S       | G | I |
-                +---------+---+---+
-                | 6000.00 | 0 | 0 |
-                | 5600.00 | 0 | 0 |
-                | 5000.00 | 0 | 0 |
-                | 2975.00 | 0 | 0 |
-                | 2850.00 | 0 | 0 |
-                | 2450.00 | 0 | 0 |
-                | 1900.00 | 0 | 0 |
-                | 1300.00 | 0 | 0 |
-                |  950.00 | 0 | 0 |
-                | 8275.00 | 0 | 1 |
-                | 6000.00 | 0 | 1 |
-                | 5600.00 | 0 | 1 |
-                | 5000.00 | 0 | 1 |
-                | 4150.00 | 0 | 1 |
-                | 6000.00 | 1 | 0 |
-                | 5600.00 | 1 | 0 |
-                | 5000.00 | 1 | 0 |
-                | 2975.00 | 1 | 0 |
-                | 2850.00 | 1 | 0 |
-                | 2450.00 | 1 | 0 |
-                | 1900.00 | 1 | 0 |
-                | 1300.00 | 1 | 0 |
-                |  950.00 | 1 | 0 |
-                | 8275.00 | 2 | 0 |
-                | 6000.00 | 2 | 0 |
-                | 5600.00 | 2 | 0 |
-                | 5000.00 | 2 | 0 |
-                | 4150.00 | 2 | 0 |
-                +---------+---+---+
-                (28 rows)
-                                
-                -- [KYLIN-751] Max on negative double values is not working
-                -- [CALCITE-735] Primitive.DOUBLE.min should be large and negative
-                select max(v) as x, min(v) as n
-                from (values cast(-86.4 as double), cast(-100 as double)) as t(v);
-                +-------+--------+
-                | X     | N      |
-                +-------+--------+
-                | -86.4 | -100.0 |
-                +-------+--------+
-                (1 row)
-                                
-                select max(v) as x, min(v) as n
-                from (values cast(-86.4 as double), cast(-100 as double), cast(2 as double)) as t(v);
-                +-----+--------+
-                | X   | N      |
-                +-----+--------+
-                | 2.0 | -100.0 |
-                +-----+--------+
-                (1 row)
-                                
-                select max(v) as x, min(v) as n
-                from (values cast(-86.4 as float), cast(-100 as float)) as t(v);
-                +-------+--------+
-                | X     | N      |
-                +-------+--------+
-                | -86.4 | -100.0 |
-                +-------+--------+
-                (1 row)
-                                
-                -- [CALCITE-551] Sub-query inside aggregate function
-                SELECT SUM(
-                  CASE WHEN deptno IN (SELECT deptno FROM "scott".dept) THEN 1
-                  ELSE 0 END) as s
-                FROM "scott".emp;
-                +----+
-                | S  |
-                +----+
-                | 14 |
-                +----+
-                (1 row)
-                                
-                SELECT SUM((select min(cast(deptno as integer)) from "scott".dept)) as s
-                FROM "scott".emp;
-                +-----+
-                | S   |
-                +-----+
-                | 140 |
-                +-----+
-                (1 row)
-                                
-                -- As above, but with GROUP BY
-                SELECT SUM((select min(cast(deptno as integer)) from "scott".dept)) as s, deptno
-                FROM "scott".emp
-                GROUP BY deptno;
-                +----+--------+
-                | S  | DEPTNO |
-                +----+--------+
-                | 30 |     10 |
-                | 50 |     20 |
-                | 60 |     30 |
-                +----+--------+
-                (3 rows)
-                                
-                -- As above, but with correlation
-                SELECT SUM(
-                  (select char_length(dname) from "scott".dept where dept.deptno = emp.empno)) as s
-                FROM "scott".emp;
-                +---+
-                | S |
-                +---+
-                |   |
-                +---+
-                (1 row)
-                                
+      @Test @Ignore("Grouping not yet implemented")
+      public void testGrouping2() {
+          this.qs("""
+                  select deptno, group_id() as g, count(*) as c
+                  from --"scott".
+                       emp
+                  group by grouping sets (deptno, (), ());
+                  +--------+---+----+
+                  | DEPTNO | G | C  |
+                  +--------+---+----+
+                  |     10 | 0 |  3 |
+                  |     20 | 0 |  5 |
+                  |     30 | 0 |  6 |
+                  |        | 0 | 14 |
+                  |        | 1 | 14 |
+                  +--------+---+----+
+                  (5 rows)
+                                  
+                  -- Degenerate case: GROUP_ID() without GROUPING SETS
+                  select group_id() as g
+                  from --"scott".
+                       emp
+                  group by ();
+                  +---+
+                  | G |
+                  +---+
+                  | 0 |
+                  +---+
+                  (1 row)
+                                  
+                  -- GROUP_ID() does not make a query into an aggregate query
+                  -- (maybe it should)
+                  select group_id() as g
+                  from "scott".emp;
+                  GROUP_ID operator may only occur in an aggregate query
+                  !error
+                                  
+                  -- GROUP_ID() does not make a query into an aggregate query
+                  select group_id() as g, sum(3) as s3
+                  from "scott".emp;
+                  +---+----+
+                  | G | S3 |
+                  +---+----+
+                  | 0 | 42 |
+                  +---+----+
+                  (1 row)
+                                  
+                  -- Extremely degenerate case: GROUP_ID on an empty table
+                  select group_id() as g, sum(3) as s3
+                  from "scott".emp
+                  where empno < 0;
+                  +---+----+
+                  | G | S3 |
+                  +---+----+
+                  | 0 |    |
+                  +---+----+
+                  (1 row)
+                                  
+                  -- As above, explicit empty GROUP BY
+                  select group_id() as g
+                  from "scott".emp
+                  where empno < 0
+                  group by ();
+                  +---+
+                  | G |
+                  +---+
+                  | 0 |
+                  +---+
+                  (1 row)
+                                  
+                  -- As above, non-empty GROUP BY
+                  select group_id() as g
+                  from "scott".emp
+                  where empno < 0
+                  group by deptno;
+                  +---+
+                  | G |
+                  +---+
+                  +---+
+                  (0 rows)
+                                  
+                  -- From http://rwijk.blogspot.com/2008/12/groupid.html
+                  select deptno
+                         , job
+                         , empno
+                         , ename
+                         , sum(sal) sumsal
+                         , case grouping_id(deptno,job,empno)
+                             when 0 then 'grouped by deptno,job,empno,ename'
+                             when 1 then 'grouped by deptno,job'
+                             when 3 then 'grouped by deptno'
+                             when 7 then 'grouped by ()'
+                           end gr_text
+                      from "scott".emp
+                     group by rollup(deptno,job,(empno,ename))
+                     order by deptno
+                         , job
+                         , empno;
+                  +--------+-----------+-------+--------+----------+-----------------------------------+
+                  | DEPTNO | JOB       | EMPNO | ENAME  | SUMSAL   | GR_TEXT                           |
+                  +--------+-----------+-------+--------+----------+-----------------------------------+
+                  |     10 | CLERK     |  7934 | MILLER |  1300.00 | grouped by deptno,job,empno,ename |
+                  |     10 | CLERK     |       |        |  1300.00 | grouped by deptno,job             |
+                  |     10 | MANAGER   |  7782 | CLARK  |  2450.00 | grouped by deptno,job,empno,ename |
+                  |     10 | MANAGER   |       |        |  2450.00 | grouped by deptno,job             |
+                  |     10 | PRESIDENT |  7839 | KING   |  5000.00 | grouped by deptno,job,empno,ename |
+                  |     10 | PRESIDENT |       |        |  5000.00 | grouped by deptno,job             |
+                  |     10 |           |       |        |  8750.00 | grouped by deptno                 |
+                  |     20 | ANALYST   |  7788 | SCOTT  |  3000.00 | grouped by deptno,job,empno,ename |
+                  |     20 | ANALYST   |  7902 | FORD   |  3000.00 | grouped by deptno,job,empno,ename |
+                  |     20 | ANALYST   |       |        |  6000.00 | grouped by deptno,job             |
+                  |     20 | CLERK     |  7369 | SMITH  |   800.00 | grouped by deptno,job,empno,ename |
+                  |     20 | CLERK     |  7876 | ADAMS  |  1100.00 | grouped by deptno,job,empno,ename |
+                  |     20 | CLERK     |       |        |  1900.00 | grouped by deptno,job             |
+                  |     20 | MANAGER   |  7566 | JONES  |  2975.00 | grouped by deptno,job,empno,ename |
+                  |     20 | MANAGER   |       |        |  2975.00 | grouped by deptno,job             |
+                  |     20 |           |       |        | 10875.00 | grouped by deptno                 |
+                  |     30 | CLERK     |  7900 | JAMES  |   950.00 | grouped by deptno,job,empno,ename |
+                  |     30 | CLERK     |       |        |   950.00 | grouped by deptno,job             |
+                  |     30 | MANAGER   |  7698 | BLAKE  |  2850.00 | grouped by deptno,job,empno,ename |
+                  |     30 | MANAGER   |       |        |  2850.00 | grouped by deptno,job             |
+                  |     30 | SALESMAN  |  7499 | ALLEN  |  1600.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |  7521 | WARD   |  1250.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |  7654 | MARTIN |  1250.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |  7844 | TURNER |  1500.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |       |        |  5600.00 | grouped by deptno,job             |
+                  |     30 |           |       |        |  9400.00 | grouped by deptno                 |
+                  |        |           |       |        | 29025.00 | grouped by ()                     |
+                  +--------+-----------+-------+--------+----------+-----------------------------------+
+                  (27 rows)
+                                  
+                  -- From http://rwijk.blogspot.com/2008/12/groupid.html
+                  select deptno
+                         , job
+                         , empno
+                         , ename
+                         , sum(sal) sumsal
+                         , case grouping_id(deptno,job,empno)
+                             when 0 then 'grouped by deptno,job,empno,ename'
+                             when 1 then 'grouped by deptno,job'
+                             when 3 then 'grouped by deptno, grouping set ' || cast(3+group_id() as varchar)
+                             when 7 then 'grouped by (), grouping set ' || cast(5+group_id() as varchar)
+                           end gr_text
+                      from "scott".emp
+                     group by grouping sets
+                           ( (deptno,job,empno,ename)
+                           , (deptno,job)
+                           , deptno
+                           , deptno
+                           , ()
+                           , ()
+                           )
+                     order by deptno
+                         , job
+                         , empno;
+                  +--------+-----------+-------+--------+----------+-----------------------------------+
+                  | DEPTNO | JOB       | EMPNO | ENAME  | SUMSAL   | GR_TEXT                           |
+                  +--------+-----------+-------+--------+----------+-----------------------------------+
+                  |     10 | CLERK     |  7934 | MILLER |  1300.00 | grouped by deptno,job,empno,ename |
+                  |     10 | CLERK     |       |        |  1300.00 | grouped by deptno,job             |
+                  |     10 | MANAGER   |  7782 | CLARK  |  2450.00 | grouped by deptno,job,empno,ename |
+                  |     10 | MANAGER   |       |        |  2450.00 | grouped by deptno,job             |
+                  |     10 | PRESIDENT |  7839 | KING   |  5000.00 | grouped by deptno,job,empno,ename |
+                  |     10 | PRESIDENT |       |        |  5000.00 | grouped by deptno,job             |
+                  |     10 |           |       |        |  8750.00 | grouped by deptno, grouping set 3 |
+                  |     10 |           |       |        |  8750.00 | grouped by deptno, grouping set 4 |
+                  |     20 | ANALYST   |  7788 | SCOTT  |  3000.00 | grouped by deptno,job,empno,ename |
+                  |     20 | ANALYST   |  7902 | FORD   |  3000.00 | grouped by deptno,job,empno,ename |
+                  |     20 | ANALYST   |       |        |  6000.00 | grouped by deptno,job             |
+                  |     20 | CLERK     |  7369 | SMITH  |   800.00 | grouped by deptno,job,empno,ename |
+                  |     20 | CLERK     |  7876 | ADAMS  |  1100.00 | grouped by deptno,job,empno,ename |
+                  |     20 | CLERK     |       |        |  1900.00 | grouped by deptno,job             |
+                  |     20 | MANAGER   |  7566 | JONES  |  2975.00 | grouped by deptno,job,empno,ename |
+                  |     20 | MANAGER   |       |        |  2975.00 | grouped by deptno,job             |
+                  |     20 |           |       |        | 10875.00 | grouped by deptno, grouping set 3 |
+                  |     20 |           |       |        | 10875.00 | grouped by deptno, grouping set 4 |
+                  |     30 | CLERK     |  7900 | JAMES  |   950.00 | grouped by deptno,job,empno,ename |
+                  |     30 | CLERK     |       |        |   950.00 | grouped by deptno,job             |
+                  |     30 | MANAGER   |  7698 | BLAKE  |  2850.00 | grouped by deptno,job,empno,ename |
+                  |     30 | MANAGER   |       |        |  2850.00 | grouped by deptno,job             |
+                  |     30 | SALESMAN  |  7499 | ALLEN  |  1600.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |  7521 | WARD   |  1250.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |  7654 | MARTIN |  1250.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |  7844 | TURNER |  1500.00 | grouped by deptno,job,empno,ename |
+                  |     30 | SALESMAN  |       |        |  5600.00 | grouped by deptno,job             |
+                  |     30 |           |       |        |  9400.00 | grouped by deptno, grouping set 3 |
+                  |     30 |           |       |        |  9400.00 | grouped by deptno, grouping set 4 |
+                  |        |           |       |        | 29025.00 | grouped by (), grouping set 5     |
+                  |        |           |       |        | 29025.00 | grouped by (), grouping set 6     |
+                  +--------+-----------+-------+--------+----------+-----------------------------------+
+                  (31 rows)
+                                  
+                  -- There are duplicate GROUPING SETS
+                  select deptno, sum(sal) as s
+                  from "scott".emp as t
+                  group by grouping sets (deptno, deptno);
+                  +--------+----------+
+                  | DEPTNO | S        |
+                  +--------+----------+
+                  |     10 |  8750.00 |
+                  |     10 |  8750.00 |
+                  |     20 | 10875.00 |
+                  |     20 | 10875.00 |
+                  |     30 |  9400.00 |
+                  |     30 |  9400.00 |
+                  +--------+----------+
+                  (6 rows)
+                                  
+                  -- Similar, not duplicate GROUPING SETS
+                  select deptno, sum(sal) as s
+                  from "scott".emp as t
+                  group by grouping sets (deptno);
+                  +--------+----------+
+                  | DEPTNO | S        |
+                  +--------+----------+
+                  |     10 |  8750.00 |
+                  |     20 | 10875.00 |
+                  |     30 |  9400.00 |
+                  +--------+----------+
+                  (3 rows)
+                                  
+                  -- Complex GROUPING SETS clause that contains duplicates
+                  select sum(sal) as s
+                  from "scott".emp as t
+                  group by job,
+                      grouping sets ( deptno,
+                      grouping sets ( (deptno, comm is null), comm is null),
+                           (comm is null)),
+                      ();
+                  +---------+
+                  | S       |
+                  +---------+
+                  | 1300.00 |
+                  | 1300.00 |
+                  | 2450.00 |
+                  | 2450.00 |
+                  | 2850.00 |
+                  | 2850.00 |
+                  | 2975.00 |
+                  | 2975.00 |
+                  | 5000.00 |
+                  | 5000.00 |
+                  | 5000.00 |
+                  | 5000.00 |
+                  | 6000.00 |
+                  |  950.00 |
+                  |  950.00 |
+                  | 1900.00 |
+                  | 1900.00 |
+                  | 4150.00 |
+                  | 4150.00 |
+                  | 5600.00 |
+                  | 5600.00 |
+                  | 5600.00 |
+                  | 5600.00 |
+                  | 6000.00 |
+                  | 6000.00 |
+                  | 6000.00 |
+                  | 8275.00 |
+                  | 8275.00 |
+                  +---------+
+                  (28 rows)
+                                  
+                  -- Equivalent query using flat GROUPING SETS
+                  select sum(sal) as s
+                  from "scott".emp
+                  group by grouping sets ((job, deptno, comm is null),
+                    (job, deptno), (job, comm is null), (job, comm is null));
+                  +---------+
+                  | S       |
+                  +---------+
+                  | 1300.00 |
+                  | 1300.00 |
+                  | 2450.00 |
+                  | 2450.00 |
+                  | 2850.00 |
+                  | 2850.00 |
+                  | 2975.00 |
+                  | 2975.00 |
+                  | 5000.00 |
+                  | 5000.00 |
+                  | 5000.00 |
+                  | 5000.00 |
+                  | 6000.00 |
+                  |  950.00 |
+                  |  950.00 |
+                  | 1900.00 |
+                  | 1900.00 |
+                  | 4150.00 |
+                  | 4150.00 |
+                  | 5600.00 |
+                  | 5600.00 |
+                  | 5600.00 |
+                  | 5600.00 |
+                  | 6000.00 |
+                  | 6000.00 |
+                  | 6000.00 |
+                  | 8275.00 |
+                  | 8275.00 |
+                  +---------+
+                  (28 rows)
+                                  
+                  -- Equivalent query, but with GROUP_ID and GROUPING_ID
+                  select sum(sal) as s,
+                    grouping_id(job, deptno, comm is null) as g,
+                    group_id() as i
+                  from "scott".emp
+                  group by grouping sets ((job, deptno, comm is null),
+                    (job, deptno), (job, comm is null), (job, comm is null))
+                  order by g, i, s desc;
+                  +---------+---+---+
+                  | S       | G | I |
+                  +---------+---+---+
+                  | 6000.00 | 0 | 0 |
+                  | 5600.00 | 0 | 0 |
+                  | 5000.00 | 0 | 0 |
+                  | 2975.00 | 0 | 0 |
+                  | 2850.00 | 0 | 0 |
+                  | 2450.00 | 0 | 0 |
+                  | 1900.00 | 0 | 0 |
+                  | 1300.00 | 0 | 0 |
+                  |  950.00 | 0 | 0 |
+                  | 8275.00 | 0 | 1 |
+                  | 6000.00 | 0 | 1 |
+                  | 5600.00 | 0 | 1 |
+                  | 5000.00 | 0 | 1 |
+                  | 4150.00 | 0 | 1 |
+                  | 6000.00 | 1 | 0 |
+                  | 5600.00 | 1 | 0 |
+                  | 5000.00 | 1 | 0 |
+                  | 2975.00 | 1 | 0 |
+                  | 2850.00 | 1 | 0 |
+                  | 2450.00 | 1 | 0 |
+                  | 1900.00 | 1 | 0 |
+                  | 1300.00 | 1 | 0 |
+                  |  950.00 | 1 | 0 |
+                  | 8275.00 | 2 | 0 |
+                  | 6000.00 | 2 | 0 |
+                  | 5600.00 | 2 | 0 |
+                  | 5000.00 | 2 | 0 |
+                  | 4150.00 | 2 | 0 |
+                  +---------+---+---+
+                  (28 rows)""");
+      }
+
+      @Test @Ignore("Must setup scott database")
+      public void testSimple() {
+          this.qs("""
+                  -- [KYLIN-751] Max on negative double values is not working
+                  -- [CALCITE-735] Primitive.DOUBLE.min should be large and negative
+                  select max(v) as x, min(v) as n
+                  from (values cast(-86.4 as double), cast(-100 as double)) as t(v);
+                  +-------+--------+
+                  | X     | N      |
+                  +-------+--------+
+                  | -86.4 | -100.0 |
+                  +-------+--------+
+                  (1 row)
+                                  
+                  select max(v) as x, min(v) as n
+                  from (values cast(-86.4 as double), cast(-100 as double), cast(2 as double)) as t(v);
+                  +-----+--------+
+                  | X   | N      |
+                  +-----+--------+
+                  | 2.0 | -100.0 |
+                  +-----+--------+
+                  (1 row)
+                                  
+                  select max(v) as x, min(v) as n
+                  from (values cast(-86.4 as real), cast(-100 as real)) as t(v);
+                  +-------+--------+
+                  | X     | N      |
+                  +-------+--------+
+                  | -86.4 | -100.0 |
+                  +-------+--------+
+                  (1 row)
+                                  
+                  -- [CALCITE-551] Sub-query inside aggregate function
+                  SELECT SUM(
+                    CASE WHEN deptno IN (SELECT deptno FROM "scott".dept) THEN 1
+                    ELSE 0 END) as s
+                  FROM "scott".emp;
+                  +----+
+                  | S  |
+                  +----+
+                  | 14 |
+                  +----+
+                  (1 row)
+                                  
+                  SELECT SUM((select min(cast(deptno as integer)) from "scott".dept)) as s
+                  FROM "scott".emp;
+                  +-----+
+                  | S   |
+                  +-----+
+                  | 140 |
+                  +-----+
+                  (1 row)
+                                  
+                  -- As above, but with GROUP BY
+                  SELECT SUM((select min(cast(deptno as integer)) from "scott".dept)) as s, deptno
+                  FROM "scott".emp
+                  GROUP BY deptno;
+                  +----+--------+
+                  | S  | DEPTNO |
+                  +----+--------+
+                  | 30 |     10 |
+                  | 50 |     20 |
+                  | 60 |     30 |
+                  +----+--------+
+                  (3 rows)
+                                  
+                  -- As above, but with correlation
+                  SELECT SUM(
+                    (select char_length(dname) from "scott".dept where dept.deptno = emp.empno)) as s
+                  FROM "scott".emp;
+                  +---+
+                  | S |
+                  +---+
+                  |   |
+                  +---+
+                  (1 row)""");
+      }
+
+      @Test @Ignore("fusion, collect not yet implemented")
+      public void testFusion() {
+          this.qs("""
                 -- FUSION rolled up using CARDINALITY
                 select cardinality(fusion(empnos)) as f_empnos_length
                 from (
@@ -1370,7 +1379,6 @@ public class AggTests extends PostBaseTests {
                 (3 rows)
                                 
                 -- COLLECT DISTINCT
-                -- Disabled in JDK 1.7 because order of values is different
                 select deptno, collect(distinct job) as jobs
                 from "scott".emp
                 group by deptno;
@@ -1394,8 +1402,12 @@ public class AggTests extends PostBaseTests {
                 |     20 | [7369]       |
                 |     30 | [7499, 7521] |
                 +--------+--------------+
-                (3 rows)
-                                
+                (3 rows)""");
+    }
+
+    @Test @Ignore("Must setup scott database")
+    public void testConditionalAggregate() {
+        this.qs("""
                 -- Aggregate FILTER
                 select deptno,
                   sum(sal) filter (where job = 'CLERK') c_sal,
@@ -1422,9 +1434,6 @@ public class AggTests extends PostBaseTests {
                   sum(sal) filter (where deptno = 10) sal_10
                 from "scott".emp
                 group by deptno;
-                DEPTNO TINYINT(3)
-                SAL_10 DECIMAL(19, 2)
-                !type
                 +--------+---------+
                 | DEPTNO | SAL_10  |
                 +--------+---------+
@@ -1598,10 +1607,15 @@ public class AggTests extends PostBaseTests {
                 |  1 | 5 |
                 |  1 | 6 |
                 +----+---+
-                (3 rows)
-                                
+                (3 rows)""");
+   }
+
+   @Test @Ignore("Must setup scott database")
+   public void testDistinctAggregates() {
+       this.qs("""
                 select count(distinct deptno) as cd, count(*) as c
-                from "scott".emp
+                from --"scott".
+                    emp
                 group by cube(deptno);
                 +----+---+
                 | CD | C |
@@ -1614,7 +1628,8 @@ public class AggTests extends PostBaseTests {
                 (4 rows)
 
                 select deptno, count(distinct deptno) as c
-                from "scott".emp
+                from --"scott".
+                     emp
                 group by deptno;
                 +--------+---+
                 | DEPTNO | C |
@@ -1626,7 +1641,8 @@ public class AggTests extends PostBaseTests {
                 (3 rows)
 
                 select count(distinct deptno) as c
-                from "scott".emp
+                from --"scott".
+                    emp
                 group by deptno;
                 +---+
                 | C |
@@ -1640,7 +1656,8 @@ public class AggTests extends PostBaseTests {
                 -- Multiple distinct count
                 select deptno,
                  count(distinct job) as j, count(distinct mgr) as m
-                from "scott".emp
+                from --"scott".
+                    emp
                 group by deptno;
                 +--------+---+---+
                 | DEPTNO | J | M |
@@ -1657,7 +1674,8 @@ public class AggTests extends PostBaseTests {
                  count(job) as j,
                  count(distinct mgr) as m,
                  sum(sal) as s
-                from "scott".emp
+                from --"scott".
+                    emp
                 group by deptno;
                 +--------+----+---+---+----------+
                 | DEPTNO | DJ | J | M | S        |
@@ -1673,7 +1691,8 @@ public class AggTests extends PostBaseTests {
                  count(job) as j,
                  count(distinct mgr) as m,
                  sum(sal) as s
-                from "scott".emp;
+                from --"scott".
+                    emp;
                 +----+----+---+----------+
                 | DJ | J  | M | S        |
                 +----+----+---+----------+
@@ -1684,7 +1703,8 @@ public class AggTests extends PostBaseTests {
                 -- [CALCITE-280] BigDecimal underflow
                 -- Previously threw "java.lang.ArithmeticException: Non-terminating decimal
                 -- expansion; no exact representable decimal result"
-                select avg(comm) as a, count(comm) as c from "scott".emp where empno < 7844;
+                select avg(comm) as a, count(comm) as c from --"scott".
+                   emp where empno < 7844;
                 +-------------------+---+
                 | A                 | C |
                 +-------------------+---+
@@ -1695,9 +1715,11 @@ public class AggTests extends PostBaseTests {
                 -- [CALCITE-846] Push aggregate with FILTER through UNION ALL
                 select deptno, count(*) filter (where job = 'CLERK') as cf, count(*) as c
                 from (
-                  select * from "scott".emp where deptno < 20
+                  select * from --"scott".
+                     emp where deptno < 20
                   union all
-                  select * from "scott".emp where deptno > 20)
+                  select * from --"scott".
+                     emp where deptno > 20)
                 group by deptno;
                 +--------+----+---+
                 | DEPTNO | CF | C |
@@ -1709,7 +1731,8 @@ public class AggTests extends PostBaseTests {
 
                 -- [CALCITE-751] Aggregate join transpose
                 select count(*)
-                from "scott".emp join "scott".dept using (deptno);
+                from --"scott".
+                    emp join "scott".dept using (deptno);
                 +--------+
                 | EXPR$0 |
                 +--------+
@@ -1719,7 +1742,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum: splits into sum * count
                 select sum(sal)
-                from "scott".emp join "scott".dept using (deptno);
+                from --"scott".
+                    emp join "scott".dept using (deptno);
                 +----------+
                 | EXPR$0   |
                 +----------+
@@ -1729,7 +1753,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum; no aggregate needed after join
                 select sum(sal)
-                from "scott".emp join "scott".dept using (deptno)
+                from --"scott".
+                    emp join "scott".dept using (deptno)
                 group by emp.deptno, dept.deptno;
                 +----------+
                 | EXPR$0   |
@@ -1742,7 +1767,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum; group by only one of the join keys
                 select sum(sal)
-                from "scott".emp join "scott".dept using (deptno)
+                from --"scott".
+                    emp join "scott".dept using (deptno)
                 group by emp.deptno;
                 +----------+
                 | EXPR$0   |
@@ -1755,7 +1781,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push min; Join-Aggregate is optimized to SemiJoin
                 select min(sal)
-                from "scott".emp join "scott".dept using (deptno)
+                from --"scott".
+                    emp join "scott".dept using (deptno)
                 group by emp.deptno;
                 +---------+
                 | EXPR$0  |
@@ -1768,7 +1795,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum and count
                 select count(*) as c, sum(sal) as s
-                from "scott".emp join "scott".dept using (deptno);
+                from --"scott".
+                    emp join "scott".dept using (deptno);
                 +----+----------+
                 | C  | S        |
                 +----+----------+
@@ -1778,7 +1806,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum and count, group by join key
                 select count(*) as c, sum(sal) as s
-                from "scott".emp join "scott".dept using (deptno) group by emp.deptno;
+                from --"scott".
+                    emp join "scott".dept using (deptno) group by emp.deptno;
                 +---+----------+
                 | C | S        |
                 +---+----------+
@@ -1790,7 +1819,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum and count, group by join key plus another column
                 select count(*) as c, sum(sal) as s
-                from "scott".emp join "scott".dept using (deptno) group by emp.job, dept.deptno;
+                from --"scott".
+                    emp join "scott".dept using (deptno) group by emp.job, dept.deptno;
                 +---+---------+
                 | C | S       |
                 +---+---------+
@@ -1808,7 +1838,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum and count, group by non-join column
                 select count(*) as c, sum(sal) as s
-                from "scott".emp join "scott".dept using (deptno) group by emp.job;
+                from --"scott".
+                    emp join "scott".dept using (deptno) group by emp.job;
                 +---+---------+
                 | C | S       |
                 +---+---------+
@@ -1822,7 +1853,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push count and sum, group by superset of join key
                 select count(*) as c, sum(sal) as s
-                from "scott".emp join "scott".dept using (deptno) group by emp.job, dept.deptno;
+                from --"scott".
+                    emp join "scott".dept using (deptno) group by emp.job, dept.deptno;
                 +---+---------+
                 | C | S       |
                 +---+---------+
@@ -1840,7 +1872,8 @@ public class AggTests extends PostBaseTests {
 
                 -- Push count and sum, group by a column being aggregated
                 select count(*) as c, sum(sal) as s
-                from "scott".emp join "scott".dept using (deptno) group by emp.sal;
+                from --"scott".
+                    emp join "scott".dept using (deptno) group by emp.sal;
                 +---+---------+
                 | C | S       |
                 +---+---------+
@@ -1861,7 +1894,9 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum, self-join, returning one row with a null value
                 select sum(e.sal) as s
-                from "scott".emp e join "scott".emp m on e.mgr = e.empno;
+                from --"scott".
+                    emp e join --"scott".
+                    emp m on e.mgr = e.empno;
                 +---+
                 | S |
                 +---+
@@ -1871,7 +1906,9 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum, self-join
                 select sum(e.sal) as s
-                from "scott".emp e join "scott".emp m on e.mgr = m.empno;
+                from --"scott".
+                    emp e join --"scott".
+                    emp m on e.mgr = m.empno;
                 +----------+
                 | S        |
                 +----------+
@@ -1881,8 +1918,10 @@ public class AggTests extends PostBaseTests {
 
                 -- Push sum, self-join, cartesian product over nullable and non-nullable columns
                 select sum(e.sal) as ss, count(e.sal) as cs, count(e.mgr) as cm
-                from "scott".emp e
-                join "scott".emp m on e.deptno = m.deptno
+                from --"scott".
+                    emp e
+                join --"scott".
+                    emp m on e.deptno = m.deptno
                 group by e.deptno, m.deptno;
                 +----------+----+----+
                 | SS       | CS | CM |
@@ -1895,7 +1934,9 @@ public class AggTests extends PostBaseTests {
                                 
                 -- Push sum, self-join, aggregate by column on "many" side
                 select sum(e.sal) as s
-                from "scott".emp e join "scott".emp m on e.mgr = m.empno
+                from --"scott".
+                    emp e join --"scott".
+                    emp m on e.mgr = m.empno
                 group by m.empno;
                 +---------+
                 | S       |
@@ -1912,7 +1953,9 @@ public class AggTests extends PostBaseTests {
                 -- Push sum, self-join, aggregate by column on "one" side.
                 -- Note inflated totals due to cartesian product.
                 select sum(m.sal) as s
-                from "scott".emp e join "scott".emp m on e.mgr = m.empno
+                from --"scott".
+                    emp e join --"scott".
+                    emp m on e.mgr = m.empno
                 group by m.empno;
                 +----------+
                 | S        |
@@ -1924,8 +1967,14 @@ public class AggTests extends PostBaseTests {
                 |  3000.00 |
                 |  5950.00 |
                 +----------+
-                (6 rows)
+                (6 rows)""");
+   }
 
+   /*
+   TODO: setup more tests
+   @Test
+   public void testAggregates() {
+       this.qs("""
                 -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])
                 select  sum(x) as sum_cnt,
                   count(distinct y) as cnt_dist
@@ -2089,9 +2138,7 @@ public class AggTests extends PostBaseTests {
                 +--------+
                 +--------+
                 (0 rows)
-                                
-                
-                                
+
                 -- [CALCITE-1023] Planner rule that removes Aggregate keys that are constant
                 select job, sum(sal) as sum_sal, deptno
                 from "scott".emp

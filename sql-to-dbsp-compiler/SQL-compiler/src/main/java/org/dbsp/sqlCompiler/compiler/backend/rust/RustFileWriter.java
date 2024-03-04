@@ -113,7 +113,6 @@ public class RustFileWriter {
                         },
                         trace::ord::{OrdIndexedZSet, OrdZSet},
                         utils::*,
-                        utils::Tup0,
                         zset,
                         indexed_zset,
                         DBWeight,

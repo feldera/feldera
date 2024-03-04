@@ -1082,7 +1082,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq)]")
                 .newline();
         builder.append("struct r#")
-                    .append(item.type.sanitizedName)
+                    .append(Objects.requireNonNull(item.type.sanitizedName))
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: item.type.fields.values()) {
@@ -1100,7 +1100,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTypeStruct type) {
         // A *reference* to a struct type is just the type name.
         this.builder.append("r#")
-                .append(type.sanitizedName);
+                .append(Objects.requireNonNull(type.sanitizedName));
         return VisitDecision.STOP;
     }
 
