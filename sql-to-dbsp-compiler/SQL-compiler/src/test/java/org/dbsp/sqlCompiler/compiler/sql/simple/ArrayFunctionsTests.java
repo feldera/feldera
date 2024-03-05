@@ -127,6 +127,60 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 -----------
                  NULL
                 (1 row)
+                
+                SELECT array_prepend(null, 1);
+                 array_prepend
+                --------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testArrayPrepend() {
+        this.qs("""
+                SELECT array_prepend(ARRAY [2, 3], 1);
+                 array_prepend
+                ---------------
+                 {1, 2, 3}
+                (1 row)
+                
+                SELECT array_prepend(ARRAY [2, 3], null);
+                 array_prepend
+                ---------------
+                 {NULL, 2, 3}
+                (1 row)
+                
+                SELECT array_prepend(ARRAY [2, 3], null::double);
+                 array_prepend
+                ---------------
+                 {NULL, 2, 3}
+                (1 row)
+                
+                SELECT array_prepend(ARRAY [2.5, 3.5], null::int);
+                 array_prepend
+                ---------------
+                 {NULL, 2.5, 3.5}
+                (1 row)
+                
+                SELECT array_prepend(ARRAY [2, 3, null], null);
+                 array_prepend
+                ---------------
+                 {NULL, 2, 3, null}
+                (1 row)
+                
+                SELECT array_prepend(ARRAY [null], null);
+                 array_prepend
+                ---------------
+                 {NULL, null}
+                (1 row)
+                
+                SELECT array_prepend(ARRAY [null], 1);
+                 array_prepend
+                ---------------
+                 {1, NULL}
+                (1 row)
                 """
         );
     }

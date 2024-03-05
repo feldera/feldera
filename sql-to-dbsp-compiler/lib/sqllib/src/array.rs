@@ -192,3 +192,12 @@ pub fn array_compact_<T>(vector: Vec<Option<T>>) -> Vec<T> {
 pub fn array_compact_N<T>(vector: Option<Vec<Option<T>>>) -> Option<Vec<T>> {
     Some(array_compact_(vector?))
 }
+
+pub fn array_prepend<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
+    vector.insert(0, value);
+    vector
+}
+
+pub fn array_prependN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
+    Some(array_prepend(vector?, value))
+}

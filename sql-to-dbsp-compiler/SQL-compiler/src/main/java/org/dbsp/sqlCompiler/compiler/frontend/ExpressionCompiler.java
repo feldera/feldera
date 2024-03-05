@@ -1046,6 +1046,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
                 return new DBSPApplyExpression(node, name, type, ops.get(0));
             }
+            case ARRAY_PREPEND:
             case ARRAY_APPEND: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
