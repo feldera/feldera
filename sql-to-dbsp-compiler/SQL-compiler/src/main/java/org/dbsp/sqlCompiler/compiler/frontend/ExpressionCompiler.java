@@ -1090,6 +1090,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
+            case ARRAY_CONTAINS:
             case ARRAY_POSITION:
             {
                 if (call.operands.size() != 2)

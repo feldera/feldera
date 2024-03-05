@@ -83,6 +83,49 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
+
+    @Test
+    public void testArrayContains() {
+        this.qs("""
+            SELECT array_contains(ARRAY [2, 4, 6, 8, null], 4);
+             array_contains
+            ---------------
+             true
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8], 4);
+             array_contains
+            ---------------
+             true
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8, null], 3);
+             array_contains
+            ---------------
+             false
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8], 3);
+             array_contains
+            ---------------
+             false
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8], null);
+             array_contains
+            ---------------
+             NULL
+            (1 row)
+            
+            SELECT array_contains(ARRAY [null, 2, 2, 6, 6, 8, 2], null);
+             array_contains
+            ----------------
+             NULL
+            (1 row)
+            """
+        );
+    }
+
     @Test @Ignore("https://github.com/feldera/feldera/issues/1475")
     public void testArrayPositionDiffTypes() {
         this.qs("""
