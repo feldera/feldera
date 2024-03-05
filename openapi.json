@@ -3419,7 +3419,7 @@
           "initialization_timeout_secs": {
             "type": "integer",
             "format": "int32",
-            "description": "Maximum timeout in seconds to wait for the endpoint to connect to\na Kafka broker.\n\nDefaults to 10.",
+            "description": "Maximum timeout in seconds to wait for the endpoint to connect to\na Kafka broker.\n\nDefaults to 60.",
             "minimum": 0
           },
           "log_level": {
