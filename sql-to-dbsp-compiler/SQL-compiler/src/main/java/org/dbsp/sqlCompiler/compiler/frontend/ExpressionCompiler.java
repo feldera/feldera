@@ -1004,6 +1004,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             case TUMBLE:
                 return this.compilePolymorphicFunction(
                         "tumble", node, type, ops, 2, 3);
+            case ARRAY_LENGTH:
+            case ARRAY_SIZE: {
+                // same as "cardinality"
+                String name = "cardinality";
+
+                nullLiteralToNullArray(ops, 0);
+
+                if (ops.get(0).getType().mayBeNull)
+                    name += "N";
+
+                return new DBSPApplyExpression(node, name, type, ops.get(0));
+            }
             case ARRAY_APPEND: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);

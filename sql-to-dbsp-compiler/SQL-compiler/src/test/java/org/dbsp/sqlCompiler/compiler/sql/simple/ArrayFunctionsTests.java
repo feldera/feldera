@@ -187,7 +187,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 ------------
                  NULL
                 (1 row)
-                
+
                 SELECT sort_array(ARRAY [true, false, null]);
                  sort_array
                 ------------
@@ -207,5 +207,52 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 (1 row)
                 """
         );
+    }
+  
+    @Test
+    public void testArraySize() {
+        this.qs("""
+                SELECT cardinality(ARRAY [1, 2, 3]);
+                 array_size
+                ------------
+                 3
+                (1 row)
+                
+                SELECT array_size(ARRAY [1, 2, 3]);
+                 array_size
+                ------------
+                 3
+                (1 row)
+                
+                SELECT array_size(ARRAY [1]);
+                 array_size
+                ------------
+                 1
+                (1 row)
+                
+                SELECT array_size(null);
+                 array_size
+                ------------
+                 NULL
+                (1 row)
+                
+                SELECT array_length(ARRAY [1, 2, 3]);
+                 array_length
+                ------------
+                 3
+                (1 row)
+                
+                SELECT array_length(ARRAY [1]);
+                 array_length
+                ------------
+                 1
+                (1 row)
+                
+                SELECT array_length(null);
+                 array_length
+                ------------
+                 NULL
+                (1 row)
+                """);
     }
 }
