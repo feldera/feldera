@@ -36,6 +36,66 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void testArrayRepeat() {
+        this.qs("""
+                SELECT array_repeat(3, 3);
+                 array_repeat
+                --------------
+                 {3,3,3}
+                (1 row)
+                
+                SELECT array_repeat(2.1, 3);
+                 array_repeat
+                --------------
+                 {2.1, 2.1, 2.1}
+                (1 row)
+                
+                SELECT array_repeat(3, -1);
+                 array_repeat
+                --------------
+                 {}
+                (1 row)
+                
+                SELECT array_repeat(null, -1);
+                 array_repeat
+                --------------
+                 {}
+                (1 row)
+                
+                SELECT array_repeat(null, 3);
+                 array_repeat
+                --------------
+                 {null,null,null}
+                (1 row)
+                """
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1473")
+    public void testArrayRepeat2() {
+        this.qs("""
+                SELECT array_repeat(123, null);
+                 array_repeat
+                --------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1474")
+    public void testArrayRepeat3() {
+        this.qs("""
+                SELECT array_repeat( 'a', 6);
+                 array_repeat
+                --------------
+                 { a, a, a, a, a, a}
+                (1 row)
+                """
+        );
+    }
+
+    @Test
     public void testArrayPosition() {
         this.qs("""
                 SELECT array_position(ARRAY [2, 4, 6, 8, null], null);
