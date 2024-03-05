@@ -210,6 +210,65 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
+    @Test
+    public void testArrayRemove() {
+        this.qs("""
+                SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], 2);
+                 array_remove
+                --------------
+                 {6, 6, 8}
+                (1 row)
+                
+                SELECT array_remove(ARRAY [1, 2, 3], null);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
+                
+                SELECT array_remove(ARRAY [null, 2, 2, 6, 6, 8, 2], 2);
+                 array_remove
+                --------------
+                 {null, 6, 6, 8}
+                (1 row)
+                
+                SELECT array_remove(ARRAY [null, 2, 2, 6, 6, 8, 2], null);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
+                
+                SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], elem) FROM (SELECT elem FROM UNNEST(ARRAY [2, 6, 8]) as elem);
+                 array_remove
+                --------------
+                 {6, 6, 8}
+                 {2, 2, 8, 2}
+                 {2, 2, 6, 6, 2}
+                (3 rows)
+                
+                SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], elem) FROM (SELECT elem FROM UNNEST(ARRAY [2, 6, 8, null]) as elem);
+                 array_remove
+                --------------
+                 {6, 6, 8}
+                 {2, 2, 8, 2}
+                 {2, 2, 6, 6, 2}
+                 NULL
+                (4 rows)
+                
+                SELECT array_remove(CAST(NULL AS INTEGER ARRAY), 1);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
+                
+                SELECT array_remove(CAST(NULL AS INTEGER ARRAY), NULL);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
     @Test @Ignore("https://github.com/feldera/feldera/issues/1465")
     public void testNullArray() {
         this.qs("""
@@ -283,6 +342,12 @@ public class ArrayFunctionsTests extends SqlIoTest {
                  array_prepend
                 ---------------
                  {1, NULL}
+                (1 row)
+                
+                SELECT array_remove(NULL, 1);
+                 array_remove
+                --------------
+                 NULL
                 (1 row)
                 """
         );
