@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SQL: support for ARRAY_SIZE, ARRAY_LENGTH functions
+  ([#1489](https://github.com/feldera/feldera/pull/1489))
 - SQL: support for ARRAY_POSITION function
   ([#1480](https://github.com/feldera/feldera/pull/1480))
 - JDBC sink support via Debezium JDBC sink connector
