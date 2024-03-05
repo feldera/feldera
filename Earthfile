@@ -181,12 +181,14 @@ test-dbsp:
     # Limit test execution to tests in trace::persistent::tests, because
     # executing everything takes too long and (in theory) the proptests we have
     # should ensure equivalence with the DRAM trace implementation:
+    ENV RUST_BACKTRACE 1
     DO rust+CARGO --args="test --package=dbsp --features=persistence -- trace::persistent::tests"
     DO rust+CARGO --args="test --package dbsp"
     DO rust+CARGO --args="test --package feldera-storage"
 
 test-nexmark:
     FROM +build-nexmark
+    ENV RUST_BACKTRACE 1
     DO rust+CARGO --args="test  --package dbsp_nexmark"
 
 test-adapters:
@@ -196,7 +198,7 @@ test-adapters:
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
-            cargo test --package dbsp_adapters --package sqllib
+            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --package sqllib
     END
 
 test-manager:
@@ -213,7 +215,7 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            cargo test --package pipeline-manager
+            RUST_BACKTRACE=1 cargo test --package pipeline-manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
