@@ -1140,6 +1140,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
             case ARRAY_COMPACT: {
+                if (call.operands.size() != 1)
+                    throw new UnimplementedException(node);
+
                 DBSPTypeVec vec = type.to(DBSPTypeVec.class);
                 DBSPExpression arg0 = ops.get(0);
 
