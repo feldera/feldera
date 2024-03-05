@@ -184,7 +184,7 @@ const fn default_max_inflight_messages() -> u32 {
 }
 
 const fn default_initialization_timeout_secs() -> u32 {
-    10
+    60
 }
 
 /// Configuration for writing data to a Kafka topic with `OutputTransport`.
@@ -222,7 +222,7 @@ pub struct KafkaOutputConfig {
     /// Maximum timeout in seconds to wait for the endpoint to connect to
     /// a Kafka broker.
     ///
-    /// Defaults to 10.
+    /// Defaults to 60.
     #[serde(default = "default_initialization_timeout_secs")]
     pub initialization_timeout_secs: u32,
 
