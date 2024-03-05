@@ -72,7 +72,6 @@ rust-sources:
 
 formatting-check:
     FROM +rust-sources
-    COPY --keep-ts rustfmt.toml rustfmt.toml
     DO rust+CARGO --args="+nightly fmt --all -- --check"
 
 machete:
