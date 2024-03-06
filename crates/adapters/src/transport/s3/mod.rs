@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use aws_sdk_s3::operation::get_object::GetObjectOutput;
+use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use log::error;
 use serde::Deserialize;
 use tokio::sync::{
@@ -252,7 +252,15 @@ impl S3InputReader {
                                         }
                                     }
                                 }
-                                Some(Err(e)) => consumer.error(false, e),
+                                Some(Err(e)) => {
+                                    match e.downcast_ref::<ListObjectsV2Error>() {
+                                        // We consider a missing bucket a fatal error
+                                        Some(ListObjectsV2Error::NoSuchBucket(_)) => {
+                                            consumer.error(true, e)
+                                        },
+                                        _ => consumer.error(false, e)
+                                    }
+                                }
                                 None => break // Channel is closed, exit.
                             }
                         }
@@ -294,8 +302,12 @@ mod test {
         transport::s3::{S3InputConfig, S3InputReader},
     };
     use aws_sdk_s3::{
-        operation::get_object::GetObjectOutput,
+        operation::{
+            get_object::{GetObjectError, GetObjectOutput},
+            list_objects_v2::ListObjectsV2Error,
+        },
         primitives::{ByteStream, SdkBody},
+        types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
     };
     use mockall::predicate::eq;
     use pipeline_types::config::InputEndpointConfig;
@@ -495,5 +507,53 @@ format:
         for (i, upd) in input_handle.state().flushed.iter().enumerate() {
             assert_eq!(upd.unwrap_insert(), &test_data[i]);
         }
+    }
+
+    #[test]
+    fn list_object_read_error() {
+        let mut mock = super::MockS3Client::default();
+        mock.expect_get_object_keys()
+            .with(eq("test-bucket"), eq(""), eq(&None))
+            .return_once(|_, _, _| {
+                Err(ListObjectsV2Error::NoSuchBucket(NoSuchBucketBuilder::default().build()).into())
+            });
+        let (reader, consumer, _) = test_setup(MULTI_KEY_CONFIG_STR, mock);
+        let (tx, rx) = std::sync::mpsc::channel();
+        consumer.on_error(Some(Box::new(move |fatal, err| {
+            tx.send((fatal, format!("{err}"))).unwrap()
+        })));
+        reader.start(0).unwrap();
+        assert_eq!((true, "NoSuchBucket".to_string()), rx.recv().unwrap());
+    }
+
+    #[test]
+    fn get_object_read_error() {
+        let mut mock = super::MockS3Client::default();
+        mock.expect_get_object_keys()
+            .with(eq("test-bucket"), eq(""), eq(&None))
+            .return_once(|_, _, _| Ok((vec!["obj1".to_string()], Some("next_token".to_string()))));
+        mock.expect_get_object_keys()
+            .with(
+                eq("test-bucket"),
+                eq(""),
+                eq(Some("next_token".to_string())),
+            )
+            .return_once(|_, _, _| Ok((vec!["obj2".to_string()], None)));
+        // Reading obj1 fails but then obj2 succeeds. We should still see
+        // the contents of objects 4, 5 and 6 in there.
+        mock.expect_get_object()
+            .with(eq("test-bucket"), eq("obj1"))
+            .return_once(|_, _| {
+                Err(GetObjectError::NoSuchKey(NoSuchKeyBuilder::default().build()).into())
+            });
+        mock.expect_get_object()
+            .with(eq("test-bucket"), eq("obj2"))
+            .return_once(|_, _| {
+                Ok(GetObjectOutput::builder()
+                    .body(ByteStream::from(SdkBody::from("4\n5\n6\n")))
+                    .build())
+            });
+        let test_data: Vec<TestStruct> = (4..7).map(|i| TestStruct { i }).collect();
+        run_test(&MULTI_KEY_CONFIG_STR, mock, test_data);
     }
 }
