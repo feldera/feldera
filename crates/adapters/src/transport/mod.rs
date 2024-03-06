@@ -45,6 +45,7 @@ pub mod http;
 
 pub mod url;
 
+mod s3;
 mod secret_resolver;
 
 #[cfg(feature = "with-kafka")]
@@ -55,6 +56,8 @@ pub use url::UrlInputTransport;
 
 #[cfg(feature = "with-kafka")]
 pub use kafka::{KafkaInputTransport, KafkaOutputTransport};
+
+pub use s3::S3InputTransport;
 
 /// Step number for fault-tolerant input and output.
 ///
@@ -83,6 +86,7 @@ static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = 
             "url",
             Box::new(UrlInputTransport) as Box<dyn InputTransport>,
         ),
+        ("s3", Box::new(S3InputTransport) as Box<dyn InputTransport>),
         #[cfg(feature = "with-kafka")]
         (
             "kafka",

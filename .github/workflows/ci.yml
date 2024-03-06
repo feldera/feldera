@@ -86,6 +86,15 @@ jobs:
           snowflake_passphrase: ${{ secrets.snowflake_ci_user_private_key_passphrase }}
           snowflake_password: ${{ secrets.snowflake_ci_user_password }}
 
+      # Ship secrets for the S3 CI account to Earthly.
+      - name: S3 .env
+        run: |
+          echo CI_S3_AWS_ACCESS_KEY="${s3_access_key}" >> deploy/.env && \
+          echo CI_S3_AWS_SECRET="${s3_secret}" >> deploy/.env
+        env:
+          s3_access_key: ${{ secrets.ci_s3_aws_access_key }}
+          s3_secret: ${{ secrets.ci_s3_aws_secret }}
+
       - name: Print ulimit
         run: ulimit -a
 

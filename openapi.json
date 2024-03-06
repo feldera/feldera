@@ -4234,6 +4234,35 @@
           }
         }
       },
+      "S3InputConfig": {
+        "type": "object",
+        "description": "Configuration for reading data from AWS S3.",
+        "required": [
+          "credentials",
+          "region",
+          "bucket_name",
+          "read_strategy"
+        ],
+        "properties": {
+          "bucket_name": {
+            "type": "string",
+            "description": "S3 bucket name to access"
+          },
+          "consume_strategy": {
+            "$ref": "#/components/schemas/ConsumeStrategy"
+          },
+          "credentials": {
+            "$ref": "#/components/schemas/AwsCredentials"
+          },
+          "read_strategy": {
+            "$ref": "#/components/schemas/ReadStrategy"
+          },
+          "region": {
+            "type": "string",
+            "description": "AWS region"
+          }
+        }
+      },
       "ServiceConfig": {
         "oneOf": [
           {
