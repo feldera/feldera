@@ -141,7 +141,9 @@ where
             .circuit()
             .add_unary_operator(FilterZSet::new(filter_func), &stream.try_sharded_version());
         filtered.mark_sharded_if(stream);
-        filtered.mark_distinct_if(stream);
+        if stream.is_distinct() {
+            filtered.mark_distinct();
+        }
         filtered
     }
 
@@ -198,7 +200,9 @@ where
             &stream.try_sharded_version(),
         );
         filtered.mark_sharded_if(stream);
-        filtered.mark_distinct_if(stream);
+        if stream.is_distinct() {
+            filtered.mark_distinct();
+        }
         filtered
     }
 
@@ -253,7 +257,9 @@ where
             .circuit()
             .add_unary_operator(FilterZSet::new(filter_func), &stream.try_sharded_version());
         filtered.mark_sharded_if(stream);
-        filtered.mark_distinct_if(stream);
+        if stream.is_distinct() {
+            filtered.mark_distinct();
+        }
         filtered
     }
 
@@ -310,7 +316,9 @@ where
             &stream.try_sharded_version(),
         );
         filtered.mark_sharded_if(stream);
-        filtered.mark_distinct_if(stream);
+        if stream.is_distinct() {
+            filtered.mark_distinct();
+        }
         filtered
     }
 
@@ -1008,5 +1016,46 @@ mod test {
         for _ in 0..1 {
             circuit.step().unwrap();
         }
+    }
+
+    /// Checks for regression against a bug such that if a distinct version of a
+    /// stream existed, `filter` marked the filtered version of the stream as
+    /// distinct.
+    #[test]
+    fn distinct_filter_test() {
+        let (circuit, (input_handle, output_handle)) = RootCircuit::build(|circuit| {
+            let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, ()>();
+            let sharded = input_stream.shard();
+            assert!(!sharded.inner().is_distinct());
+
+            // Make a distinct version of the stream.  We don't filter this
+            // version, but rather the original version, so this should have no
+            // effect on whether the filtered version is considered distinct.
+            let distinct = sharded.distinct();
+            assert!(distinct.inner().is_distinct());
+
+            let filtered = sharded.filter(|key| *key.0 > 0);
+            // The bug caused the following assertion to fail.
+            assert!(!filtered.inner().is_distinct());
+
+            Ok((input_handle, filtered.distinct_count().output()))
+        })
+        .unwrap();
+
+        input_handle.append(&mut vec![
+            Tup2(-1, ((), 1).into()),
+            Tup2(0, ((), 1).into()),
+            Tup2(1, ((), 1).into()),
+            Tup2(2, ((), 2).into()),
+            Tup2(3, ((), 3).into()),
+            Tup2(4, ((), 4).into()),
+        ]);
+        circuit.step().unwrap();
+        let output = output_handle.consolidate();
+        // The bug caused the weights below to be 1,2,3,4 instead of 1,1,1,1.
+        assert_eq!(
+            output,
+            indexed_zset! {1 => {1 => 1}, 2 => {1 => 1}, 3 => {1 => 1}, 4 => {1 => 1}}
+        );
     }
 }
