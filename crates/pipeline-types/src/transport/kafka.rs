@@ -6,11 +6,11 @@ use std::{
 };
 
 use anyhow::{Error as AnyError, Result as AnyResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Configuration for reading data from Kafka topics with `InputTransport`.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, ToSchema)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -42,7 +42,7 @@ pub struct KafkaInputConfig {
 }
 
 /// Fault tolerance configuration for Kafka input connector.
-#[derive(Deserialize, Clone, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Debug, ToSchema)]
 pub struct KafkaInputFtConfig {
     /// Options passed to `rdkafka` for consumers only, as documented at
     /// [`librdkafka`
@@ -86,7 +86,7 @@ pub struct KafkaInputFtConfig {
 }
 
 /// Kafka logging levels.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ToSchema)]
+#[derive(Serialize, Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ToSchema)]
 pub enum KafkaLogLevel {
     #[serde(rename = "emerg")]
     Emerg,
@@ -108,7 +108,7 @@ pub enum KafkaLogLevel {
 
 /// On startup, the endpoint waits to join the consumer group.
 /// This constant defines the default wait timeout.
-const fn default_group_join_timeout_secs() -> u32 {
+pub const fn default_group_join_timeout_secs() -> u32 {
     10
 }
 
@@ -179,16 +179,16 @@ pub fn default_redpanda_server() -> String {
     env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string())
 }
 
-const fn default_max_inflight_messages() -> u32 {
+pub const fn default_max_inflight_messages() -> u32 {
     1000
 }
 
-const fn default_initialization_timeout_secs() -> u32 {
+pub const fn default_initialization_timeout_secs() -> u32 {
     10
 }
 
 /// Configuration for writing data to a Kafka topic with `OutputTransport`.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, ToSchema)]
 pub struct KafkaOutputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -232,7 +232,7 @@ pub struct KafkaOutputConfig {
 }
 
 /// Fault tolerance configuration for Kafka output connector.
-#[derive(Deserialize, Clone, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Debug, ToSchema)]
 pub struct KafkaOutputFtConfig {
     /// Options passed to `rdkafka` for consumers only, as documented at
     /// [`librdkafka`

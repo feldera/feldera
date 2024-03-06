@@ -8,7 +8,6 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 use log::info;
-use pipeline_types::config::ConnectorConfig;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -19,6 +18,7 @@ use crate::{
 };
 
 use super::{ManagerError, ServerState};
+use crate::api::ConnectorConfig;
 use uuid::Uuid;
 
 /// Request to create a new connector.
@@ -29,6 +29,7 @@ pub(crate) struct NewConnectorRequest {
     /// Connector description.
     description: String,
     /// Connector configuration.
+    #[serde(flatten)]
     config: ConnectorConfig,
 }
 
@@ -57,6 +58,7 @@ pub(crate) struct UpdateConnectorRequest {
     description: Option<String>,
     /// New connector configuration. If absent, existing configuration will be
     /// kept unmodified.
+    #[serde(flatten)]
     config: Option<ConnectorConfig>,
 }
 
@@ -70,6 +72,7 @@ pub(crate) struct CreateOrReplaceConnectorRequest {
     /// New connector description.
     description: String,
     /// New connector configuration.
+    #[serde(flatten)]
     config: ConnectorConfig,
 }
 

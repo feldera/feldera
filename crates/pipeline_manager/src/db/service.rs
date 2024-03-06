@@ -30,8 +30,8 @@ pub(crate) struct ServiceDescr {
     pub service_id: ServiceId,
     pub name: String,
     pub description: String,
+    #[serde(flatten)]
     pub config: ServiceConfig,
-    pub config_type: String,
 }
 
 pub(crate) async fn new_service(
@@ -94,7 +94,6 @@ pub(crate) async fn list_services(
             name: row.get(1),
             description: row.get(2),
             config: ServiceConfig::from_yaml_str(row.get(3)),
-            config_type: row.get(4),
         });
     }
 
@@ -125,7 +124,6 @@ pub(crate) async fn get_service_by_id(
             name: row.get(0),
             description: row.get(1),
             config: ServiceConfig::from_yaml_str(row.get(2)),
-            config_type: row.get(3),
         })
     } else {
         Err(DBError::UnknownService { service_id })
@@ -154,7 +152,6 @@ pub(crate) async fn get_service_by_name(
             name: name.to_string(),
             description: row.get(1),
             config: ServiceConfig::from_yaml_str(row.get(2)),
-            config_type: row.get(3),
         })
     } else {
         Err(DBError::UnknownServiceName {

@@ -1,12 +1,12 @@
 use crate::{
     catalog::RecordFormat,
-    controller::ConnectorConfig,
+    controller::PipelineConnectorConfig,
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, FormatConfig, InputEndpoint,
+    CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, InputEndpoint,
     InputEndpointConfig, InputFormat, OutputEndpoint, OutputEndpointConfig, OutputFormat,
-    PipelineConfig,
+    PipelineConfig, PipelineFormatConfig,
 };
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
@@ -563,7 +563,7 @@ async fn input_endpoint(
     // Create endpoint config.
     let config = InputEndpointConfig {
         stream: Cow::from(table_name),
-        connector_config: ConnectorConfig {
+        connector_config: PipelineConnectorConfig {
             transport: HttpInputTransport::config(),
             format: parser_config_from_http_request(&endpoint_name, &args.format, &req)?,
             max_buffered_records: HttpInputTransport::default_max_buffered_records(),
@@ -614,7 +614,7 @@ pub fn parser_config_from_http_request(
     endpoint_name: &str,
     format_name: &str,
     request: &HttpRequest,
-) -> Result<FormatConfig, ControllerError> {
+) -> Result<PipelineFormatConfig, ControllerError> {
     let format = <dyn InputFormat>::get_format(format_name)
         .ok_or_else(|| ControllerError::unknown_input_format(endpoint_name, format_name))?;
 
@@ -624,7 +624,7 @@ pub fn parser_config_from_http_request(
     // FIXME: this is hacky. Perhaps we can parameterize `FormatConfig` with the
     // exact type stored in the `config` field, so it can be either YAML or a
     // strongly typed format-specific config.
-    Ok(FormatConfig {
+    Ok(PipelineFormatConfig {
         name: Cow::from(format_name.to_string()),
         config: serde_yaml::to_value(config)
             .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, ""))?,
@@ -637,13 +637,13 @@ pub fn encoder_config_from_http_request(
     endpoint_name: &str,
     format_name: &str,
     request: &HttpRequest,
-) -> Result<FormatConfig, ControllerError> {
+) -> Result<PipelineFormatConfig, ControllerError> {
     let format = <dyn OutputFormat>::get_format(format_name)
         .ok_or_else(|| ControllerError::unknown_output_format(endpoint_name, format_name))?;
 
     let config = format.config_from_http_request(endpoint_name, request)?;
 
-    Ok(FormatConfig {
+    Ok(PipelineFormatConfig {
         name: Cow::from(format_name.to_string()),
         config: serde_yaml::to_value(config)
             .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
@@ -747,7 +747,7 @@ async fn output_endpoint(
     let config = OutputEndpointConfig {
         stream: Cow::from(table_name),
         query: args.query,
-        connector_config: ConnectorConfig {
+        connector_config: PipelineConnectorConfig {
             transport: HttpOutputTransport::config(),
             format: encoder_config_from_http_request(&endpoint_name, &args.format, &req)?,
             max_buffered_records: HttpOutputTransport::default_max_buffered_records(),

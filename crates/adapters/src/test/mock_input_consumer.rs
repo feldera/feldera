@@ -1,6 +1,7 @@
 use crate::catalog::InputCollectionHandle;
 use crate::{
-    controller::FormatConfig, transport::Step, InputConsumer, InputFormat, ParseError, Parser,
+    controller::PipelineFormatConfig, transport::Step, InputConsumer, InputFormat, ParseError,
+    Parser,
 };
 use anyhow::{anyhow, Error as AnyError};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -42,7 +43,10 @@ impl MockInputConsumerState {
         }
     }
 
-    pub fn from_handle(input_handle: &InputCollectionHandle, format_config: &FormatConfig) -> Self {
+    pub fn from_handle(
+        input_handle: &InputCollectionHandle,
+        format_config: &PipelineFormatConfig,
+    ) -> Self {
         let format = <dyn InputFormat>::get_format(&format_config.name).unwrap();
         let parser = format
             .new_parser("mock_input_endpoint", input_handle, &format_config.config)
@@ -64,7 +68,10 @@ impl MockInputConsumerState {
 pub struct MockInputConsumer(Arc<Mutex<MockInputConsumerState>>);
 
 impl MockInputConsumer {
-    pub fn from_handle(input_handle: &InputCollectionHandle, format_config: &FormatConfig) -> Self {
+    pub fn from_handle(
+        input_handle: &InputCollectionHandle,
+        format_config: &PipelineFormatConfig,
+    ) -> Self {
         Self(Arc::new(Mutex::new(MockInputConsumerState::from_handle(
             input_handle,
             format_config,

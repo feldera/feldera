@@ -125,6 +125,16 @@ pub enum DBError {
         expected: u32,
         actual: u32,
     },
+    UnexpectedServiceType {
+        expected: String,
+        actual: String,
+    },
+    InvalidServiceConfig {
+        misconfiguration: String,
+    },
+    InvalidConnectorConfig {
+        misconfiguration: String,
+    },
 }
 
 impl DBError {
@@ -445,6 +455,18 @@ impl Display for DBError {
                     "Expected DB migrations to be applied up to {expected}, but DB only has applied migrations up to {actual}"
                 )
             }
+            DBError::UnexpectedServiceType { expected, actual } => {
+                write!(
+                    f,
+                    "Expected service type {expected} instead got type {actual:?}"
+                )
+            }
+            DBError::InvalidServiceConfig { misconfiguration } => {
+                write!(f, "{misconfiguration}")
+            }
+            DBError::InvalidConnectorConfig { misconfiguration } => {
+                write!(f, "{misconfiguration}")
+            }
         }
     }
 }
@@ -486,6 +508,9 @@ impl DetailedError for DBError {
             Self::TablesNotInSchema { .. } => Cow::from("TablesNotInSchema"),
             Self::ViewsNotInSchema { .. } => Cow::from("ViewsNotInSchema"),
             Self::MissingMigrations { .. } => Cow::from("MissingMigrations"),
+            Self::UnexpectedServiceType { .. } => Cow::from("UnexpectedServiceType"),
+            Self::InvalidServiceConfig { .. } => Cow::from("InvalidServiceConfig"),
+            Self::InvalidConnectorConfig { .. } => Cow::from("InvalidConnectorConfig"),
         }
     }
 
@@ -545,6 +570,9 @@ impl ResponseError for DBError {
             Self::RevisionNotChanged => StatusCode::BAD_REQUEST,
             Self::TablesNotInSchema { .. } => StatusCode::BAD_REQUEST,
             Self::ViewsNotInSchema { .. } => StatusCode::BAD_REQUEST,
+            Self::UnexpectedServiceType { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidServiceConfig { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidConnectorConfig { .. } => StatusCode::BAD_REQUEST,
         }
     }
 

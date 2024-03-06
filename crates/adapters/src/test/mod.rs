@@ -2,7 +2,8 @@
 
 use crate::{
     controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
-    DbspCircuitHandle, DeserializeWithContext, FormatConfig, InputTransport, SqlSerdeConfig,
+    DbspCircuitHandle, DeserializeWithContext, InputTransport, PipelineFormatConfig,
+    SqlSerdeConfig,
 };
 use anyhow::Result as AnyResult;
 use dbsp::Runtime;
@@ -80,7 +81,7 @@ where
 /// └─────────────────┘   └──────┘   └──────────┘
 /// ```
 pub fn mock_parser_pipeline<T, U>(
-    config: &FormatConfig,
+    config: &PipelineFormatConfig,
 ) -> AnyResult<(MockInputConsumer, MockDeZSet<T, U>)>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
