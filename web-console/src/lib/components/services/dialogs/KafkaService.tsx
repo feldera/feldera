@@ -309,121 +309,132 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
   const theme = useTheme()
 
   return (
-    <Grid container spacing={4} sx={{ height: 'auto', pr: 4, overflowY: 'auto', mr: -16 }}>
-      {usedFields.map(field => (
-        <>
-          <Grid item xs={12} sm={6} display='flex' alignItems='center'>
-            {mandatoryFields.includes(field) ? (
-              <Box sx={{ width: '1rem' }}></Box>
-            ) : (
-              <IconButton size='small' sx={{ ml: -4 }} onClick={() => ctx.unregister('config.' + field)}>
-                <IconX></IconX>
-              </IconButton>
-            )}
-            <Tooltip
-              slotProps={{
-                tooltip: {
-                  sx: {
-                    backgroundColor: theme.palette.background.default,
-                    color: theme.palette.text.primary,
-                    fontSize: 14
-                  }
-                }
-              }}
-              title={
-                <Markdown>
-                  {
-                    (optionName => librdkafkaOptions.find(option => option.name === optionName))(
-                      field.replaceAll('_', '.')
-                    )?.description
-                  }
-                </Markdown>
-              }
-            >
-              <Typography>{field.replaceAll('_', '.')}</Typography>
-            </Tooltip>
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            {match(fieldOptions[field].type)
-              .with('string', () => (
-                <TextFieldElement key={field} name={'config.' + field} size='small' fullWidth></TextFieldElement>
-              ))
-              .with('number', () => (
-                <TextFieldElement
-                  key={field}
-                  name={'config.' + field}
-                  size='small'
-                  fullWidth
-                  type='number'
-                ></TextFieldElement>
-              ))
-              .with('enum', () => (
-                <SelectElement
-                  key={field}
-                  name={'config.' + field}
-                  size='small'
-                  options={fieldOptions[field].range.split(', ').map(option => ({
-                    id: option,
-                    label: option
-                  }))}
-                  fullWidth
-                  disabled={props.disabled}
-                  inputProps={{
-                    'data-testid': 'input-' + field
-                  }}
-                ></SelectElement>
-              ))
-              .with('boolean', () => <SwitchElement key={field} name={'config.' + field} label={''}></SwitchElement>)
-              .with('list', () => (
-                <TextFieldElement
-                  key={field}
-                  multiline
-                  transform={{
-                    input: (v: string[]) => {
-                      return v.join(', ')
-                    },
-                    output: (v: string) => {
-                      return v.split(', ')
+    <>
+      <Box sx={{ height: '100%', overflowY: 'auto', ml: -4, pl: 4 }}>
+        <Grid container spacing={4} sx={{ height: 'auto', pr: 4, mr: -16 }}>
+          {usedFields.map(field => (
+            <>
+              <Grid item xs={12} sm={6} display='flex' alignItems='center'>
+                {mandatoryFields.includes(field) ? (
+                  <Box sx={{ width: '1rem' }}></Box>
+                ) : (
+                  <IconButton size='small' sx={{ ml: -4 }} onClick={() => ctx.unregister('config.' + field)}>
+                    <IconX></IconX>
+                  </IconButton>
+                )}
+                <Tooltip
+                  slotProps={{
+                    tooltip: {
+                      sx: {
+                        backgroundColor: theme.palette.background.default,
+                        color: theme.palette.text.primary,
+                        fontSize: 14
+                      }
                     }
                   }}
-                  name={'config.' + field}
-                  size='small'
-                  fullWidth
-                  disabled={props.disabled}
-                  inputProps={{
-                    'data-testid': 'input-' + field
-                  }}
-                />
-              ))
-              .exhaustive()}
-          </Grid>
-        </>
-      ))}
+                  title={
+                    <Markdown>
+                      {
+                        (optionName => librdkafkaOptions.find(option => option.name === optionName))(
+                          field.replaceAll('_', '.')
+                        )?.description
+                      }
+                    </Markdown>
+                  }
+                >
+                  <Typography>{field.replaceAll('_', '.')}</Typography>
+                </Tooltip>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                {match(fieldOptions[field].type)
+                  .with('string', () => (
+                    <TextFieldElement key={field} name={'config.' + field} size='small' fullWidth></TextFieldElement>
+                  ))
+                  .with('number', () => (
+                    <TextFieldElement
+                      key={field}
+                      name={'config.' + field}
+                      size='small'
+                      fullWidth
+                      type='number'
+                    ></TextFieldElement>
+                  ))
+                  .with('enum', () => (
+                    <SelectElement
+                      key={field}
+                      name={'config.' + field}
+                      size='small'
+                      options={fieldOptions[field].range.split(', ').map(option => ({
+                        id: option,
+                        label: option
+                      }))}
+                      fullWidth
+                      disabled={props.disabled}
+                      inputProps={{
+                        'data-testid': 'input-' + field
+                      }}
+                    ></SelectElement>
+                  ))
+                  .with('boolean', () => (
+                    <SwitchElement key={field} name={'config.' + field} label={''}></SwitchElement>
+                  ))
+                  .with('list', () => (
+                    <TextFieldElement
+                      key={field}
+                      multiline
+                      transform={{
+                        input: (v: string[]) => {
+                          return v.join(', ')
+                        },
+                        output: (v: string) => {
+                          return v.split(', ')
+                        }
+                      }}
+                      name={'config.' + field}
+                      size='small'
+                      fullWidth
+                      disabled={props.disabled}
+                      inputProps={{
+                        'data-testid': 'input-' + field
+                      }}
+                    />
+                  ))
+                  .exhaustive()}
+              </Grid>
+            </>
+          ))}
 
-      <Grid item xs={12} sm={6}>
-        <Autocomplete
-          value={null}
-          inputValue={undefined}
-          blurOnSelect={true}
-          onChange={(e, value) => {
-            if (!value) {
-              return
-            }
-            const field = value.replaceAll('.', '_')
-            setTimeout(() => ctx.setFocus('config.' + field), 0)
-            if (ctx.getValues('config.' + field)) {
-              return
-            }
-            const option = fieldOptions[field]
-            invariant(option)
-            ctx.setValue('config.' + field, librdkafkaDefaultValue(option))
-          }}
-          options={fieldOptionsKeys.map(option => option.replaceAll('_', '.'))}
-          size='small'
-          renderInput={params => <TextField placeholder='Add option' {...params} />}
-        />
-      </Grid>
-    </Grid>
+          <Grid item xs={12} sm={6}>
+            <Autocomplete
+              value={null}
+              inputValue={undefined}
+              blurOnSelect={true}
+              onChange={(e, value) => {
+                if (!value) {
+                  return
+                }
+                const field = value.replaceAll('.', '_')
+                setTimeout(() => ctx.setFocus('config.' + field), 0)
+                if (ctx.getValues('config.' + field)) {
+                  return
+                }
+                const option = fieldOptions[field]
+                invariant(option)
+                ctx.setValue('config.' + field, librdkafkaDefaultValue(option))
+              }}
+              options={fieldOptionsKeys.map(option => option.replaceAll('_', '.'))}
+              size='small'
+              renderInput={params => <TextField placeholder='Add option' {...params} />}
+            />
+          </Grid>
+        </Grid>
+      </Box>
+      <Typography sx={{ mt: 'auto', pt: 4 }}>
+        See{' '}
+        <a href='https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md'>librdkafka documentation</a>{' '}
+        for reference
+      </Typography>
+    </>
   )
 }
 

@@ -405,6 +405,7 @@ function CustomDetailPanelToggle({
 
 export default function PipelineTable() {
   const [rows, setRows] = useState<Pipeline[]>([])
+
   const [filteredData, setFilteredData] = useState<Pipeline[]>([])
   const [paginationModel, setPaginationModel] = useState({
     pageSize: 7,

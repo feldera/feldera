@@ -16,6 +16,9 @@ const deduceType = (row: string[]) =>
  * Columns: Property, C/P, Range, Default, Importance, Description
  *
  * C/P legend: C = Consumer, P = Producer, * = both
+ *
+ * @license librdkafka: This configuration documentation is based on https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md.
+ * See LICENSE.librdkafka for a copyright notice
  */
 export const librdkafkaOptions = [
   [
@@ -1460,6 +1463,7 @@ export const toKafkaConfig = (formFields: Record<string, LibrdkafkaOptionType>) 
       return
     }
     const optionName = fieldName.replaceAll('_', '.')
+    // TODO: Optimize .find()
     const type = librdkafkaOptions.find(option => option.name === optionName)?.type ?? 'string'
     config[optionName] = match(type)
       .with('boolean', 'number', () => String(v))
@@ -1487,6 +1491,7 @@ export const fromKafkaConfig = (config: Record<string, string>) => {
   Object.keys(config).forEach(optionName => {
     const v = config[optionName]
     const fieldName = optionName.replaceAll('.', '_')
+    // TODO: Optimize .find()
     const type = librdkafkaOptions.find(option => option.name === optionName)?.type ?? 'string'
     formFields[fieldName] = match(type)
       .with('boolean', () =>
