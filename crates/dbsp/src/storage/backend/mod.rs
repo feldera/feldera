@@ -1,11 +1,7 @@
 //! Storage backend APIs for Feldera.
 //!
-//! This file provides the traits that need to be implemented by a storage
-//! backend. The traits are split into three parts:
-//! - [`StorageControl`]: for creating and deleting files.
-//! - [`StorageWrite`]: for writing data to files.
-//! - [`StorageRead`]: for reading data from files.
-//! - [`StorageExecutor`]: for executing `Future`s from the other traits.
+//! This module provides the [`Storage`] trait that need to be implemented by a
+//! storage backend.
 //!
 //! A file transitions from being created to being written to, to being read
 //! to (eventually) deleted.
@@ -134,18 +130,17 @@ impl PartialEq for StorageError {
 #[cfg(test)]
 impl Eq for StorageError {}
 
-/// A trait for a storage backend to implement so client can create/delete
-/// files.
-pub trait StorageControl {
+/// A storage backend.
+pub trait Storage {
     /// Create a new file. See also [`create`](Self::create).
     async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError>;
 
     /// Creates a new persistent file used for writing data.
     ///
-    /// Returns a file-descriptor that can be used for writing data.
-    /// Note that it is not possible to read from this file until
-    /// [`StorageWrite::complete`] is called and the [`FileHandle`] is
-    /// converted to an [`ImmutableFileHandle`].
+    /// Returns a file-descriptor that can be used for writing data.  Note that
+    /// it is not possible to read from this file until [`Storage::complete`] is
+    /// called and the [`FileHandle`] is converted to an
+    /// [`ImmutableFileHandle`].
     async fn create(&self) -> Result<FileHandle, StorageError> {
         let uuid = Uuid::now_v7();
         let name = uuid.to_string() + ".feldera";
@@ -166,10 +161,7 @@ pub trait StorageControl {
     /// Use [`delete`](Self::delete) for deleting a file that has been
     /// completed.
     async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError>;
-}
 
-/// A trait for a storage backend to implement so clients can write to files.
-pub trait StorageWrite {
     /// Allocates a buffer suitable for writing to a file using Direct I/O over
     /// `io_uring`.
     fn allocate_buffer(sz: usize) -> FBuf {
@@ -207,17 +199,13 @@ pub trait StorageWrite {
     /// - `fd` is the file-handle to complete.
     ///
     /// ## Returns
-    /// - A file-descriptor that can be used for reading data. See also
-    /// [`StorageRead`].
+    /// - A file-descriptor that can be used for reading data.
     /// - The on-disk location of the file.
     async fn complete(
         &self,
         fd: FileHandle,
     ) -> Result<(ImmutableFileHandle, PathBuf), StorageError>;
-}
 
-/// A trait for a storage backend to implement so clients can read from files.
-pub trait StorageRead {
     /// Prefetches a block of data from a file.
     ///
     /// This is an asynchronous operation that will be completed in the
@@ -267,11 +255,7 @@ pub trait StorageRead {
 
     /// Returns the file's size in bytes.
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
-}
 
-/// A trait for a storage backend to implement so clients can wait on
-/// [`Future`]s.
-pub trait StorageExecutor {
     /// Runs `future` to completion in the storage backend's executor.
     fn block_on<F>(&self, future: F) -> F::Output
     where

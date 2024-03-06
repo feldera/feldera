@@ -13,8 +13,7 @@ use crate::storage::{
     backend::{
         monoio_impl::MonoioBackend,
         tests::{InMemoryBackend, Transition, MAX_TRANSITIONS},
-        FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead,
-        StorageWrite,
+        FileHandle, ImmutableFileHandle, Storage,
     },
     test::init_test_logger,
 };

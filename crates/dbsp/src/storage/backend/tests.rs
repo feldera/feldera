@@ -19,9 +19,7 @@ use proptest::prelude::*;
 use proptest_state_machine::ReferenceStateMachine;
 
 use crate::storage::{
-    backend::{
-        FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageRead, StorageWrite,
-    },
+    backend::{FileHandle, ImmutableFileHandle, Storage, StorageError},
     buffer_cache::FBuf,
 };
 
@@ -45,8 +43,8 @@ pub(crate) const MAX_TRANSITIONS: usize = 20;
 /// How many files the test case try to read/write to.
 const MAX_FILES: i64 = 10;
 
-/// What the backend does, models the operations that the traits
-/// [`StorageControl`], [`StorageWrite`], and [`StorageRead`]) provide.
+/// What the backend does, models the operations that the [`Storage`] trait
+/// provides.
 #[derive(Clone)]
 pub enum Transition {
     Create,
@@ -110,24 +108,6 @@ impl<const ALLOW_OVERWRITE: bool> Clone for InMemoryBackend<ALLOW_OVERWRITE> {
     }
 }
 
-impl<const ALLOW_OVERWRITE: bool> StorageControl for InMemoryBackend<ALLOW_OVERWRITE> {
-    async fn create_named<P: AsRef<Path>>(&self, _name: P) -> Result<FileHandle, StorageError> {
-        let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
-        self.files.borrow_mut().insert(file_counter, Vec::new());
-        Ok(FileHandle(file_counter))
-    }
-
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.immutable_files.borrow_mut().remove(&fd.0);
-        Ok(())
-    }
-
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.files.borrow_mut().remove(&fd.0);
-        Ok(())
-    }
-}
-
 fn insert_slice_at_offset(
     vec: &Vec<Option<u8>>,
     offset: usize,
@@ -158,7 +138,23 @@ fn insert_slice_at_offset(
     Ok(new_vec)
 }
 
-impl<const ALLOW_OVERWRITE: bool> StorageWrite for InMemoryBackend<ALLOW_OVERWRITE> {
+impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
+    async fn create_named<P: AsRef<Path>>(&self, _name: P) -> Result<FileHandle, StorageError> {
+        let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
+        self.files.borrow_mut().insert(file_counter, Vec::new());
+        Ok(FileHandle(file_counter))
+    }
+
+    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+        self.immutable_files.borrow_mut().remove(&fd.0);
+        Ok(())
+    }
+
+    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+        self.files.borrow_mut().remove(&fd.0);
+        Ok(())
+    }
+
     async fn write_block(
         &self,
         fd: &FileHandle,
@@ -180,9 +176,7 @@ impl<const ALLOW_OVERWRITE: bool> StorageWrite for InMemoryBackend<ALLOW_OVERWRI
         self.immutable_files.borrow_mut().insert(fd.0, file);
         Ok((ImmutableFileHandle(fd.0), PathBuf::from("")))
     }
-}
 
-impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRITE> {
     async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {}
 
     async fn read_block(
@@ -214,6 +208,13 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
         let files = self.immutable_files.borrow();
         let file = files.get(&fd.0).unwrap();
         Ok(file.len() as u64)
+    }
+
+    fn block_on<F>(&self, _future: F) -> F::Output
+    where
+        F: futures::Future,
+    {
+        todo!()
     }
 }
 

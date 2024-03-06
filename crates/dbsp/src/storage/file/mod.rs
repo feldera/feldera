@@ -286,11 +286,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::storage::{
-        backend::{StorageControl, StorageExecutor, StorageRead, StorageWrite},
-        buffer_cache::BufferCache,
-        test::init_test_logger,
-    };
+    use crate::storage::{backend::Storage, buffer_cache::BufferCache, test::init_test_logger};
 
     use super::{
         reader::{ColumnSpec, RowGroup},
@@ -328,7 +324,7 @@ mod test {
         after: &K,
         mut aux: A,
     ) where
-        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -404,7 +400,7 @@ mod test {
         before: &K,
         after: &K,
     ) where
-        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -438,7 +434,7 @@ mod test {
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
-        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -523,7 +519,7 @@ mod test {
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
-        S: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,

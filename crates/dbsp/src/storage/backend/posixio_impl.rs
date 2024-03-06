@@ -1,5 +1,4 @@
-//! Implementation of the storage backend APIs ([`StorageControl`],
-//! [`StorageRead`], and [`StorageWrite`]) using POSIX I/O.
+//! Implementation of the storage backend ([`Storage`] APIs using POSIX I/O.
 
 use futures::{task::noop_waker, Future};
 use metrics::{counter, histogram};
@@ -23,8 +22,7 @@ use super::{
         describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
         READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
-    StorageExecutor, StorageRead, StorageWrite,
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
 };
 
 /// Helper function that opens files as direct IO files on linux.
@@ -156,7 +154,7 @@ impl PosixBackend {
     }
 }
 
-impl StorageControl for PosixBackend {
+impl Storage for PosixBackend {
     async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
         let path = self.base.join(name);
         let file_counter = self.next_file_id.increment();
@@ -189,9 +187,7 @@ impl StorageControl for PosixBackend {
         self.delete_inner(fd.0)
             .map(|_| counter!(FILES_DELETED).increment(1))
     }
-}
 
-impl StorageWrite for PosixBackend {
     async fn write_block(
         &self,
         fd: &FileHandle,
@@ -226,9 +222,7 @@ impl StorageWrite for PosixBackend {
 
         Ok((ImmutableFileHandle(fd.0), path))
     }
-}
 
-impl StorageRead for PosixBackend {
     async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
         unimplemented!()
     }
@@ -264,9 +258,7 @@ impl StorageRead for PosixBackend {
         let size = fm.file.seek(std::io::SeekFrom::End(0))?;
         Ok(size)
     }
-}
 
-impl StorageExecutor for PosixBackend {
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,

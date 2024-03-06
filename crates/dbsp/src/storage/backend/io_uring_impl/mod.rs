@@ -1,5 +1,5 @@
-//! Implementation of the storage backend APIs ([`StorageControl`],
-//! [`StorageRead`], and [`StorageWrite`]) using the [`io_uring`] library.
+//! Implementation of the storage backend [`Storage`] API using the [`io_uring`]
+//! library.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -26,14 +26,13 @@ use crate::storage::backend::{
         FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, READ_LATENCY, TOTAL_BYTES_READ,
         TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
-    StorageRead, StorageWrite, NEXT_FILE_HANDLE,
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, NEXT_FILE_HANDLE,
 };
 use crate::storage::buffer_cache::FBuf;
 use crate::storage::init;
 
+use super::StorageError;
 use super::metrics::describe_disk_metrics;
-use super::StorageExecutor;
 
 #[cfg(test)]
 mod tests;
@@ -551,7 +550,7 @@ impl IoUringBackend {
     }
 }
 
-impl StorageControl for IoUringBackend {
+impl Storage for IoUringBackend {
     async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
         self.inner.borrow_mut().create_named(self.base.join(name))
     }
@@ -563,9 +562,7 @@ impl StorageControl for IoUringBackend {
     async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.inner.borrow_mut().delete(fd.0)
     }
-}
 
-impl StorageWrite for IoUringBackend {
     async fn write_block(
         &self,
         fd: &FileHandle,
@@ -583,9 +580,7 @@ impl StorageWrite for IoUringBackend {
     ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         self.inner.borrow_mut().complete(fd.0)
     }
-}
 
-impl StorageRead for IoUringBackend {
     async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
         unimplemented!()
     }
@@ -602,9 +597,7 @@ impl StorageRead for IoUringBackend {
     async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         Ok(self.inner.borrow().files.get(&fd.0).unwrap().size)
     }
-}
 
-impl StorageExecutor for IoUringBackend {
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,

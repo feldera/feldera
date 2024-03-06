@@ -17,8 +17,7 @@ use metrics::counter;
 use crate::{
     storage::backend::{
         metrics::{BUFFER_CACHE_HIT, BUFFER_CACHE_MISS},
-        FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageExecutor,
-        StorageRead, StorageWrite,
+        FileHandle, ImmutableFileHandle, Storage, StorageError,
     },
     storage::buffer_cache::FBuf,
 };
@@ -208,7 +207,7 @@ where
 /// A cache on top of a storage [backend](crate::storage::backend).
 pub struct BufferCache<B, E>
 where
-    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    B: Storage,
     E: CacheEntry,
 {
     backend: Rc<B>,
@@ -217,7 +216,7 @@ where
 
 impl<B, E> BufferCache<B, E>
 where
-    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    B: Storage,
     E: CacheEntry,
 {
     /// Creates a new cache on top of `backend`.
@@ -269,7 +268,7 @@ where
         let checksum = crc32c(&data[4..]).to_le_bytes();
         data[..4].copy_from_slice(checksum.as_slice());
 
-        let data = self.backend.write_block(fd, offset, data).await?;
+        let data = self.write_block(fd, offset, data).await?;
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
         self.inner
@@ -277,22 +276,11 @@ where
             .insert(CacheKey::from((fd, offset)), aux);
         Ok(())
     }
-
-    pub async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        self.backend.complete(fd).await
-    }
-
-    pub async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        self.backend.get_size(fd).await
-    }
 }
 
-impl<B, E> StorageControl for BufferCache<B, E>
+impl<B, E> Storage for BufferCache<B, E>
 where
-    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    B: Storage,
     E: CacheEntry,
 {
     async fn create(&self) -> Result<FileHandle, StorageError> {
@@ -309,17 +297,50 @@ where
         self.inner.borrow_mut().delete_file((&fd).into());
         self.backend.delete_mut(fd).await
     }
-}
 
-impl<B, E> StorageExecutor for BufferCache<B, E>
-where
-    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
-    E: CacheEntry,
-{
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
     {
         self.backend.block_on(future)
+    }
+
+    async fn write_block(
+        &self,
+        fd: &FileHandle,
+        offset: u64,
+        data: FBuf,
+    ) -> Result<Rc<FBuf>, StorageError> {
+        let data = self.backend.write_block(fd, offset, data).await?;
+        let size = data.len();
+        let aux = E::from_write(data.clone(), offset, size).unwrap();
+        self.inner
+            .borrow_mut()
+            .insert(CacheKey::from((fd, offset)), aux);
+        Ok(data)
+    }
+
+    async fn complete(
+        &self,
+        fd: FileHandle,
+    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+        self.backend.complete(fd).await
+    }
+
+    async fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize) {
+        self.backend.prefetch(fd, offset, size).await
+    }
+
+    async fn read_block(
+        &self,
+        fd: &ImmutableFileHandle,
+        offset: u64,
+        size: usize,
+    ) -> Result<Rc<FBuf>, StorageError> {
+        self.backend.read_block(fd, offset, size).await
+    }
+
+    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        self.backend.get_size(fd).await
     }
 }
