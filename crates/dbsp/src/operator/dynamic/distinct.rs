@@ -124,6 +124,7 @@ where
                 self.circuit()
                     .add_unary_operator(Distinct::new(), &stream)
                     .mark_sharded()
+                    .mark_distinct()
             })
             .clone()
     }
@@ -171,6 +172,7 @@ where
                             )
                         }
                         .mark_sharded()
+                        .mark_distinct()
                     })
                 },
             )
