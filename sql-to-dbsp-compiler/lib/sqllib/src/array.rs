@@ -100,3 +100,23 @@ where
 }
 
 some_generic_function2!(array_position, T, Vec<T>, T, Eq, i64);
+
+pub fn sort_array<T>(mut vector: Vec<T>, ascending: bool) -> Vec<T>
+where
+    T: Ord,
+{
+    if ascending {
+        vector.sort()
+    } else {
+        vector.sort_by(|a, b| b.cmp(a))
+    };
+
+    vector
+}
+
+pub fn sort_arrayN<T>(vector: Option<Vec<T>>, ascending: bool) -> Option<Vec<T>>
+where
+    T: Ord,
+{
+    Some(sort_array(vector?, ascending))
+}
