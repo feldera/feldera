@@ -128,3 +128,59 @@ where
 {
     Some(sort_array(vector?, ascending))
 }
+
+pub fn array_max__<T>(vector: Vec<T>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().max()
+}
+
+pub fn array_maxN_<T>(vector: Option<Vec<T>>) -> Option<T>
+where
+    T: Ord,
+{
+    array_max__(vector?)
+}
+
+pub fn array_max_N<T>(vector: Vec<Option<T>>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().flatten().max()
+}
+
+pub fn array_maxNN<T>(vector: Option<Vec<Option<T>>>) -> Option<T>
+where
+    T: Ord,
+{
+    array_max_N(vector?)
+}
+
+pub fn array_min__<T>(vector: Vec<T>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().min()
+}
+
+pub fn array_minN_<T>(vector: Option<Vec<T>>) -> Option<T>
+where
+    T: Ord,
+{
+    array_min__(vector?)
+}
+
+pub fn array_min_N<T>(vector: Vec<Option<T>>) -> Option<T>
+where
+    T: Ord,
+{
+    vector.into_iter().flatten().min()
+}
+
+pub fn array_minNN<T>(vector: Option<Vec<Option<T>>>) -> Option<T>
+where
+    T: Ord,
+{
+    array_min_N(vector?)
+}

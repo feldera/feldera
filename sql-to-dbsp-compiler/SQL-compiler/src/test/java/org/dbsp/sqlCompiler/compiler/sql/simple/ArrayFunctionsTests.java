@@ -108,11 +108,23 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/1465")
-    public void testArrayPosition2() {
+    public void testNullArray() {
         this.qs("""
                 SELECT array_position(null, 3);
                  array_position
                 ----------------
+                 NULL
+                (1 row)
+                
+                SELECT array_max(NULL);
+                 array_max
+                -----------
+                 NULL
+                (1 row)
+                
+                SELECT array_min(NULL);
+                 array_max
+                -----------
                  NULL
                 (1 row)
                 """
@@ -287,6 +299,36 @@ public class ArrayFunctionsTests extends SqlIoTest {
                  array_reverse
                 ---------------
                  {NULL}
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testArrayMinMax() {
+        this.qs("""
+                SELECT array_max(ARRAY [9, 1, 2, 4, 8]);
+                 array_max
+                -----------
+                 9
+                (1 row)
+                
+                SELECT array_max(ARRAY [9, 1, 2, 4, 8, null]);
+                 array_max
+                -----------
+                 9
+                (1 row)
+                
+                SELECT array_min(ARRAY [9, 1, 2, 4, 8]);
+                 array_min
+                -----------
+                 1
+                (1 row)
+                
+                SELECT array_min(ARRAY [9, 1, 2, 4, 8, null]);
+                 array_min
+                -----------
+                 1
                 (1 row)
                 """
         );

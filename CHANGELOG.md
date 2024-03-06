@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- SQL: support for SORT_ARRAY function
+  ([#1490](https://github.com/feldera/feldera/pull/1490))
+- SQL: support for ARRAY_REVERSE function
+  ([#1491](https://github.com/feldera/feldera/pull/1491))
+- SQL: support for ARRAY_MAX, ARRAY_MIN functions
+  ([#1492](https://github.com/feldera/feldera/pull/1492))
+
+
 ## [0.11.0] - 2024-03-05
 
 ### Added
@@ -26,14 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- SQL: support for SORT_ARRAY function
-  ([#1490](https://github.com/feldera/feldera/pull/1490))
-- SQL: support for ARRAY_SIZE, ARRAY_LENGTH functions
-  ([#1489](https://github.com/feldera/feldera/pull/1489))
-- SQL: support for ARRAY_REVERSE function
-  ([#1491](https://github.com/feldera/feldera/pull/1491))
-- SQL: support for ARRAY_POSITION function
-  ([#1480](https://github.com/feldera/feldera/pull/1480))
 - JDBC sink support via Debezium JDBC sink connector
   ([#1384](https://github.com/feldera/feldera/pull/1384))
 - SQL: Allow tables definitions to be retrieved from JDBC data sources

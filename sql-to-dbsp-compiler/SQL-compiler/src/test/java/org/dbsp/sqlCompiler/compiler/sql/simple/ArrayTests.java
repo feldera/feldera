@@ -373,7 +373,7 @@ public class ArrayTests extends BaseSQLTests {
                 new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6275")
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1414")
     public void testArrayAppendInnerNullable() {
         String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY NULL)";
 
@@ -413,6 +413,132 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+    }
+
+    @Test
+    public void testArrayMaxNullable() {
+        String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
+
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(1),
+                                new DBSPI32Literal(2),
+                                new DBSPI32Literal(3))
+                ),
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(5),
+                                new DBSPI32Literal(6),
+                                new DBSPI32Literal(7))
+                )
+        );
+        DBSPZSetLiteral result = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(3, true)
+                ),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(7, true)
+                )
+        );
+
+        this.testQuery(ddl, "SELECT ARRAY_MAX(val) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1414")
+    public void testArrayMaxInnerNullable() {
+        String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
+
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(1, true),
+                                new DBSPI32Literal(2, true),
+                                DBSPNullLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true)),
+                                new DBSPI32Literal(3, true))
+                ),
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(5, true),
+                                new DBSPI32Literal(6, true),
+                                new DBSPI32Literal(7, true))
+                )
+        );
+        DBSPZSetLiteral result = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(3, true)
+                ),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(7, true)
+                )
+        );
+
+        this.testQuery(ddl, "SELECT ARRAY_MAX(val) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+    }
+
+    @Test
+    public void testArrayMinNullable() {
+        String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
+
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(1),
+                                new DBSPI32Literal(2),
+                                new DBSPI32Literal(3))
+                ),
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(5),
+                                new DBSPI32Literal(6),
+                                new DBSPI32Literal(7))
+                )
+        );
+        DBSPZSetLiteral result = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(1, true)
+                ),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(5, true)
+                )
+        );
+
+        this.testQuery(ddl, "SELECT ARRAY_MIN(val) FROM ARR_TBL",
+                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1414")
+    public void testArrayMinInnerNullable() {
+        String ddl = "CREATE TABLE ARR_TBL(val INTEGER ARRAY)";
+
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(1, true),
+                                new DBSPI32Literal(2, true),
+                                DBSPNullLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true)),
+                                new DBSPI32Literal(3, true))
+                ),
+                new DBSPTupleExpression(
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(5, true),
+                                new DBSPI32Literal(6, true),
+                                new DBSPI32Literal(7, true))
+                )
+        );
+        DBSPZSetLiteral result = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(1, true)
+                ),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(5, true)
+                )
+        );
+
+        this.testQuery(ddl, "SELECT ARRAY_MIN(val) FROM ARR_TBL",
                 new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
 }
