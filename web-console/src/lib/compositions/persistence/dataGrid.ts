@@ -18,10 +18,15 @@ export function useDataGridPresentationLocalStorage({
     defaultValue: defaultColumnVisibility
   })
   const [filterModel, setFilterModel] = useLocalStorage<GridFilterModel>({
-    key: key + '/filters'
+    key: key + '/filters',
+    defaultValue: {
+      items: []
+    }
   })
+
   const [columnViewModel, setColumnViewModel] = useLocalStorage<DataGridColumnViewModel>({
-    key: key + '/columnView'
+    key: key + '/columnView',
+    defaultValue: []
   })
   return {
     columnVisibilityModel,
