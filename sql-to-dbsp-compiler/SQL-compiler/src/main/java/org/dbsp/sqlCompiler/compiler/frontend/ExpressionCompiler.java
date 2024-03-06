@@ -1085,6 +1085,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
 
             }
+            case ARRAY_REVERSE:
+            {
+                if (call.operands.size() != 1)
+                    throw new UnimplementedException(node);
+
+                DBSPExpression arg0 = ops.get(0);
+                String method = getArrayCallName(call, arg0);
+
+                return new DBSPApplyExpression(node, method, type, arg0);
+            }
             case HOP:
             case DOT:
             default:
