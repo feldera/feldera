@@ -13,6 +13,13 @@ pub struct S3InputConfig {
     /// Strategy that determines which objects to
     /// read from the bucket
     pub read_strategy: ReadStrategy,
+    /// Streaming vs chunked reads
+    #[serde(default = "default_consume_strategy")]
+    pub consume_strategy: ConsumeStrategy,
+}
+
+fn default_consume_strategy() -> ConsumeStrategy {
+    ConsumeStrategy::Fragment
 }
 
 /// Configuration to authenticate against AWS
@@ -37,4 +44,16 @@ pub enum ReadStrategy {
     SingleKey { key: String },
     /// Read all objects whose keys match a prefix
     Prefix { prefix: String },
+}
+
+/// Strategy to feed a fetched object into an InputConsumer.
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type")]
+pub enum ConsumeStrategy {
+    /// Write the object as a series of fragments (see
+    /// InputConsumer::input_fragment).
+    Fragment,
+    /// Write the entire object at once. Appropriate for formats like Parquet
+    /// that cannot be streamed.
+    Object,
 }

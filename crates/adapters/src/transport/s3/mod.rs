@@ -12,7 +12,7 @@ use crate::{InputConsumer, InputEndpoint, InputReader, InputTransport, PipelineS
 #[cfg(test)]
 use mockall::automock;
 
-use pipeline_types::transport::s3::{AwsCredentials, ReadStrategy, S3InputConfig};
+use pipeline_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
 
 pub struct S3InputTransport;
 
@@ -188,6 +188,7 @@ impl S3InputReader {
         // to make it so that no more than 8 objects are fetched while waiting
         // for object processing.
         let (tx, mut rx) = mpsc::channel(8);
+        let consume_strategy = config.consume_strategy.clone();
         tokio::spawn(async move {
             let mut continuation_token = None;
             loop {
@@ -198,11 +199,14 @@ impl S3InputReader {
                         let result = client
                             .get_object_keys(&config.bucket_name, prefix, continuation_token.take())
                             .await;
-                        if result.is_err() {
-                            error!("Could not fetch object keys {result:?}. Bailing.");
-                            break;
+                        match result {
+                            Ok(ret) => ret,
+                            Err(e) => {
+                                error!("Could not fetch object keys (Error: {e:?}).");
+                                tx.send(Err(e)).await.expect("Enqueue failed");
+                                break;
+                            }
                         }
-                        result.unwrap()
                     }
                     ReadStrategy::SingleKey { key } => (vec![key.clone()], None),
                 };
@@ -229,18 +233,27 @@ impl S3InputReader {
                         _ = receiver.changed() => (),
                         // Poll the object stream. If `None`, we have processed all objects.
                         get_obj = rx.recv() => {
-                            if let Some(get_obj) = get_obj {
-                                let mut object = get_obj?;
-                                match object.body.next().await {
-                                    Some(Ok(bytes)) => {
-                                        consumer.input_fragment(&bytes);
+                            match get_obj {
+                                Some(Ok(mut object)) => {
+                                    match consume_strategy {
+                                        ConsumeStrategy::Fragment => match object.body.next().await {
+                                            Some(Ok(bytes)) => {
+                                                consumer.input_fragment(&bytes);
+                                            }
+                                            None => break,
+                                            Some(Err(e)) => consumer.error(false, e.into())
+                                        }
+                                        ConsumeStrategy::Object =>
+                                            match object.body.collect().await.map(|c| c.into_bytes()) {
+                                                Ok(bytes) => {
+                                                    consumer.input_chunk(&bytes);
+                                                }
+                                                Err(e) => consumer.error(false, e.into())
+                                        }
                                     }
-                                    None => break,
-                                    Some(Err(e)) => Err(e)?
                                 }
-                            } else {
-                                // Channel is closed. Exit.
-                                break;
+                                Some(Err(e)) => consumer.error(false, e),
+                                None => break // Channel is closed, exit.
                             }
                         }
                     }
@@ -309,6 +322,8 @@ transport:
         read_strategy:
             type: Prefix
             prefix: ''
+        consume_strategy:
+            type: Fragment
 format:
     name: csv
 "#;
@@ -327,6 +342,8 @@ transport:
         read_strategy:
             type: SingleKey
             key: obj1
+        consume_strategy:
+            type: Object
 format:
     name: csv
 "#;
