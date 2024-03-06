@@ -88,6 +88,13 @@ where
             ))
     }
 
+    /// Returns `true` if the current stream is known to be distinct.
+    pub fn is_distinct(&self) -> bool {
+        self.circuit()
+            .cache_get(&DistinctIncrementalId::new(self.origin_node_id().clone()))
+            .map_or(false, |value: Stream<C, D>| value.ptr_eq(self))
+    }
+
     /// Returns the distinct version of the stream if it exists
     /// Otherwise, returns `self`.
     pub fn try_distinct_version(&self) -> Self {
