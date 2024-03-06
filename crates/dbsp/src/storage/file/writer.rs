@@ -18,10 +18,7 @@ use binrw::{
 };
 
 use crate::storage::{
-    backend::{
-        FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageExecutor,
-        StorageRead, StorageWrite,
-    },
+    backend::{FileHandle, ImmutableFileHandle, Storage, StorageError},
     buffer_cache::{FBuf, FBufSerializer},
     file::{
         format::{
@@ -225,7 +222,7 @@ impl ColumnWriter {
         block_writer: &mut BlockWriter<W>,
     ) -> Result<FileTrailerColumn, StorageError>
     where
-        W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        W: Storage,
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
@@ -284,7 +281,7 @@ impl ColumnWriter {
         data_block: DataBlock<K>,
     ) -> Result<(), StorageError>
     where
-        W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        W: Storage,
         K: DataTrait + ?Sized,
     {
         let location = block_writer.write_block(data_block.raw)?;
@@ -306,7 +303,7 @@ impl ColumnWriter {
         mut level: usize,
     ) -> Result<(BlockLocation, u64), StorageError>
     where
-        W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        W: Storage,
         K: DataTrait + ?Sized,
     {
         loop {
@@ -332,7 +329,7 @@ impl ColumnWriter {
         row_group: &Option<Range<u64>>,
     ) -> Result<(), StorageError>
     where
-        W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+        W: Storage,
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
@@ -869,7 +866,7 @@ impl IndexBlockBuilder {
 
 struct BlockWriter<W>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
 {
     cache: Rc<FileCache<W>>,
     file_handle: Option<FileHandle>,
@@ -878,7 +875,7 @@ where
 
 impl<W> BlockWriter<W>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
 {
     fn new(cache: &Rc<FileCache<W>>, file_handle: FileHandle) -> Self {
         Self {
@@ -909,7 +906,7 @@ where
 
 impl<W> Drop for BlockWriter<W>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
 {
     fn drop(&mut self) {
         self.file_handle
@@ -926,7 +923,7 @@ where
 /// 1-column and 2-column layer files, respectively, with added type safety.
 struct Writer<W>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
 {
     writer: BlockWriter<W>,
     cws: Vec<ColumnWriter>,
@@ -935,7 +932,7 @@ where
 
 impl<W> Writer<W>
 where
-    W: StorageRead + StorageControl + StorageWrite + StorageExecutor,
+    W: Storage,
 {
     pub fn new(
         factories: &[&AnyFactories],
@@ -1045,7 +1042,7 @@ where
 /// ```
 pub struct Writer1<W, K0, A0>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
     K0: DataTrait + ?Sized,
     A0: DataTrait + ?Sized,
 {
@@ -1056,7 +1053,7 @@ where
 
 impl<W, K0, A0> Writer1<W, K0, A0>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
     K0: DataTrait + ?Sized,
     A0: DataTrait + ?Sized,
 {
@@ -1145,7 +1142,7 @@ where
 /// ```
 pub struct Writer2<W, K0, A0, K1, A1>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
     K0: DataTrait + ?Sized,
     A0: DataTrait + ?Sized,
     K1: DataTrait + ?Sized,
@@ -1159,7 +1156,7 @@ where
 
 impl<W, K0, A0, K1, A1> Writer2<W, K0, A0, K1, A1>
 where
-    W: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    W: Storage,
     K0: DataTrait + ?Sized,
     A0: DataTrait + ?Sized,
     K1: DataTrait + ?Sized,

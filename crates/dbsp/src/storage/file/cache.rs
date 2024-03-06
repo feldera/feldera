@@ -12,10 +12,7 @@ use binrw::{
 };
 
 use crate::storage::{
-    backend::{
-        DefaultBackend, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead,
-        StorageWrite,
-    },
+    backend::{DefaultBackend, ImmutableFileHandle, Storage},
     buffer_cache::{BufferCache, CacheEntry, FBuf},
     file::BlockLocation,
 };
@@ -127,7 +124,7 @@ impl FileCache<DefaultBackend> {
 
 impl<B> BufferCache<B, FileCacheEntry>
 where
-    B: StorageRead + StorageWrite + StorageControl + StorageExecutor,
+    B: Storage,
 {
     /// Reads a `size`-byte block at `offset` in `fd` and returns it converted
     /// to `InnerDataBlock`.

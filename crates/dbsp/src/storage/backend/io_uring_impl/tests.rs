@@ -12,9 +12,7 @@ use tempfile::TempDir;
 
 use crate::storage::backend::io_uring_impl::IoUringBackend;
 use crate::storage::backend::tests::{InMemoryBackend, Transition, MAX_TRANSITIONS};
-use crate::storage::backend::{
-    FileHandle, ImmutableFileHandle, StorageControl, StorageExecutor, StorageRead, StorageWrite,
-};
+use crate::storage::backend::{FileHandle, ImmutableFileHandle, Storage};
 use crate::storage::test::init_test_logger;
 
 // Setup the state machine test using the `prop_state_machine!` macro

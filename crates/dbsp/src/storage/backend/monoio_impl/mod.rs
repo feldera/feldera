@@ -1,5 +1,5 @@
-//! Implementation of the storage backend APIs ([`StorageControl`],
-//! [`StorageRead`], and [`StorageWrite`]) using the Monoio library.
+//! Implementation of the storage backend ([`Storage`] API, using the Monoio
+//! library.
 
 use std::{
     cell::RefCell,
@@ -30,8 +30,7 @@ use super::{
         describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
         READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
-    StorageExecutor, StorageRead, StorageWrite, NEXT_FILE_HANDLE,
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, NEXT_FILE_HANDLE, StorageError,
 };
 
 #[cfg(test)]
@@ -126,7 +125,7 @@ impl MonoioBackend {
     }
 }
 
-impl StorageControl for MonoioBackend {
+impl Storage for MonoioBackend {
     async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
         let path = self.base.join(name);
         let file = open_as_direct(
@@ -161,9 +160,7 @@ impl StorageControl for MonoioBackend {
             .await
             .map(|_| counter!(FILES_DELETED).increment(1))
     }
-}
 
-impl StorageWrite for MonoioBackend {
     async fn write_block(
         &self,
         fd: &FileHandle,
@@ -198,9 +195,7 @@ impl StorageWrite for MonoioBackend {
 
         Ok((ImmutableFileHandle(fd.0), path))
     }
-}
 
-impl StorageRead for MonoioBackend {
     async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
         unimplemented!()
     }
@@ -237,9 +232,7 @@ impl StorageRead for MonoioBackend {
         let size = *fm.size.borrow();
         Ok(size)
     }
-}
 
-impl StorageExecutor for MonoioBackend {
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,

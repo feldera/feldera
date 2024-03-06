@@ -1,5 +1,4 @@
-//! Implementation of the storage backend APIs ([`StorageControl`],
-//! [`StorageRead`], and [`StorageWrite`]) using memory.
+//! Implementation of the storage backend ([`Storage`] APIs using memory.
 //!
 //! This is useful for performance testing, not as part of a production system.
 
@@ -21,8 +20,7 @@ use super::{
         describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
         TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS,
     },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, StorageControl, StorageError,
-    StorageExecutor, StorageRead, StorageWrite,
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
 };
 
 /// Meta-data we keep per file we created.
@@ -86,7 +84,7 @@ impl MemoryBackend {
     }
 }
 
-impl StorageControl for MemoryBackend {
+impl Storage for MemoryBackend {
     async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
         let file_counter = self.next_file_id.increment();
         let mut files = self.files.write().unwrap();
@@ -110,9 +108,7 @@ impl StorageControl for MemoryBackend {
     async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
     }
-}
 
-impl StorageWrite for MemoryBackend {
     async fn write_block(
         &self,
         fd: &FileHandle,
@@ -145,9 +141,7 @@ impl StorageWrite for MemoryBackend {
 
         Ok((ImmutableFileHandle(fd.0), path))
     }
-}
 
-impl StorageRead for MemoryBackend {
     async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
         unimplemented!()
     }
@@ -177,9 +171,7 @@ impl StorageRead for MemoryBackend {
         let fm = files.get(&fd.0).unwrap();
         Ok(fm.size)
     }
-}
 
-impl StorageExecutor for MemoryBackend {
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,

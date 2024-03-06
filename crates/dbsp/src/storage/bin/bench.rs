@@ -30,9 +30,7 @@ use feldera_storage::backend::glommio_impl::GlommioBackend;
 use feldera_storage::backend::io_uring_impl::IoUringBackend;
 use feldera_storage::backend::monoio_impl::MonoioBackend;
 use feldera_storage::backend::posixio_impl::PosixBackend;
-use feldera_storage::backend::{
-    AtomicIncrementOnlyI64, StorageControl, StorageExecutor, StorageRead, StorageWrite,
-};
+use feldera_storage::backend::{AtomicIncrementOnlyI64, Storage};
 use feldera_storage::buffer_cache::FBuf;
 
 #[derive(Debug, Clone, Default)]
@@ -285,10 +283,7 @@ fn thread_cpu_time() -> Duration {
     Duration::new(tp.tv_sec as u64, tp.tv_nsec as u32)
 }
 
-async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
-    backend: &T,
-    barrier: Arc<Barrier>,
-) -> ThreadBenchResult {
+async fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenchResult {
     let args = Args::parse();
     let file = backend.create().await.unwrap();
 
