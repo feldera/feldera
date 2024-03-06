@@ -144,6 +144,72 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void testSortArray() {
+        this.qs("""
+                SELECT sort_array(ARRAY [7, 1, 4, 3]);
+                 sort_array
+                ------------
+                 {1, 3, 4, 7}
+                (1 row)
+                
+                SELECT sort_array(ARRAY [7, 1, 4, 3], true);
+                 sort_array
+                ------------
+                 {1, 3, 4, 7}
+                (1 row)
+                
+                SELECT sort_array(ARRAY [7, 1, 4, 3], false);
+                 sort_array
+                ------------
+                 {7, 4, 3, 1}
+                (1 row)
+                
+                SELECT sort_array(ARRAY [7, 1, null, 4, null, 3], false);
+                 sort_array
+                ------------
+                 {7, 4, 3, 1, null, null}
+                (1 row)
+                
+                SELECT sort_array(ARRAY [7, 1, null, 4, null, 3], true);
+                 sort_array
+                ------------
+                 {null, null, 1, 3, 4, 7}
+                (1 row)
+                
+                SELECT sort_array(ARRAY [7e0, 1e0, null, 4e0, null, 3e0], true);
+                 sort_array
+                ------------
+                 {null, null, 1, 3, 4, 7}
+                (1 row)
+                
+                SELECT sort_array(null);
+                 sort_array
+                ------------
+                 NULL
+                (1 row)
+
+                SELECT sort_array(ARRAY [true, false, null]);
+                 sort_array
+                ------------
+                 {null, false, true}
+                (1 row)
+                
+                SELECT sort_array(ARRAY ['z', 'a', 'c']);
+                 sort_array
+                ------------
+                 { a, c, z}
+                (1 row)
+                
+                SELECT sort_array(ARRAY ['z', 'a', 'c'], false);
+                 sort_array
+                ------------
+                 { z, c, a}
+                (1 row)
+                """
+        );
+    }
+  
+    @Test
     public void testArraySize() {
         this.qs("""
                 SELECT cardinality(ARRAY [1, 2, 3]);

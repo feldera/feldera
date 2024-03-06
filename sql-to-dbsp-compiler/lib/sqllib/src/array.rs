@@ -108,3 +108,23 @@ pub fn array_reverse_<T>(vector: Vec<T>) -> Vec<T> {
 pub fn array_reverseN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>> {
     Some(array_reverse_(vector?))
 }
+
+pub fn sort_array<T>(mut vector: Vec<T>, ascending: bool) -> Vec<T>
+where
+    T: Ord,
+{
+    if ascending {
+        vector.sort()
+    } else {
+        vector.sort_by(|a, b| b.cmp(a))
+    };
+
+    vector
+}
+
+pub fn sort_arrayN<T>(vector: Option<Vec<T>>, ascending: bool) -> Option<Vec<T>>
+where
+    T: Ord,
+{
+    Some(sort_array(vector?, ascending))
+}

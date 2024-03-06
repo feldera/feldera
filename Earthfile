@@ -72,7 +72,6 @@ rust-sources:
 
 formatting-check:
     FROM +rust-sources
-    COPY --keep-ts rustfmt.toml rustfmt.toml
     DO rust+CARGO --args="+nightly fmt --all -- --check"
 
 machete:
@@ -181,12 +180,14 @@ test-dbsp:
     # Limit test execution to tests in trace::persistent::tests, because
     # executing everything takes too long and (in theory) the proptests we have
     # should ensure equivalence with the DRAM trace implementation:
+    ENV RUST_BACKTRACE 1
     DO rust+CARGO --args="test --package=dbsp --features=persistence -- trace::persistent::tests"
     DO rust+CARGO --args="test --package dbsp"
     DO rust+CARGO --args="test --package feldera-storage"
 
 test-nexmark:
     FROM +build-nexmark
+    ENV RUST_BACKTRACE 1
     DO rust+CARGO --args="test  --package dbsp_nexmark"
 
 test-adapters:
@@ -196,7 +197,7 @@ test-adapters:
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
             sleep 5 && \
-            cargo test --package dbsp_adapters --package sqllib
+            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --package sqllib
     END
 
 test-manager:
@@ -213,7 +214,7 @@ test-manager:
             # Sleep until postgres is up (otherwise we get connection reset if we connect too early)
             # (See: https://github.com/docker-library/docs/blob/master/postgres/README.md#caveats)
             sleep 3 && \
-            cargo test --package pipeline-manager
+            RUST_BACKTRACE=1 cargo test --package pipeline-manager
     END
     # We keep the test binary around so we can run integration tests later. This incantation is used to find the
     # test binary path, adapted from: https://github.com/rust-lang/cargo/issues/3670
@@ -342,13 +343,13 @@ test-docker-compose:
 test-docker-compose-stable:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    ENV FELDERA_VERSION=0.10.0
+    ENV FELDERA_VERSION=0.11.0
     RUN apk --no-cache add curl
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --pull ghcr.io/feldera/pipeline-manager:0.10.0 \
+                --pull ghcr.io/feldera/pipeline-manager:0.11.0 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --pull ghcr.io/feldera/demo-container:0.10.0
+                --pull ghcr.io/feldera/demo-container:0.11.0
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo && \
             # This should run the latest version of the code and in the process, trigger a migration.
             COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" FELDERA_VERSION=latest RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml up -d db pipeline-manager redpanda && \
