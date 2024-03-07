@@ -369,7 +369,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         long exact = Double.doubleToRawLongBits(value);
         String f64 = "f64::from_bits(" +
                 Long.toUnsignedString(exact) + "u64)";
-        String out = literal.raw ? f64 : literal.wrapSome("F64::new(" + f64 + ")");
+        String out = literal.raw ? f64 : literal.wrapSome("F64::from(" + f64 + ")");
         this.builder.append(out);
         this.builder.append("/*")
                 .append(val)

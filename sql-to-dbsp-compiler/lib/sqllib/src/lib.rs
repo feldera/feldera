@@ -835,7 +835,7 @@ pub fn log_d_d(left: F64, right: F64) -> F64 {
 
     // match Calcite's behavior, return 0 instead of -0
     if right.is_zero() {
-        return F64::new(0.0);
+        return F64::from(0.0);
     }
 
     left.log(right).into()
@@ -1052,25 +1052,25 @@ pub fn round_dN(left: Option<F64>, right: i32) -> Option<F64> {
 }
 
 pub fn power_i32_d(left: i32, right: F64) -> F64 {
-    F64::new((left as f64).powf(right.into_inner()))
+    F64::from((left as f64).powf(right.into_inner()))
 }
 
 some_polymorphic_function2!(power, i32, i32, d, F64, F64);
 
 pub fn power_d_i32(left: F64, right: i32) -> F64 {
-    F64::new(left.into_inner().powi(right))
+    F64::from(left.into_inner().powi(right))
 }
 
 some_polymorphic_function2!(power, d, F64, i32, i32, F64);
 
 pub fn power_i32_decimal(left: i32, right: Decimal) -> F64 {
-    F64::new((left as f64).powf(right.to_f64().unwrap()))
+    F64::from((left as f64).powf(right.to_f64().unwrap()))
 }
 
 some_polymorphic_function2!(power, i32, i32, decimal, Decimal, F64);
 
 pub fn power_decimal_i32(left: Decimal, right: i32) -> F64 {
-    F64::new(left.powi(right.into()).to_f64().unwrap())
+    F64::from(left.powi(right.into()).to_f64().unwrap())
 }
 
 some_polymorphic_function2!(power, decimal, Decimal, i32, i32, F64);
@@ -1082,7 +1082,7 @@ pub fn power_i32_i32(left: i32, right: i32) -> F64 {
 some_polymorphic_function2!(power, i32, i32, i32, i32, F64);
 
 pub fn power_d_d(left: F64, right: F64) -> F64 {
-    F64::new(left.into_inner().powf(right.into_inner()))
+    F64::from(left.into_inner().powf(right.into_inner()))
 }
 
 some_polymorphic_function2!(power, d, F64, d, F64, F64);
@@ -1099,13 +1099,13 @@ pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
 some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
 
 pub fn power_decimal_d(left: Decimal, right: F64) -> F64 {
-    F64::new(left.powf(right.into_inner()).to_f64().unwrap())
+    F64::from(left.powf(right.into_inner()).to_f64().unwrap())
 }
 
 some_polymorphic_function2!(power, decimal, Decimal, d, F64, F64);
 
 pub fn power_d_decimal(left: F64, right: Decimal) -> F64 {
-    F64::new(left.into_inner().powf(right.to_f64().unwrap()))
+    F64::from(left.into_inner().powf(right.to_f64().unwrap()))
 }
 
 some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
@@ -1125,7 +1125,7 @@ pub fn sqrt_d(left: F64) -> F64 {
     if left < 0.0 {
         panic!("Unable to compute sqrt of {left}");
     }
-    F64::new(left.sqrt())
+    F64::from(left.sqrt())
 }
 
 some_polymorphic_function1!(sqrt, d, F64, F64);
@@ -1134,12 +1134,12 @@ some_polymorphic_function1!(sqrt, d, F64, F64);
 
 #[inline(always)]
 pub fn floor_d(value: F64) -> F64 {
-    F64::new(value.into_inner().floor())
+    F64::from(value.into_inner().floor())
 }
 
 #[inline(always)]
 pub fn floor_f(value: F32) -> F32 {
-    F32::new(value.into_inner().floor())
+    F32::from(value.into_inner().floor())
 }
 
 #[inline(always)]
@@ -1155,12 +1155,12 @@ some_polymorphic_function1!(floor, decimal, Decimal, Decimal);
 
 #[inline(always)]
 pub fn ceil_d(value: F64) -> F64 {
-    F64::new(value.into_inner().ceil())
+    F64::from(value.into_inner().ceil())
 }
 
 #[inline(always)]
 pub fn ceil_f(value: F32) -> F32 {
-    F32::new(value.into_inner().ceil())
+    F32::from(value.into_inner().ceil())
 }
 
 #[inline(always)]
@@ -1181,7 +1181,7 @@ pub fn sign_d(value: F64) -> F64 {
     if x == 0f64 {
         value
     } else {
-        F64::new(x.signum())
+        F64::from(x.signum())
     }
 }
 
@@ -1192,7 +1192,7 @@ pub fn sign_f(value: F32) -> F32 {
     if x == 0f32 {
         value
     } else {
-        F32::new(x.signum())
+        F32::from(x.signum())
     }
 }
 

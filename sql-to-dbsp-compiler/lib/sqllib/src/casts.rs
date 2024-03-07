@@ -6,9 +6,8 @@ use std::cmp::Ordering;
 
 use crate::{geopoint::*, interval::*, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use dbsp::algebra::{HasOne, HasZero, F32, F64};
+use dbsp::algebra::{F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
-use num_traits::cast::NumCast;
 use rust_decimal::Decimal;
 
 const FLOAT_DISPLAY_PRECISION: usize = 6;
@@ -500,12 +499,12 @@ pub fn cast_to_d_dN(value: Option<F64>) -> F64 {
 
 #[inline]
 pub fn cast_to_d_f(value: F32) -> F64 {
-    F64::from(value.into_inner())
+    F64::from(value.into_inner() as f64)
 }
 
 #[inline]
 pub fn cast_to_d_fN(value: Option<F32>) -> F64 {
-    F64::from(value.unwrap().into_inner())
+    F64::from(value.unwrap().into_inner() as f64)
 }
 
 #[inline]
@@ -570,19 +569,19 @@ pub fn cast_to_dN_dN(value: Option<F64>) -> Option<F64> {
 
 #[inline]
 pub fn cast_to_dN_f(value: F32) -> Option<F64> {
-    Some(F64::from(value.into_inner()))
+    Some(F64::from(value.into_inner() as f64))
 }
 
 #[inline]
 pub fn cast_to_dN_fN(value: Option<F32>) -> Option<F64> {
-    value.map(|x| F64::from(x.into_inner()))
+    value.map(|x| F64::from(x.into_inner() as f64))
 }
 
 #[inline]
 pub fn cast_to_dN_s(value: String) -> Option<F64> {
     match value.trim().parse::<f64>() {
         Err(_) => Some(F64::zero()),
-        Ok(x) => Some(F64::new(x)),
+        Ok(x) => Some(F64::from(x)),
     }
 }
 
@@ -592,7 +591,7 @@ pub fn cast_to_dN_sN(value: Option<String>) -> Option<F64> {
         None => None,
         Some(x) => match x.trim().parse::<f64>() {
             Err(_) => Some(F64::zero()),
-            Ok(x) => Some(F64::new(x)),
+            Ok(x) => Some(F64::from(x)),
         },
     }
 }
@@ -1166,26 +1165,26 @@ macro_rules! cast_to_i {
             #[inline]
             pub fn [< cast_to_ $result_type _d >](value: F64) -> $result_type {
                 let value = value.into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as num_traits::cast::NumCast>::from(value).unwrap()
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type _dN >](value: Option<F64>) -> $result_type {
                 let value = value.unwrap().into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as num_traits::cast::NumCast>::from(value).unwrap()
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_d >](value: F64) -> Option<$result_type> {
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as num_traits::cast::NumCast>::from(value).unwrap())
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_dN >](value: Option<F64>) -> Option<$result_type> {
                 let value = value?;
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as num_traits::cast::NumCast>::from(value).unwrap())
             }
 
             // F32
@@ -1193,26 +1192,26 @@ macro_rules! cast_to_i {
             #[inline]
             pub fn [< cast_to_ $result_type _f >](value: F32) -> $result_type {
                 let value = value.into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as num_traits::cast::NumCast>::from(value).unwrap()
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type _fN >](value: Option<F32>) -> $result_type {
                 let value = value.unwrap().into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as num_traits::cast::NumCast>::from(value).unwrap()
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_f >](value: F32) -> Option<$result_type> {
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as num_traits::cast::NumCast>::from(value).unwrap())
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_fN >](value: Option<F32>) -> Option<$result_type> {
                 let value = value?;
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as num_traits::cast::NumCast>::from(value).unwrap())
             }
 
             // From string

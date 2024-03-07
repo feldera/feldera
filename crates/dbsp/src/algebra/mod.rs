@@ -73,6 +73,26 @@ impl_has_zero! {
     isize,
 }
 
+impl HasZero for F32 {
+    fn is_zero(&self) -> bool {
+        *self == 0.0
+    }
+
+    fn zero() -> Self {
+        F32::from(0.0)
+    }
+}
+
+impl HasZero for F64 {
+    fn is_zero(&self) -> bool {
+        *self == 0.0
+    }
+
+    fn zero() -> Self {
+        F64::from(0.0)
+    }
+}
+
 impl<T> HasZero for Option<T> {
     #[inline]
     fn is_zero(&self) -> bool {

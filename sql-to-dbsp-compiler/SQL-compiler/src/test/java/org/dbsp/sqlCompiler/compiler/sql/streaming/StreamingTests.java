@@ -242,7 +242,7 @@ public class StreamingTests extends StreamingTest {
                    // Initial data value for timestamp
                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
                    for i in 0..1000000 {
-                       let value = Some(F64::new(i.into()));
+                       let value = Some(F64::from(i.into()));
                        timestamp = timestamp.add(20000);
                        let input = zset!(Tup2::new(value, timestamp) => 1);
                        append_to_collection_handle(&input, &streams.0);

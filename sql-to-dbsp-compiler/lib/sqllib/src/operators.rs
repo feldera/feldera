@@ -137,13 +137,13 @@ where
 for_all_int_operator!(modulo);
 
 fn f32_modulo(left: F32, right: F32) -> F32 {
-    F32::new(left.into_inner() % right.into_inner())
+    <F32 as From<_>>::from(left.into_inner() % right.into_inner())
 }
 
 some_operator!(f32_modulo, modulo, f, F32, F32);
 
 fn f64_modulo(left: F64, right: F64) -> F64 {
-    F64::new(left.into_inner() % right.into_inner())
+    <F64 as From<_>>::from(left.into_inner() % right.into_inner())
 }
 
 some_operator!(f64_modulo, modulo, d, F64, F64);
