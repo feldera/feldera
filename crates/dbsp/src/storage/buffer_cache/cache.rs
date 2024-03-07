@@ -5,7 +5,6 @@
 use std::{
     cell::RefCell,
     collections::BTreeMap,
-    future::Future,
     ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
@@ -232,7 +231,7 @@ where
         }
     }
 
-    pub async fn read<F, T>(
+    pub fn read<F, T>(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
@@ -251,7 +250,7 @@ where
 
         counter!(BUFFER_CACHE_MISS).increment(1);
 
-        let block = self.backend.read_block(fd, offset, size).await?;
+        let block = self.backend.read_block(fd, offset, size)?;
         let aux = E::from_read(block, offset, size)?;
         let retval = convert(&aux)
             .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
@@ -259,16 +258,11 @@ where
         retval
     }
 
-    pub async fn write(
-        &self,
-        fd: &FileHandle,
-        offset: u64,
-        mut data: FBuf,
-    ) -> Result<(), StorageError> {
+    pub fn write(&self, fd: &FileHandle, offset: u64, mut data: FBuf) -> Result<(), StorageError> {
         let checksum = crc32c(&data[4..]).to_le_bytes();
         data[..4].copy_from_slice(checksum.as_slice());
 
-        let data = self.write_block(fd, offset, data).await?;
+        let data = self.write_block(fd, offset, data)?;
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
         self.inner
@@ -283,35 +277,28 @@ where
     B: Storage,
     E: CacheEntry,
 {
-    async fn create(&self) -> Result<FileHandle, StorageError> {
-        self.backend.create().await
+    fn create(&self) -> Result<FileHandle, StorageError> {
+        self.backend.create()
     }
-    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
-        self.backend.create_named(name).await
+    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+        self.backend.create_named(name)
     }
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.inner.borrow_mut().delete_file((&fd).into());
-        self.backend.delete(fd).await
+        self.backend.delete(fd)
     }
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.inner.borrow_mut().delete_file((&fd).into());
-        self.backend.delete_mut(fd).await
+        self.backend.delete_mut(fd)
     }
 
-    fn block_on<F>(&self, future: F) -> F::Output
-    where
-        F: Future,
-    {
-        self.backend.block_on(future)
-    }
-
-    async fn write_block(
+    fn write_block(
         &self,
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
     ) -> Result<Rc<FBuf>, StorageError> {
-        let data = self.backend.write_block(fd, offset, data).await?;
+        let data = self.backend.write_block(fd, offset, data)?;
         let size = data.len();
         let aux = E::from_write(data.clone(), offset, size).unwrap();
         self.inner
@@ -320,27 +307,24 @@ where
         Ok(data)
     }
 
-    async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        self.backend.complete(fd).await
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+        self.backend.complete(fd)
     }
 
-    async fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize) {
-        self.backend.prefetch(fd, offset, size).await
+    fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize) {
+        self.backend.prefetch(fd, offset, size)
     }
 
-    async fn read_block(
+    fn read_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
     ) -> Result<Rc<FBuf>, StorageError> {
-        self.backend.read_block(fd, offset, size).await
+        self.backend.read_block(fd, offset, size)
     }
 
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        self.backend.get_size(fd).await
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        self.backend.get_size(fd)
     }
 }

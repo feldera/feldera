@@ -2,7 +2,6 @@
 //!
 //! This is useful for performance testing, not as part of a production system.
 
-use futures::{task::noop_waker, Future};
 use metrics::counter;
 use std::{
     collections::HashMap,
@@ -10,7 +9,6 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::{Arc, RwLock},
-    task::Context,
 };
 
 use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf};
@@ -85,7 +83,7 @@ impl MemoryBackend {
 }
 
 impl Storage for MemoryBackend {
-    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
         let file_counter = self.next_file_id.increment();
         let mut files = self.files.write().unwrap();
         files.insert(
@@ -101,15 +99,15 @@ impl Storage for MemoryBackend {
         Ok(FileHandle(file_counter))
     }
 
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
     }
 
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
     }
 
-    async fn write_block(
+    fn write_block(
         &self,
         fd: &FileHandle,
         offset: u64,
@@ -131,10 +129,7 @@ impl Storage for MemoryBackend {
         Ok(data)
     }
 
-    async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let files = self.files.read().unwrap();
         let fm = files.get(&fd.0).unwrap();
         let path = fm.name.clone();
@@ -142,11 +137,11 @@ impl Storage for MemoryBackend {
         Ok((ImmutableFileHandle(fd.0), path))
     }
 
-    async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
+    fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
         unimplemented!()
     }
 
-    async fn read_block(
+    fn read_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
@@ -166,23 +161,9 @@ impl Storage for MemoryBackend {
         Err(IoError::from(ErrorKind::UnexpectedEof).into())
     }
 
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         let files = self.files.read().unwrap();
         let fm = files.get(&fd.0).unwrap();
         Ok(fm.size)
-    }
-
-    fn block_on<F>(&self, future: F) -> F::Output
-    where
-        F: Future,
-    {
-        // Extracts the result from `future` assuming that it's already ready.
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
-        let mut pinned = std::pin::pin!(future);
-        match pinned.as_mut().poll(&mut cx) {
-            std::task::Poll::Ready(output) => output,
-            std::task::Poll::Pending => unreachable!(),
-        }
     }
 }

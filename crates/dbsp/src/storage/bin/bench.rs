@@ -9,23 +9,15 @@
 //! Run `metrics-observer` in another terminal to see the metrics.
 //!
 //! There are still some issues with this benchmark to make it useful:
-//! - Threads indicate they're done writing but are still writing, potentially
-//!   async code is just wrong/needs join.
+//! - Threads indicate they're done writing but are still writing.
 
-#![allow(async_fn_in_trait)]
-
-use async_lock::Barrier;
 use libc::timespec;
 use std::fs::create_dir_all;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use monoio::{FusionDriver, RuntimeBuilder};
-
-#[cfg(feature = "glommio")]
-use feldera_storage::backend::glommio_impl::GlommioBackend;
 
 use feldera_storage::backend::io_uring_impl::IoUringBackend;
 use feldera_storage::backend::monoio_impl::MonoioBackend;
@@ -189,8 +181,6 @@ impl BenchResult {
 
 #[derive(Debug, Clone)]
 enum Backend {
-    #[cfg(feature = "glommio")]
-    Glommio,
     Monoio,
     Posix,
     IoUring,
@@ -199,8 +189,6 @@ enum Backend {
 impl From<String> for Backend {
     fn from(s: String) -> Self {
         match s.as_str() {
-            #[cfg(feature = "glommio")]
-            "Glommio" => Backend::Glommio,
             "Monoio" => Backend::Monoio,
             "Posix" => Backend::Posix,
             "IoUring" => Backend::IoUring,
@@ -283,11 +271,11 @@ fn thread_cpu_time() -> Duration {
     Duration::new(tp.tv_sec as u64, tp.tv_nsec as u32)
 }
 
-async fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenchResult {
+fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenchResult {
     let args = Args::parse();
-    let file = backend.create().await.unwrap();
+    let file = backend.create().unwrap();
 
-    barrier.wait_blocking();
+    barrier.wait();
     let start_write = Instant::now();
     for i in 0..args.per_thread_file_size / args.buffer_size {
         let mut wb = allocate_buffer(args.buffer_size);
@@ -297,19 +285,17 @@ async fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenc
         debug_assert!(wb.len() == args.buffer_size);
         backend
             .write_block(&file, (i * args.buffer_size) as u64, wb)
-            .await
             .expect("write failed");
     }
-    let (ih, _path) = backend.complete(file).await.expect("complete failed");
+    let (ih, _path) = backend.complete(file).expect("complete failed");
     let write_time = start_write.elapsed();
 
-    barrier.wait_blocking();
+    barrier.wait();
     let start_read = Instant::now();
     if !args.write_only {
         for i in 0..args.per_thread_file_size / args.buffer_size {
             let rr = backend
                 .read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size)
-                .await
                 .expect("read failed");
             if args.verify {
                 assert_eq!(rr.len(), args.buffer_size);
@@ -322,42 +308,12 @@ async fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenc
     }
     let read_time = start_read.elapsed();
 
-    backend.delete(ih).await.expect("delete failed");
+    backend.delete(ih).expect("delete failed");
     ThreadBenchResult {
         write_time,
         read_time,
         cpu_time: thread_cpu_time(),
     }
-}
-
-#[cfg(feature = "glommio")]
-fn glommio_main(args: Args) -> BenchResult {
-    use glommio::{
-        timer::Timer, DefaultStallDetectionHandler, LocalExecutorPoolBuilder, PoolPlacement,
-    };
-
-    let mut br = BenchResult::default();
-    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
-    let barrier = Arc::new(Barrier::new(args.threads));
-
-    LocalExecutorPoolBuilder::new(PoolPlacement::Unbound(args.threads))
-        .ring_depth(4096)
-        .spin_before_park(Duration::from_millis(10))
-        .detect_stalls(Some(Box::new(|| Box::new(DefaultStallDetectionHandler {}))))
-        .on_all_shards(|| async move {
-            let barrier = barrier.clone();
-            let counter = counter.clone();
-            let backend = GlommioBackend::new(args.path.clone(), counter);
-            Timer::new(Duration::from_millis(100)).await;
-            benchmark(backend, barrier).await
-        })
-        .expect("failed to spawn local executors")
-        .join_all()
-        .into_iter()
-        .map(|r| r.unwrap_or_else(|_e| panic!("unable to get result from benchmark thread")))
-        .for_each(|tres| br.times.push(tres.clone()));
-
-    br
 }
 
 fn monoio_main(args: Args) -> BenchResult {
@@ -372,26 +328,15 @@ fn monoio_main(args: Args) -> BenchResult {
             thread::spawn(move || {
                 let barrier = barrier.clone();
                 let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
-                let mut rt = RuntimeBuilder::<FusionDriver>::new()
-                    .enable_timer()
-                    .with_entries(4096)
-                    .build()
-                    .expect("Failed building the Runtime");
-                rt.block_on(benchmark(&monoio_backend, barrier))
+                benchmark(&monoio_backend, barrier)
             })
         })
         .collect();
 
     // Run on main thread
     let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
-    let mut rt = RuntimeBuilder::<FusionDriver>::new()
-        .enable_timer()
-        .with_entries(4096)
-        .build()
-        .expect("Failed building the Runtime");
-
     let mut br = BenchResult::default();
-    let main_res = rt.block_on(benchmark(&monoio_backend, barrier));
+    let main_res = benchmark(&monoio_backend, barrier);
     br.times.push(main_res);
 
     // Wait for other n-1 threads
@@ -415,7 +360,7 @@ fn posixio_main(args: Args) -> BenchResult {
             thread::spawn(move || {
                 let barrier = barrier.clone();
                 let posixio_backend = PosixBackend::new(args.path.clone(), counter);
-                posixio_backend.block_on(benchmark(&posixio_backend, barrier))
+                benchmark(&posixio_backend, barrier)
             })
         })
         .collect();
@@ -424,7 +369,7 @@ fn posixio_main(args: Args) -> BenchResult {
     let posixio_backend = PosixBackend::new(args.path.clone(), counter);
 
     let mut br = BenchResult::default();
-    let main_res = posixio_backend.block_on(benchmark(&posixio_backend, barrier));
+    let main_res = benchmark(&posixio_backend, barrier);
     br.times.push(main_res);
 
     // Wait for other n-1 threads
@@ -448,7 +393,7 @@ fn io_uring_main(args: Args) -> BenchResult {
             thread::spawn(move || {
                 let barrier = barrier.clone();
                 let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
-                io_uring_backend.block_on(benchmark(&io_uring_backend, barrier))
+                benchmark(&io_uring_backend, barrier)
             })
         })
         .collect();
@@ -457,7 +402,7 @@ fn io_uring_main(args: Args) -> BenchResult {
     let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
 
     let mut br = BenchResult::default();
-    let main_res = io_uring_backend.block_on(benchmark(&io_uring_backend, barrier));
+    let main_res = benchmark(&io_uring_backend, barrier);
     br.times.push(main_res);
 
     // Wait for other n-1 threads
@@ -486,8 +431,6 @@ fn main() {
     }
 
     let br = match args.backend {
-        #[cfg(feature = "glommio")]
-        Backend::Glommio => glommio_main(args.clone()),
         Backend::Monoio => monoio_main(args.clone()),
         Backend::Posix => posixio_main(args.clone()),
         Backend::IoUring => io_uring_main(args.clone()),

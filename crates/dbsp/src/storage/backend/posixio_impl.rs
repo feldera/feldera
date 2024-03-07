@@ -1,6 +1,5 @@
 //! Implementation of the storage backend ([`Storage`] APIs using POSIX I/O.
 
-use futures::{task::noop_waker, Future};
 use metrics::{counter, histogram};
 use std::{
     cell::RefCell,
@@ -10,7 +9,6 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
-    task::Context,
     time::Instant,
 };
 use tempfile::TempDir;
@@ -155,7 +153,7 @@ impl PosixBackend {
 }
 
 impl Storage for PosixBackend {
-    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
         let path = self.base.join(name);
         let file_counter = self.next_file_id.increment();
         let file = open_as_direct(
@@ -178,17 +176,17 @@ impl Storage for PosixBackend {
         Ok(FileHandle(file_counter))
     }
 
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
             .map(|_| counter!(FILES_DELETED).increment(1))
     }
 
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
             .map(|_| counter!(FILES_DELETED).increment(1))
     }
 
-    async fn write_block(
+    fn write_block(
         &self,
         fd: &FileHandle,
         offset: u64,
@@ -208,10 +206,7 @@ impl Storage for PosixBackend {
         Ok(block)
     }
 
-    async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let mut files = self.files.borrow_mut();
 
         let mut fm = files.remove(&fd.0).unwrap();
@@ -223,11 +218,11 @@ impl Storage for PosixBackend {
         Ok((ImmutableFileHandle(fd.0), path))
     }
 
-    async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
+    fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
         unimplemented!()
     }
 
-    async fn read_block(
+    fn read_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
@@ -252,24 +247,10 @@ impl Storage for PosixBackend {
         }
     }
 
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         let mut files = self.files.borrow_mut();
         let fm = files.get_mut(&fd.0).unwrap();
         let size = fm.file.seek(std::io::SeekFrom::End(0))?;
         Ok(size)
-    }
-
-    fn block_on<F>(&self, future: F) -> F::Output
-    where
-        F: Future,
-    {
-        // Extracts the result from `future` assuming that it's already ready.
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
-        let mut pinned = std::pin::pin!(future);
-        match pinned.as_mut().poll(&mut cx) {
-            std::task::Poll::Ready(output) => output,
-            std::task::Poll::Pending => unreachable!(),
-        }
     }
 }
