@@ -1,3 +1,34 @@
+// The following copyright notice relates to the parts of the documentation
+// for librdkafka used in this file
+/*
+librdkafka - Apache Kafka C driver library
+
+Copyright (c) 2012-2022, Magnus Edenhill
+              2023, Confluent Inc.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+*/
+
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
@@ -38,14 +69,6 @@ export const librdkafkaOptions = [
     `Client identifier.  \n*Type: string*`
   ],
   [
-    'metadata.broker.list                    ',
-    '*',
-    '               ',
-    '             ',
-    'high      ',
-    `Initial list of brokers as a CSV list of broker host or host:port. The application may also use \`rd_kafka_brokers_add()\` to add brokers during runtime.  \n*Type: CSV list*`
-  ],
-  [
     'bootstrap.servers                       ',
     '*',
     '               ',
@@ -78,14 +101,6 @@ export const librdkafkaOptions = [
     `Maximum Kafka protocol response message size. This serves as a safety precaution to avoid memory exhaustion in case of protocol hickups. This value must be at least \`fetch.max.bytes\`  + 512 to allow for protocol overhead; the value is adjusted automatically unless the configuration property is explicitly set.  \n*Type: integer*`
   ],
   [
-    'max.in.flight.requests.per.connection   ',
-    '*',
-    '1 .. 1000000   ',
-    '      1000000',
-    'low       ',
-    `Maximum number of in-flight requests per broker connection. This is a generic property applied to all broker communication, however it is primarily relevant to produce requests. In particular, note that other mechanisms limit the number of outstanding consumer fetch request per broker to one.  \n*Type: integer*`
-  ],
-  [
     'max.in.flight                           ',
     '*',
     '1 .. 1000000   ',
@@ -116,14 +131,6 @@ export const librdkafkaOptions = [
     '          100',
     'low       ',
     `When a topic loses its leader a new metadata request will be enqueued immediately and then with this initial interval, exponentially increasing upto \`retry.backoff.max.ms\`], until the topic metadata has been refreshed. If not set explicitly, it will be defaulted to \`retry.backoff.ms\`. This is used to recover quickly from transitioning leader brokers.  \n*Type: integer*`
-  ],
-  [
-    'topic.metadata.refresh.fast.cnt         ',
-    '*',
-    '0 .. 1000      ',
-    '           10',
-    'low       ',
-    `**DEPRECATED** No longer used.  \n*Type: integer*`
   ],
   [
     'topic.metadata.refresh.sparse           ',
@@ -164,14 +171,6 @@ export const librdkafkaOptions = [
     '        60000',
     'low       ',
     `Default timeout for network requests. Producer: ProduceRequests will use the lesser value of \`socket.timeout.ms\` and remaining \`message.timeout.ms\` for the first message in the batch. Consumer: FetchRequests will use \`fetch.wait.max.ms\` + \`socket.timeout.ms\`. Admin: Admin requests will use \`socket.timeout.ms\` or explicitly set \`rd_kafka_AdminOptions_set_operation_timeout()\` value.  \n*Type: integer*`
-  ],
-  [
-    'socket.blocking.max.ms                  ',
-    '*',
-    '1 .. 60000     ',
-    '         1000',
-    'low       ',
-    `**DEPRECATED** No longer used.  \n*Type: integer*`
   ],
   [
     'socket.send.buffer.bytes                ',
@@ -246,14 +245,6 @@ export const librdkafkaOptions = [
     `Close broker connections after the specified time of inactivity. Disable with 0. If this property is left at its default value some heuristics are performed to determine a suitable default value, this is currently limited to identifying brokers on Azure (see librdkafka issue #3109 for more info).  \n*Type: integer*`
   ],
   [
-    'reconnect.backoff.jitter.ms             ',
-    '*',
-    '0 .. 3600000   ',
-    '            0',
-    'low       ',
-    `**DEPRECATED** No longer used. See \`reconnect.backoff.ms\` and \`reconnect.backoff.max.ms\`.  \n*Type: integer*`
-  ],
-  [
     'reconnect.backoff.ms                    ',
     '*',
     '0 .. 3600000   ',
@@ -270,68 +261,12 @@ export const librdkafkaOptions = [
     `The maximum time to wait before reconnecting to a broker after the connection has been closed.  \n*Type: integer*`
   ],
   [
-    'statistics.interval.ms                  ',
-    '*',
-    '0 .. 86400000  ',
-    '            0',
-    'high      ',
-    `librdkafka statistics emit interval. The application also needs to register a stats callback using \`rd_kafka_conf_set_stats_cb()\`. The granularity is 1000ms. A value of 0 disables statistics.  \n*Type: integer*`
-  ],
-  [
-    'enabled_events                          ',
-    '*',
-    '0 .. 2147483647',
-    '            0',
-    'low       ',
-    `See \`rd_kafka_conf_set_events()\`  \n*Type: integer*`
-  ],
-  [
-    'error_cb                                ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Error callback (set with rd_kafka_conf_set_error_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'throttle_cb                             ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Throttle callback (set with rd_kafka_conf_set_throttle_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'stats_cb                                ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Statistics callback (set with rd_kafka_conf_set_stats_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'log_cb                                  ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Log callback (set with rd_kafka_conf_set_log_cb())  \n*Type: see dedicated API*`
-  ],
-  [
     'log_level                               ',
     '*',
     '0 .. 7         ',
     '            6',
     'low       ',
     `Logging level (syslog(3) levels)  \n*Type: integer*`
-  ],
-  [
-    'log.queue                               ',
-    '*',
-    'true, false    ',
-    '        false',
-    'low       ',
-    `Disable spontaneous log_cb from internal librdkafka threads, instead enqueue log messages on queue set with \`rd_kafka_set_log_queue()\` and serve log callbacks or events through the standard poll APIs. **NOTE**: Log messages will linger in a temporary queue until the log queue has been set.  \n*Type: boolean*`
   ],
   [
     'log.thread.name                         ',
@@ -342,92 +277,12 @@ export const librdkafkaOptions = [
     `Print internal thread name in log messages (useful for debugging librdkafka internals)  \n*Type: boolean*`
   ],
   [
-    'enable.random.seed                      ',
-    '*',
-    'true, false    ',
-    '         true',
-    'low       ',
-    `If enabled librdkafka will initialize the PRNG with srand(current_time.milliseconds) on the first invocation of rd_kafka_new() (required only if rand_r() is not available on your platform). If disabled the application must call srand() prior to calling rd_kafka_new().  \n*Type: boolean*`
-  ],
-  [
     'log.connection.close                    ',
     '*',
     'true, false    ',
     '         true',
     'low       ',
     `Log broker disconnects. It might be useful to turn this off when interacting with 0.9 brokers with an aggressive \`connections.max.idle.ms\` value.  \n*Type: boolean*`
-  ],
-  [
-    'background_event_cb                     ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Background queue event callback (set with rd_kafka_conf_set_background_event_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'socket_cb                               ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Socket creation callback to provide race-free CLOEXEC  \n*Type: see dedicated API*`
-  ],
-  [
-    'connect_cb                              ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Socket connect callback  \n*Type: see dedicated API*`
-  ],
-  [
-    'closesocket_cb                          ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Socket close callback  \n*Type: see dedicated API*`
-  ],
-  [
-    'open_cb                                 ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `File open callback to provide race-free CLOEXEC  \n*Type: see dedicated API*`
-  ],
-  [
-    'resolve_cb                              ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Address resolution callback (set with rd_kafka_conf_set_resolve_cb()).  \n*Type: see dedicated API*`
-  ],
-  [
-    'opaque                                  ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Application opaque (set with rd_kafka_conf_set_opaque())  \n*Type: see dedicated API*`
-  ],
-  [
-    'default_topic_conf                      ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Default topic configuration for automatically subscribed topics  \n*Type: see dedicated API*`
-  ],
-  [
-    'internal.termination.signal             ',
-    '*',
-    '0 .. 128       ',
-    '            0',
-    'low       ',
-    `Signal that librdkafka will use to quickly terminate on rd_kafka_destroy(). If this signal is not set then there will be a delay before rd_kafka_wait_destroyed() returns true as internal threads are timing out their system calls. If this signal is set however the delay will be minimal. The application should mask this signal as an internal signal handler is installed.  \n*Type: integer*`
   ],
   [
     'api.version.request                     ',
@@ -622,14 +477,6 @@ export const librdkafkaOptions = [
     `Comma-separated list of OpenSSL 3.0.x implementation providers. E.g., "default,legacy".  \n*Type: string*`
   ],
   [
-    'ssl.engine.location                     ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `**DEPRECATED** Path to OpenSSL engine library. OpenSSL >= 1.1.x required. DEPRECATED: OpenSSL engine support is deprecated and should be replaced by OpenSSL 3 providers.  \n*Type: string*`
-  ],
-  [
     'ssl.engine.id                           ',
     '*',
     '               ',
@@ -662,28 +509,12 @@ export const librdkafkaOptions = [
     `Endpoint identification algorithm to validate broker hostname using broker certificate. https - Server (broker) hostname verification as specified in RFC2818. none - No endpoint verification. OpenSSL >= 1.0.2 required.  \n*Type: enum value*`
   ],
   [
-    'ssl.certificate.verify_cb               ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Callback to verify the broker certificate chain.  \n*Type: see dedicated API*`
-  ],
-  [
-    'sasl.mechanisms                         ',
-    '*',
-    '               ',
-    '       GSSAPI',
-    'high      ',
-    `SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. **NOTE**: Despite the name only one mechanism must be configured.  \n*Type: string*`
-  ],
-  [
     'sasl.mechanism                          ',
     '*',
     '               ',
     '       GSSAPI',
     'high      ',
-    `Alias for \`sasl.mechanisms\`: SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. **NOTE**: Despite the name only one mechanism must be configured.  \n*Type: string*`
+    `Alias for \`sasl.mechanisms\`: SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER. \n*Type: string*`
   ],
   [
     'sasl.kerberos.service.name              ',
@@ -758,14 +589,6 @@ export const librdkafkaOptions = [
     `Enable the builtin unsecure JWT OAUTHBEARER token handler if no oauthbearer_refresh_cb has been set. This builtin handler should only be used for development or testing, and not in production.  \n*Type: boolean*`
   ],
   [
-    'oauthbearer_token_refresh_cb            ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `SASL/OAUTHBEARER token refresh callback (set with rd_kafka_conf_set_oauthbearer_token_refresh_cb(), triggered by rd_kafka_poll(), et.al. This callback will be triggered when it is time to refresh the client's OAUTHBEARER token. Also see \`rd_kafka_conf_enable_sasl_queue()\`.  \n*Type: see dedicated API*`
-  ],
-  [
     'sasl.oauthbearer.method                 ',
     '*',
     'default, oidc  ',
@@ -814,22 +637,6 @@ export const librdkafkaOptions = [
     `OAuth/OIDC issuer token endpoint HTTP(S) URI used to retrieve token. Only used when \`sasl.oauthbearer.method\` is set to "oidc".  \n*Type: string*`
   ],
   [
-    'plugin.library.paths                    ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `List of plugin libraries to load (; separated). The library search path is platform dependent (see dlopen(3) for Unix and LoadLibrary() for Windows). If no filename extension is specified the platform-specific extension (such as .dll or .so) will be appended automatically.  \n*Type: string*`
-  ],
-  [
-    'interceptors                            ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Interceptors added through rd_kafka_conf_interceptor_add_..() and any configuration handled by interceptors.  \n*Type: see dedicated API*`
-  ],
-  [
     'group.id                                ',
     'C',
     '               ',
@@ -870,14 +677,6 @@ export const librdkafkaOptions = [
     `Group session keepalive heartbeat interval.  \n*Type: integer*`
   ],
   [
-    'group.protocol.type                     ',
-    'C',
-    '               ',
-    '     consumer',
-    'low       ',
-    `Group protocol type for the \`generic\` group protocol. NOTE: Currently, the only supported group protocol type is \`consumer\`.  \n*Type: string*`
-  ],
-  [
     'coordinator.query.interval.ms           ',
     'C',
     '1 .. 3600000   ',
@@ -894,28 +693,12 @@ export const librdkafkaOptions = [
     `Maximum allowed time between calls to consume messages (e.g., rd_kafka_consumer_poll()) for high-level consumers. If this interval is exceeded the consumer is considered failed and the group will rebalance in order to reassign the partitions to another consumer group member. Warning: Offset commits may be not possible at this point. Note: It is recommended to set \`enable.auto.offset.store=false\` for long-time processing applications and then explicitly store offsets (using offsets_store()) *after* message processing, to make sure offsets are not auto-committed prior to processing has finished. The interval is checked two times per second. See KIP-62 for more information.  \n*Type: integer*`
   ],
   [
-    'enable.auto.commit                      ',
-    'C',
-    'true, false    ',
-    '         true',
-    'high      ',
-    `Automatically and periodically commit offsets in the background. Note: setting this to false does not prevent the consumer from fetching previously committed start offsets. To circumvent this behaviour set specific start offsets per partition in the call to assign().  \n*Type: boolean*`
-  ],
-  [
     'auto.commit.interval.ms                 ',
     'C',
     '0 .. 86400000  ',
     '         5000',
     'medium    ',
     `The frequency in milliseconds that the consumer offsets are committed (written) to offset storage. (0 = disable). This setting is used by the high-level consumer.  \n*Type: integer*`
-  ],
-  [
-    'enable.auto.offset.store                ',
-    'C',
-    'true, false    ',
-    '         true',
-    'high      ',
-    `Automatically store offset of last message provided to application. The offset store is an in-memory store of the next offset to (auto-)commit for each partition.  \n*Type: boolean*`
   ],
   [
     'queued.min.messages                     ',
@@ -950,14 +733,6 @@ export const librdkafkaOptions = [
     `How long to postpone the next fetch request for a topic+partition in case the current fetch queue thresholds (queued.min.messages or queued.max.messages.kbytes) have been exceded. This property may need to be decreased if the queue thresholds are set low and the application is experiencing long (~1s) delays between messages. Low values may increase CPU utilization.  \n*Type: integer*`
   ],
   [
-    'fetch.message.max.bytes                 ',
-    'C',
-    '1 .. 1000000000',
-    '      1048576',
-    'medium    ',
-    `Initial maximum number of bytes per topic+partition to request when fetching messages from the broker. If the client encounters a message larger than this value it will gradually try to increase it until the entire message can be fetched.  \n*Type: integer*`
-  ],
-  [
     'max.partition.fetch.bytes               ',
     'C',
     '1 .. 1000000000',
@@ -990,52 +765,12 @@ export const librdkafkaOptions = [
     `How long to postpone the next fetch request for a topic+partition in case of a fetch error.  \n*Type: integer*`
   ],
   [
-    'offset.store.method                     ',
-    'C',
-    'none, file, broker',
-    '       broker',
-    'low       ',
-    `**DEPRECATED** Offset commit store method: 'file' - DEPRECATED: local file store (offset.store.path, et.al), 'broker' - broker commit store (requires Apache Kafka 0.8.2 or later on the broker).  \n*Type: enum value*`
-  ],
-  [
     'isolation.level                         ',
     'C',
     'read_uncommitted, read_committed',
     'read_committed',
     'high      ',
     `Controls how to read messages written transactionally: \`read_committed\` - only return transactional messages which have been committed. \`read_uncommitted\` - return all messages, even transactional messages which have been aborted.  \n*Type: enum value*`
-  ],
-  [
-    'consume_cb                              ',
-    'C',
-    '               ',
-    '             ',
-    'low       ',
-    `Message consume callback (set with rd_kafka_conf_set_consume_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'rebalance_cb                            ',
-    'C',
-    '               ',
-    '             ',
-    'low       ',
-    `Called after consumer group has been rebalanced (set with rd_kafka_conf_set_rebalance_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'offset_commit_cb                        ',
-    'C',
-    '               ',
-    '             ',
-    'low       ',
-    `Offset commit result propagation callback. (set with rd_kafka_conf_set_offset_commit_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'enable.partition.eof                    ',
-    'C',
-    'true, false    ',
-    '        false',
-    'low       ',
-    `Emit RD_KAFKA_RESP_ERR__PARTITION_EOF event whenever the consumer reaches the end of a partition.  \n*Type: boolean*`
   ],
   [
     'check.crcs                              ',
@@ -1052,22 +787,6 @@ export const librdkafkaOptions = [
     '             ',
     'low       ',
     `A rack identifier for this client. This can be any string value which indicates where this client is physically located. It corresponds with the broker config \`broker.rack\`.  \n*Type: string*`
-  ],
-  [
-    'transactional.id                        ',
-    'P',
-    '               ',
-    '             ',
-    'high      ',
-    `Enables the transactional producer. The transactional.id is used to identify the same transactional producer instance across process restarts. It allows the producer to guarantee that transactions corresponding to earlier instances of the same producer have been finalized prior to starting any new transactions, and that any zombie instances are fenced off. If no transactional.id is provided, then the producer is limited to idempotent delivery (if enable.idempotence is set). Requires broker version >= 0.11.0.  \n*Type: string*`
-  ],
-  [
-    'transaction.timeout.ms                  ',
-    'P',
-    '1000 .. 2147483647',
-    '        60000',
-    'medium    ',
-    `The maximum amount of time in milliseconds that the transaction coordinator will wait for a transaction status update from the producer before proactively aborting the ongoing transaction. If this value is larger than the \`transaction.max.timeout.ms\` setting in the broker, the init_transactions() call will fail with ERR_INVALID_TRANSACTION_TIMEOUT. The transaction timeout automatically adjusts \`message.timeout.ms\` and \`socket.timeout.ms\`], unless explicitly configured in which case they must not exceed the transaction timeout (\`socket.timeout.ms\` must be at least 100ms lower than \`transaction.timeout.ms\`). This is also the default timeout value if no timeout (-1) is supplied to the transactional API methods.  \n*Type: integer*`
   ],
   [
     'enable.idempotence                      ',
@@ -1102,28 +821,12 @@ export const librdkafkaOptions = [
     `Maximum total message size sum allowed on the producer queue. This queue is shared by all topics and partitions. This property has higher priority than queue.buffering.max.messages.  \n*Type: integer*`
   ],
   [
-    'queue.buffering.max.ms                  ',
-    'P',
-    '0 .. 900000    ',
-    '            5',
-    'high      ',
-    `Delay in milliseconds to wait for messages in the producer queue to accumulate before constructing message batches (MessageSets) to transmit to brokers. A higher value allows larger and more effective (less overhead, improved compression) batches of messages to accumulate at the expense of increased message delivery latency.  \n*Type: float*`
-  ],
-  [
     'linger.ms                               ',
     'P',
     '0 .. 900000    ',
     '            5',
     'high      ',
     `Alias for \`queue.buffering.max.ms\`: Delay in milliseconds to wait for messages in the producer queue to accumulate before constructing message batches (MessageSets) to transmit to brokers. A higher value allows larger and more effective (less overhead, improved compression) batches of messages to accumulate at the expense of increased message delivery latency.  \n*Type: float*`
-  ],
-  [
-    'message.send.max.retries                ',
-    'P',
-    '0 .. 2147483647',
-    '   2147483647',
-    'high      ',
-    `How many times to retry sending a failing Message. **Note:** retrying may cause reordering unless \`enable.idempotence\` is set to true.  \n*Type: integer*`
   ],
   [
     'retries                                 ',
@@ -1158,14 +861,6 @@ export const librdkafkaOptions = [
     `The threshold of outstanding not yet transmitted broker requests needed to backpressure the producer's message accumulator. If the number of not yet transmitted requests equals or exceeds this number, produce request creation that would have otherwise been triggered (for example, in accordance with linger.ms) will be delayed. A lower number yields larger and more effective batches. A higher value can improve latency when using compression on slow machines.  \n*Type: integer*`
   ],
   [
-    'compression.codec                       ',
-    'P',
-    'none, gzip, snappy, lz4, zstd',
-    '         none',
-    'medium    ',
-    `compression codec to use for compressing message sets. This is the default value for all topics, may be overridden by the topic configuration property \`compression.codec\`.   \n*Type: enum value*`
-  ],
-  [
     'compression.type                        ',
     'P',
     'none, gzip, snappy, lz4, zstd',
@@ -1190,30 +885,6 @@ export const librdkafkaOptions = [
     `Maximum size (in bytes) of all messages batched in one MessageSet, including protocol framing overhead. This limit is applied after the first message has been added to the batch, regardless of the first message's size, this is to ensure that messages that exceed batch.size are produced. The total MessageSet size is also limited by batch.num.messages and message.max.bytes.  \n*Type: integer*`
   ],
   [
-    'delivery.report.only.error              ',
-    'P',
-    'true, false    ',
-    '        false',
-    'low       ',
-    `Only provide delivery reports for failed messages.  \n*Type: boolean*`
-  ],
-  [
-    'dr_cb                                   ',
-    'P',
-    '               ',
-    '             ',
-    'low       ',
-    `Delivery report callback (set with rd_kafka_conf_set_dr_cb())  \n*Type: see dedicated API*`
-  ],
-  [
-    'dr_msg_cb                               ',
-    'P',
-    '               ',
-    '             ',
-    'low       ',
-    `Delivery report callback (set with rd_kafka_conf_set_dr_msg_cb())  \n*Type: see dedicated API*`
-  ],
-  [
     'sticky.partitioning.linger.ms           ',
     'P',
     '0 .. 900000    ',
@@ -1232,14 +903,6 @@ export const librdkafkaOptions = [
 ]
   .concat([
     [
-      'request.required.acks                    ',
-      '  P  ',
-      ' -1 .. 1000                                                ',
-      '            -1    ',
-      ' high      ',
-      `This field indicates the number of acknowledgements the leader broker must receive from ISR brokers before responding to the request: *0*=Broker does not send any response/ack to client, *-1* or *all*=Broker will block until message is committed by all in sync replicas (ISRs). If there are less than \`min.insync.replicas\` (broker configuration) in the ISR set the produce request will fail.  \n*Type: integer*`
-    ],
-    [
       'acks                                     ',
       '  P  ',
       ' -1 .. 1000                                                ',
@@ -1256,36 +919,12 @@ export const librdkafkaOptions = [
       `The ack timeout of the producer request in milliseconds. This value is only enforced by the broker and relies on \`request.required.acks\` being != 0.  \n*Type: integer*`
     ],
     [
-      'message.timeout.ms                       ',
-      '  P  ',
-      ' 0 .. 2147483647                                           ',
-      '        300000    ',
-      ' high      ',
-      `Local message timeout. This value is only enforced locally and limits the time a produced message waits for successful delivery. A time of 0 is infinite. This is the maximum time librdkafka may use to deliver a message (including retries). Delivery error occurs when either the retry count or the message timeout are exceeded. The message timeout is automatically adjusted to \`transaction.timeout.ms\` if \`transactional.id\` is configured.  \n*Type: integer*`
-    ],
-    [
       'delivery.timeout.ms                      ',
       '  P  ',
       ' 0 .. 2147483647                                           ',
       '        300000    ',
       ' high      ',
       `Alias for \`message.timeout.ms\`: Local message timeout. This value is only enforced locally and limits the time a produced message waits for successful delivery. A time of 0 is infinite. This is the maximum time librdkafka may use to deliver a message (including retries). Delivery error occurs when either the retry count or the message timeout are exceeded. The message timeout is automatically adjusted to \`transaction.timeout.ms\` if \`transactional.id\` is configured.  \n*Type: integer*`
-    ],
-    [
-      'queuing.strategy                         ',
-      '  P  ',
-      ' fifo, lifo                                                ',
-      '          fifo    ',
-      ' low       ',
-      `**EXPERIMENTAL**: subject to change or removal. **DEPRECATED** Producer queuing strategy. FIFO preserves produce ordering, while LIFO prioritizes new messages.  \n*Type: enum value*`
-    ],
-    [
-      'produce.offset.report                    ',
-      '  P  ',
-      ' true, false                                               ',
-      '         false    ',
-      ' low       ',
-      `**DEPRECATED** No longer used.  \n*Type: boolean*`
     ],
     [
       'partitioner                              ',
@@ -1296,36 +935,12 @@ export const librdkafkaOptions = [
       `Partitioner: \`random\` - random distribution, \`consistent\` - CRC32 hash of key (Empty and NULL keys are mapped to single partition), \`consistent_random\` - CRC32 hash of key (Empty and NULL keys are randomly partitioned), \`murmur2\` - Java Producer compatible Murmur2 hash of key (NULL keys are mapped to single partition), \`murmur2_random\` - Java Producer compatible Murmur2 hash of key (NULL keys are randomly partitioned. This is functionally equivalent to the default partitioner in the Java Producer.), \`fnv1a\` - FNV-1a hash of key (NULL keys are mapped to single partition), \`fnv1a_random\` - FNV-1a hash of key (NULL keys are randomly partitioned).  \n*Type: string*`
     ],
     [
-      'partitioner_cb                           ',
-      '  P  ',
-      '                                                           ',
-      '                  ',
-      ' low       ',
-      `Custom partitioner callback (set with rd_kafka_topic_conf_set_partitioner_cb())  \n*Type: see dedicated API*`
-    ],
-    [
-      'msg_order_cmp                            ',
-      '  P  ',
-      '                                                           ',
-      '                  ',
-      ' low       ',
-      `**EXPERIMENTAL**: subject to change or removal. **DEPRECATED** Message queue ordering comparator (set with rd_kafka_topic_conf_set_msg_order_cmp()). Also see \`queuing.strategy\`.  \n*Type: see dedicated API*`
-    ],
-    [
       'opaque                                   ',
       '  *  ',
       '                                                           ',
       '                  ',
       ' low       ',
       `Application opaque (set with rd_kafka_topic_conf_set_opaque())  \n*Type: see dedicated API*`
-    ],
-    [
-      'compression.codec                        ',
-      '  P  ',
-      ' none, gzip, snappy, lz4, zstd, inherit                    ',
-      '       inherit    ',
-      ' high      ',
-      `Compression codec to use for compressing message sets. inherit = inherit global compression.codec configuration.  \n*Type: enum value*`
     ],
     [
       'compression.type                         ',
@@ -1344,60 +959,12 @@ export const librdkafkaOptions = [
       `Compression level parameter for algorithm selected by configuration property \`compression.codec\`. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: [0-9] for gzip; [0-12] for lz4; only 0 for snappy; -1 = codec-dependent default compression level.  \n*Type: integer*`
     ],
     [
-      'auto.commit.enable                       ',
-      '  C  ',
-      ' true, false                                               ',
-      '          true    ',
-      ' low       ',
-      `**DEPRECATED** [**LEGACY PROPERTY:** This property is used by the simple legacy consumer only. When using the high-level KafkaConsumer, the global \`enable.auto.commit\` property must be used instead]. If true, periodically commit offset of the last message handed to the application. This committed offset will be used when the process restarts to pick up where it left off. If false, the application will have to call \`rd_kafka_offset_store()\` to store an offset (optional). Offsets will be written to broker or local file according to offset.store.method.  \n*Type: boolean*`
-    ],
-    [
-      'enable.auto.commit                       ',
-      '  C  ',
-      ' true, false                                               ',
-      '          true    ',
-      ' low       ',
-      `**DEPRECATED** Alias for \`auto.commit.enable\`: [**LEGACY PROPERTY:** This property is used by the simple legacy consumer only. When using the high-level KafkaConsumer, the global \`enable.auto.commit\` property must be used instead]. If true, periodically commit offset of the last message handed to the application. This committed offset will be used when the process restarts to pick up where it left off. If false, the application will have to call \`rd_kafka_offset_store()\` to store an offset (optional). Offsets will be written to broker or local file according to offset.store.method.  \n*Type: boolean*`
-    ],
-    [
-      'auto.commit.interval.ms                  ',
-      '  C  ',
-      ' 10 .. 86400000                                            ',
-      '         60000    ',
-      ' high      ',
-      `[**LEGACY PROPERTY:** This setting is used by the simple legacy consumer only. When using the high-level KafkaConsumer, the global \`auto.commit.interval.ms\` property must be used instead]. The frequency in milliseconds that the consumer offsets are committed (written) to offset storage.  \n*Type: integer*`
-    ],
-    [
       'auto.offset.reset                        ',
       '  C  ',
       ' smallest, earliest, beginning, largest, latest, end, error',
       '       largest    ',
       ' high      ',
       `Action to take when there is no initial offset in offset store or the desired offset is out of range: 'smallest','earliest' - automatically reset the offset to the smallest offset, 'largest','latest' - automatically reset the offset to the largest offset, 'error' - trigger an error (ERR__AUTO_OFFSET_RESET) which is retrieved by consuming messages and checking 'message->err'.  \n*Type: enum value*`
-    ],
-    [
-      'offset.store.path                        ',
-      '  C  ',
-      '                                                           ',
-      '             .    ',
-      ' low       ',
-      `**DEPRECATED** Path to local file for storing offsets. If the path is a directory a filename will be automatically generated in that directory based on the topic and partition. File-based offset storage will be removed in a future version.  \n*Type: string*`
-    ],
-    [
-      'offset.store.sync.interval.ms            ',
-      '  C  ',
-      ' -1 .. 86400000                                            ',
-      '            -1    ',
-      ' low       ',
-      `**DEPRECATED** fsync() interval for the offset file, in milliseconds. Use -1 to disable syncing, and 0 for immediate sync after each write. File-based offset storage will be removed in a future version.  \n*Type: integer*`
-    ],
-    [
-      'offset.store.method                      ',
-      '  C  ',
-      ' file, broker                                              ',
-      '        broker    ',
-      ' low       ',
-      `**DEPRECATED** Offset commit store method: 'file' - DEPRECATED: local file store (offset.store.path, et.al), 'broker' - broker commit store (requires "group.id" to be configured and Apache Kafka 0.8.2 or later on the broker.).  \n*Type: enum value*`
     ],
     [
       'consume.callback.max.messages            ',
