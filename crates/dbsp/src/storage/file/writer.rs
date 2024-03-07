@@ -886,8 +886,7 @@ where
     }
 
     fn complete(mut self) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        self.cache
-            .block_on(self.cache.complete(self.file_handle.take().unwrap()))
+        self.cache.complete(self.file_handle.take().unwrap())
     }
 
     fn write_block(&mut self, mut block: FBuf) -> Result<BlockLocation, StorageError> {
@@ -895,11 +894,8 @@ where
 
         let location = BlockLocation::new(self.offset, block.len()).unwrap();
         self.offset += block.len() as u64;
-        self.cache.block_on(self.cache.write(
-            self.file_handle.as_ref().unwrap(),
-            location.offset,
-            block,
-        ))?;
+        self.cache
+            .write(self.file_handle.as_ref().unwrap(), location.offset, block)?;
         Ok(location)
     }
 }
@@ -911,7 +907,7 @@ where
     fn drop(&mut self) {
         self.file_handle
             .take()
-            .map(|file_handle| self.cache.block_on(self.cache.delete_mut(file_handle)));
+            .map(|file_handle| self.cache.delete_mut(file_handle));
     }
 }
 
@@ -950,7 +946,7 @@ where
             .collect();
         let finished_columns = Vec::with_capacity(n_columns);
         let writer = Self {
-            writer: BlockWriter::new(writer, writer.block_on(writer.create())?),
+            writer: BlockWriter::new(writer, writer.create()?),
             cws,
             finished_columns,
         };

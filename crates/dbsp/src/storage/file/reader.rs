@@ -415,11 +415,11 @@ impl InnerDataBlock {
     where
         S: Storage,
     {
-        file.cache.block_on(file.cache.read_data_block(
+        file.cache.read_data_block(
             file.file_handle.as_ref().unwrap(),
             node.location.offset,
             node.location.size,
-        ))
+        )
     }
     fn n_values(&self) -> usize {
         self.value_map.len()
@@ -733,11 +733,11 @@ impl InnerIndexBlock {
     where
         S: Storage,
     {
-        file.cache.block_on(file.cache.read_index_block(
+        file.cache.read_index_block(
             file.file_handle.as_ref().unwrap(),
             node.location.offset,
             node.location.size,
-        ))
+        )
     }
 }
 
@@ -1046,9 +1046,7 @@ where
     S: Storage,
 {
     fn drop(&mut self) {
-        let _ = self
-            .cache
-            .block_on(self.cache.delete(self.file_handle.take().unwrap()));
+        let _ = self.cache.delete(self.file_handle.take().unwrap());
     }
 }
 
@@ -1117,15 +1115,13 @@ where
         factories: &[&AnyFactories],
         file: Rc<ImmutableFileRef<S>>,
     ) -> Result<Self, Error> {
-        let file_size = file
-            .cache
-            .block_on(file.cache.get_size(file.file_handle.as_ref().unwrap()))?;
+        let file_size = file.cache.get_size(file.file_handle.as_ref().unwrap())?;
 
-        let file_trailer = file.cache.block_on(file.cache.read_file_trailer_block(
+        let file_trailer = file.cache.read_file_trailer_block(
             file.file_handle.as_ref().unwrap(),
             file_size - 4096,
             4096,
-        ))?;
+        )?;
         if file_trailer.version != VERSION_NUMBER {
             return Err(CorruptionError::InvalidVersion {
                 version: file_trailer.version,
@@ -1179,8 +1175,8 @@ where
     where
         S: Storage,
     {
-        let file_handle = cache.block_on(cache.create())?;
-        let (file_handle, path) = cache.block_on(cache.complete(file_handle))?;
+        let file_handle = cache.create()?;
+        let (file_handle, path) = cache.complete(file_handle)?;
         Ok(Self(Rc::new(ReaderInner {
             file: Rc::new(ImmutableFileRef::new(cache, file_handle, path)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),

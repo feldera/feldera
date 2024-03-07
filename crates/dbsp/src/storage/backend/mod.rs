@@ -7,11 +7,9 @@
 //! to (eventually) deleted.
 //! The API prevents writing to a file again that is completed/sealed.
 //! The API also prevents reading from a file that is not completed.
-#![allow(async_fn_in_trait)]
 #![warn(missing_docs)]
 
 use std::{
-    future::Future,
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -133,7 +131,7 @@ impl Eq for StorageError {}
 /// A storage backend.
 pub trait Storage {
     /// Create a new file. See also [`create`](Self::create).
-    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError>;
+    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError>;
 
     /// Creates a new persistent file used for writing data.
     ///
@@ -141,17 +139,17 @@ pub trait Storage {
     /// it is not possible to read from this file until [`Storage::complete`] is
     /// called and the [`FileHandle`] is converted to an
     /// [`ImmutableFileHandle`].
-    async fn create(&self) -> Result<FileHandle, StorageError> {
+    fn create(&self) -> Result<FileHandle, StorageError> {
         let uuid = Uuid::now_v7();
         let name = uuid.to_string() + ".feldera";
-        self.create_named(&name).await
+        self.create_named(name)
     }
 
     /// Deletes a previously completed file.
     ///
     /// This removes the file from the storage backend and makes it unavailable
     /// for reading.
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError>;
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError>;
 
     /// Deletes a previously created file.
     ///
@@ -160,7 +158,7 @@ pub trait Storage {
     ///
     /// Use [`delete`](Self::delete) for deleting a file that has been
     /// completed.
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError>;
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError>;
 
     /// Allocates a buffer suitable for writing to a file using Direct I/O over
     /// `io_uring`.
@@ -183,7 +181,7 @@ pub trait Storage {
     /// A reference to the (now cached) buffer.
     ///
     /// API returns an error if any of the above preconditions are not met.
-    async fn write_block(
+    fn write_block(
         &self,
         fd: &FileHandle,
         offset: u64,
@@ -201,14 +199,11 @@ pub trait Storage {
     /// ## Returns
     /// - A file-descriptor that can be used for reading data.
     /// - The on-disk location of the file.
-    async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError>;
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError>;
 
     /// Prefetches a block of data from a file.
     ///
-    /// This is an asynchronous operation that will be completed in the
+    /// This is an hronous operation that will be completed in the
     /// background. The data is likely available for reading from DRAM once the
     /// prefetch operation has completed.
     /// The implementation is free to choose how to prefetch the data. This may
@@ -222,7 +217,7 @@ pub trait Storage {
     /// ## Pre-conditions
     /// - `offset.is_power_of_two()`
     /// - `size >= 512 && size.is_power_of_two()`
-    async fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize);
+    fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize);
 
     /// Reads a block of data from a file.
     ///
@@ -246,7 +241,7 @@ pub trait Storage {
     /// A [`FBuf`] containing the data read from the file.
     ///
     /// [`UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
-    async fn read_block(
+    fn read_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
@@ -254,12 +249,7 @@ pub trait Storage {
     ) -> Result<Rc<FBuf>, StorageError>;
 
     /// Returns the file's size in bytes.
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
-
-    /// Runs `future` to completion in the storage backend's executor.
-    fn block_on<F>(&self, future: F) -> F::Output
-    where
-        F: Future;
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
 }
 
 //pub use monoio_impl::MonoioBackend as DefaultBackend;

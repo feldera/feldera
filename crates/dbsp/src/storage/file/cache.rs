@@ -128,37 +128,34 @@ where
 {
     /// Reads a `size`-byte block at `offset` in `fd` and returns it converted
     /// to `InnerDataBlock`.
-    pub(super) async fn read_data_block(
+    pub(super) fn read_data_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
     ) -> Result<Rc<InnerDataBlock>, Error> {
         self.read(fd, offset, size, FileCacheEntry::as_data_block)
-            .await
     }
 
     /// Reads a `size`-byte block at `offset` in `fd` and returns it converted
     /// to `InnerIndexBlock`.
-    pub(super) async fn read_index_block(
+    pub(super) fn read_index_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
     ) -> Result<Rc<InnerIndexBlock>, Error> {
         self.read(fd, offset, size, FileCacheEntry::as_index_block)
-            .await
     }
 
     /// Reads a `size`-byte file trailer block at `offset` in `fd` and returns
     /// it converted to `FileTrailer`.
-    pub(super) async fn read_file_trailer_block(
+    pub(super) fn read_file_trailer_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
     ) -> Result<Rc<FileTrailer>, Error> {
         self.read(fd, offset, size, FileCacheEntry::as_file_trailer)
-            .await
     }
 }

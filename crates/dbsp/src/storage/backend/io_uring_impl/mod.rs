@@ -4,17 +4,14 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::future::Future;
 use std::io::{Error as IoError, ErrorKind};
 use std::mem::ManuallyDrop;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::task::Context;
 use std::time::Instant;
 
-use futures::task::noop_waker;
 use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
@@ -31,8 +28,8 @@ use crate::storage::backend::{
 use crate::storage::buffer_cache::FBuf;
 use crate::storage::init;
 
-use super::StorageError;
 use super::metrics::describe_disk_metrics;
+use super::StorageError;
 
 #[cfg(test)]
 mod tests;
@@ -551,19 +548,19 @@ impl IoUringBackend {
 }
 
 impl Storage for IoUringBackend {
-    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
         self.inner.borrow_mut().create_named(self.base.join(name))
     }
 
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.inner.borrow_mut().delete(fd.0)
     }
 
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.inner.borrow_mut().delete(fd.0)
     }
 
-    async fn write_block(
+    fn write_block(
         &self,
         fd: &FileHandle,
         offset: u64,
@@ -574,18 +571,15 @@ impl Storage for IoUringBackend {
             .write_block(fd, offset, Rc::new(data))
     }
 
-    async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         self.inner.borrow_mut().complete(fd.0)
     }
 
-    async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
+    fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
         unimplemented!()
     }
 
-    async fn read_block(
+    fn read_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
@@ -594,21 +588,7 @@ impl Storage for IoUringBackend {
         self.inner.borrow().read_block(fd.0, offset, size)
     }
 
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         Ok(self.inner.borrow().files.get(&fd.0).unwrap().size)
-    }
-
-    fn block_on<F>(&self, future: F) -> F::Output
-    where
-        F: Future,
-    {
-        // Extracts the result from `future` assuming that it's already ready.
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
-        let mut pinned = std::pin::pin!(future);
-        match pinned.as_mut().poll(&mut cx) {
-            std::task::Poll::Ready(output) => output,
-            std::task::Poll::Pending => unreachable!(),
-        }
     }
 }

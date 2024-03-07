@@ -60,56 +60,40 @@ impl StateMachineTest for MonoioBackend {
     ) -> Self::SystemUnderTest {
         match transition {
             Transition::Create => {
-                state.backend.block_on(async {
-                    let _r = state.backend.create().await.expect("create failed");
-                });
+                let _r = state.backend.create().expect("create failed");
                 state
             }
             Transition::DeleteMut(id) => {
-                state.backend.block_on(async {
-                    state
-                        .backend
-                        .delete_mut(FileHandle(id))
-                        .await
-                        .expect("delete failed");
-                });
+                state
+                    .backend
+                    .delete_mut(FileHandle(id))
+                    .expect("delete failed");
                 state
             }
             Transition::Write(id, offset, content) => {
-                state.backend.block_on(async {
-                    let mut wb = MonoioBackend::allocate_buffer(content.len());
-                    wb.resize(content.len(), 0);
-                    wb.copy_from_slice(content.as_bytes());
-                    state
-                        .backend
-                        .write_block(&FileHandle(id), offset, wb)
-                        .await
-                        .expect("write failed");
-                });
+                let mut wb = MonoioBackend::allocate_buffer(content.len());
+                wb.resize(content.len(), 0);
+                wb.copy_from_slice(content.as_bytes());
+                state
+                    .backend
+                    .write_block(&FileHandle(id), offset, wb)
+                    .expect("write failed");
                 state
             }
             Transition::Complete(id) => {
-                state.backend.block_on(async {
-                    state
-                        .backend
-                        .complete(FileHandle(id))
-                        .await
-                        .expect("complete failed");
-                });
+                state
+                    .backend
+                    .complete(FileHandle(id))
+                    .expect("complete failed");
                 state
             }
             Transition::Read(id, offset, length) => {
-                let result_impl = state.backend.block_on(async {
+                let result_impl =
                     state
                         .backend
-                        .read_block(&ImmutableFileHandle(id), offset, length as usize)
-                        .await
-                });
-                let model_impl = futures::executor::block_on(ref_state.read_block(
-                    &ImmutableFileHandle(id),
-                    offset,
-                    length as usize,
-                ));
+                        .read_block(&ImmutableFileHandle(id), offset, length as usize);
+                let model_impl =
+                    ref_state.read_block(&ImmutableFileHandle(id), offset, length as usize);
                 assert_eq!(&model_impl, &result_impl);
                 state
             }
@@ -121,8 +105,6 @@ impl StateMachineTest for MonoioBackend {
         ref_state: &<Self::Reference as ReferenceStateMachine>::State,
     ) {
         // inv1: the immutable file contents of model and implementation must match
-        // TODO: API needs to be async for this, but it's ok we check read results
-        // in every step
 
         // inv2: we don't need more storage space than the in-memory implementation
         let all_bytes: usize = ref_state
