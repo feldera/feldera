@@ -89,8 +89,7 @@ impl crate::NumEntries for Tup0 {
 }
 
 impl crate::algebra::AddAssignByRef for Tup0 {
-    fn add_assign_by_ref(&mut self, _other: &Self) {
-    }
+    fn add_assign_by_ref(&mut self, _other: &Self) {}
 }
 
 impl crate::algebra::NegByRef for Tup0 {
