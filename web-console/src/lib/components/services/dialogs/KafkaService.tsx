@@ -133,7 +133,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
         onError={handleErrors}
       >
         <DialogTitle sx={{ textAlign: 'center' }}>
-          {props.service === undefined ? 'New Kafka Service' : props.existingTitle?.(props.service.name) ?? ''}
+          {props.service === undefined ? 'Register Kafka Service' : props.existingTitle?.(props.service.name) ?? ''}
         </DialogTitle>
         <IconButton
           onClick={handleClose}

@@ -141,7 +141,7 @@ const ServiceList = () => {
         toolbar: {
           children: [
             <Button variant='contained' size='small' key='0' href='#create'>
-              Add service
+              Register a service
             </Button>,
             <ResetColumnViewButton
               key='1'
