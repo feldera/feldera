@@ -393,13 +393,11 @@ impl Compiler {
             .current_dir(&config.workspace_dir())
             .arg("build")
             .arg("--workspace")
+            .arg("--profile")
+            .arg(&config.compilation_profile_string())
             .stdin(Stdio::null())
             .stderr(Stdio::from(err_file.into_std().await))
             .stdout(Stdio::from(out_file.into_std().await));
-
-        if !config.debug {
-            command.arg("--release");
-        }
 
         command
             .spawn()
@@ -451,16 +449,25 @@ impl Compiler {
         program_id: ProgramId,
     ) -> Result<(), ManagerError> {
         let workspace_toml_code = format!(
-            "
+            r#"
 [workspace]
-members = [ \"{}\" ]
-resolver = \"2\"
+members = [ "{}" ]
+resolver = "2"
 
 [patch.crates-io]
-rkyv = {{ git = \"https://github.com/gz/rkyv.git\", rev = \"3d3fd86\" }}
-rust_decimal = {{ git = \"https://github.com/gz/rust-decimal.git\", rev = \"ea85fdf\" }}
-size-of = {{ git = \"https://github.com/gz/size-of.git\", rev = \"3ec40db\" }}
-",
+rkyv = {{ git = "https://github.com/gz/rkyv.git", rev = "3d3fd86" }}
+rust_decimal = {{ git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }}
+size-of = {{ git = "https://github.com/gz/size-of.git", rev = "3ec40db" }}
+
+[profile.unoptimized]
+inherits = "release"
+opt-level = 0
+lto = "off"
+codegen-units = 256
+
+[profile.optimized]
+inherits = "release"
+"#,
             CompilerConfig::crate_name(program_id),
         );
         let toml_path = config.workspace_toml_path();
@@ -1134,7 +1141,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            debug: false,
+            compilation_profile: crate::config::CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1199,7 +1206,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            debug: false,
+            compilation_profile: crate::config::CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1245,7 +1252,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            debug: false,
+            compilation_profile: crate::config::CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),

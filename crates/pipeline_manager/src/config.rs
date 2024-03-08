@@ -6,6 +6,8 @@ use serde::Deserialize;
 use std::{
     fs::{canonicalize, create_dir_all},
     path::{Path, PathBuf},
+    str::FromStr,
+    string::ParseError,
 };
 
 const fn default_server_port() -> u16 {
@@ -230,6 +232,30 @@ impl ApiServerConfig {
     }
 }
 
+/// Argument to `cargo build --profile <>` passed to the rust compiler
+#[derive(Parser, Default, Deserialize, Debug, Clone)]
+pub enum CompilationProfile {
+    /// Prioritizes compilation speed over runtime speed
+    Unoptimized,
+    /// Prioritizes runtime speed over compilation speed
+    #[default]
+    Optimized,
+}
+
+impl FromStr for CompilationProfile {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "unoptimized" => Ok(CompilationProfile::Unoptimized),
+            "optimized" => Ok(CompilationProfile::Optimized),
+            e => unimplemented!(
+                "Unsupported option {e}. Available choices are 'unoptimized' and 'optimized'"
+            ),
+        }
+    }
+}
+
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -240,12 +266,15 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = default_working_directory())]
     pub compiler_working_directory: String,
 
-    /// Compile pipelines in debug mode.
-    ///
-    /// The default is `false`.
+    /// Pick the profile to use for cargo build.
+    /// Available choices are:
+    /// * 'unoptimized', for faster compilation times
+    /// at the cost of lower runtime performance.
+    /// * 'optimized', for faster runtime performance
+    /// at the cost of slower compilation times.
     #[serde(default)]
     #[arg(long)]
-    pub debug: bool,
+    pub compilation_profile: CompilationProfile,
 
     /// Location of the SQL-to-DBSP compiler.
     #[serde(default = "default_sql_compiler_home")]
@@ -322,8 +351,17 @@ impl CompilerConfig {
     pub(crate) fn target_executable(&self, program_id: ProgramId) -> PathBuf {
         Path::new(&self.workspace_dir())
             .join("target")
-            .join(if self.debug { "debug" } else { "release" })
+            .join(self.compilation_profile_string())
             .join(Self::crate_name(program_id))
+    }
+
+    /// Helper to produce the compilation profile name as a string
+    pub(crate) fn compilation_profile_string(&self) -> String {
+        match self.compilation_profile {
+            CompilationProfile::Unoptimized => "unoptimized",
+            CompilationProfile::Optimized => "optimized",
+        }
+        .to_string()
     }
 
     /// Crate name for a project.
