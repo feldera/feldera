@@ -217,3 +217,12 @@ pub fn array_prepend<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
 pub fn array_prependN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_prepend(vector?, value))
 }
+
+pub fn array_contains__<T>(vector: Vec<T>, element: T) -> bool
+where
+    T: Eq,
+{
+    vector.contains(&element)
+}
+
+some_generic_function2!(array_contains, T, Vec<T>, T, Eq, bool);
