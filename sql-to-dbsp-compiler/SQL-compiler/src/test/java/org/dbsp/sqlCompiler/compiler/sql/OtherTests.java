@@ -80,6 +80,7 @@ import org.junit.Test;
 import javax.imageio.ImageIO;
 import javax.sql.DataSource;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -505,12 +506,17 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         for (File subdir: subdirs) {
             if (!subdir.getName().contains("project_"))
                 continue;
-            String path = subdir.getPath() + "/project.sql";
-            CompilerMessages messages = CompilerMain.execute(
-                    "-i", "--alltables", "-o", BaseSQLTests.testFilePath, path);
-            if (!messages.isEmpty())
-                System.out.println(messages);
-            Assert.assertEquals(0, messages.errorCount());
+            FilenameFilter filter = (_d, name) -> !name.contains("setup") && name.endsWith(".sql");
+            String[] sqlFiles = subdir.list(filter);
+            assert sqlFiles != null;
+            for (String sqlFile: sqlFiles) {
+                String path = subdir.getPath() + "/" + sqlFile;
+                CompilerMessages messages = CompilerMain.execute(
+                        "-i", "--alltables", "-o", BaseSQLTests.testFilePath, path);
+                if (!messages.isEmpty())
+                    System.out.println(messages);
+                Assert.assertEquals(0, messages.errorCount());
+            }
             Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
         }
     }

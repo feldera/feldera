@@ -753,19 +753,26 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "truncate":
                     case "round": {
                         DBSPExpression right;
+
                         if (call.operands.isEmpty())
                             throw new UnimplementedException(node);
-                        DBSPExpression left = ops.get(0);
 
-                        if (left.type.is(DBSPTypeDouble.class))
-                            return this.compilePolymorphicFunction(call, node, type, ops, 1);
+                        DBSPExpression left = ops.get(0);
 
                         if (call.operands.size() == 1)
                             right = new DBSPI32Literal(0);
                         else
                             right = ops.get(1);
+
                         DBSPType leftType = left.getType();
                         DBSPType rightType = right.getType();
+
+                        if (rightType.is(DBSPTypeNull.class)) {
+                            this.compiler.reportWarning(node.getPositionRange(),
+                                    "evaluates to NULL", node + ": always returns NULL");
+                            return type.nullValue();
+                        }
+
                         if (!rightType.is(DBSPTypeInteger.class))
                             throw new UnimplementedException("ROUND expects a constant second argument", node);
 

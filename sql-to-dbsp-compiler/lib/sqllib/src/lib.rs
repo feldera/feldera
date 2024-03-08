@@ -990,18 +990,39 @@ pub fn truncate_decimalN(left: Option<Decimal>, right: i32) -> Option<Decimal> {
 }
 
 #[inline(always)]
-pub fn truncate_d(left: F64) -> F64 {
-    left.into_inner().trunc().into()
+pub fn truncate_d(left: F64, right: i32) -> F64 {
+    let mut left = left.into_inner() * 10.0_f64.pow(right);
+    left = left.trunc();
+    left /= 10.0_f64.pow(right);
+
+    if left.is_zero() {
+        // normalize the sign to match Calcite
+        left = 0.0;
+    }
+    (left).into()
 }
 
-some_polymorphic_function1!(truncate, d, F64, F64);
+pub fn truncate_dN(left: Option<F64>, right: i32) -> Option<F64> {
+    Some(truncate_d(left?, right))
+}
 
 #[inline(always)]
-pub fn round_d(left: F64) -> F64 {
-    left.into_inner().round().into()
+pub fn round_d(left: F64, right: i32) -> F64 {
+    let mut left = left.into_inner() * 10.0_f64.pow(right);
+    left = left.round();
+    left /= 10.0_f64.pow(right);
+
+    if left.is_zero() {
+        // normalize the sign to match Calcite
+        left = 0.0;
+    }
+
+    (left).into()
 }
 
-some_polymorphic_function1!(round, d, F64, F64);
+pub fn round_dN(left: Option<F64>, right: i32) -> Option<F64> {
+    Some(round_d(left?, right))
+}
 
 pub fn power_i32_d(left: i32, right: F64) -> F64 {
     F64::new((left as f64).powf(right.into_inner()))

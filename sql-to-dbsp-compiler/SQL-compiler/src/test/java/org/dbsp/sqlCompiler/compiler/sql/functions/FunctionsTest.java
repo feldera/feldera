@@ -8,13 +8,12 @@ import org.junit.Test;
 public class FunctionsTest extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        String ddl = "CREATE TABLE ARR_TABLE (VALS INTEGER ARRAY NOT NULL,ID INTEGER NOT NULL)";
-        String insert = """
+        String setup = """
+                CREATE TABLE ARR_TABLE (VALS INTEGER ARRAY NOT NULL,ID INTEGER NOT NULL);
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 6);
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 7);
                 """;
-        compiler.compileStatement(ddl);
-        compiler.compileStatements(insert);
+        compiler.compileStatements(setup);
     }
 
     @Test
@@ -966,6 +965,289 @@ public class FunctionsTest extends SqlIoTest {
                 ------------
                  -20
                 (1 row)
+                
+                
+                select round(15.1);
+                 round(15.1)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.4);
+                 round(15.4)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.5);
+                 round(15.5)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.6);
+                 round(15.6)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.9);
+                 round(15.9)
+                ------------
+                 16
+                (1 row)
+                
+                select round(-15.1);
+                 round(-15.1)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.4);
+                 round(-15.4)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.5);
+                 round(-15.5)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.6);
+                 round(-15.6)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.9);
+                 round(-15.9)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(15.1::DOUBLE,1);
+                 round(15.1::DOUBLE,1)
+                ------------
+                 15.1
+                (1 row)
+                
+                select round(15.4::DOUBLE,1);
+                 round(15.4::DOUBLE,1)
+                ------------
+                 15.4
+                (1 row)
+                
+                select round(15.5::DOUBLE,1);
+                 round(15.5::DOUBLE,1)
+                ------------
+                 15.5
+                (1 row)
+                
+                select round(15.6::DOUBLE,1);
+                 round(15.6::DOUBLE,1)
+                ------------
+                 15.6
+                (1 row)
+                
+                select round(15.9::DOUBLE,1);
+                 round(15.9::DOUBLE,1)
+                ------------
+                 15.9
+                (1 row)
+                
+                select round(-15.1::DOUBLE,1);
+                round(-15.1::DOUBLE,1)
+                ------------
+                 -15.1
+                (1 row)
+                
+                select round(-15.4::DOUBLE,1);
+                round(-15.4::DOUBLE,1)
+                ------------
+                 -15.4
+                (1 row)
+                
+                select round(-15.5::DOUBLE,1);
+                round(-15.5::DOUBLE,1)
+                ------------
+                 -15.5
+                (1 row)
+                
+                select round(-15.6::DOUBLE,1);
+                round(-15.6::DOUBLE,1)
+                ------------
+                 -15.6
+                (1 row)
+                
+                select round(-15.9::DOUBLE,1);
+                round(-15.9::DOUBLE,1)
+                ------------
+                 -15.9
+                (1 row)
+                
+                select round(15.1::DOUBLE,0);
+                round(15.1::DOUBLE,0)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.4::DOUBLE,0);
+                 round(15.4::DOUBLE,0)
+                ------------
+                 15
+                (1 row)
+                
+                select round(15.5::DOUBLE,0);
+                round(15.5::DOUBLE,0)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.6::DOUBLE,0);
+                round(15.6::DOUBLE,0)
+                ------------
+                 16
+                (1 row)
+                
+                select round(15.9::DOUBLE,0);
+                round(15.9::DOUBLE,0)
+                ------------
+                 16
+                (1 row)
+                
+                select round(-15.1::DOUBLE,0);
+                round(-15.1::DOUBLE,0)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.4::DOUBLE,0);
+                round(-15.4::DOUBLE,0)
+                ------------
+                 -15
+                (1 row)
+                
+                select round(-15.5::DOUBLE,0);
+                round(-15.5::DOUBLE,0)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.6::DOUBLE,0);
+                round(-15.6::DOUBLE,0)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(-15.9::DOUBLE,0);
+                round(-15.9::DOUBLE,0)
+                ------------
+                 -16
+                (1 row)
+                
+                select round(15.1::DOUBLE,-1);
+                round(15.1::DOUBLE,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.4::DOUBLE,-1);
+                round(15.4::DOUBLE,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.5::DOUBLE,-1);
+                round(15.5::DOUBLE,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.6::DOUBLE,-1);
+                round(15.6::DOUBLE,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(15.9::DOUBLE,-1);
+                round(15.9::DOUBLE,-1)
+                ------------
+                 20
+                (1 row)
+                
+                select round(-15.1::DOUBLE,-1);
+                round(-15.1::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.4::DOUBLE,-1);
+                round(-15.4::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.5::DOUBLE,-1);
+                round(-15.5::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.6::DOUBLE,-1);
+                round(-15.6::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91::DOUBLE,-1);
+                round(-15.91::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91::DOUBLE,-1::tinyint);
+                round(-15.91::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91::DOUBLE,-1::smallint);
+                round(-15.91::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(-15.91::DOUBLE,-1::int);
+                round(-15.91::DOUBLE,-1)
+                ------------
+                 -20
+                (1 row)
+                
+                select round(null::double);
+                 round
+                -------
+                 NULL
+                (1 row)
+                
+                select round(null::double, null);
+                 round
+                -------
+                 NULL
+                (1 row)
+                
+                select round(null::DECIMAL);
+                 round
+                -------
+                 NULL
+                (1 row)
+                
+                select round(null::DECIMAL, null);
+                 round
+                -------
+                 NULL
+                (1 row)
                 """
         );
     }
@@ -1128,6 +1410,207 @@ public class FunctionsTest extends SqlIoTest {
                 -----
                 5678.1
                 (1 row)
+                
+                
+                select truncate(5678.123451);
+                truncate(5678.123451)
+                -----
+                5678
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,0);
+                truncate(5678.123451::DOUBLE,0)
+                -----
+                5678
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,1);
+                truncate(5678.123451::DOUBLE,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,2);
+                truncate(5678.123451::DOUBLE,2)
+                -----
+                5678.12
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,3);
+                truncate(5678.123451::DOUBLE,3)
+                -----
+                5678.123
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,4);
+                truncate(5678.123451::DOUBLE,4)
+                -----
+                5678.1234
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,5);
+                truncate(5678.123451::DOUBLE,5)
+                -----
+                5678.12345
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,6);
+                truncate(5678.123451::DOUBLE,6)
+                -----
+                5678.123451
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,-1);
+                truncate(5678.123451::DOUBLE,-1)
+                -----
+                5670
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,-2);
+                truncate(5678.123451::DOUBLE,-2)
+                -----
+                5600
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,-3);
+                truncate(5678.123451::DOUBLE,-3)
+                -----
+                5000
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,-4);
+                truncate(5678.123451::DOUBLE,-4)
+                -----
+                0
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,0);
+                truncate(-5678.123451::DOUBLE,0)
+                -----
+                -5678
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,1);
+                truncate(-5678.123451::DOUBLE,1)
+                -----
+                -5678.1
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,2);
+                truncate(-5678.123451::DOUBLE,2)
+                -----
+                -5678.12
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,3);
+                truncate(-5678.123451::DOUBLE,3)
+                -----
+                -5678.123
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,4);
+                truncate(-5678.123451::DOUBLE,4)
+                -----
+                -5678.1234
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,5);
+                truncate(-5678.123451::DOUBLE,5)
+                -----
+                -5678.12345
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,6);
+                truncate(-5678.123451::DOUBLE,6)
+                -----
+                -5678.123451
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,-1);
+                truncate(-5678.123451::DOUBLE,-1)
+                -----
+                -5670
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,-2);
+                truncate(-5678.123451::DOUBLE,-2)
+                -----
+                -5600
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,-3);
+                truncate(-5678.123451::DOUBLE,-3)
+                -----
+                -5000
+                (1 row)
+                
+                select truncate(-5678.123451::DOUBLE,-4);
+                truncate(-5678.123451::DOUBLE,-4)
+                -----
+                0
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,1::tinyint);
+                truncate(5678.123451::DOUBLE,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,1::smallint);
+                truncate(5678.123451::DOUBLE,1)
+                -----
+                5678.1
+                (1 row)
+                
+                select truncate(5678.123451::DOUBLE,1::int);
+                truncate(5678.123451::DOUBLE,1)
+                -----
+                5678.1
+                (1 row)
+                
+                """
+        );
+    }
+
+    @Test
+    public void testRoundTruncateEdgeCases() {
+        // Calcite normalizes the sign here
+        this.qs("""
+                select truncate(-0.00123::DOUBLE, 2);
+                 truncate
+                ----------
+                 0.00
+                (1 row)
+                
+                select truncate(-0.00123::DECIMAL(10, 5), 2);
+                 truncate
+                ----------
+                 0.00
+                (1 row)
+                
+                select round(-0.00123::DOUBLE, 2);
+                 round
+                ----------
+                 0.00
+                (1 row)
+                
+                select round(-0.00123::DECIMAL(10, 5), 2);
+                 round
+                ----------
+                 0.00
+                (1 row)
+                
+                select round(-0.00623::DOUBLE, 2);
+                 round
+                ----------
+                 -0.01
+                (1 row)
+                
+                select round(-0.00623::DECIMAL(10, 5), 2);
+                 round
+                ----------
+                 -0.01
+                (1 row)
                 """
         );
     }
@@ -1198,6 +1681,36 @@ public class FunctionsTest extends SqlIoTest {
                          exp
                 ---------------------
                  214429043492155.56
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testIssue1505() {
+        this.qs("""
+                SELECT ROUND(123.1234::DOUBLE, 2);
+                 round
+                -------
+                 123.12
+                (1 row)
+                
+                SELECT ROUND(123.1266::DOUBLE, 2);
+                 round
+                -------
+                 123.13
+                (1 row)
+                
+                SELECT ROUND(123.1266::DOUBLE, -2);
+                 round
+                -------
+                 100
+                (1 row)
+                
+                SELECT ROUND(123.1266::DOUBLE);
+                 round
+                -------
+                 123
                 (1 row)
                 """
         );
