@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, utils::Tup7, OrdZSet, RootCircuit, Stream};
+use dbsp::{utils::Tup7, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 22: Get URL Directories (Not in original suite)
@@ -29,7 +29,7 @@ use dbsp::{operator::FilterMap, utils::Tup7, OrdZSet, RootCircuit, Stream};
 ///     SPLIT_INDEX(url, '/', 5) as dir3 FROM bid;
 /// ```
 
-type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, String, String, String>, i64>;
+type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, String, String, String>>;
 type Q22Stream = Stream<RootCircuit, Q22Set>;
 
 pub fn q22(input: NexmarkStream) -> Q22Stream {
@@ -60,7 +60,7 @@ pub fn q22(input: NexmarkStream) -> Q22Stream {
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::zset;
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
     #[rstest]
@@ -104,10 +104,10 @@ mod tests {
     fn test_q22(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q22Set>) {
         let input_vecs = input_event_batches
             .into_iter()
-            .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
+            .map(|batch| batch.into_iter().map(|e| Tup2(e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q22(stream);
 

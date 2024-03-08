@@ -15,7 +15,10 @@ pub use floats::{F32, F64};
 pub use lattice::Lattice;
 pub use order::{PartialOrder, TotalOrder};
 pub use present::Present;
-pub use zset::{IndexedZSet, ZSet};
+pub use zset::{
+    DynZWeight, IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet,
+    OrdZSetFactories, ZBatch, ZBatchReader, ZCursor, ZSet, ZSetReader, ZTrace, ZWeight,
+};
 
 use rust_decimal::Decimal;
 use size_of::SizeOf;

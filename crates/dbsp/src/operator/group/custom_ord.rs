@@ -1,13 +1,12 @@
+use crate::trace::Deserializable;
+use rkyv::{Archive, Deserialize, Infallible, Serialize};
+use size_of::SizeOf;
 use std::{
     cmp::Ordering,
     fmt::{self, Debug, Formatter},
     hash::{Hash, Hasher},
     marker::PhantomData,
 };
-
-use crate::trace::Deserializable;
-use rkyv::{Archive, Deserialize, Infallible, Serialize};
-use size_of::SizeOf;
 
 /// Custom comparison function.
 pub trait CmpFunc<T>: Send + 'static {
@@ -21,6 +20,15 @@ pub trait CmpFunc<T>: Send + 'static {
 pub struct WithCustomOrd<T, F> {
     pub val: T,
     phantom: PhantomData<F>,
+}
+
+impl<T: Default, F> Default for WithCustomOrd<T, F> {
+    fn default() -> Self {
+        Self {
+            val: Default::default(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<T, F> Debug for WithCustomOrd<T, F>

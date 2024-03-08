@@ -1,12 +1,6 @@
-mod partitioned;
-mod radix_tree;
-mod range;
 mod rolling_aggregate;
 mod waterline;
 mod window;
 
-pub use partitioned::{
-    OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatch, PartitionedBatchReader,
-    PartitionedIndexedZSet,
-};
-pub use range::{Range, RelOffset, RelRange};
+pub use crate::operator::dynamic::time_series::{Range, RelOffset, RelRange};
+pub use rolling_aggregate::{OrdPartitionedIndexedZSet, OrdPartitionedOverStream};

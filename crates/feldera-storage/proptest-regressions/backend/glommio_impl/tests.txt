@@ -1,8 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc ccea803afc0ece552f90806dfa7c94a41b2d671ce748eda75912c5f283b017d5 # shrinks to (initial_state, transitions) = (InMemoryBackend { file_counter: 0, files: RefCell { value: {} }, immutable_files: RefCell { value: {} }, error: None }, [Create, Create, Write(1, 512, a*512)])
-cc dbf4649857dbd417ffc82b5664a526c6f471f91ffff7fbb942fc6afb5fccc215 # shrinks to (initial_state, transitions) = (InMemoryBackend { file_counter: 0, files: RefCell { value: {} }, immutable_files: RefCell { value: {} }, error: None }, [Create, Create, Create, Write(2, 2048, a*512), Write(2, 1024, a*4096), Complete(2), Read(2, 1024, 4096)])

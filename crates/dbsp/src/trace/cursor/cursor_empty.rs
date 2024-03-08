@@ -1,21 +1,20 @@
-use crate::trace::cursor::Cursor;
 use std::marker::PhantomData;
+
+use crate::dynamic::{Factory, WeightTrait};
+
+use super::Cursor;
 
 /// Cursor that contains no data.
 
-pub struct CursorEmpty<K, V, T, R> {
-    phantom: PhantomData<(K, V, T, R)>,
+pub struct CursorEmpty<K: ?Sized, V: ?Sized, T, R: WeightTrait + ?Sized> {
+    weight_factory: &'static dyn Factory<R>,
+    phantom: PhantomData<fn(&K, &V, T, &R)>,
 }
 
-impl<K, V, T, R> Default for CursorEmpty<K, V, T, R> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<K, V, T, R> CursorEmpty<K, V, T, R> {
-    pub fn new() -> Self {
+impl<K: ?Sized, V: ?Sized, T, R: WeightTrait + ?Sized> CursorEmpty<K, V, T, R> {
+    pub fn new(weight_factory: &'static dyn Factory<R>) -> Self {
         Self {
+            weight_factory,
             phantom: PhantomData,
         }
     }
@@ -23,11 +22,15 @@ impl<K, V, T, R> CursorEmpty<K, V, T, R> {
 
 impl<K, V, T, R> Cursor<K, V, T, R> for CursorEmpty<K, V, T, R>
 where
-    K: 'static,
-    V: 'static,
+    K: ?Sized,
+    V: ?Sized,
     T: 'static,
-    R: 'static,
+    R: WeightTrait + ?Sized,
 {
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.weight_factory
+    }
+
     fn key_valid(&self) -> bool {
         false
     }
@@ -44,21 +47,20 @@ where
         panic!("CursorEmpty::val")
     }
 
-    fn fold_times<F, U>(&mut self, init: U, _fold: F) -> U
+    fn map_times(&mut self, _logic: &mut dyn FnMut(&T, &R)) {}
+
+    fn map_times_through(&mut self, _upper: &T, _logic: &mut dyn FnMut(&T, &R)) {}
+
+    fn map_values(&mut self, _logic: &mut dyn FnMut(&V, &R))
     where
-        F: FnMut(U, &T, &R) -> U,
+        T: PartialEq<()>,
     {
-        init
     }
 
-    fn fold_times_through<F, U>(&mut self, _upper: &T, init: U, _fold: F) -> U
+    fn weight(&mut self) -> &R
     where
-        F: FnMut(U, &T, &R) -> U,
+        T: PartialEq<()>,
     {
-        init
-    }
-
-    fn weight(&mut self) -> R {
         panic!("CursorEmpty::weight")
     }
 
@@ -70,17 +72,13 @@ where
         panic!("")
     }
 
-    fn seek_key_with<P>(&mut self, _predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
-    }
+    fn seek_key(&mut self, _key: &K) {}
 
-    fn seek_key_with_reverse<P>(&mut self, _predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
-    }
+    fn seek_key_with(&mut self, _predicate: &dyn Fn(&K) -> bool) {}
+
+    fn seek_key_with_reverse(&mut self, _predicate: &dyn Fn(&K) -> bool) {}
+
+    fn seek_key_reverse(&mut self, _key: &K) {}
 
     fn step_val(&mut self) {
         panic!("CursorEmpty::step_val")
@@ -88,11 +86,7 @@ where
 
     fn seek_val(&mut self, _val: &V) {}
 
-    fn seek_val_with<P>(&mut self, _predicate: P)
-    where
-        P: Fn(&V) -> bool,
-    {
-    }
+    fn seek_val_with(&mut self, _predicate: &dyn Fn(&V) -> bool) {}
 
     fn rewind_keys(&mut self) {}
 
@@ -106,11 +100,7 @@ where
 
     fn seek_val_reverse(&mut self, _val: &V) {}
 
-    fn seek_val_with_reverse<P>(&mut self, _predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
-    }
+    fn seek_val_with_reverse(&mut self, _predicate: &dyn Fn(&V) -> bool) {}
 
     fn fast_forward_vals(&mut self) {}
 }

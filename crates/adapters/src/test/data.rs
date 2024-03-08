@@ -1,3 +1,4 @@
+use dbsp::utils::Tup2;
 use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
@@ -144,9 +145,12 @@ pub fn generate_test_batches(
 pub fn generate_test_batches_with_weights(
     max_batches: usize,
     max_records: usize,
-) -> impl Strategy<Value = Vec<Vec<(TestStruct, i64)>>> {
+) -> impl Strategy<Value = Vec<Vec<Tup2<TestStruct, i64>>>> {
     collection::vec(
-        collection::vec((any::<TestStruct>(), -2i64..=2i64), 0..=max_records),
+        collection::vec(
+            (any::<TestStruct>(), -2i64..=2i64).prop_map(|(x, y)| Tup2(x, y)),
+            0..=max_records,
+        ),
         0..=max_batches,
     )
     .prop_map(|batches| {

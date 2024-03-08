@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
 
 /// Selection
 ///
@@ -19,10 +19,10 @@ use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 /// SELECT auction, price FROM bid WHERE MOD(auction, 123) = 0;
 const AUCTION_ID_MODULO: u64 = 123;
 
-pub fn q2(input: NexmarkStream) -> Stream<RootCircuit, OrdZSet<(u64, u64), i64>> {
+pub fn q2(input: NexmarkStream) -> Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>> {
     input.flat_map(|event| match event {
         Event::Bid(b) => match b.auction % AUCTION_ID_MODULO == 0 {
-            true => Some((b.auction, b.price)),
+            true => Some(Tup2(b.auction, b.price)),
             false => None,
         },
         _ => None,
@@ -36,13 +36,13 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
+    use dbsp::{OrdZSet, RootCircuit, ZWeight};
 
     #[test]
     fn test_q2() {
-        let input_vecs: Vec<Vec<(Event, i64)>> = vec![
+        let input_vecs: Vec<Vec<Tup2<Event, ZWeight>>> = vec![
             vec![
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 1,
                         price: 80,
@@ -50,7 +50,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: AUCTION_ID_MODULO,
                         price: 111,
@@ -58,7 +58,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: AUCTION_ID_MODULO + 1,
                         price: 100,
@@ -68,7 +68,7 @@ mod tests {
                 ),
             ],
             vec![
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 3 * AUCTION_ID_MODULO + 25,
                         price: 80,
@@ -76,7 +76,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 4 * AUCTION_ID_MODULO,
                         price: 222,
@@ -88,13 +88,13 @@ mod tests {
         ];
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q2(stream);
 
             let mut expected_output = vec![
-                OrdZSet::from_keys((), vec![((AUCTION_ID_MODULO, 111), 1)]),
-                OrdZSet::from_keys((), vec![((4 * AUCTION_ID_MODULO, 222), 1)]),
+                OrdZSet::from_keys((), vec![Tup2(Tup2(AUCTION_ID_MODULO, 111), 1)]),
+                OrdZSet::from_keys((), vec![Tup2(Tup2(4 * AUCTION_ID_MODULO, 222), 1)]),
             ]
             .into_iter();
 

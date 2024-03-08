@@ -1,11 +1,11 @@
 use anyhow::Result as AnyResult;
 use chrono::Datelike;
 use clap::Parser;
-use dbsp::utils::{Tup2, Tup3};
+use dbsp::utils::Tup2;
 use dbsp::{
     circuit::{IntoCircuitConfig, Layout},
-    operator::FilterMap,
-    CollectionHandle, DBSPHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
+    utils::Tup3,
+    DBSPHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle,
 };
 use futures::{
     future::{self, Ready},
@@ -36,10 +36,10 @@ struct Args {
 fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> AnyResult<(
-    CollectionHandle<Record, i64>,
-    OutputHandle<OrdIndexedZSet<String, VaxMonthly, i64>>,
+    ZSetHandle<Record>,
+    OutputHandle<OrdIndexedZSet<String, VaxMonthly>>,
 )> {
-    let (input_stream, input_handle) = circuit.add_input_zset::<Record, i64>();
+    let (input_stream, input_handle) = circuit.add_input_zset::<Record>();
     let subset = input_stream.filter(|r| {
         r.location == "England"
             || r.location == "Northern Ireland"
@@ -47,8 +47,8 @@ fn build_circuit(
             || r.location == "Wales"
     });
     let monthly_totals = subset
-        .index_with(|r| {
-            Tup2(
+        .map_index(|r| {
+            (
                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
@@ -71,8 +71,8 @@ fn build_circuit(
 
 struct Inner {
     circuit: DBSPHandle,
-    input_handle: CollectionHandle<Record, i64>,
-    output_handle: OutputHandle<OrdIndexedZSet<String, VaxMonthly, i64>>,
+    input_handle: ZSetHandle<Record>,
+    output_handle: OutputHandle<OrdIndexedZSet<String, VaxMonthly>>,
 }
 
 impl Inner {
@@ -115,7 +115,7 @@ impl Circuit for Server {
         future::ready(())
     }
     type RunFut = Ready<Vec<(String, VaxMonthly, i64)>>;
-    fn run(self, _: context::Context, mut records: Vec<(Record, i64)>) -> Self::RunFut {
+    fn run(self, _: context::Context, mut records: Vec<Tup2<Record, i64>>) -> Self::RunFut {
         self.inner()
             .as_ref()
             .unwrap()

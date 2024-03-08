@@ -64,17 +64,15 @@ mod product;
 
 use crate::{
     algebra::{Lattice, PartialOrder},
-    circuit::Scope,
-    trace::{
-        ord::{OrdKeyBatch, OrdValBatch},
-        Batch,
-    },
-    DBData, DBWeight, OrdIndexedZSet, OrdZSet,
+    dynamic::{DataTrait, WeightTrait},
+    trace::{Batch, OrdIndexedWSet, OrdKeyBatch, OrdValBatch, OrdWSet},
+    DBData, Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 
+use crate::dynamic::DynUnit;
 pub use antichain::{Antichain, AntichainRef};
 pub use nested_ts32::NestedTimestamp32;
 pub use product::Product;
@@ -85,9 +83,7 @@ pub use product::Product;
 /// DBSP.
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
-pub trait Timestamp:
-    PartialOrder + Lattice + Debug + Clone + Ord + PartialEq + Eq + Hash + 'static
-{
+pub trait Timestamp: DBData + PartialOrder + Lattice {
     type Nested: Timestamp;
 
     /// A default `Batch` type for batches using this timestamp.
@@ -104,10 +100,11 @@ pub trait Timestamp:
     /// We automate this choice by making it an associated type of
     /// `trait Timestamp` -- not a very elegant solution, but I couldn't
     /// think of a better one.
-    type OrdValBatch<K: DBData, V: DBData, R: DBWeight>: Batch<Key = K, Val = V, Time = Self, R = R>
+    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
         + SizeOf;
 
-    type OrdKeyBatch<K: DBData, R: DBWeight>: Batch<Key = K, Val = (), Time = Self, R = R> + SizeOf;
+    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
+        + SizeOf;
 
     fn minimum() -> Self;
 
@@ -198,6 +195,12 @@ pub trait Timestamp:
 #[archive_attr(doc(hidden))]
 pub struct UnitTimestamp;
 
+impl Default for UnitTimestamp {
+    fn default() -> Self {
+        UnitTimestamp
+    }
+}
+
 impl PartialOrder for UnitTimestamp {
     fn less_equal(&self, _other: &Self) -> bool {
         true
@@ -217,8 +220,9 @@ impl Lattice for UnitTimestamp {
 impl Timestamp for UnitTimestamp {
     type Nested = ();
 
-    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
-    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdKeyBatch<K, Self, R>;
+    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+        OrdValBatch<K, V, Self, R>;
+    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         UnitTimestamp
@@ -243,8 +247,9 @@ impl Timestamp for UnitTimestamp {
 impl Timestamp for () {
     type Nested = NestedTimestamp32;
 
-    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdIndexedZSet<K, V, R>;
-    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdZSet<K, R>;
+    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+        OrdIndexedWSet<K, V, R>;
+    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdWSet<K, R>;
 
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
@@ -259,8 +264,9 @@ impl Timestamp for () {
 impl Timestamp for u32 {
     type Nested = NestedTimestamp32;
 
-    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
-    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdKeyBatch<K, Self, R>;
+    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+        OrdValBatch<K, V, Self, R>;
+    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         0

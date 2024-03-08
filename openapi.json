@@ -3257,7 +3257,8 @@
             "description": "Name of the program to create a pipeline for.",
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateOrReplacePipelineResponse": {
         "type": "object",
@@ -3866,7 +3867,8 @@
             "description": "Name of the program to create a pipeline for.",
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "NewPipelineResponse": {
         "type": "object",
@@ -4946,7 +4948,8 @@
             "description": "New program to create a pipeline for. If absent, program will be set to\nNULL.",
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "UpdatePipelineResponse": {
         "type": "object",

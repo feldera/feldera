@@ -140,12 +140,12 @@ impl<C> Condition<C> {
 
 #[cfg(test)]
 mod test {
-    use crate::utils::Tup2;
     use crate::{
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
-        operator::{DelayedFeedback, FilterMap, Generator},
-        trace::ord::{OrdIndexedZSet, OrdZSet},
+        operator::{DelayedFeedback, Generator},
+        typed_batch::{OrdIndexedZSet, OrdZSet},
+        utils::Tup2,
         zset, ChildCircuit, Circuit, RootCircuit, Stream,
     };
 
@@ -192,7 +192,8 @@ mod test {
                     let init1 = init1.delta0(child).integrate();
                     let init2 = init2.delta0(child).integrate();
 
-                    let edges_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = edges.index();
+                    let edges_indexed: Stream<_, OrdIndexedZSet<u64, u64>> =
+                        edges.map_index(|Tup2(k, v)| (*k, *v));
 
                     // Builds a subcircuit that computes nodes reachable from `init`:
                     //
@@ -210,13 +211,13 @@ mod test {
                     //
                     // where suc computes the set of successor nodes.
                     let reachable_circuit =
-                        |init: Stream<ChildCircuit<RootCircuit>, OrdZSet<u64, i64>>| {
-                            let feedback = <DelayedFeedback<_, OrdZSet<u64, i64>>>::new(child);
+                        |init: Stream<ChildCircuit<RootCircuit>, OrdZSet<u64>>| {
+                            let feedback = <DelayedFeedback<_, OrdZSet<u64>>>::new(child);
 
-                            let feedback_pairs: Stream<_, OrdZSet<Tup2<u64, ()>, i64>> =
-                                feedback.stream().map(|&node| Tup2(node, ()));
-                            let feedback_indexed: Stream<_, OrdIndexedZSet<u64, (), i64>> =
-                                feedback_pairs.index();
+                            let feedback_pairs: Stream<_, OrdZSet<(u64, ())>> =
+                                feedback.stream().map(|&node| (node, ()));
+                            let feedback_indexed: Stream<_, OrdIndexedZSet<u64, ()>> =
+                                feedback_pairs.map_index(|(k, v)| (*k, *v));
 
                             let suc =
                                 feedback_indexed.stream_join(&edges_indexed, |_node, &(), &to| to);

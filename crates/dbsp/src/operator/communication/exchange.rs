@@ -12,11 +12,10 @@ use crate::{
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     circuit_cache_key,
+    storage::file::to_bytes,
     trace::{unaligned_deserialize, Rkyv},
 };
-
 use crossbeam_utils::CachePadded;
-use feldera_storage::file::to_bytes;
 use futures::{future, prelude::*};
 use once_cell::sync::{Lazy, OnceCell};
 use std::{
@@ -332,6 +331,8 @@ pub(crate) struct Exchange<T> {
     mailboxes: Arc<Vec<Mutex<Option<T>>>>,
 }
 
+// Stop Rust from complaining about unused field.s
+#[allow(dead_code)]
 struct ExchangeListener(DropGuard);
 
 impl ExchangeListener {
@@ -1132,7 +1133,7 @@ mod tests {
                         &Runtime::runtime().unwrap(),
                         Runtime::worker_index(),
                         None,
-                        || Vec::new(),
+                        Vec::new,
                         move |n, vals| {
                             for _ in 0..workers {
                                 vals.push(n)

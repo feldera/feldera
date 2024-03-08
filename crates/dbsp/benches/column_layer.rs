@@ -1,14 +1,14 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use dbsp::dynamic::{DataTraitTyped, DynDataTyped, Erase, LeanVec, WeightTraitTyped};
+use dbsp::utils::Tup2;
 use dbsp::{
-    algebra::{AddAssignByRef, AddByRef, MonoidValue, NegByRef},
+    algebra::{AddAssignByRef, AddByRef, NegByRef},
     trace::{
-        consolidation::consolidate,
-        layers::{
-            column_layer::ColumnLayer,
-            erased::{TypedErasedKeyLeaf, TypedErasedLeaf},
-            Builder, MergeBuilder, Trie, TupleBuilder,
-        },
+        layers::{Builder, Leaf, MergeBuilder, TupleBuilder},
+        Trie,
     },
+    utils::consolidate,
+    DBData, DBWeight, DynZWeight, ZWeight,
 };
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{distributions::Standard, prelude::Distribution, Rng, SeedableRng};
@@ -19,52 +19,76 @@ const SEED: [u8; 32] = [
     0x11, 0x7d, 0xc, 0xe4, 0x64, 0xbf, 0x72, 0x17, 0x46, 0x28, 0x46, 0x42, 0xb2, 0x4b, 0x72, 0x18,
 ];
 
-fn data_leaf<K, R, L>(length: usize) -> L
+fn data_leaf<K: DataTraitTyped + ?Sized, R: WeightTraitTyped + ?Sized, L>(
+    factories: &L::Factories,
+    length: usize,
+) -> L
 where
-    K: Ord + Clone,
-    R: MonoidValue,
-    L: Trie<Item = (K, R)>,
-    Standard: Distribution<(K, R)>,
+    K::Type: DBData + Erase<K>,
+    R::Type: DBWeight + Erase<R>,
+    L: for<'a> Trie<Item<'a> = (&'a mut K, &'a mut R)>,
+    Standard: Distribution<(K::Type, R::Type)>,
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
-    let mut data = Vec::with_capacity(length);
+    let mut data = LeanVec::with_capacity(length);
 
     for _ in 0..length {
-        data.push(rng.gen());
+        let (k, w) = rng.gen();
+        data.push(Tup2(k, w));
     }
     consolidate(&mut data);
 
-    let mut builder = <L::TupleBuilder>::with_capacity(length);
-    builder.extend_tuples(data.into_iter());
+    let data = Vec::from(data);
+
+    let mut builder = <L::TupleBuilder>::with_capacity(factories, length);
+
+    for Tup2(mut k, mut r) in data.into_iter() {
+        builder.push_tuple((k.erase_mut(), r.erase_mut()))
+    }
+
     builder.done()
 }
 
-fn data_leaves<K, R, L>(length: usize) -> (L, L)
+fn data_leaves<K: DataTraitTyped + ?Sized, R: DataTraitTyped + ?Sized, L>(
+    factories: &L::Factories,
+    length: usize,
+) -> (L, L)
 where
-    K: Ord + Clone,
-    R: MonoidValue,
-    L: Trie<Item = (K, R)>,
-    Standard: Distribution<(K, R)>,
+    K::Type: DBData + Erase<K>,
+    R::Type: DBWeight + Erase<R>,
+    L: for<'a> Trie<Item<'a> = (&'a mut K, &'a mut R)>,
+    Standard: Distribution<(K::Type, R::Type)>,
 {
     let mut rng = Xoshiro256StarStar::from_seed(SEED);
-    let mut left = Vec::with_capacity(length / 2);
-    let mut right = Vec::with_capacity(length / 2);
+    let mut left = LeanVec::with_capacity(length / 2);
+    let mut right = LeanVec::with_capacity(length / 2);
 
     for _ in 0..length / 2 {
-        left.push(rng.gen());
-        right.push(rng.gen());
+        let (k, w) = rng.gen();
+        left.push(Tup2(k, w));
+
+        let (k, w) = rng.gen();
+        right.push(Tup2(k, w));
     }
 
     consolidate(&mut left);
     consolidate(&mut right);
 
+    let left = Vec::from(left);
+    let right = Vec::from(right);
+
     let (mut right_builder, mut left_builder) = (
-        <L::TupleBuilder>::with_capacity(length / 2),
-        <L::TupleBuilder>::with_capacity(length / 2),
+        <L::TupleBuilder>::with_capacity(factories, length / 2),
+        <L::TupleBuilder>::with_capacity(factories, length / 2),
     );
 
-    left_builder.extend_tuples(left.into_iter());
-    right_builder.extend_tuples(right.into_iter());
+    for Tup2(mut k, mut r) in left.into_iter() {
+        left_builder.push_tuple((k.erase_mut(), r.erase_mut()))
+    }
+
+    for Tup2(mut k, mut r) in right.into_iter() {
+        right_builder.push_tuple((k.erase_mut(), r.erase_mut()))
+    }
 
     (left_builder.done(), right_builder.done())
 }
@@ -75,12 +99,13 @@ macro_rules! leaf_benches {
             let mut group = c.benchmark_group("ordered-builder-push-merge");
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
+                    let factories = <$layer<_,_> as Trie>::Factories::new::<u64, ZWeight>();
+                    let (left, right) = data_leaves::<DynDataTyped<u64>, DynZWeight, $layer<_,_>>(&factories, $size);
 
                     b.iter_batched(
                         || (left.cursor(), right.cursor()),
                         |(left, right)| {
-                            let mut builder = <$layer<_,_> as Trie>::MergeBuilder::new();
+                            let mut builder = <$layer<_,_> as Trie>::MergeBuilder::new(&factories);
                             builder.push_merge(left, right);
                         },
                         BatchSize::PerIteration,
@@ -95,7 +120,9 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
+                    let factories = <$layer<_,_> as Trie>::Factories::new::<u64, ZWeight>();
+
+                    let (left, right) = data_leaves::<DynDataTyped<u64>, DynZWeight, $layer<_,_>>(&factories, $size);
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
@@ -110,7 +137,9 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
+                    let factories = <$layer<_,_> as Trie>::Factories::new::<u64, ZWeight>();
+
+                    let (left, right) = data_leaves::<DynDataTyped<u64>, DynZWeight, $layer<_,_>>(&factories, $size);
 
                     b.iter_batched(
                         || (&left, &right),
@@ -125,7 +154,9 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
+                    let factories = <$layer<_,_> as Trie>::Factories::new::<u64, ZWeight>();
+
+                    let (left, right) = data_leaves::<DynDataTyped<u64>, DynZWeight, $layer<_,_>>(&factories, $size);
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
@@ -140,7 +171,9 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let (left, right) = data_leaves::<u64, i64, $layer<_,_>>($size);
+                    let factories = <$layer<_,_> as Trie>::Factories::new::<u64, ZWeight>();
+
+                    let (left, right) = data_leaves::<DynDataTyped<u64>, DynZWeight, $layer<_,_>>(&factories, $size);
 
                     b.iter_batched(
                         || (left.clone(), &right),
@@ -155,7 +188,9 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let leaf = data_leaf::<u64, i64, $layer<u64, i64>>($size);
+                    let factories = <$layer<_,_> as Trie>::Factories::new::<u64, ZWeight>();
+
+                    let leaf = data_leaf::<DynDataTyped<u64>, DynZWeight, $layer<DynDataTyped<u64>, DynZWeight>>(&factories, $size);
 
                     b.iter_batched(
                         || leaf.clone(),
@@ -170,7 +205,9 @@ macro_rules! leaf_benches {
             group.sample_size(10);
             $(
                 group.bench_function($name, |b| {
-                    let leaf = data_leaf::<u64, i64, $layer<u64, i64>>($size);
+                    let factories = <$layer<_,_> as Trie>::Factories::new::<u64, ZWeight>();
+
+                    let leaf = data_leaf::<DynDataTyped<u64>, DynZWeight, $layer<DynDataTyped<u64>, DynZWeight>>(&factories, $size);
 
                     b.iter_batched(
                         || &leaf,
@@ -185,33 +222,15 @@ macro_rules! leaf_benches {
 }
 
 leaf_benches! {
-    "0-static" = [ColumnLayer]0,
-    "0-erased" = [TypedErasedLeaf]0,
-    "0-erased-key" = [TypedErasedKeyLeaf]0,
-    "10-static" = [ColumnLayer]10,
-    "10-erased" = [TypedErasedLeaf]10,
-    "10-erased-key" = [TypedErasedKeyLeaf]10,
-    "100-static" = [ColumnLayer]100,
-    "100-erased" = [TypedErasedLeaf]100,
-    "100-erased-key" = [TypedErasedKeyLeaf]100,
-    "1000-static" = [ColumnLayer]1000,
-    "1000-erased" = [TypedErasedLeaf]1000,
-    "1000-erased-key" = [TypedErasedKeyLeaf]1000,
-    "10,000-static" = [ColumnLayer]10_000,
-    "10,000-erased" = [TypedErasedLeaf]10_000,
-    "10,000-erased-key" = [TypedErasedKeyLeaf]10_000,
-    "100,000-static" = [ColumnLayer]100_000,
-    "100,000-erased" = [TypedErasedLeaf]100_000,
-    "100,000-erased-key" = [TypedErasedKeyLeaf]100_000,
-    "1,000,000-static" = [ColumnLayer]1_000_000,
-    "1,000,000-erased" = [TypedErasedLeaf]1_000_000,
-    "1,000,000-erased-key" = [TypedErasedKeyLeaf]1_000_000,
-    "10,000,000-static" = [ColumnLayer]10_000_000,
-    "10,000,000-erased" = [TypedErasedLeaf]10_000_000,
-    "10,000,000-erased-key" = [TypedErasedKeyLeaf]10_000_000,
-    "100,000,000-static" = [ColumnLayer]100_000_000,
-    "100,000,000-erased" = [TypedErasedLeaf]100_000_000,
-    "100,000,000-erased-key" = [TypedErasedKeyLeaf]100_000_000,
+    "0-erased" = [Leaf]0,
+    "10-erased" = [Leaf]10,
+    "100-erased" = [Leaf]100,
+    "1000-erased" = [Leaf]1000,
+    "10,000-erased" = [Leaf]10_000,
+    "100,000-erased" = [Leaf]100_000,
+    "1,000,000-erased" = [Leaf]1_000_000,
+    "10,000,000-erased" = [Leaf]10_000_000,
+    "100,000,000-erased" = [Leaf]100_000_000,
 }
 
 criterion_group!(

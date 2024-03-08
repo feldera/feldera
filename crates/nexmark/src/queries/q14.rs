@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{OrdZSet, RootCircuit, Stream};
 use rkyv::{Archive, Deserialize, Serialize};
 use rust_decimal::Decimal;
 use size_of::SizeOf;
@@ -44,13 +44,24 @@ use std::hash::Hash;
 /// ```
 
 #[derive(
-    Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize,
+    Eq,
+    Default,
+    Clone,
+    Debug,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, String, u64);
 
-type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output, i64>>;
+type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output>>;
 
 #[derive(
     Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize,
@@ -61,6 +72,12 @@ pub enum BidTimeType {
     Day,
     Night,
     Other,
+}
+
+impl Default for BidTimeType {
+    fn default() -> Self {
+        Self::Day
+    }
 }
 
 // This is used because we can't currently use chrono.Utc, which would simply
@@ -101,7 +118,7 @@ pub fn q14(input: NexmarkStream) -> Q14Stream {
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::zset;
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
     #[rstest]
@@ -112,18 +129,18 @@ mod tests {
     #[case::date_time_is_daytime(2_000_000, 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 8*60*60*1000 + 1, String::new(), 0) => 1])]
     #[case::date_time_is_daytime_2022(2_000_000, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Day, 52*366*24*60*60*1000 + 8*60*60*1000 + 1, String::new(), 0) => 1])]
     #[case::date_time_is_othertime(2_000_000, 8*60*60*1000 - 1, "", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Other, 8*60*60*1000 - 1, String::new(), 0) => 1])]
-    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them.").into(), 4) => 1])]
+    #[case::counts_cs_in_extra(2_000_000, 0, "cause I can't calculate has four of them.", zset![Q14Output(1, 1, Decimal::new(1_816_000_000, 3), BidTimeType::Night, 0, String::from("cause I can't calculate has four of them."), 4) => 1])]
     fn test_q14(
         #[case] price: u64,
         #[case] date_time: u64,
         #[case] extra: &str,
-        #[case] expected_zset: OrdZSet<Q14Output, i64>,
+        #[case] expected_zset: OrdZSet<Q14Output>,
     ) {
-        let input_vecs = vec![vec![(
+        let input_vecs = vec![vec![Tup2(
             Event::Bid(Bid {
                 price,
                 date_time,
-                extra: String::from(extra).into(),
+                extra: String::from(extra),
                 ..make_bid()
             }),
             1,
@@ -131,7 +148,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let mut expected_output = vec![expected_zset].into_iter();
 

@@ -1,12 +1,12 @@
 //! z^-1 operator delays its input by one timestamp.
 
-use crate::circuit::metadata::{
-    ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL, USED_BYTES_LABEL,
-};
 use crate::{
     algebra::HasZero,
     circuit::{
-        metadata::{MetaItem, OperatorMeta},
+        metadata::{
+            MetaItem, OperatorMeta, ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            USED_BYTES_LABEL,
+        },
         operator_traits::{Operator, StrictOperator, StrictUnaryOperator, UnaryOperator},
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
@@ -43,6 +43,25 @@ where
     pub fn new(circuit: &C) -> Self {
         let (ExportStream { local, export }, feedback) =
             circuit.add_feedback_with_export(Z1::new(D::zero()));
+
+        Self {
+            feedback,
+            output: local,
+            export,
+        }
+    }
+}
+
+impl<C, D> DelayedFeedback<C, D>
+where
+    C: Circuit,
+    D: Eq + SizeOf + NumEntries + Clone + 'static,
+{
+    /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
+    /// close the loop.
+    pub fn with_default(circuit: &C, default: D) -> Self {
+        let (ExportStream { local, export }, feedback) =
+            circuit.add_feedback_with_export(Z1::new(default));
 
         Self {
             feedback,
@@ -128,6 +147,18 @@ where
             .clone()
     }
 
+    pub fn delay_with_zero(&self, zero: D) -> Stream<C, D>
+    where
+        D: Eq + SizeOf + NumEntries + Clone + 'static,
+    {
+        self.circuit()
+            .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), move || {
+                self.circuit()
+                    .add_unary_operator(Z1::new(zero.clone()), self)
+            })
+            .clone()
+    }
+
     /// Applies [`Z1Nested`] operator to `self`.
     pub fn delay_nested(&self) -> Stream<C, D>
     where
@@ -200,11 +231,11 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         let bytes = self.values.size_of();
         meta.extend(metadata! {
-            "total size" => self.values.num_entries_deep(),
-            "allocated bytes" => MetaItem::bytes(bytes.total_bytes()),
-            "used bytes" => MetaItem::bytes(bytes.used_bytes()),
+            NUM_ENTRIES_LABEL => self.values.num_entries_deep(),
+            ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
+            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => bytes.distinct_allocations(),
-            "shared bytes" => MetaItem::bytes(bytes.shared_bytes()),
+            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
 

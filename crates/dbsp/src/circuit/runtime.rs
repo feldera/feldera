@@ -1,15 +1,11 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
-use crate::trace::ord::file::StorageBackend;
-use crate::DetailedError;
+use crate::{storage::buffer_cache::TinyLfuCache, trace::ord::file::StorageBackend, DetailedError};
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
-use feldera_storage::buffer_cache::TinyLfuCache;
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use std::path::Path;
-use std::rc::Rc;
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
@@ -18,7 +14,8 @@ use std::{
     fmt,
     fmt::{Debug, Display, Error as FmtError, Formatter},
     panic::{self, Location, PanicInfo},
-    path::PathBuf,
+    path::{Path, PathBuf},
+    rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
@@ -348,11 +345,13 @@ impl Runtime {
     {
         let storage = cconf.storage();
         let layout = cconf.layout();
+
         let workers = layout.local_workers();
         let nworkers = workers.len();
         let runtime = Self(Arc::new(RuntimeInner::new(layout, storage)));
 
         // Install custom panic hook.
+
         let default_hook = default_panic_hook();
         panic::set_hook(Box::new(move |panic_info| {
             panic_hook(panic_info, default_hook)
@@ -421,10 +420,10 @@ impl Runtime {
             pub static DEFAULT_BACKEND: Rc<StorageBackend> = {
                 let rt = Runtime::runtime();
                 let io_backend = if let Some(rt) = rt {
-                    feldera_storage::backend::DefaultBackend::with_base(rt.inner().storage.clone())
+                    crate::storage::backend::DefaultBackend::with_base(rt.inner().storage.clone())
                 } else {
                     // This else case exists because some nexmark tests run without a runtime :/
-                    feldera_storage::backend::DefaultBackend::with_base(TEMPDIR.with(|dir| dir.path().to_path_buf()))
+                    crate::storage::backend::DefaultBackend::with_base(TEMPDIR.with(|dir| dir.path().to_path_buf()))
                 };
 
                 let sb = StorageBackend::with_backend_lfu(io_backend, LFU_CACHE.clone());
@@ -639,14 +638,21 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 #[cfg(test)]
 mod tests {
     use super::Runtime;
-    use crate::circuit::{CircuitConfig, Layout};
     use crate::{
-        circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+        circuit::{
+            schedule::{DynamicScheduler, Scheduler, StaticScheduler},
+            CircuitConfig, Layout,
+        },
         operator::Generator,
         Circuit, RootCircuit,
     };
-    use std::sync::{Arc, Mutex};
-    use std::{cell::RefCell, rc::Rc, thread::sleep, time::Duration};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, Mutex},
+        thread::sleep,
+        time::Duration,
+    };
 
     #[test]
     #[cfg_attr(miri, ignore)]

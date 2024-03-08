@@ -1,9 +1,8 @@
 use super::{process_time, NexmarkStream};
 use crate::model::Event;
 use dbsp::{
-    operator::FilterMap,
     utils::{Tup2, Tup3, Tup5, Tup7},
-    OrdZSet, RootCircuit, Stream,
+    OrdZSet, RootCircuit, Stream, ZWeight,
 };
 
 use csv;
@@ -16,6 +15,7 @@ use std::{
 ///
 /// Joins a stream to a bounded side input, modeling basic stream enrichment.
 ///
+/// TODO: use the new "filesystem" connector once FLINK-17397 is done
 /// ```sql
 /// CREATE TABLE side_input (
 ///   key BIGINT,
@@ -47,10 +47,26 @@ use std::{
 /// JOIN side_input FOR SYSTEM_TIME AS OF B.p_time AS S
 /// ON mod(B.auction, 10000) = S.key;
 /// ```
+///
+/// NOTE: although the Flink test uses a static file as the side input, the
+/// query itself allows joining the temporal table from the filesystem file that
+/// is updated while the query runs, joining the temporal table using process
+/// time. Flink itself ensures that the file is monitored for changes. The
+/// [current documentation for this connector](https://nightlies.apache.org/flink/flink-docs-master/docs/connectors/table/filesystem/)
+/// is not that used above, since the new connector (in 1.17-SNAPSHOT) does not
+/// allow specifying a file name, but only a directory to monitor. Rather, the
+/// Nexmark test appears to have used the previous legacy filesystem connector, [stable filesystem connector](https://nightlies.apache.org/flink/flink-docs-release-1.15/docs/connectors/datastream/filesystem/)
+/// which does allow specifying a file path.
+///
+/// Also see [Flink's Join with a Temporal Table](https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/joins.html#join-with-a-temporal-table).
+///
+/// So, although Flink supports monitoring the side-loaded file for updates, a
+/// simple static file is used for this bounded side-input for the Nexmark tests
+/// and that is also what is tested here.
 
-type Q13Stream = Stream<RootCircuit, OrdZSet<Tup5<u64, u64, u64, u64, String>, i64>>;
+type Q13Stream = Stream<RootCircuit, OrdZSet<Tup5<u64, u64, u64, u64, String>>>;
 
-type SideInputStream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>, i64>>;
+type SideInputStream = Stream<RootCircuit, OrdZSet<Tup3<u64, String, u64>>>;
 
 const Q13_SIDE_INPUT_CSV: &str = "benches/nexmark/data/side_input.txt";
 
@@ -62,12 +78,12 @@ fn read_side_input<R: Read>(reader: R) -> Result<Vec<(u64, String)>> {
     Ok(csv_reader.deserialize().map(|r| r.unwrap()).collect())
 }
 
-pub fn q13_side_input() -> Vec<(Tup3<u64, String, u64>, i64)> {
+pub fn q13_side_input() -> Vec<Tup2<Tup3<u64, String, u64>, ZWeight>> {
     let p_time = process_time();
     read_side_input(File::open(Q13_SIDE_INPUT_CSV).unwrap())
         .unwrap()
         .into_iter()
-        .map(|(k, v)| (Tup3(k, v, p_time), 1))
+        .map(|(k, v)| Tup2(Tup3(k, v, p_time), 1))
         .collect()
 }
 
@@ -128,14 +144,14 @@ mod tests {
     #[test]
     fn test_q13() {
         let input_vecs = vec![vec![
-            (
+            Tup2(
                 Event::Bid(Bid {
                     auction: 1005,
                     ..make_bid()
                 }),
                 1,
             ),
-            (
+            Tup2(
                 Event::Bid(Bid {
                     auction: 10005,
                     ..make_bid()
@@ -146,9 +162,9 @@ mod tests {
         .into_iter();
 
         let (circuit, (input_handle, side_input_handle)) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
             let (side_stream, side_input_handle) =
-                circuit.add_input_zset::<Tup3<u64, String, u64>, i64>();
+                circuit.add_input_zset::<Tup3<u64, String, u64>>();
 
             let mut expected_output = vec![zset![
                 Tup5(1_005, 1, 99, 0, String::from("1005")) => 1,

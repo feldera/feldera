@@ -1,10 +1,12 @@
-use clap::{PossibleValue, ValueEnum};
+use clap::{builder::PossibleValue, ValueEnum};
+use dbsp::dynamic::{DynData, Erase, LeanVec};
+use dbsp::stat::{DynBatch, DynBatchReader, DynOrdIndexedZSet, DynOrdZSet, TypedBatch};
 use dbsp::utils::Tup2;
 use dbsp::{
-    algebra::{HasOne, Present, F64},
+    algebra::F64,
     default_hash,
-    trace::{Batch, Batcher, Builder},
-    ChildCircuit, OrdIndexedZSet, OrdZSet, Stream,
+    trace::{Batch, BatchReaderFactories, Batcher, Builder},
+    BatchReader, ChildCircuit, OrdIndexedZSet, OrdZSet, Stream, ZWeight,
 };
 use indicatif::{HumanBytes, ProgressBar, ProgressState, ProgressStyle};
 use reqwest::header::CONTENT_LENGTH;
@@ -27,20 +29,25 @@ pub type Node = u64;
 /// Pagerank must use 64bit float values
 pub type Rank = F64;
 pub type Vertex = u64;
-pub type Weight = i64;
 pub type Distance = u64;
 
-pub type VertexSet<D = Present> = OrdZSet<Node, D>;
-pub type RankMap = OrdIndexedZSet<Node, Rank, Weight>;
-pub type EdgeMap<D = Present> = OrdIndexedZSet<Node, Node, D>;
-pub type DistanceSet<D = Present> = OrdZSet<Tup2<Node, Distance>, D>;
-pub type DistanceMap<D = Present> = OrdIndexedZSet<Node, Distance, D>;
+pub type VertexSet = OrdZSet<Node>;
+pub type DynVertexSet = DynOrdZSet<DynData>;
+pub type RankMap = OrdIndexedZSet<Node, Rank>;
+pub type DynRankMap = DynOrdIndexedZSet<DynData, DynData>;
+
+pub type EdgeMap = OrdIndexedZSet<Node, Node>;
+pub type DynEdgeMap = DynOrdIndexedZSet<DynData, DynData>;
+
+pub type DistanceSet = OrdZSet<Tup2<Node, Distance>>;
+pub type DynDistanceSet = DynOrdZSet<DynData>;
+pub type DistanceMap = OrdIndexedZSet<Node, Distance>;
 
 pub type Streamed<P, T> = Stream<ChildCircuit<P>, T>;
 
 pub type Ranks<P> = Streamed<P, RankMap>;
-pub type Edges<P, D = Present> = Streamed<P, EdgeMap<D>>;
-pub type Vertices<P, D = Present> = Streamed<P, VertexSet<D>>;
+pub type Edges<P> = Streamed<P, EdgeMap>;
+pub type Vertices<P> = Streamed<P, VertexSet>;
 
 type LoadedDataset<R> = (
     Properties,
@@ -451,7 +458,7 @@ impl ValueEnum for DataSet {
         &Self::DATASETS
     }
 
-    fn to_possible_value<'a>(&self) -> Option<PossibleValue<'a>> {
+    fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(PossibleValue::new(self.name))
     }
 }
@@ -620,38 +627,56 @@ impl EdgeParser {
         // Directed graphs can use an ordered builder
         if self.directed {
             let mut edges: Vec<_> = (0..workers)
-                .map(|_| <EdgeMap as Batch>::Builder::with_capacity((), approx_edges / workers))
+                .map(|_| {
+                    let factories =
+                        <DynEdgeMap as DynBatchReader>::Factories::new::<Node, Node, ZWeight>();
+                    <DynEdgeMap as DynBatch>::Builder::with_capacity(
+                        &factories,
+                        (),
+                        approx_edges / workers,
+                    )
+                })
                 .collect();
 
             self.parse(|src, dest| {
-                edges[default_hash(&src) as usize % workers].push(((src, dest), Present));
+                edges[default_hash(&src) as usize % workers].push_refs(
+                    src.erase(),
+                    dest.erase(),
+                    1.erase(),
+                );
             });
 
-            edges.into_iter().map(Builder::done).collect()
+            edges
+                .into_iter()
+                .map(|builder| TypedBatch::new(builder.done()))
+                .collect()
 
         // Undirected graphs must use an unordered builder
         } else {
             let mut forward_batches: Vec<_> = (0..workers)
-                .map(|_| Vec::with_capacity(approx_edges / workers / 2))
+                .map(|_| LeanVec::with_capacity(approx_edges / workers / 2))
                 .collect();
             let mut reverse_batches: Vec<_> = (0..workers)
-                .map(|_| Vec::with_capacity(approx_edges / workers / 2))
+                .map(|_| LeanVec::with_capacity(approx_edges / workers / 2))
                 .collect();
 
             self.parse(|src, dest| {
-                forward_batches[default_hash(&src) as usize % workers].push(((src, dest), Present));
+                forward_batches[default_hash(&src) as usize % workers]
+                    .push(Tup2(Tup2(src, dest), 1));
                 reverse_batches[default_hash(&dest) as usize % workers]
-                    .push(((dest, src), Present));
+                    .push(Tup2(Tup2(dest, src), 1));
             });
 
             forward_batches
                 .into_iter()
                 .zip(reverse_batches)
                 .map(|(mut forward, mut reverse)| {
-                    let mut edges = <EdgeMap as Batch>::Batcher::new_batcher(());
-                    edges.push_consolidated_batch(&mut forward);
-                    edges.push_batch(&mut reverse);
-                    edges.seal()
+                    let factories =
+                        <DynEdgeMap as DynBatchReader>::Factories::new::<Node, Node, ZWeight>();
+                    let mut edges = <DynEdgeMap as DynBatch>::Batcher::new_batcher(&factories, ());
+                    edges.push_consolidated_batch(&mut Box::new(forward).erase_box());
+                    edges.push_batch(&mut Box::new(reverse).erase_box());
+                    TypedBatch::new(edges.seal())
                 })
                 .collect()
         }
@@ -694,14 +719,29 @@ impl VertexParser {
     pub fn load(self, approx_vertices: usize, workers: usize) -> Vec<VertexSet> {
         // The vertices file is ordered so we can use an ordered builder
         let mut vertices: Vec<_> = (0..workers)
-            .map(|_| <VertexSet as Batch>::Builder::with_capacity((), approx_vertices / workers))
+            .map(|_| {
+                let factories =
+                    <DynVertexSet as DynBatchReader>::Factories::new::<Node, (), ZWeight>();
+                <DynVertexSet as DynBatch>::Builder::with_capacity(
+                    &factories,
+                    (),
+                    approx_vertices / workers,
+                )
+            })
             .collect();
 
         self.parse(|vertex| {
-            vertices[default_hash(&vertex) as usize % workers].push((vertex, Present))
+            vertices[default_hash(&vertex) as usize % workers].push_refs(
+                vertex.erase(),
+                ().erase(),
+                1.erase(),
+            )
         });
 
-        vertices.into_iter().map(Builder::done).collect()
+        vertices
+            .into_iter()
+            .map(|builder| TypedBatch::new(builder.done()))
+            .collect()
     }
 
     fn parse<F>(mut self, mut append: F)
@@ -746,7 +786,7 @@ impl ResultParser for NoopResults {
 pub struct BfsResults;
 
 impl ResultParser for BfsResults {
-    type Parsed = DistanceSet<i8>;
+    type Parsed = DistanceSet;
 
     fn file_suffix() -> Option<&'static str> {
         Some("-BFS")
@@ -755,9 +795,17 @@ impl ResultParser for BfsResults {
     fn load(props: &Properties, file: File) -> Self::Parsed {
         let mut file = BufReader::new(file);
 
+        let factories = <DynDistanceSet as DynBatchReader>::Factories::new::<
+            Tup2<Node, Distance>,
+            (),
+            ZWeight,
+        >();
         // The bfs results file is ordered so we can use an ordered builder
-        let mut results =
-            <DistanceSet<i8> as Batch>::Builder::with_capacity((), props.vertices as usize);
+        let mut results = <DynDistanceSet as DynBatch>::Builder::with_capacity(
+            &factories,
+            (),
+            props.vertices as usize,
+        );
 
         let mut buffer = String::with_capacity(256);
         while let Ok(n) = file.read_line(&mut buffer) {
@@ -768,14 +816,14 @@ impl ResultParser for BfsResults {
             let line = buffer.trim_end();
             let (vertex, distance) = line.split_once(' ').unwrap();
 
-            let vertex = vertex.parse().unwrap();
-            let distance = distance.parse().unwrap();
+            let vertex: Node = vertex.parse().unwrap();
+            let distance: Distance = distance.parse().unwrap();
 
-            results.push((Tup2(vertex, distance), 1));
+            results.push_refs(Tup2(vertex, distance).erase(), ().erase(), 1.erase());
             buffer.clear();
         }
 
-        results.done()
+        TypedBatch::new(results.done())
     }
 }
 
@@ -791,8 +839,13 @@ impl ResultParser for PageRankResults {
     fn load(props: &Properties, file: File) -> Self::Parsed {
         let mut file = BufReader::new(file);
 
+        let factories = <DynRankMap as DynBatchReader>::Factories::new::<Node, Rank, ZWeight>();
         // The pagerank results file is ordered so we can use an ordered builder
-        let mut results = <RankMap as Batch>::Builder::with_capacity((), props.vertices as usize);
+        let mut results = <DynRankMap as DynBatch>::Builder::with_capacity(
+            &factories,
+            (),
+            props.vertices as usize,
+        );
 
         let mut buffer = String::with_capacity(256);
         while let Ok(n) = file.read_line(&mut buffer) {
@@ -803,13 +856,13 @@ impl ResultParser for PageRankResults {
             let line = buffer.trim_end();
             let (vertex, distance) = line.split_once(' ').unwrap();
 
-            let vertex = vertex.parse().unwrap();
+            let vertex: Node = vertex.parse().unwrap();
             let rank = F64::new(distance.parse::<f64>().unwrap());
 
-            results.push(((vertex, rank), Weight::one()));
+            results.push_refs(vertex.erase(), rank.erase(), 1.erase());
             buffer.clear();
         }
 
-        results.done()
+        TypedBatch::new(results.done())
     }
 }

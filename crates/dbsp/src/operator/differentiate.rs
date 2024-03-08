@@ -1,7 +1,9 @@
 //! Differentiation operators.
 
+use std::ops::{Add, Neg};
+
 use crate::{
-    algebra::GroupValue,
+    algebra::{AddAssignByRef, AddByRef, GroupValue, NegByRef},
     circuit::{Circuit, GlobalNodeId, Stream},
     circuit_cache_key,
     operator::{integrate::IntegralId, Minus},
@@ -27,22 +29,7 @@ where
     /// You shouldn't ordinarily need this operator, at least not for streams of
     /// Z-sets, because most DBSP operators are fully incremental.
     pub fn differentiate(&self) -> Stream<C, D> {
-        self.circuit()
-            .cache_get_or_insert_with(DifferentiateId::new(self.origin_node_id().clone()), || {
-                let differentiated = self.circuit().add_binary_operator(
-                    Minus::new(),
-                    &self.try_sharded_version(),
-                    &self.try_sharded_version().delay(),
-                );
-                differentiated.mark_sharded_if(self);
-
-                self.circuit().cache_insert(
-                    IntegralId::new(differentiated.origin_node_id().clone()),
-                    self.clone(),
-                );
-                differentiated
-            })
-            .clone()
+        self.differentiate_with_zero(D::zero())
     }
 
     /// Nested stream differentiation.
@@ -60,6 +47,40 @@ where
                     differentiated
                 },
             )
+            .clone()
+    }
+}
+
+impl<C, D> Stream<C, D>
+where
+    C: Circuit + 'static,
+    D: SizeOf
+        + NumEntries
+        + Neg<Output = D>
+        + Add<Output = D>
+        + Clone
+        + AddByRef
+        + AddAssignByRef
+        + NegByRef
+        + Eq
+        + 'static,
+{
+    pub fn differentiate_with_zero(&self, zero: D) -> Stream<C, D> {
+        self.circuit()
+            .cache_get_or_insert_with(DifferentiateId::new(self.origin_node_id().clone()), || {
+                let differentiated = self.circuit().add_binary_operator(
+                    Minus::new(),
+                    &self.try_sharded_version(),
+                    &self.try_sharded_version().delay_with_zero(zero.clone()),
+                );
+                differentiated.mark_sharded_if(self);
+
+                self.circuit().cache_insert(
+                    IntegralId::new(differentiated.origin_node_id().clone()),
+                    self.clone(),
+                );
+                differentiated
+            })
             .clone()
     }
 }

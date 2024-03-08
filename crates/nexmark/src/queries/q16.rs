@@ -1,9 +1,9 @@
 use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
 use dbsp::{
-    operator::{FilterMap, Max},
+    operator::Max,
     utils::{Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9},
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -103,7 +103,7 @@ pub struct Q16Output {
     rank3_auctions: u64,
 }
 
-type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output, i64>>;
+type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output>>;
 
 #[derive(
     Clone,
@@ -120,19 +120,18 @@ type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output, i64>>;
     Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
 pub struct Q16Intermediate1(
-    i64,
+    ZWeight,
     Tup2<u8, u8>,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
 );
 
 #[derive(
@@ -150,19 +149,18 @@ pub struct Q16Intermediate1(
     Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
 pub struct Q16Intermediate2(
-    i64,
+    ZWeight,
     Tup2<u8, u8>,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
-    i64,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
+    ZWeight,
 );
 
 pub fn q16(input: NexmarkStream) -> Q16Stream {
@@ -188,7 +186,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             let day = date_time.date().to_ordinal_date();
             let time = date_time.time();
             Some(Tup2(
-                Tup2(b.channel.clone(), day),
+                Tup2(b.channel.to_string(), day),
                 Tup4(
                     b.auction,
                     b.price,
@@ -219,7 +217,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
     let rank1_distinct_bidder = rank1_bids
         .map(
             |Tup2(Tup2(channel, day), Tup4(_auction, _price, bidder, _mins))| {
@@ -227,7 +225,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
     let rank2_distinct_bidder = rank2_bids
         .map(
             |Tup2(Tup2(channel, day), Tup4(_auction, _price, bidder, _mins))| {
@@ -235,7 +233,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
     let rank3_distinct_bidder = rank3_bids
         .map(
             |Tup2(Tup2(channel, day), Tup4(_auction, _price, bidder, _mins))| {
@@ -243,7 +241,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
 
     // Compute unique auctions across all bids and for each price range.
     let distinct_auction = bids
@@ -253,7 +251,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
     let rank1_distinct_auction = rank1_bids
         .map(
             |Tup2(Tup2(channel, day), Tup4(auction, _price, _bidder, _mins))| {
@@ -261,7 +259,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
     let rank2_distinct_auction = rank2_bids
         .map(
             |Tup2(Tup2(channel, day), Tup4(auction, _price, _bidder, _mins))| {
@@ -269,7 +267,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
     let rank3_distinct_auction = rank3_bids
         .map(
             |Tup2(Tup2(channel, day), Tup4(auction, _price, _bidder, _mins))| {
@@ -277,11 +275,12 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (k.clone(), *v));
 
     // Compute bids per channel per day.
-    let count_total_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
-        bids.index().weighted_count();
+    let count_total_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> = bids
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
+        .weighted_count();
     let max_minutes = bids
         .map_index(
             |Tup2(Tup2(channel, day), Tup4(_auction, _price, _bidder, mins))| {
@@ -289,31 +288,37 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
             },
         )
         .aggregate(Max);
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
-        rank1_bids.index().weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
-        rank2_bids.index().weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
-        rank3_bids.index().weighted_count();
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
+        rank1_bids
+            .map_index(|Tup2(k, v)| (k.clone(), *v))
+            .weighted_count();
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
+        rank2_bids
+            .map_index(|Tup2(k, v)| (k.clone(), *v))
+            .weighted_count();
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
+        rank3_bids
+            .map_index(|Tup2(k, v)| (k.clone(), *v))
+            .weighted_count();
 
     // Count unique bidders per channel per day.
-    let count_total_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_total_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         distinct_bidder.weighted_count();
-    let count_rank1_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_rank1_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         rank1_distinct_bidder.weighted_count();
-    let count_rank2_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_rank2_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         rank2_distinct_bidder.weighted_count();
-    let count_rank3_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_rank3_bidders: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         rank3_distinct_bidder.weighted_count();
 
     // Count unique auctions per channel per day.
-    let count_total_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_total_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         distinct_auction.weighted_count();
-    let count_rank1_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_rank1_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         rank1_distinct_auction.weighted_count();
-    let count_rank2_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_rank2_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         rank2_distinct_auction.weighted_count();
-    let count_rank3_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, i64, _>> =
+    let count_rank3_auctions: Stream<_, OrdIndexedZSet<Tup2<String, OrdinalDate>, ZWeight>> =
         rank3_distinct_auction.weighted_count();
 
     // The following abomination simply joins all aggregates computed above into a
@@ -325,7 +330,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 Tup2(Tup2(channel.clone(), *day), Tup2(*total_bids, *max_minutes))
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_rank1_bids,
             |Tup2(channel, day), Tup2(total_bids, max_minutes), rank1_bids| {
@@ -335,7 +340,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_rank2_bids,
             |Tup2(channel, day), Tup3(total_bids, max_minutes, rank1_bids), rank2_bids| {
@@ -345,7 +350,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_rank3_bids,
             |Tup2(channel, day),
@@ -363,7 +368,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_total_bidders,
             |Tup2(channel, day),
@@ -382,7 +387,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_rank1_bidders,
             |Tup2(channel, day),
@@ -402,7 +407,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_rank2_bidders,
             |Tup2(channel, day),
@@ -431,7 +436,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_rank3_bidders,
             |Tup2(channel, day),
@@ -462,7 +467,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_total_auctions,
             |Tup2(channel, day),
@@ -495,7 +500,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), *v))
         .outer_join_default(
             &count_rank1_auctions,
             |Tup2(channel, day),
@@ -530,7 +535,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), v.clone()))
         .outer_join_default(
             &count_rank2_auctions,
             |Tup2(channel, day),
@@ -569,7 +574,7 @@ pub fn q16(input: NexmarkStream) -> Q16Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (k.clone(), v.clone()))
         .outer_join_default(
             &count_rank3_auctions,
             |Tup2(channel, day),
@@ -636,9 +641,9 @@ mod tests {
     #[case::multi_threaded_4_threads(4)]
     fn test_q16(#[case] num_threads: usize) {
         let input_vecs = vec![
-            vec![(
+            vec![Tup2(
                 Event::Bid(Bid {
-                    channel: String::from("channel-1").into(),
+                    channel: String::from("channel-1"),
                     // Right on 1970 epoch
                     date_time: 0,
                     auction: 1,
@@ -648,9 +653,9 @@ mod tests {
                 1,
             )],
             vec![
-                (
+                Tup2(
                     Event::Bid(Bid {
-                        channel: String::from("channel-1").into(),
+                        channel: String::from("channel-1"),
                         // Six minutes after epoch
                         date_time: 1000 * 6 * 60,
                         // Rank 2 bid
@@ -661,9 +666,9 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
-                        channel: String::from("channel-1").into(),
+                        channel: String::from("channel-1"),
                         // One millisecond before next day
                         date_time: 24 * 60 * 60 * 1000 - 1,
                         // Rank 3 bid
@@ -674,9 +679,9 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
-                        channel: String::from("channel-1").into(),
+                        channel: String::from("channel-1"),
                         // One millisecond into Jan 2 1970
                         date_time: 24 * 60 * 60 * 1000 + 1,
                         // Rank 3 bid
@@ -686,9 +691,9 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
-                        channel: String::from("channel-1").into(),
+                        channel: String::from("channel-1"),
                         // One millisecond into Jan 3 1970
                         date_time: 2 * 24 * 60 * 60 * 1000 + 1,
                         // Rank 3 bid
@@ -698,9 +703,9 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
-                        channel: String::from("channel-1").into(),
+                        channel: String::from("channel-1"),
                         // One millisecond into Jan 4 1970
                         date_time: 3 * 24 * 60 * 60 * 1000 + 1,
                         // Rank 3 bid
@@ -710,9 +715,9 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
-                        channel: String::from("channel-1").into(),
+                        channel: String::from("channel-1"),
                         // One millisecond into Jan 5 1970
                         date_time: 4 * 24 * 60 * 60 * 1000 + 1,
                         // Rank 3 bid
@@ -723,9 +728,9 @@ mod tests {
                     1,
                 ),
             ],
-            vec![(
+            vec![Tup2(
                 Event::Bid(Bid {
-                    channel: String::from("channel-1").into(),
+                    channel: String::from("channel-1"),
                     date_time: MILLIS_2022_01_01,
                     auction: 4,
                     ..make_bid()
@@ -736,14 +741,14 @@ mod tests {
         .into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(num_threads, move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let mut expected_output = vec![
                 zset![
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("1970-01-01").into(),
-                        minute: String::from("00:00").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("1970-01-01"),
+                        minute: String::from("00:00"),
                         total_bids: 1,
                         rank1_bids: 1,
                         total_bidders: 1,
@@ -755,9 +760,9 @@ mod tests {
                 ],
                 zset![
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("1970-01-01").into(),
-                        minute: String::from("00:00").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("1970-01-01"),
+                        minute: String::from("00:00"),
                         total_bids: 1,
                         rank1_bids: 1,
                         total_bidders: 1,
@@ -767,9 +772,9 @@ mod tests {
                         ..Q16Output::default()
                     } => -1,
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("1970-01-01").into(),
-                        minute: String::from("23:59").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("1970-01-01"),
+                        minute: String::from("23:59"),
                         total_bids: 3,
                         rank1_bids: 1,
                         rank2_bids: 1,
@@ -784,9 +789,9 @@ mod tests {
                         rank3_auctions: 1,
                     } => 1,
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("1970-01-02").into(),
-                        minute: String::from("00:00").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("1970-01-02"),
+                        minute: String::from("00:00"),
                         total_bids: 1,
                         rank1_bids: 1,
                         total_bidders: 1,
@@ -796,9 +801,9 @@ mod tests {
                         ..Q16Output::default()
                     } => 1,
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("1970-01-03").into(),
-                        minute: String::from("00:00").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("1970-01-03"),
+                        minute: String::from("00:00"),
                         total_bids: 1,
                         rank1_bids: 1,
                         total_bidders: 1,
@@ -808,9 +813,9 @@ mod tests {
                         ..Q16Output::default()
                     } => 1,
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("1970-01-04").into(),
-                        minute: String::from("00:00").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("1970-01-04"),
+                        minute: String::from("00:00"),
                         total_bids: 1,
                         rank1_bids: 1,
                         total_bidders: 1,
@@ -820,9 +825,9 @@ mod tests {
                         ..Q16Output::default()
                     } => 1,
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("1970-01-05").into(),
-                        minute: String::from("00:00").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("1970-01-05"),
+                        minute: String::from("00:00"),
                         total_bids: 1,
                         rank1_bids: 1,
                         total_bidders: 1,
@@ -834,9 +839,9 @@ mod tests {
                 ],
                 zset![
                     Q16Output {
-                        channel: String::from("channel-1").into(),
-                        day: String::from("2022-01-01").into(),
-                        minute: String::from("00:00").into(),
+                        channel: String::from("channel-1"),
+                        day: String::from("2022-01-01"),
+                        minute: String::from("00:00"),
                         total_bids: 1,
                         rank1_bids: 1,
                         total_bidders: 1,

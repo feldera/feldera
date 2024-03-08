@@ -4,10 +4,9 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
-use dbsp::{
-    trace::{Batch, BatchReader, Cursor},
-    OutputHandle,
-};
+use dbsp::dynamic::DowncastTrait;
+use dbsp::typed_batch::DynBatchReader;
+use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle};
 use serde::Serialize;
 use serde_arrow::ArrowBuilder;
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
@@ -177,6 +176,7 @@ impl<B, KD, VD> SerCollectionHandleImpl<B, KD, VD> {
 impl<B, KD, VD> SerCollectionHandle for SerCollectionHandleImpl<B, KD, VD>
 where
     B: Batch<Time = ()> + Send + Sync + Clone,
+    B::InnerBatch: Send,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
@@ -239,11 +239,11 @@ where
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig>,
 {
     fn key_count(&self) -> usize {
-        self.batch.key_count()
+        self.batch.inner().key_count()
     }
 
     fn len(&self) -> usize {
-        self.batch.len()
+        self.batch.inner().len()
     }
 
     fn cursor<'a>(
@@ -288,7 +288,7 @@ struct SerCursorImpl<'a, Ser, B, KD, VD, C>
 where
     B: BatchReader,
 {
-    cursor: B::Cursor<'a>,
+    cursor: <B::Inner as DynBatchReader>::Cursor<'a>,
     serializer: Ser,
     phantom: PhantomData<fn(KD, VD, C)>,
     key: Option<KD>,
@@ -304,7 +304,7 @@ where
     VD: From<B::Val> + SerializeWithContext<C>,
 {
     pub fn new(batch: &'a B, config: C) -> Self {
-        let cursor = batch.cursor();
+        let cursor = batch.inner().cursor();
 
         let mut result = Self {
             cursor,
@@ -320,7 +320,10 @@ where
 
     fn update_key(&mut self) {
         if self.key_valid() {
-            self.key = Some(KD::from(self.cursor.key().clone()));
+            // Safety: `trait BatchReader` guarantees that the inner key type is `B::Key`.
+            self.key = Some(KD::from(
+                unsafe { self.cursor.key().downcast::<B::Key>() }.clone(),
+            ));
         } else {
             self.key = None;
         }
@@ -328,7 +331,10 @@ where
 
     fn update_val(&mut self) {
         if self.val_valid() {
-            self.val = Some(VD::from(self.cursor.val().clone()));
+            // Safety: `trait BatchReader` guarantees that the inner key type is `B::Key`.
+            self.val = Some(VD::from(
+                unsafe { self.cursor.val().downcast::<B::Val>() }.clone(),
+            ));
         } else {
             self.val = None;
         }
@@ -371,7 +377,8 @@ where
     }
 
     fn weight(&mut self) -> i64 {
-        self.cursor.weight().into()
+        // Safety: `trait BatchReader` guarantees that the inner weight type of `B` is `B::R`.
+        unsafe { self.cursor.weight().downcast::<B::R>().clone().into() }
     }
 
     fn step_key(&mut self) {

@@ -1,32 +1,163 @@
-use crate::utils::Tup2;
 use crate::{
-    algebra::ZRingValue,
     circuit::{
         operator_traits::{Operator, SourceOperator},
-        LocalStoreMarker, RootCircuit, Scope,
+        LocalStoreMarker, Scope,
     },
-    default_hash,
-    trace::Batch,
-    Circuit, DBData, DBWeight, OrdIndexedZSet, OrdZSet, Runtime, Stream,
+    dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynUnit, Erase, LeanVec},
+    operator::dynamic::{
+        input::{
+            AddInputIndexedZSetFactories, AddInputMapFactories, AddInputSetFactories,
+            AddInputZSetFactories, CollectionHandle, UpsertHandle,
+        },
+        input_upsert::DynUpdate,
+    },
+    typed_batch::{OrdIndexedZSet, OrdZSet},
+    utils::Tup2,
+    Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, ZWeight,
 };
-use std::fmt::Debug;
 use std::{
     borrow::{Borrow, Cow},
+    fmt::Debug,
     hash::{Hash, Hasher},
     marker::PhantomData,
-    mem::{swap, take},
-    ops::Range,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
-    },
+    mem::{replace, take, transmute},
+    ops::{Deref, Range},
+    sync::{Arc, Mutex},
 };
 use typedmap::TypedMapKey;
 
-pub use crate::operator::input_upsert::{PatchFunc, Update};
+pub use crate::operator::dynamic::input_upsert::{PatchFunc, Update};
 
-pub type IndexedZSetStream<K, V, R> = Stream<RootCircuit, OrdIndexedZSet<K, V, R>>;
-pub type ZSetStream<K, R> = Stream<RootCircuit, OrdZSet<K, R>>;
+pub type IndexedZSetStream<K, V> = Stream<RootCircuit, OrdIndexedZSet<K, V>>;
+pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct ZSetHandle<K> {
+    handle: CollectionHandle<DynPair<DynData, DynUnit>, DynZWeight>,
+    phantom: PhantomData<fn(&K)>,
+}
+
+impl<K> Deref for ZSetHandle<K> {
+    type Target = CollectionHandle<DynPair<DynData, DynUnit>, DynZWeight>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
+impl<K> ZSetHandle<K>
+where
+    K: DBData,
+{
+    fn new(handle: CollectionHandle<DynPair<DynData, DynUnit>, DynZWeight>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn push(&self, k: K, mut w: ZWeight) {
+        self.handle.dyn_push(Tup2(k, ()).erase_mut(), w.erase_mut())
+    }
+
+    pub fn append(&self, vals: &mut Vec<Tup2<K, ZWeight>>) {
+        // SAFETY: `()` is a zero-sized type, more precisely it's a 1-ZST.
+        // According to the Rust spec adding it to a tuple doesn't change
+        // its memory layout.
+        let vals: &mut Vec<Tup2<Tup2<K, ()>, ZWeight>> = unsafe { transmute(vals) };
+        let vals = Box::new(LeanVec::from(take(vals)));
+
+        self.handle.dyn_append(&mut vals.erase_box())
+    }
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct IndexedZSetHandle<K, V> {
+    handle: CollectionHandle<DynData, DynPair<DynData, DynZWeight>>,
+    phantom: PhantomData<fn(&K, &V)>,
+}
+
+impl<K, V> IndexedZSetHandle<K, V>
+where
+    K: DBData,
+    V: DBData,
+{
+    fn new(handle: CollectionHandle<DynData, DynPair<DynData, DynZWeight>>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn push(&self, mut k: K, (v, w): (V, ZWeight)) {
+        self.handle.dyn_push(k.erase_mut(), Tup2(v, w).erase_mut())
+    }
+
+    pub fn append(&self, vals: &mut Vec<Tup2<K, Tup2<V, ZWeight>>>) {
+        let vals = Box::new(LeanVec::from(take(vals)));
+        self.handle.dyn_append(&mut vals.erase_box())
+    }
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct SetHandle<K> {
+    handle: UpsertHandle<DynData, DynBool>,
+    phantom: PhantomData<fn(&K)>,
+}
+
+impl<K> SetHandle<K>
+where
+    K: DBData,
+{
+    fn new(handle: UpsertHandle<DynData, DynBool>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn push(&self, mut k: K, mut v: bool) {
+        self.handle.dyn_push(k.erase_mut(), v.erase_mut())
+    }
+
+    pub fn append(&mut self, vals: &mut Vec<Tup2<K, bool>>) {
+        let vals = Box::new(LeanVec::from(take(vals)));
+        self.handle.dyn_append(&mut vals.erase_box())
+    }
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct MapHandle<K, V, U> {
+    handle: UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
+    phantom: PhantomData<fn(&K, &V, &U)>,
+}
+
+impl<K, V, U> MapHandle<K, V, U>
+where
+    K: DBData,
+    V: DBData,
+    U: DBData,
+{
+    fn new(handle: UpsertHandle<DynData, DynUpdate<DynData, DynData>>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn push(&self, mut k: K, mut upd: Update<V, U>) {
+        self.handle.dyn_push(k.erase_mut(), upd.erase_mut())
+    }
+
+    pub fn append(&mut self, vals: &mut Vec<Tup2<K, Update<V, U>>>) {
+        let vals = Box::new(LeanVec::from(take(vals)));
+        self.handle.dyn_append(&mut vals.erase_box())
+    }
+}
 
 impl RootCircuit {
     /// Create an input stream that carries values of type `T`.
@@ -55,19 +186,19 @@ impl RootCircuit {
     where
         T: Default + Debug + Clone + Send + 'static,
     {
-        let (input, input_handle) = Input::new(|x| x);
+        let (input, input_handle) = Input::new(|x| x, Arc::new(|| Default::default()));
         let stream = self.add_source(input);
         (stream, input_handle)
     }
 
-    /// Create an input stream that carries values of type [`OrdZSet<K,
-    /// R>`](`OrdZSet`).
+    /// Create an input stream that carries values of type
+    /// [`OrdZSet<K>`](`OrdZSet`).
     ///
-    /// Creates an input stream that carries values of type `OrdZSet<K, R>` and
-    /// an input handle of type [`CollectionHandle<K, R>`](`CollectionHandle`)
+    /// Creates an input stream that carries values of type `OrdZSet<K>` and
+    /// an input handle of type [`ZSetHandle<K>`](`ZSetHandle`)
     /// used to construct input Z-sets out of individual elements.  The
-    /// client invokes [`CollectionHandle::push`] and
-    /// [`CollectionHandle::append`] any number of times to add values to
+    /// client invokes [`ZSetHandle::push`] and
+    /// [`ZSetHandle::append`] any number of times to add values to
     /// the input Z-set. These values are distributed across all worker
     /// threads (when running in a multithreaded [`Runtime`]) in a round-robin
     /// fashion and buffered until the start of the next clock
@@ -77,29 +208,25 @@ impl RootCircuit {
     /// reads all buffered values and assembles them into an `OrdZSet`.
     ///
     /// See [`CollectionHandle`] for more details.
-    pub fn add_input_zset<K, R>(&self) -> (ZSetStream<K, R>, CollectionHandle<K, R>)
+    pub fn add_input_zset<K>(&self) -> (Stream<RootCircuit, OrdZSet<K>>, ZSetHandle<K>)
     where
         K: DBData,
-        R: DBWeight,
     {
-        let (input, input_handle) = Input::new(|tuples| OrdZSet::from_keys((), tuples));
-        let stream = self.add_source(input);
+        let factories = AddInputZSetFactories::new::<K>();
+        let (stream, handle) = self.dyn_add_input_zset(&factories);
 
-        let zset_handle = <CollectionHandle<K, R>>::new(input_handle);
-
-        (stream, zset_handle)
+        (stream.typed(), ZSetHandle::new(handle))
     }
 
-    /// Create an input stream that carries values of type [`OrdIndexedZSet<K,
-    /// V, R>`](`OrdIndexedZSet`).
+    /// Create an input stream that carries values of type
+    /// [`OrdIndexedZSet<K, V>`](`OrdIndexedZSet`).
     ///
-    /// Creates an input stream that carries values of type `OrdIndexedZSet<K,
-    /// V, R>` and an input handle of type [`CollectionHandle<K, (V,
-    /// R)>`](`CollectionHandle`) used to construct input Z-sets out of
-    /// individual elements.  The client invokes [`CollectionHandle::push`]
-    /// and [`CollectionHandle::append`] any number of times to add
-    /// `key/value/weight` triples the indexed Z-set. These triples are
-    /// distributed across all worker threads (when running in a
+    /// Creates an input stream that carries values of type `OrdIndexedZSet<K, V>`
+    /// and an input handle of type [`IndexedZSetHandle<K, V>`](`IndexedZSetHandle`)
+    /// used to construct input Z-sets out of individual elements.  The client
+    /// invokes [`IndexedZSetHandle::push`] and [`IndexedZSetHandle::append`] any number
+    /// of times to add `key/value/weight` triples to the indexed Z-set. These triples
+    /// are distributed across all worker threads (when running in a
     /// multithreaded [`Runtime`]) in a round-robin fashion, and
     /// buffered until the start of the next clock cycle.  At the start of a
     /// clock cycle (triggered by
@@ -109,87 +236,20 @@ impl RootCircuit {
     ///
     /// See [`CollectionHandle`] for more details.
     #[allow(clippy::type_complexity)]
-    pub fn add_input_indexed_zset<K, V, R>(
+    pub fn add_input_indexed_zset<K, V>(
         &self,
-    ) -> (IndexedZSetStream<K, V, R>, CollectionHandle<K, Tup2<V, R>>)
+    ) -> (
+        Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        IndexedZSetHandle<K, V>,
+    )
     where
         K: DBData,
         V: DBData,
-        R: DBWeight,
     {
-        let (input, input_handle) = Input::new(|tuples: Vec<(K, Tup2<V, R>)>| {
-            OrdIndexedZSet::from_tuples(
-                (),
-                tuples
-                    .into_iter()
-                    .map(|(k, Tup2(v, w))| ((k, v), w))
-                    .collect(),
-            )
-        });
-        let stream = self.add_source(input);
+        let factories = AddInputIndexedZSetFactories::new::<K, V>();
+        let (stream, handle) = self.dyn_add_input_indexed_zset(&factories);
 
-        let zset_handle = <CollectionHandle<K, Tup2<V, R>>>::new(input_handle);
-
-        (stream, zset_handle)
-    }
-
-    fn add_set_update<K, B>(&self, input_stream: Stream<Self, Vec<(K, bool)>>) -> Stream<Self, B>
-    where
-        K: DBData,
-        B: Batch<Key = K, Val = (), Time = ()>,
-        B::R: ZRingValue,
-    {
-        let sorted = input_stream
-            .apply_owned(move |mut upserts| {
-                // Sort the vector by key, preserving the history of updates for each key.
-                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-
-                // Find the last upsert for each key, that's the only one that matters.
-                upserts.dedup_by(|(k1, v1), (k2, v2)| {
-                    if k1 == k2 {
-                        swap(v1, v2);
-                        true
-                    } else {
-                        false
-                    }
-                });
-
-                upserts
-                    .into_iter()
-                    .map(|(k, v)| (k, if v { Some(()) } else { None }))
-                    .collect::<Vec<_>>()
-            })
-            // UpsertHandle shards its inputs.
-            .mark_sharded();
-
-        sorted.update_set::<B>()
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn add_upsert_indexed<K, V, U, B>(
-        &self,
-        input_stream: Stream<Self, Vec<(K, Update<V, U>)>>,
-        patch_func: PatchFunc<V, U>,
-    ) -> Stream<Self, B>
-    where
-        K: DBData,
-        B: Batch<Key = K, Val = V, Time = ()>,
-        B::R: ZRingValue,
-        V: DBData,
-        U: DBData,
-    {
-        let sorted = input_stream
-            .apply_owned(move |mut upserts| {
-                // Sort the vector by key, preserving the history of updates for each key.
-                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-                upserts
-            })
-            // UpsertHandle shards its inputs.
-            .mark_sharded();
-
-        sorted.input_upsert::<B>(patch_func)
+        (stream.typed(), IndexedZSetHandle::new(handle))
     }
 
     /// Create an input table with set semantics.
@@ -223,8 +283,8 @@ impl RootCircuit {
     /// appears as a Z-set with unit weights, but that ingests input data
     /// using set semantics. It returns a stream that carries values of type
     /// `OrdZSet<K, R>` and an input handle of type
-    /// [`UpsertHandle<K,bool>`](`UpsertHandle`).  The client uses
-    /// [`UpsertHandle::push`] and [`UpsertHandle::append`] to submit
+    /// [`SetHandle<K>`](`SetHandle`).  The client uses
+    /// [`SetHandle::push`] and [`SetHandle::append`] to submit
     /// commands of the form `(val, true)` to insert an element to the set
     /// and `(val, false) ` to delete `val` from the set.  These commands
     /// are buffered until the start of the next clock cycle.
@@ -263,20 +323,14 @@ impl RootCircuit {
     /// Specifically, retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
     // TODO: Add a version that takes a custom hash function.
-    pub fn add_input_set<K, R>(&self) -> (ZSetStream<K, R>, UpsertHandle<K, bool>)
+    pub fn add_input_set<K>(&self) -> (Stream<RootCircuit, OrdZSet<K>>, SetHandle<K>)
     where
         K: DBData,
-        R: DBData + ZRingValue,
     {
-        self.region("input_set", || {
-            let (input, input_handle) = Input::new(|tuples: Vec<(K, bool)>| tuples);
-            let input_stream = self.add_source(input);
-            let upsert_handle = <UpsertHandle<K, bool>>::new(input_handle);
+        let factories = AddInputSetFactories::new::<K>();
+        let (stream, handle) = self.dyn_add_input_set(&factories);
 
-            let upsert: Stream<RootCircuit, OrdZSet<K, R>> = self.add_set_update(input_stream);
-
-            (upsert, upsert_handle)
-        })
+        (stream.typed(), SetHandle::new(handle))
     }
 
     /// Create an input table as a key-value map with upsert update semantics.
@@ -308,8 +362,8 @@ impl RootCircuit {
     /// appears as an indexed Z-set with all unit weights, but that ingests
     /// input data using upsert semantics. It returns a stream that carries
     /// values of type `OrdIndexedZSet<K, V, R>` and an input handle of type
-    /// [`UpsertHandle<K,Option<V>>`](`UpsertHandle`).  The client uses
-    /// [`UpsertHandle::push`] and [`UpsertHandle::append`] to submit
+    /// [`MapHandle<K, V>`](`MapHandle`).  The client uses
+    /// [`MapHandle::push`] and [`MapHandle::append`] to submit
     /// commands of the form `(key, Update::Insert(val))` to insert a new
     /// key-value pair, `(key, Update::Delete)` to delete the value
     /// associated with `key`, and `(key, Update::Update)` to modify the
@@ -363,80 +417,30 @@ impl RootCircuit {
     /// Retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
     // TODO: Add a version that takes a custom hash function.
-    #[allow(clippy::type_complexity)]
-    pub fn add_input_map<K, V, U, R>(
+    pub fn add_input_map<K, V, U, PF>(
         &self,
-        patch_func: PatchFunc<V, U>,
-    ) -> (IndexedZSetStream<K, V, R>, UpsertHandle<K, Update<V, U>>)
+        patch_func: PF,
+    ) -> (
+        Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        MapHandle<K, V, U>,
+    )
     where
         K: DBData,
         V: DBData,
-        U: DBData,
-        R: DBData + ZRingValue,
-        Option<V>: DBData,
+        U: DBData + Erase<DynData>,
+        PF: Fn(&mut V, &U) + 'static,
     {
-        self.region("input_map", || {
-            let (input, input_handle) = Input::new(|tuples: Vec<(K, Update<V, U>)>| tuples);
-            let input_stream = self.add_source(input);
-            let zset_handle = <UpsertHandle<K, Update<V, U>>>::new(input_handle);
+        let factories = AddInputMapFactories::new::<K, V, U>();
+        let (stream, handle) = self.dyn_add_input_map(
+            &factories,
+            Box::new(move |v: &mut DynData, u: &DynData| unsafe {
+                patch_func(v.downcast_mut::<V>(), u.downcast::<U>())
+            }),
+        );
 
-            let upsert = self.add_upsert_indexed(input_stream, patch_func);
-
-            (upsert, zset_handle)
-        })
+        (stream.typed(), MapHandle::new(handle))
     }
 }
-
-/*
-// We may want to uncomment and use the following operator based on
-// profiling data.  At the moment the `Input` operator assembles input
-// tuples into batches as they are received from `CollectionHandle`s.
-// Since `CollectionHandle` doesn't consistently map keys to workers,
-// resulting batches may need to be re-sharded by the next operator.
-// It may be more efficient to shard update vectors received from
-// `CollectionHandle` directly without paying the cost of assembling
-// them into batches first.  This is what this operator does.
-impl<K, V> Stream<Circuit<()>, Vec<(K, V)>>
-where
-    K: Send + Hash + Clone + 'static,
-    V: Send + Clone + 'static,
-{
-    fn shard_vec(&self) -> Stream<Circuit<()>, Vec<(K, V)>> {
-        Runtime::runtime()
-            .map(|runtime| {
-                let num_workers = runtime.num_workers();
-
-                if num_workers == 1 {
-                    self.clone()
-                } else {
-                    let (sender, receiver) = self.circuit().new_exchange_operators(
-                        &runtime,
-                        Runtime::worker_index(),
-                        move |batch: Vec<(K, V)>, batches: &mut Vec<Vec<(K, V)>>| {
-                            for _ in 0..num_workers {
-                                batches.push(Vec::with_capacity(batch.len() / num_workers));
-                            }
-
-                            for (key, val) in batch.into_iter() {
-                                let batch_index = fxhash::hash(&key) % num_workers;
-                                batches[batch_index].push((key, val))
-                            }
-                        },
-                        move |output: &mut Vec<(K, V)>, batch: Vec<(K, V)>| {
-                            if output.is_empty() {
-                                output.reserve(batch.len() * num_workers);
-                            }
-                            output.extend(batch);
-                        },
-                    );
-
-                    self.circuit().add_exchange(sender, receiver, self)
-                }
-            })
-            .unwrap_or_else(|| self.clone())
-    }
-}
-*/
 
 /// `TypedMapKey` entry used to share InputHandle objects across workers in a
 /// runtime. The first worker to create the handle will store it in the map,
@@ -487,22 +491,22 @@ where
 /// thread and inside an `OutputHandle` to store data sent by a worker
 /// thread to the outside world.
 #[derive(Clone)]
-pub(super) struct Mailbox<T> {
+pub(crate) struct Mailbox<T> {
+    empty: Arc<dyn Fn() -> T + Send + Sync>,
     value: Arc<Mutex<T>>,
 }
 
-impl<T> Mailbox<T>
-where
-    T: Default,
-{
-    pub(super) fn new() -> Self {
+impl<T: Clone> Mailbox<T> {
+    pub(in crate::operator) fn new(empty: Arc<dyn Fn() -> T + Send + Sync>) -> Self {
+        let v = empty();
         Self {
-            value: Arc::new(Mutex::new(Default::default())),
+            empty,
+            value: Arc::new(Mutex::new(v)),
         }
     }
 
-    pub(super) fn take(&self) -> T {
-        take(&mut *self.value.lock().unwrap())
+    pub(in crate::operator) fn take(&self) -> T {
+        replace(&mut *self.value.lock().unwrap(), (self.empty)())
     }
 
     pub(super) fn map<F, O: 'static>(&self, func: F) -> O
@@ -519,31 +523,38 @@ where
         f(&mut *self.value.lock().unwrap());
     }
 
-    pub(super) fn set(&self, v: T) {
+    pub(in crate::operator) fn set(&self, v: T) {
         *self.value.lock().unwrap() = v;
+    }
+
+    pub(in crate::operator) fn clear(&self) {
+        *self.value.lock().unwrap() = (self.empty)();
     }
 }
 
-struct InputHandleInternal<T> {
-    mailbox: Vec<Mailbox<T>>,
+pub(crate) struct InputHandleInternal<T> {
+    pub(crate) mailbox: Vec<Mailbox<T>>,
     offset: usize,
 }
 
 impl<T> InputHandleInternal<T>
 where
-    T: Default + Clone,
+    T: Clone,
 {
     // Returns a new `InputHandleInternal` for workers with indexes in the range
     // of `workers`.
-    fn new(workers: Range<usize>) -> Self {
+    fn new(workers: Range<usize>, empty_val: Arc<dyn Fn() -> T + Send + Sync>) -> Self {
         assert!(!workers.is_empty());
         Self {
-            mailbox: workers.clone().map(|_| Mailbox::new()).collect(),
+            mailbox: workers
+                .clone()
+                .map(move |_| Mailbox::new(empty_val.clone()))
+                .collect(),
             offset: workers.start,
         }
     }
 
-    fn workers(&self) -> Range<usize> {
+    pub(crate) fn workers(&self) -> Range<usize> {
         self.offset..self.offset + self.mailbox.len()
     }
 
@@ -568,7 +579,7 @@ where
 
     fn clear_for_all(&self) {
         for mailbox in self.mailbox.iter() {
-            mailbox.set(Default::default());
+            mailbox.clear();
         }
     }
 
@@ -588,16 +599,21 @@ where
 /// `T::default()`).  The handle is then used to write new values
 /// to the mailboxes, which will be consumed at the next
 /// logical clock tick.
-#[derive(Clone)]
-pub struct InputHandle<T>(Arc<InputHandleInternal<T>>);
+pub struct InputHandle<T>(pub(crate) Arc<InputHandleInternal<T>>);
+
+impl<T> Clone for InputHandle<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 impl<T> InputHandle<T>
 where
-    T: Default + Send + Clone + 'static,
+    T: Send + Clone + 'static,
 {
-    fn new() -> Self {
+    fn new(empty_val: Arc<dyn Fn() -> T + Send + Sync>) -> Self {
         match Runtime::runtime() {
-            None => Self(Arc::new(InputHandleInternal::new(0..1))),
+            None => Self(Arc::new(InputHandleInternal::new(0..1, empty_val))),
             Some(runtime) => {
                 let input_id = runtime.sequence_next(Runtime::worker_index());
 
@@ -607,6 +623,7 @@ where
                     .or_insert_with(|| {
                         Self(Arc::new(InputHandleInternal::new(
                             runtime.layout().local_workers(),
+                            empty_val,
                         )))
                     })
                     .value()
@@ -618,7 +635,7 @@ where
     /// Returns the range of worker indexes that this input handle covers, that
     /// is, all of the workers on this host (all workers everywhere, for a
     /// single-host circuit).
-    fn workers(&self) -> Range<usize> {
+    pub(crate) fn workers(&self) -> Range<usize> {
         self.0.workers()
     }
 
@@ -651,333 +668,6 @@ where
     }
 }
 
-/// A handle used to write data to an input stream created by
-/// [`add_input_zset`](`RootCircuit::add_input_zset`),
-/// and [`add_input_indexed_zset`](`RootCircuit::add_input_indexed_zset`)
-/// methods.
-///
-/// The handle provides an API to push updates to the stream in
-/// the form of `(key, value)` tuples:
-///
-///    * For `add_input_zset`, the tuples have the form `(key, weight)`.
-///
-///    * For `add_input_indexed_zset`, the tuples have the form `(key, (value,
-///      weight)`).
-///
-/// See [`add_input_zset`](`RootCircuit::add_input_zset`),
-/// [`add_input_indexed_zset`](`RootCircuit::add_input_indexed_zset`) and
-/// documentation for the exact semantics of these updates.
-///
-/// Internally, the handle manages an array of mailboxes, one for each worker
-/// thread on this host. It automatically partitions updates across mailboxes in
-/// a round robin fashion.  At the start of each clock cycle, the circuit
-/// consumes updates buffered in each mailbox, leaving the mailbox empty.
-pub struct CollectionHandle<K, V> {
-    input_handle: InputHandle<Vec<(K, V)>>,
-    // Used to send tuples to workers in round robin.  Oftentimes the
-    // workers will immediately repartition the inputs based on the hash
-    // of the key; however this is more efficient than doing it here, as
-    // the work will be evenly split across workers.
-    next_worker: AtomicUsize,
-}
-
-impl<K, V> Clone for CollectionHandle<K, V>
-where
-    K: DBData,
-    V: DBData,
-{
-    fn clone(&self) -> Self {
-        Self::new(self.input_handle.clone())
-    }
-}
-
-impl<K, V> CollectionHandle<K, V>
-where
-    K: DBData,
-    V: DBData,
-{
-    fn new(input_handle: InputHandle<Vec<(K, V)>>) -> Self {
-        Self {
-            input_handle,
-            next_worker: AtomicUsize::new(0),
-        }
-    }
-
-    #[inline]
-    fn num_partitions(&self) -> usize {
-        self.input_handle.0.mailbox.len()
-    }
-
-    /// Push a single `(key,value)` pair to the input stream.
-    pub fn push(&self, k: K, v: V) {
-        let next_worker = match self.num_partitions() {
-            1 => 0,
-            n => self.next_worker.fetch_add(1, Ordering::AcqRel) % n,
-        };
-        self.input_handle
-            .update_for_worker(next_worker + self.input_handle.workers().start, |tuples| {
-                tuples.push((k, v))
-            });
-    }
-
-    /// Push multiple `(key,value)` pairs to the input stream.
-    ///
-    /// This is more efficient than pushing values one-by-one using
-    /// [`Self::push`].
-    ///
-    /// # Concurrency
-    ///
-    /// This method partitions updates across workers and then buffers them
-    /// atomically with respect to each worker, i.e., each worker observes
-    /// all updates in an `append` at the same logical time.  However the
-    /// operation is not atomic as a whole: concurrent `append` and
-    /// `clear_input` calls (performed via clones of the
-    /// same `CollectionHandle`) may apply in different orders in different
-    /// worker threads.  This method is also not atomic with respect to
-    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
-    /// `DBSPHandle::step` call performed concurrently with `append` may
-    /// result in only a subset of the workers observing updates from this
-    /// `append` operation.  The remaining updates will appear
-    /// during subsequent logical clock cycles.
-    pub fn append(&self, vals: &mut Vec<(K, V)>) {
-        let num_partitions = self.num_partitions();
-        let next_worker = if num_partitions > 1 {
-            self.next_worker.load(Ordering::Acquire)
-        } else {
-            0
-        };
-
-        // We divide `val` across `num_partitions` workers as evenly as we can.  The
-        // first `remainder` workers will receive `quotient + 1` values, and the
-        // rest will receive `quotient`.
-        let quotient = vals.len() / num_partitions;
-        let remainder = vals.len() % num_partitions;
-        let worker_ofs = self.input_handle.workers().start;
-        for i in 0..num_partitions {
-            let mut partition_size = quotient;
-            if i < remainder {
-                partition_size += 1;
-            }
-
-            let worker = (next_worker + i) % num_partitions + worker_ofs;
-            if partition_size == vals.len() {
-                self.input_handle.update_for_worker(worker, |tuples| {
-                    if tuples.is_empty() {
-                        *tuples = take(vals);
-                    } else {
-                        tuples.append(vals);
-                    }
-                });
-                break;
-            }
-
-            // Draining from the end should be more efficient as it doesn't
-            // require memcpy'ing the tail of the vector to the front.
-            let tail = vals.drain(vals.len() - partition_size..);
-            self.input_handle.update_for_worker(worker, |tuples| {
-                if tuples.is_empty() {
-                    *tuples = tail.collect();
-                } else {
-                    tuples.extend(tail);
-                }
-            });
-        }
-        assert_eq!(vals.len(), 0);
-
-        // If `remainder` is positive, then the values were not distributed completely
-        // evenly. Advance `self.next_worker` so that the next batch of values
-        // will give extra values to the ones that didn't get extra this time.
-        if remainder > 0 {
-            self.next_worker
-                .store(next_worker + remainder, Ordering::Release);
-        }
-    }
-
-    /// Clear all inputs buffered since the start of the last clock cycle.
-    ///
-    /// # Concurrency
-    ///
-    /// Similar to [`Self::append`], this method atomically clears updates
-    /// buffered for each worker thread, i.e., the worker observes all or none
-    /// of the updates buffered before the call to `clear_input`; however the
-    /// operation is not atomic as a whole: concurrent `append` and
-    /// `clear_input` calls (performed via clones of the
-    /// same `CollectionHandle`) may apply in different orders in different
-    /// worker threads.  This method is also not atomic with respect to
-    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
-    /// `DBSPHandle::step` call performed concurrently with `clear_input` may
-    /// result in only a subset of the workers observing empty inputs, while
-    /// other workers observe updates buffered prior to the `clear_input` call.
-    pub fn clear_input(&self) {
-        self.input_handle.set_for_all(Vec::new());
-    }
-}
-
-pub trait HashFunc<K>: Fn(&K) -> u32 + Send + Sync {}
-
-impl<K, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
-
-/// A handle used to write data to an input stream created by
-/// [`add_input_set`](`RootCircuit::add_input_set`) and
-/// [`add_input_map`](`RootCircuit::add_input_map`)
-/// methods.
-///
-/// The handle provides an API to push updates to the stream in
-/// the form of `(key, value)` tuples:
-///
-///    * For `add_input_set`, the tuples have the form `(Key, bool)`.
-///
-///    * For `add_input_map`, the tuples have the form `(Key, Option<Value>)`.
-///
-/// See [`add_input_set`](`RootCircuit::add_input_set`) and
-/// [`add_input_map`](`RootCircuit::add_input_map`) documentation for the exact
-/// semantics of these updates.
-///
-/// Internally, the handle manages an array of mailboxes, one for
-/// each worker thread. It automatically partitions updates across
-/// mailboxes based on the hash of the key.
-/// At the start of each clock cycle, the
-/// circuit consumes updates buffered in each mailbox, leaving
-/// the mailbox empty.
-pub struct UpsertHandle<K, V> {
-    buffers: Vec<Vec<(K, V)>>,
-    input_handle: InputHandle<Vec<(K, V)>>,
-    // Sharding the input collection based on the hash of the key is more
-    // expensive than simple round robin partitioning used by
-    // `CollectionHandle`; however it is necessary here, since the `Upsert`
-    // operator requires that all updates to the same key are processed
-    // by the same worker thread and in the same order they were pushed
-    // by the client.
-    hash_func: Arc<dyn HashFunc<K>>,
-}
-
-impl<K, V> Clone for UpsertHandle<K, V>
-where
-    K: DBData,
-    V: DBData,
-{
-    fn clone(&self) -> Self {
-        // Don't clone buffers.
-        Self::with_hasher(self.input_handle.clone(), self.hash_func.clone())
-    }
-}
-
-impl<K, V> UpsertHandle<K, V>
-where
-    K: DBData,
-    V: DBData,
-{
-    fn new(input_handle: InputHandle<Vec<(K, V)>>) -> Self
-    where
-        K: Hash,
-    {
-        Self::with_hasher(
-            input_handle,
-            Arc::new(|k: &K| default_hash(k) as u32) as Arc<dyn HashFunc<K>>,
-        )
-    }
-
-    fn with_hasher(
-        input_handle: InputHandle<Vec<(K, V)>>,
-        hash_func: Arc<dyn HashFunc<K>>,
-    ) -> Self {
-        Self {
-            buffers: vec![Vec::new(); input_handle.0.mailbox.len()],
-            input_handle,
-            hash_func,
-        }
-    }
-
-    #[inline]
-    fn num_partitions(&self) -> usize {
-        self.buffers.len()
-    }
-
-    /// Push a single `(key,value)` pair to the input stream.
-    pub fn push(&self, k: K, v: V) {
-        let num_partitions = self.num_partitions();
-
-        if num_partitions > 1 {
-            self.input_handle
-                .update_for_worker(((self.hash_func)(&k) as usize) % num_partitions, |tuples| {
-                    tuples.push((k, v))
-                });
-        } else {
-            self.input_handle
-                .update_for_worker(0, |tuples| tuples.push((k, v)));
-        }
-    }
-
-    /// Push multiple `(key,value)` pairs to the input stream.
-    ///
-    /// This is more efficient than pushing values one-by-one using
-    /// [`Self::push`].
-    ///
-    /// # Concurrency
-    ///
-    /// This method partitions updates across workers and then buffers them
-    /// atomically with respect to each worker, i.e., each worker observes
-    /// all updates in an `append` at the same logical time.  However the
-    /// operation is not atomic as a whole: concurrent `append` and
-    /// `clear_input` calls (performed via clones of the
-    /// same `UpsertHandle`) may apply in different orders in different
-    /// worker threads.  This method is also not atomic with respect to
-    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
-    /// `DBSPHandle::step` call performed concurrently with `append` may
-    /// result in only a subset of the workers observing updates from this
-    /// `append` operation.  The remaining updates will appear
-    /// during subsequent logical clock cycles.
-    pub fn append(&mut self, vals: &mut Vec<(K, V)>) {
-        let num_partitions = self.num_partitions();
-
-        if num_partitions > 1 {
-            for (k, v) in vals.drain(..) {
-                self.buffers[((self.hash_func)(&k) as usize) % num_partitions].push((k, v));
-            }
-            for worker in 0..num_partitions {
-                self.input_handle.update_for_worker(worker, |tuples| {
-                    if tuples.is_empty() {
-                        *tuples = take(&mut self.buffers[worker]);
-                    } else {
-                        tuples.append(&mut self.buffers[worker]);
-                    }
-                })
-            }
-        } else {
-            self.input_handle.update_for_worker(0, |tuples| {
-                if tuples.is_empty() {
-                    *tuples = take(vals);
-                } else {
-                    tuples.append(vals);
-                }
-            });
-        }
-    }
-
-    /// Clear all inputs buffered since the start of the last clock cycle.
-    ///
-    /// # Concurrency
-    ///
-    /// Similar to [`Self::append`], this method atomically clears updates
-    /// buffered for each worker thread, i.e., the worker observes all or none
-    /// of the updates buffered before the call to `clear_input`; however the
-    /// operation is not atomic as a whole: concurrent `append` and
-    /// `clear_input` calls (performed via clones of the
-    /// same `UpsertHandle`) may apply in different orders in different
-    /// worker threads.  This method is also not atomic with respect to
-    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) and
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`) methods: a
-    /// `DBSPHandle::step` call performed concurrently with `clear_input` may
-    /// result in only a subset of the workers observing empty inputs, while
-    /// other workers observe updates buffered prior to the `clear_input` call.
-    pub fn clear_input(&self) {
-        self.input_handle.set_for_all(Vec::new());
-    }
-}
-
 /// Source operator that injects data received via `InputHandle` to the circuit.
 ///
 /// ```text
@@ -990,7 +680,7 @@ where
 ///                   │                   │
 ///                   └───────────────────┘
 /// ```
-struct Input<IT, OT, F> {
+pub struct Input<IT, OT, F> {
     mailbox: Mailbox<IT>,
     input_func: F,
     phantom: PhantomData<OT>,
@@ -998,10 +688,13 @@ struct Input<IT, OT, F> {
 
 impl<IT, OT, F> Input<IT, OT, F>
 where
-    IT: Default + Clone + Send + 'static,
+    IT: Clone + Send + 'static,
 {
-    fn new(input_func: F) -> (Self, InputHandle<IT>) {
-        let handle = InputHandle::new();
+    pub fn new(
+        input_func: F,
+        default: Arc<dyn Fn() -> IT + Send + Sync>,
+    ) -> (Self, InputHandle<IT>) {
+        let handle = InputHandle::new(default);
         let mailbox = handle.mailbox(Runtime::worker_index()).clone();
 
         let input = Self {
@@ -1031,632 +724,12 @@ where
 
 impl<IT, OT, F> SourceOperator<OT> for Input<IT, OT, F>
 where
-    IT: Default + Debug + 'static,
+    IT: Clone + Debug + 'static,
     OT: 'static,
     F: Fn(IT) -> OT + 'static,
 {
     fn eval(&mut self) -> OT {
         let v = self.mailbox.take();
         (self.input_func)(v)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::utils::Tup2;
-    use crate::{
-        indexed_zset,
-        operator::input::Update,
-        trace::{cursor::Cursor, Batch, BatchReader, Builder},
-        zset, CollectionHandle, InputHandle, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime,
-        UpsertHandle,
-    };
-    use anyhow::Result as AnyResult;
-    use std::{cmp::max, iter::once, ops::Mul};
-
-    fn input_batches() -> Vec<OrdZSet<u64, i64>> {
-        vec![
-            zset! { 1 => 1, 2 => 1, 3 => 1 },
-            zset! { 5 => -1, 10 => 2, 11 => 11 },
-            zset! {},
-        ]
-    }
-
-    fn input_vecs() -> Vec<Vec<(u64, i64)>> {
-        input_batches()
-            .into_iter()
-            .map(|batch| {
-                let mut cursor = batch.cursor();
-                let mut result = Vec::new();
-
-                while cursor.key_valid() {
-                    result.push((*cursor.key(), cursor.weight()));
-                    cursor.step_key();
-                }
-                result
-            })
-            .collect()
-    }
-
-    fn input_test_circuit(
-        circuit: &RootCircuit,
-        nworkers: usize,
-    ) -> AnyResult<InputHandle<OrdZSet<u64, i64>>> {
-        let (stream, handle) = circuit.add_input_stream::<OrdZSet<u64, i64>>();
-
-        let mut expected_batches = input_batches().into_iter().chain(input_batches()).chain(
-            input_batches().into_iter().map(move |batch| {
-                //let mut result = batch.clone();
-                let mut cursor = batch.cursor();
-                let mut result =
-                    <OrdZSet<u64, i64> as Batch>::Builder::with_capacity((), batch.len());
-
-                while cursor.key_valid() {
-                    result.push((cursor.key().clone(), cursor.weight().mul(nworkers as i64)));
-                    cursor.step_key();
-                }
-                result.done()
-            }),
-        );
-
-        stream.gather(0).inspect(move |batch| {
-            if Runtime::worker_index() == 0 {
-                assert_eq!(batch, &expected_batches.next().unwrap())
-            }
-        });
-
-        Ok(handle)
-    }
-
-    #[test]
-    fn input_test_st() {
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| input_test_circuit(circuit, 1)).unwrap();
-
-        for batch in input_batches().into_iter() {
-            input_handle.set_for_worker(0, batch);
-            circuit.step().unwrap();
-        }
-
-        for batch in input_batches().into_iter() {
-            input_handle.update_for_worker(0, |b| *b = batch);
-            circuit.step().unwrap();
-        }
-
-        for batch in input_batches().into_iter() {
-            input_handle.set_for_all(batch);
-            circuit.step().unwrap();
-        }
-    }
-
-    fn input_test_mt(workers: usize) {
-        let (mut dbsp, input_handle) =
-            Runtime::init_circuit(workers, move |circuit| input_test_circuit(circuit, workers))
-                .unwrap();
-
-        for (round, batch) in input_batches().into_iter().enumerate() {
-            input_handle.set_for_worker(round % workers, batch);
-            dbsp.step().unwrap();
-        }
-
-        for (round, batch) in input_batches().into_iter().enumerate() {
-            input_handle.update_for_worker(round % workers, |b| *b = batch);
-            dbsp.step().unwrap();
-        }
-
-        for batch in input_batches().into_iter() {
-            input_handle.set_for_all(batch);
-            dbsp.step().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-    }
-
-    #[test]
-    fn input_test_mt1() {
-        input_test_mt(1);
-    }
-
-    #[test]
-    fn input_test_mt4() {
-        input_test_mt(4);
-    }
-
-    fn zset_test_circuit(circuit: &RootCircuit) -> AnyResult<CollectionHandle<u64, i64>> {
-        let (stream, handle) = circuit.add_input_zset::<u64, i64>();
-
-        let mut expected_batches = input_batches()
-            .into_iter()
-            .chain(input_batches())
-            .chain(once(zset! {}));
-        stream.gather(0).inspect(move |batch| {
-            if Runtime::worker_index() == 0 {
-                assert_eq!(batch, &expected_batches.next().unwrap())
-            }
-        });
-
-        Ok(handle)
-    }
-
-    #[test]
-    fn zset_test_st() {
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| zset_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_vecs().into_iter() {
-            input_handle.append(&mut vec);
-            circuit.step().unwrap();
-        }
-
-        for vec in input_vecs().into_iter() {
-            for (k, w) in vec.into_iter() {
-                input_handle.push(k, w);
-            }
-            input_handle.push(5, 1);
-            input_handle.push(5, -1);
-            circuit.step().unwrap();
-        }
-
-        for mut vec in input_vecs().into_iter() {
-            input_handle.append(&mut vec);
-        }
-        input_handle.clear_input();
-        circuit.step().unwrap();
-    }
-
-    fn zset_test_mt(workers: usize) {
-        let (mut dbsp, input_handle) =
-            Runtime::init_circuit(workers, |circuit| zset_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_vecs().into_iter() {
-            input_handle.append(&mut vec);
-            dbsp.step().unwrap();
-        }
-
-        for vec in input_vecs().into_iter() {
-            for (k, w) in vec.into_iter() {
-                input_handle.push(k, w);
-            }
-            input_handle.push(5, 1);
-            input_handle.push(5, -1);
-            dbsp.step().unwrap();
-        }
-
-        for mut vec in input_vecs().into_iter() {
-            input_handle.append(&mut vec);
-        }
-        input_handle.clear_input();
-        dbsp.step().unwrap();
-
-        dbsp.kill().unwrap();
-    }
-
-    #[test]
-    fn zset_test_mt1() {
-        zset_test_mt(1);
-    }
-
-    #[test]
-    fn zset_test_mt4() {
-        zset_test_mt(4);
-    }
-
-    fn input_indexed_batches() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
-        vec![
-            indexed_zset! { 1 => {1 => 1, 2 => 1}, 2 => { 3 => 1 }, 3 => {4 => -1, 5 => 5} },
-            indexed_zset! { 5 => {10 => -1}, 10 => {2 => 1, 3 => -1}, 11 => {11 => 11} },
-            indexed_zset! {},
-        ]
-    }
-
-    fn input_indexed_vecs() -> Vec<Vec<(u64, Tup2<u64, i64>)>> {
-        input_indexed_batches()
-            .into_iter()
-            .map(|batch| {
-                let mut cursor = batch.cursor();
-                let mut result = Vec::new();
-
-                while cursor.key_valid() {
-                    while cursor.val_valid() {
-                        result.push((*cursor.key(), Tup2(*cursor.val(), cursor.weight())));
-                        cursor.step_val();
-                    }
-                    cursor.step_key();
-                }
-                result
-            })
-            .collect()
-    }
-
-    fn indexed_zset_test_circuit(
-        circuit: &RootCircuit,
-    ) -> AnyResult<CollectionHandle<u64, Tup2<u64, i64>>> {
-        let (stream, handle) = circuit.add_input_indexed_zset::<u64, u64, i64>();
-
-        let mut expected_batches = input_indexed_batches()
-            .into_iter()
-            .chain(input_indexed_batches());
-        stream.gather(0).inspect(move |batch| {
-            if Runtime::worker_index() == 0 {
-                assert_eq!(batch, &expected_batches.next().unwrap())
-            }
-        });
-
-        Ok(handle)
-    }
-
-    #[test]
-    fn indexed_zset_test_st() {
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| indexed_zset_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_indexed_vecs().into_iter() {
-            input_handle.append(&mut vec);
-            circuit.step().unwrap();
-        }
-
-        for vec in input_indexed_vecs().into_iter() {
-            for (k, v) in vec.into_iter() {
-                input_handle.push(k, v);
-            }
-            input_handle.push(5, Tup2(7, 1));
-            input_handle.push(5, Tup2(7, -1));
-            circuit.step().unwrap();
-        }
-    }
-
-    fn indexed_zset_test_mt(workers: usize) {
-        let (mut dbsp, input_handle) =
-            Runtime::init_circuit(workers, |circuit| indexed_zset_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_indexed_vecs().into_iter() {
-            input_handle.append(&mut vec);
-            dbsp.step().unwrap();
-        }
-
-        for vec in input_indexed_vecs().into_iter() {
-            for (k, v) in vec.into_iter() {
-                input_handle.push(k, v);
-            }
-            dbsp.step().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-    }
-
-    #[test]
-    fn indexed_zset_test_mt1() {
-        indexed_zset_test_mt(1);
-    }
-
-    #[test]
-    fn indexed_zset_test_mt4() {
-        indexed_zset_test_mt(4);
-    }
-
-    fn input_set_updates() -> Vec<Vec<(u64, bool)>> {
-        vec![
-            vec![(1, true), (2, true), (3, false)],
-            vec![(1, false), (2, true), (3, true), (4, true)],
-            vec![(2, false), (2, true), (3, true), (4, false)],
-            vec![(2, true), (2, false)],
-            vec![(100, true)],
-            vec![(95, true)],
-            // below watermark
-            vec![(80, true)],
-        ]
-    }
-
-    fn output_set_updates() -> Vec<OrdZSet<u64, i64>> {
-        vec![
-            zset! { 1 => 1,  2 => 1},
-            zset! { 1 => -1, 3 => 1,  4 => 1 },
-            zset! { 4 => -1 },
-            zset! { 2 => -1 },
-            zset! { 100 => 1 },
-            zset! { 95 => 1 },
-            zset! {},
-        ]
-    }
-
-    fn set_test_circuit(circuit: &RootCircuit) -> AnyResult<UpsertHandle<u64, bool>> {
-        let (stream, handle) = circuit.add_input_set::<u64, i64>();
-        let watermark = stream.waterline(|| 0, |k, ()| *k, |k1, k2| max(*k1, *k2));
-        stream.integrate_trace_retain_keys(&watermark, |k, ts| *k >= ts.saturating_sub(10));
-
-        let mut expected_batches = output_set_updates().into_iter();
-
-        stream.gather(0).inspect(move |batch| {
-            if Runtime::worker_index() == 0 {
-                assert_eq!(batch, &expected_batches.next().unwrap())
-            }
-        });
-
-        Ok(handle)
-    }
-
-    #[test]
-    fn set_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_set_updates().into_iter() {
-            input_handle.append(&mut vec);
-            circuit.step().unwrap();
-        }
-
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| set_test_circuit(circuit)).unwrap();
-
-        for vec in input_set_updates().into_iter() {
-            for (k, b) in vec.into_iter() {
-                input_handle.push(k, b);
-            }
-            circuit.step().unwrap();
-        }
-    }
-
-    fn set_test_mt(workers: usize) {
-        let (mut dbsp, mut input_handle) =
-            Runtime::init_circuit(workers, |circuit| set_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_set_updates().into_iter() {
-            input_handle.append(&mut vec);
-            dbsp.step().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-
-        let (mut dbsp, input_handle) =
-            Runtime::init_circuit(workers, |circuit| set_test_circuit(circuit)).unwrap();
-
-        for vec in input_set_updates().into_iter() {
-            for (k, b) in vec.into_iter() {
-                input_handle.push(k, b);
-            }
-            dbsp.step().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-    }
-
-    #[test]
-    fn set_test_mt1() {
-        set_test_mt(1);
-    }
-
-    #[test]
-    fn set_test_mt4() {
-        set_test_mt(4);
-    }
-
-    fn input_map_updates1() -> Vec<Vec<(u64, Update<u64, i64>)>> {
-        vec![
-            vec![
-                (1, Update::Insert(1)),
-                (1, Update::Insert(2)),
-                (2, Update::Delete),
-                (3, Update::Insert(3)),
-            ],
-            vec![
-                (1, Update::Insert(1)),
-                (1, Update::Delete),
-                (2, Update::Insert(2)),
-                (3, Update::Insert(4)),
-                (4, Update::Insert(4)),
-                (4, Update::Delete),
-                (4, Update::Insert(5)),
-            ],
-            vec![
-                (1, Update::Insert(5)),
-                (1, Update::Insert(6)),
-                (3, Update::Delete),
-                (4, Update::Insert(6)),
-            ],
-            // bump watermark
-            vec![(1, Update::Insert(100))],
-            // below watermark
-            vec![(1, Update::Insert(80))],
-            vec![(1, Update::Insert(91))],
-            // bump watermark more
-            vec![(1, Update::Insert(200))],
-            // below watermark
-            vec![(1, Update::Insert(91))],
-            vec![(1, Update::Insert(191))],
-        ]
-    }
-
-    fn output_map_updates1() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
-        vec![
-            indexed_zset! { 1 => {2 => 1},  3 => {3 => 1}},
-            indexed_zset! { 1 => {2 => -1}, 2 => {2 => 1}, 3 => {3 => -1, 4 => 1}, 4 => {5 => 1}},
-            indexed_zset! { 1 => {6 => 1},  3 => {4 => -1}, 4 => {5 => -1, 6 => 1}},
-            indexed_zset! { 1 => {6 => -1, 100 => 1}},
-            indexed_zset! {},
-            indexed_zset! { 1 => {91 => 1, 100 => -1}},
-            indexed_zset! { 1 => {200 => 1, 91 => -1}},
-            indexed_zset! {},
-            indexed_zset! { 1 => {191 => 1, 200 => -1}},
-        ]
-    }
-
-    // Test handling of updates.
-    fn input_map_updates2() -> Vec<Vec<(u64, Update<u64, i64>)>> {
-        vec![
-            vec![
-                // Insert and instantly update: values add up.
-                (1, Update::Insert(1)),
-                (1, Update::Update(1)),
-                // Insert and intantly overwrite: the last value is used.
-                (2, Update::Insert(1)),
-                (2, Update::Insert(1)),
-                // Insert and instantly delete.
-                (3, Update::Insert(1)),
-                (3, Update::Delete),
-                // Delete non-existing value - ignored.
-                (4, Update::Delete),
-            ],
-            vec![
-                // Two more updates added to existing value.
-                (1, Update::Update(1)),
-                (1, Update::Update(1)),
-                // Delete and then try to update the value. The update is ignored.
-                (2, Update::Delete),
-                (2, Update::Update(1)),
-                // Update missing value and then insert. The update is ignored.
-                (3, Update::Update(1)),
-                (3, Update::Insert(5)),
-            ],
-            vec![
-                // Updates followed by a delete.
-                (1, Update::Update(2)),
-                (1, Update::Update(3)),
-                (1, Update::Delete),
-                // Insert -> update -> delete.
-                (2, Update::Insert(3)),
-                (2, Update::Update(4)),
-                (2, Update::Delete),
-                // Insert the same value - noop.
-                (3, Update::Insert(5)),
-            ],
-            vec![(1, Update::Insert(1)), (2, Update::Insert(5))],
-            // Push waterline to 15.
-            vec![(3, Update::Update(10))],
-            vec![
-                // Attempt to update value below waterline - ignored
-                (1, Update::Update(10)),
-                // Update value above waterline - accepted.
-                (2, Update::Update(10)),
-            ],
-            vec![
-                // Attempt to delete value below waterline - ignored
-                (1, Update::Delete),
-                // Overwrite value above waterline with a value below - ignored
-                (2, Update::Insert(4)),
-                // Attempt to create new value below waterline - ignored
-                (4, Update::Insert(1)),
-            ],
-            vec![
-                // Attempt to insert new value overwriting value below waterline - ignored.
-                (1, Update::Insert(20)),
-                // Overwrite value above waterline with a new value above waterline - accepted
-                (2, Update::Insert(10)),
-                // Create new value above waterline - accepted, try to overwrite it with a value
-                // below waterline - ignored.
-                (4, Update::Insert(15)),
-                (4, Update::Insert(4)),
-            ],
-            vec![
-                // Attempt to update value below waterline - ignored, even though the new value
-                // would have been above waterline.
-                (1, Update::Update(20)),
-            ],
-        ]
-    }
-
-    fn output_map_updates2() -> Vec<OrdIndexedZSet<u64, u64, i64>> {
-        vec![
-            indexed_zset! { 1 => {2 => 1}, 2 => {1 => 1}},
-            indexed_zset! { 1 => {2 => -1, 4 => 1}, 2 => {1 => -1}, 3 => { 5 => 1 } },
-            indexed_zset! { 1 => {4 => -1} },
-            indexed_zset! { 1 => {1 => 1}, 2 => {5=>1} },
-            indexed_zset! { 3 => {5 => -1, 15 => 1} },
-            indexed_zset! { 2 => {5 => -1, 15 => 1} },
-            indexed_zset! {},
-            indexed_zset! {2 => {15 => -1, 10 => 1}, 4 => {15 => 1}},
-            indexed_zset! {},
-        ]
-    }
-
-    fn map_test_circuit(
-        circuit: &RootCircuit,
-        expected_outputs: fn() -> Vec<OrdIndexedZSet<u64, u64, i64>>,
-    ) -> AnyResult<UpsertHandle<u64, Update<u64, i64>>> {
-        let (stream, handle) = circuit
-            .add_input_map::<u64, u64, i64, i64>(Box::new(|v, u| *v = ((*v as i64) + u) as u64));
-        let watermark = stream.waterline(
-            || (0, 0),
-            |k, v| (*k, *v),
-            |ts1, ts2| (max(ts1.0, ts2.0), max(ts1.1, ts2.1)),
-        );
-        stream.integrate_trace_retain_values(&watermark, |v, ts| *v >= ts.1.saturating_sub(10));
-
-        let mut expected_batches = expected_outputs().into_iter();
-
-        stream.gather(0).inspect(move |batch| {
-            if Runtime::worker_index() == 0 {
-                assert_eq!(batch, &expected_batches.next().unwrap())
-            }
-        });
-
-        Ok(handle)
-    }
-
-    #[test]
-    fn map_test_st() {
-        let (circuit, mut input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
-
-        for mut vec in input_map_updates1().into_iter() {
-            input_handle.append(&mut vec);
-            circuit.step().unwrap();
-        }
-
-        let (circuit, input_handle) =
-            RootCircuit::build(move |circuit| map_test_circuit(circuit, output_map_updates1))
-                .unwrap();
-
-        for vec in input_map_updates1().into_iter() {
-            for (k, v) in vec.into_iter() {
-                input_handle.push(k, v);
-            }
-            circuit.step().unwrap();
-        }
-    }
-
-    fn map_test_mt(
-        workers: usize,
-        inputs: fn() -> Vec<Vec<(u64, Update<u64, i64>)>>,
-        expected_outputs: fn() -> Vec<OrdIndexedZSet<u64, u64, i64>>,
-    ) {
-        let expected_outputs_clone = expected_outputs.clone();
-        let (mut dbsp, mut input_handle) = Runtime::init_circuit(workers, move |circuit| {
-            map_test_circuit(circuit, expected_outputs_clone)
-        })
-        .unwrap();
-
-        for mut vec in inputs().into_iter() {
-            input_handle.append(&mut vec);
-            dbsp.step().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-
-        let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
-            map_test_circuit(circuit, expected_outputs)
-        })
-        .unwrap();
-
-        for vec in inputs().into_iter() {
-            for (k, v) in vec.into_iter() {
-                input_handle.push(k, v);
-            }
-            dbsp.step().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-    }
-
-    #[test]
-    fn map_test_mt1() {
-        map_test_mt(1, input_map_updates1, output_map_updates1);
-        map_test_mt(1, input_map_updates2, output_map_updates2);
-    }
-
-    #[test]
-    fn map_test_mt4() {
-        map_test_mt(4, input_map_updates1, output_map_updates1);
-        map_test_mt(4, input_map_updates2, output_map_updates2);
     }
 }

@@ -1,17 +1,21 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
+    dynamic::{
+        DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait,
+        WeightTraitTyped, WithFactory,
+    },
     time::AntichainRef,
     trace::{
         layers::{
-            file::ordered::{
-                FileOrderedCursor, FileOrderedLayer, FileOrderedLayerConsumer,
-                FileOrderedLayerValues, FileOrderedTupleBuilder, FileOrderedValueCursor,
-            },
-            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, Trie, TupleBuilder,
+            Builder as TrieBuilder, Cursor as TrieCursor, FileOrderedCursor, FileOrderedLayer,
+            FileOrderedLayerFactories, FileOrderedTupleBuilder, FileOrderedValueCursor,
+            MergeBuilder, Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Consumer, Cursor, Filter, Merger, ValueConsumer,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Merger,
+        WeightedItem,
     },
+    utils::Tup2,
     DBData, DBWeight, NumEntries,
 };
 use rand::Rng;
@@ -21,23 +25,136 @@ use std::path::PathBuf;
 use std::{
     fmt::{self, Debug, Display},
     ops::{Add, AddAssign, Neg},
-    rc::Rc,
 };
+
+pub struct FileIndexedZSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    layer_factories: FileOrderedLayerFactories<K, V, R>,
+    keys_factory: &'static dyn Factory<DynVec<K>>,
+    item_factory: &'static dyn Factory<DynPair<K, V>>,
+    weighted_item_factory: &'static dyn Factory<WeightedItem<K, V, R>>,
+    weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>,
+}
+
+impl<K, V, R> Clone for FileIndexedZSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            layer_factories: self.layer_factories.clone(),
+            keys_factory: self.keys_factory,
+            item_factory: self.item_factory,
+            weighted_item_factory: self.weighted_item_factory,
+            weighted_items_factory: self.weighted_items_factory,
+        }
+    }
+}
+
+impl<K, V, R> BatchReaderFactories<K, V, (), R> for FileIndexedZSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn new<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            layer_factories: FileOrderedLayerFactories::new::<KType, VType, RType>(),
+            keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
+            item_factory: WithFactory::<Tup2<KType, VType>>::FACTORY,
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, VType>, RType>>::FACTORY,
+            weighted_items_factory:
+                WithFactory::<LeanVec<Tup2<Tup2<KType, VType>, RType>>>::FACTORY,
+        }
+    }
+
+    fn key_factory(&self) -> &'static dyn Factory<K> {
+        self.layer_factories.factories0.key_factory
+    }
+
+    fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
+        self.keys_factory
+    }
+
+    fn val_factory(&self) -> &'static dyn Factory<V> {
+        self.layer_factories.factories1.key_factory
+    }
+
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.layer_factories.diff_factory
+    }
+}
+
+impl<K, V, R> BatchFactories<K, V, (), R> for FileIndexedZSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>> {
+        self.item_factory
+    }
+
+    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
+        self.weighted_item_factory
+    }
+
+    fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
+        self.weighted_items_factory
+    }
+}
 
 /// A batch of key-value weighted tuples without timing information.
 ///
 /// Each tuple in `FileIndexedZSet<K, V, R>` has key type `K`, value type `V`,
 /// weight type `R`, and time `()`.
-#[derive(Debug, Clone)]
-#[cfg_attr(test, derive(Eq))]
 pub struct FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
+    factories: FileIndexedZSetFactories<K, V, R>,
     #[doc(hidden)]
     pub layer: FileOrderedLayer<K, V, R>,
+}
+
+impl<K, V, R> Debug for FileIndexedZSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileIndexedZSet")
+            .field("layer", &self.layer)
+            .finish()
+    }
+}
+
+impl<K, V, R> Clone for FileIndexedZSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            factories: self.factories.clone(),
+            layer: self.layer.clone(),
+        }
+    }
 }
 
 // This is `#[cfg(test)]` only because it would be surprisingly expensive in
@@ -45,9 +162,9 @@ where
 #[cfg(test)]
 impl<Other, K, V, R> PartialEq<Other> for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
     Other: BatchReader<Key = K, Val = V, R = R, Time = ()>,
 {
     fn eq(&self, other: &Other) -> bool {
@@ -74,11 +191,20 @@ where
     }
 }
 
+#[cfg(test)]
+impl<K, V, R> Eq for FileIndexedZSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+}
+
 impl<K, V, R> Display for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
     FileOrderedLayer<K, V, R>: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -90,47 +216,11 @@ where
     }
 }
 
-impl<K, V, R> Default for FileIndexedZSet<K, V, R>
-where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
-{
-    #[inline]
-    fn default() -> Self {
-        Self::empty(())
-    }
-}
-
-impl<K, V, R> From<FileOrderedLayer<K, V, R>> for FileIndexedZSet<K, V, R>
-where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
-{
-    #[inline]
-    fn from(layer: FileOrderedLayer<K, V, R>) -> Self {
-        Self { layer }
-    }
-}
-
-impl<K, V, R> From<FileOrderedLayer<K, V, R>> for Rc<FileIndexedZSet<K, V, R>>
-where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
-{
-    #[inline]
-    fn from(layer: FileOrderedLayer<K, V, R>) -> Self {
-        Rc::new(From::from(layer))
-    }
-}
-
 impl<K, V, R> NumEntries for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     const CONST_NUM_ENTRIES: Option<usize> = FileOrderedLayer::<K, V, R>::CONST_NUM_ENTRIES;
 
@@ -147,13 +237,15 @@ where
 
 impl<K, V, R> NegByRef for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight + NegByRef,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTraitTyped + ?Sized,
+    R::Type: DBWeight + NegByRef + Erase<R>,
 {
     #[inline]
     fn neg_by_ref(&self) -> Self {
         Self {
+            factories: self.factories.clone(),
             layer: self.layer.neg_by_ref(),
         }
     }
@@ -161,15 +253,17 @@ where
 
 impl<K, V, R> Neg for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight + Neg<Output = R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTraitTyped + ?Sized,
+    R::Type: DBWeight + NegByRef + Erase<R>,
 {
     type Output = Self;
 
     #[inline]
     fn neg(self) -> Self {
         Self {
+            factories: self.factories.clone(),
             layer: self.layer.neg(),
         }
     }
@@ -177,15 +271,16 @@ where
 
 impl<K, V, R> Add<Self> for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Output = Self;
     #[inline]
 
     fn add(self, rhs: Self) -> Self::Output {
         Self {
+            factories: self.factories.clone(),
             layer: self.layer.add(rhs.layer),
         }
     }
@@ -193,9 +288,9 @@ where
 
 impl<K, V, R> AddAssign<Self> for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
@@ -205,9 +300,9 @@ where
 
 impl<K, V, R> AddAssignByRef for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     #[inline]
     fn add_assign_by_ref(&mut self, rhs: &Self) {
@@ -217,13 +312,14 @@ where
 
 impl<K, V, R> AddByRef for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
         Self {
+            factories: self.factories.clone(),
             layer: self.layer.add_by_ref(&rhs.layer),
         }
     }
@@ -231,10 +327,11 @@ where
 
 impl<K, V, R> BatchReader for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
+    type Factories = FileIndexedZSetFactories<K, V, R>;
     type Key = K;
     type Val = V;
     type Time = ();
@@ -242,18 +339,14 @@ where
     type Cursor<'s> = FileIndexedZSetCursor<'s, K, V, R>
     where
         V: 's;
-    type Consumer = FileIndexedZSetConsumer<K, V, R>;
+
+    fn factories(&self) -> Self::Factories {
+        self.factories.clone()
+    }
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
         FileIndexedZSetCursor::new(self)
-    }
-
-    #[inline]
-    fn consumer(self) -> Self::Consumer {
-        FileIndexedZSetConsumer {
-            consumer: FileOrderedLayerConsumer::from(self.layer),
-        }
     }
 
     #[inline]
@@ -280,7 +373,7 @@ where
         self.layer.truncate_keys_below(lower_bound);
     }
 
-    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut Vec<Self::Key>)
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
     {
@@ -290,30 +383,13 @@ where
 
 impl<K, V, R> Batch for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    type Item = (K, V);
-    type Batcher = MergeBatcher<(K, V), (), R, Self>;
+    type Batcher = MergeBatcher<Self>;
     type Builder = FileIndexedZSetBuilder<K, V, R>;
     type Merger = FileIndexedZSetMerger<K, V, R>;
-
-    fn item_from(key: K, val: V) -> Self::Item {
-        (key, val)
-    }
-
-    fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
-    where
-        Self::Val: From<()>,
-    {
-        Self::from_tuples(
-            time,
-            keys.into_iter()
-                .map(|(k, w)| ((k, From::from(())), w))
-                .collect(),
-        )
-    }
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
         FileIndexedZSetMerger::new_merger(self, other)
@@ -321,9 +397,10 @@ where
 
     fn recede_to(&mut self, _frontier: &()) {}
 
-    fn empty(_time: Self::Time) -> Self {
+    fn dyn_empty(factories: &Self::Factories, _time: Self::Time) -> Self {
         Self {
-            layer: FileOrderedLayer::empty(),
+            factories: factories.clone(),
+            layer: FileOrderedLayer::empty(&factories.layer_factories),
         }
     }
     fn persistent_id(&self) -> Option<PathBuf> {
@@ -334,29 +411,37 @@ where
 /// State for an in-progress merge.
 pub struct FileIndexedZSetMerger<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
+    factories: FileIndexedZSetFactories<K, V, R>,
     result: Option<FileOrderedLayer<K, V, R>>,
 }
 
 impl<K, V, R> Merger<K, V, (), R, FileIndexedZSet<K, V, R>> for FileIndexedZSetMerger<K, V, R>
 where
     Self: SizeOf,
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_merger(_batch1: &FileIndexedZSet<K, V, R>, _batch2: &FileIndexedZSet<K, V, R>) -> Self {
-        Self { result: None }
+    fn new_merger(batch1: &FileIndexedZSet<K, V, R>, _batch2: &FileIndexedZSet<K, V, R>) -> Self {
+        Self {
+            factories: batch1.factories.clone(),
+            result: None,
+        }
     }
 
     #[inline]
     fn done(mut self) -> FileIndexedZSet<K, V, R> {
         FileIndexedZSet {
-            layer: self.result.take().unwrap_or_default(),
+            factories: self.factories.clone(),
+            layer: self
+                .result
+                .take()
+                .unwrap_or_else(|| FileOrderedLayer::empty(&self.factories.layer_factories)),
         }
     }
 
@@ -396,9 +481,9 @@ where
 
 impl<K, V, R> SizeOf for FileIndexedZSetMerger<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn size_of_children(&self, _context: &mut size_of::Context) {
         // XXX
@@ -406,22 +491,36 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug, SizeOf, Clone)]
+#[derive(Debug, SizeOf)]
 pub struct FileIndexedZSetCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     key_cursor: FileOrderedCursor<'s, K, V, R>,
     val_cursor: FileOrderedValueCursor<'s, K, V, R>,
 }
 
+impl<'s, K, V, R> Clone for FileIndexedZSetCursor<'s, K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            key_cursor: self.key_cursor.clone(),
+            val_cursor: self.val_cursor.clone(),
+        }
+    }
+}
+
 impl<'s, K, V, R> FileIndexedZSetCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn new(zset: &'s FileIndexedZSet<K, V, R>) -> Self {
         let key_cursor = zset.layer.cursor();
@@ -443,10 +542,14 @@ where
 
 impl<'s, K, V, R> Cursor<K, V, (), R> for FileIndexedZSetCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.key_cursor.storage.factories.diff_factory
+    }
+
     fn key(&self) -> &K {
         self.key_cursor.current_key()
     }
@@ -455,27 +558,26 @@ where
         self.val_cursor.current_value()
     }
 
-    fn fold_times<F, U>(&mut self, init: U, mut fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
+    fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
         if self.val_cursor.valid() {
-            fold(init, &(), self.val_cursor.current_diff())
-        } else {
-            init
+            logic(&(), self.val_cursor.current_diff())
         }
     }
 
-    fn fold_times_through<F, U>(&mut self, _upper: &(), init: U, fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
-        self.fold_times(init, fold)
+    fn map_times_through(&mut self, _upper: &(), logic: &mut dyn FnMut(&(), &R)) {
+        self.map_times(logic)
     }
 
-    fn weight(&mut self) -> R {
+    fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
+        while self.val_valid() {
+            logic(self.val(), self.val_cursor.current_diff());
+            self.step_val();
+        }
+    }
+
+    fn weight(&mut self) -> &R {
         debug_assert!(self.val_cursor.valid());
-        self.val_cursor.current_diff().clone()
+        self.val_cursor.current_diff()
     }
 
     fn key_valid(&self) -> bool {
@@ -498,17 +600,11 @@ where
         self.move_key(|key_cursor| key_cursor.seek(key));
     }
 
-    fn seek_key_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
+    fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.move_key(|key_cursor| key_cursor.seek_with(&predicate));
     }
 
-    fn seek_key_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
+    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.move_key(|key_cursor| key_cursor.seek_with_reverse(&predicate));
     }
 
@@ -524,10 +620,7 @@ where
         self.val_cursor.seek(val);
     }
 
-    fn seek_val_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.val_cursor.seek_val_with(predicate);
     }
 
@@ -551,10 +644,7 @@ where
         self.val_cursor.seek_reverse(val);
     }
 
-    fn seek_val_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.val_cursor.seek_val_with_reverse(predicate);
     }
 
@@ -566,31 +656,41 @@ where
 /// A builder for creating layers from unsorted update tuples.
 pub struct FileIndexedZSetBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
+    factories: FileIndexedZSetFactories<K, V, R>,
     builder: FileOrderedTupleBuilder<K, V, R>,
 }
 
-impl<K, V, R> Builder<(K, V), (), R, FileIndexedZSet<K, V, R>> for FileIndexedZSetBuilder<K, V, R>
+impl<K, V, R> Builder<FileIndexedZSet<K, V, R>> for FileIndexedZSetBuilder<K, V, R>
 where
     Self: SizeOf,
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_builder(_time: ()) -> Self {
+    fn new_builder(factories: &FileIndexedZSetFactories<K, V, R>, _time: ()) -> Self {
         Self {
-            builder: FileOrderedTupleBuilder::<K, V, R>::new(),
+            factories: factories.clone(),
+            builder: FileOrderedTupleBuilder::<K, V, R>::new(&factories.layer_factories),
         }
     }
 
     #[inline]
-    fn with_capacity(_time: (), capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FileIndexedZSetFactories<K, V, R>,
+        _time: (),
+        capacity: usize,
+    ) -> Self {
         Self {
-            builder: <FileOrderedTupleBuilder<K, V, R> as TupleBuilder>::with_capacity(capacity),
+            factories: factories.clone(),
+            builder: <FileOrderedTupleBuilder<K, V, R> as TupleBuilder>::with_capacity(
+                &factories.layer_factories,
+                capacity,
+            ),
         }
     }
 
@@ -598,13 +698,27 @@ where
     fn reserve(&mut self, _additional: usize) {}
 
     #[inline]
-    fn push(&mut self, ((key, val), diff): ((K, V), R)) {
-        self.builder.push_tuple((key, (val, diff)));
+    fn push(&mut self, item: &mut DynPair<DynPair<K, V>, R>) {
+        let (kv, r) = item.split();
+        let (k, v) = kv.split();
+
+        self.builder.push_refs((k, (v, r)));
+    }
+
+    #[inline]
+    fn push_refs(&mut self, key: &K, val: &V, weight: &R) {
+        self.builder.push_refs((key, (val, weight)))
+    }
+
+    #[inline]
+    fn push_vals(&mut self, key: &mut K, val: &mut V, weight: &mut R) {
+        self.builder.push_refs((key, (val, weight)))
     }
 
     #[inline(never)]
     fn done(self) -> FileIndexedZSet<K, V, R> {
         FileIndexedZSet {
+            factories: self.factories,
             layer: self.builder.done(),
         }
     }
@@ -612,29 +726,30 @@ where
 
 impl<K, V, R> SizeOf for FileIndexedZSetBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn size_of_children(&self, _context: &mut size_of::Context) {
         // XXX
     }
 }
 
+/*
 pub struct FileIndexedZSetConsumer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     consumer: FileOrderedLayerConsumer<K, V, R>,
 }
 
 impl<K, V, R> Consumer<K, V, R, ()> for FileIndexedZSetConsumer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type ValueConsumer<'a> = FileIndexedZSetValueConsumer<'a, K, V,  R>
     where
@@ -663,18 +778,18 @@ where
 
 pub struct FileIndexedZSetValueConsumer<'a, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     consumer: FileOrderedLayerValues<'a, K, V, R>,
 }
 
 impl<'a, K, V, R> FileIndexedZSetValueConsumer<'a, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     #[inline]
     const fn new(consumer: FileOrderedLayerValues<'a, K, V, R>) -> Self {
@@ -684,9 +799,9 @@ where
 
 impl<'a, K, V, R> ValueConsumer<'a, V, R, ()> for FileIndexedZSetValueConsumer<'a, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn value_valid(&self) -> bool {
         self.consumer.value_valid()
@@ -701,11 +816,13 @@ where
     }
 }
 
+ */
+
 impl<K, V, R> SizeOf for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn size_of_children(&self, _context: &mut size_of::Context) {
         // XXX
@@ -714,9 +831,9 @@ where
 
 impl<K, V, R> Archive for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Archived = ();
     type Resolver = ();
@@ -728,9 +845,9 @@ where
 
 impl<K, V, R, S> Serialize<S> for FileIndexedZSet<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
     S: Serializer + ?Sized,
 {
     fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
@@ -740,9 +857,9 @@ where
 
 impl<K, V, R, D> Deserialize<FileIndexedZSet<K, V, R>, D> for Archived<FileIndexedZSet<K, V, R>>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
     D: Fallible,
 {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FileIndexedZSet<K, V, R>, D::Error> {

@@ -1,35 +1,81 @@
-//! Traits and types for building trie-based indices.
-//!
-//! The trie structure has each each element of each layer indicate a range of
-//! elements in the next layer. Similarly, ranges of elements in the layer
-//! itself may correspond to single elements in the layer above.
-
-mod advance;
-
-pub mod column_layer;
-pub mod erased;
-pub mod ordered;
-pub mod ordered_leaf;
-pub mod unordered;
-
-pub mod file;
-// pub mod hashed;
-// pub mod weighted;
-
-#[cfg(test)]
-mod test;
-
-pub use advance::{advance, advance_erased, advance_raw, retreat};
-
-use crate::algebra::HasZero;
-use crate::DBData;
-use size_of::SizeOf;
 use std::{
     fmt::Debug,
     ops::{Add, Sub},
 };
 
-use super::Rkyv;
+mod file;
+mod layer;
+mod leaf;
+
+pub use file::{
+    column_layer::{
+        FileColumnLayer, FileColumnLayerBuilder, FileColumnLayerCursor, FileLeafFactories,
+    },
+    ordered::{
+        FileOrderedCursor, FileOrderedLayer, FileOrderedLayerFactories, FileOrderedTupleBuilder,
+        FileOrderedValueCursor,
+    },
+};
+pub use layer::{Layer, LayerBuilder, LayerCursor, LayerFactories};
+pub use leaf::{Leaf, LeafBuilder, LeafCursor, LeafFactories};
+use size_of::SizeOf;
+
+use crate::{algebra::HasZero, trace::Rkyv};
+
+#[cfg(test)]
+mod test;
+
+/// Trait for types used as offsets into an ordered layer.
+/// This is usually `usize`, but `u32` can also be used in applications
+/// where huge batches do not occur to reduce metadata size.
+pub trait OrdOffset:
+    Copy
+    + Debug
+    + PartialEq
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + TryFrom<usize>
+    + TryInto<usize>
+    + HasZero
+    + SizeOf
+    + Sized
+    + Rkyv
+    + Send
+    + 'static
+{
+    fn from_usize(offset: usize) -> Self;
+
+    fn into_usize(self) -> usize;
+}
+
+impl<O> OrdOffset for O
+where
+    O: Copy
+        + Debug
+        + PartialEq
+        + Add<Output = Self>
+        + Sub<Output = Self>
+        + TryFrom<usize>
+        + TryInto<usize>
+        + HasZero
+        + SizeOf
+        + Sized
+        + Rkyv
+        + Send
+        + 'static,
+    <O as TryInto<usize>>::Error: Debug,
+    <O as TryFrom<usize>>::Error: Debug,
+{
+    #[inline]
+    fn from_usize(offset: usize) -> Self {
+        offset.try_into().unwrap()
+    }
+
+    #[inline]
+    fn into_usize(self) -> usize {
+        self.try_into().unwrap()
+    }
+}
 
 /// A collection of tuples, and types for building and enumerating them.
 ///
@@ -39,7 +85,9 @@ use super::Rkyv;
 /// trait.
 pub trait Trie: Sized {
     /// The type of item from which the type is constructed.
-    type Item;
+    type Item<'a>;
+    type ItemRef<'a>;
+    type Factories: Clone;
 
     /// The type of cursor used to navigate the type.
     type Cursor<'s>: Cursor<'s>
@@ -50,7 +98,7 @@ pub trait Trie: Sized {
     type MergeBuilder: MergeBuilder<Trie = Self>;
 
     /// The type used to assemble instances of the type from its `Item`s.
-    type TupleBuilder: TupleBuilder<Trie = Self, Item = Self::Item>;
+    type TupleBuilder: TupleBuilder<Trie = Self>;
 
     /// The number of distinct keys, as distinct from the total number of
     /// tuples.
@@ -130,7 +178,7 @@ pub trait MergeBuilder: Builder {
     /// the merged data.
     fn with_capacity(other1: &Self::Trie, other2: &Self::Trie) -> Self;
 
-    fn with_key_capacity(cap: usize) -> Self;
+    // fn with_key_capacity(cap: usize) -> Self;
 
     fn reserve(&mut self, additional: usize);
 
@@ -175,26 +223,24 @@ pub trait MergeBuilder: Builder {
 
 /// A type used to assemble collections from ordered sequences of tuples.
 pub trait TupleBuilder: Builder {
-    /// The type of item accepted for construction.
-    type Item;
-
     /// Allocates a new builder.
-    fn new() -> Self;
+    fn new(factories: &<Self::Trie as Trie>::Factories) -> Self;
 
     /// Allocates a new builder with capacity for at least `cap` tuples.
-    fn with_capacity(capacity: usize) -> Self; // <-- unclear how to set child capacities...
+    fn with_capacity(factories: &<Self::Trie as Trie>::Factories, capacity: usize) -> Self; // <-- unclear how to set child capacities...
 
     /// Reserve space for `additional` new tuples to be added to the current
     /// builder
     fn reserve_tuples(&mut self, additional: usize);
 
     /// Inserts a new tuple into the current builder
-    fn push_tuple(&mut self, tuple: Self::Item);
+    fn push_tuple(&mut self, tuple: <Self::Trie as Trie>::Item<'_>);
+    fn push_refs(&mut self, tuple: <Self::Trie as Trie>::ItemRef<'_>);
 
     /// Inserts all of the given tuples into the current builder
-    fn extend_tuples<I>(&mut self, tuples: I)
+    fn extend_tuples<'a, I>(&'a mut self, tuples: I)
     where
-        I: IntoIterator<Item = Self::Item>,
+        I: IntoIterator<Item = <Self::Trie as Trie>::Item<'a>>,
     {
         let tuples = tuples.into_iter();
 
@@ -221,7 +267,7 @@ pub trait Cursor<'s> {
         Self: 'k;
 
     /// Key used to search the contents of the cursor.
-    type Key: DBData;
+    type Key: ?Sized;
 
     type ValueCursor: Cursor<'s>;
 
@@ -262,61 +308,13 @@ pub trait Cursor<'s> {
     fn reposition(&mut self, lower: usize, upper: usize);
 }
 
-/// Trait for types used as offsets into an ordered layer.
-/// This is usually `usize`, but `u32` can also be used in applications
-/// where huge batches do not occur to reduce metadata size.
-pub trait OrdOffset:
-    Copy
-    + Debug
-    + PartialEq
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + TryFrom<usize>
-    + TryInto<usize>
-    + HasZero
-    + SizeOf
-    + Sized
-    + Rkyv
-    + 'static
-{
-    fn from_usize(offset: usize) -> Self;
-
-    fn into_usize(self) -> usize;
-}
-
-impl<O> OrdOffset for O
-where
-    O: Copy
-        + Debug
-        + PartialEq
-        + Add<Output = Self>
-        + Sub<Output = Self>
-        + TryFrom<usize>
-        + TryInto<usize>
-        + HasZero
-        + SizeOf
-        + Sized
-        + Rkyv
-        + 'static,
-    <O as TryInto<usize>>::Error: Debug,
-    <O as TryFrom<usize>>::Error: Debug,
-{
-    #[inline]
-    fn from_usize(offset: usize) -> Self {
-        offset.try_into().unwrap()
-    }
-
-    #[inline]
-    fn into_usize(self) -> usize {
-        self.try_into().unwrap()
-    }
-}
-
 impl Trie for () {
-    type Item = ();
+    type Item<'a> = ();
+    type ItemRef<'a> = ();
     type Cursor<'s> = ();
     type MergeBuilder = ();
     type TupleBuilder = ();
+    type Factories = ();
 
     fn keys(&self) -> usize {
         0
@@ -325,7 +323,7 @@ impl Trie for () {
         0
     }
     fn cursor_from(&self, _lower: usize, _upper: usize) -> Self::Cursor<'_> {}
-
+    fn merge(&self, _other: &Self) -> Self {}
     fn truncate_below(&mut self, _lower_bound: usize) {}
     fn lower_bound(&self) -> usize {
         0
@@ -344,7 +342,7 @@ impl Builder for () {
 impl MergeBuilder for () {
     fn with_capacity(_other1: &(), _other2: &()) -> Self {}
 
-    fn with_key_capacity(_capacity: usize) -> Self {}
+    //fn with_key_capacity(_capacity: usize) -> Self {}
 
     fn reserve(&mut self, _additional: usize) {}
 
@@ -384,15 +382,14 @@ impl MergeBuilder for () {
 }
 
 impl TupleBuilder for () {
-    type Item = ();
+    fn new(_vtables: &()) -> Self {}
 
-    fn new() -> Self {}
-
-    fn with_capacity(_capacity: usize) -> Self {}
+    fn with_capacity(_vtables: &(), _capacity: usize) -> Self {}
 
     fn reserve_tuples(&mut self, _additional: usize) {}
 
-    fn push_tuple(&mut self, _tuple: Self::Item) {}
+    fn push_tuple(&mut self, _tuple: <Self::Trie as Trie>::Item<'_>) {}
+    fn push_refs(&mut self, _tuple: <Self::Trie as Trie>::ItemRef<'_>) {}
 
     fn tuples(&self) -> usize {
         0

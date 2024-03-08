@@ -1,9 +1,9 @@
 use crate::{
     algebra::{Lattice, PartialOrder},
-    circuit::Scope,
+    dynamic::{DataTrait, WeightTrait},
     time::Timestamp,
-    trace::ord::{OrdKeyBatch, OrdValBatch},
-    DBData, DBTimestamp, DBWeight,
+    trace::{OrdKeyBatch, OrdValBatch},
+    Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -83,13 +83,14 @@ impl<TOuter: PartialOrder, TInner: PartialOrder> PartialOrder for Product<TOuter
 
 impl<TOuter, TInner> Timestamp for Product<TOuter, TInner>
 where
-    TOuter: DBTimestamp,
-    TInner: DBTimestamp,
+    TOuter: Timestamp,
+    TInner: Timestamp,
 {
     type Nested = Product<Self, u32>;
 
-    type OrdValBatch<K: DBData, V: DBData, R: DBWeight> = OrdValBatch<K, V, Self, R>;
-    type OrdKeyBatch<K: DBData, R: DBWeight> = OrdKeyBatch<K, Self, R>;
+    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+        OrdValBatch<K, V, Self, R>;
+    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         Self::new(TOuter::minimum(), TInner::minimum())

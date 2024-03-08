@@ -1,128 +1,93 @@
-//! Convenience API for defining recursive computations.
-
 use crate::{
-    algebra::{IndexedZSet, ZRingValue},
-    circuit::{schedule::Error as SchedulerError, ChildCircuit, Circuit, Stream, WithClock},
-    operator::DelayedFeedback,
-    trace::Spine,
-    DBTimestamp,
+    circuit::WithClock,
+    dynamic::Erase,
+    operator::dynamic::{
+        distinct::DistinctFactories, recursive::RecursiveStreams as DynRecursiveStreams,
+    },
+    typed_batch::{DynIndexedZSet, TypedBatch},
+    ChildCircuit, Circuit, DBData, SchedulerError, Stream, ZWeight,
 };
 use impl_trait_for_tuples::impl_for_tuples;
-use size_of::SizeOf;
-use std::result::Result;
 
-/// Generalizes stream operators to groups of streams.
-///
-/// This is a helper trait for the
-/// [`ChildCircuit::recursive`](`crate::ChildCircuit::recursive`) method.  The
-/// method internally performs several transformations on each recursive stream:
-/// `distinct`, `connect`, `export`, `consolidate`.  This trait generalizes
-/// these methods to operate on multiple streams (e.g., tuples and vectors) of
-/// Z-sets, so that we can define recursive computations over multiple streams.
-pub trait RecursiveStreams<C> {
-    /// Generalizes: [`DelayedFeedback`] type to a group of streams; contains a
-    /// `DelayedFeedback` instance for each stream in the group.
-    type Feedback;
-
-    /// Represents streams in the group exported to the parent circuit.
-    type Export;
-
-    /// Type of the final result of the recursive computation: computed output
-    /// streams exported to the parent circuit and consolidated.
+pub trait RecursiveStreams<C>: Clone {
+    type Inner: DynRecursiveStreams<C> + Clone;
     type Output;
 
-    /// Create a group of recursive streams along with their feedback
-    /// connectors.
-    fn new(circuit: &C) -> (Self::Feedback, Self);
+    /// Returns a strongly typed version of the streams.
+    ///
+    /// # Safety
+    ///
+    /// `inner` must be backed by concrete types that match `Self`.
+    unsafe fn typed(inner: &Self::Inner) -> Self;
 
-    /// Apply `distinct` to all streams in `self`.
-    fn distinct(self) -> Self;
+    /// Returns a strongly typed version of output streams.
+    ///
+    /// # Safety
+    ///
+    /// `inner` must be backed by concrete types that match `Self::Output`.
+    unsafe fn typed_exports(
+        inner: &<Self::Inner as DynRecursiveStreams<C>>::Output,
+    ) -> Self::Output;
 
-    /// Close feedback loop for all streams in `self`.
-    fn connect(&self, vars: Self::Feedback);
-
-    /// Export all streams in `self` to the parent circuit.
-    fn export(self) -> Self::Export;
-
-    /// Apply [`Stream::consolidate`] to all streams in `exports`.
-    fn consolidate(exports: Self::Export) -> Self::Output;
+    fn inner(&self) -> Self::Inner;
+    fn factories() -> <Self::Inner as DynRecursiveStreams<C>>::Factories;
 }
 
-impl<C, B> RecursiveStreams<C> for Stream<C, B>
+impl<K, V, B, C> RecursiveStreams<C> for Stream<C, TypedBatch<K, V, ZWeight, B>>
 where
     C: Circuit,
     C::Parent: Circuit,
-    <C as WithClock>::Time: DBTimestamp,
-    B: IndexedZSet + Send,
-    B::R: ZRingValue,
-    Spine<B>: SizeOf,
+    B: DynIndexedZSet + Send,
+    K: DBData + Erase<B::Key>,
+    V: DBData + Erase<B::Val>,
 {
-    type Feedback = DelayedFeedback<C, B>;
-    type Export = Stream<C::Parent, Spine<B>>;
-    type Output = Stream<C::Parent, B>;
+    type Inner = Stream<C, B>;
+    type Output = Stream<C::Parent, TypedBatch<K, V, ZWeight, B>>;
 
-    fn new(circuit: &C) -> (Self::Feedback, Self) {
-        let feedback = DelayedFeedback::new(circuit);
-        let stream = feedback.stream().clone();
-        (feedback, stream)
+    unsafe fn typed(inner: &Self::Inner) -> Self {
+        Stream::typed(inner)
     }
 
-    fn distinct(self) -> Self {
-        Stream::distinct(&self)
+    unsafe fn typed_exports(
+        inner: &<Self::Inner as DynRecursiveStreams<C>>::Output,
+    ) -> Self::Output {
+        Stream::typed(inner)
     }
 
-    fn connect(&self, vars: Self::Feedback) {
-        vars.connect(self)
+    fn inner(&self) -> Self::Inner {
+        self.inner()
     }
 
-    fn export(self) -> Self::Export {
-        self.integrate_trace().export()
-    }
-
-    fn consolidate(exports: Self::Export) -> Self::Output {
-        Stream::consolidate(&exports)
+    fn factories() -> <Self::Inner as DynRecursiveStreams<C>>::Factories {
+        DistinctFactories::new::<K, V>()
     }
 }
-
-// TODO: `impl RecursiveStreams for Vec<Stream>`.
 
 #[impl_for_tuples(2, 12)]
-#[tuple_types_custom_trait_bound(Clone + RecursiveStreams<C>)]
+#[tuple_types_custom_trait_bound(RecursiveStreams<C>)]
 impl<C> RecursiveStreams<C> for Tuple {
-    for_tuples!( type Feedback = ( #( Tuple::Feedback ),* ); );
-    for_tuples!( type Export = ( #( Tuple::Export ),* ); );
+    for_tuples!( type Inner = ( #( Tuple::Inner ),* ); );
     for_tuples!( type Output = ( #( Tuple::Output ),* ); );
 
-    fn new(circuit: &C) -> (Self::Feedback, Self) {
-        let res = (for_tuples!( #( Tuple::new(circuit) ),* ));
-
-        let streams = (for_tuples!( #( { let stream = &res.Tuple; stream.1.clone() } ),* ));
-        let feedback = (for_tuples!( #( { let stream = res.Tuple; stream.0 } ),* ));
-
-        (feedback, streams)
+    unsafe fn typed(inner: &Self::Inner) -> Self {
+        (for_tuples!( #( Tuple::typed(&inner.Tuple) ),* ))
     }
 
-    fn distinct(self) -> Self {
-        (for_tuples!( #( self.Tuple.distinct() ),* ))
+    unsafe fn typed_exports(
+        inner: &<Self::Inner as DynRecursiveStreams<C>>::Output,
+    ) -> Self::Output {
+        (for_tuples!( #( Tuple::typed_exports(&inner.Tuple) ),* ))
     }
 
-    fn connect(&self, vars: Self::Feedback) {
-        for_tuples!( #( self.Tuple.connect(vars.Tuple); )* );
+    fn inner(&self) -> Self::Inner {
+        (for_tuples!( #( self.Tuple.inner() ),* ))
     }
 
-    fn export(self) -> Self::Export {
-        (for_tuples!( #( self.Tuple.export() ),* ))
-    }
-
-    fn consolidate(exports: Self::Export) -> Self::Output {
-        (for_tuples!( #( Tuple::consolidate(exports.Tuple) ),* ))
+    fn factories() -> <Self::Inner as DynRecursiveStreams<C>>::Factories {
+        (for_tuples!( #( Tuple::factories() ),* ))
     }
 }
 
-// We skip formatting this until
-// https://github.com/rust-lang/rustfmt/issues/5420 is resolved
-// (or we can run this doctest with persistence enabled)
-#[rustfmt::skip]
 impl<P> ChildCircuit<P>
 where
     P: WithClock,
@@ -183,7 +148,7 @@ where
     /// use dbsp::{
     ///     operator::Generator,
     ///     time::NestedTimestamp32,
-    ///     trace::ord::OrdZSet,
+    ///     OrdZSet,
     ///     Circuit, RootCircuit, Stream, zset, zset_set,
     ///     utils::Tup2,
     /// };
@@ -226,16 +191,16 @@ where
     ///     ]
     ///     .into_iter();
     ///
-    ///     let labels = circuit.recursive(|child, labels: Stream<_, OrdZSet<Tup2<i64, String>, i64>>| {
+    ///     let labels = circuit.recursive(|child, labels: Stream<_, OrdZSet<Tup2<u64, String>>>| {
     ///         // Import `edges` and `init_labels` relations from the parent circuit.
     ///         let edges = edges.delta0(child);
     ///         let init_labels = init_labels.delta0(child);
     ///
     ///         // Given an edge `from -> to` where the `from` node is labeled with `l`,
     ///         // propagate `l` to node `to`.
-    ///         let result = labels.index()
+    ///         let result = labels.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
     ///               .join(
-    ///                   &edges.index(),
+    ///                   &edges.map_index(|Tup2(x,y)| (x.clone(), y.clone())),
     ///                   |_from, l, to| Tup2(*to, l.clone()),
     ///               )
     ///               .plus(&init_labels);
@@ -259,185 +224,9 @@ where
         S: RecursiveStreams<ChildCircuit<Self>>,
         F: FnOnce(&ChildCircuit<Self>, S) -> Result<S, SchedulerError>,
     {
-        // The actual circuit we build:
-        //
-        // ```
-        //     ┌───────────────────────────────────────────────────────────────┐
-        //     │                                                               │
-        //  i  │               ┌───┐                                           │
-        // ────┼──►δ0─────────►│   │      ┌────────┐       ┌───────────────┐   │   ┌───────────┐
-        //     │               │ f ├─────►│distinct├──┬───►│integrate_trace├───┼──►│consolidate├───────►
-        //     │       ┌──────►│   │      └────────┘  │    └───────────────┘   │   └───────────┘
-        //     │       │       └───┘                  │                        │
-        //     │       │                              │                        │
-        //     │       │                              │                        │
-        //     │       │       ┌────┐                 │                        │
-        //     │       └───────┤z^-1│◄────────────────┘                        │
-        //     │               └────┘                                          │
-        //     │                                                               │
-        //     └───────────────────────────────────────────────────────────────┘
-        // ```
-        //
-        // where
-        // * `integrate_trace` integrates outputs computed across multiple fixed point
-        //   iterations.
-        // * `consolidate` consolidates the output of the nested circuit into a single
-        //   batch.
-        let traces = self.fixedpoint(|child| {
-            let (vars, input_streams) = S::new(child);
-            let output_streams = f(child, input_streams)?;
-            let output_streams = S::distinct(output_streams);
-            S::connect(&output_streams, vars);
-            Ok(S::export(output_streams))
-        })?;
-
-        Ok(S::consolidate(traces))
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::utils::Tup2;
-    use crate::{
-        operator::{FilterMap, Generator},
-        trace::ord::OrdZSet,
-        zset, Circuit, OrdIndexedZSet, RootCircuit, Stream,
-    };
-    use std::vec;
-
-    #[test]
-    fn reachability() {
-        let root = RootCircuit::build(move |circuit| {
-            // Changes to the edges relation.
-            let mut edges = vec![
-                zset! { Tup2(1, 2) => 1i64 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
-            ]
-            .into_iter();
-
-            // Expected content of the reachability relation.
-            let mut outputs = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                        Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                        Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                        Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                        Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
-            ]
-            .into_iter();
-
-            let edges = circuit
-                    .add_source(Generator::new(move || edges.next().unwrap()));
-
-            let paths = circuit.recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>, i64>>| {
-                let edges = edges.delta0(child);
-
-                let paths_indexed = paths.index_with(|&Tup2(x, y)| Tup2(y, x));
-                let edges_indexed = edges.index();
-
-                Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
-            })
-            .unwrap();
-
-            paths.integrate().stream_distinct().inspect(move |ps| {
-                assert_eq!(*ps, outputs.next().unwrap());
-            });
-            Ok(())
+        self.dyn_recursive(&S::factories(), |circuit, streams: S::Inner| {
+            f(circuit, unsafe { S::typed(&streams) }).map(|streams| streams.inner())
         })
-        .unwrap().0;
-
-        for _ in 0..8 {
-            root.step().unwrap();
-        }
-    }
-
-    // Somewhat lame multiple recursion example to test RecursiveStreams impl for
-    // tuples: compute forward and backward reachability at the same time.
-    #[test]
-    fn reachability2() {
-        type Edges<S> = Stream<S, OrdZSet<Tup2<u64, u64>, i64>>;
-
-        let root = RootCircuit::build(move |circuit| {
-            // Changes to the edges relation.
-            let mut edges = vec![
-                zset! { Tup2(1u64, 2u64) => 1i64 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
-            ]
-            .into_iter();
-
-            // Expected content of the reachability relation.
-            let output_vec = vec![
-                zset! { Tup2(1u64, 2u64) => 1i64 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                              Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                              Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                              Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                              Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
-            ];
-
-            let mut outputs = output_vec.clone().into_iter();
-            let mut outputs2 = output_vec.into_iter();
-
-            let edges: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = circuit
-                    .add_source(Generator::new(move || edges.next().unwrap()));
-
-            let (paths, reverse_paths):
-                (Stream<_, OrdZSet<Tup2<u64, u64>, i64>>, Stream<_, OrdZSet<Tup2<u64, u64>, i64>>)
-                = circuit.recursive(|child, (paths, reverse_paths): (Edges<_>, Edges<_>)| {
-                let edges = edges.delta0(child);
-
-                let paths_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = paths.index_with(|&Tup2(x, y)| Tup2(y, x));
-                let reverse_paths_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = reverse_paths.index_with(|&Tup2(x, y)| Tup2(y, x));
-                let edges_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = edges.index();
-                let reverse_edges: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = edges.map(|&Tup2(x, y)| Tup2(y, x));
-                let reverse_edges_indexed: Stream<_, OrdIndexedZSet<u64, u64, i64>> = reverse_edges.index();
-
-                let a_1: Stream<_, OrdZSet<Tup2<u64, u64>, i64>>  = paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to));
-                let a: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = edges.plus(&a_1);
-
-                let b_1: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = reverse_paths_indexed.join(&reverse_edges_indexed, |_via, from, to| Tup2(*from, *to));
-                let b: Stream<_, OrdZSet<Tup2<u64, u64>, i64>> = reverse_edges.plus(&b_1);
-                Ok((a, b))
-            })
-            .unwrap();
-
-            paths.integrate().stream_distinct().inspect(move |ps| {
-                assert_eq!(*ps, outputs.next().unwrap());
-            });
-
-            reverse_paths.map(|Tup2(x, y)| Tup2(*y, *x)).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_,_>| {
-                assert_eq!(*ps, outputs2.next().unwrap());
-            });
-            Ok(())
-        })
-        .unwrap().0;
-
-        for _ in 0..8 {
-            root.step().unwrap();
-        }
+        .map(|streams| unsafe { S::typed_exports(&streams) })
     }
 }

@@ -169,7 +169,7 @@ mod tests {
 
         assert_eq!(
             Auction {
-                id: FIRST_AUCTION_ID as u64,
+                id: FIRST_AUCTION_ID,
                 item_name: String::from("AAA"),
                 description: String::from("AAA"),
                 initial_bid: 100,
@@ -178,7 +178,7 @@ mod tests {
                 expires: 1,
                 seller: 1000,
                 category: 10,
-                extra: (0..expected_size).map(|_| "A").collect::<String>().into(),
+                extra: (0..expected_size).map(|_| "A").collect::<String>(),
             },
             auction
         );

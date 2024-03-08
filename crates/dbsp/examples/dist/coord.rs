@@ -7,6 +7,7 @@ use dbsp::circuit::Layout;
 use tarpc::{client, context, tokio_serde::formats::Bincode};
 
 mod service;
+use dbsp::utils::Tup2;
 use service::*;
 use tokio::spawn;
 
@@ -66,7 +67,7 @@ async fn main() -> AnyResult<()> {
             let Some(record) = input_records.next() else {
                 break;
             };
-            batches[next_client.next().unwrap()].push((record?, 1));
+            batches[next_client.next().unwrap()].push(Tup2(record?, 1));
             n += 1;
         }
         if n == 0 {

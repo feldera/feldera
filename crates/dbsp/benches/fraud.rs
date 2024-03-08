@@ -1,3 +1,9 @@
+// TODO: The issue here is that f64 doesn't implement From<ZWeight>.
+fn main() {
+    todo!()
+}
+
+/*
 //! ML feature engineering demo: Feature extraction queries for ML-based fraud
 //! detection.
 //!
@@ -71,15 +77,16 @@ use chrono::{NaiveDate, NaiveDateTime};
 use clap::Parser;
 use crossbeam::channel::bounded;
 use csv::Reader as CsvReader;
-use dbsp::mimalloc::MiMalloc;
+use dbsp::dynamic::{DynData, DynDataTyped};
 use dbsp::{
     algebra::F64,
+    mimalloc::MiMalloc,
     operator::{
         time_series::{OrdPartitionedIndexedZSet, RelOffset, RelRange},
-        Avg, FilterMap,
+        Avg,
     },
     utils::{Tup2, Tup3},
-    CollectionHandle, DBSPHandle, OrdIndexedZSet, Runtime, Stream,
+    DBSPHandle, OrdIndexedZSet, Runtime, Stream, ZSetHandle,
 };
 use itertools::Itertools;
 use rkyv::{Archive, Serialize};
@@ -136,6 +143,7 @@ struct QueryResult {
 }
 
 #[derive(
+    Default,
     Clone,
     PartialEq,
     Eq,
@@ -167,6 +175,7 @@ struct Demographics {
 }
 
 #[derive(
+    Default,
     Clone,
     PartialEq,
     Eq,
@@ -231,22 +240,25 @@ struct Args {
 
 type Weight = i32;
 
-type EnrichedTransactions = OrdIndexedZSet<Tup2<F64, i64>, Tup2<Transaction, Demographics>, Weight>;
-type AverageSpendingPerWeek = OrdPartitionedIndexedZSet<F64, i64, Option<F64>, Weight>;
-type AverageSpendingPerMonth = OrdPartitionedIndexedZSet<F64, i64, Option<F64>, Weight>;
-type TransactionFrequency = OrdPartitionedIndexedZSet<F64, i64, Option<i32>, Weight>;
+type EnrichedTransactions = OrdIndexedZSet<Tup2<F64, i64>, Tup2<Transaction, Demographics>>;
+type AverageSpendingPerWeek =
+    OrdPartitionedIndexedZSet<F64, i64, DynDataTyped<i64>, Option<F64>, DynData>;
+type AverageSpendingPerMonth =
+    OrdPartitionedIndexedZSet<F64, i64, DynDataTyped<i64>, Option<F64>, DynData>;
+type TransactionFrequency =
+    OrdPartitionedIndexedZSet<F64, i64, DynDataTyped<i64>, Option<i32>, DynData>;
 
 struct FraudBenchmark {
     dbsp: DBSPHandle,
-    demographics: CollectionHandle<Demographics, Weight>,
-    transactions: CollectionHandle<Transaction, Weight>,
+    demographics: ZSetHandle<Demographics>,
+    transactions: ZSetHandle<Transaction>,
 }
 
 impl FraudBenchmark {
     fn new(workers: usize) -> Self {
         let (dbsp, (hdemographics, htransactions)) = Runtime::init_circuit(workers, |circuit| {
-            let (demographics, hdemographics) = circuit.add_input_zset::<Demographics, Weight>();
-            let (transactions, htransactions) = circuit.add_input_zset::<Transaction, Weight>();
+            let (demographics, hdemographics) = circuit.add_input_zset::<Demographics>();
+            let (transactions, htransactions) = circuit.add_input_zset::<Transaction>();
 
             let amounts = transactions.map_index(|t| {
                 let timestamp = t.trans_date_trans_time.and_utc().timestamp();
@@ -268,6 +280,7 @@ impl FraudBenchmark {
             //     -- 1 week is 604800  seconds
             //     RANGE BETWEEN 604800  PRECEDING AND 1 PRECEDING) AS avg_spend_pw,
             let avg_spend_pw: Stream<_, AverageSpendingPerWeek> = amounts
+                .as_partitioned_zset()
                 .partitioned_rolling_aggregate_linear(
                     |amt| Avg::new(*amt, 1),
                     |avg| avg.compute_avg().unwrap(),
@@ -313,8 +326,8 @@ impl FraudBenchmark {
                 })
                 .join_index(
                     &trans_freq_24_indexed,
-                    |cc_num_ts, Tup2(pw_avg, pm_avg), freq| {
-                        Some((*cc_num_ts, Tup3(*pw_avg, *pm_avg, *freq)))
+                    |&cc_num_ts, (pw_avg, pm_avg), freq| {
+                        Some((cc_num_ts, Tup3(*pw_avg, *pm_avg, *freq)))
                     },
                 )
                 .join(
@@ -429,3 +442,4 @@ fn main() -> Result<()> {
     }
     Ok(())
 }
+*/

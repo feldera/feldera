@@ -7,17 +7,19 @@ pub mod cursor_list;
 pub mod cursor_pair;
 mod reverse;
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-enum Direction {
-    Forward,
-    Backward,
-}
-
 pub use cursor_empty::CursorEmpty;
 pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 pub use cursor_pair::CursorPair;
 pub use reverse::ReverseKeyCursor;
+
+use crate::dynamic::Factory;
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+enum Direction {
+    Forward,
+    Backward,
+}
 
 /// A cursor for `(key, val, time, diff)` tuples.
 ///
@@ -97,7 +99,12 @@ pub use reverse::ReverseKeyCursor;
 /// [`seek_val_reverse`]: `Self::seek_val_reverse`
 /// [`rewind_vals`]: `Self::rewind_vals`
 /// [`fast_forward_vals`]: `Self::fast_forward_vals`
-pub trait Cursor<K, V, T, R> {
+pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
+    /*fn key_vtable(&self) -> &'static VTable<K>;
+    fn val_vtable(&self) -> &'static VTable<V>;*/
+
+    fn weight_factory(&self) -> &'static dyn Factory<R>;
+
     /// Indicates if the current key is valid.
     ///
     /// A value of `false` indicates that the cursor has exhausted all keys.
@@ -135,29 +142,11 @@ pub trait Cursor<K, V, T, R> {
 
     /// Applies `logic` to each pair of time and difference. Intended for
     /// mutation of the closure's scope.
-    fn map_times<L>(&mut self, mut logic: L)
-    where
-        L: FnMut(&T, &R),
-    {
-        self.fold_times((), |(), time, diff| logic(time, diff));
-    }
-
-    fn fold_times<F, U>(&mut self, init: U, fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U;
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R));
 
     /// Applies `logic` to each pair of time and difference, restricted
     /// to times `t <= upper`.
-    fn map_times_through<L>(&mut self, upper: &T, mut logic: L)
-    where
-        L: FnMut(&T, &R),
-    {
-        self.fold_times_through(upper, (), |(), time, diff| logic(time, diff));
-    }
-
-    fn fold_times_through<F, U>(&mut self, upper: &T, init: U, fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U;
+    fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R));
 
     /// Returns the weight associated with the current key/value pair.  This
     /// concept only makes sense for cursors with unit timestamp type (`T=()`),
@@ -166,22 +155,14 @@ pub trait Cursor<K, V, T, R> {
     /// to [`Self::map_times`].
     ///
     /// If the current key and value are not valid, behavior is unspecified.
-    fn weight(&mut self) -> R
+    fn weight(&mut self) -> &R
     where
         T: PartialEq<()>;
 
     /// Apply a function to all values associated with the current key.
-    fn map_values<L: FnMut(&V, &R)>(&mut self, mut logic: L)
+    fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
     where
-        T: PartialEq<()>,
-    {
-        while self.val_valid() {
-            let weight = self.weight();
-            let val = self.val();
-            logic(val, &weight);
-            self.step_val();
-        }
-    }
+        T: PartialEq<()>;
 
     /// Advances the cursor to the next key.
     fn step_key(&mut self);
@@ -195,34 +176,20 @@ pub trait Cursor<K, V, T, R> {
     ///
     /// This has no effect if the cursor is already positioned past `key`, so it
     /// might be desirable to call [`rewind_keys`](Self::rewind_keys) first.
-    fn seek_key(&mut self, key: &K)
-    where
-        K: PartialOrd,
-    {
-        self.seek_key_with(|k| k >= key)
-    }
+    fn seek_key(&mut self, key: &K);
 
     /// Advances the cursor to the first key that satisfies `predicate`.
     /// Assumes that `predicate` remains true once it turns true.
-    fn seek_key_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone;
+    fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool);
 
     /// Move the cursor backward to the first key that satisfies `predicate`.
     /// Assumes that `predicate` remains true once it turns true.
-    fn seek_key_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone;
+    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool);
 
     /// Moves the cursor backward to the specified key.  If `key` itself is not
     /// present, moves backward to the first key less than `key`; if there is no
     /// such key, the cursor becomes invalid.
-    fn seek_key_reverse(&mut self, key: &K)
-    where
-        K: PartialOrd,
-    {
-        self.seek_key_with_reverse(|k| k <= key)
-    }
+    fn seek_key_reverse(&mut self, key: &K);
 
     /// Advances the cursor to the next value.
     fn step_val(&mut self);
@@ -238,16 +205,12 @@ pub trait Cursor<K, V, T, R> {
 
     /// Move the cursor to the first value (for the current key) that satisfies
     /// `predicate`.  Assumes that `predicate` remains true once it turns true.
-    fn seek_val_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone;
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool);
 
     /// Move the cursor back to the largest value (for the current key) that
     /// satisfies `predicate`.  Assumes that `predicate` remains true once
     /// it turns true.
-    fn seek_val_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone;
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool);
 
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self);
@@ -294,7 +257,7 @@ pub trait Cursor<K, V, T, R> {
     /// Advance the cursor to the specified `(key, value)` pair.
     fn seek_keyval(&mut self, key: &K, val: &V)
     where
-        K: PartialEq + PartialOrd,
+        K: PartialEq,
     {
         if self.get_key() != Some(key) {
             self.seek_key(key);
@@ -312,7 +275,7 @@ pub trait Cursor<K, V, T, R> {
     /// Moves the cursor back to the specified `(key, value)` pair.
     fn seek_keyval_reverse(&mut self, key: &K, val: &V)
     where
-        K: PartialEq + PartialOrd,
+        K: PartialEq,
     {
         if self.get_key() != Some(key) {
             self.seek_key_reverse(key);
@@ -334,6 +297,7 @@ pub trait Cursor<K, V, T, R> {
     }
 }
 
+/*
 /// A cursor for taking ownership of ordered `(K, V, R, T)` tuples
 pub trait Consumer<K, V, R, T> {
     /// The consumer for the values and diffs associated with a particular key
@@ -372,7 +336,9 @@ pub trait ValueConsumer<'a, V, R, T> {
 
     // TODO: Seek value method?
 }
+*/
 
+/*
 /// Debugging and testing utilities for Cursor.
 pub trait CursorDebug<K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<K, V, T, R> {
     /// Rewinds the cursor and outputs its contents to a Vec
@@ -419,7 +385,9 @@ pub trait CursorDebug<K: Clone, V: Clone, T: Clone, R: Clone>: Cursor<K, V, T, R
     }
 }
 
+
 impl<C, K: Clone, V: Clone, T: Clone, R: Clone> CursorDebug<K, V, T, R> for C where
     C: Cursor<K, V, T, R>
 {
 }
+*/

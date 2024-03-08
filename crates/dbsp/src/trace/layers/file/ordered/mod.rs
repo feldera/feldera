@@ -1,20 +1,23 @@
-mod consumer;
-
-pub use consumer::{FileOrderedLayerConsumer, FileOrderedLayerValues};
-use feldera_storage::file::{
-    reader::{Cursor as FileCursor, FallibleEq, Reader},
-    writer::{Parameters, Writer2},
-};
-use rand::{seq::index::sample, Rng};
-
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
+    dynamic::{
+        DataTrait, DynOpt, DynUnit, Erase, Factory, WeightTrait, WeightTraitTyped, WithFactory,
+    },
+    storage::file::{
+        reader::{Cursor as FileCursor, FallibleEq, Reader},
+        writer::{Parameters, Writer2},
+        Factories as FileFactories,
+    },
     trace::{
         layers::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
         ord::file::StorageBackend,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
+
+use crate::dynamic::DynVec;
+use dyn_clone::clone_box;
+use rand::{seq::index::sample, Rng};
 use std::{
     cmp::{min, Ordering},
     fmt::Debug,
@@ -22,28 +25,92 @@ use std::{
     path::PathBuf,
 };
 
-#[derive(Clone)]
+//mod tests;
+
+pub struct FileOrderedLayerFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    opt_key_factory: &'static dyn Factory<DynOpt<K>>,
+    pub(crate) diff_factory: &'static dyn Factory<R>,
+    pub(crate) factories0: FileFactories<K, DynUnit>,
+    pub(crate) factories1: FileFactories<V, R>,
+}
+
+impl<K, V, R> FileOrderedLayerFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    pub(crate) fn new<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
+            diff_factory: WithFactory::<RType>::FACTORY,
+            factories0: FileFactories::new::<KType, ()>(),
+            factories1: FileFactories::new::<VType, RType>(),
+        }
+    }
+}
+
+impl<K, V, R> Clone for FileOrderedLayerFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            opt_key_factory: self.opt_key_factory,
+            diff_factory: self.diff_factory,
+            factories0: self.factories0.clone(),
+            factories1: self.factories1.clone(),
+        }
+    }
+}
+
 pub struct FileOrderedLayer<K, V, R>
 where
-    K: 'static,
-    V: 'static,
-    R: 'static,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
+    pub(crate) factories: FileOrderedLayerFactories<K, V, R>,
     #[allow(clippy::type_complexity)]
-    file: Reader<StorageBackend, (K, (), (V, R, ()))>,
+    file: Reader<StorageBackend, (&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
     lower_bound: usize,
+}
+
+impl<K, V, R> Clone for FileOrderedLayer<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            factories: self.factories.clone(),
+            file: self.file.clone(),
+            lower_bound: self.lower_bound,
+        }
+    }
 }
 
 impl<K, V, R> FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    pub fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut Vec<K>)
+    pub fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<K>)
     where
-        K: DBData,
-        R: DBWeight,
         RG: Rng,
     {
         let size = self.keys();
@@ -51,8 +118,9 @@ where
         if sample_size >= size {
             output.reserve(size);
 
-            while let Some(key) = cursor.take_current_key() {
-                output.push(key);
+            while let Some(key) = cursor.get_current_key() {
+                output.push_ref(key);
+                cursor.step();
             }
         } else {
             output.reserve(sample_size);
@@ -61,17 +129,13 @@ where
             indexes.sort_unstable();
             for index in indexes.into_iter() {
                 cursor.move_to_row(index);
-                output.push(cursor.current_key().clone());
+                output.push_ref(cursor.current_key());
             }
         }
     }
 
     /// Remove keys smaller than `lower_bound` from the batch.
-    pub fn truncate_keys_below(&mut self, lower_bound: &K)
-    where
-        K: DBData,
-        R: DBWeight,
-    {
+    pub fn truncate_keys_below(&mut self, lower_bound: &K) {
         let mut cursor = self.file.rows().before();
         unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
         self.truncate_below(cursor.absolute_position() as usize);
@@ -84,34 +148,24 @@ where
 
 impl<K, V, R> FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    pub fn empty() -> Self {
+    pub fn empty(factories: &FileOrderedLayerFactories<K, V, R>) -> Self {
         Self {
+            factories: factories.clone(),
             file: Reader::empty(&Runtime::storage()).unwrap(),
             lower_bound: 0,
         }
     }
 }
 
-impl<K, V, R> Default for FileOrderedLayer<K, V, R>
-where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
-{
-    fn default() -> Self {
-        Self::empty()
-    }
-}
-
 impl<K, V, R> Debug for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -121,21 +175,23 @@ where
         )?;
         let mut cursor = self.cursor();
         let mut n_keys = 0;
-        while let Some((key, mut values)) = cursor.take_current_key_and_values() {
+        while let Some((key, mut values)) = cursor.get_current_key_and_values() {
             if n_keys > 0 {
                 write!(f, ", ")?;
             }
             write!(f, "{key:?}(")?;
             let mut n_values = 0;
-            while let Some((value, diff)) = values.take_current_item() {
+            while let Some((value, diff)) = values.get_current_item() {
                 if n_values > 0 {
                     write!(f, ", ")?;
                 }
                 write!(f, "({value:?}, {diff:+?})")?;
                 n_values += 1;
+                values.step();
             }
             write!(f, ")")?;
             n_keys += 1;
+            cursor.step();
         }
         write!(f, " }}")
     }
@@ -143,9 +199,9 @@ where
 
 impl<K, V, R> NumEntries for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
@@ -160,9 +216,9 @@ where
 
 impl<K, V, R> PartialEq for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn eq(&self, other: &Self) -> bool {
         self.file.equals(&other.file).unwrap()
@@ -171,19 +227,22 @@ where
 
 impl<K, V, R> Eq for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
 }
 
 impl<K, V, R> Trie for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    type Item = (K, (V, R));
+    type Item<'a> = (&'a mut K, (&'a mut V, &'a mut R));
+    type ItemRef<'a> = (&'a K, (&'a V, &'a R));
+    type Factories = FileOrderedLayerFactories<K, V, R>;
+
     type Cursor<'s> = FileOrderedCursor<'s, K, V, R> where K: 's, V: 's, R: 's;
     type MergeBuilder = FileOrderedMergeBuilder<K, V, R>;
     type TupleBuilder = FileOrderedTupleBuilder<K, V, R>;
@@ -211,17 +270,21 @@ where
     }
 }
 
-pub struct FileOrderedMergeBuilder<K, V, R>(Writer2<StorageBackend, K, (), V, R>)
+pub struct FileOrderedMergeBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight;
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    factories: FileOrderedLayerFactories<K, V, R>,
+    writer: Writer2<StorageBackend, K, DynUnit, V, R>,
+}
 
 impl<K, V, R> FileOrderedMergeBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn copy_values_if<KF, VF>(
         &mut self,
@@ -239,13 +302,13 @@ where
             while value_cursor.valid() {
                 let (value, diff) = value_cursor.item();
                 if value_filter(value) {
-                    self.0.write1((value, diff)).unwrap();
+                    self.writer.write1((value, diff)).unwrap();
                     n += 1;
                 }
                 value_cursor.step();
             }
             if n > 0 {
-                self.0.write0((&key, &())).unwrap();
+                self.writer.write0((key, ().erase())).unwrap();
             }
         }
         cursor.step();
@@ -261,7 +324,7 @@ where
     {
         let (value, diff) = cursor.current_item();
         let retval = if value_filter(value) {
-            self.0.write1((value, diff)).unwrap();
+            self.writer.write1((value, diff)).unwrap();
             1
         } else {
             0
@@ -280,6 +343,8 @@ where
         VF: Fn(&V) -> bool,
     {
         let mut n = 0;
+        let mut sum = self.factories.diff_factory.default_box();
+
         while cursor1.valid() && cursor2.valid() {
             let value1 = cursor1.current_value();
             let value2 = cursor2.current_value();
@@ -290,10 +355,9 @@ where
                 }
                 Ordering::Equal => {
                     if value_filter(value1) {
-                        let mut sum = cursor1.current_diff().clone();
-                        sum.add_assign_by_ref(cursor2.current_diff());
+                        cursor1.current_diff().add(cursor2.current_diff(), &mut sum);
                         if !sum.is_zero() {
-                            self.0.write1((value1, &sum)).unwrap();
+                            self.writer.write1((value1, &sum)).unwrap();
                             n += 1;
                         }
                     }
@@ -337,7 +401,7 @@ where
                     if key_filter(key1)
                         && self.merge_values(cursor1.values(), cursor2.values(), value_filter)
                     {
-                        self.0.write0((key1, &())).unwrap();
+                        self.writer.write0((key1, ().erase())).unwrap();
                     }
                     cursor1.step();
                     cursor2.step();
@@ -360,9 +424,9 @@ where
 
 impl<K, V, R> Builder for FileOrderedMergeBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Trie = FileOrderedLayer<K, V, R>;
 
@@ -372,7 +436,8 @@ where
 
     fn done(self) -> Self::Trie {
         FileOrderedLayer {
-            file: self.0.into_reader().unwrap(),
+            factories: self.factories.clone(),
+            file: self.writer.into_reader().unwrap(),
             lower_bound: 0,
         }
     }
@@ -380,22 +445,27 @@ where
 
 impl<K, V, R> MergeBuilder for FileOrderedMergeBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    fn with_capacity(_other1: &Self::Trie, _other2: &Self::Trie) -> Self {
-        Self::with_key_capacity(0)
-    }
-
-    fn with_key_capacity(_capacity: usize) -> Self {
-        Self(Writer2::new(&Runtime::storage(), Parameters::default()).unwrap())
+    fn with_capacity(other1: &Self::Trie, _other2: &Self::Trie) -> Self {
+        Self {
+            factories: other1.factories.clone(),
+            writer: Writer2::new(
+                &other1.factories.factories0,
+                &other1.factories.factories1,
+                &Runtime::storage(),
+                Parameters::default(),
+            )
+            .unwrap(),
+        }
     }
 
     fn reserve(&mut self, _additional: usize) {}
 
     fn keys(&self) -> usize {
-        self.0.n_rows() as usize
+        self.writer.n_rows() as usize
     }
 
     fn copy_range_retain_keys<'a, F>(
@@ -427,25 +497,27 @@ where
 
 pub struct FileOrderedTupleBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    writer: Writer2<StorageBackend, K, (), V, R>,
-    key: Option<K>,
+    factories: FileOrderedLayerFactories<K, V, R>,
+    writer: Writer2<StorageBackend, K, DynUnit, V, R>,
+    key: Box<DynOpt<K>>,
 }
 
 impl<K, V, R> Builder for FileOrderedTupleBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Trie = FileOrderedLayer<K, V, R>;
 
     fn boundary(&mut self) -> usize {
-        if let Some(key) = self.key.take() {
-            self.writer.write0((&key, &())).unwrap()
+        if let Some(key) = self.key.get() {
+            self.writer.write0((key, ().erase())).unwrap();
+            self.key.set_none()
         }
         self.writer.n_rows() as usize
     }
@@ -453,6 +525,7 @@ where
     fn done(mut self) -> Self::Trie {
         self.boundary();
         FileOrderedLayer {
+            factories: self.factories.clone(),
             file: self.writer.into_reader().unwrap(),
             lower_bound: 0,
         }
@@ -461,21 +534,26 @@ where
 
 impl<K, V, R> TupleBuilder for FileOrderedTupleBuilder<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    type Item = (K, (V, R));
-
-    fn new() -> Self {
+    fn new(factories: &FileOrderedLayerFactories<K, V, R>) -> Self {
         Self {
-            writer: Writer2::new(&Runtime::storage(), Parameters::default()).unwrap(),
-            key: None,
+            factories: factories.clone(),
+            writer: Writer2::new(
+                &factories.factories0,
+                &factories.factories1,
+                &Runtime::storage(),
+                Parameters::default(),
+            )
+            .unwrap(),
+            key: factories.opt_key_factory.default_box(),
         }
     }
 
-    fn with_capacity(_capacity: usize) -> Self {
-        Self::new()
+    fn with_capacity(factories: &FileOrderedLayerFactories<K, V, R>, _capacity: usize) -> Self {
+        Self::new(factories)
     }
 
     fn reserve_tuples(&mut self, _additional: usize) {}
@@ -484,65 +562,99 @@ where
         self.writer.n_rows() as usize
     }
 
-    fn push_tuple(&mut self, (key, val): (K, (V, R))) {
-        if let Some(ref cur_key) = self.key {
-            if *cur_key != key {
-                self.writer.write0((cur_key, &())).unwrap();
-                self.key = Some(key);
+    fn push_tuple(&mut self, (key, (val, w)): (&mut K, (&mut V, &mut R))) {
+        self.push_refs((key, (val, w)))
+    }
+
+    fn push_refs<'a>(&mut self, (key, (val, w)): (&K, (&V, &R))) {
+        if let Some(cur_key) = self.key.get() {
+            if cur_key != key {
+                self.writer.write0((cur_key, ().erase())).unwrap();
+                self.key.from_ref(key);
             }
         } else {
-            self.key = Some(key);
+            self.key.from_ref(key);
         }
-        self.writer.write1((&val.0, &val.1)).unwrap();
+        self.writer.write1((val, w)).unwrap();
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FileOrderedCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    storage: &'s FileOrderedLayer<K, V, R>,
-    key: Option<K>,
+    pub(crate) storage: &'s FileOrderedLayer<K, V, R>,
+    key: Box<K>,
+    valid: bool,
     #[allow(clippy::type_complexity)]
-    cursor: FileCursor<'s, StorageBackend, K, (), (V, R, ()), (K, (), (V, R, ()))>,
+    cursor: FileCursor<
+        's,
+        StorageBackend,
+        K,
+        DynUnit,
+        (&'static V, &'static R, ()),
+        (&'static K, &'static DynUnit, (&'static V, &'static R, ())),
+    >,
+}
+
+impl<'s, K, V, R> Clone for FileOrderedCursor<'s, K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage,
+            key: clone_box(&self.key),
+            valid: self.valid,
+            cursor: self.cursor.clone(),
+        }
+    }
 }
 
 impl<'s, K, V, R> FileOrderedCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     pub fn new(storage: &'s FileOrderedLayer<K, V, R>, bounds: Range<u64>) -> Self {
         let cursor = storage.file.rows().subset(bounds).first().unwrap();
-        let key = unsafe { cursor.key() };
+
+        let mut key = storage.factories.factories0.key_factory.default_box();
+        let valid = unsafe { cursor.key(&mut key) }.is_some();
+
         Self {
             cursor,
             storage,
             key,
+            valid,
         }
     }
 
     pub fn current_key(&self) -> &K {
-        self.key.as_ref().unwrap()
+        debug_assert!(self.valid);
+        self.key.as_ref()
     }
 
-    pub fn take_current_key(&mut self) -> Option<K> {
-        let key = self.key.take();
-        self.step();
-        key
+    pub fn get_current_key(&mut self) -> Option<&K> {
+        if self.valid {
+            Some(&self.key)
+        } else {
+            None
+        }
     }
 
-    pub fn take_current_key_and_values(
+    pub fn get_current_key_and_values(
         &mut self,
-    ) -> Option<(K, FileOrderedValueCursor<'s, K, V, R>)> {
-        if let Some(key) = self.key.take() {
+    ) -> Option<(&K, FileOrderedValueCursor<'s, K, V, R>)> {
+        if self.valid {
             let values = self.values();
-            self.step();
-            Some((key, values))
+            Some((&self.key, values))
         } else {
             None
         }
@@ -550,10 +662,19 @@ where
 
     fn move_cursor(
         &mut self,
-        f: impl FnOnce(&mut FileCursor<'s, StorageBackend, K, (), (V, R, ()), (K, (), (V, R, ()))>),
+        f: impl FnOnce(
+            &mut FileCursor<
+                's,
+                StorageBackend,
+                K,
+                DynUnit,
+                (&'static V, &'static R, ()),
+                (&'static K, &'static DynUnit, (&'static V, &'static R, ())),
+            >,
+        ),
     ) {
         f(&mut self.cursor);
-        self.key = unsafe { self.cursor.key() };
+        self.valid = unsafe { self.cursor.key(&mut self.key) }.is_some();
     }
 
     pub fn seek_with<P>(&mut self, predicate: P)
@@ -577,9 +698,9 @@ where
 
 impl<'s, K, V, R> Cursor<'s> for FileOrderedCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Key = K;
 
@@ -598,7 +719,7 @@ where
     }
 
     fn values<'a>(&'a self) -> FileOrderedValueCursor<'s, K, V, R> {
-        FileOrderedValueCursor::new(&self.cursor)
+        FileOrderedValueCursor::new(&self.storage.factories, &self.cursor)
     }
 
     fn step(&mut self) {
@@ -610,7 +731,7 @@ where
     }
 
     fn valid(&self) -> bool {
-        self.cursor.has_value()
+        self.valid
     }
 
     fn rewind(&mut self) {
@@ -646,58 +767,124 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+// FIXME: it can be inefficient to heap-allocate temporary `val` and `diff`
+// values every time this cursor is instantiated especially for collections that
+// only have few values per key.  Can we re-design this to keep the value
+// cursor as a field inside the key cursor, so it doesn't have to be recreated
+// for each key?
+#[derive(Debug)]
 pub struct FileOrderedValueCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    item: Option<(V, R)>,
     #[allow(clippy::type_complexity)]
-    cursor: FileCursor<'s, StorageBackend, V, R, (), (K, (), (V, R, ()))>,
+    cursor: FileCursor<
+        's,
+        StorageBackend,
+        V,
+        R,
+        (),
+        (&'static K, &'static DynUnit, (&'static V, &'static R, ())),
+    >,
+    val: Box<V>,
+    diff: Box<R>,
+    valid: bool,
+}
+
+impl<'s, K, V, R> Clone for FileOrderedValueCursor<'s, K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            cursor: self.cursor.clone(),
+            val: clone_box(&self.val),
+            diff: clone_box(&self.diff),
+            valid: self.valid,
+        }
+    }
 }
 
 impl<'s, K, V, R> FileOrderedValueCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     #[allow(clippy::type_complexity)]
     pub fn new(
-        cursor: &FileCursor<'s, StorageBackend, K, (), (V, R, ()), (K, (), (V, R, ()))>,
+        factories: &FileOrderedLayerFactories<K, V, R>,
+        cursor: &FileCursor<
+            's,
+            StorageBackend,
+            K,
+            DynUnit,
+            (&'static V, &'static R, ()),
+            (&'static K, &'static DynUnit, (&'static V, &'static R, ())),
+        >,
     ) -> Self {
         let cursor = cursor.next_column().unwrap().first().unwrap();
-        let item = unsafe { cursor.item() };
-        Self { cursor, item }
+        let mut val = factories.factories1.key_factory.default_box();
+        let mut diff = factories.diff_factory.default_box();
+
+        let valid = unsafe { cursor.item((&mut val, &mut diff)) }.is_some();
+        Self {
+            cursor,
+            val,
+            diff,
+            valid,
+        }
     }
 
     pub fn current_value(&self) -> &V {
-        &self.item.as_ref().unwrap().0
+        debug_assert!(self.valid);
+        &self.val
     }
 
     pub fn current_diff(&self) -> &R {
-        &self.item.as_ref().unwrap().1
+        debug_assert!(self.valid);
+        &self.diff
     }
 
     pub fn current_item(&self) -> (&V, &R) {
-        let item = self.item.as_ref().unwrap();
-        (&item.0, &item.1)
+        debug_assert!(self.valid);
+        (&self.val, &self.diff)
     }
 
+    pub fn get_current_item(&mut self) -> Option<(&V, &R)> {
+        if self.valid {
+            Some((&self.val, &self.diff))
+        } else {
+            None
+        }
+    }
+
+    /*
     pub fn take_current_item(&mut self) -> Option<(V, R)> {
         let item = self.item.take();
         self.step();
         item
-    }
+    }*/
 
     fn move_cursor(
         &mut self,
-        f: impl Fn(&mut FileCursor<'s, StorageBackend, V, R, (), (K, (), (V, R, ()))>),
+        f: impl Fn(
+            &mut FileCursor<
+                's,
+                StorageBackend,
+                V,
+                R,
+                (),
+                (&'static K, &'static DynUnit, (&'static V, &'static R, ())),
+            >,
+        ),
     ) {
         f(&mut self.cursor);
-        self.item = unsafe { self.cursor.item() };
+        self.valid = unsafe { self.cursor.item((&mut self.val, &mut self.diff)) }.is_some();
     }
 
     pub fn remaining_rows(&self) -> u64 {
@@ -721,9 +908,9 @@ where
 
 impl<'s, K, V, R> Cursor<'s> for FileOrderedValueCursor<'s, K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Key = V;
 
@@ -752,7 +939,7 @@ where
     }
 
     fn valid(&self) -> bool {
-        self.cursor.has_value()
+        self.valid
     }
 
     fn rewind(&mut self) {
@@ -782,9 +969,9 @@ where
 
 impl<K, V, R> Add<Self> for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Output = Self;
 
@@ -801,9 +988,9 @@ where
 
 impl<K, V, R> AddAssign<Self> for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -814,9 +1001,9 @@ where
 
 impl<K, V, R> AddAssignByRef for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -827,9 +1014,9 @@ where
 
 impl<K, V, R> AddByRef for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)
@@ -838,17 +1025,21 @@ where
 
 impl<K, V, R> NegByRef for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight + NegByRef,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTraitTyped + ?Sized,
+    R::Type: DBWeight + NegByRef + Erase<R>,
 {
     fn neg_by_ref(&self) -> Self {
-        let mut tuple_builder = <Self as Trie>::TupleBuilder::new();
+        let mut tuple_builder = <Self as Trie>::TupleBuilder::new(&self.factories);
         let mut cursor = self.cursor();
-        while let Some((key, mut values)) = cursor.take_current_key_and_values() {
-            while let Some((value, diff)) = values.take_current_item() {
-                tuple_builder.push_tuple((key.clone(), (value, diff.neg_by_ref())));
+        while let Some((key, mut values)) = cursor.get_current_key_and_values() {
+            while let Some((value, diff)) = values.get_current_item() {
+                let diff = diff.neg_by_ref();
+                tuple_builder.push_refs((key, (value, diff.erase())));
+                values.step();
             }
+            cursor.step()
         }
         tuple_builder.done()
     }
@@ -856,19 +1047,23 @@ where
 
 impl<K, V, R> Neg for FileOrderedLayer<K, V, R>
 where
-    K: DBData,
-    V: DBData,
-    R: DBWeight + Neg<Output = R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTraitTyped + ?Sized,
+    R::Type: DBWeight + NegByRef + Erase<R>,
 {
     type Output = Self;
 
     fn neg(self) -> Self {
-        let mut tuple_builder = <Self as Trie>::TupleBuilder::new();
+        let mut tuple_builder = <Self as Trie>::TupleBuilder::new(&self.factories);
         let mut cursor = self.cursor();
-        while let Some((key, mut values)) = cursor.take_current_key_and_values() {
-            while let Some((value, diff)) = values.take_current_item() {
-                tuple_builder.push_tuple((key.clone(), (value, -diff)));
+        while let Some((key, mut values)) = cursor.get_current_key_and_values() {
+            while let Some((value, diff)) = values.get_current_item() {
+                let diff = diff.neg_by_ref();
+                tuple_builder.push_refs((key, (value, diff.erase())));
+                values.step()
             }
+            cursor.step()
         }
         tuple_builder.done()
     }

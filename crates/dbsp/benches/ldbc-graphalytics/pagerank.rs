@@ -1,17 +1,22 @@
 use crate::data::{Edges, Node, Rank, RankMap, Ranks, Streamed, Vertices};
+use dbsp::dynamic::{DowncastTrait, DynData, DynWeight, DynWeightTyped, Erase};
+use dbsp::stat::{DynBatch, DynBatchReader, DynOrdIndexedWSet, DynOrdWSet, TypedBatch};
+use dbsp::trace::BatchReaderFactories;
 use dbsp::{
     algebra::HasOne,
     circuit::WithClock,
-    operator::{communication::new_exchange_operators, DelayedFeedback, FilterMap, Generator},
-    trace::{Batch, BatchReader, Builder, Cursor},
-    Circuit, DBData, OrdIndexedZSet, OrdZSet, Runtime,
+    operator::{communication::new_exchange_operators, DelayedFeedback, Generator},
+    trace::{Batch, Builder, Cursor},
+    Circuit, DBData, OrdWSet, OrdZSet, Runtime,
 };
 use std::{
     cmp::{min, Ordering},
     panic::Location,
 };
 
-type Weights = OrdZSet<Node, Rank>;
+type Weights = OrdWSet<Node, Rank, DynWeightTyped<Rank>>;
+type DynWeights = DynOrdWSet<DynData, DynWeightTyped<Rank>>;
+
 type Weighted<S> = Streamed<S, Weights>;
 
 /// Specified in the [LDBC Spec][0] ([Pseudo-code][1])
@@ -30,19 +35,21 @@ pub fn pagerank(
     // Count the total number of vertices within the graph
     let total_vertices = count_vertices(&vertices);
 
+    let factories = <DynWeights as DynBatchReader>::Factories::new::<Node, (), Rank>();
     // Vertices weighted by F64s instead of isizes
     let weighted_vertices = vertices
         .apply(|vertices| {
-            let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
+            let mut builder =
+                <DynWeights as DynBatch>::Builder::with_capacity(&factories, (), vertices.len());
 
             let mut cursor = vertices.cursor();
             while cursor.key_valid() {
-                let node = *cursor.key();
-                builder.push((node, Rank::one()));
+                let node = *cursor.key().downcast::<Node>();
+                builder.push_refs(node.erase(), ().erase(), Rank::one().erase());
                 cursor.step_key();
             }
 
-            builder.done()
+            TypedBatch::new(builder.done())
         })
         .mark_sharded();
 
@@ -51,19 +58,23 @@ pub fn pagerank(
     let damped_div_total_vertices = vertices
         .apply2(&total_vertices, move |vertices, &total_vertices| {
             let weight = Rank::new(damping_factor) / total_vertices as f64;
-            let mut builder = <OrdIndexedZSet<(), Node, Rank> as Batch>::Builder::with_capacity(
-                (),
-                vertices.len(),
-            );
+            let factories =
+                <DynOrdIndexedWSet<DynData, DynData, DynWeight> as DynBatchReader>::Factories::new::<(), Node, Rank>();
+            let mut builder =
+                <DynOrdIndexedWSet<DynData, DynData, DynWeight> as DynBatch>::Builder::with_capacity(
+                    &factories,
+                    (),
+                    vertices.len(),
+                );
 
             let mut cursor = vertices.cursor();
             while cursor.key_valid() {
-                let node = *cursor.key();
-                builder.push((((), node), weight));
+                let node = *cursor.key().downcast::<Node>();
+                builder.push_refs(().erase(), node.erase(), weight.erase());
                 cursor.step_key();
             }
 
-            builder.done()
+            TypedBatch::new(builder.done())
         })
         .mark_sharded();
 
@@ -73,17 +84,19 @@ pub fn pagerank(
         .apply2(&total_vertices, move |vertices, &total_vertices| {
             let initial_weight = Rank::one() / total_vertices as f64;
 
+            let factories = <DynWeights as DynBatchReader>::Factories::new::<Node, (), Rank>();
             // We can use a builder here since the cursor yields ordered values
-            let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
+            let mut builder =
+                <DynWeights as DynBatch>::Builder::with_capacity(&factories, (), vertices.len());
 
             let mut cursor = vertices.cursor();
             while cursor.key_valid() {
-                let node = *cursor.key();
-                builder.push((node, initial_weight));
+                let node = *cursor.key().downcast::<Node>();
+                builder.push_refs(node.erase(), ().erase(), initial_weight.erase());
                 cursor.step_key();
             }
 
-            builder.done()
+            TypedBatch::new(builder.done())
         })
         .mark_sharded();
 
@@ -92,17 +105,19 @@ pub fn pagerank(
         .apply2(&total_vertices, move |vertices, &total_vertices| {
             let teleport = (Rank::one() - damping_factor) / total_vertices as f64;
 
+            let factories = <DynWeights as DynBatchReader>::Factories::new::<Node, (), Rank>();
             // We can use a builder here since the cursor yields ordered values
-            let mut builder = <Weights as Batch>::Builder::with_capacity((), vertices.len());
+            let mut builder =
+                <DynWeights as DynBatch>::Builder::with_capacity(&factories, (), vertices.len());
 
             let mut cursor = vertices.cursor();
             while cursor.key_valid() {
-                let node = *cursor.key();
-                builder.push((node, teleport));
+                let node = *cursor.key().downcast::<Node>();
+                builder.push_refs(node.erase(), ().erase(), teleport.erase());
                 cursor.step_key();
             }
 
-            builder.done()
+            TypedBatch::new(builder.done())
         })
         .mark_sharded();
 
@@ -110,12 +125,14 @@ pub fn pagerank(
     let outgoing_edge_counts = edges
         .shard()
         .apply(|weights| {
+            let factories = <DynWeights as DynBatchReader>::Factories::new::<Node, (), Rank>();
             // We can use a builder here since the cursor yields ordered values
-            let mut builder = <Weights as Batch>::Builder::with_capacity((), weights.len());
+            let mut builder =
+                <DynWeights as DynBatch>::Builder::with_capacity(&factories, (), weights.len());
 
             let mut cursor = weights.cursor();
             while cursor.key_valid() {
-                let node = *cursor.key();
+                let node = *cursor.key().downcast::<Node>();
 
                 let mut total_outputs = 0usize;
                 while cursor.val_valid() {
@@ -123,11 +140,15 @@ pub fn pagerank(
                     cursor.step_val();
                 }
 
-                builder.push((node, Rank::new(total_outputs as f64)));
+                builder.push_refs(
+                    node.erase(),
+                    ().erase(),
+                    Rank::new(total_outputs as f64).erase(),
+                );
                 cursor.step_key();
             }
 
-            builder.done()
+            TypedBatch::new(builder.done())
         })
         .mark_sharded();
 
@@ -135,7 +156,7 @@ pub fn pagerank(
     let dangling_nodes = weighted_vertices.minus(
         &outgoing_edge_counts
             .stream_distinct()
-            .semijoin_stream::<_, OrdZSet<_, _>>(&weighted_vertices)
+            .semijoin_stream::<_, OrdZSet<_>>(&weighted_vertices)
             .map(|&(node, _)| node),
     );
 
@@ -255,16 +276,17 @@ fn count_vertices(vertices: &Vertices<()>) -> Streamed<(), u64> {
 
 // This code implements a join with weight division instead of multiplication
 fn div_join_stream<S, K>(
-    lhs: &Streamed<S, OrdZSet<K, Rank>>,
-    rhs: &Streamed<S, OrdZSet<K, Rank>>,
-) -> Streamed<S, OrdZSet<K, Rank>>
+    lhs: &Streamed<S, OrdWSet<K, Rank, DynWeight>>,
+    rhs: &Streamed<S, OrdWSet<K, Rank, DynWeight>>,
+) -> Streamed<S, OrdWSet<K, Rank, DynWeight>>
 where
     S: WithClock + Clone + 'static,
     K: DBData + Send + Copy,
 {
     lhs.shard().apply2(&rhs.shard(), |lhs, rhs| {
         let capacity = min(lhs.len(), rhs.len());
-        let mut builder = <OrdZSet<K, Rank> as Batch>::Builder::with_capacity((), capacity);
+        let mut builder =
+            <OrdWSet<K, Rank, DynWeight> as Batch>::Builder::with_capacity((), capacity);
 
         let (mut lhs, mut rhs) = (lhs.cursor(), rhs.cursor());
         while lhs.key_valid() && rhs.key_valid() {

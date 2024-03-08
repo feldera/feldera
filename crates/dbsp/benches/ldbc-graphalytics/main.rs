@@ -1,4 +1,11 @@
+// TODO: The main roadblock I ran into while porting this benchmark to dynamic dispatch is that
+// we no longer support stream.distinct() with floating point weights.
+fn main() {
+    todo!()
+}
+/*
 mod bfs;
+
 mod data;
 mod pagerank;
 
@@ -34,8 +41,10 @@ use std::{
     ops::{Add, Neg},
     path::Path,
     rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -45,7 +54,7 @@ static ALLOC: MiMalloc = MiMalloc;
 
 enum OutputData {
     None,
-    Bfs(DistanceSet<i8>),
+    Bfs(DistanceSet),
     PageRank(RankMap),
 }
 
@@ -157,8 +166,8 @@ fn main() {
             }
 
             let roots = circuit.region("roots", || {
-                let (roots, root_handle) = circuit.add_input_set();
-                root_handle.push(properties.source_vertex, true);
+                let (roots, root_handle) = circuit.dyn_add_input_set();
+                root_handle.dyn_push(properties.source_vertex, true);
                 roots
             });
 
@@ -562,3 +571,4 @@ struct Config {
     #[clap(long = "bench", hide = true)]
     __bench: bool,
 }
+*/

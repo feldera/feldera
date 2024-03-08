@@ -1,6 +1,5 @@
 use super::NexmarkStream;
 use crate::model::{Bid, Event};
-use dbsp::operator::FilterMap;
 
 /// Currency Conversion
 ///
@@ -44,14 +43,14 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
+    use dbsp::{utils::Tup2, OrdZSet, RootCircuit, ZWeight};
 
     #[test]
     fn test_q1() {
-        fn input_vecs() -> Vec<Vec<(Event, i64)>> {
+        fn input_vecs() -> Vec<Vec<Tup2<Event, ZWeight>>> {
             vec![
                 vec![
-                    (
+                    Tup2(
                         Event::Auction(Auction {
                             id: 1,
                             seller: 99,
@@ -60,7 +59,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 1_000,
@@ -69,7 +68,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 2_000,
@@ -80,7 +79,7 @@ mod tests {
                     ),
                 ],
                 vec![
-                    (
+                    Tup2(
                         Event::Auction(Auction {
                             id: 2,
                             seller: 99,
@@ -89,7 +88,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 1_000,
@@ -98,7 +97,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 2_000,
@@ -112,25 +111,25 @@ mod tests {
         }
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q1(stream);
 
             let mut expected_output = input_vecs().into_iter().map(|v| {
                 let expected_v = v
                     .into_iter()
-                    .map(|(e, w)| match e {
-                        Event::Bid(b) => (
+                    .map(|Tup2(e, w)| match e {
+                        Event::Bid(b) => Tup2(
                             Event::Bid(Bid {
                                 price: b.price * 89 / 100,
                                 ..b
                             }),
                             w,
                         ),
-                        _ => (e, w),
+                        _ => Tup2(e, w),
                     })
                     .collect();
-                OrdZSet::from_tuples((), expected_v)
+                OrdZSet::from_keys((), expected_v)
             });
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

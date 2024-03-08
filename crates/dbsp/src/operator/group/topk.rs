@@ -1,45 +1,42 @@
-use super::{
-    custom_ord::{CmpFunc, WithCustomOrd},
-    DiffGroupTransformer, Monotonicity, NonIncrementalGroupTransformer,
-};
 use crate::{
-    algebra::ZRingValue, operator::FilterMap, trace::Cursor, DBData, DBWeight, IndexedZSet,
-    OrdIndexedZSet, RootCircuit, Stream,
+    dynamic::{DowncastTrait, DynData},
+    operator::{
+        dynamic::group::{TopKCustomOrdFactories, TopKFactories, TopKRankCustomOrdFactories},
+        group::custom_ord::{CmpFunc, WithCustomOrd},
+    },
+    typed_batch::{IndexedZSet, OrdIndexedZSet},
+    DBData, DynZWeight, RootCircuit, Stream, ZWeight,
 };
-use std::marker::PhantomData;
 
 impl<B> Stream<RootCircuit, B>
 where
-    B: IndexedZSet + Send,
+    B: IndexedZSet<DynK = DynData, DynV = DynData>,
+    B::InnerBatch: Send,
 {
     /// Pick `k` smallest values in each group.
     ///
     /// For each key in the input stream, removes all but `k` smallest values.
     #[allow(clippy::type_complexity)]
-    pub fn topk_asc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val, B::R>>
-    where
-        B::R: ZRingValue,
-    {
-        self.group_transform(DiffGroupTransformer::new(TopK::asc(k)))
+    pub fn topk_asc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
+        let factories = TopKFactories::new::<B::Key, B::Val>();
+        self.inner().dyn_topk_asc(&factories, k).typed()
     }
 
     /// Pick `k` largest values in each group.
     ///
     /// For each key in the input stream, removes all but `k` largest values.
     #[allow(clippy::type_complexity)]
-    pub fn topk_desc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val, B::R>>
-    where
-        B::R: ZRingValue,
-    {
-        self.group_transform(DiffGroupTransformer::new(TopK::desc(k)))
+    pub fn topk_desc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
+        let factories = TopKFactories::new::<B::Key, B::Val>();
+
+        self.inner().dyn_topk_desc(&factories, k).typed()
     }
 }
 
-impl<K, V, R> Stream<RootCircuit, OrdIndexedZSet<K, V, R>>
+impl<K, V> Stream<RootCircuit, OrdIndexedZSet<K, V>>
 where
     K: DBData,
     V: DBData,
-    R: DBWeight + ZRingValue,
 {
     /// Pick `k` smallest values in each group based on a custom comparison
     /// function.
@@ -56,9 +53,26 @@ where
     where
         F: CmpFunc<V>,
     {
-        self.map_index(|(k, v)| (k.clone(), <WithCustomOrd<V, F>>::new(v.clone())))
-            .group_transform(DiffGroupTransformer::new(TopK::asc(k)))
-            .map_index(|(k, v)| (k.clone(), v.val.clone()))
+        let factories = TopKCustomOrdFactories::<DynData, DynData, DynData, DynZWeight>::new::<
+            K,
+            V,
+            WithCustomOrd<V, F>,
+            ZWeight,
+        >();
+
+        self.inner()
+            .dyn_topk_custom_order(
+                &factories,
+                k,
+                Box::new(
+                    move |v1, v2: &mut DynData /* <WithCustomOrd<V, F>> */| unsafe {
+                        *v2.downcast_mut::<WithCustomOrd<V, F>>() =
+                            WithCustomOrd::new(v1.downcast::<V>().clone())
+                    },
+                ),
+                Box::new(move |v2| unsafe { &v2.downcast::<WithCustomOrd<V, F>>().val }),
+            )
+            .typed()
     }
 
     /// Rank elements in the group and output all elements with `rank <= k`.
@@ -94,22 +108,41 @@ where
         k: usize,
         rank_eq_func: EF,
         output_func: OF,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV, R>>
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
     where
-        OV: DBData,
         CF: CmpFunc<V>,
+        OV: DBData,
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
-        i64: From<R>,
     {
-        self.map_index(|(k, v)| (k.clone(), <WithCustomOrd<V, CF>>::new(v.clone())))
-            .group_transform(DiffGroupTransformer::new(TopKRank::sparse(
+        let factories = TopKRankCustomOrdFactories::<DynData, DynData, DynData>::new::<
+            K,
+            WithCustomOrd<V, CF>,
+            OV,
+        >();
+
+        self.inner()
+            .dyn_topk_rank_custom_order(
+                &factories,
                 k,
-                move |v1: &WithCustomOrd<V, CF>, v2: &WithCustomOrd<V, CF>| {
-                    rank_eq_func(&v1.val, &v2.val)
-                },
-                move |rank, v: &WithCustomOrd<V, _>| output_func(rank, &v.val),
-            )))
+                Box::new(
+                    move |v1, v2: &mut DynData /* <WithCustomOrd<V, CF>> */| unsafe {
+                        *v2.downcast_mut::<WithCustomOrd<V, CF>>() =
+                            WithCustomOrd::new(v1.downcast::<V>().clone())
+                    },
+                ),
+                Box::new(move |x, y| unsafe {
+                    rank_eq_func(
+                        &x.downcast::<WithCustomOrd<V, CF>>().val,
+                        &y.downcast::<WithCustomOrd<V, CF>>().val,
+                    )
+                }),
+                Box::new(move |rank, v2, ov| unsafe {
+                    *ov.downcast_mut() =
+                        output_func(rank, &v2.downcast::<WithCustomOrd<V, CF>>().val)
+                }),
+            )
+            .typed()
     }
 
     /// Rank elements in the group using dense ranking and output all elements
@@ -122,22 +155,41 @@ where
         k: usize,
         rank_eq_func: EF,
         output_func: OF,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV, R>>
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
     where
-        OV: DBData,
         CF: CmpFunc<V>,
+        OV: DBData,
         EF: Fn(&V, &V) -> bool + 'static,
         OF: Fn(i64, &V) -> OV + 'static,
-        i64: From<R>,
     {
-        self.map_index(|(k, v)| (k.clone(), <WithCustomOrd<V, CF>>::new(v.clone())))
-            .group_transform(DiffGroupTransformer::new(TopKRank::dense(
+        let factories = TopKRankCustomOrdFactories::<DynData, DynData, DynData>::new::<
+            K,
+            WithCustomOrd<V, CF>,
+            OV,
+        >();
+
+        self.inner()
+            .dyn_topk_dense_rank_custom_order(
+                &factories,
                 k,
-                move |v1: &WithCustomOrd<V, CF>, v2: &WithCustomOrd<V, CF>| {
-                    rank_eq_func(&v1.val, &v2.val)
-                },
-                move |rank, v: &WithCustomOrd<V, _>| output_func(rank, &v.val),
-            )))
+                Box::new(
+                    move |v1, v2: &mut DynData /* <WithCustomOrd<V, CF>> */| unsafe {
+                        *v2.downcast_mut::<WithCustomOrd<V, CF>>() =
+                            WithCustomOrd::new(v1.downcast::<V>().clone())
+                    },
+                ),
+                Box::new(move |x, y| unsafe {
+                    rank_eq_func(
+                        &x.downcast::<WithCustomOrd<V, CF>>().val,
+                        &y.downcast::<WithCustomOrd<V, CF>>().val,
+                    )
+                }),
+                Box::new(move |rank, v2, ov| unsafe {
+                    *ov.downcast_mut() =
+                        output_func(rank, &v2.downcast::<WithCustomOrd<V, CF>>().val)
+                }),
+            )
+            .typed()
     }
 
     /// Pick `k` smallest values in each group based on a custom comparison
@@ -161,237 +213,33 @@ where
         &self,
         k: usize,
         output_func: OF,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV, R>>
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
     where
-        OV: DBData,
         CF: CmpFunc<V>,
+        OV: DBData,
         OF: Fn(i64, &V) -> OV + 'static,
     {
-        self.map_index(|(k, v)| (k.clone(), <WithCustomOrd<V, CF>>::new(v.clone())))
-            .group_transform(DiffGroupTransformer::new(TopKRowNumber::new(
+        let factories = TopKRankCustomOrdFactories::<DynData, DynData, DynData>::new::<
+            K,
+            WithCustomOrd<V, CF>,
+            OV,
+        >();
+
+        self.inner()
+            .dyn_topk_row_number_custom_order(
+                &factories,
                 k,
-                move |rank, v: &WithCustomOrd<V, _>| output_func(rank, &v.val),
-            )))
-    }
-}
-
-struct TopK<I, R, const ASCENDING: bool> {
-    k: usize,
-    name: String,
-    // asc: bool,
-    _phantom: PhantomData<(I, R)>,
-}
-
-impl<I, R> TopK<I, R, true> {
-    fn asc(k: usize) -> Self {
-        Self {
-            k,
-            name: format!("top-{k}-asc"),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<I, R> TopK<I, R, false> {
-    fn desc(k: usize) -> Self {
-        Self {
-            k,
-            name: format!("top-{k}-desc"),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<I, R, const ASCENDING: bool> NonIncrementalGroupTransformer<I, I, R> for TopK<I, R, ASCENDING>
-where
-    I: DBData,
-    R: DBWeight,
-{
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-
-    fn monotonicity(&self) -> Monotonicity {
-        if ASCENDING {
-            Monotonicity::Ascending
-        } else {
-            Monotonicity::Descending
-        }
-    }
-
-    fn transform<C, CB>(&mut self, cursor: &mut C, mut output_cb: CB)
-    where
-        C: Cursor<I, (), (), R>,
-        CB: FnMut(I, R),
-    {
-        let mut count = 0usize;
-
-        if ASCENDING {
-            while cursor.key_valid() && count < self.k {
-                let w = cursor.weight();
-                if !w.is_zero() {
-                    output_cb(cursor.key().clone(), w);
-                    count += 1;
-                }
-                cursor.step_key();
-            }
-        } else {
-            cursor.fast_forward_keys();
-
-            while cursor.key_valid() && count < self.k {
-                let w = cursor.weight();
-                if !w.is_zero() {
-                    output_cb(cursor.key().clone(), w);
-                    count += 1;
-                }
-                cursor.step_key_reverse();
-            }
-        }
-    }
-}
-
-struct TopKRank<I, R, EF, OF> {
-    k: usize,
-    dense: bool,
-    name: String,
-    rank_eq_func: EF,
-    output_func: OF,
-    _phantom: PhantomData<(I, R)>,
-}
-
-impl<I, R, EF, OF> TopKRank<I, R, EF, OF> {
-    fn sparse(k: usize, rank_eq_func: EF, output_func: OF) -> Self {
-        Self {
-            k,
-            dense: false,
-            name: format!("top-{k}-rank"),
-            rank_eq_func,
-            output_func,
-            _phantom: PhantomData,
-        }
-    }
-
-    fn dense(k: usize, rank_eq_func: EF, output_func: OF) -> Self {
-        Self {
-            k,
-            dense: true,
-            name: format!("top-{k}-dense-rank"),
-            rank_eq_func,
-            output_func,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<I, R, EF, OF, OV> NonIncrementalGroupTransformer<I, OV, R> for TopKRank<I, R, EF, OF>
-where
-    I: DBData,
-    OV: DBData,
-    EF: Fn(&I, &I) -> bool + 'static,
-    OF: Fn(i64, &I) -> OV + 'static,
-    R: DBWeight,
-    i64: From<R>,
-{
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-
-    fn monotonicity(&self) -> Monotonicity {
-        // We don't assume that `OF` preserves ordering.
-        Monotonicity::Unordered
-    }
-
-    fn transform<C, CB>(&mut self, cursor: &mut C, mut output_cb: CB)
-    where
-        C: Cursor<I, (), (), R>,
-        CB: FnMut(OV, R),
-    {
-        let mut count = 0usize;
-
-        let mut rank = 1;
-        let mut prev_key = None;
-        while cursor.key_valid() {
-            let w = cursor.weight();
-            let wi64 = i64::from(w.clone());
-            if wi64 > 0 {
-                count += wi64 as usize;
-                let key = cursor.key();
-                if let Some(prev_key) = &prev_key {
-                    if !(self.rank_eq_func)(key, prev_key) {
-                        // Rank stays the same while iterating over equal-ranked elements,
-                        // and then increases by one when computing dense ranking or skips
-                        // to `count` otherwise.
-                        if self.dense {
-                            rank += 1;
-                        } else {
-                            rank = count as i64;
-                        }
-                        if rank as usize > self.k {
-                            break;
-                        }
-                    }
-                };
-
-                output_cb((self.output_func)(rank, key), w);
-                prev_key = Some(key.clone());
-            }
-            cursor.step_key();
-        }
-    }
-}
-
-struct TopKRowNumber<I, R, OF> {
-    k: usize,
-    name: String,
-    output_func: OF,
-    _phantom: PhantomData<(I, R)>,
-}
-
-impl<I, R, OF> TopKRowNumber<I, R, OF> {
-    fn new(k: usize, output_func: OF) -> Self {
-        Self {
-            k,
-            name: format!("top-{k}-row_number"),
-            output_func,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<I, R, OF, OV> NonIncrementalGroupTransformer<I, OV, R> for TopKRowNumber<I, R, OF>
-where
-    I: DBData,
-    OV: DBData,
-    OF: Fn(i64, &I) -> OV + 'static,
-    R: DBWeight + ZRingValue,
-{
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-
-    fn monotonicity(&self) -> Monotonicity {
-        // We don't assume that `OF` preserves ordering.
-        Monotonicity::Unordered
-    }
-
-    fn transform<C, CB>(&mut self, cursor: &mut C, mut output_cb: CB)
-    where
-        C: Cursor<I, (), (), R>,
-        CB: FnMut(OV, R),
-    {
-        let mut count = 0usize;
-
-        while cursor.key_valid() && count < self.k {
-            let mut w = cursor.weight();
-            while w.ge0() && !w.is_zero() {
-                count += 1;
-                if count > self.k {
-                    break;
-                }
-                output_cb((self.output_func)(count as i64, cursor.key()), R::one());
-                w.add_assign(R::one().neg());
-            }
-            cursor.step_key();
-        }
+                Box::new(
+                    move |v1, v2: &mut DynData /* <WithCustomOrd<V, CF>> */| unsafe {
+                        *v2.downcast_mut::<WithCustomOrd<V, CF>>() =
+                            WithCustomOrd::new(v1.downcast::<V>().clone())
+                    },
+                ),
+                Box::new(move |rank, v2, ov| unsafe {
+                    *ov.downcast_mut() =
+                        output_func(rank, &v2.downcast::<WithCustomOrd<V, CF>>().val)
+                }),
+            )
+            .typed()
     }
 }

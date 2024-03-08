@@ -223,7 +223,7 @@ mod test {
         algebra::HasZero,
         circuit::OwnershipPreference,
         operator::{Generator, Inspect},
-        trace::{ord::OrdZSet, Batch},
+        typed_batch::OrdZSet,
         zset, Circuit, RootCircuit,
     };
 
@@ -257,13 +257,13 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn zset_plus() {
         let build_plus_circuit = |circuit: &RootCircuit| {
-            let mut s = <OrdZSet<_, _>>::zero();
+            let mut s = <OrdZSet<_>>::zero();
             let delta = zset! { 5 => 1};
             let source1 = circuit.add_source(Generator::new(move || {
                 s = s.merge(&delta);
                 s.clone()
             }));
-            let mut s = <OrdZSet<_, _>>::zero();
+            let mut s = <OrdZSet<_>>::zero();
             let delta = zset! { 5 => -1};
             let source2 = circuit.add_source(Generator::new(move || {
                 s = s.merge(&delta);
@@ -271,18 +271,18 @@ mod test {
             }));
             source1
                 .plus(&source2)
-                .inspect(|s| assert_eq!(s, &<OrdZSet<u64, i64>>::zero()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<u64>>::zero()));
             (source1, source2)
         };
 
         let build_minus_circuit = |circuit: &RootCircuit| {
-            let mut s = <OrdZSet<_, _>>::zero();
+            let mut s = <OrdZSet<_>>::zero();
             let delta = zset! { 5 => 1};
             let source1 = circuit.add_source(Generator::new(move || {
                 s = s.merge(&delta);
                 s.clone()
             }));
-            let mut s = <OrdZSet<_, _>>::zero();
+            let mut s = <OrdZSet<_>>::zero();
             let delta = zset! { 5 => 1};
             let source2 = circuit.add_source(Generator::new(move || {
                 s = s.merge(&delta);
@@ -290,7 +290,7 @@ mod test {
             }));
             source1
                 .minus(&source2)
-                .inspect(|s| assert_eq!(s, &<OrdZSet<_, _>>::zero()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<_>>::zero()));
             (source1, source2)
         };
         // Allow `Plus` to consume both streams by value.

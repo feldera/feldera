@@ -6,6 +6,7 @@ use crate::data::{
     GDELT_URL, GKG_SUFFIX,
 };
 use clap::Parser;
+use dbsp::dynamic::DowncastTrait;
 use dbsp::{
     trace::{BatchReader, Cursor},
     utils::Tup2,
@@ -89,8 +90,9 @@ fn main() {
                     let mut cursor = network.cursor();
                     while cursor.key_valid() {
                         if cursor.val_valid() {
-                            let count = cursor.weight();
-                            let Tup2(source, target) = cursor.key().clone();
+                            let count = **cursor.weight();
+                            let Tup2(source, target) =
+                                cursor.key().downcast::<Tup2<String, String>>().clone();
                             network_buf.push((source, target, count));
                         }
                         cursor.step_key();

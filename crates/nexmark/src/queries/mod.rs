@@ -4,7 +4,7 @@ use super::model::Event;
 use dbsp::{OrdZSet, RootCircuit, Stream};
 use std::time::SystemTime;
 
-type NexmarkStream = Stream<RootCircuit, OrdZSet<Event, i64>>;
+type NexmarkStream = Stream<RootCircuit, OrdZSet<Event>>;
 
 type OrdinalDate = (i32, u16);
 

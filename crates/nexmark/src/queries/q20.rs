@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::{Auction, Bid, Event};
-use dbsp::{operator::FilterMap, utils::Tup2, OrdZSet, RootCircuit, Stream};
+use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 20: Expand bid with auction (Not in original suite)
@@ -47,7 +47,7 @@ use dbsp::{operator::FilterMap, utils::Tup2, OrdZSet, RootCircuit, Stream};
 // WHERE A.category = 10;
 //
 
-type Q20Stream = Stream<RootCircuit, OrdZSet<Tup2<Bid, Auction>, i64>>;
+type Q20Stream = Stream<RootCircuit, OrdZSet<Tup2<Bid, Auction>>>;
 
 const FILTERED_CATEGORY: u64 = 10;
 
@@ -223,14 +223,14 @@ mod tests {
         }])]
     fn test_q20(
         #[case] input_event_batches: Vec<Vec<Event>>,
-        #[case] expected_zsets: Vec<OrdZSet<Tup2<Bid, Auction>, i64>>,
+        #[case] expected_zsets: Vec<OrdZSet<Tup2<Bid, Auction>>>,
     ) {
         let input_vecs = input_event_batches
             .into_iter()
-            .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
+            .map(|batch| batch.into_iter().map(|e| Tup2(e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q20(stream);
 

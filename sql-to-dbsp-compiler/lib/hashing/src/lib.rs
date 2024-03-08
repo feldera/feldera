@@ -1,11 +1,12 @@
-use core::{cmp::Ordering};
+use core::cmp::Ordering;
 use dbsp::{
     algebra::{HasOne, MulByRef, ZRingValue, ZSet},
     trace::{cursor::Cursor, BatchReader},
-    DBData,
+    DBData, ZWeight,
 };
 
-use sqllib::{Weight, WSet};
+use dbsp::dynamic::{DowncastTrait, Erase};
+use sqllib::{WSet, Weight};
 use sqlvalue::*;
 use std::ops::{Add, Neg};
 
@@ -40,15 +41,18 @@ pub fn zset_to_rows<K>(set: &WSet<K>) -> Vec<SqlRow>
 where
     K: DBData + ToSqlRow,
 {
-    let mut result = Vec::with_capacity(set.weighted_count().try_into().unwrap());
+    let mut w: ZWeight = 0;
+    set.weighted_count(w.erase_mut());
+
+    let mut result = Vec::with_capacity(w.try_into().unwrap());
     let mut cursor = set.cursor();
     while cursor.key_valid() {
-        let mut w = cursor.weight();
+        let mut w = **cursor.weight();
         if !w.ge0() {
             panic!("Negative weight in output set!");
         }
         while !w.le0() {
-            let row_vec = cursor.key().to_row();
+            let row_vec = unsafe { cursor.key().downcast::<K>() }.to_row();
             result.push(row_vec);
             w = w.add(Weight::neg(Weight::one()));
         }
@@ -98,11 +102,7 @@ impl<'a> DataRows<'a> {
 }
 
 /// The format is from the SqlLogicTest query output string format
-pub fn zset_to_strings<K>(
-    set: &WSet<K>,
-    format: String,
-    order: SortOrder,
-) -> Vec<Vec<String>>
+pub fn zset_to_strings<K>(set: &WSet<K>, format: String, order: SortOrder) -> Vec<Vec<String>>
 where
     K: DBData + ToSqlRow,
 {
@@ -127,11 +127,11 @@ where
     let mut data_rows = DataRows::new(&format, &order);
     let mut cursor = set.cursor();
     while cursor.key_valid() {
-        let w = cursor.weight();
+        let w = **cursor.weight();
         if w != Weight::one() {
             panic!("Weight is not one!");
         }
-        let row_vec: Vec<K> = cursor.key().to_vec();
+        let row_vec: Vec<K> = unsafe { cursor.key().downcast::<Vec<K>>() }.to_vec();
         let sql_rows = row_vec.iter().map(|k| k.to_row());
         for row in sql_rows {
             data_rows.push(row);
@@ -169,11 +169,11 @@ where
     let mut builder = String::default();
     let mut cursor = set.cursor();
     while cursor.key_valid() {
-        let w = cursor.weight();
+        let w = **cursor.weight();
         if w != Weight::one() {
             panic!("Weight is not one!");
         }
-        let row_vec: Vec<K> = cursor.key().to_vec();
+        let row_vec: Vec<K> = unsafe { cursor.key().downcast::<Vec<K>>() }.to_vec();
         let sql_rows = row_vec.iter().map(|k| k.to_row());
         let mut data_rows = DataRows::with_capacity(&format, &order, sql_rows.len());
         for row in sql_rows {
@@ -201,8 +201,8 @@ where
     let mut sum: isize = 0;
     let mut cursor = set.cursor();
     while cursor.key_valid() {
-        let key = cursor.key();
-        sum += (key.len() as isize).mul_by_ref(&cursor.weight());
+        let key = unsafe { cursor.key().downcast::<Vec<K>>() };
+        sum += (key.len() as isize).mul_by_ref(&**cursor.weight());
         cursor.step_key();
     }
     sum

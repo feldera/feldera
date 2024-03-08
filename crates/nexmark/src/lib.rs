@@ -15,20 +15,13 @@ use self::{
     generator::{config::Config as GeneratorConfig, NexmarkGenerator, NextEvent},
     model::Event,
 };
-use dbsp::{
-    algebra::{ZRingValue, ZSet},
-    circuit::operator_traits::Data,
-    OrdZSet,
-};
 use rand::{rngs::ThreadRng, Rng};
 use std::{
     collections::VecDeque,
-    marker::PhantomData,
     ops::Range,
     sync::mpsc,
     thread::{self, sleep},
-    time::Duration,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 pub mod config;
@@ -102,7 +95,7 @@ impl<T> BatchedSender<T> {
     }
 }
 
-pub struct NexmarkSource<W, C> {
+pub struct NexmarkSource {
     // TODO(absoludity): Longer-term, it'd be great to extract this to a separate gRPC service that
     // generates and streams the events, so that user benchmarks, such as DBSP, will only need the
     // gRPC client (and their process will only be receiving the stream, so no need to measure the
@@ -115,8 +108,6 @@ pub struct NexmarkSource<W, C> {
     /// An optional iterator that provides wallclock timestamps in tests.
     /// This is set to None by default.
     wallclock_iterator: Option<Range<u64>>,
-
-    _t: PhantomData<(C, W)>,
 }
 
 // Creates and spawns the generators according to the nexmark config, returning
@@ -185,16 +176,15 @@ fn create_generators_for_config<R: Rng + Default>(
     next_events_rx
 }
 
-impl<W, C> NexmarkSource<W, C> {
+impl NexmarkSource {
     pub fn from_next_events(next_events_rx: BatchedReceiver<NextEvent>) -> Self {
         NexmarkSource {
             next_events_rx,
             wallclock_iterator: None,
-            _t: PhantomData,
         }
     }
 
-    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource<i64, OrdZSet<Event, i64>> {
+    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource {
         NexmarkSource::from_next_events(create_generators_for_config::<ThreadRng>(nexmark_config))
     }
 
@@ -209,11 +199,7 @@ impl<W, C> NexmarkSource<W, C> {
     }
 }
 
-impl<W, C> Iterator for NexmarkSource<W, C>
-where
-    W: ZRingValue + 'static,
-    C: Data + ZSet<Key = Event, R = W>,
-{
+impl Iterator for NexmarkSource {
     type Item = Event;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -232,24 +218,21 @@ where
 
 #[cfg(test)]
 pub mod tests {
-    use self::generator::{
-        config::Config as GeneratorConfig, tests::generate_expected_next_events,
+    use self::{
+        generator::{config::Config as GeneratorConfig, tests::generate_expected_next_events},
+        model::Event,
     };
-    use self::model::Event;
     use core::iter::zip;
 
     use super::*;
     use core::ops::Range;
-    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
+    use dbsp::{utils::Tup2, OrdZSet, RootCircuit, ZWeight};
     use rand::rngs::mock::StepRng;
     use rstest::rstest;
 
     /// Returns a source that generates the default events/s with the specified
     /// range of wallclock time ticks.
-    pub fn make_source_with_wallclock_times(
-        times: Range<u64>,
-        max_events: u64,
-    ) -> NexmarkSource<i64, OrdZSet<Event, i64>> {
+    pub fn make_source_with_wallclock_times(times: Range<u64>, max_events: u64) -> NexmarkSource {
         let (next_event_tx, next_event_rx) = mpsc::sync_channel(max_events as usize + 1);
         let mut generator = NexmarkGenerator::new(
             GeneratorConfig {
@@ -278,19 +261,19 @@ pub mod tests {
     pub fn generate_expected_zset_tuples(
         wallclock_base_time: u64,
         num_events: usize,
-    ) -> Vec<(Event, i64)> {
+    ) -> Vec<Tup2<Event, ZWeight>> {
         let expected_events = generate_expected_next_events(wallclock_base_time, num_events);
 
         expected_events
             .into_iter()
             .filter(|event| event.is_some())
-            .map(|event| (event.unwrap().event, 1))
+            .map(|event| Tup2(event.unwrap().event, 1))
             .collect()
     }
 
     // Generates a zset manually using the default test NexmarkGenerator
-    fn generate_expected_zset(wallclock_base_time: u64, num_events: usize) -> OrdZSet<Event, i64> {
-        OrdZSet::<Event, i64>::from_keys(
+    fn generate_expected_zset(wallclock_base_time: u64, num_events: usize) -> OrdZSet<Event> {
+        OrdZSet::<Event>::from_keys(
             (),
             generate_expected_zset_tuples(wallclock_base_time, num_events),
         )
@@ -303,7 +286,7 @@ pub mod tests {
 
             let expected_zset = generate_expected_zset(0, 10);
 
-            stream.inspect(move |data: &OrdZSet<Event, i64>| {
+            stream.inspect(move |data: &OrdZSet<Event>| {
                 assert_eq!(data, &expected_zset);
             });
             Ok(input_handle)
@@ -311,7 +294,7 @@ pub mod tests {
         .unwrap();
 
         let source = make_source_with_wallclock_times(0..10, 10);
-        input_handle.append(&mut source.take(10).map(|e| (e, 1)).collect());
+        input_handle.append(&mut source.take(10).map(|e| Tup2(e, 1)).collect());
 
         circuit.step().unwrap();
     }
@@ -325,7 +308,7 @@ pub mod tests {
             ..NexmarkConfig::default()
         };
         let receiver = create_generators_for_config::<ThreadRng>(nexmark_config);
-        let source = NexmarkSource::<i64, OrdZSet<Event, i64>>::from_next_events(receiver);
+        let source = NexmarkSource::from_next_events(receiver);
 
         let expected_zset_tuple = generate_expected_zset_tuples(0, 10);
 
@@ -333,7 +316,7 @@ pub mod tests {
         // the event types (effectively the same).
         for (got, want) in zip(
             source.take(10),
-            expected_zset_tuple.into_iter().map(|(e, _)| e),
+            expected_zset_tuple.into_iter().map(|Tup2(e, _)| e),
         ) {
             match want {
                 Event::Person(_) => match got {

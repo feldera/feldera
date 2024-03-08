@@ -1,54 +1,234 @@
 use crate::{
-    algebra::{Lattice, MonoidValue},
+    dynamic::{
+        DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
+        LeanVec, WeightTrait, WithFactory,
+    },
     time::{Antichain, AntichainRef},
     trace::{
         layers::{
-            column_layer::{ColumnLayer, ColumnLayerBuilder},
-            ordered::{
-                OrderedBuilder, OrderedCursor, OrderedLayer, OrderedLayerConsumer,
-                OrderedLayerValues,
-            },
-            Builder as TrieBuilder, Cursor as TrieCursor, MergeBuilder, OrdOffset, Trie,
-            TupleBuilder,
+            Builder as _, Cursor as _, Layer, LayerBuilder, LayerCursor, LayerFactories, Leaf,
+            LeafBuilder, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
-        ord::merge_batcher::MergeBatcher,
-        Batch, BatchReader, Builder, Consumer, Cursor, Filter, Merger, ValueConsumer,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Filter, Merger, Serializer, WeightedItem,
     },
-    DBData, DBTimestamp, DBWeight, NumEntries,
+    utils::{ConsolidatePairedSlices, Tup2},
+    DBData, DBWeight, NumEntries, Timestamp,
 };
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display},
-    marker::PhantomData,
+    ops::DerefMut,
 };
 
-pub type VecKeyBatchLayer<K, T, R, O> = OrderedLayer<K, ColumnLayer<T, R>, O>;
+use crate::trace::ord::merge_batcher::MergeBatcher;
+
+pub struct VecKeyBatchFactories<K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    layer_factories: LayerFactories<K, LeafFactories<DynDataTyped<T>, R>>,
+    consolidate_weights: &'static dyn ConsolidatePairedSlices<DynDataTyped<T>, R>,
+    item_factory: &'static dyn Factory<DynPair<K, DynUnit>>,
+    weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
+    weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
+}
+
+unsafe impl<K, T, R> Send for VecKeyBatchFactories<K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+}
+
+impl<K, T, R> Clone for VecKeyBatchFactories<K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            layer_factories: self.layer_factories.clone(),
+            consolidate_weights: self.consolidate_weights,
+            item_factory: self.item_factory,
+            weighted_item_factory: self.weighted_item_factory,
+            weighted_items_factory: self.weighted_items_factory,
+        }
+    }
+}
+
+impl<K, T, R> BatchReaderFactories<K, DynUnit, T, R> for VecKeyBatchFactories<K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn new<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<DynUnit>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            layer_factories: LayerFactories::new::<KType>(
+                <LeafFactories<DynDataTyped<T>, R>>::new::<T, RType>(),
+            ),
+            consolidate_weights: <dyn ConsolidatePairedSlices<_, _>>::factory::<T, RType>(),
+            item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
+            weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
+            weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
+        }
+    }
+
+    fn key_factory(&self) -> &'static dyn Factory<K> {
+        self.layer_factories.key
+    }
+
+    fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
+        self.layer_factories.keys
+    }
+
+    fn val_factory(&self) -> &'static dyn Factory<DynUnit> {
+        WithFactory::<()>::FACTORY
+    }
+
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.layer_factories.child.diff
+    }
+}
+
+impl<K, R, T> BatchFactories<K, DynUnit, T, R> for VecKeyBatchFactories<K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    // type BatchItemFactory = BatchItemFactory<K, (), K, R>;
+
+    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, DynUnit>> {
+        self.item_factory
+    }
+
+    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, DynUnit, R>> {
+        self.weighted_item_factory
+    }
+
+    fn weighted_items_factory(
+        &self,
+    ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
+        self.weighted_items_factory
+    }
+}
+
+pub type VecKeyBatchLayer<K, T, R, O> = Layer<K, Leaf<DynDataTyped<T>, R>, O>;
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
-#[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
+#[derive(SizeOf)]
 pub struct VecKeyBatch<K, T, R, O = usize>
 where
-    K: 'static,
-    T: 'static,
-    R: 'static,
-    O: 'static,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
 {
     /// Where all the dataz is.
     pub layer: VecKeyBatchLayer<K, T, R, O>,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
+    #[size_of(skip)]
+    factories: VecKeyBatchFactories<K, T, R>,
+}
+
+impl<K, T, R, O> Debug for VecKeyBatch<K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+    O: OrdOffset,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VecKeyBatch")
+            .field("layer", &self.layer)
+            .field("lower", &self.lower)
+            .field("upper", &self.upper)
+            .finish()
+    }
+}
+
+impl<K, T, R, O: OrdOffset> Deserialize<VecKeyBatch<K, T, R, O>, Deserializer> for ()
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    fn deserialize(
+        &self,
+        _deserializer: &mut Deserializer,
+    ) -> Result<VecKeyBatch<K, T, R, O>, <Deserializer as rkyv::Fallible>::Error> {
+        todo!()
+    }
+}
+
+impl<K, T, R, O> Archive for VecKeyBatch<K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    type Archived = ();
+    type Resolver = ();
+
+    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
+        todo!()
+    }
+}
+impl<K, T, R, O: OrdOffset> Serialize<Serializer> for VecKeyBatch<K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    fn serialize(
+        &self,
+        _serializer: &mut Serializer,
+    ) -> Result<Self::Resolver, <Serializer as rkyv::Fallible>::Error> {
+        todo!()
+    }
+}
+
+impl<K, T, R, O> Clone for VecKeyBatch<K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    fn clone(&self) -> Self {
+        Self {
+            layer: self.layer.clone(),
+            lower: self.lower.clone(),
+            upper: self.upper.clone(),
+            factories: self.factories.clone(),
+        }
+    }
 }
 
 impl<K, T, R, O> Display for VecKeyBatch<K, T, R, O>
 where
-    K: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
-    VecKeyBatchLayer<K, T, R, O>: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -61,9 +241,9 @@ where
 
 impl<K, T, R, O> NumEntries for VecKeyBatch<K, T, R, O>
 where
-    K: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
     const CONST_NUM_ENTRIES: Option<usize> = <VecKeyBatchLayer<K, T, R, O>>::CONST_NUM_ENTRIES;
@@ -81,28 +261,33 @@ where
 
 impl<K, T, R, O> BatchReader for VecKeyBatch<K, T, R, O>
 where
-    K: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
     type Key = K;
-    type Val = ();
+    type Val = DynUnit;
     type Time = T;
     type R = R;
-    type Cursor<'s> = VecKeyCursor<'s, K, T, R, O> where O: 's;
-    type Consumer = VecKeyConsumer<K, T, R, O>;
+    type Cursor<'s> = OrdKeyCursor<'s, K, T, R, O> where O: 's;
+    type Factories = VecKeyBatchFactories<K, T, R>;
+    // type Consumer = OrdKeyConsumer<K, T, R, O>;
+
+    fn factories(&self) -> Self::Factories {
+        self.factories.clone()
+    }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        VecKeyCursor {
+        OrdKeyCursor {
             valid: true,
             cursor: self.layer.cursor(),
         }
     }
 
-    fn consumer(self) -> Self::Consumer {
+    /*fn consumer(self) -> Self::Consumer {
         todo!()
-    }
+    }*/
 
     fn key_count(&self) -> usize {
         <VecKeyBatchLayer<K, T, R, O> as Trie>::keys(&self.layer)
@@ -124,8 +309,9 @@ where
         self.layer.truncate_keys_below(lower_bound);
     }
 
-    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut Vec<Self::Key>)
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
+        Self::Time: PartialEq<()>,
         RG: Rng,
     {
         self.layer.sample_keys(rng, sample_size, sample);
@@ -134,23 +320,18 @@ where
 
 impl<K, T, R, O> Batch for VecKeyBatch<K, T, R, O>
 where
-    K: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    type Item = K;
-    type Batcher = MergeBatcher<K, T, R, Self>;
-    type Builder = VecKeyBuilder<K, T, R, O>;
-    type Merger = VecKeyMerger<K, T, R, O>;
+    type Batcher = MergeBatcher<Self>;
+    type Builder = OrdKeyBuilder<K, T, R, O>;
+    type Merger = OrdKeyMerger<K, T, R, O>;
 
-    fn item_from(key: K, _val: ()) -> Self::Item {
-        key
-    }
-
-    fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
+    /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self {
         Self::from_tuples(time, keys)
-    }
+    }*/
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
         Self::Merger::new_merger(self, other)
@@ -167,9 +348,9 @@ where
 
 impl<K, T, R, O> VecKeyBatch<K, T, R, O>
 where
-    K: Ord + Clone + 'static,
-    T: Lattice + Ord + Clone + 'static,
-    R: MonoidValue,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
     fn do_recede_to(&mut self, frontier: &T) {
@@ -178,9 +359,10 @@ where
         //    then zip through the key layer, collapsing each .. ?
 
         // 1. For each (time, diff) pair, advance the time.
-        for time in self.layer.vals.keys_mut() {
+        for time in self.layer.vals.columns_mut().0.deref_mut().as_mut_slice() {
             time.meet_assign(frontier);
         }
+
         // for time_diff in self.layer.vals.vals.iter_mut() {
         //     time_diff.0 = time_diff.0.advance_by(frontier);
         // }
@@ -198,13 +380,16 @@ where
 
             self.layer.offs[i] = O::from_usize(write_position);
 
-            let (times, diffs) = self.layer.vals.columns_mut();
+            let (times, diffs) = (&mut self.layer.vals.keys, &mut self.layer.vals.diffs);
 
             // sort the range by the times (ignore the diffs; they will collapse).
-            let count = crate::trace::consolidation::consolidate_paired_slices(
-                &mut times[lower..upper],
-                &mut diffs[lower..upper],
-            );
+            let count = self
+                .factories
+                .consolidate_weights
+                .consolidate_paired_slices(
+                    (times.as_mut(), lower, upper),
+                    (diffs.as_mut(), lower, upper),
+                );
 
             for index in lower..(lower + count) {
                 times.swap(write_position, index);
@@ -235,11 +420,11 @@ where
 
 /// State for an in-progress merge.
 #[derive(SizeOf)]
-pub struct VecKeyMerger<K, T, R, O = usize>
+pub struct OrdKeyMerger<K, T, R, O = usize>
 where
-    K: DBData,
-    T: DBData + Lattice,
-    R: DBData + MonoidValue,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
     // first batch, and position therein.
@@ -252,21 +437,22 @@ where
     result: <VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder,
     lower: Antichain<T>,
     upper: Antichain<T>,
+    #[size_of(skip)]
+    factories: VecKeyBatchFactories<K, T, R>,
 }
 
-impl<K, T, R, O> Merger<K, (), T, R, VecKeyBatch<K, T, R, O>> for VecKeyMerger<K, T, R, O>
+impl<K, T, R, O> Merger<K, DynUnit, T, R, VecKeyBatch<K, T, R, O>> for OrdKeyMerger<K, T, R, O>
 where
-    Self: SizeOf,
-    K: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
     fn new_merger(batch1: &VecKeyBatch<K, T, R, O>, batch2: &VecKeyBatch<K, T, R, O>) -> Self {
         // Leonid: we do not require batch bounds to grow monotonically.
         //assert!(batch1.upper() == batch2.lower());
 
-        VecKeyMerger {
+        OrdKeyMerger {
             lower1: batch1.layer.lower_bound(),
             upper1: batch1.layer.lower_bound() + batch1.layer.keys(),
             lower2: batch2.layer.lower_bound(),
@@ -274,6 +460,7 @@ where
             result: <<VecKeyBatchLayer<K, T, R, O> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(&batch1.layer, &batch2.layer),
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch1.upper().join(batch2.upper()),
+            factories: batch1.factories.clone(),
         }
     }
 
@@ -285,6 +472,7 @@ where
             layer: self.result.done(),
             lower: self.lower,
             upper: self.upper,
+            factories: self.factories,
         }
     }
 
@@ -293,7 +481,7 @@ where
         source1: &VecKeyBatch<K, T, R, O>,
         source2: &VecKeyBatch<K, T, R, O>,
         key_filter: &Option<Filter<K>>,
-        _value_filter: &Option<Filter<()>>,
+        _value_filter: &Option<Filter<DynUnit>>,
         fuel: &mut isize,
     ) {
         if let Some(key_filter) = key_filter {
@@ -314,75 +502,99 @@ where
 }
 
 /// A cursor for navigating a single layer.
-#[derive(Debug, SizeOf, Clone)]
-pub struct VecKeyCursor<'s, K, T, R, O = usize>
+#[derive(Debug, SizeOf)]
+pub struct OrdKeyCursor<'s, K, T, R, O = usize>
 where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
-    K: DBData,
-    T: DBData + Lattice,
-    R: DBWeight + MonoidValue,
 {
     valid: bool,
-    cursor: OrderedCursor<'s, K, O, ColumnLayer<T, R>>,
+    cursor: LayerCursor<'s, K, Leaf<DynDataTyped<T>, R>, O>,
 }
 
-impl<'s, K, T, R, O> Cursor<K, (), T, R> for VecKeyCursor<'s, K, T, R, O>
+impl<'s, K, T, R, O> Clone for OrdKeyCursor<'s, K, T, R, O>
 where
-    K: DBData,
-    T: DBData + Lattice + Ord + Clone,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    fn clone(&self) -> Self {
+        Self {
+            valid: self.valid,
+            cursor: self.cursor.clone(),
+        }
+    }
+}
+
+impl<'s, K, T, R, O> Cursor<K, DynUnit, T, R> for OrdKeyCursor<'s, K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    // fn key_factory(&self) -> &'static Factory<K> {
+    //     self.cursor.storage.factories.key
+    // }
+
+    // fn val_factory(&self) -> &'static Factory<()> {
+    //     todo!()
+    // }
+
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.cursor.child.storage.factories.diff
+    }
+
     fn key(&self) -> &K {
         self.cursor.item()
     }
 
-    fn val(&self) -> &() {
+    fn val(&self) -> &DynUnit {
         &()
     }
 
-    fn fold_times<F, U>(&mut self, mut init: U, mut fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U,
-    {
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         self.cursor.child.rewind();
         while self.cursor.child.valid() {
-            init = fold(
-                init,
+            logic(
                 self.cursor.child.current_key(),
                 self.cursor.child.current_diff(),
             );
             self.cursor.child.step();
         }
-
-        init
     }
 
-    fn fold_times_through<F, U>(&mut self, upper: &T, mut init: U, mut fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U,
-    {
+    fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         self.cursor.child.rewind();
         while self.cursor.child.valid() {
             if self.cursor.child.item().0.less_equal(upper) {
-                init = fold(
-                    init,
+                logic(
                     self.cursor.child.current_key(),
                     self.cursor.child.current_diff(),
                 );
             }
             self.cursor.child.step();
         }
-
-        init
     }
 
-    fn weight(&mut self) -> R
+    fn weight(&mut self) -> &R
     where
         T: PartialEq<()>,
     {
-        debug_assert!(self.cursor.child.valid());
-        self.cursor.child.item().1.clone()
+        debug_assert!(&self.cursor.child.valid());
+        self.cursor.child.current_diff()
+    }
+
+    fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R))
+    where
+        T: PartialEq<()>,
+    {
+        if self.val_valid() {
+            logic(self.val(), self.cursor.child.current_diff());
+        }
     }
 
     fn key_valid(&self) -> bool {
@@ -408,19 +620,13 @@ where
         self.valid = true;
     }
 
-    fn seek_key_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
-        self.cursor.seek_with(|k| !predicate(k));
+    fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
+        self.cursor.seek_with(predicate);
         self.valid = true;
     }
 
-    fn seek_key_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
-        self.cursor.seek_with_reverse(|k| !predicate(k));
+    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
+        self.cursor.seek_with_reverse(predicate);
         self.valid = true;
     }
 
@@ -433,11 +639,9 @@ where
         self.valid = false;
     }
 
-    fn seek_val(&mut self, _val: &()) {}
-    fn seek_val_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&()) -> bool + Clone,
-    {
+    fn seek_val(&mut self, _val: &DynUnit) {}
+
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {
             self.valid = false;
         }
@@ -461,12 +665,9 @@ where
         self.valid = false;
     }
 
-    fn seek_val_reverse(&mut self, _val: &()) {}
+    fn seek_val_reverse(&mut self, _val: &DynUnit) {}
 
-    fn seek_val_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&()) -> bool + Clone,
-    {
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
         if !predicate(&()) {
             self.valid = false;
         }
@@ -477,42 +678,50 @@ where
     }
 }
 
-type RawVecKeyBuilder<K, T, R, O> = OrderedBuilder<K, ColumnLayerBuilder<T, R>, O>;
+type RawOrdKeyBuilder<K, T, R, O> = LayerBuilder<K, LeafBuilder<DynDataTyped<T>, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
-pub struct VecKeyBuilder<K, T, R, O = usize>
+pub struct OrdKeyBuilder<K, T, R, O = usize>
 where
-    K: Ord,
-    T: Ord + Lattice,
-    R: MonoidValue,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
     time: T,
-    builder: RawVecKeyBuilder<K, T, R, O>,
+    builder: RawOrdKeyBuilder<K, T, R, O>,
+    #[size_of(skip)]
+    factories: VecKeyBatchFactories<K, T, R>,
 }
 
-impl<K, T, R, O> Builder<K, T, R, VecKeyBatch<K, T, R, O>> for VecKeyBuilder<K, T, R, O>
+impl<K, T, R, O> Builder<VecKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
 where
-    Self: SizeOf,
-    K: DBData,
-    T: DBTimestamp,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
     #[inline]
-    fn new_builder(time: T) -> Self {
+    fn new_builder(factories: &VecKeyBatchFactories<K, T, R>, time: T) -> Self {
         Self {
             time,
-            builder: <RawVecKeyBuilder<K, T, R, O> as TupleBuilder>::new(),
+            builder: <RawOrdKeyBuilder<K, T, R, O> as TupleBuilder>::new(
+                &factories.layer_factories,
+            ),
+            factories: factories.clone(),
         }
     }
 
     #[inline]
-    fn with_capacity(time: T, cap: usize) -> Self {
+    fn with_capacity(factories: &VecKeyBatchFactories<K, T, R>, time: T, cap: usize) -> Self {
         Self {
             time,
-            builder: <RawVecKeyBuilder<K, T, R, O> as TupleBuilder>::with_capacity(cap),
+            builder: <RawOrdKeyBuilder<K, T, R, O> as TupleBuilder>::with_capacity(
+                &factories.layer_factories,
+                cap,
+            ),
+            factories: factories.clone(),
         }
     }
 
@@ -522,8 +731,21 @@ where
     }
 
     #[inline]
-    fn push(&mut self, (key, diff): (K, R)) {
-        self.builder.push_tuple((key, (self.time.clone(), diff)));
+    fn push(&mut self, kr: &mut WeightedItem<K, DynUnit, R>) {
+        let (kv, r) = kr.split_mut();
+        let k = kv.fst_mut();
+        self.builder.push_tuple((k, (&mut self.time.clone(), r)));
+    }
+
+    #[inline]
+    fn push_refs(&mut self, key: &K, _val: &DynUnit, weight: &R) {
+        self.builder.push_refs((key, (&self.time, weight)));
+    }
+
+    #[inline]
+    fn push_vals(&mut self, key: &mut K, _val: &mut DynUnit, weight: &mut R) {
+        self.builder
+            .push_tuple((key, (&mut self.time.clone(), weight)));
     }
 
     #[inline(never)]
@@ -539,11 +761,12 @@ where
             layer: self.builder.done(),
             lower: Antichain::from_elem(self.time),
             upper,
+            factories: self.factories,
         }
     }
 }
 
-pub struct VecKeyConsumer<K, T, R, O>
+/*pub struct OrdKeyConsumer<K, T, R, O>
 where
     K: 'static,
     T: 'static,
@@ -553,11 +776,11 @@ where
     consumer: OrderedLayerConsumer<K, T, R, O>,
 }
 
-impl<K, T, R, O> Consumer<K, (), R, T> for VecKeyConsumer<K, T, R, O>
+impl<K, T, R, O> Consumer<K, (), R, T> for OrdKeyConsumer<K, T, R, O>
 where
     O: OrdOffset,
 {
-    type ValueConsumer<'a> = VecKeyValueConsumer<'a, K, T, R, O>
+    type ValueConsumer<'a> = OrdKeyValueConsumer<'a, K, T, R, O>
     where
         Self: 'a;
 
@@ -571,7 +794,7 @@ where
 
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, values) = self.consumer.next_key();
-        (key, VecKeyValueConsumer::new(values))
+        (key, OrdKeyValueConsumer::new(values))
     }
 
     fn seek_key(&mut self, key: &K)
@@ -582,7 +805,7 @@ where
     }
 }
 
-pub struct VecKeyValueConsumer<'a, K, T, R, O>
+pub struct OrdKeyValueConsumer<'a, K, T, R, O>
 where
     T: 'static,
     R: 'static,
@@ -591,7 +814,7 @@ where
     __type: PhantomData<(K, O)>,
 }
 
-impl<'a, K, T, R, O> VecKeyValueConsumer<'a, K, T, R, O> {
+impl<'a, K, T, R, O> OrdKeyValueConsumer<'a, K, T, R, O> {
     const fn new(consumer: OrderedLayerValues<'a, T, R>) -> Self {
         Self {
             consumer,
@@ -600,7 +823,7 @@ impl<'a, K, T, R, O> VecKeyValueConsumer<'a, K, T, R, O> {
     }
 }
 
-impl<'a, K, T, R, O> ValueConsumer<'a, (), R, T> for VecKeyValueConsumer<'a, K, T, R, O> {
+impl<'a, K, T, R, O> ValueConsumer<'a, (), R, T> for OrdKeyValueConsumer<'a, K, T, R, O> {
     fn value_valid(&self) -> bool {
         self.consumer.value_valid()
     }
@@ -614,3 +837,4 @@ impl<'a, K, T, R, O> ValueConsumer<'a, (), R, T> for VecKeyValueConsumer<'a, K, 
         self.consumer.remaining_values()
     }
 }
+*/
