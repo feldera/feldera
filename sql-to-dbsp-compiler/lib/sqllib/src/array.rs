@@ -88,6 +88,22 @@ pub fn array_appendN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_append(vector?, value))
 }
 
+pub fn array_repeat<T>(element: T, count: i32) -> Vec<T>
+where
+    T: Clone,
+{
+    std::iter::repeat(element)
+        .take(usize::try_from(count).unwrap_or(0))
+        .collect()
+}
+
+pub fn array_repeatN<T>(element: T, count: Option<i32>) -> Option<Vec<T>>
+where
+    T: Clone,
+{
+    Some(array_repeat(element, count?))
+}
+
 pub fn array_position__<T>(vector: Vec<T>, element: T) -> i64
 where
     T: Eq,
