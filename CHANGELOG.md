@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: support for ARRAY_PREPEND function
   ([#1496](https://github.com/feldera/feldera/pull/1496))
 - adapters: add an input connector for Amazon S3 (#1485)
+- SQL: support for ARRAY_REPEAT function
+  ([#1497](https://github.com/feldera/feldera/pull/1497))
 
 ## [0.11.0] - 2024-03-05
 
