@@ -65,7 +65,7 @@ const navigation = (): VerticalNavItemsType => {
     //   icon: 'bx:coin-stack'
     // },
     {
-      title: 'Services',
+      title: 'Data Services',
       path: ['/services/list', '/services/create'],
       icon: IconServer,
       testid: 'button-vertical-nav-services'

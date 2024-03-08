@@ -10,7 +10,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Link, Typog
 const WelcomeCard = () => {
   const [welcomed, setWelcomed] = useLocalStorage({
     key: LS_PREFIX + 'home/welcomed',
-    defaultValue: true
+    defaultValue: false
   })
   return (
     <>
