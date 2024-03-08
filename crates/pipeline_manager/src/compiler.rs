@@ -394,7 +394,7 @@ impl Compiler {
             .arg("build")
             .arg("--workspace")
             .arg("--profile")
-            .arg(&config.compilation_profile_string())
+            .arg(&config.compilation_profile.to_string())
             .stdin(Stdio::null())
             .stderr(Stdio::from(err_file.into_std().await))
             .stdout(Stdio::from(out_file.into_std().await));

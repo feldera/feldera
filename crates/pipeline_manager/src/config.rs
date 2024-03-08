@@ -4,6 +4,7 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use serde::Deserialize;
 use std::{
+    fmt::Display,
     fs::{canonicalize, create_dir_all},
     path::{Path, PathBuf},
     str::FromStr,
@@ -256,6 +257,19 @@ impl FromStr for CompilationProfile {
     }
 }
 
+impl Display for CompilationProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            CompilationProfile::Unoptimized => write!(f, "unoptimized"),
+            CompilationProfile::Optimized => write!(f, "optimized"),
+        }
+    }
+}
+
+fn default_compilation_profile() -> CompilationProfile {
+    CompilationProfile::Optimized
+}
+
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -273,7 +287,7 @@ pub struct CompilerConfig {
     /// * 'optimized', for faster runtime performance
     /// at the cost of slower compilation times.
     #[serde(default)]
-    #[arg(long)]
+    #[arg(long, default_value_t = default_compilation_profile())]
     pub compilation_profile: CompilationProfile,
 
     /// Location of the SQL-to-DBSP compiler.
@@ -351,17 +365,8 @@ impl CompilerConfig {
     pub(crate) fn target_executable(&self, program_id: ProgramId) -> PathBuf {
         Path::new(&self.workspace_dir())
             .join("target")
-            .join(self.compilation_profile_string())
+            .join(self.compilation_profile.to_string())
             .join(Self::crate_name(program_id))
-    }
-
-    /// Helper to produce the compilation profile name as a string
-    pub(crate) fn compilation_profile_string(&self) -> String {
-        match self.compilation_profile {
-            CompilationProfile::Unoptimized => "unoptimized",
-            CompilationProfile::Optimized => "optimized",
-        }
-        .to_string()
     }
 
     /// Crate name for a project.
