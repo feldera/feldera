@@ -40,7 +40,7 @@ crate::declare_tuples! {
     size_of::SizeOf,
     rkyv::Archive,
     rkyv::Serialize,
-    rkyv::Deserialize
+    rkyv::Deserialize,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound())]
@@ -63,8 +63,7 @@ where
     }
 }
 
-impl crate::algebra::HasZero for Tup0
-{
+impl crate::algebra::HasZero for Tup0 {
     fn zero() -> Self {
         Tup0()
     }
@@ -73,15 +72,13 @@ impl crate::algebra::HasZero for Tup0
     }
 }
 
-impl crate::algebra::AddByRef for Tup0
-{
+impl crate::algebra::AddByRef for Tup0 {
     fn add_by_ref(&self, _other: &Self) -> Self {
         Tup0()
     }
 }
 
-impl crate::NumEntries for Tup0
-{
+impl crate::NumEntries for Tup0 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
     fn num_entries_shallow(&self) -> usize {
         0
@@ -91,14 +88,12 @@ impl crate::NumEntries for Tup0
     }
 }
 
-impl crate::algebra::AddAssignByRef for Tup0
-{
+impl crate::algebra::AddAssignByRef for Tup0 {
     fn add_assign_by_ref(&mut self, _other: &Self) {
     }
 }
 
-impl crate::algebra::NegByRef for Tup0
-{
+impl crate::algebra::NegByRef for Tup0 {
     fn neg_by_ref(&self) -> Self {
         Tup0()
     }
@@ -113,8 +108,7 @@ impl From<()> for Tup0 {
 #[allow(clippy::from_over_into)]
 
 impl Into<()> for Tup0 {
-    fn into(self) {
-    }
+    fn into(self) {}
 }
 
 impl core::fmt::Debug for Tup0 {
