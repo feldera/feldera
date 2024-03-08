@@ -63,6 +63,11 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     @Override
+    public boolean isRaw() {
+        return false;
+    }
+
+    @Override
     public DBSPTypeTupleBase project(List<Integer> fields) {
         DBSPType[] resultFields = new DBSPType[fields.size()];
         int index = 0;

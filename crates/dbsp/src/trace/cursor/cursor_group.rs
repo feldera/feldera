@@ -1,23 +1,34 @@
-use crate::{trace::cursor::Cursor, Timestamp};
 use std::marker::PhantomData;
+
+use crate::{
+    dynamic::{DataTrait, DynUnit, Erase, Factory, WeightTrait},
+    Timestamp,
+};
+
+use super::Cursor;
 
 /// A `CursorGroup` iterates over values associated with a single key of a base
 /// cursor of type `C: Cursor<K, V, R, T>`.
-pub struct CursorGroup<'c, K, T, C> {
+pub struct CursorGroup<'c, K: DataTrait + ?Sized, T, R: WeightTrait + ?Sized, C> {
     /// Base cursor.
     base: &'c mut C,
     /// The cursor filters out times that are not `<= upper`.
     upper: T,
     val_valid: bool,
-    phantom: PhantomData<K>,
+    phantom: PhantomData<fn(&K, &R)>,
 }
 
-impl<'c, K, T, C> CursorGroup<'c, K, T, C> {
+impl<'c, K, T, R, C> CursorGroup<'c, K, T, R, C>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
     /// Creates a cursor over values associated with the current key
     /// of the `base` cursor restricted to times `<= upper`.
-    pub fn new<V, R>(base: &'c mut C, upper: T) -> Self
+    pub fn new<V>(base: &'c mut C, upper: T) -> Self
     where
         C: Cursor<K, V, T, R>,
+        V: DataTrait + ?Sized,
     {
         debug_assert!(base.key_valid());
         Self {
@@ -29,12 +40,18 @@ impl<'c, K, T, C> CursorGroup<'c, K, T, C> {
     }
 }
 
-impl<'c, K, V, T, R, C> Cursor<V, (), T, R> for CursorGroup<'c, K, T, C>
+impl<'c, K, V, T, R, C> Cursor<V, DynUnit, T, R> for CursorGroup<'c, K, T, R, C>
 where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
     T: Timestamp,
     C: Cursor<K, V, T, R>,
-    K: PartialEq,
 {
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.base.weight_factory()
+    }
+
     fn key_valid(&self) -> bool {
         self.base.val_valid()
     }
@@ -47,44 +64,33 @@ where
         self.base.val()
     }
 
-    fn val(&self) -> &() {
-        &()
+    fn val(&self) -> &DynUnit {
+        ().erase()
     }
 
-    fn map_times<L>(&mut self, logic: L)
-    where
-        L: FnMut(&T, &R),
-    {
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         self.base.map_times_through(&self.upper, logic);
     }
 
-    fn fold_times<F, U>(&mut self, init: U, fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U,
-    {
-        self.base.fold_times_through(&self.upper, init, fold)
-    }
-
-    fn map_times_through<L>(&mut self, upper: &T, logic: L)
-    where
-        L: FnMut(&T, &R),
-    {
+    fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         self.base.map_times_through(&self.upper.meet(upper), logic)
     }
 
-    fn fold_times_through<F, U>(&mut self, upper: &T, init: U, fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U,
-    {
-        self.base
-            .fold_times_through(&self.upper.meet(upper), init, fold)
-    }
-
-    fn weight(&mut self) -> R
+    fn weight(&mut self) -> &R
     where
         T: PartialEq<()>,
     {
         self.base.weight()
+    }
+
+    fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R))
+    where
+        T: PartialEq<()>,
+    {
+        if self.val_valid() {
+            logic(().erase(), self.weight());
+            self.step_val();
+        }
     }
 
     fn step_key(&mut self) {
@@ -99,17 +105,11 @@ where
         self.base.seek_val(val)
     }
 
-    fn seek_key_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_key_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.base.seek_val_with(predicate)
     }
 
-    fn seek_key_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.base.seek_val_with_reverse(predicate)
     }
 
@@ -121,13 +121,10 @@ where
         self.val_valid = false;
     }
 
-    fn seek_val(&mut self, _val: &()) {}
+    fn seek_val(&mut self, _val: &DynUnit) {}
 
-    fn seek_val_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&()) -> bool + Clone,
-    {
-        if !predicate(&()) {
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
+        if !predicate(().erase()) {
             self.val_valid = false;
         }
     }
@@ -148,13 +145,10 @@ where
         self.val_valid = false;
     }
 
-    fn seek_val_reverse(&mut self, _val: &()) {}
+    fn seek_val_reverse(&mut self, _val: &DynUnit) {}
 
-    fn seek_val_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&()) -> bool + Clone,
-    {
-        if !predicate(&()) {
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
+        if !predicate(().erase()) {
             self.val_valid = false;
         }
     }

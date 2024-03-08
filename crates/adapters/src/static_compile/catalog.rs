@@ -5,15 +5,26 @@ use crate::{
     Catalog, ControllerError, DeserializeWithContext, SerializeWithContext,
 };
 use dbsp::{
-    algebra::ZRingValue,
-    operator::{DelayedFeedback, FilterMap, NeighborhoodDescr, Update},
+    operator::{
+        DelayedFeedback, MapHandle, NeighborhoodDescr, NeighborhoodDescrBox,
+        NeighborhoodDescrStream, SetHandle, ZSetHandle,
+    },
+    typed_batch::TypedBox,
     utils::Tup2,
-    CollectionHandle, DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, UpsertHandle, ZSet,
+    DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet,
 };
 use pipeline_types::program_schema::Relation;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, SqlSerdeConfig};
+
+#[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq, Clone)]
+pub struct NeighborhoodQuery<K> {
+    pub anchor: Option<K>,
+    pub before: u64,
+    pub after: u64,
+}
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
@@ -31,7 +42,7 @@ impl Catalog {
     pub fn register_input_zset<Z, D>(
         &mut self,
         stream: Stream<RootCircuit, Z>,
-        handle: CollectionHandle<Z::Key, Z::R>,
+        handle: ZSetHandle<Z::Key>,
         schema: &str,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
@@ -42,7 +53,7 @@ impl Catalog {
             + Send
             + 'static,
         Z: ZSet + Debug + Send + Sync,
-        Z::R: ZRingValue + Into<i64> + Sync,
+        Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
@@ -65,18 +76,18 @@ impl Catalog {
     pub fn register_input_set<Z, D>(
         &mut self,
         stream: Stream<RootCircuit, Z>,
-        handle: UpsertHandle<Z::Key, bool>,
+        handle: SetHandle<Z::Key>,
         schema: &str,
     ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
-            + Debug
             + Clone
+            + Debug
             + Send
             + 'static,
         Z: ZSet + Debug + Send + Sync,
-        Z::R: ZRingValue + Into<i64> + Sync,
+        Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
@@ -108,10 +119,10 @@ impl Catalog {
     ///   collection.
     /// * `UD` - Update type in the input byte stream.  Updates will get
     ///   deserialized into instances of `UD` and then converted to `U`.
-    pub fn register_input_map<K, KD, V, VD, U, UD, R, VF, UF>(
+    pub fn register_input_map<K, KD, V, VD, U, UD, VF, UF>(
         &mut self,
-        stream: Stream<RootCircuit, OrdIndexedZSet<K, V, R>>,
-        handle: UpsertHandle<K, Update<V, U>>,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        handle: MapHandle<K, V, U>,
         value_key_func: VF,
         update_key_func: UF,
         schema: &str,
@@ -121,27 +132,24 @@ impl Catalog {
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
-            + Clone
             + Send
             + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
-            + Debug
             + Clone
+            + Debug
+            + Default
             + Send
             + 'static,
         UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<U>
-            + Debug
-            + Clone
             + Send
             + 'static,
-        R: DBWeight + ZRingValue + Into<i64> + Sync,
-        K: DBData + Sync + Default + From<KD>,
-        V: DBData + Sync + From<VD> + Default,
-        U: DBData + Sync + From<UD> + Default,
+        K: DBData + Sync + From<KD>,
+        V: DBData + Sync + From<VD>,
+        U: DBData + Sync + From<UD>,
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
@@ -161,12 +169,12 @@ impl Catalog {
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
-            + Debug
             + Clone
+            + Debug
             + Send
             + 'static,
         Z: ZSet + Debug + Send + Sync,
-        Z::R: ZRingValue + Into<i64> + Sync,
+        Z::InnerBatch: Send,
         Z::Key: Sync + From<D>,
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
@@ -182,27 +190,27 @@ impl Catalog {
 
         // Create handles for the neighborhood query.
         let (neighborhood_descr_stream, neighborhood_descr_handle) =
-            circuit.add_input_stream::<(bool, Option<NeighborhoodDescr<D, ()>>)>();
+            circuit.add_input_stream::<(bool, Option<NeighborhoodQuery<D>>)>();
         let neighborhood_stream = {
             // Create a feedback loop to latch the latest neighborhood descriptor
             // when `reset=true`.
             let feedback =
-                <DelayedFeedback<RootCircuit, Option<NeighborhoodDescr<Z::Key, ()>>>>::new(
+                <DelayedFeedback<RootCircuit, Option<NeighborhoodDescrBox<Z::Key, ()>>>>::new(
                     stream.circuit(),
                 );
-            let new_neighborhood =
+            let new_neighborhood: NeighborhoodDescrStream<Z::Key, ()> =
                 feedback
                     .stream()
                     .apply2(&neighborhood_descr_stream, |old, (reset, new)| {
                         if *reset {
                             // Convert anchor of type `D` into `Z::Key`.
                             new.clone().map(|new| {
-                                NeighborhoodDescr::new(
+                                TypedBox::new(NeighborhoodDescr::new(
                                     new.anchor.map(From::from),
                                     (),
                                     new.before,
                                     new.after,
-                                )
+                                ))
                             })
                         } else {
                             old.clone()
@@ -268,27 +276,24 @@ impl Catalog {
     /// of the `(key,value)` tuple, so that delta, neighborhood, and quantiles
     /// streams contain values only.  Clients, e.g., the web console, can
     /// work with maps and z-sets in the same way.
-    pub fn register_output_map<K, KD, V, VD, R, F>(
+    pub fn register_output_map<K, KD, V, VD, F>(
         &mut self,
-        stream: Stream<RootCircuit, OrdIndexedZSet<K, V, R>>,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         key_func: F,
         schema: &str,
     ) where
         F: Fn(&V) -> K + Clone + Send + Sync + 'static,
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
-            + From<K>
-            + Clone
-            + Send
-            + 'static,
+            + From<K>,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
+            + Default
             + Debug
             + Clone
             + Send
             + 'static,
-        R: DBWeight + ZRingValue + Into<i64> + Sync,
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
@@ -304,28 +309,29 @@ impl Catalog {
 
         // Create handles for the neighborhood query.
         let (neighborhood_descr_stream, neighborhood_descr_handle) =
-            circuit.add_input_stream::<(bool, Option<NeighborhoodDescr<VD, ()>>)>();
+            circuit.add_input_stream::<(bool, Option<NeighborhoodQuery<VD>>)>();
         let neighborhood_stream = {
             // Create a feedback loop to latch the latest neighborhood descriptor
             // when `reset=true`.
-            let feedback = <DelayedFeedback<RootCircuit, Option<NeighborhoodDescr<K, V>>>>::new(
+            let feedback = <DelayedFeedback<RootCircuit, Option<NeighborhoodDescrBox<K, V>>>>::new(
                 stream.circuit(),
             );
-            let new_neighborhood = feedback.stream().apply2(
+            let new_neighborhood: NeighborhoodDescrStream<K, V> = feedback.stream().apply2(
                 &neighborhood_descr_stream,
-                move |old: &Option<NeighborhoodDescr<K, V>>, (reset, new)| {
+                move |old: &Option<NeighborhoodDescrBox<K, V>>,
+                      (reset, new): &(bool, Option<NeighborhoodQuery<VD>>)| {
                     if *reset {
                         let key_func = key_func.clone();
                         // Convert anchor of type `(VD, ())` into `(Z::Key, Z::Val)`.
                         new.clone().map(move |new| {
                             let val = new.anchor.map(V::from);
                             let key = val.as_ref().map(key_func);
-                            NeighborhoodDescr::new(
+                            TypedBox::new(NeighborhoodDescr::new(
                                 key,
                                 val.unwrap_or_default(),
                                 new.before,
                                 new.after,
-                            )
+                            ))
                         })
                     } else {
                         old.clone()
@@ -474,9 +480,10 @@ mod test {
     fn catalog_map_handle_test() {
         let (mut circuit, catalog) = Runtime::init_circuit(4, |circuit| {
             let mut catalog = Catalog::new();
-            let (input, hinput) = circuit.add_input_map::<u32, TestStruct, TestStruct, i32>(Box::new(|v, u| *v = u));
 
-            catalog.register_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _, _>(
+            let (input, hinput) = circuit.add_input_map::<u32, TestStruct, TestStruct, _>(|v, u| *v = u.clone());
+
+            catalog.register_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _>(
                 input.clone(),
                 hinput,
                 |test_struct| test_struct.id,

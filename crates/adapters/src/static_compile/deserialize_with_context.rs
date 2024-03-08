@@ -45,15 +45,16 @@
 
 use std::{fmt, marker::PhantomData};
 
+use crate::static_compile::catalog::NeighborhoodQuery;
 use dbsp::{
     algebra::{F32, F64},
     operator::NeighborhoodDescr,
     utils::{Tup1, Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9},
+    DBData,
 };
 use rust_decimal::Decimal;
 use serde::{
-    de::Error,
-    de::{DeserializeSeed, SeqAccess, Visitor},
+    de::{DeserializeSeed, Error, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
 };
 
@@ -360,8 +361,8 @@ macro_rules! deserialize_struct {
         #[allow(unused_mut)]
         impl<'de, C, $($arg),*> $crate::DeserializeWithContext<'de, C> for $struct<$($arg),*>
         where
-            $($arg: $crate::DeserializeWithContext<'de, C>),*
-            $($($arg : $bound)?),*
+            $($arg: $crate::DeserializeWithContext<'de, C>,)*
+            $($($arg : $bound,)?)*
         {
             fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
             where
@@ -369,6 +370,7 @@ macro_rules! deserialize_struct {
             {
                 struct StructVisitor<'de, C, $($arg),*> {
                     context: &'de C,
+                    #[allow(unused_parens)]
                     phantom: std::marker::PhantomData<($($arg),*)>
                 }
 
@@ -383,9 +385,10 @@ macro_rules! deserialize_struct {
 
                 impl<'de, C, $($arg),*> serde::de::Visitor<'de> for StructVisitor<'de, C, $($arg),*>
                 where
-                    $($arg: $crate::DeserializeWithContext<'de, C>),*
-                    $($($arg : $bound)?),*
+                    $($arg: $crate::DeserializeWithContext<'de, C>,)*
+                    $($($arg : $bound,)?)*
                 {
+
                     type Value = $struct<$($arg),*>;
 
                     fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -439,11 +442,17 @@ macro_rules! deserialize_struct {
     }
 }
 
-deserialize_struct!(NeighborhoodDescr(K, V: Default)[4]{
+deserialize_struct!(NeighborhoodDescr(K: DBData, V: DBData)[4]{
     anchor: Option<K> = Some(None),
     anchor_val: V = Some(Default::default()),
-    before: usize = None,
-    after: usize = None
+    before: u64 = None,
+    after: u64 = None
+});
+
+deserialize_struct!(NeighborhoodQuery(K)[3]{
+    anchor: Option<K> = Some(None),
+    before: u64 = None,
+    after: u64 = None
 });
 
 /// Generate a [`DeserializeWithContext`] impl for a SQL table row type.

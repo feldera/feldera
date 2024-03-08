@@ -178,8 +178,9 @@ mod test {
         algebra::HasZero,
         monitor::TraceMonitor,
         operator::{DelayedFeedback, Generator},
-        trace::{ord::OrdZSet, Batch},
-        zset, Circuit, RootCircuit,
+        typed_batch::OrdZSet,
+        utils::Tup2,
+        zset, Circuit, RootCircuit, ZWeight,
     };
 
     #[test]
@@ -204,8 +205,8 @@ mod test {
     #[test]
     fn zset_integrate() {
         let circuit = RootCircuit::build(move |circuit| {
-            let mut counter1 = 0;
-            let mut s = <OrdZSet<u64, i64>>::zero();
+            let mut counter1: u64 = 0;
+            let mut s = <OrdZSet<u64>>::zero();
             let source = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
                 s = s.merge(&zset! { counter1 => 1});
@@ -218,18 +219,18 @@ mod test {
             integral.inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 0..counter2 {
-                    batch.push((i as u64, (counter2 - i) as i64));
+                    batch.push(Tup2(Tup2(i as u64, ()), (counter2 - i) as ZWeight));
                 }
-                assert_eq!(s, &<OrdZSet<_, _>>::from_keys((), batch));
+                assert_eq!(s, &<OrdZSet<_>>::from_tuples((), batch));
                 counter2 += 1;
             });
             let mut counter3 = 0;
             integral.delay().inspect(move |s| {
                 let mut batch = Vec::with_capacity(counter2);
                 for i in 1..counter3 {
-                    batch.push(((i - 1) as u64, (counter3 - i) as i64));
+                    batch.push(Tup2(Tup2((i - 1) as u64, ()), (counter3 - i) as ZWeight));
                 }
-                assert_eq!(s, &<OrdZSet<_, _>>::from_keys((), batch));
+                assert_eq!(s, &<OrdZSet<_>>::from_tuples((), batch));
                 counter3 += 1;
             });
             Ok(())

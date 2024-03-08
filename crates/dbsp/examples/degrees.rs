@@ -7,10 +7,9 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dbsp::{operator::FilterMap, IndexedZSet, OrdIndexedZSet, OutputHandle, Runtime};
+use dbsp::{utils::Tup2, OrdIndexedZSet, OutputHandle, Runtime};
 
 type Node = u64;
-type Weight = i64;
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
@@ -32,8 +31,8 @@ struct Args {
 }
 
 fn print_changes(
-    degrees: &OutputHandle<OrdIndexedZSet<Node, i64, Weight>>,
-    distribution: &OutputHandle<OrdIndexedZSet<i64, i64, Weight>>,
+    degrees: &OutputHandle<OrdIndexedZSet<Node, i64>>,
+    distribution: &OutputHandle<OrdIndexedZSet<i64, i64>>,
 ) {
     for (src, outdegree, weight) in degrees.consolidate().iter() {
         println!("    {weight:+}: Node {src} has out-degree {outdegree}");
@@ -56,11 +55,11 @@ fn main() -> Result<()> {
 
     let (mut dbsp, (hedges, degrees, distribution)) =
         Runtime::init_circuit(threads as usize, |circuit| {
-            let (edges, hedges) = circuit.add_input_zset::<(Node, Node), Weight>();
+            let (edges, hedges) = circuit.add_input_zset::<Tup2<Node, Node>>();
 
             // Count the number of edges with each node as its source (each node's
             // out-degree).
-            let degrees = edges.map(|(src, _dst)| *src).weighted_count();
+            let degrees = edges.map(|Tup2(src, _dst)| *src).weighted_count();
 
             // Count the number of nodes with each out-degree.
             let distribution = degrees.map(|(_src, count)| *count).weighted_count();
@@ -71,7 +70,7 @@ fn main() -> Result<()> {
 
     // Add some initial edges and print the results.
     for i in 0..edges {
-        hedges.push((i % sources, i % 7), 1);
+        hedges.push(Tup2(i % sources, i % 7), 1);
     }
     dbsp.step().unwrap();
     println!("Initialization:");
@@ -79,7 +78,7 @@ fn main() -> Result<()> {
 
     // Add a few more nodes and print the changes.
     for i in 0..extra {
-        hedges.push((i % sources, i % 9), 1);
+        hedges.push(Tup2(i % sources, i % 9), 1);
     }
     dbsp.step().unwrap();
     println!("Changes:");

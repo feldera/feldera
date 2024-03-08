@@ -57,7 +57,7 @@
 //! [GKG cookbook]: http://data.gdeltproject.org/documentation/GDELT-Global_Knowledge_Graph_Codebook-V2.1.pdf
 
 use csv::{ReaderBuilder, Trim};
-use dbsp::CollectionHandle;
+use dbsp::ZSetHandle;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -82,7 +82,7 @@ pub const GDELT_URL: &str = "http://data.gdeltproject.org/gdeltv2/";
 type Invalid = HashSet<&'static str, Xxh3Builder>;
 type Normalizations = HashMap<&'static str, &'static [&'static str], Xxh3Builder>;
 
-#[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct PersonalNetworkGkgEntry {
@@ -213,7 +213,7 @@ pub fn get_gkg_file(url: &str) -> Option<File> {
 }
 
 pub fn parse_personal_network_gkg(
-    handle: &mut CollectionHandle<PersonalNetworkGkgEntry, i32>,
+    handle: &mut ZSetHandle<PersonalNetworkGkgEntry>,
     normalizations: &Normalizations,
     invalid: &Invalid,
     file: File,
@@ -305,7 +305,7 @@ pub fn build_gdelt_normalizations() -> (Normalizations, Invalid) {
         let invalid = ["whitehouse cvesummit", "islam obama"];
 
         let mut set = HashSet::with_capacity_and_hasher(invalid.len(), Xxh3Builder::new());
-        set.extend(invalid.into_iter());
+        set.extend(invalid);
         set
     };
 

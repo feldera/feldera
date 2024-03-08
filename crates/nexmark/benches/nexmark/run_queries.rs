@@ -62,9 +62,9 @@ macro_rules! run_queries {
     // the input handle.
     (@circuit q13) => {
         |circuit: &mut RootCircuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
             let (side_stream, side_input_handle) =
-                circuit.add_input_zset::<Tup3<u64, String, u64>, i64>();
+                circuit.add_input_zset::<Tup3<u64, String, u64>>();
 
             let output = q13(stream, side_stream);
 
@@ -79,7 +79,7 @@ macro_rules! run_queries {
     };
     (@circuit $query:ident) => {
         |circuit: &mut RootCircuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = $query(stream);
 

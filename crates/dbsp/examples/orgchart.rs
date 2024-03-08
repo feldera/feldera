@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dbsp::{operator::FilterMap, IndexedZSet, OrdZSet, OutputHandle, Runtime, Stream};
+use dbsp::{OrdZSet, OutputHandle, Runtime, Stream};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::hash::Hash;
@@ -19,7 +19,18 @@ type EmployeeID = u64;
 ///
 /// If `manager == employee` then `manager` is the CEO.
 #[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
+    Default,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -31,7 +42,18 @@ struct Manages {
 /// Indicates that `manager` is the immediate manager of `employee` and that
 /// `grandmanager` is the immedate manager of `manager`.
 #[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, SizeOf, Archive, Serialize, Deserialize,
+    Default,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -41,10 +63,9 @@ struct SkipLevel {
     employee: EmployeeID,
 }
 
-type Weight = i32;
-type SkipLevels = OrdZSet<SkipLevel, Weight>;
+type SkipLevels = OrdZSet<SkipLevel>;
 
-fn print_output(output: &OutputHandle<OrdZSet<SkipLevel, Weight>>) {
+fn print_output(output: &OutputHandle<OrdZSet<SkipLevel>>) {
     for (key, _value, weight) in output.consolidate().iter() {
         println!(
             "    ({}, {}, {}) {:+}",
@@ -69,7 +90,7 @@ fn main() -> Result<()> {
     let Args { threads, size } = Args::parse();
 
     let (mut dbsp, (hmanages, output)) = Runtime::init_circuit(threads, |circuit| {
-        let (manages, hmanages) = circuit.add_input_zset::<Manages, Weight>();
+        let (manages, hmanages) = circuit.add_input_zset::<Manages>();
 
         let manages_by_manager = manages.map_index(|m| (m.manager, m.clone()));
         let manages_by_employee = manages.map_index(|m| (m.employee, m.clone()));

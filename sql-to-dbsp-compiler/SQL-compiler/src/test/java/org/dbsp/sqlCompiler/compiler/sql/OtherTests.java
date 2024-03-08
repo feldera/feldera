@@ -744,7 +744,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // Read the produced output
                     let out = adult.consolidate();
                     // Print the produced output
-                    println!("{}", out);
+                    println!("{:?}", out);
                 }
                 """;
         String rustCatalogTest = """

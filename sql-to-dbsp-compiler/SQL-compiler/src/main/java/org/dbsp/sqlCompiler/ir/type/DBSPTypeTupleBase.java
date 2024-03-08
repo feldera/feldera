@@ -41,6 +41,10 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
                 throw new NullPointerException();
     }
 
+    /** True if this is a Raw tuple (Rust ()),
+     * false if it is a TupN tuple. */
+    public abstract boolean isRaw();
+
     /**
      * If the expression has a tuple type, return the list of fields.
      * Else return the expression itself.

@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Logger;
 
@@ -76,9 +77,13 @@ public class MonotoneFunctions extends TranslateVisitor<MonotoneValue> {
 
     public DBSPType extractParameterType(DBSPType projectedType) {
         if (this.indexedSet) {
-            DBSPTypeTuple tuple = projectedType.to(DBSPTypeTuple.class);
+            DBSPTypeTupleBase tuple = projectedType.to(DBSPTypeTupleBase.class);
             assert tuple.size() == 2: "Expected a two-tuple";
-            return new DBSPTypeTuple(tuple.getFieldType(0).ref(), tuple.getFieldType(1).ref());
+            if (!tuple.isRaw()) {
+                return new DBSPTypeTuple(tuple.getFieldType(0).ref(), tuple.getFieldType(1).ref());
+            } else {
+                return new DBSPTypeRawTuple(tuple.getFieldType(0).ref(), tuple.getFieldType(1).ref());
+            }
         } else {
             return projectedType.ref();
         }

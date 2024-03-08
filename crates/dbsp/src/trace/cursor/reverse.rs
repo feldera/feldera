@@ -1,5 +1,8 @@
-use crate::trace::Cursor;
 use std::marker::PhantomData;
+
+use crate::dynamic::{Factory, WeightTrait};
+
+use super::Cursor;
 
 /// Cursor that reverses the direction of keys in the underlying
 /// cursor.
@@ -7,14 +10,14 @@ use std::marker::PhantomData;
 /// WARNING: This cursor iterates over keys in descending order,
 /// and thus will not work correctly with code that assumes
 /// monotonically growing keys.
-pub struct ReverseKeyCursor<'a, C, K, V, R> {
+pub struct ReverseKeyCursor<'a, C: ?Sized, K: ?Sized, V: ?Sized, R: ?Sized> {
     cursor: &'a mut C,
-    _phantom: PhantomData<(K, V, R)>,
+    _phantom: PhantomData<fn(&K, &V, &R)>,
 }
 
-impl<'a, C, K, V, R> ReverseKeyCursor<'a, C, K, V, R>
+impl<'a, C, K: ?Sized, V: ?Sized, R: ?Sized> ReverseKeyCursor<'a, C, K, V, R>
 where
-    C: Cursor<K, V, (), R>,
+    C: Cursor<K, V, (), R> + ?Sized,
 {
     pub fn new(cursor: &'a mut C) -> Self {
         cursor.fast_forward_keys();
@@ -26,10 +29,15 @@ where
     }
 }
 
-impl<'a, C, K, V, R> Cursor<K, V, (), R> for ReverseKeyCursor<'a, C, K, V, R>
+impl<'a, C, K: ?Sized, V: ?Sized, R: WeightTrait + ?Sized> Cursor<K, V, (), R>
+    for ReverseKeyCursor<'a, C, K, V, R>
 where
-    C: Cursor<K, V, (), R>,
+    C: Cursor<K, V, (), R> + ?Sized,
 {
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.cursor.weight_factory()
+    }
+
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
     }
@@ -54,39 +62,19 @@ where
         self.cursor.get_val()
     }
 
-    fn map_times<L>(&mut self, logic: L)
-    where
-        L: FnMut(&(), &R),
-    {
+    fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
         self.cursor.map_times(logic)
     }
 
-    fn fold_times<F, U>(&mut self, init: U, fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
-        self.cursor.fold_times(init, fold)
-    }
-
-    fn map_times_through<L>(&mut self, upper: &(), logic: L)
-    where
-        L: FnMut(&(), &R),
-    {
+    fn map_times_through(&mut self, upper: &(), logic: &mut dyn FnMut(&(), &R)) {
         self.cursor.map_times_through(upper, logic);
     }
 
-    fn fold_times_through<F, U>(&mut self, upper: &(), init: U, fold: F) -> U
-    where
-        F: FnMut(U, &(), &R) -> U,
-    {
-        self.cursor.fold_times_through(upper, init, fold)
-    }
-
-    fn weight(&mut self) -> R {
+    fn weight(&mut self) -> &R {
         self.cursor.weight()
     }
 
-    fn map_values<L: FnMut(&V, &R)>(&mut self, logic: L) {
+    fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         self.cursor.map_values(logic)
     }
 
@@ -98,31 +86,19 @@ where
         self.cursor.step_key()
     }
 
-    fn seek_key(&mut self, key: &K)
-    where
-        K: PartialOrd,
-    {
+    fn seek_key(&mut self, key: &K) {
         self.cursor.seek_key_reverse(key)
     }
 
-    fn seek_key_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
+    fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.cursor.seek_key_with_reverse(predicate)
     }
 
-    fn seek_key_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
+    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
         self.cursor.seek_key_with(predicate)
     }
 
-    fn seek_key_reverse(&mut self, key: &K)
-    where
-        K: PartialOrd,
-    {
+    fn seek_key_reverse(&mut self, key: &K) {
         self.cursor.seek_key(key)
     }
 
@@ -142,17 +118,11 @@ where
         self.cursor.seek_val_reverse(val)
     }
 
-    fn seek_val_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.cursor.seek_val_with(predicate)
     }
 
-    fn seek_val_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.cursor.seek_val_with_reverse(predicate)
     }
 

@@ -1,9 +1,6 @@
-use dbsp::utils::Tup2;
 use dbsp::{
-    mimalloc::MiMalloc,
-    operator::{FilterMap, Generator},
-    trace::{ord::OrdZSet, Batch},
-    Circuit, RootCircuit, Runtime, Stream,
+    mimalloc::MiMalloc, operator::Generator, utils::Tup2, Circuit, OrdZSet, RootCircuit, Runtime,
+    Stream,
 };
 
 #[global_allocator]
@@ -70,20 +67,22 @@ fn main() {
                 for layer in 0..5 {
                     for from in 0..LAYER {
                         for to in 0..LAYER {
-                            tuples
-                                .push((Tup2(from + (LAYER * layer), to + LAYER * (layer + 1)), 1));
+                            tuples.push(Tup2(
+                                Tup2(Tup2(from + (LAYER * layer), to + LAYER * (layer + 1)), ()),
+                                1,
+                            ));
                         }
                     }
                 }
             }
 
-            let edges = <OrdZSet<Tup2<u32, u32>, i32>>::from_tuples((), tuples);
+            let edges = <OrdZSet<Tup2<u32, u32>>>::from_tuples((), tuples);
 
-            let edges: Stream<_, OrdZSet<Tup2<u32, u32>, i32>> =
+            let edges: Stream<_, OrdZSet<Tup2<u32, u32>>> =
                 circuit.add_source(Generator::new(move || edges.clone()));
 
             let paths = circuit
-                .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u32, u32>, i32>>| {
+                .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u32, u32>>>| {
                     // ```text
                     //                            distinct
                     //               ┌───┐          ┌───┐
@@ -104,8 +103,8 @@ fn main() {
 
                     let paths_inverted = paths.map(|&Tup2(x, y)| Tup2(y, x));
 
-                    let paths_inverted_indexed = paths_inverted.index();
-                    let edges_indexed = edges.index();
+                    let paths_inverted_indexed = paths_inverted.map_index(|Tup2(k, v)| (*k, *v));
+                    let edges_indexed = edges.map_index(|Tup2(k, v)| (*k, *v));
 
                     Ok(edges.plus(
                         &paths_inverted_indexed
@@ -114,7 +113,7 @@ fn main() {
                 })
                 .unwrap();
 
-            paths.gather(0).inspect(|zs: &OrdZSet<_, _>| {
+            paths.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
                     println!("paths: {}", zs.len())
                 }

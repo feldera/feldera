@@ -9,13 +9,12 @@ use crate::{
     utils::cast_uninit_vec,
 };
 use proptest::{collection::vec, prelude::*};
-use rkyv::{with::Skip, Archive, Deserialize, Serialize};
-use size_of::SizeOf;
-use std::sync::{Arc, Mutex};
 use std::{
+    cell::{Cell, RefCell},
     cmp::Ordering,
-    hash::{Hash, Hasher},
     panic::{self, AssertUnwindSafe},
+    rc::Rc,
+    thread,
 };
 
 #[test]
@@ -56,24 +55,15 @@ impl ArtificialPanic {
     }
 }
 
-#[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub(crate) struct RandomlyOrdered {
-    #[size_of(skip)]
-    #[with(Skip)]
-    orderings: Arc<Mutex<Vec<Ordering>>>,
-}
-
-impl Hash for RandomlyOrdered {
-    fn hash<H: Hasher>(&self, _state: &mut H) {
-        todo!()
-    }
+    orderings: Rc<RefCell<Vec<Ordering>>>,
 }
 
 impl RandomlyOrdered {
-    #[allow(unused)]
     pub(crate) fn new(orderings: Vec<Ordering>) -> Self {
         Self {
-            orderings: Arc::new(Mutex::new(orderings)),
+            orderings: Rc::new(RefCell::new(orderings)),
         }
     }
 }
@@ -87,44 +77,34 @@ impl PartialEq for RandomlyOrdered {
 impl Eq for RandomlyOrdered {}
 
 impl PartialOrd for RandomlyOrdered {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+    fn partial_cmp(&self, _other: &Self) -> Option<Ordering> {
+        match self.orderings.borrow_mut().pop() {
+            order @ Some(_) => order,
+            None => panic::panic_any(ArtificialPanic),
+        }
     }
 }
 
 impl Ord for RandomlyOrdered {
     fn cmp(&self, _other: &Self) -> Ordering {
-        match self.orderings.lock() {
-            Ok(mut orderings) => match orderings.pop() {
-                Some(order) => order,
-                None => panic::panic_any(ArtificialPanic),
-            },
-            Err(_) => panic::panic_any(ArtificialPanic),
+        match self.orderings.borrow_mut().pop() {
+            Some(order) => order,
+            None => panic::panic_any(ArtificialPanic),
         }
     }
 }
 
-#[derive(Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
+#[derive(Clone)]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound(archive = "T: Archive, <T as Archive>::Archived: Ord"))]
 //#[archive(compare(PartialEq, PartialOrd))]
 pub(crate) struct LimitedDrops<T> {
-    #[size_of(skip)]
     inner: T,
-    #[size_of(skip)]
-    #[with(Skip)]
-    allowed_drops: Option<Arc<Mutex<usize>>>,
-}
-
-impl<T> Hash for LimitedDrops<T> {
-    fn hash<H: Hasher>(&self, _state: &mut H) {
-        unimplemented!()
-    }
+    allowed_drops: Option<Rc<Cell<usize>>>,
 }
 
 impl<T> LimitedDrops<T> {
-    #[allow(unused)]
-    pub(crate) fn new(inner: T, allowed_drops: Option<Arc<Mutex<usize>>>) -> Self {
+    pub(crate) fn new(inner: T, allowed_drops: Option<Rc<Cell<usize>>>) -> Self {
         Self {
             inner,
             allowed_drops,
@@ -163,18 +143,12 @@ where
 
 impl<T> Drop for LimitedDrops<T> {
     fn drop(&mut self) {
-        if let Some(allowed_drops) = self.allowed_drops.as_ref() {
-            match allowed_drops.lock() {
-                Ok(mut remaining_drops) => {
-                    if *remaining_drops == 0 {
-                        panic::panic_any(ArtificialPanic);
-                    } else {
-                        *remaining_drops -= 1;
-                    }
-                }
-                Err(_) => {
-                    // don't do anything here?
-                }
+        if let Some(allowed_drops) = self.allowed_drops.as_ref().filter(|_| !thread::panicking()) {
+            let remaining_drops = allowed_drops.get();
+            if remaining_drops == 0 {
+                panic::panic_any(ArtificialPanic);
+            } else {
+                allowed_drops.set(remaining_drops - 1);
             }
         }
     }

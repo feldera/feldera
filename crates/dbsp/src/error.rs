@@ -1,6 +1,5 @@
-use crate::{RuntimeError, SchedulerError};
+use crate::{storage::backend::StorageError, RuntimeError, SchedulerError};
 use anyhow::Error as AnyError;
-use feldera_storage::backend::StorageError;
 use log::Level;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{

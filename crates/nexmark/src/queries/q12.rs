@@ -1,6 +1,6 @@
 use super::{process_time, NexmarkStream};
 use crate::model::Event;
-use dbsp::{operator::FilterMap, utils::Tup4, OrdZSet, RootCircuit, Stream};
+use dbsp::{utils::Tup4, OrdZSet, RootCircuit, Stream};
 
 ///
 /// Query 12: Processing Time Windows (Not in original suite)
@@ -31,7 +31,7 @@ use dbsp::{operator::FilterMap, utils::Tup4, OrdZSet, RootCircuit, Stream};
 /// GROUP BY B.bidder, TUMBLE(B.p_time, INTERVAL '10' SECOND);
 /// ```
 
-type Q12Stream = Stream<RootCircuit, OrdZSet<Tup4<u64, u64, u64, u64>, i64>>;
+type Q12Stream = Stream<RootCircuit, OrdZSet<Tup4<u64, u64, u64, u64>>>;
 const TUMBLE_SECONDS: u64 = 10;
 
 fn window_for_process_time(ptime: u64) -> (u64, u64) {
@@ -72,7 +72,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{zset, RootCircuit};
+    use dbsp::{utils::Tup2, zset, RootCircuit};
     use rstest::rstest;
     use std::cell::RefCell;
 
@@ -81,7 +81,7 @@ mod tests {
         vec![vec![(1, 1), (1, 2), (1, 99), (1, 25)], vec![(1, 16), (1, 2)]],
         vec![3_000, 4_000, 5_000, 6_000, 7_000, 8_000],
         vec![
-            zset! { Tup4(1, 4, 0, 10_000) => 1},
+            zset! {Tup4(1, 4, 0, 10_000) => 1},
             zset! { Tup4(1, 4, 0, 10_000) => -1, Tup4(1, 6, 0, 10_000) => 1},
         ],
     )]
@@ -104,13 +104,13 @@ mod tests {
     fn test_q12(
         #[case] bidder_bid_batches: Vec<Vec<(u64, u64)>>,
         #[case] proc_times: Vec<u64>,
-        #[case] expected_zsets: Vec<OrdZSet<Tup4<u64, u64, u64, u64>, i64>>,
+        #[case] expected_zsets: Vec<OrdZSet<Tup4<u64, u64, u64, u64>>>,
     ) {
         let input_vecs = bidder_bid_batches.into_iter().map(|batch| {
             batch
                 .into_iter()
                 .map(|(bidder, auction)| {
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             bidder,
                             auction,
@@ -126,7 +126,7 @@ mod tests {
         let process_time = move || -> u64 { proc_time_iter.borrow_mut().next().unwrap() };
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q12_for_process_time(stream, process_time);
 

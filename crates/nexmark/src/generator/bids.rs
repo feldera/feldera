@@ -153,7 +153,7 @@ pub mod tests {
                 channel: String::from("Google"),
                 url: String::from("https://www.nexmark.com/googl/item.htm?query=1"),
                 date_time: 1_000_000_000_000,
-                extra: "A".repeat(expected_size).into(),
+                extra: "A".repeat(expected_size),
             },
             bid
         );

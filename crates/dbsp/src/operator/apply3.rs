@@ -116,7 +116,7 @@ mod test {
 
     #[test]
     fn apply3_test() {
-        let circuit = RootCircuit::build(move |circuit| {
+        let circuit: crate::CircuitHandle = RootCircuit::build(move |circuit| {
             let mut inputs1 = vec![2, 4, 6].into_iter();
             let mut inputs2 = vec![-1, -2, -3].into_iter();
             let mut inputs3 = vec![-1, -2, -3].into_iter();

@@ -1,12 +1,14 @@
 use anyhow::Result;
 use chrono::NaiveDate;
 use csv::Reader;
-use dbsp::{operator::FilterMap, CollectionHandle, OrdZSet, OutputHandle, RootCircuit, ZSet};
+use dbsp::utils::Tup2;
+use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
 #[derive(
     Clone,
+    Default,
     Debug,
     Eq,
     PartialEq,
@@ -28,11 +30,8 @@ struct Record {
 }
 fn build_circuit(
     circuit: &mut RootCircuit,
-) -> Result<(
-    CollectionHandle<Record, i64>,
-    OutputHandle<OrdZSet<Record, i64>>,
-)> {
-    let (input_stream, input_handle) = circuit.add_input_zset::<Record, i64>();
+) -> Result<(ZSetHandle<Record>, OutputHandle<OrdZSet<Record>>)> {
+    let (input_stream, input_handle) = circuit.add_input_zset::<Record>();
     input_stream.inspect(|records| {
         println!("{}", records.weighted_count());
     });
@@ -56,8 +55,8 @@ fn main() -> Result<()> {
     );
     let mut input_records = Reader::from_path(path)?
         .deserialize()
-        .map(|result| result.map(|record| (record, 1)))
-        .collect::<Result<Vec<(Record, i64)>, _>>()?;
+        .map(|result| result.map(|record| Tup2(record, 1)))
+        .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
     input_handle.append(&mut input_records);
 
     // Execute circuit.

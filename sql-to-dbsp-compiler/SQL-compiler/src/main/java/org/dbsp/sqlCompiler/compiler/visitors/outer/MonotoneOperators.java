@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ValueProjection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
@@ -78,11 +79,11 @@ public class MonotoneOperators extends CircuitVisitor {
         DBSPExpression body;
         DBSPVariablePath var;
         if (pairOfReferences) {
-            DBSPTypeTuple tpl = varType.to(DBSPTypeTuple.class);
+            DBSPTypeTupleBase tpl = varType.to(DBSPTypeTupleBase.class);
             assert tpl.size() == 2: "Expected a pair, got " + varType;
             varType = new DBSPTypeRawTuple(tpl.tupFields[0].ref(), tpl.tupFields[1].ref());
             var = new DBSPVariablePath("t", varType);
-            body = new DBSPTupleExpression(var.field(0).deref(), var.deepCopy().field(1).deref());
+            body = new DBSPRawTupleExpression(var.field(0).deref(), var.deepCopy().field(1).deref());
         } else {
             varType = varType.ref();
             var = new DBSPVariablePath("t", varType);
@@ -260,9 +261,9 @@ public class MonotoneOperators extends CircuitVisitor {
 
         assert tuple0.getType().sameType(outputValueType.tupFields[0]) :
                 "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0];
-        DBSPTypeTuple varType = projection.getType().to(DBSPTypeTuple.class);
+        DBSPTypeRawTuple varType = projection.getType().to(DBSPTypeRawTuple.class);
         assert varType.size() == 2 : "Expected a pair, got " + varType;
-        varType = new DBSPTypeTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
+        varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = new DBSPVariablePath("t", varType);
         DBSPExpression body = new DBSPTupleExpression(var.field(0).deref(), new DBSPTupleExpression());
         DBSPClosureExpression closure = body.closure(var.asParameter());

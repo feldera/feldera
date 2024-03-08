@@ -10,7 +10,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
-use dbsp::trace::Batch;
+use dbsp::utils::Tup2;
 use dbsp::OrdZSet;
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
@@ -469,7 +469,7 @@ fn parquet_output() {
         .expect("Can't create encoder");
     let zset = OrdZSet::from_keys(
         (),
-        vec![(test_data[0].clone(), 2), (test_data[1].clone(), 1)],
+        vec![Tup2(test_data[0].clone(), 2), Tup2(test_data[1].clone(), 1)],
     );
 
     let zset = Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>;

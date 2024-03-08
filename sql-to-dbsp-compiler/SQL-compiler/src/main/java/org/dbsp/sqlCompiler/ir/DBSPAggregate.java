@@ -317,11 +317,12 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             if (compact) {
                 typeArgs = new DBSPType[0];
             } else {
-                typeArgs = new DBSPType[4];
+                typeArgs = new DBSPType[5];
                 typeArgs[0] = DBSPTypeAny.getDefault();
-                typeArgs[1] = this.semigroup;
-                typeArgs[2] = DBSPTypeAny.getDefault();
+                typeArgs[1] = DBSPTypeAny.getDefault();
+                typeArgs[2] = this.semigroup;
                 typeArgs[3] = DBSPTypeAny.getDefault();
+                typeArgs[4] = DBSPTypeAny.getDefault();
             }
 
             DBSPExpression constructor =

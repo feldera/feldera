@@ -8,11 +8,11 @@ mod run_queries;
 use anyhow::{anyhow, Result};
 use ascii_table::AsciiTable;
 use clap::Parser;
+use dbsp::utils::Tup2;
 use dbsp::{
     mimalloc::{AllocStats, MiMalloc},
-    trace::ord::OrdZSet,
     utils::Tup3,
-    CollectionHandle, DBSPHandle, RootCircuit, Runtime,
+    DBSPHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
 };
 use dbsp_nexmark::{
     config::{Config as NexmarkConfig, Query as NexmarkQuery},
@@ -91,7 +91,7 @@ fn spawn_dbsp_consumer(
 
 fn spawn_source_producer(
     nexmark_config: NexmarkConfig,
-    input_handle: CollectionHandle<Event, i64>,
+    input_handle: ZSetHandle<Event>,
     step_do_rx: mpsc::Receiver<()>,
     step_done_tx: mpsc::SyncSender<StepCompleted>,
     source_exhausted_tx: mpsc::SyncSender<InputStats>,
@@ -100,16 +100,16 @@ fn spawn_source_producer(
         .name("benchmark producer".into())
         .spawn(move || {
             let batch_size = nexmark_config.input_batch_size;
-            let mut source = NexmarkSource::<i64, OrdZSet<Event, i64>>::new(nexmark_config);
+            let mut source = NexmarkSource::new(nexmark_config);
             let mut num_events: u64 = 0;
 
             // Start iterating by loading up the first batch of input ready for processing,
             // then waiting for further instructions.
             let last_batch_count = loop {
-                let mut events: Vec<(Event, i64)> = Vec::with_capacity(batch_size);
+                let mut events: Vec<Tup2<Event, ZWeight>> = Vec::with_capacity(batch_size);
                 let mut batch_count = 0;
                 for event in &mut source {
-                    events.push((event, 1));
+                    events.push(Tup2(event, 1));
                     batch_count += 1;
                     if batch_count == batch_size {
                         break;

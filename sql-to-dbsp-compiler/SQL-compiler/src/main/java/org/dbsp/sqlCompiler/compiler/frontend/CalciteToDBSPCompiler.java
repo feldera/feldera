@@ -446,7 +446,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPTupleExpression localKeyExpression = this.generateKeyExpression(localKeys, t, tuple.slice(0, aggregate.getGroupCount()));
         DBSPClosureExpression makeKeys =
-                new DBSPTupleExpression(
+                new DBSPRawTupleExpression(
                         localKeyExpression,
                         DBSPTupleExpression.flatten(t.deref())).closure(t.asParameter());
         DBSPType localGroupType = localKeyExpression.getType();
@@ -464,7 +464,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     var.field(0).deref().applyCloneIfNeeded(),
                     new DBSPTupleExpression());
             agg = new DBSPMapIndexOperator(node, addEmpty.closure(var.asParameter()), aggregateType, createIndex);
-            this.circuit.addOperator(agg);
+          this.circuit.addOperator(agg);
             agg = new DBSPStreamDistinctOperator(node, agg);
         } else {
             agg = new DBSPStreamAggregateOperator(
@@ -843,7 +843,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPVariablePath k = leftKey.getType().ref().var("k");
 
-        DBSPClosureExpression toLeftKey = new DBSPTupleExpression(
+        DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(
                 leftKey, DBSPTupleExpression.flatten(l.deref()))
                 .closure(l.asParameter());
         DBSPIndexOperator leftIndex = new DBSPIndexOperator(
@@ -851,7 +851,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.makeIndexedZSet(leftKey.getType(), leftElementType), false, filteredLeft);
         this.circuit.addOperator(leftIndex);
 
-        DBSPClosureExpression toRightKey = new DBSPTupleExpression(
+        DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(
                 rightKey, DBSPTupleExpression.flatten(r.deref()))
                 .closure(r.asParameter());
         DBSPIndexOperator rIndex = new DBSPIndexOperator(
@@ -1057,7 +1057,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple resultType = this.convertType(intersect.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPVariablePath t = inputRowType.ref().var("t");
         DBSPExpression entireKey =
-                new DBSPTupleExpression(
+                new DBSPRawTupleExpression(
                         t.deref().applyClone(),
                         new DBSPRawTupleExpression()).closure(
                 t.asParameter());
@@ -1131,7 +1131,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             fields[ix++] = t.deref().field(field);
         }
         DBSPExpression groupKeys =
-                new DBSPTupleExpression(
+                new DBSPRawTupleExpression(
                         new DBSPTupleExpression(fields),
                         DBSPTupleExpression.flatten(t.deref())).closure(t.asParameter());
         DBSPOperator index = new DBSPIndexOperator(
@@ -1360,7 +1360,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression partAndOrder = new DBSPTupleExpression(
                     partition.applyCloneIfNeeded(),
                     orderField.applyCloneIfNeeded());
-            DBSPExpression indexedInput = new DBSPTupleExpression(
+            DBSPExpression indexedInput = new DBSPRawTupleExpression(
                     partAndOrder, previousRowRefVar.deepCopy().deref().applyClone());
             DBSPExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
             DBSPOperator indexInput = new DBSPIndexOperator(node, partAndOrderClo,
@@ -1419,7 +1419,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputRowType = this.convertType(input.getRowType(), false);
         DBSPVariablePath t = inputRowType.ref().var("t");
         DBSPExpression emptyGroupKeys =
-                new DBSPTupleExpression(
+                new DBSPRawTupleExpression(
                         new DBSPRawTupleExpression(),
                         DBSPTupleExpression.flatten(t.deref())).closure(t.asParameter());
         DBSPOperator index = new DBSPIndexOperator(
@@ -1478,6 +1478,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression constructor =
                 new DBSPPath(
                         new DBSPSimplePathSegment("Fold",
+                                DBSPTypeAny.getDefault(),
                                 DBSPTypeAny.getDefault(),
                                 new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
                                         false, DBSPTypeAny.getDefault()),

@@ -1,36 +1,42 @@
 //! Test various implementations of `trait Trie`.
 
-use super::{
-    column_layer::ColumnLayer,
-    erased::{IntoErasedDiff, TypedErasedLeaf},
-    ordered::OrderedLayer,
-    ordered_leaf::OrderedLeaf,
-    Builder, Cursor, Trie, TupleBuilder,
-};
 use crate::{
-    algebra::HasZero,
-    trace::{consolidation::consolidate, layers::erased::TypedErasedKeyLeaf},
+    algebra::{HasZero, ZRingValue},
+    dynamic::{DowncastTrait, DynData, DynWeight, Erase, LeanVec},
+    trace::layers::file::{
+        column_layer::{FileColumnLayer, FileLeafFactories},
+        ordered::{FileOrderedLayer, FileOrderedLayerFactories},
+    },
+    utils::consolidate_pairs,
     DBData, DBWeight,
 };
 use proptest::{collection::vec, prelude::*};
 use std::collections::BTreeMap;
 
+use super::{
+    layer::LayerFactories, leaf::LeafFactories, Builder, Cursor, Layer, Leaf, Trie, TupleBuilder,
+};
+
 // Unordered vectors of tuples used as test inputs.
-type Tuples1<T, R> = Vec<(T, R)>;
-type Tuples2<K, T, R> = Vec<((K, T), R)>;
-type Tuples3<K, V, T, R> = Vec<((K, V, T), R)>;
+pub(crate) type Tuples1<T, R> = Vec<(T, R)>;
+pub(crate) type Tuples2<K, T, R> = Vec<((K, T), R)>;
+pub(crate) type Tuples3<K, V, T, R> = Vec<((K, V, T), R)>;
 
 // An equivalent representation of tries as nested maps.
-type Map1<T, R> = BTreeMap<T, R>;
-type Map2<K, T, R> = BTreeMap<K, Map1<T, R>>;
-type Map3<K, V, T, R> = BTreeMap<K, Map2<V, T, R>>;
+pub(crate) type Map1<T, R> = BTreeMap<T, R>;
+pub(crate) type Map2<K, T, R> = BTreeMap<K, Map1<T, R>>;
+pub(crate) type Map3<K, V, T, R> = BTreeMap<K, Map2<V, T, R>>;
 
 // Generate random input data.
-fn tuples1(max_key: i32, max_val: i32, max_len: usize) -> BoxedStrategy<Tuples1<i32, i32>> {
+pub(crate) fn tuples1(
+    max_key: i32,
+    max_val: i32,
+    max_len: usize,
+) -> BoxedStrategy<Tuples1<i32, i32>> {
     vec((0..max_key, -max_val..max_val), 0..max_len).boxed()
 }
 
-fn tuples2(
+pub(crate) fn tuples2(
     max_key: i32,
     max_t: i32,
     max_r: i32,
@@ -39,7 +45,7 @@ fn tuples2(
     vec(((0..max_key, 0..max_t), -max_r..max_r), 0..max_len).boxed()
 }
 
-fn tuples3(
+pub(crate) fn tuples3(
     max_key: i32,
     max_val: i32,
     max_t: i32,
@@ -54,7 +60,7 @@ fn tuples3(
 }
 
 // Generate nested map representation of the trie to use as a reference.
-fn tuples_to_map1<T, R>(tuples: &Tuples1<T, R>) -> Map1<T, R>
+pub(crate) fn tuples_to_map1<T, R>(tuples: &Tuples1<T, R>) -> Map1<T, R>
 where
     T: DBData,
     R: DBWeight,
@@ -73,7 +79,7 @@ where
     result
 }
 
-fn tuples_to_map2<K, T, R>(tuples: &Tuples2<K, T, R>) -> Map2<K, T, R>
+pub(crate) fn tuples_to_map2<K, T, R>(tuples: &Tuples2<K, T, R>) -> Map2<K, T, R>
 where
     K: DBData,
     T: DBData,
@@ -84,7 +90,7 @@ where
     for ((k, t), r) in tuples.iter() {
         result
             .entry(k.clone())
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .entry(t.clone())
             .or_insert_with(HasZero::zero)
             .add_assign_by_ref(r);
@@ -97,7 +103,7 @@ where
     result
 }
 
-fn tuples_to_map3<K, V, T, R>(tuples: &Tuples3<K, V, T, R>) -> Map3<K, V, T, R>
+pub(crate) fn tuples_to_map3<K, V, T, R>(tuples: &Tuples3<K, V, T, R>) -> Map3<K, V, T, R>
 where
     K: DBData,
     V: DBData,
@@ -109,9 +115,9 @@ where
     for ((k, v, t), r) in tuples.iter() {
         result
             .entry(k.clone())
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .entry(v.clone())
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .entry(t.clone())
             .or_insert_with(HasZero::zero)
             .add_assign_by_ref(r);
@@ -127,537 +133,8 @@ where
     result
 }
 
-// Generate a layer-based representation of the trie.
-fn tuples_to_trie1<T, R, Tr>(tuples: &Tuples1<T, R>) -> Tr
-where
-    Tr: Trie<Item = (T, R)> + std::fmt::Debug,
-    Tr::TupleBuilder: std::fmt::Debug,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut tuples = tuples.clone();
-    consolidate(&mut tuples);
-    let mut builder = <Tr::TupleBuilder>::with_capacity(tuples.len());
-    builder.extend_tuples(tuples.iter().cloned());
-    builder.done()
-}
-
-fn tuples_to_trie2<K, T, R, Tr>(tuples: &Tuples2<K, T, R>) -> Tr
-where
-    Tr: Trie<Item = (K, (T, R))> + std::fmt::Debug,
-    K: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut tuples = tuples.clone();
-    consolidate(&mut tuples);
-
-    let mut builder = <Tr::TupleBuilder>::with_capacity(tuples.len());
-    builder.extend_tuples(tuples.iter().cloned().map(|((k, t), r)| (k, (t, r))));
-    builder.done()
-}
-
-fn tuples_to_trie3<K, V, T, R, Tr>(tuples: &Tuples3<K, V, T, R>) -> Tr
-where
-    Tr: Trie<Item = (K, (V, (T, R)))> + std::fmt::Debug,
-    Tr::TupleBuilder: std::fmt::Debug,
-    K: DBData,
-    V: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut tuples = tuples.clone();
-    consolidate(&mut tuples);
-
-    let mut builder = <Tr::TupleBuilder>::with_capacity(tuples.len());
-    builder.extend_tuples(
-        tuples
-            .iter()
-            .cloned()
-            .map(|((k, v, t), r)| (k, (v, (t, r)))),
-    );
-    builder.done()
-}
-
-// The following functions convert various layer-based representations of tries
-// to map-based representation for equivalence checking.  There's a lot of
-// duplicated code here.  Generic implementations are likely possible, but
-// non-trivial as it is not easy to unify `(&K, &V)` and `&(K, V)` keys types
-// used by different leaf implementations.
-fn ordered_leaf_to_map1<T, R>(trie: &OrderedLeaf<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step();
-    }
-
-    result
-}
-
-fn ordered_leaf_to_map1_reverse<T, R>(trie: &OrderedLeaf<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step_reverse();
-    }
-
-    result
-}
-
-fn column_layer_to_map1<T, R>(trie: &ColumnLayer<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step();
-    }
-
-    result
-}
-
-fn column_layer_to_map1_reverse<T, R>(trie: &ColumnLayer<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step_reverse();
-    }
-
-    result
-}
-
-fn typed_erased_leaf_to_map1<T, R>(trie: &TypedErasedLeaf<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight + IntoErasedDiff,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step();
-    }
-
-    result
-}
-
-fn typed_erased_leaf_to_map1_reverse<T, R>(trie: &TypedErasedLeaf<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight + IntoErasedDiff,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step_reverse();
-    }
-
-    result
-}
-
-fn typed_erased_key_leaf_to_map1<T, R>(trie: &TypedErasedKeyLeaf<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight + IntoErasedDiff,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step();
-    }
-
-    result
-}
-
-fn typed_erased_key_leaf_to_map1_reverse<T, R>(trie: &TypedErasedKeyLeaf<T, R>) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight + IntoErasedDiff,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(t.clone(), r.clone());
-        cursor.step_reverse();
-    }
-
-    result
-}
-
-fn ordered_column_layer_to_map2<K, T, R>(
-    trie: &OrderedLayer<K, ColumnLayer<T, R>, usize>,
-) -> Map2<K, T, R>
-where
-    K: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map2<K, T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        result.insert(cursor.item().clone(), BTreeMap::new());
-
-        let mut leaf_cursor = cursor.values();
-
-        while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.item();
-
-            let entry = result.get_mut(cursor.item()).unwrap();
-            entry.insert(t.clone(), r.clone());
-
-            leaf_cursor.step();
-        }
-        cursor.step();
-    }
-
-    result
-}
-
-fn ordered_column_layer_to_map2_reverse<K, T, R>(
-    trie: &OrderedLayer<K, ColumnLayer<T, R>, usize>,
-) -> Map2<K, T, R>
-where
-    K: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map2<K, T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        result.insert(cursor.item().clone(), BTreeMap::new());
-
-        let mut leaf_cursor = cursor.values();
-        leaf_cursor.fast_forward();
-
-        while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.item();
-
-            let entry = result.get_mut(cursor.item()).unwrap();
-            entry.insert(t.clone(), r.clone());
-
-            leaf_cursor.step_reverse();
-        }
-        cursor.step_reverse();
-    }
-
-    result
-}
-
-fn ordered_leaf_layer_to_map2<K, T, R>(
-    trie: &OrderedLayer<K, OrderedLeaf<T, R>, usize>,
-) -> Map2<K, T, R>
-where
-    K: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map2<K, T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        result.insert(cursor.item().clone(), BTreeMap::new());
-
-        let mut leaf_cursor = cursor.values();
-
-        while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.item();
-
-            let entry = result.get_mut(cursor.item()).unwrap();
-            entry.insert(t.clone(), r.clone());
-
-            leaf_cursor.step();
-        }
-        cursor.step();
-    }
-
-    result
-}
-
-fn ordered_leaf_layer_to_map2_reverse<K, T, R>(
-    trie: &OrderedLayer<K, OrderedLeaf<T, R>, usize>,
-) -> Map2<K, T, R>
-where
-    K: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map2<K, T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        result.insert(cursor.item().clone(), BTreeMap::new());
-
-        let mut leaf_cursor = cursor.values();
-        leaf_cursor.fast_forward();
-
-        while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.item();
-
-            let entry = result.get_mut(cursor.item()).unwrap();
-            entry.insert(t.clone(), r.clone());
-
-            leaf_cursor.step_reverse();
-        }
-        cursor.step_reverse();
-    }
-
-    result
-}
-
-fn ordered_column_layer_to_map3<K, V, T, R>(
-    trie: &OrderedLayer<K, OrderedLayer<V, ColumnLayer<T, R>, usize>, usize>,
-) -> Map3<K, V, T, R>
-where
-    K: DBData,
-    V: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map3<K, V, T, R> = BTreeMap::new();
-
-    let mut cursor1 = trie.cursor();
-
-    while cursor1.valid() {
-        let k = cursor1.item();
-
-        result.insert(k.clone(), BTreeMap::new());
-
-        let mut cursor2 = cursor1.values();
-
-        while cursor2.valid() {
-            let v = cursor2.item();
-
-            result
-                .get_mut(k)
-                .unwrap()
-                .insert(v.clone(), BTreeMap::new());
-
-            let mut cursor3 = cursor2.values();
-            while cursor3.valid() {
-                let (t, r) = cursor3.item();
-                result
-                    .get_mut(k)
-                    .unwrap()
-                    .get_mut(v)
-                    .unwrap()
-                    .insert(t.clone(), r.clone());
-                cursor3.step();
-            }
-            cursor2.step();
-        }
-        cursor1.step();
-    }
-
-    result
-}
-
-fn ordered_column_layer_to_map3_reverse<K, V, T, R>(
-    trie: &OrderedLayer<K, OrderedLayer<V, ColumnLayer<T, R>, usize>, usize>,
-) -> Map3<K, V, T, R>
-where
-    K: DBData,
-    V: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map3<K, V, T, R> = BTreeMap::new();
-
-    let mut cursor1 = trie.cursor();
-    cursor1.fast_forward();
-
-    while cursor1.valid() {
-        let k = cursor1.item();
-
-        result.insert(k.clone(), BTreeMap::new());
-
-        let mut cursor2 = cursor1.values();
-        cursor2.fast_forward();
-
-        while cursor2.valid() {
-            let v = cursor2.item();
-
-            result
-                .get_mut(k)
-                .unwrap()
-                .insert(v.clone(), BTreeMap::new());
-
-            let mut cursor3 = cursor2.values();
-            cursor3.fast_forward();
-
-            while cursor3.valid() {
-                let (t, r) = cursor3.item();
-                result
-                    .get_mut(k)
-                    .unwrap()
-                    .get_mut(v)
-                    .unwrap()
-                    .insert(t.clone(), r.clone());
-                cursor3.step_reverse();
-            }
-            cursor2.step_reverse();
-        }
-        cursor1.step_reverse();
-    }
-
-    result
-}
-
-fn ordered_leaf_layer_to_map3<K, V, T, R>(
-    trie: &OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, usize>, usize>,
-) -> Map3<K, V, T, R>
-where
-    K: DBData,
-    V: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map3<K, V, T, R> = BTreeMap::new();
-
-    let mut cursor1 = trie.cursor();
-
-    while cursor1.valid() {
-        let k = cursor1.item();
-
-        result.insert(k.clone(), BTreeMap::new());
-
-        let mut cursor2 = cursor1.values();
-
-        while cursor2.valid() {
-            let v = cursor2.item();
-
-            result
-                .get_mut(k)
-                .unwrap()
-                .insert(v.clone(), BTreeMap::new());
-
-            let mut cursor3 = cursor2.values();
-            while cursor3.valid() {
-                let (t, r) = cursor3.item();
-                result
-                    .get_mut(k)
-                    .unwrap()
-                    .get_mut(v)
-                    .unwrap()
-                    .insert(t.clone(), r.clone());
-                cursor3.step();
-            }
-            cursor2.step();
-        }
-        cursor1.step();
-    }
-
-    result
-}
-
-fn ordered_leaf_layer_to_map3_reverse<K, V, T, R>(
-    trie: &OrderedLayer<K, OrderedLayer<V, OrderedLeaf<T, R>, usize>, usize>,
-) -> Map3<K, V, T, R>
-where
-    K: DBData,
-    V: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map3<K, V, T, R> = BTreeMap::new();
-
-    let mut cursor1 = trie.cursor();
-    cursor1.fast_forward();
-
-    while cursor1.valid() {
-        let k = cursor1.item();
-
-        result.insert(k.clone(), BTreeMap::new());
-
-        let mut cursor2 = cursor1.values();
-        cursor2.fast_forward();
-
-        while cursor2.valid() {
-            let v = cursor2.item();
-
-            result
-                .get_mut(k)
-                .unwrap()
-                .insert(v.clone(), BTreeMap::new());
-
-            let mut cursor3 = cursor2.values();
-            cursor3.fast_forward();
-
-            while cursor3.valid() {
-                let (t, r) = cursor3.item();
-                result
-                    .get_mut(k)
-                    .unwrap()
-                    .get_mut(v)
-                    .unwrap()
-                    .insert(t.clone(), r.clone());
-                cursor3.step_reverse();
-            }
-            cursor2.step_reverse();
-        }
-        cursor1.step_reverse();
-    }
-
-    result
-}
-
 // Merge map-based implementations of tries.
-fn merge_map1<T, R>(left: &Map1<T, R>, right: &Map1<T, R>) -> Map1<T, R>
+pub(crate) fn merge_map1<T, R>(left: &Map1<T, R>, right: &Map1<T, R>) -> Map1<T, R>
 where
     T: DBData,
     R: DBWeight,
@@ -674,7 +151,7 @@ where
     result
 }
 
-fn merge_map2<K, T, R>(left: &Map2<K, T, R>, right: &Map2<K, T, R>) -> Map2<K, T, R>
+pub(crate) fn merge_map2<K, T, R>(left: &Map2<K, T, R>, right: &Map2<K, T, R>) -> Map2<K, T, R>
 where
     K: DBData,
     T: DBData,
@@ -682,7 +159,7 @@ where
 {
     let mut result = left.clone();
     for (k, vals) in right.iter() {
-        let entry = result.entry(k.clone()).or_insert_with(BTreeMap::new);
+        let entry = result.entry(k.clone()).or_default();
         for (t, v) in vals.iter() {
             entry
                 .entry(t.clone())
@@ -699,7 +176,10 @@ where
     result
 }
 
-fn merge_map3<K, V, T, R>(left: &Map3<K, V, T, R>, right: &Map3<K, V, T, R>) -> Map3<K, V, T, R>
+pub(crate) fn merge_map3<K, V, T, R>(
+    left: &Map3<K, V, T, R>,
+    right: &Map3<K, V, T, R>,
+) -> Map3<K, V, T, R>
 where
     K: DBData,
     V: DBData,
@@ -708,9 +188,9 @@ where
 {
     let mut result = left.clone();
     for (k, vals) in right.iter() {
-        let entry = result.entry(k.clone()).or_insert_with(BTreeMap::new);
+        let entry = result.entry(k.clone()).or_default();
         for (v, times) in vals.iter() {
-            let entry = entry.entry(v.clone()).or_insert_with(BTreeMap::new);
+            let entry = entry.entry(v.clone()).or_default();
             for (t, r) in times.iter() {
                 entry
                     .entry(t.clone())
@@ -732,7 +212,7 @@ where
 }
 
 // Map-based implementations for `truncate_below`.
-fn truncate_map1<T, R>(map: &Map1<T, R>, lower_bound: usize) -> Map1<T, R>
+pub(crate) fn truncate_map1<T, R>(map: &Map1<T, R>, lower_bound: usize) -> Map1<T, R>
 where
     T: DBData,
     R: DBData,
@@ -743,7 +223,7 @@ where
         .collect()
 }
 
-fn truncate_map2<K, T, R>(map: &Map2<K, T, R>, lower_bound: usize) -> Map2<K, T, R>
+pub(crate) fn truncate_map2<K, T, R>(map: &Map2<K, T, R>, lower_bound: usize) -> Map2<K, T, R>
 where
     K: DBData,
     T: DBData,
@@ -755,7 +235,10 @@ where
         .collect()
 }
 
-fn truncate_map3<K, V, T, R>(map: &Map3<K, V, T, R>, lower_bound: usize) -> Map3<K, V, T, R>
+pub(crate) fn truncate_map3<K, V, T, R>(
+    map: &Map3<K, V, T, R>,
+    lower_bound: usize,
+) -> Map3<K, V, T, R>
 where
     K: DBData,
     V: DBData,
@@ -769,7 +252,7 @@ where
 }
 
 // Map-based implementations for `truncate_below`.
-fn retain_map1<T, R, F>(map: &mut Map1<T, R>, retain: F)
+/*fn retain_map1<T, R, F>(map: &mut Map1<T, R>, retain: F)
 where
     T: DBData,
     R: DBData,
@@ -778,55 +261,461 @@ where
     map.retain(|k, v| retain(k, v));
 }
 
-// Check that layer- and map-based representations are equivalent
-// by converting `Tr` to `Map` using `convert` closure.
-fn assert_eq_trie_map1<T, R, Tr, F>(trie: &Tr, map: &Map1<T, R>, convert: F)
+ */
+
+type Trie1 /* <T, R> */ = Leaf<DynData, DynWeight>;
+type Trie2 /* <K, T, R> */ = Layer<DynData, Trie1>;
+type Trie3 /* <K, V, T, R> */ = Layer<DynData, Trie2>;
+
+type FileTrie1 /* <T, R> */ = FileColumnLayer<DynData, DynWeight>;
+type FileTrie2 /* <K, V, R> */ = FileOrderedLayer<DynData, DynData, DynWeight>;
+
+// Generate a layer-based representation of the trie.
+fn tuples_to_trie1<T: DBData, R: DBWeight + ZRingValue, L: Trie>(
+    factories: &L::Factories,
+    tuples: &Tuples1<T, R>,
+) -> L
 where
     T: DBData,
-    R: DBData,
-    F: Fn(&Tr) -> Map1<T, R>,
+    R: DBWeight + ZRingValue,
+    L: for<'a> Trie<Item<'a> = (&'a mut DynData, &'a mut DynWeight)>,
 {
-    assert_eq!(map, &convert(trie));
+    let mut tuples = LeanVec::from(tuples.clone());
+    consolidate_pairs(&mut tuples);
+
+    let mut builder =
+        <<L as Trie>::TupleBuilder as TupleBuilder>::with_capacity(factories, tuples.len());
+
+    for (mut t, mut r) in tuples.as_slice().iter().cloned() {
+        builder.push_tuple((t.erase_mut(), r.erase_mut()));
+    }
+    builder.done()
 }
 
-fn assert_eq_trie_map2<K, T, R, Tr, F>(trie: &Tr, map: &Map2<K, T, R>, convert: F)
+fn tuples_to_trie2<K, T, R, L>(factories: &L::Factories, tuples: &Tuples2<K, T, R>) -> L
 where
     K: DBData,
     T: DBData,
-    R: DBData,
-    F: Fn(&Tr) -> Map2<K, T, R>,
-    Tr: std::fmt::Debug,
+    R: DBWeight + ZRingValue,
+    L: for<'a> Trie<Item<'a> = (&'a mut DynData, (&'a mut DynData, &'a mut DynWeight))>,
 {
-    assert_eq!(map, &convert(trie));
+    let mut tuples = LeanVec::from(tuples.clone());
+    consolidate_pairs(&mut tuples);
+
+    let mut builder = <<L/*<K, T, R>*/ as Trie>::TupleBuilder as TupleBuilder>::with_capacity(
+        factories,
+        tuples.len(),
+    );
+
+    for ((mut k, mut t), mut r) in tuples.as_slice().iter().cloned() {
+        builder.push_tuple((k.erase_mut(), (t.erase_mut(), r.erase_mut())))
+    }
+    builder.done()
 }
 
-fn assert_eq_trie_map3<K, V, T, R, Tr, F>(trie: &Tr, map: &Map3<K, V, T, R>, convert: F)
+fn tuples_to_trie3<K, V, T, R>(tuples: &Tuples3<K, V, T, R>) -> Trie3
 where
     K: DBData,
     V: DBData,
     T: DBData,
-    R: DBData,
-    F: Fn(&Tr) -> Map3<K, V, T, R>,
-    Tr: std::fmt::Debug,
+    R: DBWeight + ZRingValue,
+{
+    let mut tuples = LeanVec::from(tuples.clone());
+    consolidate_pairs(&mut tuples);
+
+    let mut builder = <<Trie3 as Trie>::TupleBuilder as TupleBuilder>::with_capacity(
+        &LayerFactories::new::<K>(LayerFactories::new::<V>(LeafFactories::new::<T, R>())),
+        tuples.len(),
+    );
+
+    for ((mut k, mut v, mut t), mut r) in tuples.as_slice().iter().cloned() {
+        builder.push_tuple((
+            k.erase_mut(),
+            (v.erase_mut(), (t.erase_mut(), r.erase_mut())),
+        ))
+    }
+
+    builder.done()
+}
+
+// The following functions convert various layer-based representations of tries
+// to map-based representation for equivalence checking.  There's a lot of
+// duplicated code here.  Generic implementations are likely possible, but
+// non-trivial as it is not easy to unify `(&K, &V)` and `&(K, V)` keys types
+// used by different leaf implementations.
+fn vec_leaf_to_map1<T, R>(trie: &Trie1) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(
+            t.downcast_checked::<T>().clone(),
+            r.downcast_checked::<R>().clone(),
+        );
+        cursor.step();
+    }
+
+    result
+}
+
+fn vec_leaf_to_map1_reverse<T, R>(trie: &Trie1) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(
+            t.downcast_checked::<T>().clone(),
+            r.downcast_checked::<R>().clone(),
+        );
+        cursor.step_reverse();
+    }
+
+    result
+}
+
+fn file_leaf_to_map1<T, R>(trie: &FileTrie1) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(
+            t.downcast_checked::<T>().clone(),
+            r.downcast_checked::<R>().clone(),
+        );
+        cursor.step();
+    }
+
+    result
+}
+
+fn file_leaf_to_map1_reverse<T, R>(trie: &FileTrie1) -> Map1<T, R>
+where
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map1<T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        let (t, r) = Cursor::item(&cursor);
+        result.insert(
+            t.downcast_checked::<T>().clone(),
+            r.downcast_checked::<R>().clone(),
+        );
+        cursor.step_reverse();
+    }
+
+    result
+}
+
+fn vec_trie2_to_map2<K, T, R>(trie: &Trie2) -> Map2<K, T, R>
+where
+    K: DBData,
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map2<K, T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+
+    while cursor.valid() {
+        result.insert(
+            cursor.item().downcast_checked::<K>().clone(),
+            BTreeMap::new(),
+        );
+
+        let mut leaf_cursor = cursor.values();
+
+        while leaf_cursor.valid() {
+            let (t, r) = leaf_cursor.item();
+
+            let entry = result.get_mut(cursor.item().downcast_checked()).unwrap();
+            entry.insert(
+                t.downcast_checked::<T>().clone(),
+                r.downcast_checked::<R>().clone(),
+            );
+
+            leaf_cursor.step();
+        }
+        cursor.step();
+    }
+
+    result
+}
+
+fn file_trie2_to_map2<K, T, R>(trie: &FileTrie2) -> Map2<K, T, R>
+where
+    K: DBData,
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map2<K, T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+
+    while cursor.valid() {
+        result.insert(
+            cursor.item().downcast_checked::<K>().clone(),
+            BTreeMap::new(),
+        );
+
+        let mut leaf_cursor = cursor.values();
+
+        while leaf_cursor.valid() {
+            let (t, r) = leaf_cursor.item();
+
+            let entry = result.get_mut(cursor.item().downcast_checked()).unwrap();
+            entry.insert(
+                t.downcast_checked::<T>().clone(),
+                r.downcast_checked::<R>().clone(),
+            );
+
+            leaf_cursor.step();
+        }
+        cursor.step();
+    }
+
+    result
+}
+
+fn vec_trie2_to_map2_reverse<K, T, R>(trie: &Trie2) -> Map2<K, T, R>
+where
+    K: DBData,
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map2<K, T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        result.insert(
+            cursor.item().downcast_checked::<K>().clone(),
+            BTreeMap::new(),
+        );
+
+        let mut leaf_cursor = cursor.values();
+        leaf_cursor.fast_forward();
+
+        while leaf_cursor.valid() {
+            let (t, r) = leaf_cursor.item();
+
+            let entry = result.get_mut(cursor.item().downcast_checked()).unwrap();
+            entry.insert(
+                t.downcast_checked::<T>().clone(),
+                r.downcast_checked::<R>().clone(),
+            );
+
+            leaf_cursor.step_reverse();
+        }
+        cursor.step_reverse();
+    }
+
+    result
+}
+
+fn file_trie2_to_map2_reverse<K, T, R>(trie: &FileTrie2) -> Map2<K, T, R>
+where
+    K: DBData,
+    T: DBData,
+    R: DBWeight,
+{
+    let mut result: Map2<K, T, R> = BTreeMap::new();
+
+    let mut cursor = trie.cursor();
+    cursor.fast_forward();
+
+    while cursor.valid() {
+        result.insert(
+            cursor.item().downcast_checked::<K>().clone(),
+            BTreeMap::new(),
+        );
+
+        let mut leaf_cursor = cursor.values();
+        leaf_cursor.fast_forward();
+
+        while leaf_cursor.valid() {
+            let (t, r) = leaf_cursor.item();
+
+            let entry = result.get_mut(cursor.item().downcast_checked()).unwrap();
+            entry.insert(
+                t.downcast_checked::<T>().clone(),
+                r.downcast_checked::<R>().clone(),
+            );
+
+            leaf_cursor.step_reverse();
+        }
+        cursor.step_reverse();
+    }
+
+    result
+}
+
+fn trie3_to_map3<K, V, T, R>(trie: &Trie3) -> Map3<K, V, T, R>
+where
+    K: DBData,
+    V: DBData,
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map3<K, V, T, R> = BTreeMap::new();
+
+    let mut cursor1 = trie.cursor();
+
+    while cursor1.valid() {
+        let k = cursor1.item().downcast_checked::<K>();
+
+        result.insert(k.clone(), BTreeMap::new());
+
+        let mut cursor2 = cursor1.values();
+
+        while cursor2.valid() {
+            let v = cursor2.item().downcast_checked::<V>();
+
+            result
+                .get_mut(k)
+                .unwrap()
+                .insert(v.clone(), BTreeMap::new());
+
+            let mut cursor3 = cursor2.values();
+            while cursor3.valid() {
+                let (t, r) = cursor3.item();
+                result.get_mut(k).unwrap().get_mut(v).unwrap().insert(
+                    t.downcast_checked::<T>().clone(),
+                    r.downcast_checked::<R>().clone(),
+                );
+                cursor3.step();
+            }
+            cursor2.step();
+        }
+        cursor1.step();
+    }
+
+    result
+}
+
+fn trie3_to_map3_reverse<K, V, T, R>(trie: &Trie3) -> Map3<K, V, T, R>
+where
+    K: DBData,
+    V: DBData,
+    T: DBData,
+    R: DBWeight + ZRingValue,
+{
+    let mut result: Map3<K, V, T, R> = BTreeMap::new();
+
+    let mut cursor1 = trie.cursor();
+    cursor1.fast_forward();
+
+    while cursor1.valid() {
+        let k = cursor1.item().downcast_checked::<K>();
+
+        result.insert(k.clone(), BTreeMap::new());
+
+        let mut cursor2 = cursor1.values();
+        cursor2.fast_forward();
+
+        while cursor2.valid() {
+            let v = cursor2.item().downcast_checked::<V>();
+
+            result
+                .get_mut(k)
+                .unwrap()
+                .insert(v.clone(), BTreeMap::new());
+
+            let mut cursor3 = cursor2.values();
+            cursor3.fast_forward();
+
+            while cursor3.valid() {
+                let (t, r) = cursor3.item();
+                result.get_mut(k).unwrap().get_mut(v).unwrap().insert(
+                    t.downcast_checked::<T>().clone(),
+                    r.downcast_checked::<R>().clone(),
+                );
+                cursor3.step_reverse();
+            }
+            cursor2.step_reverse();
+        }
+        cursor1.step_reverse();
+    }
+
+    result
+}
+
+// Check that layer- and map-based representations are equivalent
+// by converting `Tr` to `Map` using `convert` closure.
+fn assert_eq_trie_map1<T, R, L, F>(trie: &L, map: &Map1<T, R>, convert: F)
+where
+    T: DBData,
+    R: DBWeight,
+    L: for<'a> Trie<Item<'a> = (&'a mut DynData, &'a mut DynWeight)>,
+    F: Fn(&L) -> Map1<T, R>,
 {
     assert_eq!(map, &convert(trie));
 }
 
-fn test_trie1<T, R, Tr, F>(left: &Tuples1<T, R>, right: &Tuples1<T, R>, trie_to_map: &F)
+fn assert_eq_trie_map2<K, T, R, L, F>(trie: &L, map: &Map2<K, T, R>, convert: F)
 where
+    K: DBData,
     T: DBData,
     R: DBWeight,
-    Tr: Trie<Item = (T, R)> + std::fmt::Debug,
-    Tr::TupleBuilder: std::fmt::Debug,
-    F: Fn(&Tr) -> Map1<T, R>,
+    F: Fn(&L) -> Map2<K, T, R>,
+    L: for<'a> Trie<Item<'a> = (&'a mut DynData, (&'a mut DynData, &'a mut DynWeight))>,
+{
+    let map2 = &convert(trie);
+    assert_eq!(map, map2);
+}
+
+fn assert_eq_trie_map3<K, V, T, R, F>(trie: &Trie3, map: &Map3<K, V, T, R>, convert: F)
+where
+    K: DBData,
+    V: DBData,
+    T: DBData,
+    R: DBWeight,
+    F: Fn(&Trie3) -> Map3<K, V, T, R>,
+{
+    assert_eq!(map, &convert(trie));
+}
+
+fn test_trie1<T, R, F, L>(
+    factories: &L::Factories,
+    left: &Tuples1<T, R>,
+    right: &Tuples1<T, R>,
+    trie_to_map: &F,
+) where
+    T: DBData,
+    R: DBWeight + ZRingValue,
+    F: Fn(&L) -> Map1<T, R>,
+    L: for<'a> Trie<Item<'a> = (&'a mut DynData, &'a mut DynWeight)>,
 {
     // Check that map- and layer-based representations of
     // input datasets are identical.
     let left_map = tuples_to_map1(left);
     let right_map = tuples_to_map1(right);
 
-    let left_trie = tuples_to_trie1::<_, _, Tr>(left);
-    let right_trie = tuples_to_trie1::<_, _, Tr>(right);
+    let left_trie = tuples_to_trie1::<_, _, L>(factories, left);
+    let right_trie = tuples_to_trie1::<_, _, L>(factories, right);
 
     assert_eq_trie_map1(&left_trie, &left_map, trie_to_map);
     assert_eq_trie_map1(&right_trie, &right_map, trie_to_map);
@@ -848,20 +737,23 @@ where
     }
 }
 
-fn test_trie2<K, T, R, Tr, F>(left: &Tuples2<K, T, R>, right: &Tuples2<K, T, R>, trie_to_map: &F)
-where
+fn test_trie2<K, T, R, F, L>(
+    factories: &L::Factories,
+    left: &Tuples2<K, T, R>,
+    right: &Tuples2<K, T, R>,
+    trie_to_map: &F,
+) where
     K: DBData,
     T: DBData,
-    R: DBWeight,
-    Tr: Trie<Item = (K, (T, R))> + std::fmt::Debug,
-    Tr::TupleBuilder: std::fmt::Debug,
-    F: Fn(&Tr) -> Map2<K, T, R>,
+    R: DBWeight + ZRingValue,
+    F: Fn(&L) -> Map2<K, T, R>,
+    L: for<'a> Trie<Item<'a> = (&'a mut DynData, (&'a mut DynData, &'a mut DynWeight))>,
 {
     let left_map = tuples_to_map2(left);
     let right_map = tuples_to_map2(right);
 
-    let left_trie = tuples_to_trie2::<_, _, _, Tr>(left);
-    let right_trie = tuples_to_trie2::<_, _, _, Tr>(right);
+    let left_trie = tuples_to_trie2(factories, left);
+    let right_trie = tuples_to_trie2(factories, right);
 
     assert_eq_trie_map2(&left_trie, &left_map, trie_to_map);
 
@@ -881,7 +773,7 @@ where
     }
 }
 
-fn test_trie3<K, V, T, R, Tr, F>(
+fn test_trie3<K, V, T, R, F>(
     left: &Tuples3<K, V, T, R>,
     right: &Tuples3<K, V, T, R>,
     trie_to_map: &F,
@@ -889,16 +781,14 @@ fn test_trie3<K, V, T, R, Tr, F>(
     K: DBData,
     V: DBData,
     T: DBData,
-    R: DBWeight,
-    Tr: Trie<Item = (K, (V, (T, R)))> + std::fmt::Debug,
-    Tr::TupleBuilder: std::fmt::Debug,
-    F: Fn(&Tr) -> Map3<K, V, T, R>,
+    R: DBWeight + ZRingValue,
+    F: Fn(&Trie3) -> Map3<K, V, T, R>,
 {
     let left_map = tuples_to_map3(left);
     let right_map = tuples_to_map3(right);
 
-    let left_trie = tuples_to_trie3::<_, _, _, _, Tr>(left);
-    let right_trie = tuples_to_trie3::<_, _, _, _, Tr>(right);
+    let left_trie = tuples_to_trie3::<_, _, _, _>(left);
+    let right_trie = tuples_to_trie3::<_, _, _, _>(right);
 
     assert_eq_trie_map3(&left_trie, &left_map, trie_to_map);
 
@@ -919,6 +809,7 @@ fn test_trie3<K, V, T, R, Tr, F>(
 }
 
 proptest! {
+    /*
     #[test]
     fn test_column_layer_retain(tuples in tuples1(100, 3, 5000)) {
         let mut map = tuples_to_map1(&tuples);
@@ -934,36 +825,36 @@ proptest! {
             assert_eq_trie_map1(&trie, &map, column_layer_to_map1);
         }
     }
+    */
 
     #[test]
     fn test_leaf_layers(left in tuples1(10, 3, 5000), right in tuples1(10, 3, 5000)) {
-        test_trie1::<_, _, OrderedLeaf<_, _>, _>(&left, &right, &ordered_leaf_to_map1);
-        test_trie1::<_, _, OrderedLeaf<_, _>, _>(&left, &right, &ordered_leaf_to_map1_reverse);
-        test_trie1::<_, _, ColumnLayer<_, _>, _>(&left, &right, &column_layer_to_map1);
-        test_trie1::<_, _, ColumnLayer<_, _>, _>(&left, &right, &column_layer_to_map1_reverse);
+        test_trie1::<_, _, _, Trie1>(&LeafFactories::new::<i32, i32>(), &left, &right, &vec_leaf_to_map1);
+        test_trie1::<_, _, _, Trie1>(&LeafFactories::new::<i32, i32>(), &left, &right, &vec_leaf_to_map1_reverse);
     }
 
     #[test]
-    fn test_erased_leaf_layers(left in tuples1(10, 3, 5000), right in tuples1(10, 3, 5000)) {
-        test_trie1::<_, _, TypedErasedLeaf<_, _>, _>(&left, &right, &typed_erased_leaf_to_map1);
-        test_trie1::<_, _, TypedErasedLeaf<_, _>, _>(&left, &right, &typed_erased_leaf_to_map1_reverse);
-        test_trie1::<_, _, TypedErasedKeyLeaf<_, _>, _>(&left, &right, &typed_erased_key_leaf_to_map1);
-        test_trie1::<_, _, TypedErasedKeyLeaf<_, _>, _>(&left, &right, &typed_erased_key_leaf_to_map1_reverse);
+    fn test_file_leaf_layers(left in tuples1(10, 3, 5000), right in tuples1(10, 3, 5000)) {
+        test_trie1::<_, _, _, FileTrie1>(&FileLeafFactories::new::<i32, i32>(), &left, &right, &file_leaf_to_map1);
+        test_trie1::<_, _, _, FileTrie1>(&FileLeafFactories::new::<i32, i32>(), &left, &right, &file_leaf_to_map1_reverse);
     }
+
 
     #[test]
     fn test_nested_layers(left in tuples2(10, 10, 2, 5000), right in tuples2(10, 5, 2, 5000)) {
-        test_trie2::<_, _, _, OrderedLayer<_, ColumnLayer<_, _>, usize>, _>(&left, &right, &ordered_column_layer_to_map2);
-        test_trie2::<_, _, _, OrderedLayer<_, ColumnLayer<_, _>, usize>, _>(&left, &right, &ordered_column_layer_to_map2_reverse);
-        test_trie2::<_, _, _, OrderedLayer<_, OrderedLeaf<_, _>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map2);
-        test_trie2::<_, _, _, OrderedLayer<_, OrderedLeaf<_, _>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map2_reverse);
+        test_trie2(&LayerFactories::new::<i32>(LeafFactories::new::<i32, i32>()), &left, &right, &vec_trie2_to_map2);
+        test_trie2(&LayerFactories::new::<i32>(LeafFactories::new::<i32, i32>()), &left, &right, &vec_trie2_to_map2_reverse);
+    }
+
+    #[test]
+    fn test_file_nested_layers(left in tuples2(10, 10, 2, 5000), right in tuples2(10, 5, 2, 5000)) {
+        test_trie2(&FileOrderedLayerFactories::new::<i32, i32,i32>(), &left, &right, &file_trie2_to_map2);
+        test_trie2(&FileOrderedLayerFactories::new::<i32, i32,i32>(), &left, &right, &file_trie2_to_map2_reverse);
     }
 
     #[test]
     fn test_twice_nested_layers(left in tuples3(10, 5, 5, 2, 5000), right in tuples3(10, 5, 5, 2, 5000)) {
-        test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, OrderedLeaf<_, _>, usize>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map3);
-        test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, OrderedLeaf<_, _>, usize>, usize>, _>(&left, &right, &ordered_leaf_layer_to_map3_reverse);
-        test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, ColumnLayer<_, _>, usize>, usize>, _>(&left, &right, &ordered_column_layer_to_map3);
-        test_trie3::<_, _, _, _, OrderedLayer<_, OrderedLayer<_, ColumnLayer<_, _>, usize>, usize>, _>(&left, &right, &ordered_column_layer_to_map3_reverse);
+        test_trie3(&left, &right, &trie3_to_map3);
+        test_trie3(&left, &right, &trie3_to_map3_reverse);
     }
 }

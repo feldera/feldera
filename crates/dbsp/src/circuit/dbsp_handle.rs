@@ -261,7 +261,7 @@ impl Runtime {
     /// an identical circuit in each worker, by calling `constructor` once per
     /// worker.  `init_circuit` passes each call of `constructor` a new
     /// [`RootCircuit`], in which it should create input operators by calling
-    /// [`RootCircuit::add_input_zset`] and related methods.  Each of these
+    /// [`RootCircuit::dyn_add_input_zset`] and related methods.  Each of these
     /// calls returns an input handle and a `Stream`.  The `constructor` can
     /// call [`Stream`] methods to construct more operators, each of which
     /// yields further `Stream`s.  It can also use [`Stream::output`] to obtain
@@ -663,7 +663,7 @@ impl Drop for DBSPHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Barrier};
+    use std::time::Duration;
 
     use crate::{operator::Generator, Circuit, Error as DBSPError, Runtime, RuntimeError};
     use anyhow::anyhow;
@@ -735,21 +735,17 @@ mod tests {
 
     #[test]
     fn test_panic_no_deadlock() {
-        let barrier = Arc::new(Barrier::new(4));
-        let (mut handle, _) = {
-            let barrier = barrier.clone();
-            Runtime::init_circuit(4, move |circuit| {
-                circuit.add_source(Generator::new(move || {
-                    if Runtime::worker_index() == 1 {
-                        panic!()
-                    } else {
-                        barrier.wait();
-                    }
-                }));
-                Ok(())
-            })
-            .unwrap()
-        };
+        let (mut handle, _) = Runtime::init_circuit(4, |circuit| {
+            circuit.add_source(Generator::new(|| {
+                if Runtime::worker_index() == 1 {
+                    panic!()
+                } else {
+                    std::thread::sleep(Duration::MAX)
+                }
+            }));
+            Ok(())
+        })
+        .unwrap();
 
         if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
             // println!("error: {err}");
@@ -757,7 +753,6 @@ mod tests {
         } else {
             panic!();
         }
-        barrier.wait();
     }
 
     // Kill the runtime.

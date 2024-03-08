@@ -1,9 +1,8 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
-    operator::{FilterMap, Max},
-    utils::Tup2,
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
+    dynamic::DynData, operator::Max, typed_batch::TypedBox, utils::Tup2, OrdIndexedZSet, OrdZSet,
+    RootCircuit, Stream,
 };
 
 /// Query 5: Hot Items
@@ -69,14 +68,14 @@ use dbsp::{
 /// will aggregate within each window exactly once, which is what we implement
 /// here.
 
-type Q5Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>, i64>>;
+type Q5Stream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
 
 const WINDOW_WIDTH_SECONDS: u64 = 10;
 const TUMBLE_SECONDS: u64 = 2;
 
 pub fn q5(input: NexmarkStream) -> Q5Stream {
     // All bids indexed by date time to be able to window the result.
-    let bids_by_time: Stream<_, OrdIndexedZSet<u64, u64, _>> =
+    let bids_by_time: Stream<_, OrdIndexedZSet<u64, u64>> =
         input.flat_map_index(|event| match event {
             Event::Bid(b) => Some((b.date_time, b.auction)),
             _ => None,
@@ -84,17 +83,20 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
 
     // Extract the largest timestamp from the input stream. We will use it as
     // current time. Set watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
-    let watermark = bids_by_time.waterline_monotonic(
+    let watermark: Stream<_, TypedBox<u64, DynData>> = bids_by_time.waterline_monotonic(
         || 0,
         |date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000,
     );
 
     // 10-second window with 2-second step.
-    let window_bounds = watermark.apply(|watermark| {
-        let watermark_rounded = *watermark - (*watermark % (TUMBLE_SECONDS * 1000));
+    let window_bounds = watermark.apply(|watermark: &TypedBox<u64, _>| {
+        let watermark = **watermark;
+        let watermark_rounded = watermark - (watermark % (TUMBLE_SECONDS * 1000));
         (
-            watermark_rounded.saturating_sub(WINDOW_WIDTH_SECONDS * 1000),
-            watermark_rounded,
+            TypedBox::<u64, DynData>::new(
+                watermark_rounded.saturating_sub(WINDOW_WIDTH_SECONDS * 1000),
+            ),
+            TypedBox::<u64, DynData>::new(watermark_rounded),
         )
     });
 
@@ -110,7 +112,7 @@ pub fn q5(input: NexmarkStream) -> Q5Stream {
     let max_auction_count = auction_counts
         .map_index(|(_auction, count)| ((), *count))
         .aggregate(Max)
-        .map(|((), max_count)| *max_count);
+        .map_index(|((), max_count)| (*max_count, ()));
 
     // Filter out auctions with the largest number of bids.
     // TODO: once the query works, this can be done more efficiently
@@ -159,7 +161,7 @@ mod tests {
     fn test_q5(
         #[case] auction1_batches: Vec<Vec<u64>>,
         #[case] auction2_batches: Vec<Vec<u64>>,
-        #[case] expected_zsets: Vec<OrdZSet<Tup2<u64, u64>, i64>>,
+        #[case] expected_zsets: Vec<OrdZSet<Tup2<u64, u64>>>,
     ) {
         // Just ensure we don't get a false positive with zip only including
         // part of the input data. We could instead directly import zip_eq?
@@ -176,7 +178,7 @@ mod tests {
                     a1_batch
                         .into_iter()
                         .map(|date_time| {
-                            (
+                            Tup2(
                                 Event::Bid(Bid {
                                     auction: 1,
                                     date_time,
@@ -186,7 +188,7 @@ mod tests {
                             )
                         })
                         .chain(a2_batch.into_iter().map(|date_time| {
-                            (
+                            Tup2(
                                 Event::Bid(Bid {
                                     auction: 2,
                                     date_time,
@@ -199,7 +201,7 @@ mod tests {
                 });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q5(stream);
 

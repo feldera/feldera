@@ -250,6 +250,23 @@ where
     }
 }
 
+impl<T: ?Sized> NumEntries for Box<T>
+where
+    T: NumEntries,
+{
+    const CONST_NUM_ENTRIES: Option<usize> = T::CONST_NUM_ENTRIES;
+
+    #[inline]
+    fn num_entries_shallow(&self) -> usize {
+        self.as_ref().num_entries_shallow()
+    }
+
+    #[inline]
+    fn num_entries_deep(&self) -> usize {
+        self.as_ref().num_entries_deep()
+    }
+}
+
 impl<T> NumEntries for Option<T>
 where
     T: NumEntries,

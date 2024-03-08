@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{
     algebra::UnimplementedSemigroup,
-    operator::{FilterMap, Fold, Max},
+    operator::{Fold, Max},
     utils::Tup2,
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
@@ -38,7 +38,7 @@ use dbsp::{
 /// ) AS Q;
 /// ```
 
-type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64, i64>>;
+type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64>>;
 
 const NUM_AUCTIONS_PER_SELLER: usize = 10;
 
@@ -55,7 +55,7 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
         _ => None,
     });
 
-    type BidsAuctionsJoin = Stream<RootCircuit, OrdZSet<((u64, u64, u64, u64), (u64, u64)), i64>>;
+    type BidsAuctionsJoin = Stream<RootCircuit, OrdZSet<((u64, u64, u64, u64), (u64, u64))>>;
 
     // Join to get bids for each auction.
     let bids_for_auctions: BidsAuctionsJoin = auctions_by_id.join(
@@ -85,7 +85,7 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     // need the auction ids anymore.
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
-    type WinningBidsBySeller = Stream<RootCircuit, OrdIndexedZSet<u64, Tup2<u64, u64>, i64>>;
+    type WinningBidsBySeller = Stream<RootCircuit, OrdIndexedZSet<u64, Tup2<u64, u64>>>;
     let winning_bids_by_seller_indexed: WinningBidsBySeller = bids_for_auctions_indexed
         .aggregate(Max)
         .map_index(|(key, max)| (key.1, Tup2(key.0, *max)));
@@ -94,7 +94,7 @@ pub fn q6(input: NexmarkStream) -> Q6Stream {
     // 10 closed auctions.
     // TODO: use linear aggregation when ready (#138).
     winning_bids_by_seller_indexed.aggregate(
-        <Fold<_, UnimplementedSemigroup<_>, _, _>>::with_output(
+        <Fold<_, _, UnimplementedSemigroup<_>, _, _>>::with_output(
             Vec::with_capacity(NUM_AUCTIONS_PER_SELLER),
             |top: &mut Vec<u64>, val: &Tup2<u64, u64>, _w| {
                 if top.len() >= NUM_AUCTIONS_PER_SELLER {
@@ -126,7 +126,7 @@ mod tests {
             // The first batch has a single auction for seller 99 with a highest bid of 100
             // (currently).
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 1,
                         seller: 99,
@@ -135,7 +135,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 1_000,
@@ -144,7 +144,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 2_000,
@@ -155,7 +155,7 @@ mod tests {
                 ),
             ],
             // The second batch has a new highest bid for the (currently) only auction.
-            vec![(
+            vec![Tup2(
                 Event::Bid(Bid {
                     auction: 1,
                     date_time: 9_000,
@@ -165,7 +165,7 @@ mod tests {
                 1,
             )],
             // The third batch has a new bid but it's not higher, so no effect.
-            vec![(
+            vec![Tup2(
                 Event::Bid(Bid {
                     auction: 1,
                     date_time: 9_500,
@@ -178,7 +178,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
@@ -210,7 +210,7 @@ mod tests {
         let input_vecs = vec![
             // The first batch has a single auction for seller 99 with a highest bid of 100.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 1,
                         seller: 99,
@@ -219,7 +219,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 2_000,
@@ -232,7 +232,7 @@ mod tests {
             // The second batch adds a new auction for the same seller, with
             // a final bid of 200, so the average should be 150 for this seller.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 2,
                         seller: 99,
@@ -241,7 +241,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 2,
                         date_time: 15_000,
@@ -255,7 +255,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
                 indexed_zset! { 99 => {100 => 1} },
@@ -285,7 +285,7 @@ mod tests {
             // The first batch has 5 auctions all with single bids of 100, except
             // the first which is at 200.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 1,
                         seller: 99,
@@ -294,7 +294,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 2_000,
@@ -303,7 +303,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 2,
                         seller: 99,
@@ -312,7 +312,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 2,
                         date_time: 2_000,
@@ -321,7 +321,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 3,
                         seller: 99,
@@ -330,7 +330,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 3,
                         date_time: 2_000,
@@ -339,7 +339,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 4,
                         seller: 99,
@@ -348,7 +348,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 4,
                         date_time: 2_000,
@@ -357,7 +357,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 5,
                         seller: 99,
@@ -366,7 +366,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 5,
                         date_time: 2_000,
@@ -378,7 +378,7 @@ mod tests {
             ],
             // The second batch has another 5 auctions all with single bids of 100.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 6,
                         seller: 99,
@@ -387,7 +387,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 6,
                         date_time: 2_000,
@@ -396,7 +396,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 7,
                         seller: 99,
@@ -405,7 +405,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 7,
                         date_time: 2_000,
@@ -414,7 +414,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 8,
                         seller: 99,
@@ -423,7 +423,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 8,
                         date_time: 2_000,
@@ -432,7 +432,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 9,
                         seller: 99,
@@ -441,7 +441,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 9,
                         date_time: 2_000,
@@ -450,7 +450,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 10,
                         seller: 99,
@@ -459,7 +459,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 10,
                         date_time: 2_000,
@@ -472,7 +472,7 @@ mod tests {
             // The third batch has a single auction and bid of 100. The last
             // 10 auctions all have 100 now, so average is 100.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 11,
                         seller: 99,
@@ -481,7 +481,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 11,
                         date_time: 2_000,
@@ -495,7 +495,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
             let mut expected_output = vec![
                 // First has 5 auction for person 99, but average is (200 + 100 * 4) / 5.
                 indexed_zset! { 99 => {120 => 1} },
@@ -526,7 +526,7 @@ mod tests {
         let input_vecs = vec![
             // The first batch has a single auction for seller 99 with a highest bid of 100.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 1,
                         seller: 99,
@@ -535,7 +535,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 1,
                         date_time: 2_000,
@@ -549,7 +549,7 @@ mod tests {
             // a final bid of 200, so the two sellers have 100 and 200 as
             // their averages.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 2,
                         seller: 33,
@@ -558,7 +558,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 2,
                         date_time: 15_000,
@@ -572,7 +572,7 @@ mod tests {
             // final bids of 200, so the two sellers have 150 and 200 as
             // their averages.
             vec![
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 3,
                         seller: 99,
@@ -581,7 +581,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 3,
                         date_time: 15_000,
@@ -590,7 +590,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 4,
                         seller: 33,
@@ -599,7 +599,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         auction: 4,
                         date_time: 15_000,
@@ -613,7 +613,7 @@ mod tests {
         .into_iter();
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.

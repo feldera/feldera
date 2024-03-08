@@ -57,15 +57,15 @@ pub type CircuitCache = TypedMap<CircuitStoreMarker>;
 /// `Stream<C, D>`.
 #[macro_export]
 macro_rules! circuit_cache_key {
-    ($constructor:ident$(<$($typearg:ident),*>)?($key_type:ty => $val_type:ty)) => {
-        circuit_cache_key!(@inner pub [$crate::circuit::cache::CircuitStoreMarker] $constructor $(<$($typearg),*>)?($key_type => $val_type));
+    ($constructor:ident$(<$($typearg:ident $(:$trait_bound:tt)? ),*>)?($key_type:ty => $val_type:ty)) => {
+        circuit_cache_key!(@inner pub [$crate::circuit::cache::CircuitStoreMarker] $constructor $(<$($typearg $(:$trait_bound)?),*>)?($key_type => $val_type));
     };
 
-    (local $vis:vis $constructor:ident$(<$($typearg:ident),*>)?($key_type:ty => $val_type:ty)) => {
-        circuit_cache_key!(@inner $vis [$crate::circuit::runtime::LocalStoreMarker] $constructor $(<$($typearg),*>)?($key_type => $val_type));
+    (local $vis:vis $constructor:ident$(<$($typearg:ident $(:$trait_bound:tt)?),*>)?($key_type:ty => $val_type:ty)) => {
+        circuit_cache_key!(@inner $vis [$crate::circuit::runtime::LocalStoreMarker] $constructor $(<$($typearg $(:$trait_bound)?),*>)?($key_type => $val_type));
     };
 
-    (@inner $vis:vis [$type_key:path] $constructor:ident$(<$($typearg:ident),*>)?($key_type:ty => $val_type:ty)) => {
+    (@inner $vis:vis [$type_key:path] $constructor:ident$(<$($typearg:ident $(:$trait_bound:tt)?),*>)?($key_type:ty => $val_type:ty)) => {
         #[repr(transparent)]
         #[allow(unused_parens)]
         $vis struct $constructor$(<$($typearg: 'static),*>)?(pub $key_type, $(::std::marker::PhantomData<($($typearg),*)>)?);
@@ -94,11 +94,59 @@ macro_rules! circuit_cache_key {
 
         impl$(<$($typearg),*>)? ::std::cmp::Eq for $constructor$(<$($typearg),*>)? {}
 
-        impl$(<$($typearg: 'static),*>)? ::typedmap::TypedMapKey<$type_key> for $constructor$(<$($typearg),*>)? {
+        impl$(<$($typearg $(:$trait_bound)?),*>)? ::typedmap::TypedMapKey<$type_key> for $constructor$(<$($typearg),*>)? {
             type Value = $val_type;
         }
 
         unsafe impl$(<$($typearg: 'static),*>)? Send for $constructor$(<$($typearg),*>)? {}
         unsafe impl$(<$($typearg: 'static),*>)? Sync for $constructor$(<$($typearg),*>)? {}
+    };
+}
+
+#[macro_export]
+macro_rules! circuit_cache_key_unsized {
+    ($constructor:ident$(<$($typearg:ident),*>)?($key_type:ty => $val_type:ty)) => {
+        circuit_cache_key_unsized!(@inner pub [$crate::circuit::cache::CircuitStoreMarker] $constructor $(<$($typearg),*>)?($key_type => $val_type));
+    };
+
+    (local $vis:vis $constructor:ident$(<$($typearg:ident),*>)?($key_type:ty => $val_type:ty)) => {
+        circuit_cache_key_unsized!(@inner $vis [$crate::circuit::runtime::LocalStoreMarker] $constructor $(<$($typearg),*>)?($key_type => $val_type));
+    };
+
+    (@inner $vis:vis [$type_key:path] $constructor:ident$(<$($typearg:ident),*>)?($key_type:ty => $val_type:ty)) => {
+        #[repr(transparent)]
+        #[allow(unused_parens)]
+        $vis struct $constructor$(<$($typearg: 'static + ?Sized),*>)?(pub $key_type, $(::std::marker::PhantomData<fn($(& $typearg),*)>)?);
+
+        impl$(<$($typearg: ?Sized),*>)? $constructor$(<$($typearg),*>)? {
+            #[allow(unused_parens)]
+            pub fn new(key: $key_type) -> Self {
+                Self(key, $(::std::marker::PhantomData::<($($typearg),*)>)?)
+            }
+        }
+
+        impl$(<$($typearg: ?Sized),*>)? ::std::hash::Hash for $constructor$(<$($typearg),*>)? {
+            fn hash<H>(&self, state: &mut H)
+            where
+                H: ::std::hash::Hasher,
+            {
+                ::std::hash::Hash::hash(&self.0, state);
+            }
+        }
+
+        impl$(<$($typearg: ?Sized),*>)? ::std::cmp::PartialEq for $constructor$(<$($typearg),*>)? {
+            fn eq(&self, other: &Self) -> bool {
+                ::std::cmp::PartialEq::eq(&self.0, &other.0)
+            }
+        }
+
+        impl$(<$($typearg: ?Sized),*>)? ::std::cmp::Eq for $constructor$(<$($typearg),*>)? {}
+
+        impl$(<$($typearg: ?Sized + 'static),*>)? ::typedmap::TypedMapKey<$type_key> for $constructor$(<$($typearg),*>)? {
+            type Value = $val_type;
+        }
+
+        unsafe impl$(<$($typearg: ?Sized + 'static),*>)? Send for $constructor$(<$($typearg),*>)? {}
+        unsafe impl$(<$($typearg: ?Sized + 'static),*>)? Sync for $constructor$(<$($typearg),*>)? {}
     };
 }

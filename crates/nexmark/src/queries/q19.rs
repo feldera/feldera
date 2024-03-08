@@ -1,10 +1,7 @@
 use super::NexmarkStream;
 use crate::model::{Bid, Event};
 use dbsp::{
-    algebra::UnimplementedSemigroup,
-    operator::{FilterMap, Fold},
-    utils::Tup2,
-    OrdZSet, RootCircuit, Stream,
+    algebra::UnimplementedSemigroup, operator::Fold, utils::Tup2, OrdZSet, RootCircuit, Stream,
 };
 
 ///
@@ -33,7 +30,7 @@ use dbsp::{
 /// WHERE rank_number <= 10;
 /// ```
 
-type Q19Stream = Stream<RootCircuit, OrdZSet<Bid, i64>>;
+type Q19Stream = Stream<RootCircuit, OrdZSet<Bid>>;
 
 const TOP_BIDS: usize = 10;
 
@@ -44,7 +41,7 @@ pub fn q19(input: NexmarkStream) -> Q19Stream {
     });
 
     bids_by_auction
-        .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
+        .aggregate(<Fold<_, _, UnimplementedSemigroup<_>, _, _>>::new(
             Vec::with_capacity(TOP_BIDS),
             |top: &mut Vec<Bid>, Tup2(_price, bid): &Tup2<u64, Bid>, _w| {
                 if top.len() >= TOP_BIDS {
@@ -261,13 +258,13 @@ mod tests {
     )]
     pub fn test_q19(
         #[case] input_bid_batches: Vec<Vec<(u64, u64, u64)>>,
-        #[case] expected_zsets: Vec<OrdZSet<Bid, i64>>,
+        #[case] expected_zsets: Vec<OrdZSet<Bid>>,
     ) {
         let input_vecs = input_bid_batches.into_iter().map(|batch| {
             batch
                 .into_iter()
                 .map(|(auction, bidder, price)| {
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction,
                             bidder,
@@ -281,7 +278,7 @@ mod tests {
         });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q19(stream);
 

@@ -22,24 +22,30 @@ pub use timestamp::Date;
 pub use timestamp::Time;
 pub use timestamp::Timestamp;
 
+use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories};
+use dbsp::dynamic::{DowncastTrait, DynData, Erase};
+use dbsp::trace::ord::vec::indexed_wset_batch::VecIndexedWSetBuilder;
+use dbsp::trace::ord::vec::wset_batch::VecWSetBuilder;
+use dbsp::trace::BatchReaderFactories;
+use dbsp::typed_batch::TypedBatch;
 use dbsp::{
     algebra::{
         AddByRef, HasOne, HasZero, NegByRef, Semigroup, SemigroupValue, ZRingValue, F32, F64,
     },
-    trace::{Batch, BatchReader, Builder, Cursor},
+    trace::{BatchReader, Builder, Cursor},
     utils::*,
-    CollectionHandle, DBData, OrdIndexedZSet, OrdZSet, OutputHandle, UpsertHandle,
+    DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
 use num::{Signed, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::ops::{Add, Neg};
+use std::ops::{Add, Deref, Neg};
 use std::str::FromStr;
 
 pub type Weight = i64; // Default weight type
-pub type WSet<D> = OrdZSet<D, Weight>;
-pub type IndexedWSet<K, D> = OrdIndexedZSet<K, D, Weight>;
+pub type WSet<D> = OrdZSet<D>;
+pub type IndexedWSet<K, D> = OrdIndexedZSet<K, D>;
 
 #[derive(Clone)]
 pub struct DefaultOptSemigroup<T>(PhantomData<T>);
@@ -1407,15 +1413,17 @@ where
     T: DBData + 'static,
     F: Fn(&D) -> T,
 {
-    let mut builder = <WSet<T> as Batch>::Builder::with_capacity((), data.len());
+    let factories = OrdZSetFactories::new::<T, (), ZWeight>();
+    let mut builder = VecWSetBuilder::with_capacity(&factories, (), data.len());
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        let item = cursor.key();
-        let data = mapper(item);
-        builder.push((data, cursor.weight()));
+        let mut weight = *cursor.weight().deref();
+        let item = unsafe { cursor.key().downcast::<D>() };
+        let mut data = mapper(item);
+        builder.push_vals(data.erase_mut(), ().erase_mut(), weight.erase_mut());
         cursor.step_key();
     }
-    builder.done()
+    TypedBatch::new(builder.done())
 }
 
 pub fn zset_filter_comparator<D, T, F>(data: &WSet<D>, value: &T, comparator: F) -> WSet<D>
@@ -1424,17 +1432,20 @@ where
     T: 'static,
     F: Fn(&D, &T) -> bool,
 {
-    let mut builder = <WSet<D> as Batch>::Builder::with_capacity((), data.len());
+    let factories = OrdZSetFactories::new::<D, (), ZWeight>();
+
+    let mut builder = VecWSetBuilder::with_capacity(&factories, (), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        let item = cursor.key();
+        let weight = *cursor.weight().deref();
+        let item = unsafe { cursor.key().downcast::<D>() };
         if comparator(item, value) {
-            builder.push((item.clone(), cursor.weight()));
+            builder.push_refs(item.erase(), ().erase(), weight.erase());
         }
         cursor.step_key();
     }
-    builder.done()
+    TypedBatch::new(builder.done())
 }
 
 pub fn indexed_zset_filter_comparator<K, D, T, F>(
@@ -1443,43 +1454,44 @@ pub fn indexed_zset_filter_comparator<K, D, T, F>(
     comparator: F,
 ) -> IndexedWSet<K, D>
 where
-    K: DBData + 'static,
-    D: DBData + 'static,
+    K: DBData + Erase<DynData>,
+    D: DBData + Erase<DynData>,
     T: 'static,
     F: Fn((&K, &D), &T) -> bool,
 {
-    let mut builder = <IndexedWSet<K, D> as Batch>::Builder::with_capacity((), data.len());
+    let factories = OrdIndexedZSetFactories::new::<K, D, ZWeight>();
+    let mut builder = VecIndexedWSetBuilder::with_capacity(&factories, (), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        let key = cursor.key().clone();
+        let key = unsafe { cursor.key().downcast::<K>() }.clone();
         while cursor.val_valid() {
-            let w = cursor.weight();
-            let item = cursor.val();
+            let w = *cursor.weight().deref();
+            let item = unsafe { cursor.val().downcast::<D>() };
             if comparator((&key, item), value) {
-                builder.push(((key.clone(), item.clone()), w));
+                builder.push_refs(&key, item.erase(), w.erase());
             }
             cursor.step_val();
         }
         cursor.step_key();
     }
-    builder.done()
+    TypedBatch::new(builder.done())
 }
 
-pub fn append_to_upsert_handle<K>(data: &WSet<K>, handle: &UpsertHandle<K, bool>)
+pub fn append_to_upsert_handle<K>(data: &WSet<K>, handle: &SetHandle<K>)
 where
     K: DBData,
 {
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        let mut w = cursor.weight();
+        let mut w = *cursor.weight().deref();
         let mut insert = true;
         if !w.ge0() {
             insert = false;
             w = w.neg();
         }
         while !w.le0() {
-            let key = cursor.key();
+            let key = unsafe { cursor.key().downcast::<K>() };
             handle.push(key.clone(), insert);
             w = w.add(Weight::neg(Weight::one()));
         }
@@ -1487,13 +1499,16 @@ where
     }
 }
 
-pub fn append_to_collection_handle<K>(data: &WSet<K>, handle: &CollectionHandle<K, Weight>)
+pub fn append_to_collection_handle<K>(data: &WSet<K>, handle: &ZSetHandle<K>)
 where
     K: DBData,
 {
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        handle.push(cursor.key().clone(), cursor.weight());
+        handle.push(
+            unsafe { cursor.key().downcast::<K>() }.clone(),
+            *cursor.weight().deref(),
+        );
         cursor.step_key();
     }
 }
@@ -1518,8 +1533,8 @@ where
     }
     let mut cursor = diff.cursor();
     while cursor.key_valid() {
-        let key = cursor.key().clone();
-        let weight = cursor.weight();
+        let weight = **cursor.weight();
+        let key = cursor.key();
         if weight.le0() {
             println!("R: {:?}x{:?}", key, weight.neg());
         } else {

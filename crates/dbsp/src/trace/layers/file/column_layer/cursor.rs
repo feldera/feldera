@@ -1,59 +1,94 @@
+use dyn_clone::clone_box;
+
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     ops::Range,
 };
 
-use feldera_storage::file::reader::Cursor as FileCursor;
+use crate::storage::file::reader::Cursor as FileCursor;
 
 use crate::{
+    dynamic::{DataTrait, WeightTrait},
     trace::{layers::Cursor, ord::file::StorageBackend},
-    DBData, DBWeight,
 };
 
 use super::FileColumnLayer;
 
 /// A cursor for walking through a [`FileColumnLayer`].
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct FileColumnLayerCursor<'s, K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    storage: &'s FileColumnLayer<K, R>,
-    item: Option<(K, R)>,
-    cursor: FileCursor<'s, StorageBackend, K, R, (), (K, R, ())>,
+    pub(crate) storage: &'s FileColumnLayer<K, R>,
+    key: Box<K>,
+    diff: Box<R>,
+    valid: bool,
+    cursor: FileCursor<'s, StorageBackend, K, R, (), (&'static K, &'static R, ())>,
+}
+
+impl<'s, K, R> Clone for FileColumnLayerCursor<'s, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage,
+            key: clone_box(&self.key),
+            diff: clone_box(&self.diff),
+            valid: self.valid,
+            cursor: self.cursor.clone(),
+        }
+    }
 }
 
 impl<'s, K, R> FileColumnLayerCursor<'s, K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     pub fn new(storage: &'s FileColumnLayer<K, R>, bounds: Range<u64>) -> Self {
+        let mut key = storage.factories.file_factories.key_factory.default_box();
+        let mut diff = storage.factories.diff_factory.default_box();
+
         let cursor = storage.file.rows().subset(bounds).first().unwrap();
-        let item = unsafe { cursor.item() };
+        let valid = unsafe { cursor.item((key.as_mut(), diff.as_mut())) }.is_some();
+
         Self {
             cursor,
             storage,
-            item,
+            key,
+            diff,
+            valid,
         }
     }
     pub fn current_key(&self) -> &K {
-        &self.item.as_ref().unwrap().0
+        debug_assert!(self.valid);
+        &self.key
     }
 
     pub fn current_diff(&self) -> &R {
-        &self.item.as_ref().unwrap().1
+        debug_assert!(self.valid);
+        &self.diff
     }
 
-    pub fn current_item(&self) -> &(K, R) {
-        self.item.as_ref().unwrap()
+    pub fn current_item(&self) -> (&K, &R) {
+        debug_assert!(self.valid);
+        (&self.key, &self.diff)
     }
 
-    pub fn take_current_item(&mut self) -> Option<(K, R)> {
-        let item = self.item.take();
-        self.step();
-        item
+    pub fn get_current_item(&self) -> Option<(&K, &R)> {
+        if self.valid {
+            Some((&self.key, &self.diff))
+        } else {
+            None
+        }
+    }
+
+    fn get_item(&mut self) {
+        self.valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
     }
 
     pub fn seek_with<P>(&mut self, predicate: P)
@@ -61,7 +96,7 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         unsafe { self.cursor.seek_forward_until(predicate) }.unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     pub fn seek_with_reverse<P>(&mut self, predicate: P)
@@ -69,19 +104,19 @@ where
         P: Fn(&K) -> bool + Clone,
     {
         unsafe { self.cursor.seek_backward_until(predicate) }.unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     pub fn move_to_row(&mut self, row: usize) {
         self.cursor.move_to_row(row as u64).unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 }
 
 impl<'s, K, R> Cursor<'s> for FileColumnLayerCursor<'s, K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Item<'k> = (&'k K, &'k R)
         where
@@ -96,43 +131,43 @@ where
     }
 
     fn item(&self) -> Self::Item<'_> {
-        (self.current_key(), self.current_diff())
+        self.current_item()
     }
 
     fn values(&self) {}
 
     fn step(&mut self) {
         self.cursor.move_next().unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     fn step_reverse(&mut self) {
         self.cursor.move_prev().unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     fn seek(&mut self, key: &Self::Key) {
         unsafe { self.cursor.advance_to_value_or_larger(key) }.unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     fn seek_reverse(&mut self, key: &Self::Key) {
         unsafe { self.cursor.rewind_to_value_or_smaller(key) }.unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     fn valid(&self) -> bool {
-        self.cursor.has_value()
+        self.valid
     }
 
     fn rewind(&mut self) {
         self.cursor.move_first().unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     fn fast_forward(&mut self) {
         self.cursor.move_last().unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 
     fn position(&self) -> usize {
@@ -147,14 +182,14 @@ where
             .subset(lower as u64..upper as u64)
             .first()
             .unwrap();
-        self.item = unsafe { self.cursor.item() };
+        self.get_item();
     }
 }
 
 impl<'a, K, R> Display for FileColumnLayerCursor<'a, K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         let mut cursor: FileColumnLayerCursor<K, R> = self.clone();

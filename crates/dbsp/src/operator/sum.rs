@@ -1,7 +1,7 @@
 //! N-ary plus operator.
 
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero},
+    algebra::{AddAssignByRef, AddByRef},
     circuit::{
         operator_traits::{NaryOperator, Operator},
         Circuit, OwnershipPreference, Scope, Stream,
@@ -19,7 +19,7 @@ use std::{
 impl<C, D> Stream<C, D>
 where
     C: Circuit,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + HasZero + NumEntries + 'static,
+    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + NumEntries + 'static,
 {
     /// Apply the [`Sum`] operator to `self` and all streams in `streams`.
     /// The first output is the sum of the first input from each input stream,
@@ -78,7 +78,7 @@ where
 
 impl<D> NaryOperator<D, D> for Sum<D>
 where
-    D: Add<Output = D> + AddAssignByRef + Clone + HasZero + NumEntries + 'static,
+    D: Add<Output = D> + AddAssignByRef + Clone + NumEntries + 'static,
 {
     fn eval<'a, Iter>(&mut self, inputs: Iter) -> D
     where
@@ -96,20 +96,21 @@ where
             input_vec.push(input);
         }
 
+        assert!(!input_vec.is_empty());
+
         input_vec.sort_by_key(|x| Reverse(x.num_entries_shallow()));
 
-        let mut res = D::zero();
-        for input in input_vec.drain(..) {
-            if res.is_zero() {
-                res = match input {
-                    Cow::Borrowed(v) => v.clone(),
-                    Cow::Owned(v) => v,
-                };
-            } else {
-                match input {
-                    Cow::Borrowed(v) => res.add_assign_by_ref(v),
-                    Cow::Owned(v) => res = res + v,
-                }
+        let mut iter = input_vec.drain(..);
+
+        let mut res = match iter.next().unwrap() {
+            Cow::Borrowed(v) => v.clone(),
+            Cow::Owned(v) => v,
+        };
+
+        for input in iter {
+            match input {
+                Cow::Borrowed(v) => res.add_assign_by_ref(v),
+                Cow::Owned(v) => res = res + v,
             }
         }
 
@@ -134,26 +135,26 @@ mod test {
         algebra::HasZero,
         circuit::OwnershipPreference,
         operator::{Generator, Inspect},
-        trace::{ord::OrdZSet, Batch},
+        typed_batch::OrdZSet,
         zset, Circuit, RootCircuit,
     };
 
     #[test]
     fn zset_sum() {
         let build_circuit = |circuit: &RootCircuit| {
-            let mut s = <OrdZSet<_, _> as HasZero>::zero();
+            let mut s = <OrdZSet<_> as HasZero>::zero();
             let source1 = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
                 s = s.merge(&zset! { 5 => 1, 6 => 2 });
                 res
             }));
-            let mut s = <OrdZSet<_, _> as HasZero>::zero();
+            let mut s = <OrdZSet<_> as HasZero>::zero();
             let source2 = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
                 s = s.merge(&zset! { 5 => -1 });
                 res
             }));
-            let mut s = <OrdZSet<_, _> as HasZero>::zero();
+            let mut s = <OrdZSet<_> as HasZero>::zero();
             let source3 = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
                 s = s.merge(&zset! { 6 => -1 });
@@ -163,7 +164,7 @@ mod test {
             // Supply `source3` twice to test the handling of aliases.
             source3
                 .sum(&[source2.clone(), source1.clone(), source3.clone()])
-                .inspect(|s| assert_eq!(s, &<OrdZSet<_, _> as HasZero>::zero()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<_> as HasZero>::zero()));
             (source1, source2, source3)
         };
 

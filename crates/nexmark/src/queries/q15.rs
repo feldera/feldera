@@ -1,9 +1,8 @@
 use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
 use dbsp::{
-    operator::FilterMap,
     utils::{Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9},
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -90,7 +89,7 @@ pub struct Q15Output {
     rank3_auctions: u64,
 }
 
-type Q15Stream = Stream<RootCircuit, OrdZSet<Q15Output, i64>>;
+type Q15Stream = Stream<RootCircuit, OrdZSet<Q15Output>>;
 
 pub fn q15(input: NexmarkStream) -> Q15Stream {
     // Dug for a long time to figure out how to use the const generics
@@ -131,66 +130,75 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
     let distinct_bidder = bids
         .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
     let rank1_distinct_bidder = rank1_bids
         .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
+
     let rank2_distinct_bidder = rank2_bids
         .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
+
     let rank3_distinct_bidder = rank3_bids
         .map(|Tup2(day, Tup3(_auction, _price, bidder))| Tup2(*day, *bidder))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
 
     // Compute unique auctions across all bids and for each price range.
     let distinct_auction = bids
         .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
+
     let rank1_distinct_auction = rank1_bids
         .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
+
     let rank2_distinct_auction = rank2_bids
         .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
+
     let rank3_distinct_auction = rank3_bids
         .map(|Tup2(day, Tup3(auction, _price, _bidder))| Tup2(*day, *auction))
         .distinct()
-        .index();
+        .map_index(|Tup2(k, v)| (*k, *v));
 
     // Compute bids per day.
-    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
-        bids.index().weighted_count();
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
-        rank1_bids.index().weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
-        rank2_bids.index().weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
-        rank3_bids.index().weighted_count();
+    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = bids
+        .map_index(|Tup2(k, v)| (*k, *v))
+        .weighted_count();
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank1_bids
+        .map_index(|Tup2(k, v)| (*k, *v))
+        .weighted_count();
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank2_bids
+        .map_index(|Tup2(k, v)| (*k, *v))
+        .weighted_count();
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank3_bids
+        .map_index(|Tup2(k, v)| (*k, *v))
+        .weighted_count();
 
     // Count unique bidders per day.
-    let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         distinct_bidder.weighted_count();
-    let count_rank1_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_rank1_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         rank1_distinct_bidder.weighted_count();
-    let count_rank2_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_rank2_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         rank2_distinct_bidder.weighted_count();
-    let count_rank3_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_rank3_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         rank3_distinct_bidder.weighted_count();
 
     // Count unique auctions per day.
-    let count_total_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_total_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         distinct_auction.weighted_count();
-    let count_rank1_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_rank1_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         rank1_distinct_auction.weighted_count();
-    let count_rank2_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_rank2_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         rank2_distinct_auction.weighted_count();
-    let count_rank3_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, i64, _>> =
+    let count_rank3_auctions: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
         rank3_distinct_auction.weighted_count();
 
     // The following abomination simply joins all aggregates computed above into a
@@ -199,14 +207,14 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
         .outer_join_default(&count_rank1_bids, |date, total_bids, rank1_bids| {
             Tup2(*date, Tup2(*total_bids, *rank1_bids))
         })
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank2_bids,
             |date, Tup2(total_bids, rank1_bids), rank2_bids| {
                 Tup2(*date, Tup3(*total_bids, *rank1_bids, *rank2_bids))
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank3_bids,
             |date, Tup3(total_bids, rank1_bids, rank2_bids), rank3_bids| {
@@ -216,7 +224,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_total_bidders,
             |date, Tup4(total_bids, rank1_bids, rank2_bids, rank3_bids), total_bidders| {
@@ -232,7 +240,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank1_bidders,
             |date,
@@ -251,7 +259,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank2_bidders,
             |date,
@@ -271,7 +279,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank3_bidders,
             |date,
@@ -300,7 +308,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_total_auctions,
             |date,
@@ -331,7 +339,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank1_auctions,
             |date,
@@ -364,7 +372,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank2_auctions,
             |date,
@@ -401,7 +409,7 @@ pub fn q15(input: NexmarkStream) -> Q15Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank3_auctions,
             |date,
@@ -462,7 +470,7 @@ mod tests {
     #[case::multi_threaded_4_threads(4)]
     fn test_q15(#[case] num_threads: usize) {
         let input_vecs = vec![
-            vec![(
+            vec![Tup2(
                 Event::Bid(Bid {
                     // Right on 1970 epoch
                     date_time: 0,
@@ -473,7 +481,7 @@ mod tests {
                 1,
             )],
             vec![
-                (
+                Tup2(
                     Event::Bid(Bid {
                         // Six minutes after epoch
                         date_time: 1000 * 6,
@@ -485,7 +493,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         // One millisecond before next day
                         date_time: 24 * 60 * 60 * 1000 - 1,
@@ -497,7 +505,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         // One millisecond into Jan 2 1970
                         date_time: 24 * 60 * 60 * 1000 + 1,
@@ -508,7 +516,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         // One millisecond into Jan 3 1970
                         date_time: 2 * 24 * 60 * 60 * 1000 + 1,
@@ -519,7 +527,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         // One millisecond into Jan 4 1970
                         date_time: 3 * 24 * 60 * 60 * 1000 + 1,
@@ -530,7 +538,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Bid(Bid {
                         // One millisecond into Jan 5 1970
                         date_time: 4 * 24 * 60 * 60 * 1000 + 1,
@@ -542,7 +550,7 @@ mod tests {
                     1,
                 ),
             ],
-            vec![(
+            vec![Tup2(
                 Event::Bid(Bid {
                     date_time: MILLIS_2022_01_01,
                     auction: 4,
@@ -554,7 +562,7 @@ mod tests {
         .into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(num_threads, move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let mut expected_output = vec![
                 zset![

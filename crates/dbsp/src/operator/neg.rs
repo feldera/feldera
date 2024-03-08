@@ -78,16 +78,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        algebra::HasZero,
-        operator::Generator,
-        trace::{ord::OrdZSet, Batch},
-        zset, Circuit, RootCircuit,
+        algebra::HasZero, operator::Generator, typed_batch::OrdZSet, zset, Circuit, RootCircuit,
     };
 
     #[test]
     fn zset_sum() {
         let build_circuit = |circuit: &RootCircuit| {
-            let mut s = <OrdZSet<_, _> as HasZero>::zero();
+            let mut s = <OrdZSet<u64> as HasZero>::zero();
             let source = circuit.add_source(Generator::new(move || {
                 let res = s.clone();
                 s = s.merge(&zset! { 5 => 1, 6 => 2 });
@@ -96,7 +93,7 @@ mod test {
             source
                 .neg()
                 .plus(&source)
-                .inspect(|s| assert_eq!(s, &<OrdZSet<_, _> as HasZero>::zero()));
+                .inspect(|s| assert_eq!(s, &<OrdZSet<_> as HasZero>::zero()));
             Ok(source)
         };
 

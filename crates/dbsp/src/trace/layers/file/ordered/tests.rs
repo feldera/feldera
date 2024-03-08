@@ -1,16 +1,8 @@
 #![cfg(test)]
 
-use crate::trace::{
-    layers::{
-        column_layer::ColumnLayerBuilder,
-        Builder, TupleBuilder,
-    },
-    Consumer, ValueConsumer,
-};
+use crate::trace::layers::{Builder, TupleBuilder};
 
-use super::{FileOrderedLayerConsumer, FileOrderedBuilder};
-
-
+/*
 fn empty_consumer() -> FileOrderedLayerConsumer<usize, usize, isize, usize> {
     FileOrderedLayerConsumer::from(
         FileOrderedBuilder::<usize, ColumnLayerBuilder<usize, isize>, usize>::new().done(),
@@ -45,6 +37,7 @@ fn consumer_smoke_test() {
         assert_eq!(diff, -100);
     }
 }
+*/
 
 /*
 #[test]

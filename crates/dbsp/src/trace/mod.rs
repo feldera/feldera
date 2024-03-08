@@ -7,8 +7,7 @@
 //!
 //! The base trait for a trace is [`BatchReader`], which allows a trace to be
 //! read in sorted order by key and value.  `BatchReader` provides [`Cursor`] to
-//! step through a batch's tuples without modifying them, and [`Consumer`] to
-//! read tuples while taking ownership.
+//! step through a batch's tuples without modifying them.
 //!
 //! The [`Batch`] trait extends [`BatchReader`] with types and methods for
 //! creating new traces from ordered tuples ([`Batch::Builder`]) or unordered
@@ -33,37 +32,40 @@
 //! and upper bounds, one for each category of incomparable time, in an
 //! [`Antichain`](crate::time::Antichain).
 
-pub mod consolidation;
+pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
+use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
+use dyn_clone::DynClone;
+use rand::Rng;
+use size_of::SizeOf;
+use std::{fmt::Debug, hash::Hash, path::PathBuf};
+
 pub mod cursor;
 pub mod layers;
 pub mod ord;
-#[cfg(feature = "persistence")]
-pub mod persistent;
 pub mod spine_fueled;
-
-pub use cursor::{Consumer, Cursor, ValueConsumer};
-use feldera_storage::buffer_cache::FBuf;
-pub use feldera_storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
-
-#[cfg(feature = "persistence")]
-pub use persistent::PersistentTrace as Spine;
-#[cfg(not(feature = "persistence"))]
-pub use spine_fueled::Spine;
-
 #[cfg(test)]
-pub mod test_batch;
+pub mod test;
+
+pub use ord::{
+    FileIndexedZSet, FileIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
+    FileValBatchFactories, FileZSet, FileZSetFactories,
+};
+pub use ord::{
+    OrdIndexedWSet, OrdIndexedWSetFactories, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch,
+    OrdValBatchFactories, OrdWSet, OrdWSetFactories,
+};
+
+use rkyv::{archived_root, Deserialize, Infallible};
 
 use crate::{
-    algebra::{HasZero, MonoidValue},
-    circuit::Activator,
-    time::{AntichainRef, Timestamp},
-    Error, NumEntries,
+    algebra::MonoidValue,
+    dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
+    time::AntichainRef,
+    Error, NumEntries, Timestamp,
 };
-use rand::Rng;
-use rkyv::{archived_root, Archive, Archived, Deserialize, Infallible, Serialize};
-use size_of::SizeOf;
-use std::path::PathBuf;
-use std::{fmt::Debug, hash::Hash};
+pub use cursor::Cursor;
+pub use layers::Trie;
+pub use spine_fueled::Spine;
 
 /// Trait for data stored in batches.
 ///
@@ -73,57 +75,14 @@ use std::{fmt::Debug, hash::Hash};
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
 pub trait DBData:
-    Clone
-    + Eq
-    + Ord
-    + Hash
-    + SizeOf
-    + Send
-    + Debug
-    + Archive
-    + Serialize<Serializer>
-    + ArchivedDBData
-    + 'static
-where
-    // We want to be able Clone the serialized version and compare it with the
-    // original as well as serialized version.
-    <Self as ArchivedDBData>::Repr: Ord + PartialOrd<Self>,
+    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Debug + ArchivedDBData + 'static
 {
 }
 
 /// Automatically implement DBData for everything that satisfied the bounds.
-impl<T> DBData for T
-where
-    T: Clone
-        + Eq
-        + Ord
-        + Hash
-        + SizeOf
-        + Send
-        + Debug
-        + Archive
-        + Serialize<Serializer>
-        + ArchivedDBData
-        + 'static,
-    <T as ArchivedDBData>::Repr: Ord + PartialOrd<T>,
+impl<T> DBData for T where
+    T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
 {
-}
-
-/// Trait for DBData that can be deserialized with [`rkyv`].
-///
-/// The associated type `Repr` with the bound + connecting it to Archived
-/// seems to be the key for rust to know the bounds exist globally in the code
-/// without having to specify the bounds everywhere.
-pub trait ArchivedDBData: Archive<Archived = Self::Repr> + Sized {
-    type Repr: Deserialize<Self, Deserializer> + Ord + PartialOrd<Self>;
-}
-
-/// We also automatically implement this bound for everything that satisfies it.
-impl<T: Archive> ArchivedDBData for T
-where
-    Archived<T>: Deserialize<T, Deserializer> + Ord + PartialOrd<T>,
-{
-    type Repr = Archived<T>;
 }
 
 /// Trait for data that can be serialized and deserialized with [`rkyv`].
@@ -159,28 +118,46 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
 /// `DBWeight` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::R: DBWeight`.
 pub trait DBWeight: DBData + MonoidValue {}
-
 impl<T> DBWeight for T where T: DBData + MonoidValue {}
 
-/// Trait for data types used as logical timestamps.
-pub trait DBTimestamp: DBData + Timestamp {}
+pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone {}
 
-impl<T> DBTimestamp for T where T: DBData + Timestamp {}
+impl<V: ?Sized, F> FilterFunc<V> for F where F: Fn(&V) -> bool + Clone + 'static {}
 
-pub trait FilterFunc<V>: Fn(&V) -> bool {
-    fn fork(&self) -> Filter<V>;
-}
-
-impl<V, F> FilterFunc<V> for F
-where
-    F: Fn(&V) -> bool + Clone + 'static,
-{
-    fn fork(&self) -> Filter<V> {
-        Box::new(self.clone())
-    }
-}
-
+dyn_clone::clone_trait_object! {<V: ?Sized> FilterFunc<V>}
 pub type Filter<V> = Box<dyn FilterFunc<V>>;
+
+pub trait BatchReaderFactories<
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T,
+    R: WeightTrait + ?Sized,
+>: Clone + Send
+{
+    // type BatchItemVTable: BatchItemTypeDescr<Key = K, Val = V, Item = I, R = R>;
+    fn new<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>;
+
+    fn key_factory(&self) -> &'static dyn Factory<K>;
+    fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>>;
+    fn val_factory(&self) -> &'static dyn Factory<V>;
+    fn weight_factory(&self) -> &'static dyn Factory<R>;
+}
+
+// TODO: use Tuple3 instead
+pub type WeightedItem<K, V, R> = DynPair<DynPair<K, V>, R>;
+
+pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: WeightTrait + ?Sized>:
+    BatchReaderFactories<K, V, T, R>
+{
+    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>>;
+
+    fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>>;
+    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>>;
+}
 
 /// A set of `(key, val, time, diff)` tuples that can be read and extended.
 ///
@@ -191,10 +168,16 @@ pub type Filter<V> = Box<dyn FilterFunc<V>>;
 /// traces.
 pub trait Trace: BatchReader {
     /// The type of an immutable collection of updates.
-    type Batch: Batch<Key = Self::Key, Val = Self::Val, Time = Self::Time, R = Self::R>;
+    type Batch: Batch<
+        Key = Self::Key,
+        Val = Self::Val,
+        Time = Self::Time,
+        R = Self::R,
+        Factories = Self::Factories,
+    >;
 
     /// Allocates a new empty trace.
-    fn new<S: AsRef<str>>(activator: Option<Activator>, persistent_id: S) -> Self;
+    fn new<S: AsRef<str>>(factories: &Self::Factories, persistent_id: S) -> Self;
 
     /// Pushes all timestamps in the trace back to `frontier` or less, by
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This
@@ -284,29 +267,33 @@ pub trait BatchReader: NumEntries + Rkyv + SizeOf + 'static
 where
     Self: Sized,
 {
+    type Factories: BatchFactories<Self::Key, Self::Val, Self::Time, Self::R>;
+
     /// Key by which updates are indexed.
-    type Key: DBData;
+    type Key: DataTrait + ?Sized;
 
     /// Values associated with keys.
-    type Val: DBData;
+    type Val: DataTrait + ?Sized;
 
     /// Timestamps associated with updates
-    type Time: DBTimestamp;
+    type Time: Timestamp;
 
     /// Associated update.
-    type R: DBWeight;
+    type R: WeightTrait + ?Sized;
 
     /// The type used to enumerate the batch's contents.
     type Cursor<'s>: Cursor<Self::Key, Self::Val, Self::Time, Self::R> + Clone
     where
         Self: 's;
 
-    type Consumer: Consumer<Self::Key, Self::Val, Self::R, Self::Time>;
+    // type Consumer: Consumer<Self::Key, Self::Val, Self::R, Self::Time>;
+
+    fn factories(&self) -> Self::Factories;
 
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
 
-    fn consumer(self) -> Self::Consumer;
+    //fn consumer(self) -> Self::Consumer;
 
     /// The number of keys in the batch.
     // TODO: return `(usize, Option<usize>)`, similar to
@@ -367,7 +354,7 @@ where
     ///   contain all such keys.
     ///
     /// * The output sample contains keys sorted in ascending order.
-    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut Vec<Self::Key>)
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
         RG: Rng;
@@ -390,36 +377,35 @@ pub trait Batch: BatchReader + Clone
 where
     Self: Sized,
 {
-    /// Items used to assemble the batch.  Must be one of `Self::Key`
-    /// (when `Self::Val = ()`) or `(Self::Key, Self::Val)`.
-    type Item;
-
     /// A type used to assemble batches from disordered updates.
-    type Batcher: Batcher<Self::Item, Self::Time, Self::R, Self>;
+    type Batcher: Batcher<Self>;
 
     /// A type used to assemble batches from ordered update sequences.
-    type Builder: Builder<Self::Item, Self::Time, Self::R, Self>;
+    type Builder: Builder<Self>;
 
     /// A type used to progressively merge batches.
     type Merger: Merger<Self::Key, Self::Val, Self::Time, Self::R, Self>;
 
-    /// Create an item from a `(key, value)` pair.
-    fn item_from(key: Self::Key, val: Self::Val) -> Self::Item;
-
     /// Assemble an unordered vector of weighted items into a batch.
     #[allow(clippy::type_complexity)]
-    fn from_tuples(time: Self::Time, mut tuples: Vec<(Self::Item, Self::R)>) -> Self {
-        let mut batcher = Self::Batcher::new_batcher(time);
-        batcher.push_batch(&mut tuples);
+    fn dyn_from_tuples(
+        factories: &Self::Factories,
+        time: Self::Time,
+        tuples: &mut Box<DynWeightedPairs<DynPair<Self::Key, Self::Val>, Self::R>>,
+    ) -> Self {
+        let mut batcher = Self::Batcher::new_batcher(factories, time);
+        batcher.push_batch(tuples);
         batcher.seal()
     }
 
+    /*
     /// Assemble an unordered vector of keys into a batch.
     ///
     /// This method is only defined for batches whose `Val` type is `()`.
     fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
     where
         Self::Val: From<()>;
+    */
 
     /// Initiates the merging of consecutive batches.
     ///
@@ -440,8 +426,8 @@ where
     }
 
     /// Creates an empty batch.
-    fn empty(time: Self::Time) -> Self {
-        Self::Builder::new_builder(time).done()
+    fn dyn_empty(factories: &Self::Factories, time: Self::Time) -> Self {
+        Self::Builder::new_builder(factories, time).done()
     }
 
     /// Pushes all timestamps in the trace back to `frontier` or less, by
@@ -454,33 +440,26 @@ where
     }
 }
 
-impl<B> HasZero for B
-where
-    B: Batch<Time = ()>,
-{
-    fn zero() -> Self {
-        Self::empty(())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.is_empty()
-    }
-}
-
 /// Functionality for collecting and batching updates.
-pub trait Batcher<I, T, R, Output>: SizeOf
+pub trait Batcher<Output>: SizeOf
 where
-    Output: Batch<Item = I, Time = T, R = R>,
+    Output: Batch,
 {
     /// Allocates a new empty batcher.  All tuples in the batcher (and its
     /// output batch) will have timestamp `time`.
-    fn new_batcher(time: T) -> Self;
+    fn new_batcher(vtables: &Output::Factories, time: Output::Time) -> Self;
 
     /// Adds an unordered batch of elements to the batcher.
-    fn push_batch(&mut self, batch: &mut Vec<(I, R)>);
+    fn push_batch(
+        &mut self,
+        batch: &mut Box<DynWeightedPairs<DynPair<Output::Key, Output::Val>, Output::R>>,
+    );
 
     /// Adds a consolidated batch of elements to the batcher
-    fn push_consolidated_batch(&mut self, batch: &mut Vec<(I, R)>);
+    fn push_consolidated_batch(
+        &mut self,
+        batch: &mut Box<DynWeightedPairs<DynPair<Output::Key, Output::Val>, Output::R>>,
+    );
 
     /// Returns the number of tuples in the batcher.
     fn tuples(&self) -> usize;
@@ -490,26 +469,36 @@ where
 }
 
 /// Functionality for building batches from ordered update sequences.
-pub trait Builder<I, T, R, Output>: SizeOf
+pub trait Builder<Output>: SizeOf
 where
-    Output: Batch<Item = I, Time = T, R = R>,
+    Output: Batch,
 {
     /// Allocates an empty builder.  All tuples in the builder (and its output
     /// batch) will have timestamp `time`.
-    fn new_builder(time: T) -> Self;
+    fn new_builder(factories: &Output::Factories, time: Output::Time) -> Self;
 
     /// Allocates an empty builder with some capacity.  All tuples in the
     /// builder (and its output batch) will have timestamp `time`.
-    fn with_capacity(time: T, cap: usize) -> Self;
+    fn with_capacity(factories: &Output::Factories, time: Output::Time, cap: usize) -> Self;
 
     /// Adds an element to the batch.
-    fn push(&mut self, element: (I, R));
+    fn push(&mut self, element: &mut DynPair<DynPair<Output::Key, Output::Val>, Output::R>);
+
+    fn push_refs(&mut self, key: &Output::Key, val: &Output::Val, weight: &Output::R);
+
+    fn push_vals(&mut self, key: &mut Output::Key, val: &mut Output::Val, weight: &mut Output::R);
 
     fn reserve(&mut self, additional: usize);
 
     /// Adds an ordered sequence of elements to the batch.
     #[inline]
-    fn extend<It: Iterator<Item = (I, R)>>(&mut self, iter: It) {
+    fn extend<
+        'a,
+        It: Iterator<Item = &'a mut WeightedItem<Output::Key, Output::Val, Output::R>>,
+    >(
+        &mut self,
+        iter: It,
+    ) {
         let (lower, upper) = iter.size_hint();
         self.reserve(upper.unwrap_or(lower));
 
@@ -523,7 +512,7 @@ where
 }
 
 /// Represents a merge in progress.
-pub trait Merger<K, V, T, R, Output>: SizeOf
+pub trait Merger<K: ?Sized, V: ?Sized, T, R: ?Sized, Output>: SizeOf
 where
     Output: Batch<Key = K, Val = V, Time = T, R = R>,
 {
@@ -552,12 +541,10 @@ where
 }
 
 /// Merges all of the batches in `batches` and returns the merged result.
-pub fn merge_batches<B, T>(batches: T) -> B
+pub fn merge_batches<B, T>(factories: &B::Factories, batches: T) -> B
 where
     T: IntoIterator<Item = B>,
     B: Batch<Time = ()>,
-    B::Key: Clone,
-    B::Val: Clone,
 {
     // Repeatedly merge the smallest two batches until no more than one batch is
     // left.
@@ -578,5 +565,5 @@ where
             batches.insert(position, new);
         }
     }
-    batches.pop().unwrap_or(B::empty(()))
+    batches.pop().unwrap_or(B::dyn_empty(factories, ()))
 }

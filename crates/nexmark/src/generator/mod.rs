@@ -160,13 +160,13 @@ pub mod tests {
     pub fn make_person() -> Person {
         Person {
             id: 1,
-            name: String::from("AAA BBBB").into(),
-            email_address: String::from("AAABBB@example.com").into(),
-            credit_card: String::from("1111 2222 3333 4444").into(),
-            city: String::from("Phoenix").into(),
-            state: String::from("OR").into(),
+            name: String::from("AAA BBBB"),
+            email_address: String::from("AAABBB@example.com"),
+            credit_card: String::from("1111 2222 3333 4444"),
+            city: String::from("Phoenix"),
+            state: String::from("OR"),
             date_time: 0,
-            extra: String::from("").into(),
+            extra: String::from(""),
         }
     }
 
@@ -175,25 +175,25 @@ pub mod tests {
             auction: 1,
             bidder: 1,
             price: 99,
-            channel: String::from("my-channel").into(),
-            url: String::from("https://example.com").into(),
+            channel: String::from("my-channel"),
+            url: String::from("https://example.com"),
             date_time: 0,
-            extra: String::new().into(),
+            extra: String::new(),
         }
     }
 
     pub fn make_auction() -> Auction {
         Auction {
             id: 1,
-            item_name: String::from("item-name").into(),
-            description: String::from("description").into(),
+            item_name: String::from("item-name"),
+            description: String::from("description"),
             initial_bid: 5,
             reserve: 10,
             date_time: 0,
             expires: 2000,
             seller: 1,
             category: 1,
-            extra: String::new().into(),
+            extra: String::new(),
         }
     }
 

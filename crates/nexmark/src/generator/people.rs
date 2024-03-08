@@ -160,15 +160,15 @@ mod tests {
             p,
             Person {
                 id: 1002,
-                name: "Peter Shultz".to_string().into(),
-                email_address: "AAA@AAA.com".to_string().into(),
-                credit_card: "0000 0000 0000 0000".to_string().into(),
-                city: "Phoenix".to_string().into(),
-                state: "AZ".to_string().into(),
+                name: "Peter Shultz".to_string(),
+                email_address: "AAA@AAA.com".to_string(),
+                credit_card: "0000 0000 0000 0000".to_string(),
+                city: "Phoenix".to_string(),
+                state: "AZ".to_string(),
                 date_time: 1_000_000_000_000,
                 // Difference of 200 - 59 = 141, delta of 28 (141*0.2),
                 // so extra 113 chars (59 + 113 = 172 = 200 - delta)
-                extra: (0..113).map(|_| "A").collect::<String>().into(),
+                extra: (0..113).map(|_| "A").collect::<String>(),
             }
         );
     }

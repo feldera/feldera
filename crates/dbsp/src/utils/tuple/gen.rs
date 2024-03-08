@@ -55,7 +55,6 @@ macro_rules! declare_tuples {
                 #[archive(bound(
                     archive = $( "" $element "" ": rkyv::Archive, ")* "" $( "<" $element "" " as rkyv::Archive>::Archived: Ord, ")*
                 ))]
-                #[archive(compare(PartialEq, PartialOrd))]
                 pub struct $tuple_name<$($element,)*>($(pub $element,)*);
             }
 

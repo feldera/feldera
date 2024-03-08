@@ -111,7 +111,8 @@ public class RustFileWriter {
                             MinSemigroup,
                             CmpFunc,
                         },
-                        trace::ord::{OrdIndexedZSet, OrdZSet},
+                        OrdIndexedZSet, OrdZSet,
+                        TypedBox,
                         utils::*,
                         zset,
                         indexed_zset,
@@ -121,7 +122,8 @@ public class RustFileWriter {
                         Error as DBSPError,
                         Runtime,
                         NumEntries,
-                        CollectionHandle, UpsertHandle, OutputHandle,
+                        MapHandle, ZSetHandle, OutputHandle,
+                        dynamic::DynData,
                     };
                     use dbsp_adapters::{deserialize_table_record, serialize_table_record, Catalog};
                     use size_of::*;

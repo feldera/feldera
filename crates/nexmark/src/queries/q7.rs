@@ -1,7 +1,9 @@
 use super::{NexmarkStream, WATERMARK_INTERVAL_SECONDS};
 use crate::model::Event;
 use dbsp::{
-    operator::{FilterMap, Max},
+    dynamic::DynData,
+    operator::Max,
+    typed_batch::TypedBox,
     utils::{Tup4, Tup5},
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
 };
@@ -38,13 +40,13 @@ use dbsp::{
 /// ```
 
 type Q7Output = Tup5<u64, u64, u64, u64, String>;
-type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output, i64>>;
+type Q7Stream = Stream<RootCircuit, OrdZSet<Q7Output>>;
 
 const TUMBLE_SECONDS: u64 = 10;
 
 pub fn q7(input: NexmarkStream) -> Q7Stream {
     // All bids indexed by date time to be able to window the result.
-    let bids_by_time: Stream<_, OrdIndexedZSet<u64, _, _>> =
+    let bids_by_time: Stream<_, OrdIndexedZSet<u64, _>> =
         input.flat_map_index(|event| match event {
             Event::Bid(b) => Some((
                 b.date_time,
@@ -57,17 +59,18 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
     // from the input stream for the current time, with the window ending at the
     // previous 10 second multiple.
     // Set the watermark to `WATERMARK_INTERVAL_SECONDS` in the past.
-    let watermark = bids_by_time.waterline_monotonic(
+    let watermark: Stream<_, TypedBox<u64, DynData>> = bids_by_time.waterline_monotonic(
         || 0,
         |date_time| date_time - WATERMARK_INTERVAL_SECONDS * 1000,
     );
 
     // In this case we have a 10-second window with 10-second steps (tumbling).
     let window_bounds = watermark.apply(|watermark| {
-        let watermark_rounded = *watermark - (*watermark % (TUMBLE_SECONDS * 1000));
+        let watermark = **watermark;
+        let watermark_rounded = watermark - (watermark % (TUMBLE_SECONDS * 1000));
         (
-            watermark_rounded.saturating_sub(TUMBLE_SECONDS * 1000),
-            watermark_rounded,
+            TypedBox::<u64, DynData>::new(watermark_rounded.saturating_sub(TUMBLE_SECONDS * 1000)),
+            TypedBox::<u64, DynData>::new(watermark_rounded),
         )
     });
 
@@ -83,11 +86,9 @@ pub fn q7(input: NexmarkStream) -> Q7Stream {
 
     // Find the maximum bid across all bids.
     windowed_bids
-        .map_index(|(_date_time, Tup4(_auction, _bidder, price, _extra))| {
-            ((), *price)
-        })
+        .map_index(|(_date_time, Tup4(_auction, _bidder, price, _extra))| ((), *price))
         .aggregate(Max)
-        .map(|((), price)| *price)
+        .map_index(|((), price)| (*price, ()))
         // Find _all_ bids with computed max price.
         .join(&bids_by_price, |_price, &(), tuple| tuple.clone())
 }
@@ -99,7 +100,7 @@ mod tests {
         generator::tests::make_bid,
         model::{Bid, Event},
     };
-    use dbsp::{zset, RootCircuit};
+    use dbsp::{utils::Tup2, zset, RootCircuit};
     use rstest::rstest;
 
     type Q7Tuple = Tup5<u64, u64, u64, u64, String>;
@@ -147,13 +148,13 @@ mod tests {
     )]
     fn test_q7(
         #[case] input_batches: Vec<Vec<(u64, u64)>>,
-        #[case] expected_zsets: Vec<OrdZSet<Q7Tuple, i64>>,
+        #[case] expected_zsets: Vec<OrdZSet<Q7Tuple>>,
     ) {
         let input_vecs = input_batches.into_iter().map(|batch| {
             batch
                 .into_iter()
                 .map(|(date_time, price)| {
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             date_time,
                             price,
@@ -166,7 +167,7 @@ mod tests {
         });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q7(stream);
 

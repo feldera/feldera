@@ -47,7 +47,7 @@ public class DBSPIndexOperator extends DBSPUnaryOperator {
     public DBSPIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                              DBSPTypeIndexedZSet outputType,
                              boolean isMultiset, DBSPOperator input) {
-        super(node, "index_with", indexFunction,
+        super(node, "map_index", indexFunction,
                 outputType, isMultiset, input);
     }
 

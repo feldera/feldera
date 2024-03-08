@@ -342,13 +342,13 @@ public class ToRustVisitor extends CircuitVisitor {
                 DBSPTypeZSet zset = input.outputType.as(DBSPTypeZSet.class);
                 if (zset != null) {
                     type = new DBSPTypeUser(
-                            zset.getNode(), DBSPTypeCode.USER, "CollectionHandle", false,
-                            zset.elementType, new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false));
+                            zset.getNode(), DBSPTypeCode.USER, "ZSetHandle", false,
+                            zset.elementType);
                 } else {
                     DBSPTypeIndexedZSet ix = input.outputType.to(DBSPTypeIndexedZSet.class);
                     type = new DBSPTypeUser(
-                            ix.getNode(), DBSPTypeCode.USER, "UpsertHandle", false,
-                            ix.elementType, DBSPTypeBool.create(false));
+                            ix.getNode(), DBSPTypeCode.USER, "SetHandle", false,
+                            ix.elementType);
                 }
                 type.accept(inner);
                 signature.append(", ");
@@ -413,7 +413,6 @@ public class ToRustVisitor extends CircuitVisitor {
 
         DBSPTypeZSet zsetType = operator.getType().to(DBSPTypeZSet.class);
         zsetType.elementType.accept(this.innerVisitor);
-        this.builder.append(", Weight");
         this.builder.append(">();").newline();
         if (!this.useHandles) {
             this.builder.append("catalog.register_input_zset::<_, ");
@@ -479,13 +478,12 @@ public class ToRustVisitor extends CircuitVisitor {
         ix.elementType.accept(this.innerVisitor);
         this.builder.append(", ");
         upsertStruct.toTuple().accept(this.innerVisitor);
-        this.builder.append(", Weight");
-        this.builder.append(">(").increase();
+        this.builder.append(", _>(").increase();
         {
             // Upsert update function
             this.builder.append("Box::new(|updated: &mut ");
             type.toTuple().accept(this.innerVisitor);
-            this.builder.append(", changes: ");
+            this.builder.append(", changes: &");
             upsertStruct.toTuple().accept(this.innerVisitor);
             this.builder.append("| {");
             int index = 0;
@@ -494,14 +492,14 @@ public class ToRustVisitor extends CircuitVisitor {
                 if (!keyStructType.hasField(field.name)) {
                     this.builder.append("if let Some(")
                             .append(name)
-                            .append(") = changes.")
+                            .append(") = &changes.")
                             .append(index)
                             .append(" { ")
                             .append("updated.")
                             .append(index)
                             .append(" = ")
                             .append(name)
-                            .append("; }")
+                            .append(".clone(); }")
                             .newline();
                 }
                 index++;
@@ -525,7 +523,6 @@ public class ToRustVisitor extends CircuitVisitor {
             upsertStruct.toTuple().accept(this.innerVisitor);
             this.builder.append(", ");
             upsertStruct.accept(this.innerVisitor);
-            this.builder.append(", Weight");
             this.builder.append(", _, _>(")
                     .append(operator.getOutputName())
                     .append(".clone(), ")
@@ -600,6 +597,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.operation)
                 .append("(&")
                 .append(operator.inputs.get(1).getOutputName())
+                // FIXME: temporary workaround until the compiler learns about
+                // TypedBox's
+                .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
                 .append(", ");
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(");");
@@ -618,12 +618,14 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.input().getOutputName())
                 .append(".")
                 .append(operator.operation)
-                .append("(");
+                .append("::<_, DynData, _, _>(");
         // This part is different from a standard operator.
         operator.init.accept(this.innerVisitor);
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(");");
+        // FIXME: temporary fix until the compiler learns to work with the
+        // `TypedBox` type.
+        this.builder.append(").inner_typed();");
         return VisitDecision.STOP;
     }
 
@@ -860,7 +862,8 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(tmp)
                 .append(" = ")
                 .append(operator.input().getOutputName())
-                .append(".partitioned_rolling_aggregate(");
+                // FIXME: `as_partitioned_zset()` is a temporary workaround.
+                .append(".as_partitioned_zset().partitioned_rolling_aggregate(");
         operator.getFunction().accept(this.innerVisitor);
         builder.append(", ");
         operator.window.accept(this.innerVisitor);

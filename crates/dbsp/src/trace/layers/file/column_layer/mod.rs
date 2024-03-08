@@ -1,39 +1,90 @@
 mod builders;
-mod consumer;
 pub(crate) mod cursor;
 
-use feldera_storage::file::reader::{FallibleEq, Reader};
+use crate::{
+    algebra::{AddAssignByRef, AddByRef, NegByRef},
+    dynamic::{DataTrait, DynVec, Erase, Factory, WeightTrait, WeightTraitTyped, WithFactory},
+    storage::file::{
+        reader::{FallibleEq, Reader},
+        Factories as FileFactories,
+    },
+    trace::{
+        layers::{Builder, Cursor, Trie, TupleBuilder},
+        ord::file::StorageBackend,
+    },
+    DBData, DBWeight, NumEntries, Runtime,
+};
 use rand::{seq::index::sample, Rng};
-use rkyv::ser::Serializer;
-use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize};
+use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::ops::AddAssign;
 use std::path::PathBuf;
 use std::{
     cmp::min,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
-    ops::{Add, Neg},
+    ops::{Add, AddAssign, Neg},
 };
 
-use crate::algebra::{AddAssignByRef, AddByRef, NegByRef};
-use crate::trace::layers::{Builder, Trie, TupleBuilder};
-use crate::trace::ord::file::StorageBackend;
-use crate::{DBData, DBWeight, NumEntries, Runtime};
+pub use self::{builders::FileColumnLayerBuilder, cursor::FileColumnLayerCursor};
 
-pub use self::builders::FileColumnLayerBuilder;
-pub use self::cursor::FileColumnLayerCursor;
-pub use consumer::{FileColumnLayerConsumer, FileColumnLayerValues};
+pub struct FileLeafFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
+    pub(crate) file_factories: FileFactories<K, R>,
+    pub(crate) diff_factory: &'static dyn Factory<R>,
+}
 
-#[derive(Clone)]
-pub struct FileColumnLayer<K, R> {
-    file: Reader<StorageBackend, (K, R, ())>,
+impl<K, R> FileLeafFactories<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    pub fn new<KType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        RType: DBData + Erase<R>,
+    {
+        Self {
+            file_factories: FileFactories::new::<KType, RType>(),
+            diff_factory: WithFactory::<RType>::FACTORY,
+        }
+    }
+}
+
+impl<K, R> Clone for FileLeafFactories<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            file_factories: self.file_factories.clone(),
+            diff_factory: self.diff_factory,
+        }
+    }
+}
+
+pub struct FileColumnLayer<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
+    pub factories: FileLeafFactories<K, R>,
+    file: Reader<StorageBackend, (&'static K, &'static R, ())>,
     lower_bound: usize,
+}
+
+impl<K, R> Clone for FileColumnLayer<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            factories: self.factories.clone(),
+            file: self.file.clone(),
+            lower_bound: self.lower_bound,
+        }
+    }
 }
 
 impl<K, R> FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     pub fn len(&self) -> u64 {
         self.file.n_rows(0)
@@ -43,17 +94,16 @@ where
         self.file.n_rows(0) == 0
     }
 
-    pub fn empty() -> Self {
+    pub fn empty(factories: &FileLeafFactories<K, R>) -> Self {
         Self {
+            factories: factories.clone(),
             file: Reader::empty(&Runtime::storage()).unwrap(),
             lower_bound: 0,
         }
     }
 
-    pub fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut Vec<K>)
+    pub fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<K>)
     where
-        K: DBData,
-        R: DBWeight,
         RG: Rng,
     {
         let size = self.keys();
@@ -61,8 +111,9 @@ where
         if sample_size >= size {
             output.reserve(size);
 
-            while let Some((key, _)) = cursor.take_current_item() {
-                output.push(key);
+            while let Some((key, _)) = cursor.get_current_item() {
+                output.push_ref(key);
+                cursor.step();
             }
         } else {
             output.reserve(sample_size);
@@ -71,17 +122,13 @@ where
             indexes.sort_unstable();
             for index in indexes.into_iter() {
                 cursor.move_to_row(index);
-                output.push(cursor.current_key().clone());
+                output.push_ref(cursor.current_key());
             }
         }
     }
 
     /// Remove keys smaller than `lower_bound` from the batch.
-    pub fn truncate_keys_below(&mut self, lower_bound: &K)
-    where
-        K: DBData,
-        R: DBWeight,
-    {
+    pub fn truncate_keys_below(&mut self, lower_bound: &K) {
         let mut cursor = self.file.rows().before();
         unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
         self.truncate_below(cursor.absolute_position() as usize);
@@ -94,14 +141,15 @@ where
 
 impl<K, R> Debug for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "FileColumnLayer(lower_bound={}):", self.lower_bound)?;
         let mut cursor = self.cursor();
-        while let Some((key, diff)) = cursor.take_current_item() {
+        while let Some((key, diff)) = cursor.get_current_item() {
             write!(f, " ({key:?}, {diff:+?})")?;
+            cursor.step();
         }
         Ok(())
     }
@@ -109,8 +157,8 @@ where
 
 impl<K, R> Display for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         Display::fmt(&self.cursor(), f)
@@ -119,10 +167,14 @@ where
 
 impl<K, R> Trie for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
-    type Item = (K, R);
+    type Item<'a> = (&'a mut K, &'a mut R);
+
+    type ItemRef<'a> = (&'a K, &'a R);
+    type Factories = FileLeafFactories<K, R>;
+
     type Cursor<'s> = FileColumnLayerCursor<'s, K, R> where K: 's, R: 's;
     type MergeBuilder = FileColumnLayerBuilder<K, R>;
     type TupleBuilder = FileColumnLayerBuilder<K, R>;
@@ -152,8 +204,8 @@ where
 
 impl<K, R> Archive for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Archived = ();
     type Resolver = ();
@@ -165,8 +217,8 @@ where
 
 impl<K, R, S> Serialize<S> for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
     S: Serializer + ?Sized,
 {
     fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
@@ -176,8 +228,8 @@ where
 
 impl<K, R, D> Deserialize<FileColumnLayer<K, R>, D> for Archived<FileColumnLayer<K, R>>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
     D: Fallible,
 {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FileColumnLayer<K, R>, D::Error> {
@@ -187,8 +239,8 @@ where
 
 impl<K, R> SizeOf for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn size_of_children(&self, _context: &mut size_of::Context) {
         // XXX
@@ -197,8 +249,8 @@ where
 
 impl<K, R> PartialEq for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn eq(&self, other: &Self) -> bool {
         self.file.equals(&other.file).unwrap()
@@ -207,15 +259,15 @@ where
 
 impl<K, R> Eq for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
 }
 
 impl<K, R> NumEntries for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
@@ -233,8 +285,8 @@ where
 
 impl<K, R> Add<Self> for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     type Output = Self;
 
@@ -251,8 +303,8 @@ where
 
 impl<K, R> AddAssign<Self> for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn add_assign(&mut self, rhs: Self) {
         if !rhs.is_empty() {
@@ -263,8 +315,8 @@ where
 
 impl<K, R> AddAssignByRef for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn add_assign_by_ref(&mut self, other: &Self) {
         if !other.is_empty() {
@@ -275,8 +327,8 @@ where
 
 impl<K, R> AddByRef for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight,
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
 {
     fn add_by_ref(&self, rhs: &Self) -> Self {
         self.merge(rhs)
@@ -285,15 +337,17 @@ where
 
 impl<K, R> NegByRef for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight + NegByRef,
+    K: DataTrait + ?Sized,
+    R: WeightTraitTyped + ?Sized,
+    R::Type: DBWeight + NegByRef + Erase<R>,
 {
     fn neg_by_ref(&self) -> Self {
-        let mut tuple_builder = <Self as Trie>::TupleBuilder::new();
+        let mut tuple_builder = <Self as Trie>::TupleBuilder::new(&self.factories);
         let mut cursor = self.cursor();
-        while let Some((key, diff)) = cursor.take_current_item() {
+        while let Some((key, diff)) = cursor.get_current_item() {
             let diff = diff.neg_by_ref();
-            tuple_builder.push_tuple((key, diff));
+            tuple_builder.push_refs((key, diff.erase()));
+            cursor.step();
         }
         tuple_builder.done()
     }
@@ -301,16 +355,19 @@ where
 
 impl<K, R> Neg for FileColumnLayer<K, R>
 where
-    K: DBData,
-    R: DBWeight + Neg<Output = R>,
+    K: DataTrait + ?Sized,
+    R: WeightTraitTyped + ?Sized,
+    R::Type: DBWeight + NegByRef + Erase<R>,
 {
     type Output = Self;
 
     fn neg(self) -> Self {
-        let mut tuple_builder = <Self as Trie>::TupleBuilder::new();
+        let mut tuple_builder = <Self as Trie>::TupleBuilder::new(&self.factories);
         let mut cursor = self.cursor();
-        while let Some((key, diff)) = cursor.take_current_item() {
-            tuple_builder.push_tuple((key, -diff));
+        while let Some((key, diff)) = cursor.get_current_item() {
+            let diff = diff.deref().neg_by_ref();
+            tuple_builder.push_refs((key, diff.erase()));
+            cursor.step();
         }
         tuple_builder.done()
     }

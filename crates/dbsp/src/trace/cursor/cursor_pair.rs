@@ -2,16 +2,15 @@
 
 use std::{cmp::Ordering, marker::PhantomData};
 
-use crate::{
-    algebra::{HasZero, MonoidValue},
-    trace::cursor::{Cursor, Direction},
-};
+use crate::dynamic::{DataTrait, Factory, WeightTrait};
+
+use super::{Cursor, Direction};
 
 /// A cursor over the combined updates of two different cursors.
 ///
 /// A `CursorPair` wraps two cursors over the same types of updates, and
 /// provides navigation through their merged updates.
-pub struct CursorPair<'a, K, V, T, R, C1, C2> {
+pub struct CursorPair<'a, K: ?Sized, V: ?Sized, T, R: ?Sized, C1: ?Sized, C2: ?Sized> {
     cursor1: &'a mut C1,
     cursor2: &'a mut C2,
     key_order: Ordering, /* Invalid keys are `Greater` than all other keys when iterating
@@ -22,15 +21,17 @@ pub struct CursorPair<'a, K, V, T, R, C1, C2> {
                          forward and `Less` than all other vals when iterating backward.
                          `Equal` implies both valid. */
     val_direction: Direction,
-    _phantom: PhantomData<(K, V, T, R)>,
+    weight: Box<R>,
+    _phantom: PhantomData<fn(&K, &V, &T, &R)>,
 }
 
 impl<'a, K, V, T, R, C1, C2> CursorPair<'a, K, V, T, R, C1, C2>
 where
-    K: Ord,
-    V: Ord,
-    C1: Cursor<K, V, T, R>,
-    C2: Cursor<K, V, T, R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    C1: Cursor<K, V, T, R> + ?Sized,
+    C2: Cursor<K, V, T, R> + ?Sized,
 {
     pub fn new(cursor1: &'a mut C1, cursor2: &'a mut C2) -> Self {
         let key_order = match (cursor1.key_valid(), cursor2.key_valid()) {
@@ -45,6 +46,8 @@ where
             (true, true) => cursor1.val().cmp(cursor2.val()),
         };
 
+        let weight = cursor1.weight_factory().default_box();
+
         Self {
             cursor1,
             cursor2,
@@ -52,6 +55,7 @@ where
             val_order,
             key_direction: Direction::Forward,
             val_direction: Direction::Forward,
+            weight,
             _phantom: PhantomData,
         }
     }
@@ -151,12 +155,18 @@ where
 
 impl<'a, K, V, T, R, C1, C2> Cursor<K, V, T, R> for CursorPair<'a, K, V, T, R, C1, C2>
 where
-    K: Ord,
-    V: Ord,
     C1: Cursor<K, V, T, R>,
     C2: Cursor<K, V, T, R>,
-    R: MonoidValue,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    C1: Cursor<K, V, T, R> + ?Sized,
+    C2: Cursor<K, V, T, R> + ?Sized,
 {
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.cursor1.weight_factory()
+    }
+
     // validation methods
     fn key_valid(&self) -> bool {
         if self.current_key1() {
@@ -195,44 +205,57 @@ where
         }
     }
 
-    fn fold_times<F, U>(&mut self, mut init: U, mut fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U,
-    {
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         if self.current_val1() || self.current_val12() {
-            init = self.cursor1.fold_times(init, &mut fold);
+            self.cursor1.map_times(logic);
         }
 
         if self.current_val2() || self.current_val12() {
-            init = self.cursor2.fold_times(init, fold);
+            self.cursor2.map_times(logic);
         }
-
-        init
     }
 
-    fn fold_times_through<F, U>(&mut self, upper: &T, mut init: U, mut fold: F) -> U
-    where
-        F: FnMut(U, &T, &R) -> U,
-    {
+    fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
         if self.current_val1() || self.current_val12() {
-            init = self.cursor1.fold_times_through(upper, init, &mut fold);
+            self.cursor1.map_times_through(upper, logic);
         }
 
         if self.current_val2() || self.current_val12() {
-            init = self.cursor2.fold_times_through(upper, init, fold);
+            self.cursor2.map_times_through(upper, logic);
         }
-
-        init
     }
 
-    fn weight(&mut self) -> R
+    fn weight(&mut self) -> &R
     where
         T: PartialEq<()>,
     {
         debug_assert!(self.val_valid());
-        let mut res: R = HasZero::zero();
-        self.map_times(|_, w| res.add_assign_by_ref(w));
-        res
+        self.weight.set_zero();
+
+        if self.current_val1() || self.current_val12() {
+            self.cursor1
+                .map_times(&mut |_, w| self.weight.add_assign(w));
+        }
+
+        if self.current_val2() || self.current_val12() {
+            self.cursor2
+                .map_times(&mut |_, w| self.weight.add_assign(w));
+        }
+
+        &self.weight
+    }
+
+    fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R))
+    where
+        T: PartialEq<()>,
+    {
+        while self.val_valid() {
+            // This will store current weight in `self.weight`, so we can use it below.
+            self.weight();
+            let val = self.val();
+            logic(val, &self.weight);
+            self.step_val();
+        }
     }
 
     // key methods
@@ -274,26 +297,20 @@ where
         self.update_key_order_forward();
     }
 
-    fn seek_key_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
+    fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
         debug_assert_eq!(self.key_direction, Direction::Forward);
 
-        self.cursor1.seek_key_with(predicate.clone());
+        self.cursor1.seek_key_with(predicate);
         self.cursor2.seek_key_with(predicate);
 
         self.val_direction = Direction::Forward;
         self.update_key_order_forward();
     }
 
-    fn seek_key_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&K) -> bool + Clone,
-    {
+    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
         debug_assert_eq!(self.key_direction, Direction::Backward);
 
-        self.cursor1.seek_key_with_reverse(predicate.clone());
+        self.cursor1.seek_key_with_reverse(predicate);
         self.cursor2.seek_key_with_reverse(predicate);
 
         self.val_direction = Direction::Forward;
@@ -375,10 +392,7 @@ where
         }
     }
 
-    fn seek_val_with<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         debug_assert_eq!(self.val_direction, Direction::Forward);
 
         if self.current_key1() {
@@ -386,16 +400,13 @@ where
         } else if self.current_key2() {
             self.cursor2.seek_val_with(predicate);
         } else {
-            self.cursor1.seek_val_with(predicate.clone());
+            self.cursor1.seek_val_with(predicate);
             self.cursor2.seek_val_with(predicate);
             self.update_val_order_forward();
         }
     }
 
-    fn seek_val_with_reverse<P>(&mut self, predicate: P)
-    where
-        P: Fn(&V) -> bool + Clone,
-    {
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
         debug_assert_eq!(self.val_direction, Direction::Backward);
 
         if self.current_key1() {
@@ -403,7 +414,7 @@ where
         } else if self.current_key2() {
             self.cursor2.seek_val_with_reverse(predicate);
         } else {
-            self.cursor1.seek_val_with_reverse(predicate.clone());
+            self.cursor1.seek_val_with_reverse(predicate);
             self.cursor2.seek_val_with_reverse(predicate);
             self.update_val_order_reverse();
         }

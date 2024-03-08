@@ -10,7 +10,18 @@ use size_of::SizeOf;
 /// Note that Rust can simply derive the equivalent methods on the Java
 /// class.
 #[derive(
-    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Archive, Serialize, Deserialize,
+    Clone,
+    Default,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -107,4 +118,10 @@ pub enum Event {
     Person(Person),
     Auction(Auction),
     Bid(Bid),
+}
+
+impl Default for Event {
+    fn default() -> Self {
+        Event::Person(Default::default())
+    }
 }

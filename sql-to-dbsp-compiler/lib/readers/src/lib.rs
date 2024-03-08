@@ -6,6 +6,7 @@
 
 use async_std::task;
 use csv::{Reader, ReaderBuilder};
+use dbsp::utils::Tup2;
 use dbsp::{
     algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, MulByRef, NegByRef, ZRingValue, ZSet},
     trace::Batch,
@@ -41,7 +42,7 @@ where
         .from_reader(file);
     let vec = csv_reader
         .deserialize()
-        .map(|x| (x.unwrap(), Weight::one()))
+        .map(|x| Tup2(x.unwrap(), Weight::one()))
         .collect();
     WSet::<T>::from_keys((), vec)
 }
@@ -61,7 +62,7 @@ where
     });
     let vec = rows
         .iter()
-        .map(|row| (mapper(row), Weight::one()))
+        .map(|row| Tup2(mapper(row), Weight::one()))
         .collect();
     WSet::from_keys((), vec)
 }

@@ -10,19 +10,18 @@ keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["algorithms", "data-structures"]
 publish = true
 
-[package.metadata.release]
-release = true
+    [package.metadata.release]
+    release = true
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+    [package.metadata.docs.rs]
+    all-features = true
+    rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
 # main.yml and coverage.yml:
 default = ["with-serde"]
-persistence = ["rocksdb", "uuid"]
-with-serde = ["serde"]
+with-serde = []
 with-csv = ["csv"]
 persistence2 = []
 
@@ -36,17 +35,12 @@ once_cell = "1.9.0"
 priority-queue = "1.3.2"
 hashbrown = "0.14.2"
 csv = { version = "1.2.2", optional = true }
-serde = { version = "1.0", features = ["derive"], optional = true }
 impl-trait-for-tuples = "0.2"
 itertools = "0.10.5"
 textwrap = "0.15.0"
-ordered-float = { version = "3.9.1", features = ["serde", "rkyv_64", ] }
+ordered-float = { version = "3.9.1", features = ["serde", "rkyv_64"] }
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 crossbeam = "0.8.2"
-rocksdb = { version = "0.21", default-features = false, features = [
-    "multi-threaded-cf",
-], optional = true }
-uuid = { version = "1.1.2", features = ["v4"], optional = true }
 arc-swap = "1.5.1"
 mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
@@ -59,45 +53,69 @@ size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features
 tarpc = { version = "0.33.0", features = ["full"] }
 futures = "0.3"
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
-log = "0.4.20"
 paste = "1"
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
-feldera-storage = { path = "../feldera-storage" }
-ouroboros = "0.18.1"
-tempfile = "3.10.0"
-
-[dev-dependencies]
-csv = "1.2.2"
-zip = "0.6.2"
-tar = "0.4.38"
+dyn-clone = "1.0.16"
 rand_chacha = "0.3.1"
-zstd = "0.12.0"
-proptest = "1.0.0"
-criterion = "0.5.1"
-pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
-proptest-derive = "0.3.0"
-rand_xoshiro = "0.6.0"
-indicatif = "0.17.0-rc.11"
-clap = { version = "3.2.8", features = ["derive", "env"] }
-reqwest = { version = "0.11.11", features = ["blocking"] }
-# Go back to a version once commit containing 849932 is released:
-chrono = { git = "https://github.com/chronotope/chrono", rev = "849932", features = ["rkyv-64", "serde"] }
-env_logger = { version = "0.11.1" }
-serde_json = "1.0.87"
+tempfile = "3.10.0"
+binrw = "0.13.3"
+crc32c = "0.6.4"
+num-derive = "0.4.1"
+num-traits = "0.2.17"
+thiserror = "1.0"
+uuid = { version = "1.6.1", features = ["v7"] }
+clap = { version = "4.4.14", features = ["derive", "env"] }
+fdlimit = { version = "0.3.0" }
+# Waiting for https://github.com/bytedance/monoio/pull/227 to be merged
+monoio = { git = "https://github.com/gz/monoio.git", rev = "9303e02" }
+async-lock = { version = "3.3" }
+metrics = { version = "0.22.0" }
+metrics-exporter-tcp = { version = "0.9.0", optional = true }
+log = { version = "0.4", features = [] }
+moka = { version = "0.12", features = ["future"] }
+sysinfo = { version = "0.30" }
+rlimit = "0.10.1"
+serde = { version = "1.0", features = ["derive"] }
+ptr_meta = "0.2.0"
 
 [dependencies.time]
 version = "0.3.20"
 features = ["formatting", "macros", "serde", "serde-human-readable"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.150"
+
+[dev-dependencies]
+rand = "0.8.5"
+proptest-derive = { version = "0.4.0" }
+proptest = { version = "1.4.0" }
+proptest-state-machine = { version = "0.1.0" }
+futures = { version = "0.3.30", features = ["executor"] }
+pretty_assertions = { version = "1.4" }
+csv = "1.2.2"
+zip = "0.6.2"
+tar = "0.4.38"
+zstd = "0.12.0"
+criterion = "0.5.1"
+pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
+rand_xoshiro = "0.6.0"
+indicatif = "0.17.0-rc.11"
+#clap = { version = "3.2.8", features = ["derive", "env"] }
+reqwest = { version = "0.11.11", features = ["blocking"] }
+# Go back to a version once commit containing 849932 is released:
+chrono = { git = "https://github.com/chronotope/chrono", rev = "849932", features = ["rkyv-64", "serde"] }
+env_logger = { version = "0.11.2", features = ["color"] }
+serde_json = "1.0.87"
 
 [[bench]]
 name = "galen"
 harness = false
 required-features = ["with-csv"]
 
-[[bench]]
-name = "fraud"
-harness = false
-required-features = ["with-csv", "with-serde"]
+#[[bench]]
+#name = "fraud"
+#harness = false
+#required-features = ["with-csv", "with-serde"]
 
 [[bench]]
 name = "path"
@@ -107,10 +125,10 @@ harness = false
 name = "consolidation"
 harness = false
 
-[[bench]]
-name = "ldbc-graphalytics"
-required-features = ["with-csv"]
-harness = false
+#[[bench]]
+#name = "ldbc-graphalytics"
+#required-features = ["with-csv"]
+#harness = false
 
 [[bench]]
 name = "column_layer"

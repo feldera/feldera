@@ -1,14 +1,18 @@
-use rand::{seq::index::sample, Rng};
+use crate::dynamic::LeanVec;
+use rand::{seq::index::sample, RngCore};
 
 /// Compute a random sample of size `sample_size` of values in `slice`.
 ///
 /// Pushes the random sample of values to the `output` vector in the order
 /// in which values occur in `slice`, i.e., if `slice` is sorted, the output
 /// will be sorted too.
-pub fn sample_slice<T, RG>(slice: &[T], rng: &mut RG, sample_size: usize, output: &mut Vec<T>)
-where
+pub fn sample_slice<T>(
+    slice: &[T],
+    rng: &mut dyn RngCore,
+    sample_size: usize,
+    output: &mut LeanVec<T>,
+) where
     T: Clone,
-    RG: Rng,
 {
     let size = slice.len();
 

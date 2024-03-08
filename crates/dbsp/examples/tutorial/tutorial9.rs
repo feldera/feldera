@@ -1,15 +1,16 @@
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 use csv::Reader;
-use dbsp::utils::{Tup2, Tup3};
 use dbsp::{
-    operator::FilterMap, CollectionHandle, IndexedZSet, OrdIndexedZSet, OutputHandle, RootCircuit,
+    utils::{Tup2, Tup3},
+    OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
 };
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
 #[derive(
     Clone,
+    Default,
     Debug,
     Eq,
     PartialEq,
@@ -32,6 +33,7 @@ struct Record {
 
 #[derive(
     Clone,
+    Default,
     Debug,
     Eq,
     PartialEq,
@@ -55,10 +57,10 @@ struct VaxMonthly {
 fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> Result<(
-    CollectionHandle<Record, i64>,
-    OutputHandle<OrdIndexedZSet<String, VaxMonthly, i64>>,
+    ZSetHandle<Record>,
+    OutputHandle<OrdIndexedZSet<String, VaxMonthly>>,
 )> {
-    let (input_stream, input_handle) = circuit.add_input_zset::<Record, i64>();
+    let (input_stream, input_handle) = circuit.add_input_zset::<Record>();
     let subset = input_stream.filter(|r| {
         r.location == "England"
             || r.location == "Northern Ireland"
@@ -66,8 +68,8 @@ fn build_circuit(
             || r.location == "Wales"
     });
     let monthly_totals = subset
-        .index_with(|r| {
-            Tup2(
+        .map_index(|r| {
+            (
                 Tup3(r.location.clone(), r.date.year(), r.date.month() as u8),
                 r.daily_vaccinations.unwrap_or(0),
             )
@@ -103,7 +105,7 @@ fn main() -> Result<()> {
             let Some(record) = input_records.next() else {
                 break;
             };
-            batch.push((record?, 1));
+            batch.push(Tup2(record?, 1));
         }
         if batch.is_empty() {
             break;

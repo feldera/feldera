@@ -4,13 +4,14 @@ use crate::{
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
-    trace::{merge_batches, Batch},
-    Circuit, Runtime, Stream,
+    trace::BatchReaderFactories,
+    Batch, Circuit, Runtime, Stream,
 };
-use std::fmt::Debug;
 use std::{
     borrow::Cow,
+    fmt::Debug,
     hash::{Hash, Hasher},
+    intrinsics::transmute,
     marker::PhantomData,
     sync::Arc,
 };
@@ -97,13 +98,13 @@ struct OutputHandleInternal<T> {
     mailbox: Vec<Mailbox<Option<T>>>,
 }
 
-impl<T> OutputHandleInternal<T> {
+impl<T: Clone> OutputHandleInternal<T> {
     fn new(num_workers: usize) -> Self {
         assert_ne!(num_workers, 0);
 
         let mut mailbox = Vec::with_capacity(num_workers);
         for _ in 0..num_workers {
-            mailbox.push(Mailbox::new());
+            mailbox.push(Mailbox::new(Arc::new(|| None)));
         }
 
         Self { mailbox }
@@ -237,7 +238,8 @@ where
 
 impl<T> OutputHandle<T>
 where
-    T: Batch<Time = ()> + Send,
+    T: Batch<Time = ()>,
+    T::InnerBatch: Send,
 {
     /// Read batches produced by all worker threads during the last
     /// clock cycle and consolidate them into a single batch.
@@ -258,7 +260,9 @@ where
     /// to `take_from_worker` return `None`. `consolidate` skips `None` results
     /// when computing the consolidated batch.
     pub fn consolidate(&self) -> T {
-        merge_batches(self.take_from_all())
+        let factories = BatchReaderFactories::new::<T::Key, T::Val, T::R>();
+        let handle: &OutputHandle<T::Inner> = unsafe { transmute(self) };
+        T::from_inner(handle.dyn_consolidate(&factories))
     }
 }
 
@@ -363,12 +367,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{trace::Batch, OrdZSet, Runtime};
+    use crate::{typed_batch::OrdZSet, utils::Tup2, Runtime};
 
     #[test]
     fn test_output_handle() {
         let (mut dbsp, (input, output)) = Runtime::init_circuit(4, |circuit| {
-            let (zset, zset_handle) = circuit.add_input_zset::<u64, i64>();
+            let (zset, zset_handle) = circuit.add_input_zset::<u64>();
             let zset_output = zset.output();
 
             Ok((zset_handle, zset_output))
@@ -376,12 +380,23 @@ mod test {
         .unwrap();
 
         let inputs = vec![
-            vec![(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)],
-            vec![(1, -1), (2, -1), (3, -1), (4, -1), (5, -1)],
+            vec![Tup2(1, 1), Tup2(2, 1), Tup2(3, 1), Tup2(4, 1), Tup2(5, 1)],
+            vec![
+                Tup2(1, -1),
+                Tup2(2, -1),
+                Tup2(3, -1),
+                Tup2(4, -1),
+                Tup2(5, -1),
+            ],
         ];
 
         for mut input_vec in inputs {
-            let expected_output = OrdZSet::from_tuples((), input_vec.clone());
+            let input_tuples = input_vec
+                .iter()
+                .map(|Tup2(k, w)| Tup2(Tup2(*k, ()), *w))
+                .collect::<Vec<_>>();
+
+            let expected_output = OrdZSet::from_tuples((), input_tuples);
 
             input.append(&mut input_vec);
             dbsp.step().unwrap();
@@ -395,7 +410,7 @@ mod test {
     #[test]
     fn test_guarded_output_handle() {
         let (mut dbsp, (input, guard, output)) = Runtime::init_circuit(4, |circuit| {
-            let (zset, zset_handle) = circuit.add_input_zset::<u64, i64>();
+            let (zset, zset_handle) = circuit.add_input_zset::<u64>();
             let (guard, guard_handle) = circuit.add_input_stream::<bool>();
             let zset_output = zset.output_guarded(&guard);
 
@@ -404,12 +419,23 @@ mod test {
         .unwrap();
 
         let inputs = vec![
-            vec![(1, 1), (2, 1), (3, 1), (4, 1), (5, 1)],
-            vec![(1, -1), (2, -1), (3, -1), (4, -1), (5, -1)],
+            vec![Tup2(1, 1), Tup2(2, 1), Tup2(3, 1), Tup2(4, 1), Tup2(5, 1)],
+            vec![
+                Tup2(1, -1),
+                Tup2(2, -1),
+                Tup2(3, -1),
+                Tup2(4, -1),
+                Tup2(5, -1),
+            ],
         ];
 
         for mut input_vec in inputs {
-            let expected_output = OrdZSet::from_tuples((), input_vec.clone());
+            let input_tuples = input_vec
+                .iter()
+                .map(|Tup2(k, w)| Tup2(Tup2(*k, ()), *w))
+                .collect::<Vec<_>>();
+
+            let expected_output = OrdZSet::from_tuples((), input_tuples);
 
             input.append(&mut input_vec.clone());
             guard.set_for_all(false);

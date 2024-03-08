@@ -1,33 +1,55 @@
-//! Count operators.
-
 use crate::{
-    algebra::{HasOne, IndexedZSet, ZRingValue},
-    circuit::{Circuit, Stream, WithClock},
-    trace::Batch,
-    DBTimestamp, OrdIndexedZSet,
+    dynamic::{DowncastTrait, DynData},
+    operator::dynamic::{
+        aggregate::{IncAggregateLinearFactories, StreamLinearAggregateFactories},
+        count::{DistinctCountFactories, StreamDistinctCountFactories},
+    },
+    storage::file::Deserializable,
+    typed_batch::{DynOrdIndexedZSet, IndexedZSet, OrdIndexedZSet},
+    Circuit, DynZWeight, Stream, ZWeight,
 };
 
 impl<C, Z> Stream<C, Z>
 where
     C: Circuit,
-    <C as WithClock>::Time: DBTimestamp,
-    Z: IndexedZSet,
-    Z::R: ZRingValue,
+    Z: IndexedZSet<DynK = DynData>,
+    Z::InnerBatch: Send,
+    <Z::Key as Deserializable>::ArchivedDeser: Ord,
 {
     /// Incrementally sums the weights for each key `self` into an indexed Z-set
     /// that maps from the original keys to the weights.  Both the input and
     /// output are streams of updates.
     #[allow(clippy::type_complexity)]
-    pub fn weighted_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, Z::R, Z::R>> {
-        self.weighted_count_generic()
+    pub fn weighted_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
+        let factories: IncAggregateLinearFactories<
+            Z::Inner,
+            DynZWeight,
+            DynOrdIndexedZSet<DynData, DynData>,
+            C::Time,
+        > = IncAggregateLinearFactories::new::<Z::Key, ZWeight, ZWeight>();
+
+        self.inner()
+            .dyn_weighted_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 
-    /// Like [`Self::weighted_count`], but can return any batch type.
+    /// Like [`Self::dyn_weighted_count`], but can return any batch type.
     pub fn weighted_count_generic<O>(&self) -> Stream<C, O>
     where
-        O: Batch<Key = Z::Key, Val = Z::R, R = Z::R, Time = ()>,
+        O: IndexedZSet<Key = Z::Key, DynK = Z::DynK, DynV = DynData>,
     {
-        self.aggregate_linear_generic(|_v| Z::R::one())
+        let factories: IncAggregateLinearFactories<Z::Inner, DynZWeight, O::Inner, C::Time> =
+            IncAggregateLinearFactories::new::<Z::Key, ZWeight, O::Val>();
+
+        self.inner()
+            .dyn_weighted_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 
     /// Incrementally, for each key in `self`, counts the number of unique
@@ -35,40 +57,70 @@ where
     /// that maps from the original keys to the unique value counts.  Both
     /// the input and output are streams of updates.
     #[allow(clippy::type_complexity)]
-    pub fn distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, Z::R, Z::R>>
-    where
-        Z: Send,
-    {
-        self.distinct_count_generic()
+    pub fn distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
+        let factories: DistinctCountFactories<
+            Z::Inner,
+            DynOrdIndexedZSet<DynData, DynData>,
+            C::Time,
+        > = DistinctCountFactories::new::<Z::Key, Z::Val, ZWeight>();
+
+        self.inner()
+            .dyn_distinct_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 
-    /// Like [`Self::distinct_count`], but can return any batch type.
+    /// Like [`Self::dyn_distinct_count`], but can return any batch type.
     pub fn distinct_count_generic<O>(&self) -> Stream<C, O>
     where
-        O: Batch<Key = Z::Key, Val = Z::R, R = Z::R, Time = ()>,
-        Z: Send,
+        O: IndexedZSet<Key = Z::Key, DynK = DynData>,
     {
-        self.distinct().weighted_count_generic()
+        let factories: DistinctCountFactories<Z::Inner, O::Inner, C::Time> =
+            DistinctCountFactories::new::<Z::Key, Z::Val, O::Val>();
+
+        self.inner()
+            .dyn_distinct_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 
     /// Non-incrementally sums the weights for each key `self` into an indexed
     /// Z-set that maps from the original keys to the weights.  Both the
     /// input and output are streams of data (not updates).
     #[allow(clippy::type_complexity)]
-    pub fn stream_weighted_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, Z::R, Z::R>>
-    where
-        Z: Send,
-    {
-        self.stream_weighted_count_generic()
+    pub fn stream_weighted_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
+        let factories: StreamLinearAggregateFactories<
+            Z::Inner,
+            Z::DynR,
+            DynOrdIndexedZSet<DynData, DynData>,
+        > = StreamLinearAggregateFactories::new::<Z::Key, Z::Val, ZWeight, ZWeight>();
+
+        self.inner()
+            .dyn_stream_weighted_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 
-    /// Like [`Self::stream_weighted_count`], but can return any batch type.
+    /// Like [`Self::dyn_stream_weighted_count`], but can return any batch type.
     pub fn stream_weighted_count_generic<O>(&self) -> Stream<C, O>
     where
-        O: IndexedZSet<Key = Z::Key, Val = Z::R, R = Z::R, Time = ()>,
-        Z: Send,
+        O: IndexedZSet<Key = Z::Key, DynK = Z::DynK, Val = ZWeight, DynV = DynData>,
     {
-        self.stream_aggregate_linear_generic(|_v| Z::R::one())
+        let factories: StreamLinearAggregateFactories<Z::Inner, Z::DynR, O::Inner> =
+            StreamLinearAggregateFactories::new::<Z::Key, Z::Val, ZWeight, ZWeight>();
+
+        self.inner()
+            .dyn_stream_weighted_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 
     /// Incrementally, for each key in `self`, counts the number of unique
@@ -76,150 +128,31 @@ where
     /// that maps from the original keys to the unique value counts.  Both
     /// the input and output are streams of data (not updates).
     #[allow(clippy::type_complexity)]
-    pub fn stream_distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, Z::R, Z::R>>
-    where
-        Z: Send,
-    {
-        self.stream_distinct_count_generic()
+    pub fn stream_distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
+        let factories: StreamDistinctCountFactories<Z::Inner, DynOrdIndexedZSet<DynData, DynData>> =
+            StreamDistinctCountFactories::new::<Z::Key, Z::Val, ZWeight>();
+
+        self.inner()
+            .dyn_stream_distinct_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 
-    /// Like [`Self::distinct_count`], but can return any batch type.
+    /// Like [`Self::dyn_distinct_count`], but can return any batch type.
     pub fn stream_distinct_count_generic<O>(&self) -> Stream<C, O>
     where
-        O: IndexedZSet<Key = Z::Key, Val = Z::R, R = Z::R, Time = ()>,
-        Z: Send,
+        O: IndexedZSet<Key = Z::Key, DynK = Z::DynK, Val = ZWeight, DynV = DynData>,
     {
-        self.stream_distinct().stream_weighted_count_generic()
-    }
-}
+        let factories: StreamDistinctCountFactories<Z::Inner, O::Inner> =
+            StreamDistinctCountFactories::new::<Z::Key, Z::Val, ZWeight>();
 
-#[cfg(test)]
-mod test {
-    use crate::{
-        indexed_zset,
-        operator::{FilterMap, Generator},
-        trace::Batch,
-        zset, Circuit, OrdIndexedZSet, RootCircuit,
-    };
-    use core::ops::Range;
-    use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
-
-    #[test]
-    fn weighted_count_test() {
-        let (circuit, (counts, stream_counts, expected_counts)) =
-            RootCircuit::build(move |circuit| {
-                // Generate sequence with key 1 and weights 1, -2, 4, -8, 16, -32, ...
-                let mut next = 1;
-                let ones = circuit.add_source(Generator::new(move || {
-                    let this = zset! { 1 => next };
-                    next *= -2;
-                    this
-                }));
-
-                // Generate sequence with key 2 and delayed weights.
-                let twos = ones.map(|_| 2).delay();
-
-                let counts = ones.plus(&twos).weighted_count().integrate();
-                let stream_counts = ones.plus(&twos).integrate().stream_weighted_count();
-
-                // Generate expected values in `counts` by another means, using the formula for
-                // A077925 (https://oeis.org/A077925).
-                let mut term = 0;
-                fn a077925(n: i64) -> i64 {
-                    let mut x = 2 << n;
-                    if (n & 1) == 0 {
-                        x = -x;
-                    }
-                    (1 - x) / 3
-                }
-                let expected_ones = circuit.add_source(Generator::new(move || {
-                    term += 1;
-                    indexed_zset! { 1 => { a077925(term - 1) => 1 } }
-                }));
-                let expected_twos = expected_ones.map_index(|(&_k, &v)| (2, v)).delay();
-                let expected_counts = expected_ones.plus(&expected_twos);
-
-                Ok((
-                    counts.output(),
-                    stream_counts.output(),
-                    expected_counts.output(),
-                ))
-            })
-            .unwrap();
-
-        for _ in 0..10 {
-            circuit.step().unwrap();
-            let counts = counts.consolidate();
-            let stream_counts = stream_counts.consolidate();
-            let expected_counts = expected_counts.consolidate();
-            // println!("counts={}", counts);
-            // println!("stream_counts={}", stream_counts);
-            // println!("expected={}", expected_counts);
-            assert_eq!(counts, expected_counts);
-            assert_eq!(stream_counts, expected_counts);
-        }
-    }
-
-    #[test]
-    fn distinct_count_test() {
-        // Number of steps to test.
-        const N: usize = 50;
-
-        // Generate `input` as a vector of `N` Z-sets with keys in range `K`, values in
-        // range `V`, and weights in range `W`, and `expected` as a vector that
-        // for each element in `input` contains a Z-set that maps from each key
-        // to the number of values with positive weight.
-        const K: Range<u64> = 0..10; // Range of keys in Z-set.
-        const V: Range<u64> = 0..10; // Range of values in Z-set.
-        const W: Range<i64> = -10..10; // Range of weights in Z-set.
-        let mut rng = StdRng::seed_from_u64(0); // Make the test reproducible.
-        let mut input: Vec<OrdIndexedZSet<u64, i64, i64>> = Vec::new();
-        let mut expected: Vec<OrdIndexedZSet<u64, i64, i64>> = Vec::new();
-        for _ in 0..N {
-            let mut input_tuples = Vec::new();
-            let mut expected_tuples = Vec::new();
-            for k in K {
-                let mut v: Vec<u64> = V.collect();
-                let n = rng.gen_range(V);
-                v.partial_shuffle(&mut rng, n as usize);
-
-                let mut distinct_count = 0;
-                for &v in &v[0..n as usize] {
-                    let w = rng.gen_range(W);
-                    input_tuples.push(((k, v as i64), w));
-                    if w > 0 {
-                        distinct_count += 1;
-                    }
-                }
-                if distinct_count > 0 {
-                    expected_tuples.push(((k, distinct_count), 1));
-                }
-            }
-            input.push(OrdIndexedZSet::from_tuples((), input_tuples));
-            expected.push(OrdIndexedZSet::from_tuples((), expected_tuples));
-        }
-        let input_copy = input.clone();
-
-        let (circuit, (counts, stream_counts)) = RootCircuit::build(move |circuit| {
-            let mut iter = input.into_iter();
-            let source =
-                circuit.add_source(Generator::new(move || iter.next().unwrap_or_default()));
-            let counts = source.differentiate().distinct_count().integrate();
-            let stream_counts = source.stream_distinct_count();
-            Ok((counts.output(), stream_counts.output()))
-        })
-        .unwrap();
-
-        for (_input, expected_counts) in input_copy.into_iter().zip(expected.into_iter()) {
-            circuit.step().unwrap();
-            let counts = counts.consolidate();
-            let stream_counts = stream_counts.consolidate();
-            // println!("input={}", _input);
-            // println!("counts={}", counts);
-            // println!("stream_counts={}", stream_counts);
-            // println!("expected={}", expected_counts);
-            assert_eq!(counts, expected_counts);
-            assert_eq!(stream_counts, expected_counts);
-        }
+        self.inner()
+            .dyn_stream_distinct_count_generic(
+                &factories,
+                Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
+            )
+            .typed()
     }
 }

@@ -1,7 +1,9 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::utils::{Tup3, Tup4};
-use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
+use dbsp::{
+    utils::{Tup3, Tup4},
+    OrdZSet, RootCircuit, Stream,
+};
 
 /// Local Item Suggestion
 ///
@@ -31,7 +33,7 @@ use dbsp::{operator::FilterMap, OrdZSet, RootCircuit, Stream};
 const STATES_OF_INTEREST: &[&str] = &["OR", "ID", "CA"];
 const CATEGORY_OF_INTEREST: u64 = 10;
 
-type Q3Stream = Stream<RootCircuit, OrdZSet<Tup4<String, String, String, u64>, i64>>;
+type Q3Stream = Stream<RootCircuit, OrdZSet<Tup4<String, String, String, u64>>>;
 
 pub fn q3(input: NexmarkStream) -> Q3Stream {
     // Select auctions of interest and index them by seller id.
@@ -70,40 +72,40 @@ mod tests {
         generator::tests::{make_auction, make_person},
         model::{Auction, Person},
     };
-    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
+    use dbsp::{utils::Tup2, OrdZSet, RootCircuit, ZWeight};
 
     #[test]
     fn test_q3_people() {
-        let input_vecs: Vec<Vec<(Event, i64)>> = vec![
+        let input_vecs: Vec<Vec<Tup2<Event, ZWeight>>> = vec![
             vec![
-                (
+                Tup2(
                     Event::Person(Person {
                         id: 1,
-                        name: String::from("NL Seller").into(),
-                        state: String::from("NL").into(),
+                        name: String::from("NL Seller"),
+                        state: String::from("NL"),
                         ..make_person()
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Person(Person {
                         id: 2,
-                        name: String::from("CA Seller").into(),
-                        state: String::from("CA").into(),
+                        name: String::from("CA Seller"),
+                        state: String::from("CA"),
                         ..make_person()
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Person(Person {
                         id: 3,
-                        name: String::from("ID Seller").into(),
-                        state: String::from("ID").into(),
+                        name: String::from("ID Seller"),
+                        state: String::from("ID"),
                         ..make_person()
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 999,
                         seller: 2,
@@ -112,7 +114,7 @@ mod tests {
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 452,
                         seller: 3,
@@ -124,16 +126,16 @@ mod tests {
             ],
             vec![
                 // This person is selling in OR, but a different category.
-                (
+                Tup2(
                     Event::Person(Person {
                         id: 4,
-                        name: String::from("OR Seller").into(),
-                        state: String::from("OR").into(),
+                        name: String::from("OR Seller"),
+                        state: String::from("OR"),
                         ..make_person()
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 999,
                         seller: 4,
@@ -143,16 +145,16 @@ mod tests {
                     1,
                 ),
                 // This person is selling in OR in the category of interest.
-                (
+                Tup2(
                     Event::Person(Person {
                         id: 5,
-                        name: String::from("OR Seller").into(),
-                        state: String::from("OR").into(),
+                        name: String::from("OR Seller"),
+                        state: String::from("OR"),
                         ..make_person()
                     }),
                     1,
                 ),
-                (
+                Tup2(
                     Event::Auction(Auction {
                         id: 333,
                         seller: 5,
@@ -165,7 +167,7 @@ mod tests {
         ];
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q3(stream);
 
@@ -173,7 +175,7 @@ mod tests {
                 OrdZSet::from_keys(
                     (),
                     vec![
-                        (
+                        Tup2(
                             Tup4(
                                 String::from("CA Seller"),
                                 String::from("Phoenix"),
@@ -182,7 +184,7 @@ mod tests {
                             ),
                             1,
                         ),
-                        (
+                        Tup2(
                             Tup4(
                                 String::from("ID Seller"),
                                 String::from("Phoenix"),
@@ -195,7 +197,7 @@ mod tests {
                 ),
                 OrdZSet::from_keys(
                     (),
-                    vec![(
+                    vec![Tup2(
                         Tup4(
                             String::from("OR Seller"),
                             String::from("Phoenix"),

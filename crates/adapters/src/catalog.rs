@@ -55,16 +55,16 @@ where
 /// stream.
 ///
 /// A trait for a type that wraps a
-/// [`CollectionHandle`](`dbsp::CollectionHandle`) or
-/// an [`UpsertHandle`](`dbsp::UpsertHandle`) and pushes serialized relational
+/// [`ZSetHandle`](`dbsp::ZSetHandle`) or
+/// an [`MapHandle`](`dbsp::MapHandle`) and pushes serialized relational
 /// data to the associated input stream record-by-record.  The client passes a
 /// byte array with a serialized data record (e.g., in JSON or CSV format)
 /// to [`insert`](`Self::insert`), [`delete`](`Self::delete`), and
 /// [`update`](`Self::update`) methods. The record gets deserialized into the
 /// strongly typed representation expected by the input stream and gets buffered
 /// inside the handle. The [`flush`](`Self::flush`) method pushes all buffered
-/// data to the underlying [`CollectionHandle`](`dbsp::CollectionHandle`) or
-/// [`UpsertHandle`](`dbsp::UpsertHandle`).
+/// data to the underlying [`ZSetHandle`](`dbsp::ZSetHandle`) or
+/// [`MapHandle`](`dbsp::MapHandle`).
 ///
 /// Instances of this trait are created by calling
 /// [`DeCollectionHandle::configure_deserializer`].
@@ -154,6 +154,8 @@ pub trait DeCollectionHandle: Send {
 /// This is a wrapper around the DBSP `Batch` trait that returns a cursor that
 /// yields `erased_serde::Serialize` trait objects that can be used to serialize
 /// the contents of the batch without knowing its key and value types.
+// The reason we need the `Sync` trait below is so that we can wrap batches
+// in `Arc` and send the same batch to multiple output endpoint threads.
 pub trait SerBatch: Send + Sync {
     /// Number of keys in the batch.
     fn key_count(&self) -> usize;

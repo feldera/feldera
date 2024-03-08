@@ -1,8 +1,10 @@
+// TODO: adapt these benchmarks for dynamic dispatch-based implementation.
+fn main() {
+    todo!()
+}
+/*
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
-use dbsp::{
-    algebra::{AddAssignByRef, HasZero},
-    trace::consolidation,
-};
+use dbsp::algebra::{AddAssignByRef, HasZero};
 use rand::{
     distributions::Standard,
     prelude::{Distribution, SliceRandom},
@@ -205,3 +207,4 @@ consolidation_benches! {
 
 criterion_group!(benches, consolidation_benches);
 criterion_main!(benches);
+*/

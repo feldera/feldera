@@ -42,6 +42,11 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
         super(node, code, mayBeNull, tupArgs);
     }
 
+    @Override
+    public boolean isRaw() {
+        return true;
+    }
+
     public DBSPTypeRawTuple(DBSPType... tupArgs) {
         this(CalciteObject.EMPTY, DBSPTypeCode.RAW_TUPLE, false, tupArgs);
     }

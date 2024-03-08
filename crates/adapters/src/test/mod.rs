@@ -129,12 +129,13 @@ where
 /// Create a simple test circuit that passes the input stream right through to
 /// the output.
 // TODO: parameterize with the number (and types?) of input and output streams.
+
 pub fn test_circuit(
     config: CircuitConfig,
 ) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>) {
     let (circuit, catalog) = Runtime::init_circuit(config, |circuit| {
         let mut catalog = Catalog::new();
-        let (input, hinput) = circuit.add_input_zset::<TestStruct, i32>();
+        let (input, hinput) = circuit.add_input_zset::<TestStruct>();
 
         // Use bogus schema until any of the tests care about having a real one.
         let input_schema =

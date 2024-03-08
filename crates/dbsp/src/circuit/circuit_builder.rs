@@ -25,10 +25,7 @@
 #[cfg(doc)]
 use crate::{
     algebra::{IndexedZSet, ZSet},
-    operator::{
-        time_series::{PartitionedIndexedZSet, RelRange},
-        Aggregator, FilterMap, Fold, Generator, Max, Min,
-    },
+    operator::{time_series::RelRange, Aggregator, Fold, Generator, Max, Min},
     trace::Batch,
     InputHandle, OutputHandle,
 };
@@ -176,7 +173,7 @@ impl<D> StreamValue<D> {
 ///
 /// # Operator naming convention
 ///
-/// `Stream` and [`FilterMap`] use `_index` and `_generic` suffixes and
+/// `Stream` uses `_index` and `_generic` suffixes and
 /// `stream_` prefix to declare variations of basic operations, e.g., `map`,
 /// `map_index`, `map_generic`, `map_index_generic`, `join`, `stream_join`:
 ///
@@ -187,7 +184,7 @@ impl<D> StreamValue<D> {
 ///     [Data streams versus delta streams]:
 ///     Stream#data-streams-versus-delta-streams
 ///
-///   * `generic_` suffix: Most operators can assemble their outputs into any
+///   * `_generic` suffix: Most operators can assemble their outputs into any
 ///     collection type that implements the [`Batch`] trait.  In practice, we
 ///     typically use [`OrdIndexedZSet`](`crate::OrdIndexedZSet`) for indexed
 ///     batches and [`OrdZSet`](`crate::OrdZSet`) for non-indexed batches.
@@ -203,7 +200,7 @@ impl<D> StreamValue<D> {
 ///
 /// # Catalog of stream operators
 ///
-/// `Stream` methods and the [`FilterMap`] trait are the main way to perform
+/// `Stream` methods are the main way to perform
 /// computations with streams.  The number of available methods can be
 /// overwhelming, so the subsections below categorize them into functionally
 /// related groups.
@@ -230,10 +227,10 @@ impl<D> StreamValue<D> {
 ///     different kinds of input handles.
 ///
 /// Use [`RootCircuit::add_input_indexed_zset`] or
-/// [`RootCircuit::add_input_zset`] to crate an (indexed) Z-set input stream.
-/// There's also [`RootCircuit::add_input_set`] and
-/// [`RootCircuit::add_input_map`] to simplify cases where a regular set or map
-/// is easier to use than a Z-set.  The latter functions maintain an extra
+/// [`RootCircuit::add_input_zset`] to crate an (indexed) Z-set input
+/// stream. There's also [`RootCircuit::add_input_set`] and
+/// [`RootCircuit::add_input_map`] to simplify cases where a regular set or
+/// map is easier to use than a Z-set.  The latter functions maintain an extra
 /// internal table tracking the contents of the set or map, so they're a second
 /// choice.
 ///
@@ -276,26 +273,22 @@ impl<D> StreamValue<D> {
 /// pass in a function that looks at individual records in a Z-set or other
 /// batch.  These functions apply to both streams of deltas and streams of data.
 ///
-/// The following methods are implemented via trait [`FilterMap`], which
-/// `Stream` implements for streams of indexed and non-indexed Z-sets.  Each of
+/// The following methods are available for streams of indexed and non-indexed
+/// Z-sets that implement trait [`FilterMap`](`crate::FilterMap`).  Each of
 /// these takes a function that accepts a key (for non-indexed Z-sets) or a
 /// key-value pair (for indexed Z-sets):
 ///
-///   * Use [`FilterMap::map`] to output a non-indexed Z-set using an arbitrary
-///     mapping function, or [`FilterMap::map_index`] to map to an indexed
-///     Z-set.
+///   * Use [`Stream::map`] to output a non-indexed Z-set using an
+///     arbitrary mapping function, or [`Stream::map_index`] to map to
+///     an indexed Z-set.
 ///
-///   * Use [`FilterMap::filter`] to drop records that do not satisfy a
+///   * Use [`Stream::filter`] to drop records that do not satisfy a
 ///     predicate function.  The output stream has the same type as the input.
 ///
-///   * Use [`FilterMap::flat_map`] to output a Z-set that maps each input
-///     record to any number of records, or [`FilterMap::flat_map_index`] for
-///     indexed Z-set output.  These methods also work as a `filter_map`
-///     equivalent.
-///
-/// `Stream` also has [`Stream::index`] to transform a batch with `(k, v)` keys
-/// into an indexed Z-set, and [`Stream::index_with`] for transforming a batch
-/// with an arbitrary key type into an indexed Z-set through a mapping function.
+///   * Use [`Stream::flat_map`] to output a Z-set that maps each
+///     input record to any number of records, or
+///     [`Stream::flat_map_index`] for indexed Z-set output.  These
+///     methods also work as a `filter_map` equivalent.
 ///
 /// ## Value-by-value mapping operators
 ///
@@ -360,7 +353,7 @@ impl<D> StreamValue<D> {
 ///
 /// ## Weighting and counting operators
 ///
-/// Use [`Stream::weigh`] to multiply the weights in an indexed Z-set by a
+/// Use [`Stream::dyn_weigh`] to multiply the weights in an indexed Z-set by a
 /// user-provided function of the key and value.  This is equally appropriate
 /// for streams of data or deltas.  This method outputs a non-indexed Z-set with
 /// just the keys from the input, discarding the values, which also means that
@@ -370,12 +363,12 @@ impl<D> StreamValue<D> {
 /// indexed Z-set:
 ///
 ///   * To sum the weights for each value within a key, use
-///     [`Stream::weighted_count`] for streams of deltas or
-///     [`Stream::stream_weighted_count`] for streams of data.
+///     [`Stream::dyn_weighted_count`] for streams of deltas or
+///     [`Stream::dyn_stream_weighted_count`] for streams of data.
 ///
 ///   * To count each value only once even for a weight greater than one, use
-///     [`Stream::distinct_count`] for streams of deltas or
-///     [`Stream::stream_distinct_count`] for streams of data.
+///     [`Stream::dyn_distinct_count`] for streams of deltas or
+///     [`Stream::dyn_stream_distinct_count`] for streams of data.
 ///
 /// The "distinct" operator on a Z-set maps positive weights to 1 and all other
 /// weights to 0.  `Stream` has two implementations:
@@ -426,10 +419,10 @@ impl<D> StreamValue<D> {
 /// whose keys do not appear in `b`.  `b` may be indexed or non-indexed and its
 /// value type does not matter.
 ///
-/// Use [`Stream::semijoin_stream`] for semi-joins of data streams.  It takes a
-/// batch `a` and non-indexed batch `b` with the same key type as `a`.  It
-/// outputs a non-indexed Z-set of key-value tuples that contains all the pairs
-/// from `a` for which a key appears in `b`.
+/// Use [`Stream::dyn_semijoin_stream`] for semi-joins of data streams.  It
+/// takes a batch `a` and non-indexed batch `b` with the same key type as `a`.
+/// It outputs a non-indexed Z-set of key-value tuples that contains all the
+/// pairs from `a` for which a key appears in `b`.
 ///
 /// Use [`Stream::outer_join`] or [`Stream::outer_join_default`] for outer joins
 /// of delta streams.  The former takes three functions, one for each of the
@@ -438,9 +431,9 @@ impl<D> StreamValue<D> {
 /// default for the missing value.
 ///
 /// DBSP implements "range join" of data streams, which joins keys in `a`
-/// against ranges of keys in `b`.  [`Stream::stream_join_range`] implements
+/// against ranges of keys in `b`.  [`Stream::dyn_stream_join_range`] implements
 /// range join with non-indexed Z-set output,
-/// [`Stream::stream_join_range_index`] with indexed output.
+/// [`Stream::dyn_stream_join_range_index`] with indexed output.
 ///
 /// ## Aggregation
 ///
@@ -453,21 +446,23 @@ impl<D> StreamValue<D> {
 ///
 /// DBSP implements two kinds of aggregation:
 ///
-///   * [`Stream::aggregate`] aggregates delta streams.  It takes an aggregation
-///     function as an [`Aggregator`], e.g. [`Min`], [`Max`], [`Fold`], or one
-///     written by the client.
+///   * [`Stream::dyn_aggregate`] aggregates delta streams.  It takes an
+///     aggregation function as an [`Aggregator`], e.g. [`Min`], [`Max`],
+///     [`Fold`], or one written by the client.
 ///
-///     [`Stream::aggregate_linear`] is cheaper for linear aggregation
+///     [`Stream::dyn_aggregate_linear`] is cheaper for linear aggregation
 ///     functions.  It's also a little easier to use with a custom aggregation
 ///     function, because it only takes a function rather than an [`Aggregator`]
 ///     object.
 ///
-///     [`Stream::average`] calculates the average over the values for each key.
+///     [`Stream::dyn_average`] calculates the average over the values for each
+/// key.
 ///
-///   * [`Stream::stream_aggregate`] aggregates data streams.  Each batch from
-///     the input is separately aggregated and written to the output stream.
+///   * [`Stream::dyn_stream_aggregate`] aggregates data streams.  Each batch
+///     from the input is separately aggregated and written to the output
+///     stream.
 ///
-///     [`Stream::stream_aggregate_linear`] applies a linear aggregation
+///     [`Stream::dyn_stream_aggregate_linear`] applies a linear aggregation
 ///     function to a data stream.
 ///
 /// These aggregation functions all partition the aggregation by key, like GROUP
@@ -500,8 +495,9 @@ impl<D> StreamValue<D> {
 /// Rolling aggregation takes place within a "partition", which is any
 /// convenient division of the data.  It might correspond to a tenant ID, for
 /// example, if each tenant's data is to be separately aggregated.  To represent
-/// partitioning, rolling aggregation introduces a [`PartitionedIndexedZSet`]
-/// trait, which is an `IndexedZSet` with an arbitrary key type that specifies
+/// partitioning, rolling aggregation introduces the
+/// [`OrdPartitionedIndexedZSet`](`crate::OrdPartitionedIndexedZSet`)
+/// type, which is an `IndexedZSet` with an arbitrary key type that specifies
 /// the partition (it may be `()` if all data is to be within a single
 /// partition) and a value type of the form `(TS, V)` where `TS` is the type
 /// used for time and `V` is the client's value type.
@@ -542,7 +538,7 @@ impl<D> StreamValue<D> {
 ///
 /// ## Windowing
 ///
-/// Use [`Stream::window`] to extract a stream of deltas to windows from a
+/// Use [`Stream::dyn_window`] to extract a stream of deltas to windows from a
 /// stream of deltas.  This can be useful for windowing outside the context of
 /// rolling aggregation.
 pub struct Stream<C, D> {
@@ -570,6 +566,28 @@ where
             origin_node_id: self.origin_node_id.clone(),
             circuit: self.circuit.clone(),
             val: self.val.clone(),
+        }
+    }
+}
+
+impl<C, D> Stream<C, D>
+where
+    C: Clone,
+{
+    /// Transmute a stream of `D` into a stream of `D2`.
+    ///
+    /// This is unsafe and dangerous for the same reasons [`std::mem:transmute`]
+    /// is dangerous and should be used with care.
+    ///
+    /// # Safety
+    ///
+    /// Transmuting `D` into `D2` should be safe.
+    pub(crate) unsafe fn transmute_payload<D2>(&self) -> Stream<C, D2> {
+        Stream {
+            local_node_id: self.local_node_id,
+            origin_node_id: self.origin_node_id.clone(),
+            circuit: self.circuit.clone(),
+            val: std::mem::transmute(self.val.clone()),
         }
     }
 }
@@ -1906,7 +1924,7 @@ where
 impl RootCircuit {
     /// Creates a circuit and prepares it for execution by calling
     /// `constructor`.  The constructor should create input operators by calling
-    /// [`RootCircuit::add_input_zset`] and related methods.  Each of these
+    /// [`RootCircuit::dyn_add_input_zset`] and related methods.  Each of these
     /// calls returns an input handle and a [`Stream`].  The `constructor` can
     /// call [`Stream`] methods to do computation, each of which yields further
     /// [`Stream`]s.  It can also use [`Stream::output`] to obtain an output
@@ -4482,7 +4500,6 @@ mod tests {
     fn sum_circuit_dynamic() {
         sum_circuit::<DynamicScheduler>();
     }
-
     // Compute the sum of numbers from 0 to 99.
     fn sum_circuit<S>()
     where

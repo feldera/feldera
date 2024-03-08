@@ -1,10 +1,6 @@
 use super::NexmarkStream;
 use crate::model::{Bid, Event};
-use dbsp::{
-    algebra::UnimplementedSemigroup,
-    operator::{FilterMap, Fold},
-    OrdZSet, RootCircuit, Stream,
-};
+use dbsp::{algebra::UnimplementedSemigroup, operator::Fold, OrdZSet, RootCircuit, Stream};
 
 //
 // Query 18: Find last bid (Not in original suite)
@@ -32,7 +28,7 @@ use dbsp::{
 ///  WHERE rank_number <= 1;
 /// ```
 
-type Q18Stream = Stream<RootCircuit, OrdZSet<Bid, i64>>;
+type Q18Stream = Stream<RootCircuit, OrdZSet<Bid>>;
 
 pub fn q18(input: NexmarkStream) -> Q18Stream {
     let bids_by_auction_bidder = input.flat_map_index(|event| match event {
@@ -41,7 +37,7 @@ pub fn q18(input: NexmarkStream) -> Q18Stream {
     });
 
     bids_by_auction_bidder
-        .aggregate(<Fold<_, UnimplementedSemigroup<_>, _, _>>::new(
+        .aggregate(<Fold<_, _, UnimplementedSemigroup<_>, _, _>>::new(
             Bid::default(),
             |top: &mut Bid, val: &Bid, _w| {
                 if val.date_time > top.date_time {
@@ -56,7 +52,7 @@ pub fn q18(input: NexmarkStream) -> Q18Stream {
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::zset;
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
     #[rstest]
@@ -373,14 +369,14 @@ mod tests {
     )]
     fn test_q18(
         #[case] input_bid_batches: Vec<Vec<Bid>>,
-        #[case] expected_zsets: Vec<OrdZSet<Bid, i64>>,
+        #[case] expected_zsets: Vec<OrdZSet<Bid>>,
     ) {
         let input_vecs = input_bid_batches
             .into_iter()
-            .map(|batch| batch.into_iter().map(|b| (Event::Bid(b), 1)).collect());
+            .map(|batch| batch.into_iter().map(|b| Tup2(Event::Bid(b), 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q18(stream);
 

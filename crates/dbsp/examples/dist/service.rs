@@ -1,10 +1,12 @@
 use chrono::NaiveDate;
 use dbsp::circuit::Layout;
+use dbsp::utils::Tup2;
 use rkyv::Archive;
 use size_of::SizeOf;
 
 #[derive(
     Clone,
+    Default,
     Debug,
     Eq,
     PartialEq,
@@ -28,6 +30,7 @@ pub struct Record {
 
 #[derive(
     Clone,
+    Default,
     Debug,
     Eq,
     PartialEq,
@@ -52,5 +55,5 @@ pub struct VaxMonthly {
 #[tarpc::service]
 pub trait Circuit {
     async fn init(layout: Layout);
-    async fn run(records: Vec<(Record, i64)>) -> Vec<(String, VaxMonthly, i64)>;
+    async fn run(records: Vec<Tup2<Record, i64>>) -> Vec<(String, VaxMonthly, i64)>;
 }

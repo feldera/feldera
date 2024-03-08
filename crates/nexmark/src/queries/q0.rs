@@ -14,14 +14,14 @@ mod tests {
         generator::tests::{make_auction, make_bid},
         model::{Auction, Bid, Event},
     };
-    use dbsp::{trace::Batch, OrdZSet, RootCircuit};
+    use dbsp::{utils::Tup2, OrdZSet, RootCircuit, ZWeight};
 
     #[test]
     fn test_q0() {
-        fn input_vecs() -> Vec<Vec<(Event, i64)>> {
+        fn input_vecs() -> Vec<Vec<Tup2<Event, ZWeight>>> {
             vec![
                 vec![
-                    (
+                    Tup2(
                         Event::Auction(Auction {
                             id: 1,
                             seller: 99,
@@ -30,7 +30,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 1_000,
@@ -39,7 +39,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 1,
                             date_time: 2_000,
@@ -50,7 +50,7 @@ mod tests {
                     ),
                 ],
                 vec![
-                    (
+                    Tup2(
                         Event::Auction(Auction {
                             id: 2,
                             seller: 99,
@@ -59,7 +59,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 1_000,
@@ -68,7 +68,7 @@ mod tests {
                         }),
                         1,
                     ),
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction: 2,
                             date_time: 2_000,
@@ -82,13 +82,11 @@ mod tests {
         }
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q0(stream);
 
-            let mut expected_output = input_vecs()
-                .into_iter()
-                .map(|v| OrdZSet::from_tuples((), v));
+            let mut expected_output = input_vecs().into_iter().map(|v| OrdZSet::from_keys((), v));
 
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 

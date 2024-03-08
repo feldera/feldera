@@ -1,3 +1,4 @@
+use super::SqlSerdeConfig;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::byte_record_deserializer,
@@ -5,12 +6,10 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
 use dbsp::{
-    algebra::ZRingValue, operator::Update, CollectionHandle, DBData, DBWeight, InputHandle,
-    UpsertHandle,
+    algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
+    ZSetHandle, ZWeight,
 };
-use std::{collections::VecDeque, marker::PhantomData};
-
-use super::SqlSerdeConfig;
+use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
 pub trait DeserializerFromBytes<C> {
@@ -257,13 +256,13 @@ where
     }
 }
 
-pub struct DeZSetHandle<K, D, R> {
-    handle: CollectionHandle<K, R>,
+pub struct DeZSetHandle<K, D> {
+    handle: ZSetHandle<K>,
     phantom: PhantomData<D>,
 }
 
-impl<K, D, R> DeZSetHandle<K, D, R> {
-    pub fn new(handle: CollectionHandle<K, R>) -> Self {
+impl<K, D> DeZSetHandle<K, D> {
+    pub fn new(handle: ZSetHandle<K>) -> Self {
         Self {
             handle,
             phantom: PhantomData,
@@ -271,10 +270,9 @@ impl<K, D, R> DeZSetHandle<K, D, R> {
     }
 }
 
-impl<K, D, R> DeCollectionHandle for DeZSetHandle<K, D, R>
+impl<K, D> DeCollectionHandle for DeZSetHandle<K, D>
 where
     K: DBData + From<D>,
-    R: DBWeight + ZRingValue,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn configure_deserializer(
@@ -284,13 +282,12 @@ where
         match record_format {
             RecordFormat::Csv => {
                 let config = SqlSerdeConfig::default();
-                Ok(Box::new(DeZSetStream::<
-                    CsvDeserializerFromBytes<_>,
-                    K,
-                    D,
-                    R,
-                    _,
-                >::new(self.handle.clone(), config)))
+                Ok(Box::new(
+                    DeZSetStream::<CsvDeserializerFromBytes<_>, K, D, _>::new(
+                        self.handle.clone(),
+                        config,
+                    ),
+                ))
             }
             RecordFormat::Json(flavor) => {
                 let config = SqlSerdeConfig::from(flavor);
@@ -298,7 +295,6 @@ where
                     JsonDeserializerFromBytes<_>,
                     K,
                     D,
-                    R,
                     _,
                 >::new(self.handle.clone(), config)))
             }
@@ -309,7 +305,7 @@ where
     }
 }
 
-/// An input handle that wraps a [`CollectionHandle<K, R>`](`CollectionHandle`)
+/// An input handle that wraps a [`MapHandle<K, R>`](`MapHandle`)
 /// returned by
 /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`).
 ///
@@ -319,20 +315,20 @@ where
 ///
 /// The [`delete`](`Self::delete`) method of this handle buffers a `(k, -1)`
 /// update for the underlying `CollectionHandle`.
-pub struct DeZSetStream<De, K, D, R, C> {
-    updates: Vec<(K, R)>,
-    handle: CollectionHandle<K, R>,
+pub struct DeZSetStream<De, K, D, C> {
+    updates: Vec<Tup2<K, ZWeight>>,
+    handle: ZSetHandle<K>,
     deserializer: De,
     config: C,
     phantom: PhantomData<D>,
 }
 
-impl<De, K, D, R, C> DeZSetStream<De, K, D, R, C>
+impl<De, K, D, C> DeZSetStream<De, K, D, C>
 where
     De: DeserializerFromBytes<C>,
     C: Clone,
 {
-    pub fn new(handle: CollectionHandle<K, R>, config: C) -> Self {
+    pub fn new(handle: ZSetHandle<K>, config: C) -> Self {
         Self {
             updates: Vec::new(),
             handle,
@@ -349,25 +345,24 @@ where
     }
 }
 
-impl<De, K, D, R, C> DeCollectionStream for DeZSetStream<De, K, D, R, C>
+impl<De, K, D, C> DeCollectionStream for DeZSetStream<De, K, D, C>
 where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
-    R: DBWeight + ZRingValue,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push((key, R::one()));
+        self.updates.push(Tup2(key, ZWeight::one()));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push((key, R::one().neg()));
+        self.updates.push(Tup2(key, ZWeight::one().neg()));
         Ok(())
     }
 
@@ -395,12 +390,12 @@ where
 }
 
 pub struct DeSetHandle<K, D> {
-    handle: UpsertHandle<K, bool>,
+    handle: SetHandle<K>,
     phantom: PhantomData<D>,
 }
 
 impl<K, D> DeSetHandle<K, D> {
-    pub fn new(handle: UpsertHandle<K, bool>) -> Self {
+    pub fn new(handle: SetHandle<K>) -> Self {
         Self {
             handle,
             phantom: PhantomData,
@@ -439,20 +434,20 @@ where
     }
 }
 
-/// An input handle that wraps a [`UpsertHandle<V, bool>`](`UpsertHandle`)
+/// An input handle that wraps a [`SetHandle<V>`](`SetHandle`)
 /// returned by
 /// [`RootCircuit::add_input_set`](`dbsp::RootCircuit::add_input_set`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, true)` update for the underlying
-/// `UpsertHandle`.
+/// `SetHandle`.
 ///
 /// The [`delete`](`Self::delete`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(v, false)` update for the underlying
-/// `UpsertHandle`.
+/// `SetHandle`.
 pub struct DeSetStream<De, K, D, C> {
-    updates: Vec<(K, bool)>,
-    handle: UpsertHandle<K, bool>,
+    updates: Vec<Tup2<K, bool>>,
+    handle: SetHandle<K>,
     deserializer: De,
     config: C,
     phantom: PhantomData<fn(D)>,
@@ -463,7 +458,7 @@ where
     De: DeserializerFromBytes<C>,
     C: Clone,
 {
-    pub fn new(handle: UpsertHandle<K, bool>, config: C) -> Self {
+    pub fn new(handle: SetHandle<K>, config: C) -> Self {
         Self {
             updates: Vec::new(),
             handle,
@@ -484,14 +479,14 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push((key, true));
+        self.updates.push(Tup2(key, true));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push((key, false));
+        self.updates.push(Tup2(key, false));
         Ok(())
     }
 
@@ -523,7 +518,7 @@ where
     V: DBData,
     U: DBData,
 {
-    handle: UpsertHandle<K, Update<V, U>>,
+    handle: MapHandle<K, V, U>,
     value_key_func: VF,
     update_key_func: UF,
     phantom: PhantomData<fn(KD, VD, UD)>,
@@ -534,11 +529,7 @@ where
     V: DBData,
     U: DBData,
 {
-    pub fn new(
-        handle: UpsertHandle<K, Update<V, U>>,
-        value_key_func: VF,
-        update_key_func: UF,
-    ) -> Self {
+    pub fn new(handle: MapHandle<K, V, U>, value_key_func: VF, update_key_func: UF) -> Self {
         Self {
             handle,
             value_key_func,
@@ -605,27 +596,27 @@ where
     }
 }
 
-/// An input handle that wraps a [`UpsertHandle<K, Option<V>>`](`UpsertHandle`)
+/// An input handle that wraps a [`MapHandle<K, V>`](`MapHandle`)
 /// returned by
 /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`).
 ///
 /// The [`insert`](`Self::insert`) method of this handle deserializes value
 /// `v` type `V` and buffers a `(key_func(v), Some(v))` update for the
-/// underlying `UpsertHandle`, where `key_func: F` extracts key of type `K`
+/// underlying `MapHandle`, where `key_func: F` extracts key of type `K`
 /// from value of type `V`.
 ///
 /// The [`delete`](`Self::delete`) method of this handle deserializes value
 /// `k` type `K` and buffers a `(k, None)` update for the underlying
-/// `UpsertHandle`.
+/// `MapHandle`.
 pub struct DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
 where
     V: DBData,
     U: DBData,
 {
-    updates: Vec<(K, Update<V, U>)>,
+    updates: Vec<Tup2<K, Update<V, U>>>,
     value_key_func: VF,
     update_key_func: UF,
-    handle: UpsertHandle<K, Update<V, U>>,
+    handle: MapHandle<K, V, U>,
     config: C,
     deserializer: De,
     phantom: PhantomData<fn(KD, VD, UD)>,
@@ -639,7 +630,7 @@ where
     C: Clone,
 {
     pub fn new(
-        handle: UpsertHandle<K, Update<V, U>>,
+        handle: MapHandle<K, V, U>,
         value_key_func: VF,
         update_key_func: UF,
         config: C,
@@ -674,14 +665,14 @@ where
         let val = V::from(self.deserializer.deserialize::<VD>(data)?);
         let key = (self.value_key_func)(&val);
 
-        self.updates.push((key, Update::Insert(val)));
+        self.updates.push(Tup2(key, Update::Insert(val)));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = K::from(self.deserializer.deserialize::<KD>(data)?);
 
-        self.updates.push((key, Update::Delete));
+        self.updates.push(Tup2(key, Update::Delete));
         Ok(())
     }
 
@@ -689,7 +680,7 @@ where
         let upd = U::from(self.deserializer.deserialize::<UD>(data)?);
         let key = (self.update_key_func)(&upd);
 
-        self.updates.push((key, Update::Update(upd)));
+        self.updates.push(Tup2(key, Update::Update(upd)));
         Ok(())
     }
 
@@ -719,18 +710,18 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::static_compile::deinput::RecordFormat;
     use crate::{
         deserialize_without_context,
         static_compile::{
-            DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle, DeZSetHandle,
+            deinput::RecordFormat, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle,
+            DeZSetHandle,
         },
         DeCollectionHandle,
     };
     use csv::WriterBuilder as CsvWriterBuilder;
     use csv_core::{ReadRecordResult, Reader as CsvReader};
     use dbsp::{
-        algebra::F32, trace::Batch, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
+        algebra::F32, utils::Tup2, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
     use pipeline_types::format::json::JsonFlavor;
     use serde_json::to_string as to_json_string;
@@ -772,9 +763,9 @@ mod test {
         Box<dyn DeCollectionHandle>,
     );
     type OutputHandles = (
-        OutputHandle<OrdZSet<TestStruct, i64>>,
-        OutputHandle<OrdZSet<TestStruct, i64>>,
-        OutputHandle<OrdIndexedZSet<i64, TestStruct, i64>>,
+        OutputHandle<OrdZSet<TestStruct>>,
+        OutputHandle<OrdZSet<TestStruct>>,
+        OutputHandle<OrdIndexedZSet<i64, TestStruct>>,
     );
 
     // Test circuit for DeScalarHandle.
@@ -857,10 +848,10 @@ mod test {
     fn decollection_test_circuit(workers: usize) -> (DBSPHandle, InputHandles, OutputHandles) {
         let (dbsp, ((zset_input, zset_output), (set_input, set_output), (map_input, map_output))) =
             Runtime::init_circuit(workers, |circuit| {
-                let (zset, zset_handle) = circuit.add_input_zset::<TestStruct, i64>();
-                let (set, set_handle) = circuit.add_input_set::<TestStruct, i64>();
-                let (map, map_handle) = circuit
-                    .add_input_map::<i64, TestStruct, TestStruct, i64>(Box::new(|v, u| *v = u));
+                let (zset, zset_handle) = circuit.add_input_zset::<TestStruct>();
+                let (set, set_handle) = circuit.add_input_set::<TestStruct>();
+                let (map, map_handle) =
+                    circuit.add_input_map::<i64, TestStruct, TestStruct, _>(|v, u| *v = u.clone());
 
                 let zset_output = zset.output();
                 let set_output = set.output();
@@ -913,15 +904,18 @@ mod test {
         let set_output = &output_handles.1;
         let map_output = &output_handles.2;
 
-        let zset = OrdZSet::from_tuples(
-            (),
-            inputs.iter().map(|v| (v.clone(), 1)).collect::<Vec<_>>(),
-        );
-        let map = <OrdIndexedZSet<i64, TestStruct, i64>>::from_tuples(
+        let zset = OrdZSet::from_keys(
             (),
             inputs
                 .iter()
-                .map(|v| ((v.id, v.clone()), 1i64))
+                .map(|v| Tup2(v.clone(), 1))
+                .collect::<Vec<_>>(),
+        );
+        let map = <OrdIndexedZSet<i64, TestStruct>>::from_tuples(
+            (),
+            inputs
+                .iter()
+                .map(|v| Tup2(Tup2(v.id, v.clone()), 1))
                 .collect::<Vec<_>>(),
         );
 
@@ -1001,15 +995,18 @@ mod test {
         let set_output = &output_handles.1;
         let map_output = &output_handles.2;
 
-        let zset = OrdZSet::from_tuples(
-            (),
-            inputs.iter().map(|v| (v.clone(), -1)).collect::<Vec<_>>(),
-        );
-        let map = <OrdIndexedZSet<i64, TestStruct, i64>>::from_tuples(
+        let zset = OrdZSet::from_keys(
             (),
             inputs
                 .iter()
-                .map(|v| ((v.id, v.clone()), -1i64))
+                .map(|v| Tup2(v.clone(), -1))
+                .collect::<Vec<_>>(),
+        );
+        let map = <OrdIndexedZSet<i64, TestStruct>>::from_tuples(
+            (),
+            inputs
+                .iter()
+                .map(|v| Tup2(Tup2(v.id, v.clone()), -1))
                 .collect::<Vec<_>>(),
         );
 

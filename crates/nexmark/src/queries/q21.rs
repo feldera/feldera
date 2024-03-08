@@ -1,6 +1,6 @@
 use super::NexmarkStream;
 use crate::model::Event;
-use dbsp::{operator::FilterMap, utils::Tup5, OrdZSet, RootCircuit, Stream};
+use dbsp::{utils::Tup5, OrdZSet, RootCircuit, Stream};
 use regex::Regex;
 
 ///
@@ -35,7 +35,7 @@ use regex::Regex;
 ///           lower(channel) in ('apple', 'google', 'facebook', 'baidu');
 /// ```
 
-type Q21Set = OrdZSet<Tup5<u64, u64, u64, String, String>, i64>;
+type Q21Set = OrdZSet<Tup5<u64, u64, u64, String, String>>;
 type Q21Stream = Stream<RootCircuit, Q21Set>;
 
 pub fn q21(input: NexmarkStream) -> Q21Stream {
@@ -65,7 +65,7 @@ pub fn q21(input: NexmarkStream) -> Q21Stream {
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::zset;
+    use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
     #[rstest]
@@ -118,10 +118,10 @@ mod tests {
     fn test_q21(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q21Set>) {
         let input_vecs = input_event_batches
             .into_iter()
-            .map(|batch| batch.into_iter().map(|e| (e, 1)).collect());
+            .map(|batch| batch.into_iter().map(|e| Tup2(e, 1)).collect());
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q21(stream);
 

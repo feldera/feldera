@@ -166,7 +166,7 @@ impl SqlRow {
     /// respectively for integers, real, or text.
     /// # Panics
     /// if format.let() != self.values.len()
-    pub fn to_slt_strings(self, format: &String) -> Vec<String> {
+    pub fn to_slt_strings(self, format: &str) -> Vec<String> {
         if self.values.len() != format.len() {
             panic!(
                 "Mismatched format {} vs len {}",
@@ -195,7 +195,7 @@ pub trait SqlLogicTestFormat {
 /// Convert a string result according to the SqlLogicTest rules:
 /// empty strings are turned into (empty)
 /// non-printable (ASCII) characters are turned into @
-fn slt_translate_string(s: &String) -> String {
+fn slt_translate_string(s: &str) -> String {
     if s.is_empty() {
         return String::from("(empty)");
     }

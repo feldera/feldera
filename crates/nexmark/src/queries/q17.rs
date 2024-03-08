@@ -1,9 +1,9 @@
 use super::NexmarkStream;
 use crate::{model::Event, queries::OrdinalDate};
 use dbsp::{
-    operator::{FilterMap, Max, Min},
+    operator::{Max, Min},
     utils::{Tup10, Tup2, Tup3, Tup4, Tup5, Tup6},
-    OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
+    OrdIndexedZSet, OrdZSet, RootCircuit, Stream, ZWeight,
 };
 use std::time::{Duration, SystemTime};
 use time::{
@@ -49,9 +49,9 @@ use time::{
 /// GROUP BY auction, DATE_FORMAT(dateTime, 'yyyy-MM-dd');
 /// ```
 
-type Q17Output = Tup10<u64, String, i64, i64, i64, i64, u64, u64, i64, i64>;
+type Q17Output = Tup10<u64, String, ZWeight, ZWeight, ZWeight, ZWeight, u64, u64, ZWeight, ZWeight>;
 
-type Q17Stream = Stream<RootCircuit, OrdZSet<Q17Output, i64>>;
+type Q17Stream = Stream<RootCircuit, OrdZSet<Q17Output>>;
 
 pub fn q17(input: NexmarkStream) -> Q17Stream {
     let iso8601_day_format = &Iso8601::<
@@ -74,7 +74,7 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
         _ => None,
     });
 
-    let count_total_bids: Stream<_, OrdIndexedZSet<Tup2<u64, OrdinalDate>, i64, _>> =
+    let count_total_bids: Stream<_, OrdIndexedZSet<Tup2<u64, OrdinalDate>, ZWeight>> =
         bids_indexed.weighted_count();
     let count_rank1_bids = bids_indexed
         .filter(|(_auction_day, price)| *price < 10_000)
@@ -87,21 +87,21 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
         .weighted_count();
     let min_price = bids_indexed.aggregate(Min);
     let max_price = bids_indexed.aggregate(Max);
-    let sum_price = bids_indexed.aggregate_linear(|price| -> i64 { *price as i64 });
+    let sum_price = bids_indexed.aggregate_linear(|price| -> ZWeight { *price as ZWeight });
 
     // Another outer-join abomination to put all aggregates into single stream.
     count_total_bids
         .outer_join_default(&count_rank1_bids, |auction_day, total_bids, count_rank1| {
             Tup2(*auction_day, Tup2(*total_bids, *count_rank1))
         })
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank2_bids,
             |auction_day, Tup2(total_bids, count_rank1), count_rank2| {
                 Tup2(*auction_day, Tup3(*total_bids, *count_rank1, *count_rank2))
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &count_rank3_bids,
             |auction_day, Tup3(total_bids, count_rank1, count_rank2), count_rank3| {
@@ -111,7 +111,7 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &min_price,
             |auction_day, Tup4(total_bids, count_rank1, count_rank2, count_rank3), min_price| {
@@ -127,7 +127,7 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &max_price,
             |auction_day,
@@ -146,7 +146,7 @@ pub fn q17(input: NexmarkStream) -> Q17Stream {
                 )
             },
         )
-        .index()
+        .map_index(|Tup2(k, v)| (*k, *v))
         .outer_join_default(
             &sum_price,
             |Tup2(auction, day),
@@ -188,7 +188,7 @@ mod tests {
         vec![zset! {
         Tup10(
             1,
-            String::from("1970-01-01").into(),
+            String::from("1970-01-01"),
             3,
             3,
             0,
@@ -211,7 +211,7 @@ mod tests {
         vec![zset! {
         Tup10(
             1,
-            String::from("1970-01-01").into(),
+            String::from("1970-01-01"),
             3,
             3,
             0,
@@ -222,7 +222,7 @@ mod tests {
             1_200,
         ) => 1, Tup10(
             2,
-            String::from("1970-01-01").into(),
+            String::from("1970-01-01"),
             3,
             3,
             0,
@@ -246,7 +246,7 @@ mod tests {
         vec![zset! {
             Tup10(
             1,
-            String::from("1970-01-01").into(),
+            String::from("1970-01-01"),
             1,
             1,
             0,
@@ -258,7 +258,7 @@ mod tests {
         ) => 1}, zset! {
         Tup10(
             1,
-            String::from("1970-01-01").into(),
+            String::from("1970-01-01"),
             1,
             1,
             0,
@@ -269,7 +269,7 @@ mod tests {
             100,
         ) => -1, Tup10(
             1,
-            String::from("1970-01-01").into(),
+            String::from("1970-01-01"),
             2,
             1,
             1,
@@ -280,7 +280,7 @@ mod tests {
             10_200,
         ) => 1, Tup10(
             2,
-            String::from("1970-01-03").into(),
+            String::from("1970-01-03"),
             2,
             0,
             0,
@@ -294,13 +294,13 @@ mod tests {
     )]
     fn test_q17(
         #[case] input_bid_batches: Vec<Vec<(u64, u64, u64)>>,
-        #[case] expected_zsets: Vec<OrdZSet<Q17Output, i64>>,
+        #[case] expected_zsets: Vec<OrdZSet<Q17Output>>,
     ) {
         let input_vecs = input_bid_batches.into_iter().map(|batch| {
             batch
                 .into_iter()
                 .map(|(auction, date_time, price)| {
-                    (
+                    Tup2(
                         Event::Bid(Bid {
                             auction,
                             date_time,
@@ -314,7 +314,7 @@ mod tests {
         });
 
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             let output = q17(stream);
 

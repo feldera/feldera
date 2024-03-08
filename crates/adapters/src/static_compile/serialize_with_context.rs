@@ -26,10 +26,7 @@
 
 use std::marker::PhantomData;
 
-use dbsp::{
-    algebra::{F32, F64},
-    operator::NeighborhoodDescr,
-};
+use dbsp::algebra::{F32, F64};
 use rust_decimal::Decimal;
 use serde::{
     ser::{SerializeSeq, SerializeTuple},
@@ -292,7 +289,7 @@ macro_rules! serialize_struct {
         impl<C, $($arg),*> $crate::SerializeWithContext<C> for $struct<$($arg),*>
         where
             $($arg: $crate::SerializeWithContext<C> + serde::Serialize),*
-            $($($arg : $bound)?),*
+            $($($arg : $bound,)?)*
         {
             fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
             where
@@ -327,13 +324,6 @@ macro_rules! serialize_table_record {
         }
     }
 }
-
-serialize_struct!(NeighborhoodDescr(K, V)[4]{
-    anchor["anchor"]: Option<K>,
-    anchor_val["anchor_val"]: V,
-    before["before"]: usize,
-    after["after"]: usize
-});
 
 #[cfg(test)]
 mod test {

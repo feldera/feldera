@@ -131,7 +131,6 @@ build-dbsp:
     FROM +rust-sources
     DO rust+CARGO --args="build --package dbsp"
     DO rust+CARGO --args="build --package pipeline_types"
-    DO rust+CARGO --args="build --package feldera-storage"
 
 build-sql:
     FROM +build-dbsp
@@ -177,13 +176,8 @@ build-nexmark:
 
 test-dbsp:
     FROM +build-dbsp
-    # Limit test execution to tests in trace::persistent::tests, because
-    # executing everything takes too long and (in theory) the proptests we have
-    # should ensure equivalence with the DRAM trace implementation:
     ENV RUST_BACKTRACE 1
-    DO rust+CARGO --args="test --package=dbsp --features=persistence -- trace::persistent::tests"
     DO rust+CARGO --args="test --package dbsp"
-    DO rust+CARGO --args="test --package feldera-storage"
 
 test-nexmark:
     FROM +build-nexmark
@@ -288,7 +282,6 @@ build-pipeline-manager-container:
     COPY crates/dbsp database-stream-processor/crates/dbsp
     COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
     COPY crates/adapters database-stream-processor/crates/adapters
-    COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
     COPY README.md database-stream-processor/README.md
 
     # Then copy over the required SQL compiler files
@@ -514,7 +507,6 @@ benchmark:
     RUN bash scripts/bench.bash
     SAVE ARTIFACT crates/nexmark/nexmark_results.csv AS LOCAL .
     SAVE ARTIFACT crates/nexmark/dram_nexmark_results.csv AS LOCAL .
-    SAVE ARTIFACT crates/nexmark/persistence_nexmark_results.csv AS LOCAL .
     SAVE ARTIFACT crates/dbsp/galen_results.csv AS LOCAL .
     SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
 

@@ -37,11 +37,40 @@
 //! Efficiency here means, in a nutshell, that the cost of processing a set of
 //! input events is proportional to the size of the input rather than the entire
 //! state of the database.
+//!
+//! # Crate overview
+//!
+//! This crate consists of several layers.
+//!
+//! * [`dynamic`] - Types and traits that support dynamic dispatch.  We heavily rely on
+//!   dynamic dispatch to limit the amount of monomorphization performed by the compiler when
+//!   building complex dataflow graphs, balancing compilation speed and runtime performance.
+//!   This module implements the type machinery necessary to support this architecture.
+//!
+//! * [`typed_batch`] - Strongly type wrappers around dynamically typed batches and traces.
+//!
+//! * [`trace`] - This module implements batches and traces, which are core DBSP data structures
+//!   that represent tables, indexes and changes to tables and indexes.  We provide both in-memory
+//!   and persistent batch and trace implementations.
+//!
+//! * [`operator::dynamic`] - Dynamically typed operator API. Operators transform data streams
+//!   (usually carrying data in the form of batches and traces).  DBSP provides many relational
+//!   operators, such as map, filter, aggregate, join, etc.  The operator API in this module is
+//!   dynamically typed and unsafe.
+//!
+//! * [`operator`] - Statically typed wrappers around the dynamic API in [`operator::dynamic`].
 
+#![allow(clippy::type_complexity)]
+
+extern crate core;
+
+pub mod dynamic;
 mod error;
 mod hash;
 mod num_entries;
 mod ref_pair;
+
+pub mod typed_batch;
 
 #[macro_use]
 pub mod circuit;
@@ -50,24 +79,37 @@ pub mod mimalloc;
 pub mod monitor;
 pub mod operator;
 pub mod profile;
+pub mod storage;
 pub mod time;
 pub mod trace;
 pub mod utils;
 
-pub use crate::error::{DetailedError, Error};
-pub use crate::hash::default_hash;
-pub use crate::num_entries::NumEntries;
-pub use crate::ref_pair::RefPair;
+pub use crate::{
+    error::{DetailedError, Error},
+    hash::default_hash,
+    num_entries::NumEntries,
+};
+// // pub use crate::ref_pair::RefPair;
 pub use crate::time::Timestamp;
 
-pub use algebra::{IndexedZSet, ZSet};
+pub use algebra::{DynZWeight, ZWeight};
+
 pub use circuit::{
     ChildCircuit, Circuit, CircuitHandle, DBSPHandle, RootCircuit, Runtime, RuntimeError,
     SchedulerError, Stream,
 };
-pub use operator::{CollectionHandle, InputHandle, OutputHandle, UpsertHandle};
-pub use trace::ord::{OrdIndexedZSet, OrdZSet};
-pub use trace::{DBData, DBTimestamp, DBWeight, Rkyv};
+pub use operator::{
+    input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
+    CmpFunc, FilterMap, OrdPartitionedIndexedZSet, OutputHandle,
+};
+pub use trace::{DBData, DBWeight};
+pub use typed_batch::{
+    Batch, BatchReader, FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch, FileWSet,
+    FileZSet, IndexedZSet, OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, TypedBox, ZSet,
+};
 
 #[cfg(doc)]
 pub mod tutorial;
+
+// TODO: import from `circuit`.
+pub type Scope = u16;
