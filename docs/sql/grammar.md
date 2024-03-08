@@ -203,14 +203,41 @@ to `GROUP BY`.
      <td>Returns a bit vector of the grouping expressions</td>
   </tr>
   <tr>
-     <td><code>GROUP_ID()</code></td>
-     <td>Returns an integer that uniquely identifies the combination of grouping keys</td>
-  </tr>
-  <tr>
      <td><code>GROUPING_ID(</code>expression, [ expression ]<code>)</code></td>
-     <td>Synonim for <code>GROUPING</code></td>
+     <td>Synonym for <code>GROUPING</code></td>
   </tr>
 </table>
+
+Example using `GROUPING`:
+
+```sql
+select deptno, job, count(*) as c, grouping(deptno) as d,
+  grouping(job) j, grouping(deptno, job) as x
+from emp
+group by cube(deptno, job);
++--------+-----------+----+---+---+---+
+| DEPTNO | JOB       | C  | D | J | X |
++--------+-----------+----+---+---+---+
+|     10 | CLERK     |  1 | 0 | 0 | 0 |
+|     10 | MANAGER   |  1 | 0 | 0 | 0 |
+|     10 | PRESIDENT |  1 | 0 | 0 | 0 |
+|     10 |           |  3 | 0 | 1 | 1 |
+|     20 | ANALYST   |  2 | 0 | 0 | 0 |
+|     20 | CLERK     |  2 | 0 | 0 | 0 |
+|     20 | MANAGER   |  1 | 0 | 0 | 0 |
+|     20 |           |  5 | 0 | 1 | 1 |
+|     30 | CLERK     |  1 | 0 | 0 | 0 |
+|     30 | MANAGER   |  1 | 0 | 0 | 0 |
+|     30 | SALESMAN  |  4 | 0 | 0 | 0 |
+|     30 |           |  6 | 0 | 1 | 1 |
+|        | ANALYST   |  2 | 1 | 0 | 2 |
+|        | CLERK     |  4 | 1 | 0 | 2 |
+|        | MANAGER   |  3 | 1 | 0 | 2 |
+|        | PRESIDENT |  1 | 1 | 0 | 2 |
+|        | SALESMAN  |  4 | 1 | 0 | 2 |
+|        |           | 14 | 1 | 1 | 3 |
++--------+-----------+----+---+---+---+
+```
 
 ### Window aggregates
 
