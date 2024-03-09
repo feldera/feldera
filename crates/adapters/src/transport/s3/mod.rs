@@ -393,7 +393,10 @@ format:
 
         // Unpause the endpoint, wait for the data to appear at the output.
         reader.start(0).unwrap();
-        wait(|| input_handle.state().flushed.len() == 3, 100);
+        wait(
+            || input_handle.state().flushed.len() == test_data.len(),
+            1000,
+        );
 
         assert_eq!(test_data.len(), input_handle.state().flushed.len());
         for (i, upd) in input_handle.state().flushed.iter().enumerate() {

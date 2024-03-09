@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1493](https://github.com/feldera/feldera/pull/1493))
 - SQL: support for ARRAY_PREPEND function
   ([#1496](https://github.com/feldera/feldera/pull/1496))
+- adapters: add an input connector for Amazon S3
+  ([#1485](https://github.com/feldera/feldera/pull/1485))
+- pipeline-manager: add option to pick a compilation profile
+  ([#1513](https://github.com/feldera/feldera/pull/1513))
 - adapters: add an input connector for Amazon S3 (#1485)
 - SQL: support for ARRAY_CONTAINS function
   ([#1499](https://github.com/feldera/feldera/pull/1499))
