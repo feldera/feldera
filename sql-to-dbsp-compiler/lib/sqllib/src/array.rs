@@ -1,6 +1,7 @@
 // Array operations
 
 use crate::some_generic_function2;
+use std::hash::Hash;
 use std::ops::Index;
 
 pub fn element<T>(array: Vec<T>) -> Option<T>
@@ -236,3 +237,19 @@ where
 }
 
 some_generic_function2!(array_contains, T, Vec<T>, T, Eq, bool);
+
+pub fn array_distinct<T>(mut vector: Vec<T>) -> Vec<T>
+where
+    T: Eq + Hash + Clone,
+{
+    let mut hset: std::collections::HashSet<T> = std::collections::HashSet::new();
+    vector.retain(|v| hset.insert(v.clone()));
+    vector
+}
+
+pub fn array_distinctN<T>(vector: Option<Vec<T>>) -> Option<Vec<T>>
+where
+    T: Eq + Hash + Clone,
+{
+    Some(array_distinct(vector?))
+}
