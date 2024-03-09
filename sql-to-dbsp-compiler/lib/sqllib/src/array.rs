@@ -104,6 +104,16 @@ where
     Some(array_repeat(element, count?))
 }
 
+pub fn array_remove__<T>(mut vector: Vec<T>, element: T) -> Vec<T>
+where
+    T: Eq,
+{
+    vector.retain(|v| v != &element);
+    vector
+}
+
+some_generic_function2!(array_remove, T, Vec<T>, T, Eq, Vec<T>);
+
 pub fn array_position__<T>(vector: Vec<T>, element: T) -> i64
 where
     T: Eq,
