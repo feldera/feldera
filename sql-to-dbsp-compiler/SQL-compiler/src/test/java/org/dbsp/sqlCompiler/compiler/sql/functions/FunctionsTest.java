@@ -88,7 +88,7 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6210")
-    public void testSubstring2() {
+    public void testBinaryCast() {
         this.qs(
                 """
                         SELECT CAST('1234567890' AS VARBINARY) as val;

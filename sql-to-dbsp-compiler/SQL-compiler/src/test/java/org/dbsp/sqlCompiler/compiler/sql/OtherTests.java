@@ -194,7 +194,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Logger.INSTANCE.setDebugStream(save);
         String messages = builder.toString();
         Assert.assertTrue(messages.contains("After optimizer"));
-        Assert.assertTrue(messages.contains("CircuitRewriter:Simplify"));
+        Assert.assertTrue(messages.contains("MergeSums"));
         Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 0);
         Logger.INSTANCE.setLoggingLevel(Passes.class, 0);
     }

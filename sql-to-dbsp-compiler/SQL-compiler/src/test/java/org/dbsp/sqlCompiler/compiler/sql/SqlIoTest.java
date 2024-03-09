@@ -12,10 +12,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.junit.Assert;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -157,6 +157,23 @@ public abstract class SqlIoTest extends BaseSQLTests {
         this.addRustTestCase(query, ccs);
     }
 
+    String removeComments(String queryAndOutput) {
+        String[] lines = queryAndOutput.split("\n");
+        int index = 0;
+        for (String line: lines) {
+            line = line.trim();
+            int comment = line.indexOf("--");
+            if (comment >= 0) {
+                line = line.substring(0, comment);
+                lines[index] = line;
+            }
+            index++;
+            if (line.contains(";"))
+                break;
+        }
+        return String.join("\n", lines);
+    }
+
     /**
      * Test a query followed by the expected output.
      * The query ends at the semicolon.
@@ -164,6 +181,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * This makes sure that constant queries still exercise the runtime.
      */
     public void q(String queryAndOutput, boolean twoWays) {
+        queryAndOutput = this.removeComments(queryAndOutput);
         int semicolon = queryAndOutput.indexOf(';');
         if (semicolon < 0)
             throw new RuntimeException("Could not parse query and output");
@@ -232,14 +250,16 @@ public abstract class SqlIoTest extends BaseSQLTests {
         String[] parts = queriesWithOutputs.split("\n\n");
         // From each part drop the last line (N rows) *and* its last newline.
         Pattern regex = Pattern.compile("^(.*)\\n\\(\\d+ rows?\\)$", Pattern.DOTALL);
+        int index = 0;
         for (String part: parts) {
             Matcher regexMatcher = regex.matcher(part);
             if (regexMatcher.find()) {
                 String result = regexMatcher.group(1);
                 this.q(result, twoWays);
             } else {
-                throw new RuntimeException("Could not understand test: " + part);
+                throw new RuntimeException("Could not understand test #" + index + ": " + part);
             }
+            index++;
         }
     }
 
@@ -262,7 +282,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPCircuit circuit = ccs.circuit;
         DBSPType outputType = circuit.getSingleOutputType();
-        Change result = new Change(new DBSPZSetLiteral(Collections.emptyMap(), outputType));
+        Change result = new Change(
+                DBSPZSetLiteral.emptyWithElementType(outputType.to(DBSPTypeZSet.class).getElementType()));
         InputOutputChange ioChange = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 result

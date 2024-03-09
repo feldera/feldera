@@ -1,17 +1,15 @@
-package org.dbsp.sqlCompiler.compiler.sql.foodmart;
+package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
-/*
- * https://github.com/apache/calcite/blob/bdfb17029f7e205f895dc3dfd0f37c8ff2520823/core/src/test/resources/sql/scalar.iq
- */
+/* https://github.com/apache/calcite/blob/main/core/src/test/resources/sql/scalar.iq */
 public class FoodmartBaseTests extends SqlIoTest {
-    // https://github.com/apache/calcite/blob/bdfb17029f7e205f895dc3dfd0f37c8ff2520823/innodb/src/test/resources/scott.sq
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
+        // https://github.com/apache/calcite/blob/main/innodb/src/test/resources/scott.sql
         compiler.compileStatements("""
                 DROP TABLE IF EXISTS DEPT;
                 CREATE TABLE DEPT(

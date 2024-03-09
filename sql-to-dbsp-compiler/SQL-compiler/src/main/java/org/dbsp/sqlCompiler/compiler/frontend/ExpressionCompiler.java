@@ -952,15 +952,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "substring": {
                         if (ops.isEmpty())
                             throw new UnimplementedException(node);
-                        DBSPType baseType = ops.get(0).getType();
-                        String functionName = opName + baseType.nullableSuffix();
                         String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
                         } else {
                             module_prefix = "string::";
                         }
-                        return this.compileFunction(module_prefix + functionName, node, type, ops, 2, 3);
+                        return this.compileFunction(module_prefix + opName, node, type, ops, 2, 3);
                     }
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);

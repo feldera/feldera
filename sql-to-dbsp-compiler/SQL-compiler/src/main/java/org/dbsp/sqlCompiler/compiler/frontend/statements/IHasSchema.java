@@ -79,7 +79,7 @@ public interface IHasSchema {
             fields.add(new DBSPTypeStruct.Field(
                     col.node, col.getName(), col.getName(), fType, col.nameIsQuoted));
         }
-        return new DBSPTypeStruct(this.getNode(), this.getName(), this.getName(), fields);
+        return new DBSPTypeStruct(this.getNode(), this.getName(), null, fields);
     }
 
     default DBSPTypeTuple getRowTypeAsTuple(TypeCompiler compiler) {

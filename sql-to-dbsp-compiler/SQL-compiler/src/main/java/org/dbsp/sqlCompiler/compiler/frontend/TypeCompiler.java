@@ -53,7 +53,7 @@ public class TypeCompiler implements ICompilerComponent {
         return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType);
     }
 
-    private static final NameGen structNameGen = new NameGen("$");
+    private static final NameGen structNameGen = new NameGen("struct_");
 
     /**
      * Convert a Calcite RelDataType to an equivalent DBSP type.

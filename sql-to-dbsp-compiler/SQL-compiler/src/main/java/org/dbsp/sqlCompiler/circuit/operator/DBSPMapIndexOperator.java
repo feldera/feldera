@@ -34,6 +34,8 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
+/** Generate an IndexedZSet by applying a function to every element of an input dataset.
+ * Output is always an IndexedZSet.  Input can be a ZSet or an IndexedZSet */
 public class DBSPMapIndexOperator extends DBSPUnaryOperator {
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression expression,
                                 DBSPTypeIndexedZSet outputType,

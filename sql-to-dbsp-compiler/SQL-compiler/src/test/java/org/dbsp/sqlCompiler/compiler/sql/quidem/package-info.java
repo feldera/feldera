@@ -3,12 +3,12 @@
  */
 
 /**
- * Examples using the 'foodmart' database from Calcite.
+ * Quidem tests taken from Calcite.
  */
 @ParametersAreNonnullByDefault
 @FieldsAreNonnullByDefault
 @MethodsAreNonnullByDefault
-package org.dbsp.sqlCompiler.compiler.sql.foodmart;
+package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
 import org.dbsp.util.FieldsAreNonnullByDefault;
 import org.dbsp.util.MethodsAreNonnullByDefault;

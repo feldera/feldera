@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -114,12 +115,14 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public final String name;
+    @Nullable
     public final String sanitizedName;
     public final LinkedHashMap<String, Field> fields;
 
-    public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName, Collection<Field> args) {
+    public DBSPTypeStruct(CalciteObject node, String name, @Nullable String sanitizedName, Collection<Field> args) {
         super(node, STRUCT, false);
         this.sanitizedName = sanitizedName;
+        assert this.sanitizedName == null || Utilities.isLegalRustIdentifier(sanitizedName);
         this.name = name;
         this.fields = new LinkedHashMap<>();
         for (Field f: args) {
@@ -130,7 +133,7 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public DBSPTypeStruct rename(String newName) {
-        return new DBSPTypeStruct(this.getNode(), newName, sanitizedName, this.fields.values());
+        return new DBSPTypeStruct(this.getNode(), newName, this.sanitizedName, this.fields.values());
     }
 
     @Override
@@ -155,7 +158,7 @@ public class DBSPTypeStruct extends DBSPType {
         DBSPTypeStruct other = type.to(DBSPTypeStruct.class);
         if (!this.name.equals(other.name))
             return false;
-        if (!this.sanitizedName.equals(other.sanitizedName))
+        if (!Objects.equals(this.sanitizedName, other.sanitizedName))
             return false;
         if (this.fields.size() != other.fields.size())
             return false;
@@ -203,7 +206,7 @@ public class DBSPTypeStruct extends DBSPType {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         builder.append("struct ")
-                .append(this.sanitizedName)
+                .append(this.sanitizedName != null ? this.sanitizedName : this.name)
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: this.fields.values()) {

@@ -48,30 +48,42 @@ public class CircuitOptimizer implements ICompilerComponent {
         this.compiler = compiler;
     }
 
-    @SuppressWarnings("ConstantValue")
-    CircuitTransform monotonicity() {
-        return circuit -> {
+    static class MonotoneAnalyzer implements CircuitTransform {
+        final IErrorReporter reporter;
+
+        public MonotoneAnalyzer(IErrorReporter reporter) {
+            this.reporter = reporter;
+        }
+
+        @SuppressWarnings("ConstantValue")
+        @Override
+        public DBSPCircuit apply(DBSPCircuit circuit) {
             final boolean debug = false;
 
             if (debug)
-                ToDotVisitor.toDot(compiler, "original.jpg", true, "jpg", circuit);
-            ExpandOperators expander = new ExpandOperators(this.compiler, 1);
-            Repeat repeat = new Repeat(this.compiler, expander);
+                ToDotVisitor.toDot(this.reporter, "original.jpg", true, "jpg", circuit);
+            ExpandOperators expander = new ExpandOperators(this.reporter, 1);
+            Repeat repeat = new Repeat(this.reporter, expander);
             DBSPCircuit expanded = repeat.apply(circuit);
             if (debug)
-                ToDotVisitor.toDot(compiler, "expanded.jpg", false, "jpg", expanded);
+                ToDotVisitor.toDot(reporter, "expanded.jpg", false, "jpg", expanded);
 
-            MonotoneOperators monotone = new MonotoneOperators(this.compiler);
+            MonotoneOperators monotone = new MonotoneOperators(this.reporter);
             expanded = monotone.apply(expanded); // this does not really mutate the circuit
 
             InsertLimiters limiters = new InsertLimiters(
-                    this.compiler, expanded, monotone.operatorMonotoneValue, expander.expansion);
+                    this.reporter, expanded, monotone.operatorMonotoneValue, expander.expansion);
             // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
             DBSPCircuit result = limiters.apply(circuit);
             if (debug)
-                ToDotVisitor.toDot(compiler, "limited.jpg", true, "jpg", result);
+                ToDotVisitor.toDot(reporter, "limited.jpg", true, "jpg", result);
             return result;
-        };
+        }
+
+        @Override
+        public String toString() {
+            return "MonotoneAnalyzer";
+        }
     }
 
     CircuitTransform getOptimizer() {
@@ -105,7 +117,7 @@ public class CircuitOptimizer implements ICompilerComponent {
             // The predicate below controls which nodes have their output dumped at runtime
             passes.add(new InstrumentDump(reporter, t -> false));
         }
-        passes.add(this.monotonicity());
+        passes.add(new MonotoneAnalyzer(reporter));
         // debugging aid
         passes.add(new RemoveDeindexOperator(reporter));
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
