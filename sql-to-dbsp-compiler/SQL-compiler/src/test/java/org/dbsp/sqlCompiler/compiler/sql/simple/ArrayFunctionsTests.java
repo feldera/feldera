@@ -295,6 +295,12 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 --------------
                  NULL
                 (1 row)
+                
+                SELECT array_remove(NULL, 1);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
                 """
         );
     }
@@ -342,12 +348,6 @@ public class ArrayFunctionsTests extends SqlIoTest {
                  array_prepend
                 ---------------
                  {1, NULL}
-                (1 row)
-                
-                SELECT array_remove(NULL, 1);
-                 array_remove
-                --------------
-                 NULL
                 (1 row)
                 """
         );
