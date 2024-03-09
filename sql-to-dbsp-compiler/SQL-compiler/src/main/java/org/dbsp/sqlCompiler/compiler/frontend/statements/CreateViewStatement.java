@@ -54,4 +54,8 @@ public class CreateViewStatement extends CreateRelationStatement {
     public RelNode getRelNode() {
         return Objects.requireNonNull(this.compiled).rel;
     }
+
+    public RelRoot getRoot() {
+        return this.compiled;
+    }
 }

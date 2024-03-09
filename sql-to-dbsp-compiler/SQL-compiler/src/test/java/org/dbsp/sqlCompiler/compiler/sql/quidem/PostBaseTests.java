@@ -23,7 +23,7 @@ public class PostBaseTests extends SqlIoTest {
                    gender CHAR(1)
                 );
                 CREATE TABLE DEPT(
-                   POST INTEGER,
+                   deptno INTEGER,
                    dname VARCHAR
                 );
                 CREATE TABLE EMPS(

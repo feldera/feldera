@@ -604,7 +604,9 @@ public class AggScottTests extends ScottBaseTests {
                 (2 rows)""");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1508")
+    // Test case for issue 1508: query with order by that does not
+    // select the ordered field is compiled incorrectly
+    @Test
     public void testOrderByFilter() {
         this.qs("""
                 -- Aggregate FILTER with ORDER BY
