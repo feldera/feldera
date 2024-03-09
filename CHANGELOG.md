@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1512](https://github.com/feldera/feldera/pull/1512))
 - SQL: support for ARRAY_REMOVE function
   ([#1498](https://github.com/feldera/feldera/pull/1498))
+- SQL: support for ARRAY_DISTINCT function
+  ([#1515](https://github.com/feldera/feldera/pull/1515))
   
 ## [0.11.0] - 2024-03-05
 
