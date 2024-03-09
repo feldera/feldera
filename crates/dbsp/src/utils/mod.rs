@@ -7,7 +7,7 @@ mod vec_ext;
 pub use dyn_vec::{DynIter, DynVec, DynVecVTable};
 
 pub use sample::sample_slice;
-pub use tuple::{Tup1, Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9};
+pub use tuple::{Tup0, Tup1, Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9};
 pub(crate) use vec_ext::VecExt;
 
 use std::{

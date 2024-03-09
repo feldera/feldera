@@ -6,14 +6,19 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
@@ -40,6 +45,11 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         super(node);
         this.rowVar = rowVar;
         this.components = components;
+        for (Implementation i: components) {
+            //noinspection RedundantIfStatement
+            if (i.linearFunction != null)
+                assert(i.linearFunction.parameters[0].sameFields(rowVar.asParameter()));
+        }
         this.isWindowAggregate = isWindowAggregate;
     }
 
@@ -114,8 +124,15 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         List<DBSPType> flatAccumTypes = Linq.flatMap(accumulatorTypes, this::flatten);
         DBSPVariablePath accumParam = new DBSPTypeTuple(flatAccumTypes).var("a");
         DBSPParameter accumulator = accumParam.asParameter();
-        DBSPParameter row = closures[0].parameters[1];
-        DBSPParameter weight = closures[0].parameters[2];
+        DBSPParameter row;
+        DBSPParameter weight;
+        if (closures.length > 0) {
+            row = closures[0].parameters[1];
+            weight = closures[0].parameters[2];
+        } else {
+            row = new DBSPParameter("_r", DBSPTypeAny.getDefault());
+            weight = new DBSPParameter("_w", DBSPTypeAny.getDefault());
+        }
 
         List<DBSPStatement> body = new ArrayList<>();
         List<DBSPExpression> tmpVars = new ArrayList<>();
@@ -150,78 +167,6 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
     }
 
     /**
-     * Get a function that performs post-processing for all aggregates.
-     * Let's say the closures are:
-     * closure0 = move |x: i64, | -> i64 { x }
-     * closure1 = move |x: Option[i64], | -> Option[i64] { x }
-     * The combined result will have this signature:
-     * move | p: (i64, Option[i64]) | -> (i64, Option[i64]) {
-     *     let tmp0: i64 = (move |x: i64, | -> i64 { x })(p0.0);
-     *     let tmp1: Option<i32> = (move |x: Option<i32>, | -> Option<i32> { x })(p0.1);
-     *     Tuple2::new(tmp0, tmp1)
-     * }
-     * Similarly to getIncrement above, the type of the function arguments
-     * is flattened if it is a nested tuple.
-     */
-    public DBSPClosureExpression getPostprocessing() {
-        DBSPClosureExpression[] closures = Linq.map(
-                this.components, Implementation::getPostprocessing, DBSPClosureExpression.class);
-        DBSPParameter[][] allParams = Linq.map(closures, c -> c.parameters, DBSPParameter[].class);
-        int paramCount = -1;
-        for (DBSPParameter[] params: allParams) {
-            if (paramCount == -1)
-                paramCount = params.length;
-            else if (paramCount != params.length)
-                throw new InternalCompilerError("Closures cannot be combined", this);
-        }
-
-        DBSPVariablePath[] resultParams = new DBSPVariablePath[paramCount];
-        for (int i = 0; i < paramCount; i++) {
-            int finalI = i;
-            DBSPParameter[] first = Linq.map(allParams, p -> p[finalI], DBSPParameter.class);
-            String name = "p" + i;
-            DBSPVariablePath pi = new DBSPVariablePath(
-                    name, new DBSPTypeTuple(Linq.flatMap(first, p -> this.flatten(p.type))));
-            resultParams[i] = pi;
-        }
-
-        List<DBSPStatement> body = new ArrayList<>();
-        List<DBSPExpression> tmps = new ArrayList<>();
-        int start = 0;
-        for (int i = 0; i < closures.length; i++) {
-            DBSPClosureExpression closure = closures[i];
-            String tmp = "tmp" + i;
-            DBSPExpression[] args = new DBSPExpression[closure.parameters.length];
-            for (int j = 0; j < args.length; j++) {
-                DBSPType paramType = closure.parameters[j].getType();
-                if (paramType.is(DBSPTypeRef.class))
-                    paramType = paramType.to(DBSPTypeRef.class).type;
-                if (paramType.is(DBSPTypeTupleBase.class)) {
-                    DBSPTypeTupleBase tuple = paramType.to(DBSPTypeTupleBase.class);
-                    DBSPExpression[] argFields = new DBSPExpression[tuple.size()];
-                    for (int k = 0; k < tuple.size(); k++) {
-                        argFields[k] = resultParams[j].field(start);
-                        start++;
-                    }
-                    args[j] = tuple.makeTuple(argFields);
-                } else {
-                    args[j] = resultParams[j].field(start);
-                    start++;
-                }
-            }
-            DBSPExpression init = closure.call(args);
-            DBSPLetStatement stat = new DBSPLetStatement(tmp, init);
-            tmps.add(new DBSPVariablePath(tmp, init.getType()));
-            body.add(stat);
-        }
-
-        DBSPExpression last = new DBSPTupleExpression(tmps, false);
-        DBSPBlockExpression block = new DBSPBlockExpression(body, last);
-        DBSPParameter[] params = Linq.map(resultParams, DBSPVariablePath::asParameter, DBSPParameter.class);
-        return new DBSPClosureExpression(block, params);
-    }
-
-    /**
      * Given an DBSPAggregate where all Implementation objects have a linearFunction
      * component, combine these linear functions into a single one.
      * The linear functions have the signature:
@@ -235,10 +180,14 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
             if (expr.parameters.length != 1)
                 throw new InternalCompilerError("Expected exactly 1 parameter for linear closure", expr);
         }
-        DBSPParameter row = closures[0].parameters[0];
+        DBSPParameter parameter = this.rowVar.asParameter();
         DBSPExpression[] bodies = Linq.map(closures, c -> c.body, DBSPExpression.class);
         DBSPTupleExpression tuple = new DBSPTupleExpression(bodies);
-        return tuple.closure(row);
+        return tuple.closure(parameter);
+    }
+
+    public boolean isEmpty() {
+        return this.components.length == 0;
     }
 
     /**

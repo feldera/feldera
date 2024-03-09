@@ -943,29 +943,25 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTupleExpression expression) {
         if (expression.isNull)
             return this.doNullExpression(expression);
-        if (expression.size() == 0) {
-            this.builder.append("()");
-        } else {
-            boolean newlines = this.compact && expression.fields.length > 2;
-            this.builder.append(DBSPTypeCode.TUPLE.rustName)
-                    .append(expression.size())
-                    .append("::new(");
-            if (newlines)
-                this.builder.increase();
-            boolean first = true;
-            for (DBSPExpression field: expression.fields) {
-                if (!first) {
-                    this.builder.append(", ");
-                    if (newlines)
-                        this.builder.newline();
-                }
-                first = false;
-                field.accept(this);
+        boolean newlines = this.compact && expression.fields.length > 2;
+        this.builder.append(DBSPTypeCode.TUPLE.rustName)
+                .append(expression.size())
+                .append("::new(");
+        if (newlines)
+            this.builder.increase();
+        boolean first = true;
+        for (DBSPExpression field : expression.fields) {
+            if (!first) {
+                this.builder.append(", ");
+                if (newlines)
+                    this.builder.newline();
             }
-            if (newlines)
-                this.builder.decrease();
-            this.builder.append(")");
+            first = false;
+            field.accept(this);
         }
+        if (newlines)
+            this.builder.decrease();
+        this.builder.append(")");
         return VisitDecision.STOP;
     }
 
@@ -1086,7 +1082,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq)]")
                 .newline();
         builder.append("struct r#")
-                    .append(item.type.sanitizedName)
+                    .append(Objects.requireNonNull(item.type.sanitizedName))
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: item.type.fields.values()) {
@@ -1104,28 +1100,26 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTypeStruct type) {
         // A *reference* to a struct type is just the type name.
         this.builder.append("r#")
-                .append(type.sanitizedName);
+                .append(Objects.requireNonNull(type.sanitizedName));
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeTuple type) {
-        if (type.tupFields.length == 0) {
-            this.builder.append("()");
-            return VisitDecision.STOP;
-        }
         if (type.mayBeNull)
             this.builder.append("Option<");
-        this.builder.append(type.getName())
-                .append("<");
-        boolean first = true;
-        for (DBSPType fType: type.tupFields) {
-            if (!first)
-                this.builder.append(", ");
-            first = false;
-            fType.accept(this);
+        this.builder.append(type.getName());
+        if (type.size() > 0) {
+            this.builder.append("<");
+            boolean first = true;
+            for (DBSPType fType : type.tupFields) {
+                if (!first)
+                    this.builder.append(", ");
+                first = false;
+                fType.accept(this);
+            }
+            this.builder.append(">");
         }
-        this.builder.append(">");
         if (type.mayBeNull)
             this.builder.append(">");
         return VisitDecision.STOP;

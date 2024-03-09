@@ -88,6 +88,32 @@ pub fn array_appendN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_append(vector?, value))
 }
 
+pub fn array_repeat<T>(element: T, count: i32) -> Vec<T>
+where
+    T: Clone,
+{
+    std::iter::repeat(element)
+        .take(usize::try_from(count).unwrap_or(0))
+        .collect()
+}
+
+pub fn array_repeatN<T>(element: T, count: Option<i32>) -> Option<Vec<T>>
+where
+    T: Clone,
+{
+    Some(array_repeat(element, count?))
+}
+
+pub fn array_remove__<T>(mut vector: Vec<T>, element: T) -> Vec<T>
+where
+    T: Eq,
+{
+    vector.retain(|v| v != &element);
+    vector
+}
+
+some_generic_function2!(array_remove, T, Vec<T>, T, Eq, Vec<T>);
+
 pub fn array_position__<T>(vector: Vec<T>, element: T) -> i64
 where
     T: Eq,
@@ -201,3 +227,12 @@ pub fn array_prepend<T>(mut vector: Vec<T>, value: T) -> Vec<T> {
 pub fn array_prependN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_prepend(vector?, value))
 }
+
+pub fn array_contains__<T>(vector: Vec<T>, element: T) -> bool
+where
+    T: Eq,
+{
+    vector.contains(&element)
+}
+
+some_generic_function2!(array_contains, T, Vec<T>, T, Eq, bool);

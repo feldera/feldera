@@ -36,6 +36,8 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         super(node, DBSPTypeCode.INDEXED_ZSET, "IndexedWSet", false, keyType, elementType);
         this.keyType = keyType;
         this.elementType = elementType;
+        assert !elementType.is(DBSPTypeZSet.class);
+        assert !elementType.is(DBSPTypeIndexedZSet.class);
     }
 
     public DBSPTypeRawTuple getKVRefType() {

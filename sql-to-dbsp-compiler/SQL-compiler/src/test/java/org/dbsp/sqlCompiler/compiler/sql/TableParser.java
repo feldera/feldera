@@ -329,7 +329,7 @@ public class TableParser {
     public static DBSPTupleExpression parseRow(String line, DBSPTypeTupleBase rowType, String separatorRegex) {
         String[] columns;
         if (rowType.size() > 1) {
-            columns = line.split(separatorRegex);
+            columns = line.split(separatorRegex, -1);
         } else {
             // Do not split; allows handling 1-column outputs that contains |
             columns = new String[1];
@@ -418,7 +418,7 @@ public class TableParser {
             if (inHeader)
                 continue;
             if (mysqlStyle && line.startsWith("|") && line.endsWith("|"))
-                line = line.substring(1, line.length() - 2);
+                line = line.substring(1, line.length() - 1);
             DBSPExpression row = parseRow(line, tuple, separator);
             result.add(row);
         }

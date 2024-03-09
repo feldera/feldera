@@ -753,19 +753,26 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "truncate":
                     case "round": {
                         DBSPExpression right;
+
                         if (call.operands.isEmpty())
                             throw new UnimplementedException(node);
-                        DBSPExpression left = ops.get(0);
 
-                        if (left.type.is(DBSPTypeDouble.class))
-                            return this.compilePolymorphicFunction(call, node, type, ops, 1);
+                        DBSPExpression left = ops.get(0);
 
                         if (call.operands.size() == 1)
                             right = new DBSPI32Literal(0);
                         else
                             right = ops.get(1);
+
                         DBSPType leftType = left.getType();
                         DBSPType rightType = right.getType();
+
+                        if (rightType.is(DBSPTypeNull.class)) {
+                            this.compiler.reportWarning(node.getPositionRange(),
+                                    "evaluates to NULL", node + ": always returns NULL");
+                            return type.nullValue();
+                        }
+
                         if (!rightType.is(DBSPTypeInteger.class))
                             throw new UnimplementedException("ROUND expects a constant second argument", node);
 
@@ -945,15 +952,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "substring": {
                         if (ops.isEmpty())
                             throw new UnimplementedException(node);
-                        DBSPType baseType = ops.get(0).getType();
-                        String functionName = opName + baseType.nullableSuffix();
                         String module_prefix;
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary::";
                         } else {
                             module_prefix = "string::";
                         }
-                        return this.compileFunction(module_prefix + functionName, node, type, ops, 2, 3);
+                        return this.compileFunction(module_prefix + opName, node, type, ops, 2, 3);
                     }
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
@@ -1090,6 +1095,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
+            case ARRAY_CONTAINS:
+            case ARRAY_REMOVE:
             case ARRAY_POSITION:
             {
                 if (call.operands.size() != 2)
@@ -1162,6 +1169,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 String method = getArrayCallName(call, arg0);
 
                 return new DBSPApplyExpression(node, method, type, arg0);
+            }
+            case ARRAY_REPEAT: {
+                if (call.operands.size() != 2)
+                    throw new UnimplementedException(node);
+
+                String method = getArrayCallName(call);
+
+                return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
             }
             case HOP:
             case DOT:

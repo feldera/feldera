@@ -433,6 +433,8 @@ public class CalciteCompiler implements IWritesLogs {
         Utilities.putNew(result, "Expand windows", window);
 
         HepProgram distinctAggregates = createProgram(
+                // TODO: enable this rule
+                // CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES,
                 // Convert DISTINCT aggregates into separate computations and join the results
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN
         );

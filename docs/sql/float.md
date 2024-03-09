@@ -84,8 +84,16 @@ REAL '1.23'  -- string style
     <td>Returns the integer portion of the number. This is true truncation, no rounding is performed.</td>
   </tr>
   <tr>
+    <td><code>TRUNCATE(value, digits)</code></td>
+    <td>where <code>digits</code> is an integer value. Truncates the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+  </tr>
+  <tr>
     <td><code>ROUND(value)</code></td>
     <td>Rounds to the nearest integer and returns it. Rounding follows "Bankers Rounding" (rounds 0.5 to the nearest even number) strategy.</td>
+  </tr>
+  <tr>
+    <td><code>ROUND(value, digits)</code></td>
+    <td>where <code>digits</code> is an integer value. Round the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
   </tr>
   <tr>
     <td><code>POWER(BASE, EXPONENT)</code></td>

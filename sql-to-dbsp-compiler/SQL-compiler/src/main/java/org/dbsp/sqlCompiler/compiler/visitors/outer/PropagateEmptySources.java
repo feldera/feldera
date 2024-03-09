@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 
 import java.util.ArrayList;
@@ -54,10 +55,12 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     DBSPLiteral emptyLiteral(DBSPType type) {
-        if (type.is(DBSPTypeZSet.class))
-            return DBSPZSetLiteral.emptyWithElementType(type);
-        else
+        if (type.is(DBSPTypeZSet.class)) {
+            DBSPTypeZSet z = type.to(DBSPTypeZSet.class);
+            return DBSPZSetLiteral.emptyWithElementType(z.elementType);
+        } else {
             return new DBSPIndexedZSetLiteral(type.getNode(), type);
+        }
     }
 
     boolean replaceUnary(DBSPUnaryOperator operator) {

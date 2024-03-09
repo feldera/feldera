@@ -302,7 +302,7 @@ public class Utilities {
         for (int offset = 0; offset < length; ) {
             int codepoint = identifier.codePointAt(offset);
             if (first) {
-                if (!Character.isLetter(codepoint))
+                if (!Character.isLetter(codepoint) && codepoint != '_')
                     return false;
             } else if (!Character.isLetterOrDigit(codepoint) && codepoint != '_') {
                 return false;

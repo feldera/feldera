@@ -345,8 +345,6 @@ public class StreamingTests extends StreamingTest {
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/1462")
     public void testJoinNonMonotoneColumn() {
-        Logger.INSTANCE.setLoggingLevel(MonotoneFunctions.class, 3);
-        Logger.INSTANCE.setLoggingLevel(MonotoneOperators.class, 3);
         String script = """
             CREATE TABLE series (
                     metadata VARCHAR NOT NULL,

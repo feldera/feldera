@@ -36,6 +36,66 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void testArrayRepeat() {
+        this.qs("""
+                SELECT array_repeat(3, 3);
+                 array_repeat
+                --------------
+                 {3,3,3}
+                (1 row)
+                
+                SELECT array_repeat(2.1, 3);
+                 array_repeat
+                --------------
+                 {2.1, 2.1, 2.1}
+                (1 row)
+                
+                SELECT array_repeat(3, -1);
+                 array_repeat
+                --------------
+                 {}
+                (1 row)
+                
+                SELECT array_repeat(null, -1);
+                 array_repeat
+                --------------
+                 {}
+                (1 row)
+                
+                SELECT array_repeat(null, 3);
+                 array_repeat
+                --------------
+                 {null,null,null}
+                (1 row)
+                """
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1473")
+    public void testArrayRepeat2() {
+        this.qs("""
+                SELECT array_repeat(123, null);
+                 array_repeat
+                --------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1474")
+    public void testArrayRepeat3() {
+        this.qs("""
+                SELECT array_repeat( 'a', 6);
+                 array_repeat
+                --------------
+                 { a, a, a, a, a, a}
+                (1 row)
+                """
+        );
+    }
+
+    @Test
     public void testArrayPosition() {
         this.qs("""
                 SELECT array_position(ARRAY [2, 4, 6, 8, null], null);
@@ -83,6 +143,49 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
+
+    @Test
+    public void testArrayContains() {
+        this.qs("""
+            SELECT array_contains(ARRAY [2, 4, 6, 8, null], 4);
+             array_contains
+            ---------------
+             true
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8], 4);
+             array_contains
+            ---------------
+             true
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8, null], 3);
+             array_contains
+            ---------------
+             false
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8], 3);
+             array_contains
+            ---------------
+             false
+            (1 row)
+
+            SELECT array_contains(ARRAY [2, 4, 6, 8], null);
+             array_contains
+            ---------------
+             NULL
+            (1 row)
+            
+            SELECT array_contains(ARRAY [null, 2, 2, 6, 6, 8, 2], null);
+             array_contains
+            ----------------
+             NULL
+            (1 row)
+            """
+        );
+    }
+
     @Test @Ignore("https://github.com/feldera/feldera/issues/1475")
     public void testArrayPositionDiffTypes() {
         this.qs("""
@@ -102,6 +205,65 @@ public class ArrayFunctionsTests extends SqlIoTest {
                  array_position
                 ----------------
                  0
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testArrayRemove() {
+        this.qs("""
+                SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], 2);
+                 array_remove
+                --------------
+                 {6, 6, 8}
+                (1 row)
+                
+                SELECT array_remove(ARRAY [1, 2, 3], null);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
+                
+                SELECT array_remove(ARRAY [null, 2, 2, 6, 6, 8, 2], 2);
+                 array_remove
+                --------------
+                 {null, 6, 6, 8}
+                (1 row)
+                
+                SELECT array_remove(ARRAY [null, 2, 2, 6, 6, 8, 2], null);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
+                
+                SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], elem) FROM (SELECT elem FROM UNNEST(ARRAY [2, 6, 8]) as elem);
+                 array_remove
+                --------------
+                 {6, 6, 8}
+                 {2, 2, 8, 2}
+                 {2, 2, 6, 6, 2}
+                (3 rows)
+                
+                SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], elem) FROM (SELECT elem FROM UNNEST(ARRAY [2, 6, 8, null]) as elem);
+                 array_remove
+                --------------
+                 {6, 6, 8}
+                 {2, 2, 8, 2}
+                 {2, 2, 6, 6, 2}
+                 NULL
+                (4 rows)
+                
+                SELECT array_remove(CAST(NULL AS INTEGER ARRAY), 1);
+                 array_remove
+                --------------
+                 NULL
+                (1 row)
+                
+                SELECT array_remove(CAST(NULL AS INTEGER ARRAY), NULL);
+                 array_remove
+                --------------
+                 NULL
                 (1 row)
                 """
         );
@@ -130,6 +292,12 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 
                 SELECT array_prepend(null, 1);
                  array_prepend
+                --------------
+                 NULL
+                (1 row)
+                
+                SELECT array_remove(NULL, 1);
+                 array_remove
                 --------------
                  NULL
                 (1 row)

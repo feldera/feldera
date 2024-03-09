@@ -35,6 +35,8 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     public DBSPTypeZSet(CalciteObject node, DBSPType elementType) {
         super(node, ZSET, "WSet", false, elementType);
         this.elementType = elementType;
+        assert !elementType.is(DBSPTypeZSet.class);
+        assert !elementType.is(DBSPTypeIndexedZSet.class);
     }
 
     public DBSPTypeZSet(DBSPType elementType) {

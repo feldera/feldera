@@ -94,7 +94,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     public DBSPTypeTuple slice(int start, int endExclusive) {
-        if (endExclusive <= start)
+        if (endExclusive < start)
             throw new InternalCompilerError("Incorrect slice parameters " + start + ":" + endExclusive, this);
         return new DBSPTypeTuple(Utilities.arraySlice(this.tupFields, start, endExclusive));
     }

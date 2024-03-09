@@ -61,7 +61,7 @@ macro_rules! declare_tuples {
 
             /*$(<$element as Archive>::Archived: Ord, )*
             Expands to:
-            impl<T0, T1> Tuple2<T0, T1> {
+            impl<T0, T1> Tup2<T0, T1> {
                fn new(T0: T0, T1: T1) -> Self {
                   Self(T0, T1)
                }
@@ -77,7 +77,7 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1, W> $crate::algebra::MulByRef<W> for Tuple2<T0, T1>
+             impl<T0, T1, W> $crate::algebra::MulByRef<W> for Tup2<T0, T1>
              where
                  T0: $crate::algebra::MulByRef<W, Output = T0>,
                  T1: $crate::algebra::MulByRef<W, Output = T1>,
@@ -85,8 +85,8 @@ macro_rules! declare_tuples {
              {
                  type Output = Self;
                  fn mul_by_ref(&self, other: &W) -> Self::Output {
-                     let Tuple2(T0, T1) = self;
-                     Tuple2(T0.mul_by_ref(other), T1.mul_by_ref(other))
+                     let Tup2(T0, T1) = self;
+                     Tup2(T0.mul_by_ref(other), T1.mul_by_ref(other))
                  }
              }
              */
@@ -105,17 +105,17 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1> $crate::algebra::HasZero for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::HasZero for Tup2<T0, T1>
              where
                  T0: $crate::algebra::HasZero,
                  T1: $crate::algebra::HasZero,
              {
                  fn zero() -> Self {
-                     Tuple2(T0::zero(), T1::zero())
+                     Tup2(T0::zero(), T1::zero())
                  }
                  fn is_zero(&self) -> bool {
                      let mut result = true;
-                     let Tuple2(T0, T1) = self;
+                     let Tup2(T0, T1) = self;
                      result = result && T0.is_zero();
                      result = result && T1.is_zero();
                      result
@@ -140,15 +140,15 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1> $crate::algebra::AddByRef for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::AddByRef for Tup2<T0, T1>
              where
                  T0: $crate::algebra::AddByRef,
                  T1: $crate::algebra::AddByRef,
              {
                  fn add_by_ref(&self, other: &Self) -> Self {
-                     let Tuple2(T0, T1) = self;
-                     let Tuple2(QT0, QT1) = other;
-                     Tuple2(T0.add_by_ref(QT0), T1.add_by_ref(QT1))
+                     let Tup2(T0, T1) = self;
+                     let Tup2(QT0, QT1) = other;
+                     Tup2(T0.add_by_ref(QT0), T1.add_by_ref(QT1))
                  }
              }
             */
@@ -166,7 +166,7 @@ macro_rules! declare_tuples {
 
             /*
             Example generated code:
-            impl<T0, T1> $crate::NumEntries for Tuple2<T0, T1>
+            impl<T0, T1> $crate::NumEntries for Tup2<T0, T1>
             where
                 T0: $crate::NumEntries,
                 T1: $crate::NumEntries,
@@ -176,7 +176,7 @@ macro_rules! declare_tuples {
                     1usize + 1usize
                 }
                 fn num_entries_deep(&self) -> usize {
-                    let Tuple2(T0, T1) = self;
+                    let Tup2(T0, T1) = self;
                     T0.num_entries_deep() + T1.num_entries_deep()
                 }
             }
@@ -200,14 +200,14 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1> $crate::algebra::AddAssignByRef for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::AddAssignByRef for Tup2<T0, T1>
              where
                  T0: $crate::algebra::AddAssignByRef,
                  T1: $crate::algebra::AddAssignByRef,
              {
                  fn add_assign_by_ref(&mut self, other: &Self) {
-                     let Tuple2(T0, T1) = self;
-                     let Tuple2(QT0, QT1) = other;
+                     let Tup2(T0, T1) = self;
+                     let Tup2(QT0, QT1) = other;
                      T0.add_assign_by_ref(&QT0);
                      T1.add_assign_by_ref(&QT1);
                  }
@@ -227,15 +227,15 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1> $crate::algebra::NegByRef for Tuple2<T0, T1>
+             impl<T0, T1> $crate::algebra::NegByRef for Tup2<T0, T1>
              where
                  T0: $crate::algebra::NegByRef,
                  T1: $crate::algebra::NegByRef,
              {
                  fn neg_by_ref(&self) -> Self {
                      let mut result = true;
-                     let Tuple2(T0, T1) = self;
-                     Tuple2(T0.neg_by_ref(), T1.neg_by_ref())
+                     let Tup2(T0, T1) = self;
+                     Tup2(T0.neg_by_ref(), T1.neg_by_ref())
                  }
              }
             */
@@ -252,7 +252,7 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1> From<(T0, T1)> for Tuple2<T0, T1> {
+             impl<T0, T1> From<(T0, T1)> for Tup2<T0, T1> {
                  fn from((T0, T1): (T0, T1)) -> Self {
                      Self(T0, T1)
                  }
@@ -266,9 +266,9 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0, T1> Into<(T0, T1)> for Tuple2<T0, T1> {
+             impl<T0, T1> Into<(T0, T1)> for Tup2<T0, T1> {
                  fn into(self) -> (T0, T1) {
-                     let Tuple2(T0, T1) = self;
+                     let Tup2(T0, T1) = self;
                      (T0, T1)
                  }
              }
@@ -283,9 +283,9 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0: Debug, T1: Debug> Debug for Tuple2<T0, T1> {
-                 fn fmt(&self, f: &mut Formatter) -> FmtResult {
-                     let Tuple2(T0, T1) = self;
+             impl<T0: core::fmt::Debug, T1: core::fmt::Debug> core::fmt::Debug for Tup2<T0, T1> {
+                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
+                     let Tup2(T0, T1) = self;
                      f.debug_tuple("").field(&T0).field(&T1).finish()
                  }
              }
@@ -301,7 +301,7 @@ macro_rules! declare_tuples {
 
             /*
              Example generated code:
-             impl<T0: Copy, T1: Copy> Copy for Tuple2<T0, T1> {}
+             impl<T0: Copy, T1: Copy> Copy for Tup2<T0, T1> {}
             */
             impl<$($element: Copy),*> Copy for $tuple_name<$($element),*> {}
         )*
