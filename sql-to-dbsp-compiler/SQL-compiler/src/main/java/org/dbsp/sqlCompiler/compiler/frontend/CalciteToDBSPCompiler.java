@@ -27,6 +27,7 @@ import com.google.common.collect.ImmutableList;
 import org.apache.calcite.adapter.jdbc.JdbcTableScan;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.JoinRelType;
@@ -277,6 +278,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     public DBSPAggregate createAggregate(RelNode node,
             List<AggregateCall> aggregates, DBSPTypeTuple resultType,
             DBSPType inputRowType, int groupCount) {
+        CalciteObject obj = CalciteObject.create(node);
         DBSPVariablePath rowVar = inputRowType.ref().var("v");
         DBSPAggregate.Implementation[] implementations = new DBSPAggregate.Implementation[aggregates.size()];
         int aggIndex = 0;
@@ -289,7 +291,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             implementations[aggIndex] =  implementation;
             aggIndex++;
         }
-        return new DBSPAggregate(CalciteObject.create(node), rowVar, implementations, false);
+        return new DBSPAggregate(obj, rowVar, implementations, false);
     }
 
     /**
@@ -459,7 +461,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // No aggregations: just apply distinct
             DBSPVariablePath var = new DBSPVariablePath("t", localGroupAndInput.getKVRefType());
             DBSPExpression addEmpty = new DBSPRawTupleExpression(
-                    var.field(0).deref(),
+                    var.field(0).deref().applyCloneIfNeeded(),
                     new DBSPTupleExpression());
             agg = new DBSPMapIndexOperator(node, addEmpty.closure(var.asParameter()), aggregateType, createIndex);
             this.circuit.addOperator(agg);
@@ -1560,13 +1562,44 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     .append(CalciteCompiler.getPlan(rel))
                     .newline();
             this.go(rel);
-            // TODO: connect the result of the query compilation with
-            // the fields of rel; for now we assume that these are 1/1
             DBSPOperator op = this.getOperator(rel);
+
+            // The operator above may not contain all columns that were computed.
+            RelRoot root = view.getRoot();
+            DBSPTypeZSet producedType = op.getOutputZSetType();
+            // The output element may be a Tuple or a Vec<Tuple> when we sort;
+            DBSPType elemType = producedType.getElementType();
+            DBSPTypeTupleBase tuple;
+            boolean isVector = false;
+            if (elemType.is(DBSPTypeVec.class)) {
+                isVector = true;
+                tuple = elemType.to(DBSPTypeVec.class).getElementType().to(DBSPTypeTupleBase.class);
+            } else {
+                tuple = elemType.to(DBSPTypeTupleBase.class);
+            }
+            if (root.fields.size() != tuple.size()) {
+                DBSPVariablePath t = new DBSPVariablePath("t", tuple.ref());
+                List<DBSPExpression> resultFields = new ArrayList<>();
+                for (Map.Entry<Integer, String> field: root.fields) {
+                    resultFields.add(t.deref().field(field.getKey()).applyCloneIfNeeded());
+                }
+                DBSPExpression all = new DBSPTupleExpression(resultFields, false);
+                DBSPClosureExpression closure = all.closure(t.asParameter());
+                DBSPType outputElementType = all.getType();
+                if (isVector) {
+                    outputElementType = new DBSPTypeVec(outputElementType, false);
+                    DBSPVariablePath v = new DBSPVariablePath("v", elemType);
+                    closure = new DBSPApplyExpression("map", outputElementType, v, closure)
+                            .closure(v.asParameter());
+                }
+                op = new DBSPMapOperator(view.getCalciteObject(), closure, this.makeZSet(outputElementType), op);
+                this.circuit.addOperator(op);
+            }
+
             DBSPOperator o;
             if (this.generateOutputForNextView) {
                 this.metadata.addView(view);
-                DBSPType originalRowType = this.convertType(view.getRelNode().getRowType(), true);
+                DBSPType originalRowType = this.convertType(view.getRoot().validatedRowType, true);
                 DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class).rename(view.relationName);
                 o = new DBSPSinkOperator(
                         view.getCalciteObject(), view.relationName,
