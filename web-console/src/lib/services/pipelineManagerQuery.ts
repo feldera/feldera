@@ -1,6 +1,8 @@
 import { assertUnion } from '$lib/functions/common/array'
 import { compose } from '$lib/functions/common/function'
 import { getQueryData, invalidateQuery, mkQuery, mkQueryKey, setQueryData } from '$lib/functions/common/tanstack'
+import { SQLValueJS } from '$lib/functions/ddl'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import {
   ApiError,
   ApiKeyDescr,
@@ -11,6 +13,8 @@ import {
   CancelablePromise,
   ConfigurationService,
   ConnectorsService,
+  HttpInputOutputService,
+  JsonUpdateFormat,
   NewPipelineRequest,
   NewPipelineResponse,
   NewServiceRequest,
@@ -21,6 +25,7 @@ import {
   ProgramId,
   ProgramsService,
   ProgramStatus,
+  Relation,
   ServicesService,
   UpdateConnectorRequest,
   UpdateConnectorResponse,
@@ -35,6 +40,7 @@ import { Arguments } from '$lib/types/common/function'
 import { ControllerStatus, Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { leftJoin } from 'array-join'
 import invariant from 'tiny-invariant'
+import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
 import { Query, QueryClient, UseMutationOptions } from '@tanstack/react-query'
@@ -467,6 +473,31 @@ export const mutationDeleteService = (
   onSuccess(_data, variables, _context) {
     invalidateQuery(queryClient, PipelineManagerQueryKey.listServices())
     invalidateQuery(queryClient, PipelineManagerQueryKey.getService(variables.serviceName))
+  }
+})
+
+export const mutationHttpIngressJson = (
+  _queryClient: QueryClient
+): UseMutationOptions<
+  string,
+  ApiError,
+  {
+    pipelineName: string
+    relation: Relation
+    force: boolean
+    data: Partial<Record<'insert' | 'delete', Record<string, SQLValueJS | null>>>[]
+  }
+> => ({
+  mutationFn: ({ pipelineName, relation, force, data }) => {
+    return HttpInputOutputService.httpInput(
+      pipelineName,
+      getCaseIndependentName(relation),
+      force,
+      'json',
+      JSONbig.stringify(data),
+      true,
+      JsonUpdateFormat.INSERT_DELETE
+    )
   }
 })
 

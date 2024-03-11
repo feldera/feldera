@@ -5,23 +5,24 @@
 // etc. This issue will go away once we support JSON for the data format. But
 // until then we do the type conversion here.
 
+import { clampBigNumber } from '$lib/functions/common/bigNumber'
 import { nonNull } from '$lib/functions/common/function'
+import { ColumnType, Relation, SqlType } from '$lib/services/manager'
 import assert from 'assert'
 import { BigNumber } from 'bignumber.js'
 import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 
-import { GridCellParams } from '@mui/x-data-grid-pro'
+export type SQLValueJS = string | number | BigNumber | boolean | Dayjs | SQLValueJS[]
 
-import { ColumnType, Relation, SqlType } from '../services/manager'
-import { clampBigNumber } from './common/bigNumber'
-
-// Representing we get back from the ingress rest API.
+/**
+ * The format we get back from the ingress rest API.
+ */
 export interface Row {
   genId: number
   weight: number
-  record: Record<string, any>
+  record: Record<string, SQLValueJS | null>
 }
 
 export interface ValidationError {
@@ -29,55 +30,84 @@ export interface ValidationError {
   message: string
 }
 
-// Returns a function which, for a given SQL type, converts the values of that
-// type to displayable strings.
-export function getValueFormatter(columntype: ColumnType): (value: any, params?: GridCellParams) => string {
-  return match(columntype)
+/**
+ * Returns a function which, for a given SQL type, converts the values of that
+ * type to displayable strings. null value for a nullable SQL type is rendered to null.
+ * @param columntype
+ * @returns
+ */
+export function getValueFormatter(columntype: ColumnType) {
+  const formatter = match(columntype)
+    .returnType<(value: SQLValueJS) => string>()
     .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
-      return (value: BigNumber) => {
-        if (!BigNumber.isBigNumber(value)) {
-          return value
-        }
+      return value => {
+        invariant(BigNumber.isBigNumber(value))
         return value.toFixed()
       }
     })
+    .with(
+      { type: SqlType.TINYINT },
+      { type: SqlType.SMALLINT },
+      { type: SqlType.INTEGER },
+      { type: SqlType.REAL },
+      { type: SqlType.DOUBLE },
+      () => {
+        return value => {
+          invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+          return value.toString()
+        }
+      }
+    )
     .with({ type: SqlType.TIME }, () => {
-      return (value: Dayjs | string) => {
-        if (isDayjs(value)) {
-          return value.format('HH:mm:ss')
-        } else {
+      return value => {
+        invariant(typeof value === 'string' || isDayjs(value))
+        if (typeof value === 'string') {
           return value
         }
+        return value.format('HH:mm:ss')
       }
     })
     .with({ type: SqlType.DATE }, () => {
-      return (value: Dayjs | string) => {
+      return value => {
+        invariant(typeof value === 'string' && isDayjs(value))
         return dayjs(value).format('YYYY-MM-DD')
       }
     })
     .with({ type: SqlType.TIMESTAMP }, () => {
-      return (value: Dayjs | string) => {
+      return value => {
+        invariant(typeof value === 'string' && isDayjs(value))
         return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
       }
     })
     .with({ type: SqlType.ARRAY }, () => {
-      return (value: any) => {
+      return value => {
+        invariant(Array.isArray(value))
         return JSON.stringify(
-          value.map((v: any) => {
+          value.map(v => {
             assert(columntype.component !== null && columntype.component !== undefined)
             return clampToSQL(columntype.component)(v)
           })
         )
       }
     })
+    .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
+      return value => {
+        invariant(typeof value === 'string')
+        return value
+      }
+    })
     .otherwise(() => {
-      return (value: any) => {
+      return value => {
         return value.toString()
       }
     })
+  return (value: SQLValueJS) => {
+    if (value === null && columntype.nullable) {
+      return null
+    }
+    return formatter(value)
+  }
 }
-
-export type ColumnTypeJS = string | BigNumber | boolean | Dayjs | ColumnTypeJS[]
 
 // Generate a parser function for a field that converts a value to something
 // that is close to the original value but also acceptable for the SQL type.
@@ -153,7 +183,7 @@ export function clampToSQL(columntype: ColumnType) {
       invariant(typeof value === 'string' || isDayjs(value), `clampToSQL DATE,TIMESTAMP: ${typeof value} ${value}`)
       return dayjs(value)
     })
-    .with({ type: SqlType.ARRAY }, () => (value: ColumnTypeJS[]): ColumnTypeJS[] => {
+    .with({ type: SqlType.ARRAY }, () => (value: SQLValueJS[]): SQLValueJS[] => {
       return value.map(v => {
         invariant(columntype.component)
         return clampToSQL(columntype.component)(v as never)
@@ -163,21 +193,21 @@ export function clampToSQL(columntype: ColumnType) {
       () =>
         <T>(value: T) =>
           value
-    ) as (value: ColumnTypeJS) => ColumnTypeJS
+    ) as (value: SQLValueJS) => SQLValueJS
 }
 
 // Convert a row of strings to an object of typed values.
 //
 // The type conversion is important because for sending a row as an anchor later
 // it needs to have proper types (a number can't be a string etc.)
-export function csvLineToRow(relation: Relation, row: any[]): Row {
+export function csvLineToRow(relation: Relation, row: string[]): Row {
   const genId = Number(row[0])
   const weight = Number(row[row.length - 1])
   const records = row.slice(1, row.length - 1)
 
-  const record: Record<string, any> = {}
+  const record: Record<string, SQLValueJS | null> = {}
   relation.fields.forEach((field, i) => {
-    record[field.name] = parseValueSafe(field.columntype, records[i])
+    record[field.name] = parseCSVValue(field.columntype, records[i])
   })
 
   return {
@@ -216,22 +246,17 @@ export const findBaseType = (type: ColumnType): ColumnType => {
  * @param value
  * @returns
  */
-export const parseValueSafe = (sqlType: ColumnType, value: string) => {
+export const parseCSVValue = (sqlType: ColumnType, value: string) => {
+  if (sqlType.nullable && ['', 'null'].includes(value)) {
+    return null
+  }
   return match(sqlType)
+    .returnType<SQLValueJS>()
     .with({ type: SqlType.BOOLEAN }, () => value === 'true')
-    .with({ type: SqlType.TINYINT }, () => new BigNumber(value))
-    .with({ type: SqlType.SMALLINT }, () => new BigNumber(value))
-    .with({ type: SqlType.INTEGER }, () => new BigNumber(value))
-    .with({ type: SqlType.BIGINT }, () => new BigNumber(value))
-    .with({ type: SqlType.REAL }, () => new BigNumber(value))
-    .with({ type: SqlType.DOUBLE }, () => new BigNumber(value))
-    .with({ type: SqlType.DECIMAL }, () => new BigNumber(value))
-    .with({ type: SqlType.TIMESTAMP, nullable: P.select() }, (nullable: boolean) => {
-      if (!value && nullable) {
-        return null
-      }
-      return value
-    })
+    .with({ type: SqlType.TINYINT }, { type: SqlType.SMALLINT }, { type: SqlType.INTEGER }, () => parseInt(value))
+    .with({ type: SqlType.REAL }, { type: SqlType.DOUBLE }, () => parseFloat(value))
+    .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => new BigNumber(value))
+    .with({ type: SqlType.TIMESTAMP }, { type: SqlType.DATE }, { type: SqlType.TIME }, () => value)
     .otherwise(() => value)
 }
 
@@ -262,7 +287,6 @@ export const numericRange = (sqlType: ColumnType) =>
     // Limit array lengths to 0-5 for random generation.
     .with({ type: SqlType.ARRAY }, () => ({ min: new BigNumber(0), max: new BigNumber(5) }))
     .otherwise(() => {
-      console.log('Not a numeric type:', sqlType)
       throw new Error(`Not a numeric type: ${sqlType.type}`)
     })
 

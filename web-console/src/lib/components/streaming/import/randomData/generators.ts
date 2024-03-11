@@ -37,7 +37,7 @@ import {
 import { FieldNames } from './'
 import { BooleanSwitch } from './BooleanSwitch'
 
-import type { ColumnTypeJS } from '$lib/functions/ddl'
+import type { SQLValueJS } from '$lib/functions/ddl'
 
 type AddFieldName<T> = { name: FieldNames } & Partial<T>
 
@@ -66,7 +66,7 @@ export interface IRngGenMethod {
   // The random generator function, receives the type, plus additional
   // properties (coming from the defined `form_fields` see below) to generate a
   // random value.
-  generator: (config: ColumnType, settings?: Partial<Record<FieldNames, any>>) => ColumnTypeJS
+  generator: (config: ColumnType, settings?: Partial<Record<FieldNames, any>>) => SQLValueJS
   // Additional form fields that are displayed when this generation method is
   // selected.
   //
@@ -145,7 +145,7 @@ const transformToArrayGenerator = (type: ColumnType, generators: IRngGenMethod[]
       }
     }
 
-    const generator = (ct: ColumnType, settings: Record<string, any> | undefined): ColumnTypeJS[] => {
+    const generator = (ct: ColumnType, settings: Record<string, any> | undefined): SQLValueJS[] => {
       invariant(ct.component)
       const c = ct.component
       const { min, max } = numericRange(ct)

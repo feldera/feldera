@@ -1,6 +1,6 @@
 // Generates rows and inserts them into a table.
 
-import { Row } from '$lib/functions/ddl'
+import { Row, SQLValueJS } from '$lib/functions/ddl'
 import { ColumnType, Field, Relation, SqlType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 import dayjs from 'dayjs'
@@ -9,7 +9,7 @@ import { match } from 'ts-pattern'
 
 import { GridApi } from '@mui/x-data-grid-pro'
 
-export const getDefaultValue = (columntype: ColumnType) =>
+export const getDefaultValue = (columntype: ColumnType): SQLValueJS =>
   match(columntype)
     .with({ type: SqlType.BOOLEAN }, () => false)
     .with(

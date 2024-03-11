@@ -23,7 +23,8 @@ import Grid from '@mui/material/Grid'
 import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
-import type { Row } from '$lib/components/streaming/import/InsertionTable'
+import type { Row } from '$lib/functions/ddl'
+
 const TablesBreadcrumb = (props: {
   pipeline: Pipeline
   caseIndependentName: string

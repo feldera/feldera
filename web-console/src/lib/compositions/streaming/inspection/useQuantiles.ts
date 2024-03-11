@@ -5,7 +5,7 @@
 // support streaming yet.
 
 import { readLineFromStream } from '$lib/functions/common/stream'
-import { parseValueSafe } from '$lib/functions/ddl'
+import { parseCSVValue, SQLValueJS } from '$lib/functions/ddl'
 import { getUrl, httpOutputOptions } from '$lib/services/HttpInputOutputService'
 import { Chunk, HttpInputOutputService, OpenAPI, Relation } from '$lib/services/manager'
 import { getHeaders } from '$lib/services/manager/core/request'
@@ -18,7 +18,7 @@ function useQuantiles() {
   const readStream = useCallback(
     async (
       egressParams: Arguments<typeof HttpInputOutputService.httpOutput>,
-      setQuantiles: Dispatch<SetStateAction<any[][] | undefined>>,
+      setQuantiles: Dispatch<SetStateAction<(SQLValueJS | null)[][] | undefined>>,
       relation: Relation,
       controller: AbortController
     ) => {
@@ -72,11 +72,11 @@ function useQuantiles() {
                 // Convert a row of strings to a typed record. This is important
                 // because for sending a row as an anchor later it needs to have
                 // proper types (a number can't be a string etc.)
-                const typedRecords: any[][] = result.map(row => {
+                const typedRecords = result.map(row => {
                   const fields = row
-                  const newRow = [] as any
+                  const newRow = [] as (SQLValueJS | null)[]
                   relation.fields.forEach((col, i) => {
-                    newRow[i] = parseValueSafe(col.columntype, fields[i])
+                    newRow[i] = parseCSVValue(col.columntype, fields[i])
                   })
                   return newRow
                 })

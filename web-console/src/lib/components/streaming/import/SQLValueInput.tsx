@@ -1,10 +1,12 @@
-import { BigNumberInput } from '$lib/components/input/BigNumberInput'
+import { bigNumberInputProps } from '$lib/components/input/BigNumberInput'
 import { numericRange } from '$lib/functions/ddl'
 import { ColumnType, SqlType } from '$lib/services/manager'
 import BigNumber from 'bignumber.js'
+import { ChangeEvent } from 'react'
 import { match } from 'ts-pattern'
+import IconX from '~icons/bx/x'
 
-import { TextField, TextFieldProps } from '@mui/material'
+import { IconButton, TextField, TextFieldProps } from '@mui/material'
 
 /**
  * Input for a value representable by given SQL type accounting for precision, nullability etc.
@@ -14,83 +16,94 @@ import { TextField, TextFieldProps } from '@mui/material'
 export const SQLValueInput = ({
   columnType,
   ...props
-}: { columnType: ColumnType; value: any; onChange: (value: any) => void } & Omit<
+}: { columnType: ColumnType; value: any; onChange: (event: ChangeEvent<HTMLInputElement>) => void } & Omit<
   TextFieldProps,
   'type' | 'value' | 'onChange'
->) =>
-  match(columnType.type)
-    .with(SqlType.BIGINT, SqlType.DECIMAL, () => {
-      return (
-        <BigNumberInput
-          {...{ ...props, defaultValue: props.defaultValue as BigNumber | undefined }}
-          precision={columnType.precision}
-          scale={columnType.scale}
-        ></BigNumberInput>
-      )
-    })
-    .otherwise(() => (
-      <TextField
-        {...match(columnType.type)
-          .with(SqlType.BOOLEAN, () => ({
-            type: 'checkbox'
-          }))
-          .with(SqlType.TINYINT, () => ({
-            type: 'number',
-            inputProps: {
-              ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
-            }
-          }))
-          .with(SqlType.SMALLINT, () => ({
-            type: 'number',
-            inputProps: {
-              ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
-            }
-          }))
-          .with(SqlType.INTEGER, () => ({
-            type: 'number',
-            inputProps: {
-              ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
-            }
-          }))
-          .with(SqlType.REAL, () => ({
-            type: 'number',
-            inputProps: {
-              ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
-            }
-          }))
-          .with(SqlType.DOUBLE, () => ({
-            type: 'number',
-            inputProps: {
-              ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
-            }
-          }))
-          .with(SqlType.VARCHAR, () => ({
-            type: 'string',
-            inputProps: {
-              maxLength: columnType.precision ?? 0 > 0 ? columnType.precision : undefined
-            }
-          }))
-          .with(SqlType.CHAR, () => ({
-            type: 'string',
-            inputProps: {
-              maxLength: 1
-            }
-          }))
-          .with(SqlType.TIME, () => ({
-            type: 'string'
-          }))
-          .with(SqlType.TIMESTAMP, () => ({
-            type: 'datetime-local'
-          }))
-          .with(SqlType.DATE, () => ({
-            type: 'date'
-          }))
-          .with(SqlType.ARRAY, () => ({
-            type: 'string'
-          }))
-          .otherwise(() => ({
-            type: 'string'
-          }))}
-        {...props}
-      />
-    ))
+>) => {
+  const numericOnChange = {
+    onChange: (event: any) => {
+      if (event.target.value === '' || event.target.value === undefined) {
+        return props.onChange({ ...event, target: { ...event.target, value: null as any } })
+      }
+      return props.onChange(event)
+    }
+  }
+  return (
+    <TextField
+      InputProps={{
+        endAdornment: columnType.nullable ? (
+          <IconButton
+            size='small'
+            sx={{ mr: -3 }}
+            onClick={() => props.onChange({ target: { value: null as any } } as any)}
+          >
+            <IconX></IconX>
+          </IconButton>
+        ) : undefined
+      }}
+      {...match(columnType.type)
+        .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, SqlType.REAL, SqlType.DOUBLE, () => ({
+          type: 'number',
+          inputProps: {
+            ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType)),
+            value: props.value === null ? '' : props.value, // Enable clearing of the input when setting value to null
+            placeholder: props.value === null ? 'null' : ''
+          },
+          ...props,
+          ...numericOnChange
+        }))
+        .with(SqlType.BIGINT, SqlType.DECIMAL, () => ({
+          ...bigNumberInputProps({
+            ...props,
+            ...numericOnChange,
+            defaultValue: props.defaultValue as BigNumber | undefined,
+            precision: columnType.precision,
+            scale: columnType.scale
+          }),
+          placeholder: props.value === null ? 'null' : '',
+          ...props,
+          onChange: undefined
+        }))
+        .with(SqlType.BOOLEAN, () => ({
+          type: 'checkbox',
+          ...props
+        }))
+        .with(SqlType.CHAR, () => ({
+          type: 'string',
+          inputProps: {
+            maxLength: 1
+          },
+          ...props
+        }))
+        .with(SqlType.VARCHAR, () => ({
+          type: 'string',
+          inputProps: {
+            maxLength: columnType.precision ?? 0 > 0 ? columnType.precision : undefined
+          },
+          ...props,
+          value: props.value === null ? '' : props.value,
+          placeholder: props.value === null ? 'null' : ''
+        }))
+        .with(SqlType.TIME, () => ({
+          type: 'string',
+          ...props
+        }))
+        .with(SqlType.TIMESTAMP, () => ({
+          type: 'datetime-local',
+          ...props
+        }))
+        .with(SqlType.DATE, () => ({
+          type: 'date',
+          ...props
+        }))
+        .with(SqlType.ARRAY, () => ({
+          type: 'string',
+          ...props
+        }))
+        .otherwise(() => ({
+          type: 'string',
+          ...props
+        }))}
+    />
+  )
+}

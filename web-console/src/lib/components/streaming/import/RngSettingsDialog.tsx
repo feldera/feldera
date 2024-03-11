@@ -2,7 +2,7 @@
 // the table.
 
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-import { ColumnType, Field, Relation } from '$lib/services/manager'
+import { ColumnType, Field, Relation, SqlType } from '$lib/services/manager'
 import { forwardRef, ReactElement, Ref, useState } from 'react'
 import { match, P } from 'ts-pattern'
 import IconCog from '~icons/bx/cog'
@@ -22,21 +22,20 @@ import { StoreSettingsFn } from './ImportToolbar'
 import { FieldNames, RngFieldSettings } from './randomData'
 
 const RNG_SUPPORTED_TYPES = [
-  'BOOLEAN',
-  'TINYINT',
-  'SMALLINT',
-  'INTEGER',
-  'BIGINT',
-  'VARCHAR',
-  'CHAR',
-  'DOUBLE',
-  'FLOAT',
-  'DECIMAL',
-  'TIME',
-  'DATE',
-  'TIMESTAMP',
-  'ARRAY',
-  'GEOMETRY'
+  SqlType.BOOLEAN,
+  SqlType.TINYINT,
+  SqlType.SMALLINT,
+  SqlType.INTEGER,
+  SqlType.BIGINT,
+  SqlType.VARCHAR,
+  SqlType.CHAR,
+  SqlType.DOUBLE,
+  SqlType.REAL,
+  SqlType.DECIMAL,
+  SqlType.TIME,
+  SqlType.DATE,
+  SqlType.TIMESTAMP,
+  SqlType.ARRAY
 ]
 
 // The state for a RNG method stored in local storage.

@@ -6,12 +6,13 @@ import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnV
 import { InspectionToolbar } from '$lib/components/streaming/inspection/InspectionToolbar'
 import { PercentilePagination } from '$lib/components/streaming/inspection/PercentilePagination'
 import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeader'
+import { SQLValueDisplay } from '$lib/components/streaming/inspection/SQLValueDisplay'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
-import { Row, rowToAnchor } from '$lib/functions/ddl'
+import { Row, rowToAnchor, SQLValueJS } from '$lib/functions/ddl'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
@@ -23,7 +24,12 @@ import IconPause from '~icons/bx/pause-circle'
 
 import { IconButton, Tooltip } from '@mui/material'
 import Card from '@mui/material/Card'
-import { GridPaginationModel, GridRowSelectionModel } from '@mui/x-data-grid-pro'
+import {
+  GridPaginationModel,
+  GridRenderCellParams,
+  GridRowSelectionModel,
+  GridValueGetterParams
+} from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
 const FETCH_QUANTILES = 100
@@ -57,7 +63,7 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
   const [paginationModel, setPaginationModel] = useState(INITIAL_PAGINATION_MODEL)
   const [neighborhood, setNeighborhood] = useState<NeighborhoodQuery>(DEFAULT_NEIGHBORHOOD)
-  const [quantiles, setQuantiles] = useState<any[][] | undefined>(undefined)
+  const [quantiles, setQuantiles] = useState<(SQLValueJS | null)[][] | undefined>(undefined)
   const [quantile, setQuantile] = useState<number>(0)
   const [rows, setRows] = useState<Row[]>([])
   const [isPending, setLoading] = useState<boolean>(true)
@@ -315,37 +321,38 @@ const InspectionTableImpl = ({
         disableColumnFilter
         density='compact'
         getRowId={(row: Row) => row.genId}
-        columns={relation.fields
-          .map((col: Field) => {
+        columns={[
+          ...relation.fields.map((col: Field) => {
             return {
               field: getCaseIndependentName(col),
               headerName: getCaseIndependentName(col),
               description: getCaseIndependentName(col),
               flex: 1,
-              valueGetter: (params: any) => {
+              valueGetter: (params: GridValueGetterParams<Row>) => {
                 return params.row.record[col.name]
               },
-              renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>
+              // valueFormatter: getValueFormatter(col.columntype),
+              renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,
+              renderCell: (props: GridRenderCellParams) => <SQLValueDisplay value={props.value} type={col.columntype} />
             }
-          })
-          .concat([
-            {
-              field: 'genId',
-              headerName: 'genId',
-              description: 'Index relative to the current paginated set of rows.',
-              flex: 0.5,
-              valueGetter: (params: any) => params.row.genId,
-              renderHeader: () => <></>
-            },
-            {
-              field: 'rowCount',
-              headerName: 'Row Count',
-              description: 'Counts how many times this row appears in the database.',
-              flex: 0.5,
-              valueGetter: (params: any) => params.row.weight,
-              renderHeader: () => <></>
-            }
-          ])}
+          }),
+          {
+            field: 'genId',
+            headerName: 'genId',
+            description: 'Index relative to the current paginated set of rows.',
+            flex: 0.5,
+            valueGetter: (params: GridValueGetterParams<Row>) => params.row.genId,
+            renderHeader: () => <></>
+          },
+          {
+            field: 'rowCount',
+            headerName: 'Row Count',
+            description: 'Counts how many times this row appears in the database.',
+            flex: 0.5,
+            valueGetter: (params: GridValueGetterParams<Row>) => params.row.weight,
+            renderHeader: () => <></>
+          }
+        ]}
         slots={{
           pagination: PercentilePagination,
           toolbar: InspectionToolbar
@@ -405,7 +412,7 @@ const InspectionTableImpl = ({
         // rows will usually be bigger than PAGE_SIZE and have negative row
         // indices, so we can detect that we're at the beginning/end of the
         // table. But we always only display from 0..PAGE_SIZE-1.
-        rows={rows.filter((row: any) => row.genId >= 0 && row.genId < PAGE_SIZE)}
+        rows={rows.filter(row => row.genId >= 0 && row.genId < PAGE_SIZE)}
         paginationMode='server'
         pageSizeOptions={[PAGE_SIZE]}
         onPaginationModelChange={handlePaginationModelChange}

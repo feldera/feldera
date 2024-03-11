@@ -6,10 +6,10 @@
 import { DataGridPro } from '$lib/components/common/table/DataGridProDeclarative'
 import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
 import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeader'
+import { SQLValueDisplay } from '$lib/components/streaming/inspection/SQLValueDisplay'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { getDefaultValue } from '$lib/compositions/streaming/import/useDefaultRows'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
-import { getValueFormatter, Row } from '$lib/functions/ddl'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
@@ -32,7 +32,7 @@ import { useQuery } from '@tanstack/react-query'
 import ImportToolbar from './ImportToolbar'
 import { SQLValueInput } from './SQLValueInput'
 
-export type { Row } from '$lib/functions/ddl'
+import type { Row } from '$lib/functions/ddl'
 
 const useInsertionTable = (props: {
   pipeline: Pipeline
@@ -100,7 +100,7 @@ export const InsertionTable = (props: {
   return <InsertionTableImpl {...{ relation, ...data }} />
 }
 
-const EditSQLCell =
+const SQLValueInputCell =
   (ct: ColumnType) =>
   ({ id, field, value, ...props }: GridRenderEditCellParams) => {
     const onChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,9 +144,10 @@ const InsertionTableImpl = ({
           }
         }}
         getRowId={(row: Row) => row.genId}
-        columns={relation.fields
-          .map((col: Field) => {
+        columns={[
+          ...relation.fields.map((col: Field) => {
             return {
+              type: undefined,
               field: getCaseIndependentName(col),
               headerName: getCaseIndependentName(col),
               description: getCaseIndependentName(col),
@@ -161,9 +162,7 @@ const InsertionTableImpl = ({
               valueGetter: (params: GridValueGetterParams) => {
                 return params.row.record[col.name]
               },
-              valueFormatter: (params: GridValueFormatterParams<any>) => {
-                return getValueFormatter(col.columntype)(params.value)
-              },
+              // valueFormatter: getValueFormatter(col.columntype),
               valueParser: (value: any) => {
                 // It looks like this doesn't do anything -- it just returns the
                 // value, but I found without having defined this, if you edit a
@@ -178,36 +177,37 @@ const InsertionTableImpl = ({
                 return row
               },
               renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,
-              renderCell: (props: GridRenderCellParams) => <>{props.formattedValue}</>,
-              renderEditCell: EditSQLCell(col.columntype)
+              renderCell: (props: GridRenderCellParams) => (
+                <SQLValueDisplay value={props.value} type={col.columntype} />
+              ),
+              renderEditCell: SQLValueInputCell(col.columntype)
             }
-          })
-          .concat([
-            {
-              field: 'genId',
-              headerName: 'genId',
-              description: 'Index relative to the current set of rows we are adding.',
-              flex: 0.5,
-              editable: false,
-              preProcessEditCellProps: (params: GridPreProcessEditCellProps) => {
-                const hasError = false
-                return { ...params.props, error: hasError }
-              },
-              valueFormatter: (params: GridValueFormatterParams<any>) => {
-                return params.value
-              },
-              valueParser: (value: any) => {
-                return value
-              },
-              valueGetter: (params: any) => params.row.genId,
-              valueSetter: (params: GridValueSetterParams) => {
-                return params.row
-              },
-              renderHeader: () => <></>,
-              renderCell: () => <></>,
-              renderEditCell: () => <></>
-            }
-          ])}
+          }),
+          {
+            field: 'genId',
+            headerName: 'genId',
+            description: 'Index relative to the current set of rows we are adding.',
+            flex: 0.5,
+            editable: false,
+            preProcessEditCellProps: (params: GridPreProcessEditCellProps) => {
+              const hasError = false
+              return { ...params.props, error: hasError }
+            },
+            valueFormatter: (params: GridValueFormatterParams<number>) => {
+              return String(params.value) as string | null
+            },
+            valueParser: (value: any) => {
+              return value
+            },
+            valueGetter: (params: any) => params.row.genId,
+            valueSetter: (params: GridValueSetterParams) => {
+              return params.row
+            },
+            renderHeader: () => <></>,
+            renderCell: () => <></>,
+            renderEditCell: () => <></>
+          }
+        ]}
         slots={{
           toolbar: ImportToolbar
         }}
