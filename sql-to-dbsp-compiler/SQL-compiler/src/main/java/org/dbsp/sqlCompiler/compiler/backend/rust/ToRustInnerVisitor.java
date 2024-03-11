@@ -1087,7 +1087,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .increase();
         for (DBSPTypeStruct.Field field: item.type.fields.values()) {
             builder.append("#[serde(rename = \"")
-                    .append(field.name)
+                    .append(Utilities.escape(field.name))
                     .append("\")]\n");
             field.accept(this);
             this.builder.append(",")
