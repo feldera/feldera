@@ -53,14 +53,6 @@ const deduceType = (row: string[]) =>
  */
 export const librdkafkaOptions = [
   [
-    'builtin.features                        ',
-    '*',
-    '               ',
-    'gzip, snappy, ssl, sasl, regex, lz4, sasl_gssapi, sasl_plain, sasl_scram, plugins, zstd, sasl_oauthbearer, http, oidc',
-    'low       ',
-    `Indicates the builtin features for this build of librdkafka. An application can either query this value or attempt to set it with its list of required features to check for library support.  \n*Type: CSV list*`
-  ],
-  [
     'client.id                               ',
     '*',
     '               ',
@@ -155,14 +147,6 @@ export const librdkafkaOptions = [
     '             ',
     'low       ',
     `Topic blacklist, a comma-separated list of regular expressions for matching topic names that should be ignored in broker metadata information as if the topics did not exist.  \n*Type: pattern list*`
-  ],
-  [
-    'debug                                   ',
-    '*',
-    'generic, broker, topic, metadata, feature, queue, msg, protocol, cgrp, security, fetch, interceptor, plugin, consumer, admin, eos, mock, assignor, conf, all',
-    '             ',
-    'medium    ',
-    `A comma-separated list of debug contexts to enable. Detailed Producer debugging: broker,topic,msg. Consumer: consumer,cgrp,topic,fetch  \n*Type: CSV list*`
   ],
   [
     'socket.timeout.ms                       ',
@@ -429,14 +413,6 @@ export const librdkafkaOptions = [
     `CA certificate string (PEM format) for verifying the broker's key.  \n*Type: string*`
   ],
   [
-    'ssl_ca                                  ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `CA certificate as set by rd_kafka_conf_set_ssl_cert()  \n*Type: see dedicated API*`
-  ],
-  [
     'ssl.ca.certificate.stores               ',
     '*',
     '               ',
@@ -485,14 +461,6 @@ export const librdkafkaOptions = [
     `OpenSSL engine id is the name used for loading engine.  \n*Type: string*`
   ],
   [
-    'ssl_engine_callback_data                ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `OpenSSL engine callback data (set with rd_kafka_conf_set_engine_callback_data()).  \n*Type: see dedicated API*`
-  ],
-  [
     'enable.ssl.certificate.verification     ',
     '*',
     'true, false    ',
@@ -531,22 +499,6 @@ export const librdkafkaOptions = [
     '  kafkaclient',
     'low       ',
     `This client's Kerberos principal name. (Not supported on Windows, will use the logon user's principal).  \n*Type: string*`
-  ],
-  [
-    'sasl.kerberos.kinit.cmd                 ',
-    '*',
-    '               ',
-    'kinit -R -t "%{sasl.kerberos.keytab}" -k %{sasl.kerberos.principal} || kinit -t "%{sasl.kerberos.keytab}" -k %{sasl.kerberos.principal}',
-    'low       ',
-    `Shell command to refresh or acquire the client's Kerberos ticket. This command is executed on client creation and every sasl.kerberos.min.time.before.relogin (0=disable). %{config.prop.name} is replaced by corresponding config object value.  \n*Type: string*`
-  ],
-  [
-    'sasl.kerberos.keytab                    ',
-    '*',
-    '               ',
-    '             ',
-    'low       ',
-    `Path to Kerberos keytab file. This configuration property is only used as a variable in \`sasl.kerberos.kinit.cmd\` as \` ... -t "%{sasl.kerberos.keytab}"\`.  \n*Type: string*`
   ],
   [
     'sasl.kerberos.min.time.before.relogin   ',

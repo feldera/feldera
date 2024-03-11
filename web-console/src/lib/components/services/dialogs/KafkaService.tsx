@@ -67,7 +67,7 @@ const schema = va.object({
       )
     }),
     authParamsSchema,
-    va.object({}, va.union([va.string(), va.number(), va.boolean(), va.array(va.string())]))
+    va.partial(va.object({}, va.union([va.string(), va.number(), va.boolean(), va.array(va.string())])))
   ])
 })
 export type KafkaServiceSchema = va.Output<typeof schema>
@@ -357,6 +357,9 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
                       size='small'
                       fullWidth
                       type='number'
+                      {...(([, min, max]) => ({ min: parseInt(min), max: parseInt(max) }))(
+                        fieldOptions[field].range.match(/(\d+) .. (\d+)/) ?? []
+                      )}
                     ></TextFieldElement>
                   ))
                   .with('enum', () => (
