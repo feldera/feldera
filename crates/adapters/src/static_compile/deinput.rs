@@ -193,6 +193,9 @@ where
                     config,
                 )))
             }
+            RecordFormat::Parquet(_) => {
+                todo!()
+            }
         }
     }
 }
@@ -298,6 +301,9 @@ where
                     R,
                     _,
                 >::new(self.handle.clone(), config)))
+            }
+            RecordFormat::Parquet(_) => {
+                todo!()
             }
         }
     }
@@ -425,6 +431,9 @@ where
                         SqlSerdeConfig::from(flavor),
                     ),
                 ))
+            }
+            RecordFormat::Parquet(_) => {
+                todo!()
             }
         }
     }
@@ -589,6 +598,9 @@ where
                 self.update_key_func.clone(),
                 SqlSerdeConfig::from(flavor),
             ))),
+            RecordFormat::Parquet(_) => {
+                todo!()
+            }
         }
     }
 }

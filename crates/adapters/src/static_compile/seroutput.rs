@@ -8,6 +8,8 @@ use dbsp::{
     trace::{Batch, BatchReader, Cursor},
     OutputHandle,
 };
+use serde::Serialize;
+use serde_arrow::ArrowBuilder;
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
 /// Implementation of the [`std::io::Write`] trait that allows swapping out
@@ -61,6 +63,13 @@ trait BytesSerializer<C>: Send {
         val: &T,
         buf: &mut Vec<u8>,
     ) -> AnyResult<()>;
+
+    fn serialize_arrow<T>(&mut self, _val: &T, _buf: &mut ArrowBuilder) -> AnyResult<()>
+    where
+        T: Serialize,
+    {
+        unimplemented!()
+    }
 }
 
 struct CsvSerializer<C> {
@@ -112,6 +121,32 @@ where
         T: SerializeWithContext<C>,
     {
         val.serialize_with_context(&mut serde_json::Serializer::new(buf), &self.context)?;
+        Ok(())
+    }
+}
+
+struct ParquetSerializer {
+    _context: SqlSerdeConfig,
+}
+
+impl BytesSerializer<SqlSerdeConfig> for ParquetSerializer {
+    fn create(_context: SqlSerdeConfig) -> Self {
+        Self { _context }
+    }
+
+    fn serialize<T>(&mut self, _val: &T, _buf: &mut Vec<u8>) -> AnyResult<()>
+    where
+        T: SerializeWithContext<SqlSerdeConfig>,
+    {
+        unimplemented!()
+    }
+
+    fn serialize_arrow<T>(&mut self, val: &T, builder: &mut ArrowBuilder) -> AnyResult<()>
+    where
+        T: Serialize,
+    {
+        //let fields = Vec::<Field>::from_type::<T>(TracingOptions::default())?;
+        builder.push(val)?;
         Ok(())
     }
 }
@@ -233,6 +268,17 @@ where
                     SqlSerdeConfig,
                 >>::new(&self.batch, config))
             }
+            RecordFormat::Parquet(schema) => Box::new(<SerCursorImpl<
+                'a,
+                ParquetSerializer,
+                B,
+                KD,
+                VD,
+                SqlSerdeConfig,
+            >>::new(
+                &self.batch,
+                SqlSerdeConfig::from_schema(schema),
+            )),
         })
     }
 }
@@ -307,6 +353,11 @@ where
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.serializer.serialize(self.key.as_ref().unwrap(), dst)
+    }
+
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()> {
+        self.serializer
+            .serialize_arrow(self.key.as_ref().unwrap(), dst)
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {

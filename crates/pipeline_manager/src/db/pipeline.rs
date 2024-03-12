@@ -4,7 +4,7 @@ use std::{
     fmt::{self, Display},
 };
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use futures_util::TryFutureExt;
 use pipeline_types::{
@@ -1364,17 +1364,11 @@ fn row_to_pipeline(row: &Row) -> Result<Pipeline, DBError> {
 }
 
 fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, DBError> {
-    let created_naive =
-        NaiveDateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
-            DBError::invalid_data(format!(
-                "Invalid timestamp in 'pipeline_runtime_state.created' column: {created_secs}"
-            ))
-        })?;
-
-    Ok(DateTime::<Utc>::from_naive_utc_and_offset(
-        created_naive,
-        Utc,
-    ))
+    DateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
+        DBError::invalid_data(format!(
+            "Invalid timestamp in 'pipeline_runtime_state.created' column: {created_secs}"
+        ))
+    })
 }
 
 fn json_to_attached_connectors(connectors_json: Value) -> Vec<AttachedConnector> {

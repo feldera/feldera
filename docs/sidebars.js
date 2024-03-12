@@ -104,7 +104,7 @@ const sidebars = {
     {
       type: 'category',
       label: 'API Reference',
-      items: ['api/rest', 'api/json', 'api/csv', 'api/rust']
+      items: ['api/rest', 'api/json', 'api/parquet', 'api/csv', 'api/rust']
     },
     {
       type: 'category',

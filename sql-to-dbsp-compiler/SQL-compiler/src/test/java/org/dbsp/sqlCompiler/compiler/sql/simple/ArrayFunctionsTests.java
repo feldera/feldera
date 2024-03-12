@@ -615,4 +615,70 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 """
         );
     }
+
+    @Test
+    public void testArrayDistinct() {
+        this.qs("""
+                SELECT array_distinct(ARRAY [1, 1, 2, 2, 3, 3]);
+                 array_distinct
+                ----------------
+                 {1, 2, 3}
+                (1 row)
+    
+                SELECT array_distinct(ARRAY [2, 4, 6, 8, 4, 6]);
+                 array_distinct
+                -----------------
+                 {2,4,6,8}
+                (1 row)
+                            
+                SELECT array_distinct(ARRAY [2, 2, 2, 2]);
+                 array_distinct
+                ---------------
+                 {2}
+                (1 row)
+                            
+                SELECT array_distinct(ARRAY ['a', 'b', 'c', 'b', 'a']);
+                 array_distinct
+                -----------------
+                 { a, b, c}
+                (1 row)
+                            
+                SELECT array_distinct(ARRAY [null, null, null]);
+                 array_distinct
+                ---------------
+                 {NULL}
+                (1 row)
+                
+                SELECT array_distinct(ARRAY [1, 2, null, 2, null, 3]);
+                 array_distinct
+                -----------------
+                 {1,2,null,3}
+                (1 row)
+    
+                SELECT array_distinct(ARRAY [null, 1, null, 2, 3]);
+                 array_distinct
+                -----------------
+                 {NULL,1,2,3}
+                (1 row)
+                
+                SELECT array_distinct(ARRAY [1, 2, 3, 4, 5]);
+                 array_distinct
+                -----------------
+                 {1,2,3,4,5}
+                (1 row)
+                
+                SELECT array_distinct(NULL);
+                 array_distinct
+                ----------------
+                 NULL
+                (1 row)
+                
+                SELECT array_distinct(CAST(NULL AS INTEGER ARRAY));
+                 array_distinct
+                ----------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
 }

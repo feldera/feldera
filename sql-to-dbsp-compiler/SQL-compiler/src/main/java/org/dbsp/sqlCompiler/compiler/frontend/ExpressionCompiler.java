@@ -1137,6 +1137,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 return new DBSPApplyExpression(node, method, type, arg0, arg1);
 
             }
+            case ARRAY_DISTINCT: {
+                DBSPExpression arg0 = ops.get(0);
+                String method = getCallName(call);
+
+                if (arg0.type.mayBeNull)
+                    method += "N";
+
+                return new DBSPApplyExpression(node, method, type, arg0);
+            }
             case ARRAY_REVERSE:
             {
                 if (call.operands.size() != 1)
