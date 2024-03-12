@@ -2,7 +2,7 @@ use crate::db::{PipelineId, ProgramId, Version};
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     fs::{canonicalize, create_dir_all},
@@ -10,6 +10,7 @@ use std::{
     str::FromStr,
     string::ParseError,
 };
+use utoipa::ToSchema;
 
 const fn default_server_port() -> u16 {
     8080
@@ -234,7 +235,7 @@ impl ApiServerConfig {
 }
 
 /// Argument to `cargo build --profile <>` passed to the rust compiler
-#[derive(Parser, Default, Deserialize, Debug, Clone)]
+#[derive(Parser, Default, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, ToSchema)]
 pub enum CompilationProfile {
     /// Prioritizes compilation speed over runtime speed
     Unoptimized,

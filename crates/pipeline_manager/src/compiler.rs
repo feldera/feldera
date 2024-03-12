@@ -1,5 +1,5 @@
 use crate::auth::TenantId;
-use crate::config::CompilerConfig;
+use crate::config::{CompilationProfile, CompilerConfig};
 use crate::db::storage::Storage;
 use crate::db::{DBError, ProgramId, ProjectDB, Version};
 use crate::error::ManagerError;
@@ -118,6 +118,14 @@ impl ProgramStatus {
     pub(crate) fn is_compiling(&self) -> bool {
         *self == ProgramStatus::CompilingRust || *self == ProgramStatus::CompilingSql
     }
+}
+
+/// Program configuration.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ProgramConfig {
+    /// Request a compilation profile.
+    #[serde(default)]
+    pub profile: CompilationProfile,
 }
 
 static METRICS: Lazy<CompilerMetrics> = Lazy::new(init_metrics);
@@ -821,6 +829,7 @@ inherits = "release"
                                 &None,
                                 &Some(ProgramStatus::CompilingRust),
                                 &Some(schema),
+                                &None,
                                 Some(version),
                                 None
                             ).await?;
@@ -1102,7 +1111,7 @@ mod test {
     use crate::{
         auth::TenantRecord,
         compiler::ProgramStatus,
-        config::CompilerConfig,
+        config::{CompilationProfile, CompilerConfig},
         db::{storage::Storage, ProgramId, ProjectDB, Version},
     };
 
@@ -1116,6 +1125,9 @@ mod test {
                 pname,
                 "program desc",
                 "ignored",
+                &super::ProgramConfig {
+                    profile: CompilationProfile::Unoptimized,
+                },
                 None,
             )
             .await

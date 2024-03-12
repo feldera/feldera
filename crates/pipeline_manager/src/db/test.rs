@@ -8,6 +8,8 @@ use super::{
     ProgramSchema,
 };
 use crate::auth::{self, TenantId, TenantRecord};
+use crate::compiler::ProgramConfig;
+use crate::config::CompilationProfile;
 use crate::db::pipeline::convert_bigint_to_time;
 use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
 use crate::db::{ServiceDescr, ServiceId};
@@ -197,6 +199,9 @@ async fn program_creation() {
             "test1",
             "program desc",
             "ignored",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -210,6 +215,9 @@ async fn program_creation() {
         status: ProgramStatus::Pending,
         schema: None,
         code: None,
+        config: ProgramConfig {
+            profile: CompilationProfile::Unoptimized,
+        },
     };
     let actual = rows.get(0).unwrap();
     assert_eq!(1, rows.len());
@@ -224,6 +232,9 @@ async fn program_creation() {
         status: ProgramStatus::Pending,
         schema: None,
         code: Some("ignored".to_string()),
+        config: ProgramConfig {
+            profile: CompilationProfile::Unoptimized,
+        },
     };
     let actual = rows.get(0).unwrap();
     assert_eq!(1, rows.len());
@@ -238,6 +249,9 @@ async fn program_creation() {
         status: ProgramStatus::Pending,
         schema: None,
         code: None,
+        config: ProgramConfig {
+            profile: CompilationProfile::Unoptimized,
+        },
     };
     let (_, actual) = rows.get(0).unwrap();
     assert_eq!(1, rows.len());
@@ -256,6 +270,9 @@ async fn duplicate_program() {
             "test1",
             "program desc",
             "ignored",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await;
@@ -267,6 +284,9 @@ async fn duplicate_program() {
             "test1",
             "program desc",
             "ignored",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -287,6 +307,9 @@ async fn program_code() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -316,6 +339,9 @@ async fn update_program() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -328,6 +354,7 @@ async fn update_program() {
             &Some("test2".to_string()),
             &Some("different desc".to_string()),
             &Some("create table t2(c2 integer);".to_string()),
+            &None,
             &None,
             &None,
             None,
@@ -350,6 +377,7 @@ async fn update_program() {
             program_id,
             &Some("updated_test1".to_string()),
             &Some("some new description".to_string()),
+            &None,
             &None,
             &None,
             &None,
@@ -376,6 +404,9 @@ async fn program_queries() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -400,7 +431,7 @@ async fn program_queries() {
 }
 
 #[tokio::test]
-async fn program_config() {
+async fn pipeline_config() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
     handle
@@ -461,6 +492,9 @@ async fn project_pending() {
             "test1",
             "project desc",
             "ignored",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -473,6 +507,9 @@ async fn project_pending() {
             "test2",
             "project desc",
             "ignored",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -508,6 +545,9 @@ async fn update_status() {
             "test1",
             "program desc",
             "create table t1(c1 integer);",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -740,7 +780,17 @@ async fn versioning_no_change_no_connectors() {
 
     let (program_id, _) = handle
         .db
-        .new_program(tenant_id, Uuid::now_v7(), "", "", "", None)
+        .new_program(
+            tenant_id,
+            Uuid::now_v7(),
+            "",
+            "",
+            "",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
+            None,
+        )
         .await
         .unwrap();
     handle
@@ -793,6 +843,9 @@ async fn versioning() {
             "test1",
             "program desc",
             "only schema matters--this isn't compiled",
+            &ProgramConfig {
+                profile: CompilationProfile::Unoptimized,
+            },
             None,
         )
         .await
@@ -868,6 +921,7 @@ async fn versioning() {
             &None,
             &None,
             &Some("only schema matters--this isn't compiled2".to_string()),
+            &None,
             &None,
             &None,
             None,
@@ -1278,6 +1332,30 @@ pub(crate) fn option_runtime_config() -> impl Strategy<Value = Option<RuntimeCon
     })
 }
 
+/// Generate different program configurations
+pub(crate) fn program_config() -> impl Strategy<Value = ProgramConfig> {
+    any::<(bool,)>().prop_map(|config| ProgramConfig {
+        profile: if config.0 {
+            CompilationProfile::Unoptimized
+        } else {
+            CompilationProfile::Optimized
+        },
+    })
+}
+
+/// Generate different program configurations
+pub(crate) fn option_program_config() -> impl Strategy<Value = Option<ProgramConfig>> {
+    any::<Option<(bool,)>>().prop_map(|c| {
+        c.map(|config| ProgramConfig {
+            profile: if config.0 {
+                CompilationProfile::Unoptimized
+            } else {
+                CompilationProfile::Optimized
+            },
+        })
+    })
+}
+
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
@@ -1288,6 +1366,7 @@ enum StorageAction {
         String,
         String,
         String,
+        #[proptest(strategy = "program_config()")] ProgramConfig,
     ),
     UpdateProgram(
         TenantId,
@@ -1296,6 +1375,7 @@ enum StorageAction {
         Option<String>,
         Option<String>,
         Option<Version>,
+        #[proptest(strategy = "option_program_config()")] Option<ProgramConfig>,
     ),
     GetProgramById(TenantId, ProgramId, bool),
     GetProgramByName(TenantId, String, bool),
@@ -1604,22 +1684,22 @@ fn db_impl_behaves_like_model() {
                                     check_responses(i, model_response, impl_response);
                                 }
                             }
-                            StorageAction::NewProgram(tenant_id, id, name, description, code) => {
+                            StorageAction::NewProgram(tenant_id, id, name, description, code, config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response =
-                                    model.new_program(tenant_id, id, &name, &description, &code, None).await;
+                                    model.new_program(tenant_id, id, &name, &description, &code, &config, None).await;
                                 let impl_response =
-                                    handle.db.new_program(tenant_id, id, &name, &description, &code, None).await;
+                                    handle.db.new_program(tenant_id, id, &name, &description, &code, &config, None).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::UpdateProgram(tenant_id, program_id, name, description, code, guard) => {
+                            StorageAction::UpdateProgram(tenant_id, program_id, name, description, code, guard, config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model
-                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, guard, None)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, &config, guard, None)
                                     .await;
                                 let impl_response = handle
                                     .db
-                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, guard, None)
+                                    .update_program(tenant_id, program_id, &name, &description, &code, &None, &None, &config, guard, None)
                                     .await;
                                 check_responses(i, model_response, impl_response);
                             }
@@ -1971,6 +2051,7 @@ impl Storage for Mutex<DbModel> {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        config: &ProgramConfig,
         _txn: Option<&Transaction<'_>>,
     ) -> DBResult<(super::ProgramId, super::Version)> {
         let mut s = self.lock().await;
@@ -2000,6 +2081,7 @@ impl Storage for Mutex<DbModel> {
                     schema: None,
                     version,
                     code: Some(program_code.to_owned()),
+                    config: config.clone(),
                 },
                 SystemTime::now(),
             ),
@@ -2017,6 +2099,7 @@ impl Storage for Mutex<DbModel> {
         program_code: &Option<String>,
         status: &Option<ProgramStatus>,
         schema: &Option<ProgramSchema>,
+        config: &Option<ProgramConfig>,
         guard: Option<Version>,
         _txn: Option<&Transaction<'_>>,
     ) -> DBResult<super::Version> {
@@ -2076,6 +2159,13 @@ impl Storage for Mutex<DbModel> {
                 if let Some(schema) = schema {
                     p.schema = Some(schema.clone());
                 }
+                let mut has_config_changed = false;
+                if let Some(config) = config {
+                    if p.config != *config {
+                        has_config_changed = true;
+                    }
+                    p.config = config.clone();
+                }
                 if let Some(status) = status {
                     p.status = status.clone();
                     // Reset schema when program status is set to Pending,
@@ -2090,11 +2180,13 @@ impl Storage for Mutex<DbModel> {
                 if let Some(code) = program_code {
                     if *code != cur_code {
                         p.code = program_code.to_owned();
-                        p.version.0 += 1;
-                        p.schema = None;
-                        p.status = ProgramStatus::Pending;
                         has_code_changed = true;
                     }
+                }
+                if has_code_changed || has_config_changed {
+                    p.version.0 += 1;
+                    p.schema = None;
+                    p.status = ProgramStatus::Pending;
                 }
                 if !has_code_changed && (status.is_some() || schema.is_some()) {
                     *e = SystemTime::now();

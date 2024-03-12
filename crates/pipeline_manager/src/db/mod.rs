@@ -2,7 +2,7 @@
 use crate::config::ApiServerConfig;
 use crate::{
     auth::{TenantId, TenantRecord},
-    compiler::ProgramStatus,
+    compiler::{ProgramConfig, ProgramStatus},
     config::DatabaseConfig,
 };
 use async_trait::async_trait;
@@ -162,6 +162,7 @@ impl Storage for ProjectDB {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        config: &ProgramConfig,
         txn: Option<&Transaction<'_>>,
     ) -> Result<(ProgramId, Version), DBError> {
         Ok(program::new_program(
@@ -171,6 +172,7 @@ impl Storage for ProjectDB {
             program_name,
             program_description,
             program_code,
+            config,
             txn,
         )
         .await?)
@@ -187,6 +189,7 @@ impl Storage for ProjectDB {
         program_code: &Option<String>,
         status: &Option<ProgramStatus>,
         schema: &Option<ProgramSchema>,
+        config: &Option<ProgramConfig>,
         guard: Option<Version>,
         txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError> {
@@ -199,6 +202,7 @@ impl Storage for ProjectDB {
                 program_code,
                 status,
                 schema,
+                config,
                 guard,
                 t,
             )
@@ -214,6 +218,7 @@ impl Storage for ProjectDB {
                 program_code,
                 status,
                 schema,
+                config,
                 guard,
                 &txn_inner,
             )
@@ -1198,6 +1203,7 @@ impl ProjectDB {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        program_config: &ProgramConfig,
     ) -> Result<(bool, ProgramId, Version), DBError> {
         let mut manager = self.pool.get().await?;
         let txn = manager.transaction().await?;
@@ -1214,6 +1220,7 @@ impl ProjectDB {
                     &Some(program_code.to_string()),
                     &None,
                     &None,
+                    &Some(program_config.clone()),
                     None,
                     Some(&txn),
                 )
@@ -1226,6 +1233,7 @@ impl ProjectDB {
                     &program_name,
                     program_description,
                     program_code,
+                    program_config,
                     Some(&txn),
                 )
                 .await
@@ -1239,6 +1247,7 @@ impl ProjectDB {
     /// Updates a program by name by, within a transaction, resolving
     /// the name to its respective identifier and proceeding to use
     /// that in the update query.
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_program_by_name(
         &self,
         tenant_id: TenantId,
@@ -1246,6 +1255,7 @@ impl ProjectDB {
         new_name: &Option<String>,
         description: &Option<String>,
         program_code: &Option<String>,
+        program_config: &Option<ProgramConfig>,
         guard: Option<Version>,
     ) -> Result<Version, DBError> {
         let mut manager = self.pool.get().await?;
@@ -1262,6 +1272,7 @@ impl ProjectDB {
                 program_code,
                 &None,
                 &None,
+                program_config,
                 guard,
                 Some(&txn),
             )

@@ -13,6 +13,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::{examples, parse_string_param},
     auth::TenantId,
+    compiler::ProgramConfig,
     db::{storage::Storage, DBError, ProgramId, Version},
 };
 
@@ -56,6 +57,8 @@ pub(crate) struct NewProgramRequest {
     /// SQL code of the program.
     #[schema(example = "CREATE TABLE example(name VARCHAR);")]
     code: String,
+    /// Program configuration.
+    config: ProgramConfig,
 }
 
 /// Response to a new program request.
@@ -83,6 +86,8 @@ pub(crate) struct UpdateProgramRequest {
     /// A version guard: update the program only if the program version
     /// matches the supplied value.
     guard: Option<Version>,
+    /// Program configuration.
+    config: ProgramConfig,
 }
 
 /// Response to a program update request.
@@ -102,6 +107,8 @@ pub(crate) struct CreateOrReplaceProgramRequest {
     /// SQL code of the program.
     #[schema(example = "CREATE TABLE example(name VARCHAR);")]
     code: String,
+    /// Program configuration.
+    config: ProgramConfig,
 }
 
 /// Response to a create or replace program request.
@@ -242,6 +249,7 @@ async fn new_program(
             &request.name,
             &request.description,
             &request.code,
+            &request.config,
             None,
         )
         .await?;
@@ -302,6 +310,7 @@ async fn update_program(
             &body.name,
             &body.description,
             &body.code,
+            &Some(body.config.clone()),
             body.guard,
         )
         .await?;
@@ -345,7 +354,13 @@ async fn create_or_replace_program(
         .db
         .lock()
         .await
-        .create_or_replace_program(*tenant_id, &program_name, &body.description, &body.code)
+        .create_or_replace_program(
+            *tenant_id,
+            &program_name,
+            &body.description,
+            &body.code,
+            &body.config,
+        )
         .await?;
     if created {
         info!(

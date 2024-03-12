@@ -5,6 +5,7 @@ use super::{
 };
 use crate::api::ProgramStatus;
 use crate::auth::TenantId;
+use crate::compiler::ProgramConfig;
 use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
 use crate::db::{ServiceDescr, ServiceId};
 use crate::prober::service::{ServiceProbeRequest, ServiceProbeResponse, ServiceProbeType};
@@ -49,6 +50,7 @@ pub(crate) trait Storage {
             &None,
             &None,
             &Some(schema),
+            &None,
             None,
             None,
         )
@@ -77,6 +79,7 @@ pub(crate) trait Storage {
             &None,
             &Some(status),
             &None,
+            &None,
             Some(expected_version),
             None,
         )
@@ -85,6 +88,7 @@ pub(crate) trait Storage {
     }
 
     /// Create a new program.
+    #[allow(clippy::too_many_arguments)]
     async fn new_program(
         &self,
         tenant_id: TenantId,
@@ -92,6 +96,7 @@ pub(crate) trait Storage {
         program_name: &str,
         program_description: &str,
         program_code: &str,
+        program_config: &ProgramConfig,
         txn: Option<&Transaction<'_>>,
     ) -> Result<(ProgramId, Version), DBError>;
 
@@ -106,6 +111,7 @@ pub(crate) trait Storage {
         program_code: &Option<String>,
         status: &Option<ProgramStatus>,
         schema: &Option<ProgramSchema>,
+        config: &Option<ProgramConfig>,
         guard: Option<Version>,
         txn: Option<&Transaction<'_>>,
     ) -> Result<Version, DBError>;
