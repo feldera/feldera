@@ -58,6 +58,7 @@ pub(crate) struct NewProgramRequest {
     #[schema(example = "CREATE TABLE example(name VARCHAR);")]
     code: String,
     /// Program configuration.
+    #[serde(default)]
     config: ProgramConfig,
 }
 
@@ -87,7 +88,8 @@ pub(crate) struct UpdateProgramRequest {
     /// matches the supplied value.
     guard: Option<Version>,
     /// Program configuration.
-    config: ProgramConfig,
+    #[serde(default)]
+    config: Option<ProgramConfig>,
 }
 
 /// Response to a program update request.
@@ -108,6 +110,7 @@ pub(crate) struct CreateOrReplaceProgramRequest {
     #[schema(example = "CREATE TABLE example(name VARCHAR);")]
     code: String,
     /// Program configuration.
+    #[serde(default)]
     config: ProgramConfig,
 }
 
@@ -310,7 +313,7 @@ async fn update_program(
             &body.name,
             &body.description,
             &body.code,
-            &Some(body.config.clone()),
+            &body.config,
             body.guard,
         )
         .await?;

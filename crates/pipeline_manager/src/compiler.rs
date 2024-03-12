@@ -121,10 +121,9 @@ impl ProgramStatus {
 }
 
 /// Program configuration.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 pub struct ProgramConfig {
     /// Request a compilation profile.
-    #[serde(default)]
     pub profile: CompilationProfile,
 }
 
