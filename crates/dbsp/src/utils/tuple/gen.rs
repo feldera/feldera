@@ -1,6 +1,6 @@
 //! This file contains a macro which can be used to define tuples with any
-//! number of fields.  The type names are `Tuple0<>`, `Tuple1<T0>`,
-//! `Tuple2<T0, T1>`, etc.
+//! number of fields.  The type names are `Tup0<>`, `Tup1<T0>`, `Tup2<T0, T1>`,
+//! etc.
 //!
 //! The macro defines many traits which are useful for tuples to be used as DBSP
 //! values in Z-Sets. Rust tuples only go up to 12 fields, but we may need more.
@@ -55,6 +55,7 @@ macro_rules! declare_tuples {
                 #[archive(bound(
                     archive = $( "" $element "" ": rkyv::Archive, ")* "" $( "<" $element "" " as rkyv::Archive>::Archived: Ord, ")*
                 ))]
+                /// A tuple type on which `dbsp` controls trait implementations.
                 pub struct $tuple_name<$($element,)*>($(pub $element,)*);
             }
 

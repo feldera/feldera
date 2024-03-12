@@ -1,4 +1,12 @@
-//! DBSP stream operators.
+//! DBSP stream operator implementations.
+//!
+//! Operators are implemented in two layers. An outer layer, in most of the
+//! submodules of this one, implements a statically typed API. An inner layer,
+//! in the [dynamic] sub-module, is dynamically typed, unsafe, and wrapped by
+//! the outer layer in a safe way.
+//!
+//! Code that uses DBSP hardly needs to work directly with this module. Instead,
+//! use [Stream](crate::Stream) methods to instantiate operators.
 pub mod apply2;
 pub mod apply3;
 pub mod communication;

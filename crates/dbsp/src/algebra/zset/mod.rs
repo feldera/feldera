@@ -1,3 +1,18 @@
+//! Z-sets and indexed Z-sets.
+//!
+//! An [`IndexedZSet`] is conceptually a set of `(key, value, weight)` tuples.
+//! Indexed Z-sets have a specialization called a “non-indexed Z-set” ([`ZSet`])
+//! that contains key and weight only.
+//!
+//! Indexed and non-indexed Z-sets are both subtraits of a higher-level
+//! [`Batch`] trait.
+//!
+//! [`Stream`] values are often indexed or non-indexed Z-sets, which can
+//! represent both data and deltas (see [Data streams versus delta streams]).
+//!
+//! [`Stream`]: crate::Stream
+//! [`Batch`]: crate::Batch
+//! [Data streams versus delta streams]: crate::Stream#data-streams-versus-delta-streams
 mod zset_macro;
 
 use crate::{
@@ -103,6 +118,13 @@ pub trait IndexedZSetReader: BatchReader<Time = (), R = DynZWeight> {}
 
 impl<Z> IndexedZSetReader for Z where Z: BatchReader<Time = (), R = DynZWeight> {}
 
+/// An indexed Z-set.
+///
+/// An [`IndexedZSet`] is conceptually a set of `(key, value, weight)` tuples.
+/// Indexed Z-sets have a specialization called a “non-indexed Z-set” ([`ZSet`])
+/// that contains key and weight only.
+///
+/// For more information, see [`IndexedZSetReader`].
 pub trait IndexedZSet:
     Batch<Time = (), R = DynZWeight>
     + Add<Self, Output = Self>
@@ -205,13 +227,18 @@ where
     }
 }
 
+/// A Z-set reader.
+///
+/// This is just a specialization of [`IndexedZSetReader`] with [`DynUnit`]
+/// (essentially `()`) as the value type.
 pub trait ZSetReader: IndexedZSetReader<Val = DynUnit> {}
 impl<Z> ZSetReader for Z where Z: IndexedZSetReader<Val = DynUnit> {}
 
-/// The Z-set trait.
+/// A Z-set.
 ///
-/// A Z-set is a set of unique keys, each associated with a weight.
-/// A `ZSet` is merely an `IndexedZSet` with its value type set to `()`.
+/// A Z-set is a set of unique keys, each associated with a weight.  A `ZSet` is
+/// merely an [`IndexedZSet`] with its value type set to [`DynUnit`], which is
+/// essentially `()`.
 pub trait ZSet: IndexedZSet<Val = DynUnit> {
     /// Sum of the weights of the elements in the Z-set.  Weights can be
     /// negative, so the result can be zero even if the Z-set contains nonzero

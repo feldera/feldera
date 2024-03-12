@@ -5,8 +5,8 @@ use std::cmp::Ordering;
 /// Traits like `Eq` and `Ord` are not object-safe since they take
 /// a reference to `Self` as the second argument.  This trait is an
 /// object-safe (but runtime-unsafe) version of `Eq` and `Ord` , which
-/// takes the second argument as a `* u8`.  It is meant to only be
-/// used inside the `[derive_comparison_traits]` macro to derive
+/// takes the second argument as a `*const u8`.  It is meant to only be
+/// used inside the (private) `derive_comparison_traits` macro to derive
 /// `Ord` and `Eq` for trait objects.
 pub trait Comparable: 'static {
     /// Test if `self` and `other` are equal.
