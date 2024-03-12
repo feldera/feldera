@@ -14,12 +14,11 @@
 //!
 //! The solution we adopt relies on dynamic dispatch instead.  We bundle primitive operations
 //! on types (comparison, cloning, etc.) as object-safe traits and expose them to operators
-//! as trait object.  This way we are able to achieve faster compilation without sacrificing
-//! much performance.
+//! as trait objects.  This speeds up compilation without sacrificing much performance.
 //!
-//! Implementing this approach involves some machinery.  First, Trait objects cannot be
+//! Implementing this approach involves some machinery.  First, trait objects cannot be
 //! efficiently combined into any kind of containers (vectors, sets, or even tuples or structs)
-//! without wrapping each object in a `Box` or some other heap allocated type, leading to many
+//! without wrapping each object in a `Box` or some other heap-allocated type, leading to many
 //! small allocations.  To avoid this, we represent such containers as separate trait objects.
 //! For instance, options (`Option<T>`), 2-tuples (`(T1, T2)`), vectors (`Vec<T>`), and sets
 //! (`Set<T>`) are modeled as traits.
@@ -27,8 +26,9 @@
 //! Second, this design introduces unsafe code that cannot be nicely encapsulated.  By
 //! replacing concrete types with trait objects, we lose the ability to distinguish between trait
 //! objects backed by different types.  Operations like comparison and cloning must downcast
-//! their arguments to the same concrete type.  This can be done safely by checking the type id's of
-//! the arguments, but this check is expensive in Rust when performed on the critical
+//! their arguments to the same concrete type.  This can be done safely by checking the
+//! [`TypeId`](core::any::TypeId)s
+//! of the arguments, but this check is expensive in Rust when performed on the critical
 //! path.  We therefore elide this check in release builds, making all such operations unsafe.
 //!
 //! Finally, operators require the ability to create new values, which in turn requires passing
@@ -55,7 +55,8 @@
 //!
 //! ### Basic traits
 //!
-//! The following traits must be implemented for all values that DBSP can compute on:
+//! The following traits must be implemented for all values that DBSP can compute on.
+//! All of these traits include blanket implementation for all the types that can support them:
 //!
 //! * [`AsAny`] - convert a reference to a type to `&dyn Any`.
 //! * [`Clonable`] - an object-safe version of `Clone`.
