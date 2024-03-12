@@ -26,7 +26,7 @@ use crate::{
 };
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
-use pipeline_types::program_schema::{ColumnType, Relation};
+use pipeline_types::program_schema::{ColumnType, Relation, SqlType};
 
 #[cfg(test)]
 mod test;
@@ -227,24 +227,25 @@ fn relation_to_parquet_schema(relation: &Relation) -> Result<SerdeArrowSchema, C
     // data types (see sqllib). This may need to be adjusted in the future
     // or made configurable.
     fn columntype_to_datatype(c: &ColumnType) -> DataType {
-        match c.typ.to_ascii_lowercase().as_str() {
-            "boolean" => DataType::Boolean,
-            "tinyint" => DataType::Int8,
-            "smallint" => DataType::Int16,
-            "integer" => DataType::Int32,
-            "bigint" | "int64" => DataType::Int64,
-            "float" => DataType::Float32,
-            "double" => DataType::Float64,
-            "decimal" => DataType::Decimal128(
+        match c.typ {
+            SqlType::Boolean => DataType::Boolean,
+            SqlType::TinyInt => DataType::Int8,
+            SqlType::SmallInt => DataType::Int16,
+            SqlType::Int => DataType::Int32,
+            SqlType::BigInt => DataType::Int64,
+            SqlType::Real => DataType::Float32,
+            SqlType::Double => DataType::Float64,
+            SqlType::Decimal => DataType::Decimal128(
                 c.precision.unwrap_or(0).try_into().unwrap(),
                 c.scale.unwrap_or(0).try_into().unwrap(),
             ),
-            "char" | "varchar" | "string" | "text" => DataType::LargeUtf8,
-            "time" => DataType::Time64(TimeUnit::Nanosecond),
-            "timestamp" => DataType::Timestamp(TimeUnit::Millisecond, None),
-            "date" => DataType::Date32,
-            "array" => unimplemented!("handle array types"),
-            s => unimplemented!("Encountered unknown type {}", s),
+            SqlType::Char | SqlType::Varchar => DataType::LargeUtf8,
+            SqlType::Time => DataType::Time64(TimeUnit::Nanosecond),
+            SqlType::Timestamp => DataType::Timestamp(TimeUnit::Millisecond, None),
+            SqlType::Date => DataType::Date32,
+            SqlType::Null => DataType::Null,
+            SqlType::Binary | SqlType::Varbinary | SqlType::Interval => todo!(),
+            SqlType::Array => todo!("handle array types"),
         }
     }
 

@@ -15,7 +15,7 @@ use dbsp::OrdZSet;
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use pipeline_types::format::parquet::ParquetEncoderConfig;
-use pipeline_types::program_schema::{ColumnType, Field, Relation};
+use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use pretty_assertions::assert_eq;
 use serde::{Deserialize, Deserializer, Serializer};
 use size_of::SizeOf;
@@ -291,7 +291,7 @@ impl TestStruct {
                     name: "id".to_string(),
                     case_sensitive: false,
                     columntype: ColumnType {
-                        typ: "int64".to_string(),
+                        typ: SqlType::BigInt,
                         nullable: false,
                         precision: None,
                         scale: None,
@@ -302,7 +302,7 @@ impl TestStruct {
                     name: "name".to_string(),
                     case_sensitive: false,
                     columntype: ColumnType {
-                        typ: "string".to_string(),
+                        typ: SqlType::Varchar,
                         nullable: true,
                         precision: None,
                         scale: None,
@@ -313,7 +313,7 @@ impl TestStruct {
                     name: "b".to_string(),
                     case_sensitive: false,
                     columntype: ColumnType {
-                        typ: "boolean".to_string(),
+                        typ: SqlType::Boolean,
                         nullable: false,
                         precision: None,
                         scale: None,
@@ -324,7 +324,7 @@ impl TestStruct {
                     name: "ts".to_string(),
                     case_sensitive: false,
                     columntype: ColumnType {
-                        typ: "timestamp".to_string(),
+                        typ: SqlType::Timestamp,
                         nullable: false,
                         precision: None,
                         scale: None,
@@ -335,7 +335,7 @@ impl TestStruct {
                     name: "dt".to_string(),
                     case_sensitive: false,
                     columntype: ColumnType {
-                        typ: "date".to_string(),
+                        typ: SqlType::Date,
                         nullable: false,
                         precision: None,
                         scale: None,
@@ -346,7 +346,7 @@ impl TestStruct {
                     name: "t".to_string(),
                     case_sensitive: false,
                     columntype: ColumnType {
-                        typ: "time".to_string(),
+                        typ: SqlType::Time,
                         nullable: false,
                         precision: None,
                         scale: None,

@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ServiceConfig } from './ServiceConfig'
-
 /**
  * Request to create or replace a service.
  */

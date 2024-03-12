@@ -2,10 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ApiKeyId } from './ApiKeyId'
 import type { ApiPermission } from './ApiPermission'
-
 /**
  * ApiKey descriptor.
  */

@@ -9,11 +9,9 @@ import type { NewConnectorRequest } from '../models/NewConnectorRequest'
 import type { NewConnectorResponse } from '../models/NewConnectorResponse'
 import type { UpdateConnectorRequest } from '../models/UpdateConnectorRequest'
 import type { UpdateConnectorResponse } from '../models/UpdateConnectorResponse'
-
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class ConnectorsService {
   /**
    * Fetch connectors, optionally filtered by name or ID
@@ -36,7 +34,6 @@ export class ConnectorsService {
       }
     })
   }
-
   /**
    * Create a new connector.
    * Create a new connector.
@@ -55,7 +52,6 @@ export class ConnectorsService {
       }
     })
   }
-
   /**
    * Fetch a connector by name.
    * Fetch a connector by name.
@@ -75,7 +71,6 @@ export class ConnectorsService {
       }
     })
   }
-
   /**
    * Create or replace a connector.
    * Create or replace a connector.
@@ -101,7 +96,6 @@ export class ConnectorsService {
       }
     })
   }
-
   /**
    * Delete an existing connector.
    * Delete an existing connector.
@@ -121,7 +115,6 @@ export class ConnectorsService {
       }
     })
   }
-
   /**
    * Update the name, description and/or configuration of a connector.
    * Update the name, description and/or configuration of a connector.

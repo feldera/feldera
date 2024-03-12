@@ -7,11 +7,9 @@ import type { EgressMode } from '../models/EgressMode'
 import type { JsonUpdateFormat } from '../models/JsonUpdateFormat'
 import type { NeighborhoodQuery } from '../models/NeighborhoodQuery'
 import type { OutputQuery } from '../models/OutputQuery'
-
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class HttpInputOutputService {
   /**
    * Subscribe to a stream of updates from a SQL view or table.
@@ -74,7 +72,6 @@ export class HttpInputOutputService {
       }
     })
   }
-
   /**
    * Push data to a SQL table.
    * Push data to a SQL table.

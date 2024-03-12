@@ -2,10 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { FormatConfig } from './FormatConfig'
 import type { TransportConfig } from './TransportConfig'
-
 /**
  * A data connector's configuration
  */

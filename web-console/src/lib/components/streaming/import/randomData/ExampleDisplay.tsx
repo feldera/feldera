@@ -6,7 +6,7 @@
 
 import { inRangeInclusive } from '$lib/functions/common/bigNumber'
 import { ColumnTypeJS, getValueFormatter, numericRange } from '$lib/functions/ddl'
-import { Field } from '$lib/services/manager'
+import { Field, SqlType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 
 import { Grid, Typography } from '@mui/material'
@@ -31,7 +31,15 @@ export const ExampleDisplay = ({
   const adjustments: string[] = []
   if (
     typeof example === 'number' &&
-    ['TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT', 'DECIMAL', 'FLOAT', 'DOUBLE'].includes(field.columntype.type)
+    [
+      SqlType.TINYINT,
+      SqlType.SMALLINT,
+      SqlType.INTEGER,
+      SqlType.BIGINT,
+      SqlType.DECIMAL,
+      SqlType.REAL,
+      SqlType.DOUBLE
+    ].includes(field.columntype.type)
   ) {
     const range = numericRange(field.columntype)
     if (!inRangeInclusive(range)(example)) {
@@ -42,14 +50,14 @@ export const ExampleDisplay = ({
     beforeParsedValue = "'"
     afterParsedValue = "'"
     if (
-      ['VARCHAR', 'CHAR'].includes(field.columntype.type) &&
+      [SqlType.VARCHAR, SqlType.CHAR].includes(field.columntype.type) &&
       field.columntype.precision != null &&
       field.columntype.precision != -1 &&
       example.length > field.columntype.precision
     ) {
       adjustments.push('trimmed')
     } else if (
-      ['CHAR'].includes(field.columntype.type) &&
+      [SqlType.CHAR].includes(field.columntype.type) &&
       field.columntype.precision != null &&
       example.length < field.columntype.precision
     ) {
@@ -67,7 +75,7 @@ export const ExampleDisplay = ({
   if (
     BigNumber.isBigNumber(example) &&
     typeof parsed === 'string' &&
-    ['DECIMAL'].includes(field.columntype.type) &&
+    [SqlType.DECIMAL].includes(field.columntype.type) &&
     parsed.length != example.toFixed().length
   ) {
     adjustments.push('trimmed')

@@ -83,6 +83,117 @@ pub struct Field {
     pub columntype: ColumnType,
 }
 
+/// The available SQL types as specified in `CREATE` statements.
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
+pub enum SqlType {
+    /// SQL `BOOLEAN` type.
+    #[serde(rename = "BOOLEAN")]
+    Boolean,
+    /// SQL `TINYINT` type.
+    #[serde(rename = "TINYINT")]
+    TinyInt,
+    /// SQL `SMALLINT` or `INT2` type.
+    #[serde(rename = "SMALLINT")]
+    SmallInt,
+    /// SQL `INTEGER`, `INT`, `SIGNED`, `INT4` type.
+    #[serde(rename = "INTEGER")]
+    Int,
+    /// SQL `BIGINT` or `INT64` type.
+    #[serde(rename = "BIGINT")]
+    BigInt,
+    /// SQL `REAL` or `FLOAT4` or `FLOAT32` type.
+    #[serde(rename = "REAL")]
+    Real,
+    /// SQL `DOUBLE` or `FLOAT8` or `FLOAT64` type.
+    #[serde(rename = "DOUBLE")]
+    Double,
+    /// SQL `DECIMAL` or `DEC` or `NUMERIC` type.
+    #[serde(rename = "DECIMAL")]
+    Decimal,
+    /// SQL `CHAR(n)` or `CHARACTER(n)` type.
+    #[serde(rename = "CHAR")]
+    Char,
+    /// SQL `VARCHAR`, `CHARACTER VARYING`, `TEXT`, or `STRING` type.
+    #[serde(rename = "VARCHAR")]
+    Varchar,
+    /// SQL `BINARY(n)` type.
+    #[serde(rename = "BINARY")]
+    Binary,
+    /// SQL `VARBINARY` or `BYTEA` type.
+    #[serde(rename = "VARBINARY")]
+    Varbinary,
+    /// SQL `TIME` type.
+    #[serde(rename = "TIME")]
+    Time,
+    /// SQL `DATE` type.
+    #[serde(rename = "DATE")]
+    Date,
+    /// SQL `TIMESTAMP` type.
+    #[serde(rename = "TIMESTAMP")]
+    Timestamp,
+    /// SQL `INTERVAL` type.
+    #[serde(rename = "INTERVAL")]
+    Interval,
+    /// SQL `ARRAY` type.
+    #[serde(rename = "ARRAY")]
+    Array,
+    /// SQL `NULL` type.
+    #[serde(rename = "NULL")]
+    Null,
+}
+
+impl From<SqlType> for &'static str {
+    fn from(value: SqlType) -> &'static str {
+        match value {
+            SqlType::Boolean => "boolean",
+            SqlType::TinyInt => "tinyint",
+            SqlType::SmallInt => "smallint",
+            SqlType::Int => "integer",
+            SqlType::BigInt => "bigint",
+            SqlType::Real => "real",
+            SqlType::Double => "double",
+            SqlType::Decimal => "decimal",
+            SqlType::Char => "char",
+            SqlType::Varchar => "varchar",
+            SqlType::Binary => "binary",
+            SqlType::Varbinary => "varbinary",
+            SqlType::Time => "time",
+            SqlType::Date => "date",
+            SqlType::Timestamp => "timestamp",
+            SqlType::Interval => "interval",
+            SqlType::Array => "array",
+            SqlType::Null => "null",
+        }
+    }
+}
+
+impl<S: AsRef<str>> From<S> for SqlType {
+    fn from(s: S) -> Self {
+        match s.as_ref().to_lowercase().as_str() {
+            "boolean" => SqlType::Boolean,
+            "tinyint" => SqlType::TinyInt,
+            "smallint" => SqlType::SmallInt,
+            "integer" => SqlType::Int,
+            "bigint" => SqlType::BigInt,
+            "real" => SqlType::Real,
+            "double" => SqlType::Double,
+            "decimal" => SqlType::Decimal,
+            "char" => SqlType::Char,
+            "varchar" => SqlType::Varchar,
+            "binary" => SqlType::Binary,
+            "varbinary" => SqlType::Varbinary,
+            "time" => SqlType::Time,
+            "date" => SqlType::Date,
+            "timestamp" => SqlType::Timestamp,
+            "interval" => SqlType::Interval,
+            "array" => SqlType::Array,
+            "null" => SqlType::Null,
+            _ => panic!("Found unknown SQL type: {}", s.as_ref()),
+        }
+    }
+}
+
 /// A SQL column type description.
 ///
 /// Matches the Calcite JSON format.
@@ -91,7 +202,7 @@ pub struct Field {
 pub struct ColumnType {
     #[serde(rename = "type")]
     /// Identifier for the type (e.g., `VARCHAR`, `BIGINT`, `ARRAY` etc.)
-    pub typ: String,
+    pub typ: SqlType,
     /// Does the type accept NULL values?
     pub nullable: bool,
     /// Precision of the type.

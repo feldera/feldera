@@ -2,10 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { AttachedConnector } from './AttachedConnector'
 import type { RuntimeConfig } from './RuntimeConfig'
-
 /**
  * Request to create a new pipeline.
  */

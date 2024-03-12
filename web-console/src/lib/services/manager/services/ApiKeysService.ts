@@ -5,11 +5,9 @@
 import type { ApiKeyDescr } from '../models/ApiKeyDescr'
 import type { NewApiKeyRequest } from '../models/NewApiKeyRequest'
 import type { NewApiKeyResponse } from '../models/NewApiKeyResponse'
-
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class ApiKeysService {
   /**
    * List all API keys
@@ -30,7 +28,6 @@ export class ApiKeysService {
       }
     })
   }
-
   /**
    * Create an API key
    * Create an API key
@@ -49,7 +46,6 @@ export class ApiKeysService {
       }
     })
   }
-
   /**
    * Get an API key description
    * Get an API key description
@@ -69,7 +65,6 @@ export class ApiKeysService {
       }
     })
   }
-
   /**
    * Delete an API key
    * Delete an API key

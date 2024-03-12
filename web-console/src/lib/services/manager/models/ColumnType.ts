@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
+import type { SqlType } from './SqlType'
 /**
  * A SQL column type description.
  *
@@ -32,8 +32,5 @@ export type ColumnType = {
    * - `DECIMAL(1,2)` sets scale to `2`.
    */
   scale?: number | null
-  /**
-   * Identifier for the type (e.g., `VARCHAR`, `BIGINT`, `ARRAY` etc.)
-   */
-  type: string
+  type: SqlType
 }

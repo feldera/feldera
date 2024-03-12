@@ -1,4 +1,4 @@
-use pipeline_types::program_schema::{ColumnType, Field, Relation};
+use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
@@ -41,7 +41,7 @@ pub fn test_struct_schema() -> Relation {
                 name: "id".to_string(),
                 case_sensitive: false,
                 columntype: ColumnType {
-                    typ: "int64".to_string(),
+                    typ: SqlType::BigInt,
                     nullable: false,
                     precision: None,
                     scale: None,
@@ -52,7 +52,7 @@ pub fn test_struct_schema() -> Relation {
                 name: "b".to_string(),
                 case_sensitive: false,
                 columntype: ColumnType {
-                    typ: "boolean".to_string(),
+                    typ: SqlType::Boolean,
                     nullable: false,
                     precision: None,
                     scale: None,
@@ -63,7 +63,7 @@ pub fn test_struct_schema() -> Relation {
                 name: "i".to_string(),
                 case_sensitive: false,
                 columntype: ColumnType {
-                    typ: "int64".to_string(),
+                    typ: SqlType::BigInt,
                     nullable: true,
                     precision: None,
                     scale: None,
@@ -74,7 +74,7 @@ pub fn test_struct_schema() -> Relation {
                 name: "s".to_string(),
                 case_sensitive: false,
                 columntype: ColumnType {
-                    typ: "string".to_string(),
+                    typ: SqlType::Varchar,
                     nullable: false,
                     precision: None,
                     scale: None,

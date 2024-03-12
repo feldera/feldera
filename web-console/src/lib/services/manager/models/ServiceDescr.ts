@@ -2,10 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ServiceConfig } from './ServiceConfig'
 import type { ServiceId } from './ServiceId'
-
 /**
  * Service descriptor.
  */

@@ -58,7 +58,7 @@ pub fn build_key_schema(
 /// decimals.
 mod kafka_connect_json_converter {
     use crate::ControllerError;
-    use pipeline_types::program_schema::{ColumnType, Field, Relation};
+    use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
 
@@ -190,21 +190,21 @@ mod kafka_connect_json_converter {
     }
 
     fn logical_type_schema(schema: &ColumnType) -> Result<Option<LogicalType>, ControllerError> {
-        Ok(match schema.typ.to_lowercase().as_str() {
-            "time" => Some(LogicalType {
+        Ok(match schema.typ {
+            SqlType::Time => Some(LogicalType {
                 name: "org.apache.kafka.connect.data.Time".to_string(),
                 parameters: BTreeMap::new(),
             }),
-            "timestamp" => Some(LogicalType {
+            SqlType::Timestamp => Some(LogicalType {
                 name: "org.apache.kafka.connect.data.Timestamp".to_string(),
                 parameters: BTreeMap::new(),
             }),
-            "date" => Some(LogicalType {
+            SqlType::Date => Some(LogicalType {
                 name: "org.apache.kafka.connect.data.Date".to_string(),
                 parameters: BTreeMap::new(),
             }),
             // TODO: add serialization for intervals to `sqllib`.
-            "interval" => Some(LogicalType {
+            SqlType::Interval => Some(LogicalType {
                 name: "io.debezium.time.Interval".to_string(),
                 parameters: BTreeMap::new(),
             }),
@@ -215,38 +215,29 @@ mod kafka_connect_json_converter {
     fn representation_type_schema(
         schema: &ColumnType,
     ) -> Result<RepresentationType, ControllerError> {
-        match schema.typ.to_lowercase().as_str() {
-            "boolean" | "bool" => Ok(RepresentationType::Boolean),
-            "varchar" | "character varying" | "char" | "character" | "string" | "text" => {
-                Ok(RepresentationType::String)
-            }
-            "tinyint" => Ok(RepresentationType::Int8),
-            "smallint" | "int2" => Ok(RepresentationType::Int16),
-            "integer" | "int" | "signed" | "int4" => Ok(RepresentationType::Int32),
-            "bigint" | "int64" => Ok(RepresentationType::Int64),
+        match schema.typ {
+            SqlType::Boolean => Ok(RepresentationType::Boolean),
+            SqlType::Varchar | SqlType::Char => Ok(RepresentationType::String),
+            SqlType::TinyInt => Ok(RepresentationType::Int8),
+            SqlType::SmallInt => Ok(RepresentationType::Int16),
+            SqlType::Int => Ok(RepresentationType::Int32),
+            SqlType::BigInt => Ok(RepresentationType::Int64),
             // This requires Kafka connector to be configure with `"decimal.handling.mode":
             // "string"`. Other encodings would require serde to know the scale of the
             // decimal number, which isn't preserved in Rust.
-            "decimal" | "dec" | "numeric" | "number" => Ok(RepresentationType::String),
-            "real" | "float4" | "float32" => Ok(RepresentationType::Float),
-            "double" | "float8" | "float64" => Ok(RepresentationType::Double),
-            "time" => Ok(RepresentationType::Int64),
-            "timestamp" => Ok(RepresentationType::Int64),
-            "date" => Ok(RepresentationType::Int32),
-            "binary" | "varbinary" | "bytea" => Ok(RepresentationType::Bytes),
-            "array" => Ok(RepresentationType::Array {
-                items: Box::new(type_schema(schema.component.as_ref().ok_or_else(
-                    || {
-                        ControllerError::schema_validation_error(&format!(
-                            "element type is not specified for array type {schema:?}"
-                        ))
-                    },
-                )?)?),
+            SqlType::Decimal => Ok(RepresentationType::String),
+            SqlType::Real => Ok(RepresentationType::Float),
+            SqlType::Double => Ok(RepresentationType::Double),
+            SqlType::Time => Ok(RepresentationType::Int64),
+            SqlType::Timestamp => Ok(RepresentationType::Int64),
+            SqlType::Date => Ok(RepresentationType::Int32),
+            SqlType::Binary | SqlType::Varbinary => Ok(RepresentationType::Bytes),
+            SqlType::Array => Ok(RepresentationType::Array {
+                // unwrap() is ok here as Array type is guaranteed to have a component.
+                items: Box::new(type_schema(schema.component.as_ref().unwrap())?),
             }),
-            "interval" => Ok(RepresentationType::String),
-            _ => Err(ControllerError::not_supported(&format!(
-                "column type {schema:?} is not supported by the JSON encoder"
-            ))),
+            SqlType::Interval => Ok(RepresentationType::String),
+            SqlType::Null => Ok(RepresentationType::String),
         }
     }
 

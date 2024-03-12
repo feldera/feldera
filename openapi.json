@@ -2834,6 +2834,51 @@
           }
         ]
       },
+      "AwsCredentials": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "NoSignRequest"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Authenticate using a long-lived AWS access key and secret",
+            "required": [
+              "aws_access_key_id",
+              "aws_secret_access_key",
+              "type"
+            ],
+            "properties": {
+              "aws_access_key_id": {
+                "type": "string"
+              },
+              "aws_secret_access_key": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AccessKey"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Configuration to authenticate against AWS",
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
       "Chunk": {
         "type": "object",
         "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.",
@@ -2897,8 +2942,7 @@
             "nullable": true
           },
           "type": {
-            "type": "string",
-            "description": "Identifier for the type (e.g., `VARCHAR`, `BIGINT`, `ARRAY` etc.)"
+            "$ref": "#/components/schemas/SqlType"
           }
         }
       },
@@ -2964,6 +3008,39 @@
         "type": "string",
         "format": "uuid",
         "description": "Unique connector id."
+      },
+      "ConsumeStrategy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Fragment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Object"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Strategy to feed a fetched object into an InputConsumer."
       },
       "CreateOrReplaceConnectorRequest": {
         "type": "object",
@@ -3742,6 +3819,20 @@
           "quantiles"
         ]
       },
+      "ParquetEncoderConfig": {
+        "type": "object",
+        "properties": {
+          "buffer_size_records": {
+            "type": "integer",
+            "description": "Number of records before a new parquet file is written.\n\nThe default is 100_000.",
+            "minimum": 0
+          }
+        }
+      },
+      "ParquetParserConfig": {
+        "type": "object",
+        "description": "Configuration for the parquet parser."
+      },
       "Pipeline": {
         "type": "object",
         "description": "State of a pipeline, including static configuration\nand runtime status.",
@@ -4136,6 +4227,52 @@
           }
         }
       },
+      "ReadStrategy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Read a single object specified by a key",
+            "required": [
+              "key",
+              "type"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SingleKey"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Read all objects whose keys match a prefix",
+            "required": [
+              "prefix",
+              "type"
+            ],
+            "properties": {
+              "prefix": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Prefix"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Strategy that determines which objects to read from a given bucket",
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
       "Relation": {
         "type": "object",
         "description": "A SQL table or view. It has a name and a list of fields.\n\nMatches the Calcite JSON format.",
@@ -4351,6 +4488,30 @@
             "type": "boolean"
           }
         }
+      },
+      "SqlType": {
+        "type": "string",
+        "description": "The available SQL types as specified in `CREATE` statements.",
+        "enum": [
+          "BOOLEAN",
+          "TINYINT",
+          "SMALLINT",
+          "INTEGER",
+          "BIGINT",
+          "REAL",
+          "DOUBLE",
+          "DECIMAL",
+          "CHAR",
+          "VARCHAR",
+          "BINARY",
+          "VARBINARY",
+          "TIME",
+          "DATE",
+          "TIMESTAMP",
+          "INTERVAL",
+          "ARRAY",
+          "NULL"
+        ]
       },
       "TenantId": {
         "type": "string",

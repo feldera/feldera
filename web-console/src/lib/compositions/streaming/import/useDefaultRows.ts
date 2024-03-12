@@ -1,7 +1,7 @@
 // Generates rows and inserts them into a table.
 
 import { Row } from '$lib/functions/ddl'
-import { ColumnType, Field, Relation } from '$lib/services/manager'
+import { ColumnType, Field, Relation, SqlType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 import dayjs from 'dayjs'
 import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
@@ -11,22 +11,21 @@ import { GridApi } from '@mui/x-data-grid-pro'
 
 export const getDefaultValue = (columntype: ColumnType) =>
   match(columntype)
-    .with({ type: 'BOOLEAN' }, () => false)
+    .with({ type: SqlType.BOOLEAN }, () => false)
     .with(
-      { type: 'TINYINT' },
-      { type: 'SMALLINT' },
-      { type: 'INTEGER' },
-      { type: 'FLOAT' },
-      { type: 'DOUBLE' },
+      { type: SqlType.TINYINT },
+      { type: SqlType.SMALLINT },
+      { type: SqlType.INTEGER },
+      { type: SqlType.REAL },
+      { type: SqlType.DOUBLE },
       () => 0
     )
-    .with({ type: 'BIGINT' }, { type: 'DECIMAL' }, () => new BigNumber(0))
-    .with({ type: 'VARCHAR' }, { type: 'CHAR' }, () => '')
-    .with({ type: 'TIME' }, () => dayjs(new Date()))
-    .with({ type: 'TIMESTAMP' }, () => dayjs(new Date()))
-    .with({ type: 'DATE' }, () => dayjs(new Date()))
-    .with({ type: 'GEOMETRY' }, () => 'st_point(0.0, 0.0)')
-    .with({ type: 'ARRAY' }, () => '[]')
+    .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => new BigNumber(0))
+    .with({ type: SqlType.VARCHAR }, { type: SqlType.CHAR }, () => '')
+    .with({ type: SqlType.TIME }, () => dayjs(new Date()))
+    .with({ type: SqlType.TIMESTAMP }, () => dayjs(new Date()))
+    .with({ type: SqlType.DATE }, () => dayjs(new Date()))
+    .with({ type: SqlType.ARRAY }, () => '[]')
     .otherwise(() => '')
 
 function useDefaultRows(

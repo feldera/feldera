@@ -2,7 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 /**
  * A request to output a specific neighborhood of a table or view.
  * The neighborhood is defined in terms of its central point (`anchor`)

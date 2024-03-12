@@ -7,11 +7,9 @@ import type { NewServiceResponse } from '../models/NewServiceResponse'
 import type { ServiceDescr } from '../models/ServiceDescr'
 import type { UpdateServiceRequest } from '../models/UpdateServiceRequest'
 import type { UpdateServiceResponse } from '../models/UpdateServiceResponse'
-
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class ServicesService {
   /**
    * Fetch services, optionally filtered by name, ID or configuration type.
@@ -40,7 +38,6 @@ export class ServicesService {
       }
     })
   }
-
   /**
    * Create a new service.
    * Create a new service.
@@ -59,7 +56,6 @@ export class ServicesService {
       }
     })
   }
-
   /**
    * Fetch a service by name.
    * Fetch a service by name.
@@ -79,7 +75,6 @@ export class ServicesService {
       }
     })
   }
-
   /**
    * Delete an existing service.
    * Delete an existing service.
@@ -99,7 +94,6 @@ export class ServicesService {
       }
     })
   }
-
   /**
    * Update the name, description and/or configuration of a service.
    * Update the name, description and/or configuration of a service.
