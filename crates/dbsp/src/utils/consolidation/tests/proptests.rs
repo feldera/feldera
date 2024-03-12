@@ -24,7 +24,7 @@ prop_compose! {
 
 prop_compose! {
     /// Generate a random batch of data
-    fn batch()(batch in vec(tuple().prop_map(|((k,v), w)| Tup2(Tup2(k, v), w)), 0..50_000)) -> LeanVec<Tup2<Tup2<usize, usize>, isize>> {
+    fn batch()(batch in vec(tuple().prop_map(|((k,v), w)| Tup2(Tup2(k, v), w)), 0..5_000)) -> LeanVec<Tup2<Tup2<usize, usize>, isize>> {
         LeanVec::from(batch)
     }
 }

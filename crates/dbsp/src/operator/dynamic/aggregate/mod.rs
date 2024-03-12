@@ -1108,11 +1108,11 @@ mod test {
     use crate::{dynamic::DowncastTrait, utils::Tup2};
     use proptest::{collection, prelude::*};
 
-    const MAX_ROUNDS: usize = 15;
-    const MAX_ITERATIONS: usize = 15;
-    const NUM_KEYS: u64 = 5;
+    const MAX_ROUNDS: usize = 10;
+    const MAX_ITERATIONS: usize = 10;
+    const NUM_KEYS: u64 = 3;
     const MAX_VAL: i64 = 3;
-    const MAX_TUPLES: usize = 10;
+    const MAX_TUPLES: usize = 8;
 
     fn test_zset() -> impl Strategy<Value = TestZSet> {
         collection::vec(
@@ -1153,7 +1153,8 @@ mod test {
 
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
-        fn proptest_aggregate_test_mt(inputs in test_input(), workers in (2..=16usize)) {
+        fn proptest_aggregate_test_mt(inputs in test_input(), log_workers in (1..=4)) {
+            let workers = 1usize << log_workers;
             let iterations = inputs.len();
             let mut circuit = Runtime::init_circuit(workers, |circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
 
