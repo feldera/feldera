@@ -5,12 +5,11 @@
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class ConfigurationService {
   /**
-   * Get the list of canned demos (title, description and URL).
-   * Get the list of canned demos (title, description and URL).
-   * @returns string A list of canned demo URLs to the demo JSON object
+   * Get the list of demo URLs.
+   * Get the list of demo URLs.
+   * @returns string URLs to JSON objects that describe a set of demos
    * @throws ApiError
    */
   public static getDemos(): CancelablePromise<Array<string>> {

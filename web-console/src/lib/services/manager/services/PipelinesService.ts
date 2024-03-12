@@ -11,11 +11,9 @@ import type { PipelineConfig } from '../models/PipelineConfig'
 import type { PipelineRevision } from '../models/PipelineRevision'
 import type { UpdatePipelineRequest } from '../models/UpdatePipelineRequest'
 import type { UpdatePipelineResponse } from '../models/UpdatePipelineResponse'
-
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class PipelinesService {
   /**
    * Fetch pipelines, optionally filtered by name or ID.
@@ -35,7 +33,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Create a new pipeline.
    * Create a new pipeline.
@@ -54,7 +51,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Fetch a pipeline by ID.
    * Fetch a pipeline by ID.
@@ -74,7 +70,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Create or replace a pipeline.
    * Create or replace a pipeline.
@@ -100,7 +95,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Delete a pipeline. The pipeline must be in the shutdown state.
    * Delete a pipeline. The pipeline must be in the shutdown state.
@@ -121,7 +115,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Change a pipeline's name, description, code, configuration, or connectors.
    * Change a pipeline's name, description, code, configuration, or connectors.
@@ -148,7 +141,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Fetch a pipeline's configuration.
    * Fetch a pipeline's configuration.
@@ -175,7 +167,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Return the currently deployed version of the pipeline, if any.
    * Return the currently deployed version of the pipeline, if any.
@@ -195,7 +186,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Retrieve pipeline metrics and performance counters.
    * Retrieve pipeline metrics and performance counters.
@@ -216,7 +206,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Validate a pipeline.
    * Validate a pipeline.
@@ -242,7 +231,6 @@ export class PipelinesService {
       }
     })
   }
-
   /**
    * Change the desired state of the pipeline.
    * Change the desired state of the pipeline.

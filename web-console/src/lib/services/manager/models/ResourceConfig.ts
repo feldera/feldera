@@ -2,7 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 export type ResourceConfig = {
   /**
    * The maximum number of CPU cores to reserve

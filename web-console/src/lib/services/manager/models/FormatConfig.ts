@@ -2,7 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 /**
  * Data format specification used to parse raw data received from the
  * endpoint or to encode data sent to the endpoint.

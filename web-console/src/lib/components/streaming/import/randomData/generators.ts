@@ -9,7 +9,7 @@ import {
 import { getRandomDate } from '$lib/functions/common/date'
 import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
 import { clampToSQL, dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
-import { ColumnType, Field } from '$lib/services/manager'
+import { ColumnType, Field, SqlType } from '$lib/services/manager'
 import assert from 'assert'
 import BigNumber from 'bignumber.js'
 import * as d3 from 'd3-random'
@@ -38,6 +38,7 @@ import { FieldNames } from './'
 import { BooleanSwitch } from './BooleanSwitch'
 
 import type { ColumnTypeJS } from '$lib/functions/ddl'
+
 type AddFieldName<T> = { name: FieldNames } & Partial<T>
 
 // A list of categories for grouping the generators in the selector.
@@ -93,20 +94,20 @@ export interface IRngGenMethod {
 
 const getDefaultRngMethodName = (sqlType: ColumnType): string =>
   match(sqlType)
-    .with({ type: 'BOOLEAN' }, () => 'Percentage')
-    .with({ type: 'TINYINT' }, () => 'Uniform')
-    .with({ type: 'SMALLINT' }, () => 'Uniform')
-    .with({ type: 'INTEGER' }, () => 'Uniform')
-    .with({ type: 'BIGINT' }, () => 'Uniform')
-    .with({ type: 'DECIMAL' }, () => 'Uniform')
-    .with({ type: 'FLOAT' }, () => 'Uniform')
-    .with({ type: 'DOUBLE' }, () => 'Uniform')
-    .with({ type: 'VARCHAR' }, () => 'Word')
-    .with({ type: 'CHAR' }, () => 'Word')
-    .with({ type: 'TIME' }, () => 'Uniform')
-    .with({ type: 'TIMESTAMP' }, () => 'Uniform')
-    .with({ type: 'DATE' }, () => 'Uniform')
-    .with({ type: 'ARRAY' }, () => {
+    .with({ type: SqlType.BOOLEAN }, () => 'Percentage')
+    .with({ type: SqlType.TINYINT }, () => 'Uniform')
+    .with({ type: SqlType.SMALLINT }, () => 'Uniform')
+    .with({ type: SqlType.INTEGER }, () => 'Uniform')
+    .with({ type: SqlType.BIGINT }, () => 'Uniform')
+    .with({ type: SqlType.DECIMAL }, () => 'Uniform')
+    .with({ type: SqlType.REAL }, () => 'Uniform')
+    .with({ type: SqlType.DOUBLE }, () => 'Uniform')
+    .with({ type: SqlType.VARCHAR }, () => 'Word')
+    .with({ type: SqlType.CHAR }, () => 'Word')
+    .with({ type: SqlType.TIME }, () => 'Uniform')
+    .with({ type: SqlType.TIMESTAMP }, () => 'Uniform')
+    .with({ type: SqlType.DATE }, () => 'Uniform')
+    .with({ type: SqlType.ARRAY }, () => {
       assert(sqlType.component !== null && sqlType.component !== undefined, 'Array type must have a component type')
       return getDefaultRngMethodName(sqlType.component)
     })
@@ -165,23 +166,23 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
   return (
     match(type)
       .with(
-        { type: 'TINYINT' },
-        { type: 'SMALLINT' },
-        { type: 'INTEGER' },
-        { type: 'BIGINT' },
+        { type: SqlType.TINYINT },
+        { type: SqlType.SMALLINT },
+        { type: SqlType.INTEGER },
+        { type: SqlType.BIGINT },
         () => INTEGER_GENERATORS
       )
-      .with({ type: 'FLOAT' }, { type: 'DOUBLE' }, () => FLOAT_GENERATORS)
+      .with({ type: SqlType.REAL }, { type: SqlType.DOUBLE }, () => FLOAT_GENERATORS)
       // There aren't any good random generator libraries for arbitrary
       // precision numbers. So we just use the same generators as FLOAT and
       // DOUBLE for now.
-      .with({ type: 'DECIMAL' }, () => FLOAT_GENERATORS)
-      .with({ type: 'VARCHAR' }, { type: 'TEXT' }, { type: 'CHAR' }, () => STRING_GENERATORS)
-      .with({ type: 'BOOLEAN' }, () => BOOLEAN_GENERATORS)
-      .with({ type: 'TIME' }, () => TIME_GENERATORS)
-      .with({ type: 'DATE' }, () => DATE_GENERATORS)
-      .with({ type: 'TIMESTAMP' }, () => TIMESTAMP_GENERATORS)
-      .with({ type: 'ARRAY' }, () => {
+      .with({ type: SqlType.DECIMAL }, () => FLOAT_GENERATORS)
+      .with({ type: SqlType.VARCHAR }, { type: SqlType.CHAR }, () => STRING_GENERATORS)
+      .with({ type: SqlType.BOOLEAN }, () => BOOLEAN_GENERATORS)
+      .with({ type: SqlType.TIME }, () => TIME_GENERATORS)
+      .with({ type: SqlType.DATE }, () => DATE_GENERATORS)
+      .with({ type: SqlType.TIMESTAMP }, () => TIMESTAMP_GENERATORS)
+      .with({ type: SqlType.ARRAY }, () => {
         invariant(type.component)
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
@@ -411,9 +412,10 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
       const { min, max } = (({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(
         props?.min && props.max
           ? { min: props.min, max: props.max }
-          : (({ min, max }) => ({ min: BigNumber.max(convenientMin, min), max: BigNumber.min(convenientMax, max) }))(
-              numericRange(ct)
-            )
+          : (({ min, max }) => ({
+              min: BigNumber.max(convenientMin, min),
+              max: BigNumber.min(convenientMax, max)
+            }))(numericRange(ct))
       )
       // We use d3.randomUniform for generating floating point numbers as long
       // as the user set a range for the values.

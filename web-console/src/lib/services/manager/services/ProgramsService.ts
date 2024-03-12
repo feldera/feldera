@@ -10,11 +10,9 @@ import type { NewProgramResponse } from '../models/NewProgramResponse'
 import type { ProgramDescr } from '../models/ProgramDescr'
 import type { UpdateProgramRequest } from '../models/UpdateProgramRequest'
 import type { UpdateProgramResponse } from '../models/UpdateProgramResponse'
-
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class ProgramsService {
   /**
    * Fetch programs, optionally filtered by name or ID.
@@ -46,7 +44,6 @@ export class ProgramsService {
       }
     })
   }
-
   /**
    * Create a new program.
    * Create a new program.
@@ -65,7 +62,6 @@ export class ProgramsService {
       }
     })
   }
-
   /**
    * Fetch a program by name.
    * Fetch a program by name.
@@ -92,7 +88,6 @@ export class ProgramsService {
       }
     })
   }
-
   /**
    * Create or replace a program.
    * Create or replace a program.
@@ -118,7 +113,6 @@ export class ProgramsService {
       }
     })
   }
-
   /**
    * Delete a program.
    * Delete a program.
@@ -142,7 +136,6 @@ export class ProgramsService {
       }
     })
   }
-
   /**
    * Change one or more of a program's code, description or name.
    * Change one or more of a program's code, description or name.
@@ -176,7 +169,6 @@ export class ProgramsService {
       }
     })
   }
-
   /**
    * Deprecated. Mark a program for compilation.
    * Deprecated. Mark a program for compilation.

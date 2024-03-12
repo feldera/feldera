@@ -2,11 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { InputEndpointConfig } from './InputEndpointConfig'
 import type { OutputEndpointConfig } from './OutputEndpointConfig'
 import type { ResourceConfig } from './ResourceConfig'
-
 /**
  * Pipeline configuration specified by the user when creating
  * a new pipeline instance.
@@ -52,4 +50,12 @@ export type PipelineConfig = {
    * Output endpoint configuration.
    */
   outputs?: Record<string, OutputEndpointConfig>
+  /**
+   * Storage location.
+   *
+   * An identifier for location where the pipeline's state is stored.
+   * If not set, the pipeline's state is not persisted across
+   * restarts.
+   */
+  storage_location?: string | null
 }

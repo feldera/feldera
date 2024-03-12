@@ -2,13 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ColumnType } from './ColumnType'
-
 /**
  * A SQL field.
  *
- * Matches the Calcite JSON format.
+ * Matches the SQL compiler JSON format.
  */
 export type Field = {
   case_sensitive?: boolean

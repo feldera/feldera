@@ -2,12 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ProgramId } from './ProgramId'
 import type { ProgramSchema } from './ProgramSchema'
 import type { ProgramStatus } from './ProgramStatus'
 import type { Version } from './Version'
-
 /**
  * Program descriptor.
  */

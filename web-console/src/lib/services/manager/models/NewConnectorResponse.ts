@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ConnectorId } from './ConnectorId'
-
 /**
  * Response to a connector creation request.
  */

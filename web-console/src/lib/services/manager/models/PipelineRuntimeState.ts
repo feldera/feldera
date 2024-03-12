@@ -2,11 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ErrorResponse } from './ErrorResponse'
 import type { PipelineId } from './PipelineId'
 import type { PipelineStatus } from './PipelineStatus'
-
 /**
  * Runtime state of the pipeine.
  */

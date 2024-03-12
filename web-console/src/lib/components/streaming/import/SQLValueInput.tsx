@@ -1,6 +1,6 @@
 import { BigNumberInput } from '$lib/components/input/BigNumberInput'
 import { numericRange } from '$lib/functions/ddl'
-import { ColumnType } from '$lib/services/manager'
+import { ColumnType, SqlType } from '$lib/services/manager'
 import BigNumber from 'bignumber.js'
 import { match } from 'ts-pattern'
 
@@ -19,7 +19,7 @@ export const SQLValueInput = ({
   'type' | 'value' | 'onChange'
 >) =>
   match(columnType.type)
-    .with('BIGINT', 'DECIMAL', () => {
+    .with(SqlType.BIGINT, SqlType.DECIMAL, () => {
       return (
         <BigNumberInput
           {...{ ...props, defaultValue: props.defaultValue as BigNumber | undefined }}
@@ -31,64 +31,61 @@ export const SQLValueInput = ({
     .otherwise(() => (
       <TextField
         {...match(columnType.type)
-          .with('BOOLEAN', 'BOOL', () => ({
+          .with(SqlType.BOOLEAN, () => ({
             type: 'checkbox'
           }))
-          .with('TINYINT', () => ({
+          .with(SqlType.TINYINT, () => ({
             type: 'number',
             inputProps: {
               ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
             }
           }))
-          .with('SMALLINT', () => ({
+          .with(SqlType.SMALLINT, () => ({
             type: 'number',
             inputProps: {
               ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
             }
           }))
-          .with('INTEGER', () => ({
+          .with(SqlType.INTEGER, () => ({
             type: 'number',
             inputProps: {
               ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
             }
           }))
-          .with('FLOAT', () => ({
+          .with(SqlType.REAL, () => ({
             type: 'number',
             inputProps: {
               ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
             }
           }))
-          .with('DOUBLE', () => ({
+          .with(SqlType.DOUBLE, () => ({
             type: 'number',
             inputProps: {
               ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType))
             }
           }))
-          .with('VARCHAR', () => ({
+          .with(SqlType.VARCHAR, () => ({
             type: 'string',
             inputProps: {
               maxLength: columnType.precision ?? 0 > 0 ? columnType.precision : undefined
             }
           }))
-          .with('CHAR', () => ({
+          .with(SqlType.CHAR, () => ({
             type: 'string',
             inputProps: {
               maxLength: 1
             }
           }))
-          .with('TIME', () => ({
+          .with(SqlType.TIME, () => ({
             type: 'string'
           }))
-          .with('TIMESTAMP', () => ({
+          .with(SqlType.TIMESTAMP, () => ({
             type: 'datetime-local'
           }))
-          .with('DATE', () => ({
+          .with(SqlType.DATE, () => ({
             type: 'date'
           }))
-          .with('GEOMETRY', () => ({
-            type: 'string'
-          }))
-          .with('ARRAY', () => ({
+          .with(SqlType.ARRAY, () => ({
             type: 'string'
           }))
           .otherwise(() => ({

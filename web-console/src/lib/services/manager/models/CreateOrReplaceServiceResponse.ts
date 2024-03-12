@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ServiceId } from './ServiceId'
-
 /**
  * Response to a create or replace service request.
  */

@@ -2,12 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { AttachedConnector } from './AttachedConnector'
 import type { PipelineId } from './PipelineId'
 import type { RuntimeConfig } from './RuntimeConfig'
 import type { Version } from './Version'
-
 /**
  * Pipeline descriptor.
  */

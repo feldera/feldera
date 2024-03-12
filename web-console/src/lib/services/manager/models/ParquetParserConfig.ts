@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type ProviderGoogleIdentity = {
-  client_id: string
-  jwk_uri: string
-}
+/**
+ * Configuration for the parquet parser.
+ */
+export type ParquetParserConfig = Record<string, any>

@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ApiKeyId } from './ApiKeyId'
-
 /**
  * Response to a successful API key creation.
  */

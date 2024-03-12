@@ -3,11 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { AuthProvider } from '../models/AuthProvider'
-
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class AuthenticationService {
   /**
    * Get authentication provider configuration

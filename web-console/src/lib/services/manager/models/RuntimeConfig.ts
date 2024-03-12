@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ResourceConfig } from './ResourceConfig'
-
 /**
  * Global pipeline configuration settings. This is the publicly
  * exposed type for users to configure pipelines.

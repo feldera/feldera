@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { KafkaService } from './KafkaService'
-
 /**
  * Service configuration for the API
  *

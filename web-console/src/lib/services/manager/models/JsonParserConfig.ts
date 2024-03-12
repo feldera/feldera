@@ -2,10 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { JsonFlavor } from './JsonFlavor'
 import type { JsonUpdateFormat } from './JsonUpdateFormat'
-
 /**
  * JSON parser configuration.
  *

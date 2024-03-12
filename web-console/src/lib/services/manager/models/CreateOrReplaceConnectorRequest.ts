@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
 import type { ConnectorConfig } from './ConnectorConfig'
-
 /**
  * Request to create or replace a connector.
  */
