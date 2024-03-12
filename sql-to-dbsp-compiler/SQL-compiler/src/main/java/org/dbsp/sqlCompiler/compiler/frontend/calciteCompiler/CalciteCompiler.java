@@ -30,20 +30,13 @@ import org.apache.calcite.config.CalciteConnectionProperty;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
-import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptUtil;
-import org.apache.calcite.plan.hep.HepMatchOrder;
 import org.apache.calcite.plan.hep.HepPlanner;
-import org.apache.calcite.plan.hep.HepProgram;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
-import org.apache.calcite.rel.RelVisitor;
-import org.apache.calcite.rel.core.Join;
-import org.apache.calcite.rel.rules.CoreRules;
-import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -116,7 +109,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -343,149 +335,6 @@ public class CalciteCompiler implements IWritesLogs {
         );
     }
 
-    /**
-     * Policy which decides whether to run the bushy join optimization.
-     * @param rootRel Current plan.
-     */
-    public static boolean avoidBushyJoin(RelNode rootRel) {
-        class OuterJoinFinder extends RelVisitor {
-            public int outerJoinCount = 0;
-            public int joinCount = 0;
-            @Override public void visit(RelNode node, int ordinal,
-                                        @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
-                if (node instanceof Join) {
-                    Join join = (Join)node;
-                    ++joinCount;
-                    if (join.getJoinType().isOuterJoin())
-                        ++outerJoinCount;
-                }
-                super.visit(node, ordinal, parent);
-            }
-
-            void run(RelNode node) {
-                this.go(node);
-            }
-        }
-
-        OuterJoinFinder finder = new OuterJoinFinder();
-        finder.run(rootRel);
-        // Bushy join optimization fails when the query contains outer joins.
-        return (finder.outerJoinCount > 0) || (finder.joinCount < 3);
-    }
-
-    /**
-     * Helper function used to assemble sequence of optimization rules
-     * into an optimization plan.  The rules are executed in sequence.
-     */
-    static HepProgram createProgram(RelOptRule... rules) {
-        HepProgramBuilder builder = new HepProgramBuilder();
-        for (RelOptRule r: rules)
-            builder.addRuleInstance(r);
-        return builder.build();
-    }
-
-    /**
-     * List of optimization stages to apply on RelNodes.
-     * We do program-dependent optimization, since some optimizations
-     * are buggy and don't always work.
-     */
-    LinkedHashMap<String, HepProgram> getOptimizationStages(RelNode rel) {
-        LinkedHashMap<String, HepProgram> result = new LinkedHashMap<>();
-        if (this.options.languageOptions.optimizationLevel < 1)
-            // For optimization levels below 1 we don't even apply Calcite optimizations.
-            // Note that this may cause compilation to fail, since our compiler does not
-            // handle all possible RelNode programs.
-            return result;
-
-        HepProgram constantFold = createProgram(
-                CoreRules.COERCE_INPUTS,
-                CoreRules.FILTER_REDUCE_EXPRESSIONS,
-                CoreRules.PROJECT_REDUCE_EXPRESSIONS,
-                CoreRules.JOIN_REDUCE_EXPRESSIONS,
-                CoreRules.WINDOW_REDUCE_EXPRESSIONS,
-                CoreRules.CALC_REDUCE_EXPRESSIONS,
-                CoreRules.CALC_REDUCE_DECIMALS,
-                CoreRules.FILTER_VALUES_MERGE,
-                CoreRules.PROJECT_FILTER_VALUES_MERGE,
-                // Rule is buggy; disabled due to
-                // https://github.com/feldera/feldera/issues/217
-                //CoreRules.PROJECT_VALUES_MERGE
-                CoreRules.AGGREGATE_VALUES
-        );
-        Utilities.putNew(result, "Constant fold", constantFold);
-
-        HepProgram removeEmpty = createProgram(
-                PruneEmptyRules.UNION_INSTANCE,
-                PruneEmptyRules.INTERSECT_INSTANCE,
-                PruneEmptyRules.MINUS_INSTANCE,
-                PruneEmptyRules.PROJECT_INSTANCE,
-                PruneEmptyRules.FILTER_INSTANCE,
-                PruneEmptyRules.SORT_INSTANCE,
-                PruneEmptyRules.AGGREGATE_INSTANCE,
-                PruneEmptyRules.JOIN_LEFT_INSTANCE,
-                PruneEmptyRules.JOIN_RIGHT_INSTANCE,
-                PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE);
-        Utilities.putNew(result, "Remove empty relations", removeEmpty);
-
-        HepProgram window = createProgram(
-                CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
-        );
-        Utilities.putNew(result, "Expand windows", window);
-
-        HepProgram distinctAggregates = createProgram(
-                // TODO: enable this rule
-                // CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES,
-                // Convert DISTINCT aggregates into separate computations and join the results
-                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN
-        );
-        Utilities.putNew(result,"Isolate DISTINCT aggregates", distinctAggregates);
-
-        HepProgramBuilder joinBuilder = new HepProgramBuilder()
-                .addRuleInstance(CoreRules.JOIN_CONDITION_PUSH)
-                .addRuleInstance(CoreRules.JOIN_PUSH_EXPRESSIONS)
-                //.addRuleInstance(CoreRules.FILTER_INTO_JOIN) // Rule seems to be unsound
-            ;
-        if (!avoidBushyJoin(rel))
-            joinBuilder
-                    .addRuleInstance(CoreRules.JOIN_TO_MULTI_JOIN)
-                    .addRuleInstance(CoreRules.PROJECT_MULTI_JOIN_MERGE)
-                    .addRuleInstance(CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY);
-        Utilities.putNew(result, "Join order optimization",
-                joinBuilder.addMatchOrder(HepMatchOrder.BOTTOM_UP).build());
-
-        HepProgram move = createProgram(
-                CoreRules.PROJECT_CORRELATE_TRANSPOSE,
-                CoreRules.PROJECT_SET_OP_TRANSPOSE,
-                CoreRules.FILTER_PROJECT_TRANSPOSE
-                //CoreRules.PROJECT_JOIN_TRANSPOSE  // This rule is unsound
-        );
-        Utilities.putNew(result, "Move projections", move);
-
-        HepProgram mergeNodes = createProgram(
-                CoreRules.PROJECT_MERGE,
-                CoreRules.MINUS_MERGE,
-                CoreRules.UNION_MERGE,
-                CoreRules.AGGREGATE_MERGE,
-                CoreRules.INTERSECT_MERGE);
-        Utilities.putNew(result, "Merge identical operations", mergeNodes);
-
-        HepProgram remove = createProgram(
-                CoreRules.AGGREGATE_REMOVE,
-                CoreRules.UNION_REMOVE,
-                CoreRules.PROJECT_REMOVE,
-                CoreRules.PROJECT_JOIN_JOIN_REMOVE,
-                CoreRules.PROJECT_JOIN_REMOVE
-                );
-        Utilities.putNew(result, "Remove dead code", remove);
-        return result;
-            /*
-        return Linq.list(
-                CoreRules.AGGREGATE_PROJECT_PULL_UP_CONSTANTS,
-                CoreRules.AGGREGATE_UNION_AGGREGATE,
-        );
-         */
-    }
-
     public static String getPlan(RelNode rel) {
         return RelOptUtil.dumpPlan("[Logical plan]", rel,
                 SqlExplainFormat.TEXT,
@@ -558,19 +407,8 @@ public class CalciteCompiler implements IWritesLogs {
                 .decrease()
                 .newline();
 
-        for (Map.Entry<String, HepProgram> entry: this.getOptimizationStages(rel).entrySet()) {
-            HepPlanner planner = new HepPlanner(entry.getValue());
-            planner.setRoot(rel);
-            rel = planner.findBestExp();
-            Logger.INSTANCE.belowLevel(this, 3)
-                    .append("After ")
-                    .append(entry.getKey())
-                    .increase()
-                    .append(getPlan(rel))
-                    .decrease()
-                    .newline();
-        }
-
+        CalciteOptimizer optimizer = new CalciteOptimizer(this.options.languageOptions.optimizationLevel);
+        rel = optimizer.apply(rel);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("After optimizer ")
                 .increase()

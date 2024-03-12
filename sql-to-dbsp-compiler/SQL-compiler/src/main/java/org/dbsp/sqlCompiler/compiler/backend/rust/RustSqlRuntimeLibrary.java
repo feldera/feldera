@@ -98,6 +98,8 @@ public class RustSqlRuntimeLibrary {
         this.stringFunctions.put("gte", DBSPOpcode.GTE);
         this.stringFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.stringFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
+        this.stringFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
+        this.stringFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
 
         this.booleanFunctions.put("eq", DBSPOpcode.EQ);
         this.booleanFunctions.put("neq", DBSPOpcode.NEQ);

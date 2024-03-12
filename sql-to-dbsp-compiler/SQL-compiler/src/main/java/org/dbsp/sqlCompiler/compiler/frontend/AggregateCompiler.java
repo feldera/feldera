@@ -27,6 +27,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.logical.LogicalAggregate;
 import org.apache.calcite.sql.SqlAggFunction;
+import org.apache.calcite.sql.fun.SqlAbstractGroupFunction;
 import org.apache.calcite.sql.fun.SqlAvgAggFunction;
 import org.apache.calcite.sql.fun.SqlBitOpAggFunction;
 import org.apache.calcite.sql.fun.SqlCountAggFunction;
@@ -34,6 +35,7 @@ import org.apache.calcite.sql.fun.SqlMinMaxAggFunction;
 import org.apache.calcite.sql.fun.SqlSingleValueAggFunction;
 import org.apache.calcite.sql.fun.SqlSumAggFunction;
 import org.apache.calcite.sql.fun.SqlSumEmptyIsZeroAggFunction;
+import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -46,6 +48,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
@@ -56,6 +59,8 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.NameGen;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -79,9 +84,7 @@ public class AggregateCompiler implements ICompilerComponent {
     @Nullable
     private DBSPAggregate.Implementation foldingFunction;
     
-    /**
-     * Expression that stands for the whole input row in the input zset.
-     */
+    /** Expression that stands for the whole input row in the input zset. */
     private final DBSPVariablePath v;
     private final boolean isDistinct;
     private final SqlAggFunction aggFunction;
@@ -91,14 +94,18 @@ public class AggregateCompiler implements ICompilerComponent {
     private final DBSPExpression aggArgument;
     private final NameGen generator;
     private final RelNode aggregateNode;
-
+    private final ImmutableBitSet groups;
+    private final AggregateCall call;
 
     public AggregateCompiler(
             RelNode node,
             DBSPCompiler compiler,
             AggregateCall call, DBSPType resultType,
-            DBSPVariablePath v) {
+            DBSPVariablePath v,
+            ImmutableBitSet groups) {
         this.aggregateNode = node;
+        this.call = call;
+        this.groups = groups;
         this.compiler = compiler;
         this.resultType = resultType;
         this.nullableResultType = resultType.setMayBeNull(true);
@@ -115,7 +122,8 @@ public class AggregateCompiler implements ICompilerComponent {
             int fieldNumber = call.getArgList().get(0);
             this.aggArgument = this.v.deref().field(fieldNumber);
         } else {
-            throw new UnimplementedException(CalciteObject.create(call.getAggregation()));
+            List<DBSPExpression> fields = Linq.map(call.getArgList(), a -> this.v.deref().field(a));
+            this.aggArgument = new DBSPTupleExpression(fields, false);
         }
     }
 
@@ -169,6 +177,28 @@ public class AggregateCompiler implements ICompilerComponent {
         // TODO: some of these are linear
         increment = this.aggregateOperation(node, opcode,
                 this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
+        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, USER, "UnimplementedSemigroup",
+                false, accumulator.getType());
+        this.setFoldingFunction(new DBSPAggregate.Implementation(
+                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null));
+    }
+
+    void processGrouping(SqlAbstractGroupFunction function) {
+        CalciteObject node = CalciteObject.create(function);
+        DBSPExpression zero = this.nullableResultType.to(IsNumericType.class).getZero();
+
+        long result = 0;
+        long mask = 1;
+        List<Integer> args = new ArrayList<>(this.call.getArgList());
+        Collections.reverse(args);
+        for (int field: args) {
+            if (!this.groups.get(field)) {
+                result = result | mask;
+            }
+            mask <<= 1;
+        }
+        DBSPExpression increment = new DBSPI64Literal(result).cast(this.nullableResultType);
+        DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
         DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, USER, "UnimplementedSemigroup",
                 false, accumulator.getType());
         this.setFoldingFunction(new DBSPAggregate.Implementation(
@@ -239,7 +269,8 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
         DBSPType resultType = type.setMayBeNull(leftType.mayBeNull || rightType.mayBeNull);
-        DBSPExpression binOp = new DBSPConditionalAggregateExpression(node, op, resultType, left, right, filter);
+        DBSPExpression binOp = new DBSPConditionalAggregateExpression(
+                node, op, resultType, left.applyCloneIfNeeded(), right.applyCloneIfNeeded(), filter);
         return binOp.cast(type);
     }
 
@@ -419,7 +450,8 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||
                 this.process(this.aggFunction, SqlAvgAggFunction.class, this::processAvg) ||
                 this.process(this.aggFunction, SqlBitOpAggFunction.class, this::processBitOp) ||
-                this.process(this.aggFunction, SqlSingleValueAggFunction.class, this::processSingle);
+                this.process(this.aggFunction, SqlSingleValueAggFunction.class, this::processSingle) ||
+                this.process(this.aggFunction, SqlAbstractGroupFunction.class, this::processGrouping);
         if (!success || this.foldingFunction == null)
             throw new UnimplementedException(CalciteObject.create(this.aggFunction));
         return this.foldingFunction;

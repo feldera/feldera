@@ -7,7 +7,7 @@ import org.junit.Test;
 public class AggTests extends PostBaseTests {
     @Test @Ignore("https://github.com/feldera/feldera/issues/1481")
     public void testCompositeCount() {
-        this.q("""
+        this.qs("""
                 -- composite count
                 select count(deptno, ename, 1, deptno) as c from emp;
                 +---+
@@ -275,7 +275,7 @@ public class AggTests extends PostBaseTests {
                 (3 rows)""");
     }
 
-    @Test @Ignore("Grouping sets not yet implemented")
+    @Test
     public void testGroupingSets() {
         this.qs("""
                 -- Basic GROUPING SETS
@@ -597,7 +597,6 @@ public class AggTests extends PostBaseTests {
                 (1 row)""");
     }
 
-    @Ignore("Grouping not yet implemented")
     @Test public void testGrouping() {
         this.qs("""
                 -- CUBE and JOIN
@@ -608,10 +607,10 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+----------+
                 | DEPTNO | GENDER | MIN_NAME |
                 +--------+--------+----------+
-                |     10 | M      | Bob      |
-                |     10 | M      | Bob      |
-                |        | F      | Alice    |
-                |        |        | Alice    |
+                |     10 | M| Bob|
+                |     10 | M| Bob|
+                |        | F| Alice|
+                |        |NULL| Alice|
                 +--------+--------+----------+
                 (4 rows)
                                 
@@ -718,11 +717,11 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+--------+---+
                 | DEPTNO | GENDER | EXPR$2 | C |
                 +--------+--------+--------+---+
-                |     10 | F      |      0 | 1 |
-                |     10 | M      |      0 | 1 |
-                |        | F      |      5 | 1 |
-                |        | M      |      5 | 1 |
-                |        |        |      7 | 2 |
+                |     10 | F|      0 | 1 |
+                |     10 | M|      0 | 1 |
+                |        | F|      5 | 1 |
+                |        | M|      5 | 1 |
+                |        |NULL|      7 | 2 |
                 +--------+--------+--------+---+
                 (5 rows)
                                 
@@ -752,23 +751,23 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+----+----+----+----+-----+---+
                 | DEPTNO | GENDER | GD | GG | DG | GD | GID | C |
                 +--------+--------+----+----+----+----+-----+---+
-                |     10 | F      |  0 |  0 |  0 |  0 |   0 | 1 |
-                |     10 | M      |  0 |  0 |  0 |  0 |   0 | 1 |
-                |     20 | M      |  0 |  0 |  0 |  0 |   0 | 1 |
-                |     30 | F      |  0 |  0 |  0 |  0 |   0 | 2 |
-                |     50 | F      |  0 |  0 |  0 |  0 |   0 | 1 |
-                |     50 | M      |  0 |  0 |  0 |  0 |   0 | 1 |
-                |     60 | F      |  0 |  0 |  0 |  0 |   0 | 1 |
-                |        | F      |  0 |  0 |  0 |  0 |   0 | 1 |
-                |        |        |  1 |  1 |  3 |  3 |   0 | 9 |
-                |     10 |        |  0 |  1 |  1 |  2 |   0 | 2 |
-                |     20 |        |  0 |  1 |  1 |  2 |   0 | 1 |
-                |     30 |        |  0 |  1 |  1 |  2 |   0 | 2 |
-                |     50 |        |  0 |  1 |  1 |  2 |   0 | 2 |
-                |     60 |        |  0 |  1 |  1 |  2 |   0 | 1 |
-                |        | F      |  1 |  0 |  2 |  1 |   0 | 6 |
-                |        | M      |  1 |  0 |  2 |  1 |   0 | 3 |
-                |        |        |  0 |  1 |  1 |  2 |   0 | 1 |
+                |     10 | F|        0 |  0 |  0 |  0 |   0 | 1 |
+                |     10 | M|        0 |  0 |  0 |  0 |   0 | 1 |
+                |     20 | M|        0 |  0 |  0 |  0 |   0 | 1 |
+                |     30 | F|        0 |  0 |  0 |  0 |   0 | 2 |
+                |     50 | F|        0 |  0 |  0 |  0 |   0 | 1 |
+                |     50 | M|        0 |  0 |  0 |  0 |   0 | 1 |
+                |     60 | F|        0 |  0 |  0 |  0 |   0 | 1 |
+                |        | F|        0 |  0 |  0 |  0 |   0 | 1 |
+                |        |NULL|      1 |  1 |  3 |  3 |   0 | 9 |
+                |     10 |NULL|      0 |  1 |  1 |  2 |   0 | 2 |
+                |     20 |NULL|      0 |  1 |  1 |  2 |   0 | 1 |
+                |     30 |NULL|      0 |  1 |  1 |  2 |   0 | 2 |
+                |     50 |NULL|      0 |  1 |  1 |  2 |   0 | 2 |
+                |     60 |NULL|      0 |  1 |  1 |  2 |   0 | 1 |
+                |        | F|        1 |  0 |  2 |  1 |   0 | 6 |
+                |        | M|        1 |  0 |  2 |  1 |   0 | 3 |
+                |        |NULL|      0 |  1 |  1 |  2 |   0 | 1 |
                 +--------+--------+----+----+----+----+-----+---+
                 (17 rows)""");
     }

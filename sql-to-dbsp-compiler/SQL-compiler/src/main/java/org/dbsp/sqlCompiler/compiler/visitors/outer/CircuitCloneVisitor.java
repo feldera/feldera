@@ -93,7 +93,10 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     protected void map(DBSPOperator old, DBSPOperator newOp) {
         this.map(old, newOp, true);
         assert old == this.getCurrent();
-        newOp.setDerivedFrom(old.id);
+        long derivedFrom = old.derivedFrom;
+        if (derivedFrom == -1)
+            derivedFrom = old.id;
+        newOp.setDerivedFrom(derivedFrom);
     }
 
     /**
