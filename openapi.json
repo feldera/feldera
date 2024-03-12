@@ -3283,8 +3283,7 @@
         "description": "Request to create or replace a program.",
         "required": [
           "description",
-          "code",
-          "config"
+          "code"
         ],
         "properties": {
           "code": {
@@ -3897,8 +3896,7 @@
         "required": [
           "name",
           "description",
-          "code",
-          "config"
+          "code"
         ],
         "properties": {
           "code": {
@@ -4981,9 +4979,6 @@
       "UpdateProgramRequest": {
         "type": "object",
         "description": "Request to update an existing program.",
-        "required": [
-          "config"
-        ],
         "properties": {
           "code": {
             "type": "string",
@@ -4991,7 +4986,12 @@
             "nullable": true
           },
           "config": {
-            "$ref": "#/components/schemas/ProgramConfig"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramConfig"
+              }
+            ],
+            "nullable": true
           },
           "description": {
             "type": "string",
