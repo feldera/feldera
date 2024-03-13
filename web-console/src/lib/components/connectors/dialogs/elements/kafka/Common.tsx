@@ -7,7 +7,6 @@ export const KafkaBootstrapServersElement = (props: { disabled?: boolean; parent
       multiline
       transform={{
         input: (v: string[]) => {
-          console.log('TextFieldElement input', v)
           return v.join(', ')
         },
         output: (v: string) => {

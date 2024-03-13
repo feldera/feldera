@@ -12,11 +12,11 @@ import {
 } from '$lib/functions/kafka/librdkafkaOptions'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { ServiceDialogProps, ServiceProps } from '$lib/types/xgressServices/ServiceDialog'
-import { useState } from 'react'
+import { Dispatch, SetStateAction, useState } from 'react'
 import {
+  AutocompleteElement,
   FieldErrors,
   FormContainer,
-  SelectElement,
   SwitchElement,
   TextFieldElement,
   useFormContext,
@@ -43,8 +43,10 @@ import {
   Box,
   Dialog,
   DialogTitle,
+  FormControlLabel,
   Grid,
   IconButton,
+  Link,
   Switch,
   Tab,
   TextField,
@@ -89,9 +91,15 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
     props.setShow(false)
   }
   const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
+  const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
   const jsonSwitch = (
-    <Box sx={{ pl: 2 }}>
-      <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> Edit JSON
+    <Box sx={{ pl: 4 }}>
+      <Tooltip title={editorDirty !== 'clean' ? 'Fix errors before switching the view' : undefined}>
+        <FormControlLabel
+          control={<Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} disabled={editorDirty !== 'clean'} />}
+          label='Edit JSON'
+        />
+      </Tooltip>
     </Box>
   )
   const defaultValues: KafkaServiceSchema = props.service
@@ -151,7 +159,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
             <>
               <Box sx={{ height: '100%' }}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', p: 4, height: '100%' }}>
-                  <GenericEditorForm disabled={props.disabled}></GenericEditorForm>
+                  <GenericEditorForm disabled={props.disabled} setEditorDirty={setEditorDirty}></GenericEditorForm>
                   <Box sx={{ display: 'flex', justifyContent: 'end', pt: 4 }}>{props.submitButton}</Box>
                 </Box>
               </Box>
@@ -310,18 +318,11 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
 
   return (
     <>
-      <Box sx={{ height: '100%', overflowY: 'auto', ml: -4, pl: 4 }}>
-        <Grid container spacing={4} sx={{ height: 'auto', pr: 4, mr: -16 }}>
+      <Box sx={{ height: '100%', overflowY: 'auto', pr: '3rem' }}>
+        <Grid container spacing={4} sx={{ height: 'auto', pr: 0 }}>
           {usedFields.map(field => (
             <>
               <Grid item xs={12} sm={6} display='flex' alignItems='center'>
-                {mandatoryFields.includes(field) ? (
-                  <Box sx={{ width: '1rem' }}></Box>
-                ) : (
-                  <IconButton size='small' sx={{ ml: -4 }} onClick={() => ctx.unregister('config.' + field)}>
-                    <IconX></IconX>
-                  </IconButton>
-                )}
                 <Tooltip
                   slotProps={{
                     tooltip: {
@@ -346,63 +347,90 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
                 </Tooltip>
               </Grid>
               <Grid item xs={12} sm={6}>
-                {match(fieldOptions[field].type)
-                  .with('string', () => (
-                    <TextFieldElement key={field} name={'config.' + field} size='small' fullWidth></TextFieldElement>
-                  ))
-                  .with('number', () => (
-                    <TextFieldElement
-                      key={field}
-                      name={'config.' + field}
+                <Box sx={{ display: 'flex' }}>
+                  {match(fieldOptions[field].type)
+                    .with('string', () => (
+                      <TextFieldElement key={field} name={'config.' + field} size='small' fullWidth></TextFieldElement>
+                    ))
+                    .with('number', () => (
+                      <TextFieldElement
+                        key={field}
+                        name={'config.' + field}
+                        size='small'
+                        fullWidth
+                        type='number'
+                        inputProps={{
+                          ...(([, min, max]) => {
+                            return { min: parseInt(min), max: parseInt(max) }
+                          })(fieldOptions[field].range.match(/(\d+) .. (\d+)/) ?? [])
+                        }}
+                      ></TextFieldElement>
+                    ))
+                    .with('enum', () => (
+                      <AutocompleteElement
+                        key={field}
+                        name={'config.' + field}
+                        options={fieldOptions[field].range.split(', ').map(option => ({
+                          id: option,
+                          label: option
+                        }))}
+                        textFieldProps={{
+                          inputProps: {
+                            'data-testid': 'input-' + field
+                          } as any
+                        }}
+                        autocompleteProps={{
+                          disableClearable: true,
+                          size: 'small',
+                          fullWidth: true,
+                          disabled: props.disabled,
+                          slotProps: {
+                            paper: {
+                              'data-testid': 'input-' + field
+                            } as any
+                          }
+                        }}
+                      ></AutocompleteElement>
+                    ))
+                    .with('boolean', () => (
+                      <Box sx={{ width: '100%' }}>
+                        <SwitchElement key={field} name={'config.' + field} label={''}></SwitchElement>
+                      </Box>
+                    ))
+                    .with('list', () => (
+                      <TextFieldElement
+                        key={field}
+                        multiline
+                        transform={{
+                          input: (v: string[]) => {
+                            return v.join(', ')
+                          },
+                          output: (v: string) => {
+                            return v.split(', ')
+                          }
+                        }}
+                        name={'config.' + field}
+                        size='small'
+                        fullWidth
+                        disabled={props.disabled}
+                        inputProps={{
+                          'data-testid': 'input-' + field
+                        }}
+                      />
+                    ))
+                    .exhaustive()}
+                  {mandatoryFields.includes(field) ? (
+                    <></>
+                  ) : (
+                    <IconButton
                       size='small'
-                      fullWidth
-                      type='number'
-                      {...(([, min, max]) => ({ min: parseInt(min), max: parseInt(max) }))(
-                        fieldOptions[field].range.match(/(\d+) .. (\d+)/) ?? []
-                      )}
-                    ></TextFieldElement>
-                  ))
-                  .with('enum', () => (
-                    <SelectElement
-                      key={field}
-                      name={'config.' + field}
-                      size='small'
-                      options={fieldOptions[field].range.split(', ').map(option => ({
-                        id: option,
-                        label: option
-                      }))}
-                      fullWidth
-                      disabled={props.disabled}
-                      inputProps={{
-                        'data-testid': 'input-' + field
-                      }}
-                    ></SelectElement>
-                  ))
-                  .with('boolean', () => (
-                    <SwitchElement key={field} name={'config.' + field} label={''}></SwitchElement>
-                  ))
-                  .with('list', () => (
-                    <TextFieldElement
-                      key={field}
-                      multiline
-                      transform={{
-                        input: (v: string[]) => {
-                          return v.join(', ')
-                        },
-                        output: (v: string) => {
-                          return v.split(', ')
-                        }
-                      }}
-                      name={'config.' + field}
-                      size='small'
-                      fullWidth
-                      disabled={props.disabled}
-                      inputProps={{
-                        'data-testid': 'input-' + field
-                      }}
-                    />
-                  ))
-                  .exhaustive()}
+                      sx={{ mr: '-2.5rem', ml: '0.5rem' }}
+                      onClick={() => ctx.unregister('config.' + field)}
+                    >
+                      <IconX></IconX>
+                    </IconButton>
+                  )}
+                </Box>
               </Grid>
             </>
           ))}
@@ -425,7 +453,9 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
                 invariant(option)
                 ctx.setValue('config.' + field, librdkafkaDefaultValue(option))
               }}
-              options={fieldOptionsKeys.map(option => option.replaceAll('_', '.'))}
+              options={fieldOptionsKeys
+                .filter(option => !usedFields.includes(option))
+                .map(option => option.replaceAll('_', '.'))}
               size='small'
               renderInput={params => <TextField placeholder='Add option' {...params} />}
             />
@@ -434,14 +464,19 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
       </Box>
       <Typography sx={{ mt: 'auto', pt: 4 }}>
         See{' '}
-        <a href='https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md'>librdkafka documentation</a>{' '}
+        <Link href='https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md'>
+          librdkafka documentation
+        </Link>{' '}
         for reference
       </Typography>
     </>
   )
 }
 
-const GenericEditorForm = (props: { disabled?: boolean }) => (
+const GenericEditorForm = (props: {
+  disabled?: boolean
+  setEditorDirty?: Dispatch<SetStateAction<'dirty' | 'clean' | 'error'>>
+}) => (
   <Grid container spacing={4} sx={{ height: '100%' }}>
     <Grid item sm={4} xs={12}>
       <TextFieldElement
@@ -477,7 +512,10 @@ const GenericEditorForm = (props: { disabled?: boolean }) => (
   </Grid>
 )
 
-export const ServiceConfigEditorElement = (props: { disabled?: boolean }) => {
+export const ServiceConfigEditorElement = (props: {
+  disabled?: boolean
+  setEditorDirty?: Dispatch<SetStateAction<'dirty' | 'clean' | 'error'>>
+}) => {
   const ctx = useFormContext()
   const config: Record<string, unknown> = ctx.watch('config')
   const { errors } = useFormState({ control: ctx.control })
@@ -486,11 +524,12 @@ export const ServiceConfigEditorElement = (props: { disabled?: boolean }) => {
       disabled={props.disabled}
       valueFromText={text => fromKafkaConfig(JSON.parse(text))}
       valueToText={config => JSON.stringify(toKafkaConfig(config as any), undefined, '\t')}
-      errors={(errors?.config as any) ?? {}}
+      errors={(errors?.config as Record<string, { message: string }>) ?? {}}
       value={config}
       setValue={config => {
         ctx.setValue('config', config)
       }}
+      setEditorDirty={props.setEditorDirty}
       data-testid='input-config'
     ></JSONEditor>
   )

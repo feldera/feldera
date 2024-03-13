@@ -3,12 +3,13 @@
 import { JSONEditor } from '$lib/components/common/JSONEditor'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
+import { Dispatch, SetStateAction } from 'react'
 import { TextFieldElement, useFormContext, useFormState } from 'react-hook-form-mui'
 
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 
-export type JSONConfigEditorFields = {
+type JSONConfigEditorFields = {
   transport: Record<string, any>
   format: Record<string, any>
 }
@@ -18,6 +19,7 @@ export const GenericEditorForm = (props: {
   direction: Direction
   configFromText: (t: string) => JSONConfigEditorFields
   configToText: (c: JSONConfigEditorFields) => string
+  setEditorDirty?: Dispatch<SetStateAction<'dirty' | 'clean' | 'error'>>
 }) => {
   return (
     <Grid container spacing={4}>
@@ -62,6 +64,7 @@ export const JSONConfigEditorElement = (props: {
   disabled?: boolean
   configFromText: (text: string) => JSONConfigEditorFields
   configToText: (config: JSONConfigEditorFields) => string
+  setEditorDirty?: Dispatch<SetStateAction<'dirty' | 'clean' | 'error'>>
 }) => {
   const ctx = useFormContext()
   const transport: Record<string, unknown> = ctx.watch('transport')
@@ -78,6 +81,7 @@ export const JSONConfigEditorElement = (props: {
         ctx.setValue('transport', v.transport)
         ctx.setValue('format', v.format)
       }}
+      setEditorDirty={props.setEditorDirty}
       data-testid='input-config'
     ></JSONEditor>
   )

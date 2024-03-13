@@ -29,7 +29,7 @@ import { valibotResolver } from '@hookform/resolvers/valibot'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import { Switch } from '@mui/material'
+import { FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
@@ -73,7 +73,6 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   const [rawJSON, setRawJSON] = useState(false)
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<KafkaInputSchema | undefined>(undefined)
-  console.log('curValues', curValues)
 
   // Initialize the form either with default or values from the passed in connector
   useEffect(() => {
@@ -155,9 +154,15 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   }
 
   const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
+  const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
   const jsonSwitch = (
     <Box sx={{ pl: 2, marginTop: { xs: '0', md: '-4rem' } }}>
-      <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> Edit JSON
+      <Tooltip title={editorDirty !== 'clean' ? 'Fix errors before switching the view' : undefined}>
+        <FormControlLabel
+          control={<Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} disabled={editorDirty !== 'clean'} />}
+          label='Edit JSON'
+        />
+      </Tooltip>
     </Box>
   )
   return (
@@ -210,6 +215,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                 direction={Direction.INPUT}
                 configFromText={text => parseKafkaInputSchemaConfig(JSON.parse(text))}
                 configToText={config => JSON.stringify(normalizeConfig(config), undefined, '\t')}
+                setEditorDirty={setEditorDirty}
               />
               <Box sx={{ display: 'flex', justifyContent: 'end' }}>{props.submitButton}</Box>
             </Box>
