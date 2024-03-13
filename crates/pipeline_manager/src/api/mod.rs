@@ -25,9 +25,12 @@ mod pipeline;
 mod program;
 mod service;
 
+// All service types
 mod services;
-
-pub(crate) use services::*;
+pub use services::{
+    KafkaService, ServiceConfig, ServiceProbe, ServiceProbeError, ServiceProbeRequest,
+    ServiceProbeResponse, ServiceProbeResult, ServiceProbeStatus, ServiceProbeType,
+};
 
 use crate::auth::JwkCache;
 use crate::probe::Probe;
@@ -54,7 +57,8 @@ use utoipa_swagger_ui::SwaggerUi;
 pub(crate) use crate::compiler::ProgramStatus;
 pub(crate) use crate::config::ApiServerConfig;
 use crate::db::{
-    AttachedConnectorId, ConnectorId, PipelineId, ProgramId, ProjectDB, ServiceId, Version,
+    AttachedConnectorId, ConnectorId, PipelineId, ProgramId, ProjectDB, ServiceId, ServiceProbeId,
+    Version,
 };
 pub use crate::error::ManagerError;
 use crate::runner::RunnerApi;
@@ -143,6 +147,8 @@ request is rejected."
         service::new_service,
         service::update_service,
         service::delete_service,
+        service::new_service_probe,
+        service::list_service_probes,
         http_io::http_input,
         http_io::http_output,
         api_key::create_api_key,
@@ -161,6 +167,7 @@ request is rejected."
         crate::db::ProgramDescr,
         crate::db::ConnectorDescr,
         crate::db::ServiceDescr,
+        crate::db::ServiceProbeDescr,
         crate::db::Pipeline,
         crate::db::PipelineRuntimeState,
         crate::db::PipelineDescr,
@@ -216,6 +223,7 @@ request is rejected."
         ConnectorId,
         AttachedConnectorId,
         ServiceId,
+        ServiceProbeId,
         Version,
         ProgramStatus,
         ErrorResponse,
@@ -244,10 +252,17 @@ request is rejected."
         service::UpdateServiceResponse,
         service::CreateOrReplaceServiceRequest,
         service::CreateOrReplaceServiceResponse,
+        service::CreateServiceProbeResponse,
         api_key::NewApiKeyRequest,
         api_key::NewApiKeyResponse,
         ServiceConfig,
         KafkaService,
+        ServiceProbeType,
+        ServiceProbeRequest,
+        ServiceProbeResponse,
+        ServiceProbeResult,
+        ServiceProbeError,
+        ServiceProbeStatus,
     ),),
     tags(
         (name = "Manager", description = "Configure system behavior"),
@@ -312,6 +327,8 @@ fn api_scope() -> Scope {
         .service(service::update_service)
         .service(service::create_or_replace_service)
         .service(service::delete_service)
+        .service(service::new_service_probe)
+        .service(service::list_service_probes)
         .service(api_key::create_api_key)
         .service(api_key::list_api_keys)
         .service(api_key::get_api_key)

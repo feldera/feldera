@@ -6,6 +6,7 @@ use crate::{
     config::DatabaseConfig,
 };
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod, Transaction};
 use log::{debug, info};
 use openssl::sha;
@@ -28,7 +29,8 @@ mod pg_setup;
 pub(crate) mod storage;
 
 mod error;
-use crate::api::ServiceConfig;
+use crate::api::{ServiceConfig, ServiceProbeRequest, ServiceProbeResponse, ServiceProbeType};
+pub(crate) use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
 pub use error::DBError;
 
 mod embedded {
@@ -817,6 +819,86 @@ impl Storage for ProjectDB {
     async fn delete_service(&self, tenant_id: TenantId, service_name: &str) -> Result<(), DBError> {
         Ok(service::delete_service(self, tenant_id, service_name).await?)
     }
+
+    async fn new_service_probe(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        id: Uuid,
+        request: ServiceProbeRequest,
+        created_at: &DateTime<Utc>,
+        txn: Option<&Transaction<'_>>,
+    ) -> Result<ServiceProbeId, DBError> {
+        Ok(
+            service::new_service_probe(self, tenant_id, service_id, id, request, created_at, txn)
+                .await?,
+        )
+    }
+
+    async fn update_service_probe_set_running(
+        &self,
+        tenant_id: TenantId,
+        service_probe_id: ServiceProbeId,
+        started_at: &DateTime<Utc>,
+    ) -> Result<(), DBError> {
+        Ok(
+            service::update_service_probe_set_running(
+                self,
+                tenant_id,
+                service_probe_id,
+                started_at,
+            )
+            .await?,
+        )
+    }
+
+    async fn update_service_probe_set_finished(
+        &self,
+        tenant_id: TenantId,
+        service_probe_id: ServiceProbeId,
+        response: ServiceProbeResponse,
+        finished_at: &DateTime<Utc>,
+    ) -> Result<(), DBError> {
+        Ok(service::update_service_probe_set_finished(
+            self,
+            tenant_id,
+            service_probe_id,
+            response,
+            finished_at,
+        )
+        .await?)
+    }
+
+    async fn next_service_probe(
+        &self,
+    ) -> Result<Option<(ServiceProbeId, TenantId, ServiceProbeRequest, ServiceConfig)>, DBError>
+    {
+        Ok(service::next_service_probe(self).await?)
+    }
+
+    async fn get_service_probe(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        service_probe_id: ServiceProbeId,
+        txn: Option<&Transaction<'_>>,
+    ) -> Result<ServiceProbeDescr, DBError> {
+        Ok(service::get_service_probe(self, tenant_id, service_id, service_probe_id, txn).await?)
+    }
+
+    async fn list_service_probes(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        limit: Option<u32>,
+        probe_type: Option<ServiceProbeType>,
+        txn: Option<&Transaction<'_>>,
+    ) -> Result<Vec<ServiceProbeDescr>, DBError> {
+        Ok(
+            service::list_service_probes(self, tenant_id, service_id, limit, probe_type, txn)
+                .await?,
+        )
+    }
 }
 
 impl ProjectDB {
@@ -935,6 +1017,9 @@ impl ProjectDB {
                     Some("program_pkey") => DBError::unique_key_violation("program_pkey"),
                     Some("connector_pkey") => DBError::unique_key_violation("connector_pkey"),
                     Some("service_pkey") => DBError::unique_key_violation("service_pkey"),
+                    Some("service_probe_pkey") => {
+                        DBError::unique_key_violation("service_probe_pkey")
+                    }
                     Some("pipeline_pkey") => DBError::unique_key_violation("pipeline_pkey"),
                     Some("api_key_pkey") => DBError::unique_key_violation("api_key_pkey"),
                     Some("unique_hash") => DBError::duplicate_key(),
@@ -1041,6 +1126,46 @@ impl ProjectDB {
                             return DBError::UnknownTenant { tenant_id };
                         }
                     }
+                }
+            }
+        }
+
+        err
+    }
+
+    /// Helper to convert service_id foreign key constraint error into an
+    /// user-friendly error message.
+    fn maybe_service_id_foreign_key_constraint_err(err: DBError, service_id: ServiceId) -> DBError {
+        if let DBError::PostgresError { error, .. } = &err {
+            let db_err = error.as_db_error();
+            if let Some(db_err) = db_err {
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
+                    && (db_err.constraint() == Some("service_service_id_fkey")
+                        || db_err.constraint() == Some("service_probe_service_id_fkey"))
+                {
+                    return DBError::UnknownService { service_id };
+                }
+            }
+        }
+
+        err
+    }
+
+    /// Helper to convert tenant_id_service_id foreign key constraint error into
+    /// an user-friendly error message.
+    fn maybe_tenant_id_service_id_foreign_key_constraint_err(
+        err: DBError,
+        service_id: ServiceId,
+    ) -> DBError {
+        if let DBError::PostgresError { error, .. } = &err {
+            let db_err = error.as_db_error();
+            if let Some(db_err) = db_err {
+                if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION
+                    && db_err.constraint() == Some("service_probe_tenant_id_service_id_fkey")
+                {
+                    // TODO: specialized error indicating the service specifically does not exist
+                    // for this tenant?
+                    return DBError::UnknownService { service_id };
                 }
             }
         }
@@ -1384,5 +1509,73 @@ impl ProjectDB {
         .await?;
         txn.commit().await?;
         Ok(())
+    }
+
+    /// Creates a new service probe for the service named `service_name`.
+    pub async fn new_service_probe_for_service_by_name(
+        &self,
+        tenant_id: TenantId,
+        service_name: &str,
+        id: Uuid,
+        request: ServiceProbeRequest,
+        created_at: &DateTime<Utc>,
+    ) -> Result<ServiceProbeId, DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let service = self
+            .get_service_by_name(tenant_id, service_name, Some(&txn))
+            .await?;
+        let service_probe_id = self
+            .new_service_probe(
+                tenant_id,
+                service.service_id,
+                id,
+                request,
+                created_at,
+                Some(&txn),
+            )
+            .await?;
+        txn.commit().await?;
+        Ok(service_probe_id)
+    }
+
+    /// Retrieves the service probe with id `service_probe_id`
+    /// for the service named `service_name`.
+    pub(crate) async fn get_service_probe_for_service_by_name(
+        &self,
+        tenant_id: TenantId,
+        service_name: &str,
+        service_probe_id: ServiceProbeId,
+    ) -> Result<ServiceProbeDescr, DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let service = self
+            .get_service_by_name(tenant_id, service_name, Some(&txn))
+            .await?;
+        let descr = self
+            .get_service_probe(tenant_id, service.service_id, service_probe_id, Some(&txn))
+            .await?;
+        txn.commit().await?;
+        Ok(descr)
+    }
+
+    /// Retrieves the list of service probes for the service named `service_name`.
+    pub(crate) async fn list_service_probes_for_service_by_name(
+        &self,
+        tenant_id: TenantId,
+        service_name: &str,
+        limit: Option<u32>,
+        probe_type: Option<ServiceProbeType>,
+    ) -> Result<Vec<ServiceProbeDescr>, DBError> {
+        let mut manager = self.pool.get().await?;
+        let txn = manager.transaction().await?;
+        let service = self
+            .get_service_by_name(tenant_id, service_name, Some(&txn))
+            .await?;
+        let descr_list = self
+            .list_service_probes(tenant_id, service.service_id, limit, probe_type, Some(&txn))
+            .await?;
+        txn.commit().await?;
+        Ok(descr_list)
     }
 }

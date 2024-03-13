@@ -796,12 +796,15 @@ pub(crate) async fn get_pipeline_runtime_state_by_id(
             location: row.get::<_, Option<String>>(0).unwrap_or_default(),
             desired_status: row.get::<_, String>(1).try_into()?,
             current_status: row.get::<_, String>(2).try_into()?,
-            status_since: convert_bigint_to_time(row.get(3))?,
+            status_since: convert_bigint_to_time(
+                "pipeline_runtime_state.status_since",
+                row.get(3),
+            )?,
             error: row
                 .get::<_, Option<String>>(4)
                 .map(|s| deserialize_error_response(pipeline_id, &s))
                 .transpose()?,
-            created: convert_bigint_to_time(row.get(5))?,
+            created: convert_bigint_to_time("pipeline_runtime_state.created", row.get(5))?,
         })
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -835,12 +838,15 @@ pub(crate) async fn get_pipeline_runtime_state_by_name(
             location: row.get::<_, Option<String>>(0).unwrap_or_default(),
             desired_status: row.get::<_, String>(1).try_into()?,
             current_status: row.get::<_, String>(2).try_into()?,
-            status_since: convert_bigint_to_time(row.get(3))?,
+            status_since: convert_bigint_to_time(
+                "pipeline_runtime_state.status_since",
+                row.get(3),
+            )?,
             error: row
                 .get::<_, Option<String>>(4)
                 .map(|s| deserialize_error_response(pipeline_id, &s))
                 .transpose()?,
-            created: convert_bigint_to_time(row.get(5))?,
+            created: convert_bigint_to_time("pipeline_runtime_state.created", row.get(5))?,
         })
     } else {
         Err(DBError::UnknownPipelineName {
@@ -1352,21 +1358,24 @@ fn row_to_pipeline(row: &Row) -> Result<Pipeline, DBError> {
         location: row.get::<_, Option<String>>(7).unwrap_or_default(),
         desired_status: row.get::<_, String>(8).try_into()?,
         current_status: row.get::<_, String>(9).try_into()?,
-        status_since: convert_bigint_to_time(row.get(10))?,
+        status_since: convert_bigint_to_time("pipeline_runtime_state.status_since", row.get(10))?,
         error: row
             .get::<_, Option<String>>(11)
             .map(|s| deserialize_error_response(pipeline_id, &s))
             .transpose()?,
-        created: convert_bigint_to_time(row.get(12))?,
+        created: convert_bigint_to_time("pipeline_runtime_state.created", row.get(12))?,
     };
 
     Ok(Pipeline { descriptor, state })
 }
 
-fn convert_bigint_to_time(created_secs: i64) -> Result<DateTime<Utc>, DBError> {
+pub(crate) fn convert_bigint_to_time(
+    table_column: &str,
+    created_secs: i64,
+) -> Result<DateTime<Utc>, DBError> {
     DateTime::from_timestamp_millis(created_secs * 1000).ok_or_else(|| {
         DBError::invalid_data(format!(
-            "Invalid timestamp in 'pipeline_runtime_state.created' column: {created_secs}"
+            "Invalid timestamp in '{table_column}' column: {created_secs}"
         ))
     })
 }
