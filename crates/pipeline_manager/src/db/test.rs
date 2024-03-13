@@ -7,8 +7,13 @@ use super::{
     ApiKeyDescr, ApiKeyId, ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState,
     ProgramSchema,
 };
-use crate::api::{KafkaService, ServiceConfig};
+use crate::api::{
+    KafkaService, ServiceConfig, ServiceProbeRequest, ServiceProbeResponse, ServiceProbeStatus,
+    ServiceProbeType,
+};
 use crate::auth::{self, TenantId, TenantRecord};
+use crate::db::pipeline::convert_bigint_to_time;
+use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
 use crate::db::{ServiceDescr, ServiceId};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -1194,6 +1199,25 @@ pub(crate) fn limited_option_service_config() -> impl Strategy<Value = Option<Se
     })
 }
 
+/// Generate an optional list limit
+pub(crate) fn limited_option_list_limit() -> impl Strategy<Value = Option<u32>> {
+    any::<Option<u8>>().prop_map(|byte| byte.map(|b| (b % 5) as u32))
+}
+
+/// Generate an optional service probe request type including possibly invalid
+pub(crate) fn limited_option_service_probe_type() -> impl Strategy<Value = Option<ServiceProbeType>>
+{
+    any::<Option<u8>>().prop_map(|byte| {
+        byte.map(|b| {
+            if b <= 127 {
+                ServiceProbeRequest::TestConnectivity.probe_type()
+            } else {
+                ServiceProbeRequest::KafkaGetTopics.probe_type()
+            }
+        })
+    })
+}
+
 /// Generate different resource configurations
 pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
     any::<(
@@ -1348,6 +1372,32 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_service_config()")] Option<ServiceConfig>,
     ),
     DeleteService(TenantId, String),
+    NewServiceProbe(
+        TenantId,
+        ServiceId,
+        #[proptest(strategy = "limited_uuid()")] Uuid,
+        ServiceProbeRequest,
+        #[cfg_attr(test, proptest(value = "Utc::now()"))] DateTime<Utc>,
+    ),
+    UpdateServiceProbeSetRunning(
+        TenantId,
+        ServiceProbeId,
+        #[cfg_attr(test, proptest(value = "Utc::now()"))] DateTime<Utc>,
+    ),
+    UpdateServiceProbeSetFinished(
+        TenantId,
+        ServiceProbeId,
+        ServiceProbeResponse,
+        #[cfg_attr(test, proptest(value = "Utc::now()"))] DateTime<Utc>,
+    ),
+    NextServiceProbe,
+    GetServiceProbe(TenantId, ServiceId, ServiceProbeId),
+    ListServiceProbes(
+        TenantId,
+        ServiceId,
+        #[proptest(strategy = "limited_option_list_limit()")] Option<u32>,
+        #[proptest(strategy = "limited_option_service_probe_type()")] Option<ServiceProbeType>,
+    ),
     ListApiKeys(TenantId),
     GetApiKey(TenantId, String),
     DeleteApiKey(TenantId, String),
@@ -1831,6 +1881,41 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_service(tenant_id, &service_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::NewServiceProbe(tenant_id, service_id, id, request, created_at) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.new_service_probe(tenant_id, service_id, id, request.clone(), &created_at, None).await;
+                                let impl_response = handle.db.new_service_probe(tenant_id, service_id, id, request.clone(), &created_at, None).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::UpdateServiceProbeSetRunning(tenant_id, service_probe_id, started_at) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.update_service_probe_set_running(tenant_id, service_probe_id, &started_at).await;
+                                let impl_response = handle.db.update_service_probe_set_running(tenant_id, service_probe_id, &started_at).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::UpdateServiceProbeSetFinished(tenant_id, service_probe_id, response, finished_at) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.update_service_probe_set_finished(tenant_id, service_probe_id, response.clone(), &finished_at).await;
+                                let impl_response = handle.db.update_service_probe_set_finished(tenant_id, service_probe_id, response.clone(), &finished_at).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::NextServiceProbe => {
+                                let model_response = model.next_service_probe().await;
+                                let impl_response = handle.db.next_service_probe().await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::GetServiceProbe(tenant_id, service_id, service_probe_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_service_probe(tenant_id, service_id, service_probe_id, None).await;
+                                let impl_response = handle.db.get_service_probe(tenant_id, service_id, service_probe_id, None).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::ListServiceProbes(tenant_id, service_id, limit, probe_type) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.list_service_probes(tenant_id, service_id, limit, probe_type.clone(), None).await;
+                                let impl_response = handle.db.list_service_probes(tenant_id, service_id, limit, probe_type.clone(), None).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                         }
                     }
                 });
@@ -1856,6 +1941,7 @@ struct DbModel {
     pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Vec<ApiPermission>)>,
     pub connectors: BTreeMap<(TenantId, ConnectorId), ConnectorDescr>,
     pub services: BTreeMap<(TenantId, ServiceId), ServiceDescr>,
+    pub service_probes: BTreeMap<(TenantId, ServiceProbeId), (ServiceProbeDescr, ServiceId)>,
     pub tenants: BTreeMap<TenantId, TenantRecord>,
 }
 
@@ -2983,6 +3069,9 @@ impl Storage for Mutex<DbModel> {
             })?;
         let service_id = service_id.clone();
 
+        // Cascade: remove any service probes of the service
+        s.service_probes.retain(|_, (_, id)| *id != service_id);
+
         // Remove the service
         s.services
             .remove(&(tenant_id, service_id.clone()))
@@ -2991,5 +3080,226 @@ impl Storage for Mutex<DbModel> {
             })?;
 
         Ok(())
+    }
+
+    async fn new_service_probe(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        id: Uuid,
+        request: ServiceProbeRequest,
+        created_at: &DateTime<Utc>,
+        _txn: Option<&Transaction<'_>>,
+    ) -> Result<ServiceProbeId, DBError> {
+        let mut s = self.lock().await;
+        let service_probe_id = ServiceProbeId(id);
+
+        // Primary key constraint violation
+        if s.service_probes.keys().any(|k| k.1 == service_probe_id) {
+            return Err(DBError::unique_key_violation("service_probe_pkey"));
+        }
+
+        // Service must exist
+        if !s
+            .services
+            .keys()
+            .any(|k| k.0 == tenant_id && k.1 == service_id)
+        {
+            return Err(DBError::UnknownService { service_id });
+        }
+
+        s.service_probes.insert(
+            (tenant_id, service_probe_id),
+            (
+                ServiceProbeDescr {
+                    service_probe_id,
+                    status: ServiceProbeStatus::Pending,
+                    request: request.clone(),
+                    probe_type: request.probe_type().clone(),
+                    response: None,
+                    // Convert to timestamp to second precision
+                    created_at: convert_bigint_to_time("", created_at.clone().timestamp()).unwrap(),
+                    started_at: None,
+                    finished_at: None,
+                },
+                service_id,
+            ),
+        );
+        Ok(service_probe_id)
+    }
+
+    async fn update_service_probe_set_running(
+        &self,
+        tenant_id: TenantId,
+        service_probe_id: ServiceProbeId,
+        started_at: &DateTime<Utc>,
+    ) -> Result<(), DBError> {
+        let mut s = self.lock().await;
+
+        // Service probe must exist
+        if s.service_probes
+            .get(&(tenant_id, service_probe_id))
+            .is_none()
+        {
+            return Err(DBError::UnknownServiceProbe { service_probe_id }.into());
+        }
+
+        // Update the service probe
+        let c = s
+            .service_probes
+            .get_mut(&(tenant_id, service_probe_id))
+            .ok_or(DBError::UnknownServiceProbe { service_probe_id })?;
+        c.0.status = ServiceProbeStatus::Running;
+        c.0.started_at = Some(convert_bigint_to_time("", started_at.clone().timestamp()).unwrap());
+
+        Ok(())
+    }
+
+    async fn update_service_probe_set_finished(
+        &self,
+        tenant_id: TenantId,
+        service_probe_id: ServiceProbeId,
+        response: ServiceProbeResponse,
+        finished_at: &DateTime<Utc>,
+    ) -> Result<(), DBError> {
+        let mut s = self.lock().await;
+
+        // Service probe must exist
+        if s.service_probes
+            .get(&(tenant_id, service_probe_id))
+            .is_none()
+        {
+            return Err(DBError::UnknownServiceProbe { service_probe_id }.into());
+        }
+
+        // Update the service probe
+        let c = s
+            .service_probes
+            .get_mut(&(tenant_id, service_probe_id))
+            .ok_or(DBError::UnknownServiceProbe { service_probe_id })?;
+        c.0.status = match response {
+            ServiceProbeResponse::Success(_) => ServiceProbeStatus::Success,
+            ServiceProbeResponse::Error(_) => ServiceProbeStatus::Failure,
+        };
+        c.0.response = Some(response);
+        c.0.finished_at =
+            Some(convert_bigint_to_time("", finished_at.clone().timestamp()).unwrap());
+
+        Ok(())
+    }
+
+    async fn next_service_probe(
+        &self,
+    ) -> Result<Option<(ServiceProbeId, TenantId, ServiceProbeRequest, ServiceConfig)>, DBError>
+    {
+        let s = self.lock().await;
+
+        // Sort ascending on (timestamp, id)
+        // Sorting by created_at is at second granularity
+        let mut values: Vec<(&(TenantId, ServiceProbeId), &(ServiceProbeDescr, ServiceId))> =
+            Vec::from_iter(s.service_probes.iter());
+        values.sort_by(|(_, (descr1, _)), (_, (descr2, _))| {
+            (descr1.created_at, descr1.service_probe_id)
+                .cmp(&(descr2.created_at, descr2.service_probe_id))
+        });
+
+        values
+            .iter()
+            .find(|(_, (probe_descr, _))| {
+                probe_descr.status == ServiceProbeStatus::Pending
+                    || probe_descr.status == ServiceProbeStatus::Running
+            })
+            .map(
+                |((tenant_id, service_probe_id), (probe_descr, service_id))| {
+                    Ok(Some((
+                        *service_probe_id,
+                        *tenant_id,
+                        probe_descr.request.clone(),
+                        s.services
+                            .get(&(*tenant_id, *service_id))
+                            .cloned()
+                            .ok_or(DBError::UnknownService {
+                                service_id: *service_id,
+                            })?
+                            .config,
+                    )))
+                },
+            )
+            .unwrap_or(Ok(None))
+    }
+
+    async fn get_service_probe(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        service_probe_id: ServiceProbeId,
+        _txn: Option<&Transaction<'_>>,
+    ) -> Result<ServiceProbeDescr, DBError> {
+        let s = self.lock().await;
+
+        // Service probe must exist
+        let service_probe = s
+            .service_probes
+            .get(&(tenant_id, service_probe_id))
+            .cloned()
+            .ok_or(DBError::UnknownServiceProbe { service_probe_id })?;
+
+        // The service identifier must match to that of the probe
+        if service_probe.1 != service_id {
+            return Err(DBError::UnknownServiceProbe { service_probe_id });
+        }
+
+        Ok(service_probe.0)
+    }
+
+    async fn list_service_probes(
+        &self,
+        tenant_id: TenantId,
+        service_id: ServiceId,
+        limit: Option<u32>,
+        probe_type: Option<ServiceProbeType>,
+        _txn: Option<&Transaction<'_>>,
+    ) -> Result<Vec<ServiceProbeDescr>, DBError> {
+        let s = self.lock().await;
+
+        // A service with that name must exist, else return empty
+        let service = s
+            .services
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id)
+            .map(|k| k.1.clone())
+            .find(|c| c.service_id == service_id);
+        if service.is_none() {
+            return Ok(vec![]);
+        }
+        let service = service.unwrap();
+
+        // Retrieve all probes
+        let mut list: Vec<ServiceProbeDescr> = s
+            .service_probes
+            .iter()
+            .filter(|k| k.0 .0 == tenant_id && k.1 .1 == service.service_id)
+            .map(|(_, (descr, _))| descr.clone())
+            .collect();
+
+        // Sort descending on (timestamp, id)
+        list.sort_by(|descr1, descr2| {
+            (descr2.created_at, descr2.service_probe_id)
+                .cmp(&(descr1.created_at, descr1.service_probe_id))
+        });
+
+        // Filter out leaving a single request type
+        if let Some(probe_type) = probe_type {
+            list.retain(|descr| descr.probe_type == probe_type);
+        }
+
+        // Limit list size
+        if let Some(limit) = limit {
+            while list.len() > limit as usize {
+                list.pop();
+            }
+        }
+
+        Ok(list)
     }
 }

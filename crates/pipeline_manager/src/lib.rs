@@ -14,5 +14,6 @@ pub mod logging;
 pub mod metrics;
 pub mod pipeline_automata;
 pub mod probe;
+pub mod prober;
 pub mod retries;
 pub mod runner;

@@ -416,6 +416,19 @@ test-s3:
         RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile s3 up --force-recreate --exit-code-from s3-demo
     END
 
+test-service-probe:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/.env .
+    RUN cat .env
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --pull postgres \
+                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile service-probe-demo up --force-recreate --exit-code-from service-probe-demo
+    END
+
 # Fetches the test binary from test-manager, and produces a container image out of it
 integration-test-container:
     FROM +install-deps
@@ -521,3 +534,4 @@ all-tests:
     BUILD +test-debezium-jdbc-sink
     BUILD +test-snowflake
     BUILD +test-s3
+    BUILD +test-service-probe

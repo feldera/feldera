@@ -2735,6 +2735,164 @@
           }
         ]
       }
+    },
+    "/v0/services/{service_name}/probes": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Fetch a list of probes for a service, optionally filtered by id.",
+        "description": "Fetch a list of probes for a service, optionally filtered by id.",
+        "operationId": "list_service_probes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "If provided, will filter based on exact match of the service probe\nidentifier.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "If provided, will limit the amount of probes to the N most recent.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "If provided, will only have probes of that particular type.",
+            "required": false,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ServiceProbeType"
+                }
+              ],
+              "nullable": true
+            }
+          },
+          {
+            "name": "service_name",
+            "in": "path",
+            "description": "Unique service name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service probes retrieved successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceProbeDescr"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Specified service name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "name": "unknown_name"
+                  },
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Create a service probe.",
+        "description": "Create a service probe.",
+        "operationId": "new_service_probe",
+        "parameters": [
+          {
+            "name": "service_name",
+            "in": "path",
+            "description": "Unique service name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Service probe created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateServiceProbeResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Specified service name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "name": "unknown_name"
+                  },
+                  "error_code": "UnknownName",
+                  "message": "An entity with name unknown_name was not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3179,6 +3337,18 @@
         "properties": {
           "service_id": {
             "$ref": "#/components/schemas/ServiceId"
+          }
+        }
+      },
+      "CreateServiceProbeResponse": {
+        "type": "object",
+        "description": "Response to a create service probe request.",
+        "required": [
+          "service_probe_id"
+        ],
+        "properties": {
+          "service_probe_id": {
+            "$ref": "#/components/schemas/ServiceProbeId"
           }
         }
       },
@@ -4414,7 +4584,7 @@
             }
           }
         ],
-        "description": "Service configuration for the API\n\nA Service is an API object, with as one of its properties its config.\nThe config is a variant of this enumeration, and is stored serialized\nin the database.\n\nHow a service configuration is applied can vary by connector, e.g., some\nmight have options that are mutually exclusive whereas others might be\ndefaults that can be overriden."
+        "description": "Configuration for a Service, which typically includes how to establish a\nconnection (e.g., hostname, port) and authenticate (e.g., credentials).\n\nThis configuration can be used to easily derive connectors for the service\nas well as probe it for information."
       },
       "ServiceDescr": {
         "type": "object",
@@ -4448,6 +4618,183 @@
         "type": "string",
         "format": "uuid",
         "description": "Unique service id."
+      },
+      "ServiceProbeDescr": {
+        "type": "object",
+        "description": "Service probe descriptor.",
+        "required": [
+          "service_probe_id",
+          "status",
+          "probe_type",
+          "request",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "probe_type": {
+            "$ref": "#/components/schemas/ServiceProbeType"
+          },
+          "request": {
+            "$ref": "#/components/schemas/ServiceProbeRequest"
+          },
+          "response": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceProbeResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "service_probe_id": {
+            "$ref": "#/components/schemas/ServiceProbeId"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/ServiceProbeStatus"
+          }
+        }
+      },
+      "ServiceProbeError": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "timeout_exceeded"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "unsupported_request"
+            ],
+            "properties": {
+              "unsupported_request": {
+                "type": "object",
+                "required": [
+                  "service_type",
+                  "probe_type"
+                ],
+                "properties": {
+                  "probe_type": {
+                    "type": "string"
+                  },
+                  "service_type": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "other"
+            ],
+            "properties": {
+              "other": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Range of possible errors that can occur during a service probe.\nThese are shared across all services."
+      },
+      "ServiceProbeId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Unique service probe id."
+      },
+      "ServiceProbeRequest": {
+        "type": "string",
+        "description": "Enumeration of all possible service probe requests.",
+        "enum": [
+          "test_connectivity",
+          "kafka_get_topics"
+        ]
+      },
+      "ServiceProbeResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "success"
+            ],
+            "properties": {
+              "success": {
+                "$ref": "#/components/schemas/ServiceProbeResult"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "$ref": "#/components/schemas/ServiceProbeError"
+              }
+            }
+          }
+        ],
+        "description": "Response being either success or error."
+      },
+      "ServiceProbeResult": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "A connection to the service was established.",
+            "enum": [
+              "connected"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "kafka_topics"
+            ],
+            "properties": {
+              "kafka_topics": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The names of all Kafka topics of the service."
+              }
+            }
+          }
+        ],
+        "description": "Enumeration of all possible service probe success responses."
+      },
+      "ServiceProbeStatus": {
+        "type": "string",
+        "description": "Service probe status.\n\nState transition diagram:\n```text\nPending\n│\n│ (Prober server picks up the probe)\n│\n▼\n⌛Running ───► Failure\n│\n▼\nSuccess\n```",
+        "enum": [
+          "pending",
+          "running",
+          "success",
+          "failure"
+        ]
+      },
+      "ServiceProbeType": {
+        "type": "string",
+        "description": "Enumeration of all possible service probe types.\nEach type maps to exactly one request variant.",
+        "enum": [
+          "test_connectivity",
+          "kafka_get_topics"
+        ]
       },
       "SqlCompilerMessage": {
         "type": "object",
