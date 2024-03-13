@@ -130,6 +130,7 @@ const ServiceList = () => {
   }, [servicesQuery.isError, servicesQuery.error])
   return (
     <DataGridPro
+      autoHeight
       loading={servicesQuery.isPending}
       rows={servicesQuery.data ?? []}
       getRowId={row => row.service_id}

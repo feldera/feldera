@@ -32,7 +32,7 @@ import { valibotResolver } from '@hookform/resolvers/valibot'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import { Switch } from '@mui/material'
+import { FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
@@ -139,10 +139,16 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
   const tabFooter = (
     <TabFooter submitButton={props.submitButton} activeTab={activeTab} setActiveTab={setActiveTab} tabs={tabs} />
   )
+  const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
 
   const jsonSwitch = (
     <Box sx={{ pl: 2, marginTop: { xs: '0', md: '-4rem' } }}>
-      <Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} /> Edit JSON
+      <Tooltip title={editorDirty !== 'clean' ? 'Fix errors before switching the view' : undefined}>
+        <FormControlLabel
+          control={<Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} disabled={editorDirty !== 'clean'} />}
+          label='Edit JSON'
+        />
+      </Tooltip>
     </Box>
   )
   return (
@@ -191,6 +197,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 direction={Direction.OUTPUT}
                 configFromText={t => parseSnowflakeOutputSchemaConfig(JSON.parse(t))}
                 configToText={c => JSON.stringify(normalizeConfig(c as any), undefined, '\t')}
+                setEditorDirty={setEditorDirty}
               />
               <Box sx={{ display: 'flex', justifyContent: 'end' }}>{props.submitButton}</Box>
             </Box>
