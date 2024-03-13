@@ -4,7 +4,7 @@ use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
-use dbsp_adapters::{
+use pipeline_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
 };
@@ -882,12 +882,12 @@ pub fn extract_hour_Time(value: Time) -> i64 {
 #[cfg(test)]
 mod test {
     use super::{Date, Time, Timestamp};
-    use dbsp_adapters::{
-        deserialize_table_record, serialize_table_record, DeserializeWithContext,
-        SerializeWithContext, SqlSerdeConfig,
-    };
     use lazy_static::lazy_static;
     use pipeline_types::format::json::JsonFlavor;
+    use pipeline_types::serde_with_context::{
+        DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+    };
+    use pipeline_types::{deserialize_table_record, serialize_table_record};
 
     #[derive(Debug, Eq, PartialEq, serde::Serialize)]
     #[allow(non_snake_case)]

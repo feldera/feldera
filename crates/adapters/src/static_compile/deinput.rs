@@ -1,14 +1,14 @@
-use super::SqlSerdeConfig;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::byte_record_deserializer,
-    ControllerError, DeCollectionHandle, DeserializeWithContext,
+    ControllerError, DeCollectionHandle,
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
 use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
 };
+use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
@@ -711,7 +711,6 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        deserialize_without_context,
         static_compile::{
             deinput::RecordFormat, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeSetHandle,
             DeZSetHandle,
@@ -723,7 +722,8 @@ mod test {
     use dbsp::{
         algebra::F32, utils::Tup2, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
-    use pipeline_types::format::json::JsonFlavor;
+
+    use pipeline_types::{deserialize_without_context, format::json::JsonFlavor};
     use serde_json::to_string as to_json_string;
     use size_of::SizeOf;
     use std::hash::Hash;

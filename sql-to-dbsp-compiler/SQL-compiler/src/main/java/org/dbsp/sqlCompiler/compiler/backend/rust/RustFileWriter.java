@@ -125,7 +125,8 @@ public class RustFileWriter {
                         MapHandle, ZSetHandle, OutputHandle,
                         dynamic::DynData,
                     };
-                    use dbsp_adapters::{deserialize_table_record, serialize_table_record, Catalog};
+                    use dbsp_adapters::Catalog;
+                    use pipeline_types::{deserialize_table_record, serialize_table_record};
                     use size_of::*;
                     use ::serde::{Deserialize,Serialize};
                     use compare::{Compare, Extract};
@@ -287,7 +288,7 @@ public class RustFileWriter {
             if (i <= 10)
                 // These are already pre-declared
                 continue;
-            stream.append("dbsp_adapters::deserialize_without_context!(");
+            stream.append("pipeline_types::deserialize_without_context!(");
             stream.append(DBSPTypeCode.TUPLE.rustName)
                     .append(i);
             for (int j = 0; j < i; j++) {

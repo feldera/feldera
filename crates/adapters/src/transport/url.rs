@@ -264,7 +264,6 @@ fn rustls_config() -> Arc<ClientConfig> {
 #[cfg(test)]
 mod test {
     use crate::{
-        deserialize_without_context,
         test::{mock_input_pipeline, wait, MockDeZSet, MockInputConsumer, DEFAULT_TIMEOUT_MS},
         transport::InputReader,
     };
@@ -276,6 +275,7 @@ mod test {
     };
     use async_stream::stream;
     use futures_timer::Delay;
+    use pipeline_types::deserialize_without_context;
     use serde::{Deserialize, Serialize};
     use std::{
         io::Error as IoError,

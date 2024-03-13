@@ -2,11 +2,12 @@
 
 use crate::{
     controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
-    DbspCircuitHandle, DeserializeWithContext, FormatConfig, InputTransport, SqlSerdeConfig,
+    DbspCircuitHandle, FormatConfig, InputTransport,
 };
 use anyhow::Result as AnyResult;
 use dbsp::Runtime;
 use log::{Log, Metadata, Record};
+use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{
     thread::sleep,
     time::{Duration, Instant},

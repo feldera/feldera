@@ -1,15 +1,15 @@
 //! (De)serializer configuration used for SQL records.
 //!
-//! The [`DeserializeWithContext`](`crate::DeserializeWithContext`) and
-//! [`SerializeWithContext`](`crate::SerializeWithContext`) traits
+//! The [`DeserializeWithContext`](`crate::serde_with_context::DeserializeWithContext`) and
+//! [`SerializeWithContext`](`crate::serde_with_context::SerializeWithContext`) traits
 //! provide a mechanism for building configurable deserializers and serializers.
 //! This module defines the [`SqlSerdeConfig`] type used to specify the
 //! encoding used for SQL types.  All input types used by a Feldera pipeline
 //! must implement `DeserializeWithContext<SqlDeserializerConfig>`.
-//! Likewise all output types must implement
+//! Likewise, all output types must implement
 //! `SerializeWithContext<SqlSerializerConfig>`.
 
-use pipeline_types::format::json::JsonFlavor;
+use crate::format::json::JsonFlavor;
 use serde_arrow::schema::SerdeArrowSchema;
 
 /// Representation of the SQL `TIME` type.
@@ -76,13 +76,13 @@ pub struct SqlSerdeConfig {
     pub date_format: DateFormat,
     /// `TIMESTAMP` format.
     pub timestamp_format: TimestampFormat,
-    /// Arrow schema for serialization
-    pub arrow_schema: Option<SerdeArrowSchema>,
+    /// Schema of the arrow format.
+    arrow_schema: Option<SerdeArrowSchema>,
 }
 
 impl SqlSerdeConfig {
-    pub(crate) fn from_schema(arrow_schema: SerdeArrowSchema) -> Self {
-        let mut cfg = SqlSerdeConfig::from(JsonFlavor::Default);
+    pub fn from_schema(arrow_schema: SerdeArrowSchema) -> Self {
+        let mut cfg = SqlSerdeConfig::from(JsonFlavor::ParquetConverter);
         cfg.arrow_schema = Some(arrow_schema);
         cfg
     }

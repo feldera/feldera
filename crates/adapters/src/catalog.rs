@@ -1,13 +1,14 @@
 use std::fmt::{Debug, Formatter};
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::{serialize_struct, static_compile::DeScalarHandle, ControllerError};
+use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 use dbsp::{utils::Tup2, InputHandle};
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::program_schema::canonical_identifier;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::query::OutputQuery;
+use pipeline_types::serialize_struct;
 use serde::{Deserialize, Serialize};
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrowBuilder;

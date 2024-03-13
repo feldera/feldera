@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 dbsp = { path = "../../../crates/dbsp" }
-dbsp_adapters = { path = "../../../crates/adapters" }
 pipeline_types = { path = "../../../crates/pipeline-types/" }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf", features = ["maths", "rkyv"] }
 geo = { version = "0.26.0" }

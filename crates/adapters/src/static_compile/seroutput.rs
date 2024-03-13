@@ -1,12 +1,15 @@
 use crate::{
     catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
-    ControllerError, SerializationContext, SerializeWithContext, SqlSerdeConfig,
+    ControllerError,
 };
 use anyhow::Result as AnyResult;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::dynamic::DowncastTrait;
 use dbsp::typed_batch::DynBatchReader;
 use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle};
+use pipeline_types::serde_with_context::{
+    SerializationContext, SerializeWithContext, SqlSerdeConfig,
+};
 use serde::Serialize;
 use serde_arrow::ArrowBuilder;
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};

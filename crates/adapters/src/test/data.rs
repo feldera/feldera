@@ -5,7 +5,7 @@ use proptest_derive::Arbitrary;
 use size_of::SizeOf;
 use std::string::ToString;
 
-use crate::{deserialize_without_context, serialize_struct};
+use pipeline_types::{deserialize_without_context, serialize_struct};
 
 #[derive(
     Debug,

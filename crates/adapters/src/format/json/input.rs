@@ -448,13 +448,16 @@ impl Parser for JsonParser {
 #[cfg(test)]
 mod test {
     use crate::{
-        deserialize_table_record,
         test::{mock_parser_pipeline, MockUpdate},
         transport::InputConsumer,
-        DeserializeWithContext, FormatConfig, ParseError, SqlSerdeConfig,
+        FormatConfig, ParseError,
     };
     use log::trace;
-    use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
+    use pipeline_types::{
+        deserialize_table_record,
+        format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat},
+        serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
+    };
     use std::{borrow::Cow, fmt::Debug};
 
     #[derive(PartialEq, Debug, Eq)]

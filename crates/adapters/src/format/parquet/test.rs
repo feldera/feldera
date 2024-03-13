@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -9,7 +8,7 @@ use arrow::array::{
     Time64NanosecondArray, TimestampMillisecondArray,
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use dbsp::trace::Batch;
 use dbsp::utils::Tup2;
 use dbsp::OrdZSet;
 use parquet::arrow::ArrowWriter;
@@ -17,199 +16,16 @@ use parquet::file::properties::WriterProperties;
 use pipeline_types::format::parquet::ParquetEncoderConfig;
 use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use pretty_assertions::assert_eq;
-use serde::{Deserialize, Deserializer, Serializer};
 use size_of::SizeOf;
+use sqllib::{Date, Time, Timestamp};
 use tempfile::NamedTempFile;
 
 use crate::format::parquet::ParquetEncoder;
 use crate::format::Encoder;
 use crate::static_compile::seroutput::SerBatchImpl;
 use crate::test::{mock_input_pipeline, wait, MockOutputConsumer, DEFAULT_TIMEOUT_MS};
-use crate::{
-    deserialize_table_record, deserialize_without_context, serialize_table_record,
-    serialize_without_context, DateFormat, DeserializeWithContext, SerBatch, SerializeWithContext,
-    SqlSerdeConfig, TimestampFormat,
-};
-
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    SizeOf,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
-#[serde(transparent)]
-pub struct Timestamp {
-    // since unix epoch
-    milliseconds: i64,
-}
-
-impl Timestamp {
-    fn new(milliseconds: i64) -> Self {
-        Self { milliseconds }
-    }
-
-    fn milliseconds(&self) -> i64 {
-        self.milliseconds
-    }
-}
-
-impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
-    fn serialize_with_context<S>(
-        &self,
-        serializer: S,
-        context: &SqlSerdeConfig,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match context.timestamp_format {
-            TimestampFormat::String(format_string) => {
-                let datetime = DateTime::from_timestamp(
-                    self.milliseconds / 1000,
-                    ((self.milliseconds % 1000) * 1000) as u32,
-                )
-                .expect("Timestamp should be valid");
-                serializer.serialize_str(&datetime.format(format_string).to_string())
-            }
-            TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds),
-        }
-    }
-}
-
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
-    fn deserialize_with_context<D>(
-        deserializer: D,
-        config: &'de SqlSerdeConfig,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        match config.timestamp_format {
-            TimestampFormat::String(format) => {
-                // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
-                // and can only deserialize into an owned string.
-                let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-                let timestamp = NaiveDateTime::parse_from_str(timestamp_str.trim(), format)
-                    .expect("Timestamp should be valid");
-                Ok(Self::new(timestamp.timestamp_millis()))
-            }
-            TimestampFormat::MillisSinceEpoch => {
-                let millis: i64 = Deserialize::deserialize(deserializer)?;
-                Ok(Self::new(millis))
-            }
-        }
-    }
-}
-
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    SizeOf,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
-#[serde(transparent)]
-pub struct Time {
-    nanoseconds: u64,
-}
-
-impl Time {
-    fn new(nanoseconds: u64) -> Self {
-        Self { nanoseconds }
-    }
-
-    fn nanoseconds(&self) -> u64 {
-        self.nanoseconds
-    }
-}
-
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    SizeOf,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
-#[serde(transparent)]
-pub struct Date {
-    // since unix epoch
-    days: i32,
-}
-
-impl Date {
-    fn new(days: i32) -> Self {
-        Self { days }
-    }
-
-    fn days(&self) -> i32 {
-        self.days
-    }
-}
-
-impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Date {
-    fn deserialize_with_context<D>(
-        deserializer: D,
-        config: &'de SqlSerdeConfig,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        match config.date_format {
-            DateFormat::String(format) => {
-                let str: &'de str = Deserialize::deserialize(deserializer)?;
-                let date =
-                    NaiveDate::parse_from_str(str.trim(), format).expect("Date should be valid");
-                Ok(Self::new(
-                    (date.and_time(NaiveTime::default()).timestamp() / 86_400) as i32,
-                ))
-            }
-            DateFormat::DaysSinceEpoch => Ok(Self {
-                days: i32::deserialize(deserializer)?,
-            }),
-        }
-    }
-}
-
-serialize_without_context!(Date);
-serialize_without_context!(Time);
-deserialize_without_context!(Time);
+use crate::SerBatch;
+use pipeline_types::{deserialize_table_record, serialize_table_record};
 
 /// This struct mimics the field naming schema of the compiler.
 #[derive(

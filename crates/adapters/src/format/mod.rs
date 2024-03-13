@@ -1,11 +1,12 @@
 use crate::catalog::InputCollectionHandle;
 use crate::format::parquet::{ParquetInputFormat, ParquetOutputFormat};
-use crate::{catalog::SerBatch, transport::Step, ControllerError, FieldParseError};
+use crate::{catalog::SerBatch, transport::Step, ControllerError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
 use once_cell::sync::Lazy;
 use pipeline_types::program_schema::Relation;
+use pipeline_types::serde_with_context::FieldParseError;
 use serde::Serialize;
 use serde_yaml::Value as YamlValue;
 use std::{

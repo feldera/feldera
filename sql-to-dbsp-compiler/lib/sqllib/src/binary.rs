@@ -2,8 +2,8 @@
 
 use crate::{some_function1, some_function2, some_function3, some_function4};
 use dbsp::num_entries_scalar;
-use dbsp_adapters::{deserialize_without_context, serialize_without_context};
 use hex::ToHex;
+use pipeline_types::{deserialize_without_context, serialize_without_context};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::Debug;

@@ -1,6 +1,7 @@
 use crate::algebra::{HasOne, HasZero};
 use ordered_float::OrderedFloat;
 use paste::paste;
+use pipeline_types::{deserialize_without_context, serialize_without_context};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display},
@@ -386,6 +387,11 @@ float! {
     F32(f32),
     F64(f64),
 }
+
+serialize_without_context!(F32);
+serialize_without_context!(F64);
+deserialize_without_context!(F32);
+deserialize_without_context!(F64);
 
 impl From<F32> for F64 {
     #[inline]
