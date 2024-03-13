@@ -2,7 +2,7 @@
 //!
 //! ## Motivation
 //!
-//! See [`deserialize_with_context`](super::deserialize_with_context) module
+//! See [`deserialize_with_context`](super::deserialize) module
 //! documentation.
 //!
 //! ## Design
@@ -24,14 +24,12 @@
 // This could benefit from procedural macros to auto-derive
 // [`SerializeWithContext`].
 
-use std::marker::PhantomData;
-
-use dbsp::algebra::{F32, F64};
 use rust_decimal::Decimal;
 use serde::{
     ser::{SerializeSeq, SerializeTuple},
     Serialize, Serializer,
 };
+use std::marker::PhantomData;
 
 /// Similar to [`Serialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
@@ -53,7 +51,7 @@ macro_rules! serialize_without_context {
     };
 
     ($typ:tt, $($arg:tt),*) => {
-        impl<C, $($arg),*> $crate::SerializeWithContext<C> for $typ<$($arg),*>
+        impl<C, $($arg),*> $crate::serde_with_context::SerializeWithContext<C> for $typ<$($arg),*>
         where
             $typ<$($arg),*>: serde::Serialize,
         {
@@ -82,8 +80,6 @@ serialize_without_context!(usize);
 serialize_without_context!(isize);
 serialize_without_context!(String);
 serialize_without_context!(char);
-serialize_without_context!(F32);
-serialize_without_context!(F64);
 serialize_without_context!(Decimal);
 
 /// Used to pass the context to nested structures during serialization.
@@ -286,10 +282,10 @@ macro_rules! serialize_struct {
     ($struct:ident($($arg:tt $(: $bound:tt)?),*)[$num_fields:expr]{$($field_name:ident[$column_name:tt]: $type:ty),* }) => {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
-        impl<C, $($arg),*> $crate::SerializeWithContext<C> for $struct<$($arg),*>
+        impl<C, $($arg),*> $crate::serde_with_context::SerializeWithContext<C> for $struct<$($arg),*>
         where
-            $($arg: $crate::SerializeWithContext<C> + serde::Serialize),*
-            $($($arg : $bound,)?)*
+            $($arg: $crate::serde_with_context::SerializeWithContext<C> + serde::Serialize),*
+            $($($arg : $bound,)?),*
         {
             fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
             where
@@ -297,7 +293,7 @@ macro_rules! serialize_struct {
             {
                 let mut struct_serializer = serializer.serialize_struct(stringify!($struct), $num_fields)?;
                 $(
-                    serde::ser::SerializeStruct::serialize_field(&mut struct_serializer, $column_name, &$crate::SerializationContext::new(context, &self.$field_name))?;
+                    serde::ser::SerializeStruct::serialize_field(&mut struct_serializer, $column_name, &$crate::serde_with_context::SerializationContext::new(context, &self.$field_name))?;
                 )*
                 serde::ser::SerializeStruct::end(struct_serializer)
             }
@@ -310,14 +306,14 @@ macro_rules! serialize_table_record {
     ($struct:ident[$num_fields:expr]{$($field_name:ident[$column_name:tt]: $type:ty),* }) => {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
-        impl $crate::SerializeWithContext<$crate::SqlSerdeConfig> for $struct {
-            fn serialize_with_context<S>(&self, serializer: S, context: & $crate::SqlSerdeConfig) -> Result<S::Ok, S::Error>
+        impl $crate::serde_with_context::SerializeWithContext<$crate::serde_with_context::SqlSerdeConfig> for $struct {
+            fn serialize_with_context<S>(&self, serializer: S, context: & $crate::serde_with_context::SqlSerdeConfig) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
             {
                 let mut struct_serializer = serializer.serialize_struct(stringify!($struct), $num_fields)?;
                 $(
-                    serde::ser::SerializeStruct::serialize_field(&mut struct_serializer, $column_name, &$crate::SerializationContext::new(context, &self.$field_name))?;
+                    serde::ser::SerializeStruct::serialize_field(&mut struct_serializer, $column_name, &$crate::serde_with_context::SerializationContext::new(context, &self.$field_name))?;
                 )*
                 serde::ser::SerializeStruct::end(struct_serializer)
             }
@@ -327,14 +323,12 @@ macro_rules! serialize_table_record {
 
 #[cfg(test)]
 mod test {
-
-    use dbsp::algebra::F64;
     use lazy_static::lazy_static;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use serde::{Deserialize, Serialize};
 
-    use crate::{SerializationContext, SerializeWithContext, SqlSerdeConfig};
+    use crate::serde_with_context::{SerializationContext, SerializeWithContext, SqlSerdeConfig};
 
     #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
     struct TUPLE0;
@@ -365,14 +359,14 @@ mod test {
     #[allow(non_snake_case)]
     struct Struct2 {
         #[allow(non_snake_case)]
-        cc_num: F64,
+        cc_num: u64,
         #[allow(non_snake_case)]
         first: Option<String>,
         #[allow(non_snake_case)]
         dec: Decimal,
     }
     serialize_struct!(Struct2()[3] {
-        cc_num["cc_num"]: F64,
+        cc_num["cc_num"]: u64,
         first["FIRST"]: Option<String>,
         dec["DEC"]: Decimal
     });
@@ -381,32 +375,32 @@ mod test {
     fn serialize_struct2() {
         assert_eq!(
             serialize_json_with_default_context(&Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(0.123),
             })
             .unwrap(),
-            r#"{"cc_num":100.0,"FIRST":null,"DEC":"0.123"}"#
+            r#"{"cc_num":100,"FIRST":null,"DEC":"0.123"}"#
         );
 
         assert_eq!(
             serialize_json_with_default_context(&Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(-1.40),
             })
             .unwrap(),
-            r#"{"cc_num":100.0,"FIRST":null,"DEC":"-1.40"}"#
+            r#"{"cc_num":100,"FIRST":null,"DEC":"-1.40"}"#
         );
 
         assert_eq!(
             serialize_json_with_default_context(&Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: Some("foo".to_string()),
                 dec: dec!(1e20),
             })
             .unwrap(),
-            r#"{"cc_num":100.0,"FIRST":"foo","DEC":"100000000000000000000"}"#
+            r#"{"cc_num":100,"FIRST":"foo","DEC":"100000000000000000000"}"#
         );
     }
 

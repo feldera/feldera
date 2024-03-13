@@ -3,9 +3,10 @@ use crate::{
     static_compile::deinput::{
         CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
     },
-    ControllerError, DeCollectionHandle, DeserializeWithContext, SqlSerdeConfig,
+    ControllerError, DeCollectionHandle,
 };
 use anyhow::Result as AnyResult;
+use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{
     fmt::Debug,
     mem::take,

@@ -242,11 +242,9 @@ however the File transport does not support this representation."
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        deserialize_without_context,
-        test::{mock_input_pipeline, wait, DEFAULT_TIMEOUT_MS},
-    };
+    use crate::test::{mock_input_pipeline, wait, DEFAULT_TIMEOUT_MS};
     use csv::WriterBuilder as CsvWriterBuilder;
+    use pipeline_types::deserialize_without_context;
     use serde::{Deserialize, Serialize};
     use std::{io::Write, thread::sleep, time::Duration};
     use tempfile::NamedTempFile;

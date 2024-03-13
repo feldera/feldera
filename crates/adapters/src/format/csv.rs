@@ -345,3 +345,57 @@ impl Encoder for CsvEncoder {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::format::string_record_deserializer;
+    use pipeline_types::deserialize_table_record;
+    use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+
+    #[derive(Debug, Eq, PartialEq)]
+    #[allow(non_snake_case)]
+    struct CaseSensitive {
+        fIeLd1: bool,
+        field2: String,
+        field3: Option<u8>,
+    }
+
+    deserialize_table_record!(CaseSensitive["CaseSensitive", 3] {
+    (fIeLd1, "fIeLd1", true, bool, None),
+    (field2, "field2", true, String, None),
+    (field3, "field3", false, Option<u8>, Some(None))
+    });
+
+    #[test]
+    fn csv() {
+        let data = r#"true,"foo",5
+    true,bar,buzz"#;
+        let rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(data.as_bytes());
+        let mut records = rdr.into_records();
+        assert_eq!(
+            CaseSensitive::deserialize_with_context(
+                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
+                &SqlSerdeConfig::default()
+            )
+            .unwrap(),
+            CaseSensitive {
+                fIeLd1: true,
+                field2: "foo".to_string(),
+                field3: Some(5)
+            }
+        );
+        assert_eq!(
+            CaseSensitive::deserialize_with_context(
+                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
+                &SqlSerdeConfig::default()
+            )
+            .map_err(|e| e.to_string()),
+            Err(
+                r#"{"field":"field3","description":"field 2: invalid digit found in string"}"#
+                    .to_string()
+            )
+        );
+    }
+}

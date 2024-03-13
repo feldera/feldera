@@ -43,20 +43,12 @@
 // This could benefit from using procedural macros to auto-derive
 // [`DeserializeWithContext`].
 
-use std::{fmt, marker::PhantomData};
-
-use crate::static_compile::catalog::NeighborhoodQuery;
-use dbsp::{
-    algebra::{F32, F64},
-    operator::NeighborhoodDescr,
-    utils::{Tup1, Tup10, Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9},
-    DBData,
-};
 use rust_decimal::Decimal;
 use serde::{
-    de::{DeserializeSeed, Error, SeqAccess, Visitor},
+    de::{DeserializeSeed, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
 };
+use std::{fmt, marker::PhantomData};
 
 /// Similar to [`Deserialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
@@ -78,7 +70,7 @@ macro_rules! deserialize_without_context {
     };
 
     ($typ:tt, $($arg:tt),*) => {
-        impl<'de, C, $($arg),*> $crate::DeserializeWithContext<'de, C> for $typ<$($arg),*>
+        impl<'de, C, $($arg),*> $crate::serde_with_context::DeserializeWithContext<'de, C> for $typ<$($arg),*>
         where
             $typ<$($arg),*>: serde::Deserialize<'de>,
         {
@@ -107,23 +99,11 @@ deserialize_without_context!(usize);
 deserialize_without_context!(isize);
 deserialize_without_context!(String);
 deserialize_without_context!(char);
-deserialize_without_context!(F32);
-deserialize_without_context!(F64);
 deserialize_without_context!(Decimal);
-deserialize_without_context!(Tup1, T1);
-deserialize_without_context!(Tup2, T1, T2);
-deserialize_without_context!(Tup3, T1, T2, T3);
-deserialize_without_context!(Tup4, T1, T2, T3, T4);
-deserialize_without_context!(Tup5, T1, T2, T3, T4, T5);
-deserialize_without_context!(Tup6, T1, T2, T3, T4, T5, T6);
-deserialize_without_context!(Tup7, T1, T2, T3, T4, T5, T6, T7);
-deserialize_without_context!(Tup8, T1, T2, T3, T4, T5, T6, T7, T8);
-deserialize_without_context!(Tup9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
-deserialize_without_context!(Tup10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 
 // Used to pass the context to nested structures using the
 // `DeserializeSeed` mechanism.  This is only public because it's
-// use in a macro; it's not suppposed to be user-visible otherwise.
+// use in a macro; it's not supposed to be user-visible otherwise.
 #[doc(hidden)]
 pub struct DeserializationContext<'de, C, T> {
     context: &'de C,
@@ -205,6 +185,7 @@ where
     }
 }
 
+#[macro_export]
 macro_rules! deserialize_tuple {
     ([$num_fields:expr]($($arg:tt),*)) => {
         #[allow(unused_variables)]
@@ -216,40 +197,41 @@ macro_rules! deserialize_tuple {
         {
             fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
             where
-                D: Deserializer<'de>,
+                D: serde::de::Deserializer<'de>,
             {
                 struct TupleVisitor<'de, C, $($arg),*> {
                     context: &'de C,
-                    phantom: PhantomData<($($arg),*)>,
+                    phantom: std::marker::PhantomData<($($arg),*)>,
                 }
 
                 impl<'de, C, $($arg),*> TupleVisitor<'de, C, $($arg),*> {
                     fn new(context: &'de C) -> Self {
                         Self {
                             context,
-                            phantom: PhantomData,
+                            phantom: std::marker::PhantomData,
                         }
                     }
                 }
 
-                impl<'de, C, $($arg),*> Visitor<'de> for TupleVisitor<'de, C, $($arg),*>
+                impl<'de, C, $($arg),*> serde::de::Visitor<'de> for TupleVisitor<'de, C, $($arg),*>
                 where
-                    $($arg: DeserializeWithContext<'de, C>),*
+                    $($arg: $crate::serde_with_context::DeserializeWithContext<'de, C>),*
                 {
                     type Value = ($($arg),*);
 
-                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                         write!(formatter, concat!("a tuple of size ", stringify!($num_fields)))
                     }
 
                     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
                     where
-                        A: SeqAccess<'de>,
+                        A: serde::de::SeqAccess<'de>,
                     {
                         let mut cnt: i32 = -1;
                         Ok(($({cnt+=1; seq
-                            .next_element_seed(<$crate::DeserializationContext<C, $arg>>::new(self.context))?
+                            .next_element_seed(<$crate::serde_with_context::DeserializationContext<C, $arg>>::new(self.context))?
                             .ok_or_else(|| {
+                                use serde::de::Error;
                                 A::Error::invalid_length(cnt as usize, &self)
                             })?}),*))
                     }
@@ -282,18 +264,18 @@ where
 {
     fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
         struct OptionVisitor<'de, C, T> {
             context: &'de C,
-            phantom: std::marker::PhantomData<T>,
+            phantom: PhantomData<T>,
         }
 
         impl<'de, C, T> OptionVisitor<'de, C, T> {
             fn new(context: &'de C) -> Self {
                 Self {
                     context,
-                    phantom: std::marker::PhantomData,
+                    phantom: PhantomData,
                 }
             }
         }
@@ -317,7 +299,7 @@ where
 
             fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
-                D: serde::Deserializer<'de>,
+                D: Deserializer<'de>,
             {
                 Ok(Some(T::deserialize_with_context(
                     deserializer,
@@ -359,10 +341,10 @@ macro_rules! deserialize_struct {
     ($struct:ident($($arg:tt $(: $bound:tt)?),*)[$num_fields:expr]{$($field_name:ident: $type:ty = $default:expr),* }) => {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
-        impl<'de, C, $($arg),*> $crate::DeserializeWithContext<'de, C> for $struct<$($arg),*>
+        impl<'de, C, $($arg),*> $crate::serde_with_context::DeserializeWithContext<'de, C> for $struct<$($arg),*>
         where
-            $($arg: $crate::DeserializeWithContext<'de, C>,)*
-            $($($arg : $bound,)?)*
+            $($arg: $crate::serde_with_context::DeserializeWithContext<'de, C>),*
+            $($($arg : $bound,)?),*
         {
             fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
             where
@@ -385,8 +367,8 @@ macro_rules! deserialize_struct {
 
                 impl<'de, C, $($arg),*> serde::de::Visitor<'de> for StructVisitor<'de, C, $($arg),*>
                 where
-                    $($arg: $crate::DeserializeWithContext<'de, C>,)*
-                    $($($arg : $bound,)?)*
+                    $($arg: $crate::serde_with_context::DeserializeWithContext<'de, C>),*
+                    $($($arg : $bound,)?),*
                 {
 
                     type Value = $struct<$($arg),*>;
@@ -403,7 +385,7 @@ macro_rules! deserialize_struct {
                         while let Some(field_name) = map.next_key::<std::borrow::Cow<'de, str>>()? {
                             $(
                                 if stringify!($field_name) == field_name.as_ref() {
-                                    $field_name = Some(map.next_value_seed(<$crate::DeserializationContext<C, $type>>::new(self.context))?);
+                                    $field_name = Some(map.next_value_seed(<$crate::serde_with_context::DeserializationContext<C, $type>>::new(self.context))?);
                                 } else
                             )*
                             {let _ = map.next_value::<serde::de::IgnoredAny>()?;}
@@ -420,7 +402,7 @@ macro_rules! deserialize_struct {
                         let result = $struct {
                             $($field_name: {
                                 _cols += 1;
-                                seq.next_element_seed(<$crate::DeserializationContext<C, $type>>::new(self.context))?
+                                seq.next_element_seed(<$crate::serde_with_context::DeserializationContext<C, $type>>::new(self.context))?
                                     .ok_or_else(|| {
                                         serde::de::Error::invalid_length(_cols-1, &format!("{} fields", $num_fields).as_str())
                                     })?
@@ -442,19 +424,6 @@ macro_rules! deserialize_struct {
     }
 }
 
-deserialize_struct!(NeighborhoodDescr(K: DBData, V: DBData)[4]{
-    anchor: Option<K> = Some(None),
-    anchor_val: V = Some(Default::default()),
-    before: u64 = None,
-    after: u64 = None
-});
-
-deserialize_struct!(NeighborhoodQuery(K)[3]{
-    anchor: Option<K> = Some(None),
-    before: u64 = None,
-    after: u64 = None
-});
-
 /// Generate a [`DeserializeWithContext`] impl for a SQL table row type.
 ///
 /// A call to this macro is normally generated by the SQL compiler.
@@ -469,17 +438,17 @@ macro_rules! deserialize_table_record {
         #[allow(unused_variables)]
         #[allow(unused_mut)]
         #[allow(dead_code)]
-        impl<'de> $crate::DeserializeWithContext<'de, $crate::SqlSerdeConfig> for $table {
-            fn deserialize_with_context<D>(deserializer: D, context: &'de $crate::SqlSerdeConfig) -> Result<Self, D::Error>
+        impl<'de> $crate::serde_with_context::DeserializeWithContext<'de, $crate::serde_with_context::SqlSerdeConfig> for $table {
+            fn deserialize_with_context<D>(deserializer: D, context: &'de $crate::serde_with_context::SqlSerdeConfig) -> Result<Self, D::Error>
             where
                 D: serde::Deserializer<'de>,
             {
                 struct RecordVisitor<'de> {
-                    context: &'de $crate::SqlSerdeConfig,
+                    context: &'de $crate::serde_with_context::SqlSerdeConfig,
                 }
 
                 impl<'de> RecordVisitor<'de> {
-                    fn new(context: &'de $crate::SqlSerdeConfig) -> Self {
+                    fn new(context: &'de $crate::serde_with_context::SqlSerdeConfig) -> Self {
                         Self {
                             context
                         }
@@ -506,9 +475,9 @@ macro_rules! deserialize_table_record {
                                     // user, since the error type is determined by the
                                     // deserializer type `D`, so we instead encode it as a JSON
                                     // object, which the client will have to parse.
-                                    $field_name = Some(map.next_value_seed(<$crate::DeserializationContext<$crate::SqlSerdeConfig, $type>>::new(self.context))
+                                    $field_name = Some(map.next_value_seed(<$crate::serde_with_context::DeserializationContext<$crate::serde_with_context::SqlSerdeConfig, $type>>::new(self.context))
                                                   $(.map($postprocess))*
-                                                  .map_err(|e| serde::de::Error::custom(serde_json::to_string(&$crate::FieldParseError{field: $column_name.to_string(), description: e.to_string()}).unwrap()))?);
+                                                  .map_err(|e| serde::de::Error::custom(serde_json::to_string(&$crate::serde_with_context::FieldParseError{field: $column_name.to_string(), description: e.to_string()}).unwrap()))?);
                                 } else
                             )*
                             {let _ = map.next_value::<serde::de::IgnoredAny>()?;}
@@ -525,9 +494,9 @@ macro_rules! deserialize_table_record {
                         let result = $table {
                             $($field_name: {
                                 _cols += 1;
-                                seq.next_element_seed(<$crate::DeserializationContext<$crate::SqlSerdeConfig, $type>>::new(self.context))
+                                seq.next_element_seed(<$crate::serde_with_context::DeserializationContext<$crate::serde_with_context::SqlSerdeConfig, $type>>::new(self.context))
                                     .map_err(|e| {
-                                        serde::de::Error::custom(serde_json::to_string(&$crate::FieldParseError{field: $column_name.to_string(), description: e.to_string()}).unwrap())
+                                        serde::de::Error::custom(serde_json::to_string(&$crate::serde_with_context::FieldParseError{field: $column_name.to_string(), description: e.to_string()}).unwrap())
                                     })?
                                     .ok_or_else(|| {
                                         serde::de::Error::invalid_length(_cols-1, &format!("{} columns", $num_cols).as_str())
@@ -560,13 +529,11 @@ macro_rules! deserialize_table_record {
 
 #[cfg(test)]
 mod test {
-
-    use dbsp::algebra::F64;
     use lazy_static::lazy_static;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
-    use crate::{format::string_record_deserializer, DeserializeWithContext, SqlSerdeConfig};
+    use crate::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 
     #[derive(Debug, Eq, PartialEq)]
     struct TUPLE0;
@@ -606,13 +573,13 @@ mod test {
     #[allow(non_snake_case)]
     struct Struct2 {
         #[allow(non_snake_case)]
-        cc_num: F64,
+        cc_num: u64,
         #[allow(non_snake_case)]
         first: Option<String>,
         #[allow(non_snake_case)]
         dec: Decimal,
     }
-    deserialize_table_record!(Struct2["Table.Name", 3] {(cc_num, "cc_num", false, F64, None), (first, "first", false, Option<String>, Some(None)), (dec, "dec", false, Decimal, None)});
+    deserialize_table_record!(Struct2["Table.Name", 3] {(cc_num, "cc_num", false, u64, None), (first, "first", false, Option<String>, Some(None)), (dec, "dec", false, Decimal, None)});
 
     #[test]
     fn deserialize_struct2() {
@@ -620,7 +587,7 @@ mod test {
             deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": "0.123"}"#)
                 .unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(0.123),
             }
@@ -629,7 +596,7 @@ mod test {
             deserialize_with_default_context::<Struct2>(r#"{"cc_num": 100, "dec": 0.123}"#)
                 .unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(0.123),
             }
@@ -641,7 +608,7 @@ mod test {
             )
             .unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(-1.40),
             }
@@ -653,7 +620,7 @@ mod test {
             )
             .unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(-1.40),
             }
@@ -665,7 +632,7 @@ mod test {
             )
             .unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: Some("foo".to_string()),
                 dec: dec!(1e20),
             }
@@ -678,7 +645,7 @@ mod test {
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, "foo", "-1e20"]"#).unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: Some("foo".to_string()),
                 dec: dec!(-1e20),
             }
@@ -686,7 +653,7 @@ mod test {
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, null, "2e-5"]"#).unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(0.00002),
             }
@@ -694,7 +661,7 @@ mod test {
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, null, "-3e-5"]"#).unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(-3e-5),
             }
@@ -702,7 +669,7 @@ mod test {
         assert_eq!(
             deserialize_with_default_context::<Struct2>(r#"[100, null, -3e-5]"#).unwrap(),
             Struct2 {
-                cc_num: F64::from(100),
+                cc_num: 100,
                 first: None,
                 dec: dec!(-3e-5),
             }
@@ -718,9 +685,9 @@ mod test {
     }
 
     deserialize_table_record!(CaseSensitive["CaseSensitive", 3] {
-        (fIeLd1, "fIeLd1", true, bool, None),
-        (field2, "field2", true, String, None),
-        (field3, "field3", false, Option<u8>, Some(None))
+    (fIeLd1, "fIeLd1", true, bool, None),
+    (field2, "field2", true, String, None),
+    (field3, "field3", false, Option<u8>, Some(None))
     });
 
     #[test]
@@ -784,9 +751,9 @@ mod test {
     }
 
     deserialize_table_record!(UnicodeStruct["UnicodeStruct", 3] {
-        (f1, "αΒβΓγδε", true, bool, None),
-        (f2, "українська", false, String, None),
-        (f3, "unicode⌛👏", false, Option<u8>, Some(None))
+    (f1, "αΒβΓγδε", true, bool, None),
+    (f2, "українська", false, String, None),
+    (f3, "unicode⌛👏", false, Option<u8>, Some(None))
     });
 
     #[test]
@@ -813,39 +780,6 @@ mod test {
                 r#"[true, 10, 100]"#
             ).map_err(|e| e.to_string()),
             Err(r#"{"field":"українська","description":"invalid type: integer `10`, expected a string at line 1 column 9"} at line 1 column 11"#.to_string())
-        );
-    }
-
-    #[test]
-    fn csv() {
-        let data = r#"true,"foo",5
-true,bar,buzz"#;
-        let rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_reader(data.as_bytes());
-        let mut records = rdr.into_records();
-        assert_eq!(
-            CaseSensitive::deserialize_with_context(
-                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
-                &SqlSerdeConfig::default()
-            )
-            .unwrap(),
-            CaseSensitive {
-                fIeLd1: true,
-                field2: "foo".to_string(),
-                field3: Some(5)
-            }
-        );
-        assert_eq!(
-            CaseSensitive::deserialize_with_context(
-                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
-                &SqlSerdeConfig::default()
-            )
-            .map_err(|e| e.to_string()),
-            Err(
-                r#"{"field":"field3","description":"field 2: invalid digit found in string"}"#
-                    .to_string()
-            )
         );
     }
 }

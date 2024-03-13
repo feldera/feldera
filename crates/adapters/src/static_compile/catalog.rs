@@ -2,7 +2,7 @@ use crate::catalog::InputCollectionHandle;
 use crate::{
     catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
     static_compile::{DeScalarHandle, DeScalarHandleImpl},
-    Catalog, ControllerError, DeserializeWithContext, SerializeWithContext,
+    Catalog, ControllerError,
 };
 use dbsp::{
     operator::{
@@ -13,11 +13,15 @@ use dbsp::{
     utils::Tup2,
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet,
 };
+use pipeline_types::deserialize_struct;
 use pipeline_types::program_schema::Relation;
+use pipeline_types::serde_with_context::{
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
-use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl, SqlSerdeConfig};
+use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct NeighborhoodQuery<K> {
@@ -25,6 +29,12 @@ pub struct NeighborhoodQuery<K> {
     pub before: u64,
     pub after: u64,
 }
+
+deserialize_struct!(NeighborhoodQuery(K)[3]{
+    anchor: Option<K> = Some(None),
+    before: u64 = None,
+    after: u64 = None
+});
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {

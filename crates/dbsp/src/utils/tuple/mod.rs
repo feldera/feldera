@@ -5,6 +5,8 @@
 // This was introduced to resolve issues with auto-derived rkyv trait
 // implementations.
 
+use pipeline_types::deserialize_without_context;
+
 pub mod gen;
 
 // Make sure to also call `dbsp_adapters::deserialize_without_context!`
@@ -23,6 +25,17 @@ crate::declare_tuples! {
     Tup9<T1, T2, T3, T4, T5, T6, T7, T8, T9>,
     Tup10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10>,
 }
+
+deserialize_without_context!(Tup1, T1);
+deserialize_without_context!(Tup2, T1, T2);
+deserialize_without_context!(Tup3, T1, T2, T3);
+deserialize_without_context!(Tup4, T1, T2, T3, T4);
+deserialize_without_context!(Tup5, T1, T2, T3, T4, T5);
+deserialize_without_context!(Tup6, T1, T2, T3, T4, T5, T6);
+deserialize_without_context!(Tup7, T1, T2, T3, T4, T5, T6, T7);
+deserialize_without_context!(Tup8, T1, T2, T3, T4, T5, T6, T7, T8);
+deserialize_without_context!(Tup9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+deserialize_without_context!(Tup10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 
 #[derive(
     Default,

@@ -22,3 +22,12 @@ log = "0.4.20"
 utoipa = "4.1"
 proptest = { version = "1.0.0", optional = true }
 proptest-derive = { version = "0.3.0", optional = true }
+# Revert after https://github.com/paupino/rust-decimal/pull/637 is merged:
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
+# Revert after https://github.com/chmp/serde_arrow/pull/147 is merged:
+serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arrow-50"], rev = "7b604f0" }
+
+[dev-dependencies]
+lazy_static = "1.4.0"
+rust_decimal_macros = "1.32"
+csv = "1.2.2"

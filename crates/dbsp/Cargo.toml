@@ -10,12 +10,12 @@ keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["algorithms", "data-structures"]
 publish = true
 
-    [package.metadata.release]
-    release = true
+[package.metadata.release]
+release = true
 
-    [package.metadata.docs.rs]
-    all-features = true
-    rustdoc-args = ["--cfg", "docsrs"]
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
@@ -77,6 +77,7 @@ sysinfo = { version = "0.30" }
 rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
+pipeline_types = { path = "../pipeline-types" }
 
 [dependencies.time]
 version = "0.3.20"

@@ -297,7 +297,6 @@ fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
 #[cfg(test)]
 mod test {
     use crate::{
-        deserialize_without_context,
         test::{mock_parser_pipeline, wait, MockDeZSet, MockInputConsumer},
         transport::s3::{S3InputConfig, S3InputReader},
     };
@@ -310,7 +309,7 @@ mod test {
         types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
     };
     use mockall::predicate::eq;
-    use pipeline_types::config::InputEndpointConfig;
+    use pipeline_types::{config::InputEndpointConfig, deserialize_without_context};
     use serde::{Deserialize, Serialize};
     use std::{sync::Arc, time::Duration};
 
