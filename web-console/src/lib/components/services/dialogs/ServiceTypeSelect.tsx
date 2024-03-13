@@ -26,7 +26,7 @@ export const ServiceTypeSelectDialog = (props: { show: boolean; setShow: Dispatc
       TransitionComponent={Fade}
       PaperProps={{ sx: { mb: '56vh' } }}
     >
-      <DialogTitle>Select a type of service to create</DialogTitle>
+      <DialogTitle sx={{ width: '100%', textAlign: 'center' }}>Select a type of service to register</DialogTitle>
       <DialogContent>
         <Grid container spacing={4}>
           <GridItems xs={4} sm={3} md={2}>

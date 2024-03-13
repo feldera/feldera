@@ -212,7 +212,7 @@ const ServiceDialogs = () => {
         },
         submitButton: (
           <Button type='submit' variant='contained' color='success' endIcon={<IconCheck />}>
-            Create
+            Register
           </Button>
         )
       }

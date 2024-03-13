@@ -318,8 +318,8 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
 
   return (
     <>
-      <Box sx={{ height: '100%', overflowY: 'auto', pr: '3rem' }}>
-        <Grid container spacing={4} sx={{ height: 'auto', pr: 0 }}>
+      <Box sx={{ height: '100%', overflowY: 'auto', pr: '3rem', mr: '-1rem' }}>
+        <Grid container spacing={4} sx={{ height: 'auto' }}>
           {usedFields.map(field => (
             <>
               <Grid item xs={12} sm={6} display='flex' alignItems='center'>
