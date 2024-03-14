@@ -18,7 +18,7 @@ function useQuantiles() {
   const readStream = useCallback(
     async (
       egressParams: Arguments<typeof HttpInputOutputService.httpOutput>,
-      setQuantiles: Dispatch<SetStateAction<(SQLValueJS | null)[][] | undefined>>,
+      setQuantiles: Dispatch<SetStateAction<SQLValueJS[][] | undefined>>,
       relation: Relation,
       controller: AbortController
     ) => {
@@ -74,7 +74,7 @@ function useQuantiles() {
                 // proper types (a number can't be a string etc.)
                 const typedRecords = result.map(row => {
                   const fields = row
-                  const newRow = [] as (SQLValueJS | null)[]
+                  const newRow = [] as SQLValueJS[]
                   relation.fields.forEach((col, i) => {
                     newRow[i] = parseCSVValue(col.columntype, fields[i])
                   })

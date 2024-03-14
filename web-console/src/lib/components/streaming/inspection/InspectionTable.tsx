@@ -63,7 +63,7 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
   const [paginationModel, setPaginationModel] = useState(INITIAL_PAGINATION_MODEL)
   const [neighborhood, setNeighborhood] = useState<NeighborhoodQuery>(DEFAULT_NEIGHBORHOOD)
-  const [quantiles, setQuantiles] = useState<(SQLValueJS | null)[][] | undefined>(undefined)
+  const [quantiles, setQuantiles] = useState<SQLValueJS[][] | undefined>(undefined)
   const [quantile, setQuantile] = useState<number>(0)
   const [rows, setRows] = useState<Row[]>([])
   const [isPending, setLoading] = useState<boolean>(true)
@@ -331,7 +331,6 @@ const InspectionTableImpl = ({
               valueGetter: (params: GridValueGetterParams<Row>) => {
                 return params.row.record[col.name]
               },
-              // valueFormatter: getValueFormatter(col.columntype),
               renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,
               renderCell: (props: GridRenderCellParams) => <SQLValueDisplay value={props.value} type={col.columntype} />
             }

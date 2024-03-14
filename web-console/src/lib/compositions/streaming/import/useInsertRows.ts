@@ -13,7 +13,7 @@ const rowToIngressJSON =
   (row: Row) =>
     ({
       [action]: row.record
-    }) as Record<Action, Record<string, SQLValueJS | null>>
+    }) as Record<Action, Record<string, SQLValueJS>>
 
 function useInsertRows() {
   const queryClient = useQueryClient()

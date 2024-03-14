@@ -11,8 +11,6 @@ import { Grid, Typography } from '@mui/material'
  *
  * Also indicates if the example was modified after generation due to type
  * constraints (overflow etc.).
- * @param param0
- * @returns
  */
 export const ExampleDisplay = ({
   example,

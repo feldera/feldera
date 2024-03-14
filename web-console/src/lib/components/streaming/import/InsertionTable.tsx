@@ -162,7 +162,6 @@ const InsertionTableImpl = ({
               valueGetter: (params: GridValueGetterParams) => {
                 return params.row.record[col.name]
               },
-              // valueFormatter: getValueFormatter(col.columntype),
               valueParser: (value: any) => {
                 // It looks like this doesn't do anything -- it just returns the
                 // value, but I found without having defined this, if you edit a

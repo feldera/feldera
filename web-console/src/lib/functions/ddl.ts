@@ -14,7 +14,7 @@ import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 
-export type SQLValueJS = string | number | BigNumber | boolean | Dayjs | SQLValueJS[]
+export type SQLValueJS = string | number | boolean | BigNumber | Dayjs | SQLValueJS[] | null
 
 /**
  * The format we get back from the ingress rest API.
@@ -22,7 +22,7 @@ export type SQLValueJS = string | number | BigNumber | boolean | Dayjs | SQLValu
 export interface Row {
   genId: number
   weight: number
-  record: Record<string, SQLValueJS | null>
+  record: Record<string, SQLValueJS>
 }
 
 export interface ValidationError {
@@ -38,7 +38,7 @@ export interface ValidationError {
  */
 export function getValueFormatter(columntype: ColumnType) {
   const formatter = match(columntype)
-    .returnType<(value: SQLValueJS) => string>()
+    .returnType<(value: Exclude<SQLValueJS, null>) => string>()
     .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
       return value => {
         invariant(BigNumber.isBigNumber(value))
@@ -105,6 +105,7 @@ export function getValueFormatter(columntype: ColumnType) {
     if (value === null && columntype.nullable) {
       return null
     }
+    invariant(value !== null)
     return formatter(value)
   }
 }
@@ -205,7 +206,7 @@ export function csvLineToRow(relation: Relation, row: string[]): Row {
   const weight = Number(row[row.length - 1])
   const records = row.slice(1, row.length - 1)
 
-  const record: Record<string, SQLValueJS | null> = {}
+  const record: Record<string, SQLValueJS> = {}
   relation.fields.forEach((field, i) => {
     record[field.name] = parseCSVValue(field.columntype, records[i])
   })

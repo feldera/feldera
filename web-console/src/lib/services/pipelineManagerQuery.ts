@@ -476,6 +476,9 @@ export const mutationDeleteService = (
   }
 })
 
+/**
+ * A React Query mutation that inserts data into the pipeline in an insert_delete JSON format
+ */
 export const mutationHttpIngressJson = (
   _queryClient: QueryClient
 ): UseMutationOptions<
@@ -485,7 +488,7 @@ export const mutationHttpIngressJson = (
     pipelineName: string
     relation: Relation
     force: boolean
-    data: Partial<Record<'insert' | 'delete', Record<string, SQLValueJS | null>>>[]
+    data: Partial<Record<'insert' | 'delete', Record<string, SQLValueJS>>>[]
   }
 > => ({
   mutationFn: ({ pipelineName, relation, force, data }) => {
