@@ -183,7 +183,8 @@ public class CalciteOptimizer implements IWritesLogs {
         ));
         this.addStep(new SimpleOptimizerStep(
                 "Isolate DISTINCT aggregates",
-                // TODO: enable this rule
+                // Not clear when the following is preferrable.
+                // It triggers a bug in our compiler.
                 // CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES,
                 // Convert DISTINCT aggregates into separate computations and join the results
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN
