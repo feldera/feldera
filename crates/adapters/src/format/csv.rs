@@ -369,7 +369,7 @@ mod test {
     #[test]
     fn csv() {
         let data = r#"true,"foo",5
-    true,bar,buzz"#;
+true,bar,buzz"#;
         let rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader(data.as_bytes());
