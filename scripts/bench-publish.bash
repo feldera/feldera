@@ -45,9 +45,9 @@ fi
 
 # Copy nexmark results
 mkdir -p ${DEPLOY_DIR}
-mv ${NEXMARK_CSV_FILE} ${NEXMARK_PERSISTENCE_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${DEPLOY_DIR}
+mv ${NEXMARK_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_CSV_FILE}
-gzip -f ${DEPLOY_DIR}/${NEXMARK_PERSISTENCE_CSV_FILE}
+#gzip -f ${DEPLOY_DIR}/${NEXMARK_PERSISTENCE_CSV_FILE}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_DRAM_CSV_FILE}
 
 # Add galen results to repo
@@ -63,16 +63,16 @@ mv ${GALEN_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${GALEN_CSV_FILE}
 
 # Add ldbc results to repo
-DEPLOY_DIR="gh-pages/ldbc/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
-if [ -d "${DEPLOY_DIR}" ]; then
+#DEPLOY_DIR="gh-pages/ldbc/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
+#if [ -d "${DEPLOY_DIR}" ]; then
     # If we already have results for this SHA (the directory exists),
     # we will add the new results in a subdir
-    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
-fi
+#    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+#fi
 # Copy ldbc results
-mkdir -p ${DEPLOY_DIR}
-mv ${LDBC_CSV_FILE} ${DEPLOY_DIR}
-gzip -f ${DEPLOY_DIR}/${LDBC_CSV_FILE}
+#mkdir -p ${DEPLOY_DIR}
+#mv ${LDBC_CSV_FILE} ${DEPLOY_DIR}
+#gzip -f ${DEPLOY_DIR}/${LDBC_CSV_FILE}
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE

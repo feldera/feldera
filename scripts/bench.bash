@@ -38,10 +38,10 @@ if [ "$SMOKE" != "" ]; then
     DATASET_SMALL='wiki-Talk'
     DATASET_MEDIUM='kgs'
 fi
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
-cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
 
 # Run nexmark benchmark with persistence
 EVENT_RATE=5000000
@@ -52,4 +52,4 @@ if [ "$SMOKE" != "" ]; then
   MAX_EVENTS=100000
 fi
 cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
-cargo bench --bench nexmark --features persistence -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
+#cargo bench --bench nexmark --features persistence -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
