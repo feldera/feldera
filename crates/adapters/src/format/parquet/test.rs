@@ -8,7 +8,6 @@ use arrow::array::{
     Time64NanosecondArray, TimestampMillisecondArray,
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
-use dbsp::trace::Batch;
 use dbsp::utils::Tup2;
 use dbsp::OrdZSet;
 use parquet::arrow::ArrowWriter;
