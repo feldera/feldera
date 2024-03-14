@@ -552,9 +552,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(implementation.function);
         if (expression.condition != null)
             this.builder.append("_conditional");
-        this.builder.append("(&");
+        this.builder.append("(");
         expression.left.accept(this);
-        this.builder.append(", &");
+        this.builder.append(", ");
         expression.right.accept(this);
         if (expression.condition != null) {
             this.builder.append(", ");

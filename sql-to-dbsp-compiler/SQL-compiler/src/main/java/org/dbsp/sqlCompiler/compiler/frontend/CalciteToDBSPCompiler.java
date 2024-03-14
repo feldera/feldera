@@ -277,7 +277,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      */
     public DBSPAggregate createAggregate(RelNode node,
             List<AggregateCall> aggregates, DBSPTypeTuple resultType,
-            DBSPType inputRowType, int groupCount) {
+            DBSPType inputRowType, int groupCount, ImmutableBitSet groupKeys) {
         CalciteObject obj = CalciteObject.create(node);
         DBSPVariablePath rowVar = inputRowType.ref().var("v");
         DBSPAggregate.Implementation[] implementations = new DBSPAggregate.Implementation[aggregates.size()];
@@ -286,7 +286,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (AggregateCall call: aggregates) {
             DBSPType resultFieldType = resultType.getFieldType(aggIndex + groupCount);
             AggregateCompiler compiler = new AggregateCompiler(node,
-                    this.getCompiler(), call, resultFieldType, rowVar);
+                    this.getCompiler(), call, resultFieldType, rowVar, groupKeys);
             DBSPAggregate.Implementation implementation = compiler.compile();
             implementations[aggIndex] =  implementation;
             aggIndex++;
@@ -438,7 +438,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 aggregate.getGroupSet(), t, tuple.slice(0, aggregate.getGroupCount()));
         DBSPType[] aggTypes = Utilities.arraySlice(tuple.tupFields, aggregate.getGroupCount());
         DBSPTypeTuple aggType = new DBSPTypeTuple(aggTypes);
-        DBSPAggregate fold = this.createAggregate(aggregate, aggregateCalls, tuple, inputRowType, aggregate.getGroupCount());
+        DBSPAggregate fold = this.createAggregate(aggregate, aggregateCalls, tuple, inputRowType, aggregate.getGroupCount(), localKeys);
         // The aggregate operator will not return a stream of type aggType, but a stream
         // with a type given by fd.defaultZero.
         DBSPTypeTuple typeFromAggregate = fold.defaultZeroType();
@@ -496,7 +496,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
             DBSPExpression remap = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(reindexFields),
-                    reindexVar.field(1).deref());
+                    reindexVar.field(1).deref().applyCloneIfNeeded());
             adjust = new DBSPMapIndexOperator(
                     node, remap.closure(reindexVar.asParameter()), aggregateResultType, agg);
             this.circuit.addOperator(adjust);
@@ -1337,7 +1337,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<AggregateCall> aggregateCalls = group.getAggregateCalls(window);
             List<DBSPType> types = Linq.map(aggregateCalls, c -> this.convertType(c.type, false));
             DBSPTypeTuple tuple = new DBSPTypeTuple(types);
-            DBSPAggregate fd = this.createAggregate(window, aggregateCalls, tuple, inputRowType, 0);
+            DBSPAggregate fd = this.createAggregate(window, aggregateCalls, tuple, inputRowType, 0, ImmutableBitSet.of());
 
             // Compute aggregates for the window
             DBSPTypeTuple aggResultType = fd.defaultZeroType().to(DBSPTypeTuple.class);

@@ -11,6 +11,7 @@ public class PostBaseTests extends SqlIoTest {
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = super.getOptions(optimize);
         options.languageOptions.ignoreOrderBy = true;
+        options.languageOptions.lenient = true;
         return options;
     }
 
