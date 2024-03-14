@@ -508,7 +508,7 @@ benchmark:
     SAVE ARTIFACT crates/nexmark/nexmark_results.csv AS LOCAL .
     SAVE ARTIFACT crates/nexmark/dram_nexmark_results.csv AS LOCAL .
     SAVE ARTIFACT crates/dbsp/galen_results.csv AS LOCAL .
-    SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
+    #SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
 
 all-tests:
     BUILD +formatting-check
