@@ -151,7 +151,7 @@ const InsertionTableImpl = ({
               field: getCaseIndependentName(col),
               headerName: getCaseIndependentName(col),
               description: getCaseIndependentName(col),
-              flex: 1,
+              width: 150,
               editable: true,
               preProcessEditCellProps: (params: GridPreProcessEditCellProps) => {
                 // We'll add support for this once we have JSON format + better

@@ -127,11 +127,13 @@ export function useTableUpdater() {
 
       try {
         for await (const line of readLineFromStream(response)) {
+          console.log('readLineFromStream a', line)
           const obj = JSON.parse(line)
           if (obj.text_data === undefined) {
             // A ping message, we ignore this.
             continue
           }
+          console.log('readLineFromStream b', obj)
 
           parse(
             obj.text_data,
@@ -140,6 +142,7 @@ export function useTableUpdater() {
               cast: false
             },
             (error, result: string[][]) => {
+              console.log('error', error, result)
               if (error) {
                 console.error('useTableUpdater error', error)
               }

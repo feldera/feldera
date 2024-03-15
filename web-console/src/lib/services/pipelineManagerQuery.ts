@@ -1,7 +1,7 @@
 import { assertUnion } from '$lib/functions/common/array'
 import { compose } from '$lib/functions/common/function'
 import { getQueryData, invalidateQuery, mkQuery, mkQueryKey, setQueryData } from '$lib/functions/common/tanstack'
-import { SQLValueJS } from '$lib/functions/ddl'
+import { JSONIngressValue } from '$lib/functions/ddl'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import {
   ApiError,
@@ -488,7 +488,7 @@ export const mutationHttpIngressJson = (
     pipelineName: string
     relation: Relation
     force: boolean
-    data: Partial<Record<'insert' | 'delete', Record<string, SQLValueJS>>>[]
+    data: Partial<Record<'insert' | 'delete', Record<string, JSONIngressValue>>>[]
   }
 > => ({
   mutationFn: ({ pipelineName, relation, force, data }) => {

@@ -66,7 +66,12 @@ export const SQLValueInput = ({
         }))
         .with(SqlType.BOOLEAN, () => ({
           type: 'checkbox',
-          ...props
+          ...props,
+          inputProps: {
+            ...props.inputProps,
+            checked: props.value,
+          },
+          onChange: (e: ChangeEvent) => props.onChange({...e, target: {...e.target, value: (e.target as any).checked}} as any)
         }))
         .with(SqlType.CHAR, () => ({
           type: 'string',

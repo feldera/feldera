@@ -5,6 +5,7 @@ import { ColumnType, Field, Relation, SqlType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 import dayjs from 'dayjs'
 import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
+import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
 import { GridApi } from '@mui/x-data-grid-pro'
@@ -25,8 +26,12 @@ export const getDefaultValue = (columntype: ColumnType): SQLValueJS =>
     .with({ type: SqlType.TIME }, () => dayjs(new Date()))
     .with({ type: SqlType.TIMESTAMP }, () => dayjs(new Date()))
     .with({ type: SqlType.DATE }, () => dayjs(new Date()))
-    .with({ type: SqlType.ARRAY }, () => '[]')
-    .otherwise(() => '')
+    .with({ type: SqlType.ARRAY }, () => [])
+    .with({ type: SqlType.BINARY }, () => invariant(false, 'BINARY not implemented') as never)
+    .with({ type: SqlType.VARBINARY }, () => invariant(false, 'VARBINARY not implemented') as never)
+    .with({ type: SqlType.INTERVAL }, () => invariant(false, 'INTERVAL not supported for ingress') as never)
+    .with({ type: SqlType.NULL }, () => invariant(false, 'NULL not supported for ingress') as never)
+    .exhaustive()
 
 function useDefaultRows(
   apiRef: MutableRefObject<GridApi>,

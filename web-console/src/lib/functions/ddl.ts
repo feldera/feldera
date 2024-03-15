@@ -7,8 +7,9 @@
 
 import { clampBigNumber } from '$lib/functions/common/bigNumber'
 import { nonNull } from '$lib/functions/common/function'
+import { tuple } from '$lib/functions/common/tuple'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ColumnType, Relation, SqlType } from '$lib/services/manager'
-import assert from 'assert'
 import { BigNumber } from 'bignumber.js'
 import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
@@ -39,6 +40,12 @@ export interface ValidationError {
 export function getValueFormatter(columntype: ColumnType) {
   const formatter = match(columntype)
     .returnType<(value: Exclude<SQLValueJS, null>) => string>()
+    .with({ type: SqlType.BOOLEAN }, () => {
+      return value => {
+        invariant(typeof value === 'boolean')
+        return String(value)
+      }
+    })
     .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
       return value => {
         invariant(BigNumber.isBigNumber(value))
@@ -69,13 +76,13 @@ export function getValueFormatter(columntype: ColumnType) {
     })
     .with({ type: SqlType.DATE }, () => {
       return value => {
-        invariant(typeof value === 'string' && isDayjs(value))
+        invariant(typeof value === 'string' || isDayjs(value))
         return dayjs(value).format('YYYY-MM-DD')
       }
     })
     .with({ type: SqlType.TIMESTAMP }, () => {
       return value => {
-        invariant(typeof value === 'string' && isDayjs(value))
+        invariant(typeof value === 'string' || isDayjs(value))
         return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
       }
     })
@@ -84,7 +91,7 @@ export function getValueFormatter(columntype: ColumnType) {
         invariant(Array.isArray(value))
         return JSON.stringify(
           value.map(v => {
-            assert(columntype.component !== null && columntype.component !== undefined)
+            invariant(nonNull(columntype.component))
             return clampToSQL(columntype.component)(v)
           })
         )
@@ -96,19 +103,104 @@ export function getValueFormatter(columntype: ColumnType) {
         return value
       }
     })
-    .otherwise(() => {
-      return value => {
-        return value.toString()
-      }
+    .with({ type: SqlType.BINARY }, () => {
+      invariant(false, 'BINARY type is not implemented for display')
     })
+    .with({ type: SqlType.VARBINARY }, () => {
+      invariant(false, 'VARBINARY type is not implemented for display')
+    })
+    .with({ type: SqlType.INTERVAL }, () => {
+      invariant(false, 'INTERVAL type is not implemented for display')
+    })
+    .with({ type: SqlType.NULL }, () => {
+      invariant(false, 'Unreachable - case handled')
+    })
+    .exhaustive()
   return (value: SQLValueJS) => {
-    if (value === null && columntype.nullable) {
+    if (value === null && columntype.nullable || columntype.type === SqlType.NULL) {
       return null
     }
     invariant(value !== null)
     return formatter(value)
   }
 }
+
+/**
+ * A type for a SQL value that can be unambiguously serialized into a body of a HTTP JSON ingress request
+ */
+export type JSONIngressValue = string | number | boolean | BigNumber | JSONIngressValue[] | null
+
+/**
+ * Render an SQL Value to a JSON value that can be unambiguously serialized into a body of a HTTP JSON ingress request
+ */
+const sqlValueToIngressJSON = (type: ColumnType, value: SQLValueJS): JSONIngressValue => {
+  if (value === null && type.nullable) {
+    return null
+  }
+  invariant(value !== null)
+  return match(type)
+  .with({ type: SqlType.BOOLEAN }, () => {
+    invariant(typeof value === 'boolean')
+    return value
+  })
+  .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
+    invariant(BigNumber.isBigNumber(value))
+    return value
+  })
+  .with(
+    { type: SqlType.TINYINT },
+    { type: SqlType.SMALLINT },
+    { type: SqlType.INTEGER },
+    { type: SqlType.REAL },
+    { type: SqlType.DOUBLE },
+    () => {
+      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+      return value
+    }
+  )
+  .with({ type: SqlType.TIME }, () => {
+    invariant(typeof value === 'string' || isDayjs(value))
+    if (typeof value === 'string') {
+      return value
+    }
+    return value.format('HH:mm:ss')
+  })
+  .with({ type: SqlType.DATE }, () => {
+    invariant(typeof value === 'string' || isDayjs(value))
+    return dayjs(value).format('YYYY-MM-DD')
+  })
+  .with({ type: SqlType.TIMESTAMP }, () => {
+    invariant(typeof value === 'string' || isDayjs(value))
+    return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
+  })
+  .with({ type: SqlType.ARRAY }, () => {
+    invariant(Array.isArray(value))
+    return value.map(v => {
+      invariant(nonNull(type.component))
+      return sqlValueToIngressJSON(type.component, v)
+    })
+  })
+  .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
+    invariant(typeof value === 'string')
+    return value
+  })
+  .with({ type: SqlType.BINARY }, () => {
+    invariant(false, 'BINARY type is not implemented for ingress')
+  })
+  .with({ type: SqlType.VARBINARY }, () => {
+    invariant(false, 'VARBINARY type is not implemented for ingress')
+  })
+  .with({ type: SqlType.INTERVAL }, () => {
+    invariant(false, 'INTERVAL type is not supported for ingress')
+  })
+  .with({ type: SqlType.NULL }, () => {
+    invariant(false, 'NULL type is not supported for ingress')
+  })
+  .exhaustive()
+}
+
+export const rowToIngressJSON = (relation: Relation, row: Row) =>
+  Object.fromEntries(relation.fields.map(field => tuple(getCaseIndependentName(field), sqlValueToIngressJSON(field.columntype, row.record[field.name]))))
 
 // Generate a parser function for a field that converts a value to something
 // that is close to the original value but also acceptable for the SQL type.
@@ -168,7 +260,7 @@ export function clampToSQL(columntype: ColumnType) {
       // const [precision, scale] = [columntype.precision ?? 1024, columntype.scale ?? 0]
       invariant(nonNull(columntype.precision))
       invariant(nonNull(columntype.scale))
-      assert(columntype.precision >= columntype.scale, 'Precision must be greater or equal than scale')
+      invariant(columntype.precision >= columntype.scale, 'Precision must be greater or equal than scale')
       // We want to limit the number of digits that are displayed in the UI to
       // fit the column decimal type.
       return new BigNumber(value).decimalPlaces(columntype.scale, BigNumber.ROUND_HALF_UP)

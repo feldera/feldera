@@ -1,19 +1,12 @@
 // Sends a set of rows to a pipeline table.
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { Row, SQLValueJS } from '$lib/functions/ddl'
+import { Row, rowToIngressJSON } from '$lib/functions/ddl'
 import { Relation } from '$lib/services/manager'
 import { mutationHttpIngressJson } from '$lib/services/pipelineManagerQuery'
 import { Dispatch, SetStateAction, useCallback } from 'react'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-
-const rowToIngressJSON =
-  <Action extends 'insert' | 'delete'>(action: Action) =>
-  (row: Row) =>
-    ({
-      [action]: row.record
-    }) as Record<Action, Record<string, SQLValueJS>>
 
 function useInsertRows() {
   const queryClient = useQueryClient()
@@ -33,7 +26,7 @@ function useInsertRows() {
         return
       }
       pipelineInsert(
-        { pipelineName, relation, force, data: rows.map(rowToIngressJSON('insert')) },
+        { pipelineName, relation, force, data: rows.map(row => ({ insert: rowToIngressJSON(relation, row)})) },
         {
           onSuccess: () => {
             setRows([])

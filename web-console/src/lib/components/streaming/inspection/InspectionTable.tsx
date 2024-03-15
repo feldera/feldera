@@ -327,7 +327,7 @@ const InspectionTableImpl = ({
               field: getCaseIndependentName(col),
               headerName: getCaseIndependentName(col),
               description: getCaseIndependentName(col),
-              flex: 1,
+              width: 150,
               valueGetter: (params: GridValueGetterParams<Row>) => {
                 return params.row.record[col.name]
               },
