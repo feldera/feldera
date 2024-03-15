@@ -168,29 +168,24 @@ const transformToArrayGenerator = (type: ColumnType, generators: IRngGenMethod[]
 // Given a ColumType returns a list of applicable generator methods.
 export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
   return (
-    match(type)
-      .with(
-        { type: SqlType.TINYINT },
-        { type: SqlType.SMALLINT },
-        { type: SqlType.INTEGER },
-        { type: SqlType.BIGINT },
-        () => INTEGER_GENERATORS
-      )
-      .with({ type: SqlType.REAL }, { type: SqlType.DOUBLE }, () => FLOAT_GENERATORS)
+    match(type.type)
+      .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, SqlType.BIGINT, () => INTEGER_GENERATORS)
+      .with(SqlType.REAL, SqlType.DOUBLE, () => FLOAT_GENERATORS)
       // There aren't any good random generator libraries for arbitrary
       // precision numbers. So we just use the same generators as FLOAT and
       // DOUBLE for now.
-      .with({ type: SqlType.DECIMAL }, () => FLOAT_GENERATORS)
-      .with({ type: SqlType.VARCHAR }, { type: SqlType.CHAR }, () => STRING_GENERATORS)
-      .with({ type: SqlType.BOOLEAN }, () => BOOLEAN_GENERATORS)
-      .with({ type: SqlType.TIME }, () => TIME_GENERATORS)
-      .with({ type: SqlType.DATE }, () => DATE_GENERATORS)
-      .with({ type: SqlType.TIMESTAMP }, () => TIMESTAMP_GENERATORS)
-      .with({ type: SqlType.ARRAY }, () => {
+      .with(SqlType.DECIMAL, () => FLOAT_GENERATORS)
+      .with(SqlType.VARCHAR, SqlType.CHAR, () => STRING_GENERATORS)
+      .with(SqlType.BOOLEAN, () => BOOLEAN_GENERATORS)
+      .with(SqlType.TIME, () => TIME_GENERATORS)
+      .with(SqlType.DATE, () => DATE_GENERATORS)
+      .with(SqlType.TIMESTAMP, () => TIMESTAMP_GENERATORS)
+      .with(SqlType.ARRAY, () => {
         invariant(type.component)
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
-      .otherwise(() => UNSUPPORTED_TYPE_GENERATORS)
+      .with(SqlType.INTERVAL, SqlType.BINARY, SqlType.VARBINARY, SqlType.NULL, () => UNSUPPORTED_TYPE_GENERATORS)
+      .exhaustive()
       .map(({ generator, ...rng }) => ({
         ...rng,
         generator: (ct, settings) => clampToSQL(ct)(generator(ct, settings))

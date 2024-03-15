@@ -299,6 +299,7 @@ export function clampToSQL(columntype: ColumnType) {
         return value.toString().substring(0, columntype.precision)
       }
     )
+    .with({ type: SqlType.VARCHAR }, () => (value: string) => value)
     .with(
       {
         type: SqlType.CHAR,
@@ -310,6 +311,7 @@ export function clampToSQL(columntype: ColumnType) {
         return value.toString().substring(0, columntype.precision).padEnd(columntype.precision)
       }
     )
+    .with({ type: SqlType.CHAR }, () => (value: string) => value)
     .with(
       { type: SqlType.TINYINT },
       { type: SqlType.SMALLINT },
@@ -364,11 +366,17 @@ export function clampToSQL(columntype: ColumnType) {
         return clampToSQL(columntype.component)(v as never)
       })
     })
-    .otherwise(
+    .with(
+      { type: SqlType.BOOLEAN },
+      { type: SqlType.BINARY },
+      { type: SqlType.VARBINARY },
+      { type: SqlType.INTERVAL },
+      { type: SqlType.NULL },
       () =>
         <T>(value: T) =>
           value
-    ) as (value: SQLValueJS) => SQLValueJS
+    )
+    .exhaustive() as (value: SQLValueJS) => SQLValueJS
 }
 
 // We convert fields to a tuple so that we can use it as an anchor in the REST
@@ -419,28 +427,56 @@ export const numericRange = (sqlType: ColumnType) =>
     })
     // Limit array lengths to 0-5 for random generation.
     .with({ type: SqlType.ARRAY }, () => ({ min: new BigNumber(0), max: new BigNumber(5) }))
-    .otherwise(() => {
-      throw new Error(`Not a numeric type: ${sqlType.type}`)
-    })
+    .with(
+      { type: SqlType.BOOLEAN },
+      { type: SqlType.CHAR },
+      { type: SqlType.VARCHAR },
+      { type: SqlType.BINARY },
+      { type: SqlType.VARBINARY },
+      { type: SqlType.DATE },
+      { type: SqlType.TIME },
+      { type: SqlType.TIMESTAMP },
+      { type: SqlType.INTERVAL },
+      { type: SqlType.NULL },
+      () => {
+        throw new Error(`Not a numeric type: ${sqlType.type}`)
+      }
+    )
+    .exhaustive()
 
 export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
-  match(sqlType)
+  match(sqlType.type)
     // We can represent the date range going all the way to year zero but the
     // date-picker we use complains if we use dates less than 1000-01-01. There
     // is also a rendering issue if we have too many years for the datepicker
     // components so we're a bit more conservative than we need to be.
     // - https://github.com/mui/mui-x/issues/4746
-    .with({ type: SqlType.DATE }, { type: SqlType.TIMESTAMP }, () => [
+    .with(SqlType.DATE, SqlType.TIMESTAMP, () => [
       dayjs(new Date('1500-01-01 00:00:00')),
       dayjs(new Date('2500-12-31 23:59:59'))
     ])
-    .with({ type: SqlType.TIME }, () => [
-      dayjs(new Date('1500-01-01 00:00:00')),
-      dayjs(new Date('1500-01-01 23:59:59'))
-    ])
-    .otherwise(() => {
-      throw new Error('Not a date/time type')
-    })
+    .with(SqlType.TIME, () => [dayjs(new Date('1500-01-01 00:00:00')), dayjs(new Date('1500-01-01 23:59:59'))])
+    .with(
+      SqlType.BOOLEAN,
+      SqlType.TINYINT,
+      SqlType.SMALLINT,
+      SqlType.INTEGER,
+      SqlType.REAL,
+      SqlType.DOUBLE,
+      SqlType.BIGINT,
+      SqlType.DECIMAL,
+      SqlType.INTERVAL,
+      SqlType.CHAR,
+      SqlType.VARCHAR,
+      SqlType.BINARY,
+      SqlType.VARBINARY,
+      SqlType.ARRAY,
+      SqlType.NULL,
+      () => {
+        throw new Error('Not a date/time type')
+      }
+    )
+    .exhaustive()
 
 export const sqlValueComparator = (sqlType: ColumnType) =>
   match(sqlType.type)

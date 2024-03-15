@@ -106,10 +106,26 @@ export const SQLValueInput = ({
           type: 'string',
           ...props
         }))
-        .otherwise(() => ({
+        .with(SqlType.INTERVAL, () => ({
           type: 'string',
           ...props
-        }))}
+        }))
+        .with(SqlType.BINARY, () => ({
+          type: 'string',
+          ...props
+        }))
+        .with(SqlType.VARBINARY, () => ({
+          type: 'string',
+          ...props
+        }))
+        .with(SqlType.NULL, () => ({
+          type: 'string',
+          ...props,
+          value: '',
+          placeholder: 'null',
+          disabled: true
+        }))
+        .exhaustive()}
     />
   )
 }
