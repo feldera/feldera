@@ -50,13 +50,7 @@ tooling is geared towards the SQL API.
 
 ## What does Feldera do that a streaming engine cannot do?
 
-Existing streaming engines offer a subset of Feldera's capabilities.
-
-Like a database, Feldera supports arbitrary insertions and deletions for
-arbitrary data sources.  Many streaming engines only support
-insertions.
-
-Feldera is programmed using the SQL database language.
+Feldera is the only engine than can evaluate arbitrary SQL over streaming data, while supporting insertions, updates and deletes, from multiple sources. Other streaming engines typically support restrictive subsets of SQL, and often only support insertions.
 
 ## What does Feldera do that a database cannot do?
 
