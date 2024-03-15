@@ -1,7 +1,11 @@
-use crate::api::{ManagerError, ServiceProbe};
+// Exported
+pub mod service;
+
+use crate::api::ManagerError;
 use crate::config::ProberConfig;
 use crate::db::storage::Storage;
 use crate::db::{DBError, ProjectDB};
+use crate::prober::service::probe_service;
 use actix_web::{get, web, HttpServer, Responder};
 use log::{debug, error, info};
 use std::sync::Arc;
@@ -48,8 +52,11 @@ async fn service_probing_task(
 
                 // Perform the probe with timeout
                 debug!("Probe request: {:?}", &request);
-                let response =
-                    service_config.probe(request, Duration::from_millis(config.probe_timeout_ms));
+                let response = probe_service(
+                    &service_config,
+                    request,
+                    Duration::from_millis(config.probe_timeout_ms),
+                );
                 let finished_at = chrono::offset::Utc::now();
                 debug!("Probe response: {:?}", &response);
 

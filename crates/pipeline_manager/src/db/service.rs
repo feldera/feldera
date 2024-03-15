@@ -1,12 +1,13 @@
-use crate::api::{
-    ServiceConfig, ServiceProbeRequest, ServiceProbeResponse, ServiceProbeStatus, ServiceProbeType,
-};
 use crate::auth::TenantId;
 use crate::db::pipeline::convert_bigint_to_time;
 use crate::db::{DBError, ProjectDB};
+use crate::prober::service::{
+    ServiceProbeRequest, ServiceProbeResponse, ServiceProbeStatus, ServiceProbeType,
+};
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use log::debug;
+use pipeline_types::service::ServiceConfig;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;

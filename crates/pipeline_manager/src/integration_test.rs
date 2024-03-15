@@ -56,13 +56,13 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use crate::api::KafkaService;
 use crate::{
     compiler::Compiler,
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
     db::{Pipeline, PipelineStatus},
 };
 use anyhow::{bail, Result as AnyResult};
+use pipeline_types::service::KafkaService;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

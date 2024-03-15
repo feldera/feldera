@@ -1,8 +1,9 @@
 /// API to create, modify and delete Services,
 /// which represent named external services such as Kafka.
 use super::{ManagerError, ServerState};
-use crate::api::{parse_string_param, ServiceConfig, ServiceProbeRequest, ServiceProbeType};
+use crate::api::parse_string_param;
 use crate::db::ServiceProbeId;
+use crate::prober::service::{ServiceProbeRequest, ServiceProbeType};
 use crate::{
     api::examples,
     auth::TenantId,
@@ -18,6 +19,7 @@ use actix_web::{
 };
 use chrono::Utc;
 use log::info;
+use pipeline_types::service::ServiceConfig;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;

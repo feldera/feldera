@@ -3,15 +3,15 @@ use super::{
     PipelineDescr, PipelineId, PipelineRevision, PipelineRuntimeState, PipelineStatus,
     ProgramDescr, ProgramId, Revision, Version,
 };
-use crate::api::{
-    ProgramStatus, ServiceConfig, ServiceProbeRequest, ServiceProbeResponse, ServiceProbeType,
-};
+use crate::api::ProgramStatus;
 use crate::auth::TenantId;
 use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
 use crate::db::{ServiceDescr, ServiceId};
+use crate::prober::service::{ServiceProbeRequest, ServiceProbeResponse, ServiceProbeType};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
+use pipeline_types::service::ServiceConfig;
 use pipeline_types::{
     config::{ConnectorConfig, RuntimeConfig},
     program_schema::ProgramSchema,
