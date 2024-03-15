@@ -33,7 +33,7 @@ viable solution:
   example, other tools take 5 minutes to perform a result needed every
   minute.
 
-- when the analysis need to combine data from *multiple sources* or
+- when the analysis needs to combine data from *multiple sources* or
   when the analysis is *complex*: other tools are frequently limited
   in these dimensions
 
@@ -58,7 +58,7 @@ insertions.
 
 Feldera is programmed using the SQL database language.
 
-## What does Feldera do that a database databases cannot do?
+## What does Feldera do that a database cannot do?
 
 Database engines cannot efficiently maintain multiple complex views on
 fast-changing data.
