@@ -12,7 +12,7 @@ import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
-import { Row, rowToAnchor, SQLValueJS } from '$lib/functions/ddl'
+import { Row, rowToAnchor, sqlValueComparator, SQLValueJS } from '$lib/functions/ddl'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
@@ -112,7 +112,7 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
       [
         pipeline.descriptor.name,
         caseIndependentName,
-        'csv',
+        'json',
         OutputQuery.NEIGHBORHOOD,
         EgressMode.WATCH,
         undefined,
@@ -160,7 +160,7 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
     const controller = new AbortController()
 
     quantileLoader(
-      [pipeline.descriptor.name, caseIndependentName, 'csv', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
+      [pipeline.descriptor.name, caseIndependentName, 'json', OutputQuery.QUANTILES, EgressMode.SNAPSHOT],
       setQuantiles,
       relation,
       controller
@@ -332,7 +332,10 @@ const InspectionTableImpl = ({
                 return params.row.record[col.name]
               },
               renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,
-              renderCell: (props: GridRenderCellParams) => <SQLValueDisplay value={props.value} type={col.columntype} />
+              renderCell: (props: GridRenderCellParams) => (
+                <SQLValueDisplay value={props.value} type={col.columntype} />
+              ),
+              sortComparator: sqlValueComparator(col.columntype)
             }
           }),
           {

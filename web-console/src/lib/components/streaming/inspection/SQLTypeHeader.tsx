@@ -2,7 +2,7 @@ import { nonNull } from '$lib/functions/common/function'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { Field } from '$lib/services/manager'
 
-import { Box, Stack, Typography } from '@mui/material'
+import { Stack, Typography } from '@mui/material'
 
 export const SQLTypeHeader = ({ col }: { col: Field }) => {
   return (

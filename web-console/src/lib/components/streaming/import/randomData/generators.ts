@@ -111,10 +111,10 @@ const getDefaultRngMethodName = (sqlType: ColumnType): string =>
       assert(sqlType.component !== null && sqlType.component !== undefined, 'Array type must have a component type')
       return getDefaultRngMethodName(sqlType.component)
     })
-    .with({ type: SqlType.BINARY}, () => 'BINARY type not implemented')
-    .with({ type: SqlType.VARBINARY}, () => 'VARBINARY type not implemented')
-    .with({ type: SqlType.INTERVAL}, () => 'INTERVAL type not supported')
-    .with({ type: SqlType.NULL}, () => 'NULL type not supported')
+    .with({ type: SqlType.BINARY }, () => 'BINARY type not implemented')
+    .with({ type: SqlType.VARBINARY }, () => 'VARBINARY type not implemented')
+    .with({ type: SqlType.INTERVAL }, () => 'INTERVAL type not supported')
+    .with({ type: SqlType.NULL }, () => 'NULL type not supported')
     .exhaustive()
 
 // Given a title & SQL type, returns the corresponding generator method.

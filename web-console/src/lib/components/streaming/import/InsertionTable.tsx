@@ -10,6 +10,7 @@ import { SQLValueDisplay } from '$lib/components/streaming/inspection/SQLValueDi
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { getDefaultValue } from '$lib/compositions/streaming/import/useDefaultRows'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
+import { sqlValueComparator } from '$lib/functions/ddl'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
@@ -179,7 +180,8 @@ const InsertionTableImpl = ({
               renderCell: (props: GridRenderCellParams) => (
                 <SQLValueDisplay value={props.value} type={col.columntype} />
               ),
-              renderEditCell: SQLValueInputCell(col.columntype)
+              renderEditCell: SQLValueInputCell(col.columntype),
+              sortComparator: sqlValueComparator(col.columntype)
             }
           }),
           {

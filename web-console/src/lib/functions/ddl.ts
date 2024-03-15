@@ -117,7 +117,7 @@ export function getValueFormatter(columntype: ColumnType) {
     })
     .exhaustive()
   return (value: SQLValueJS) => {
-    if (value === null && columntype.nullable || columntype.type === SqlType.NULL) {
+    if ((value === null && columntype.nullable) || columntype.type === SqlType.NULL) {
       return null
     }
     invariant(value !== null)
@@ -128,79 +128,161 @@ export function getValueFormatter(columntype: ColumnType) {
 /**
  * A type for a SQL value that can be unambiguously serialized into a body of a HTTP JSON ingress request
  */
-export type JSONIngressValue = string | number | boolean | BigNumber | JSONIngressValue[] | null
+export type JSONXgressValue = string | number | boolean | BigNumber | JSONXgressValue[] | null
 
 /**
  * Render an SQL Value to a JSON value that can be unambiguously serialized into a body of a HTTP JSON ingress request
  */
-const sqlValueToIngressJSON = (type: ColumnType, value: SQLValueJS): JSONIngressValue => {
+const sqlValueToIngressJSON = (type: ColumnType, value: SQLValueJS): JSONXgressValue => {
   if (value === null && type.nullable) {
     return null
   }
   invariant(value !== null)
   return match(type)
-  .with({ type: SqlType.BOOLEAN }, () => {
-    invariant(typeof value === 'boolean')
-    return value
-  })
-  .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
-    invariant(BigNumber.isBigNumber(value))
-    return value
-  })
-  .with(
-    { type: SqlType.TINYINT },
-    { type: SqlType.SMALLINT },
-    { type: SqlType.INTEGER },
-    { type: SqlType.REAL },
-    { type: SqlType.DOUBLE },
-    () => {
-      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+    .with({ type: SqlType.BOOLEAN }, () => {
+      invariant(typeof value === 'boolean')
       return value
-    }
-  )
-  .with({ type: SqlType.TIME }, () => {
-    invariant(typeof value === 'string' || isDayjs(value))
-    if (typeof value === 'string') {
-      return value
-    }
-    return value.format('HH:mm:ss')
-  })
-  .with({ type: SqlType.DATE }, () => {
-    invariant(typeof value === 'string' || isDayjs(value))
-    return dayjs(value).format('YYYY-MM-DD')
-  })
-  .with({ type: SqlType.TIMESTAMP }, () => {
-    invariant(typeof value === 'string' || isDayjs(value))
-    return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
-  })
-  .with({ type: SqlType.ARRAY }, () => {
-    invariant(Array.isArray(value))
-    return value.map(v => {
-      invariant(nonNull(type.component))
-      return sqlValueToIngressJSON(type.component, v)
     })
-  })
-  .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
-    invariant(typeof value === 'string')
-    return value
-  })
-  .with({ type: SqlType.BINARY }, () => {
-    invariant(false, 'BINARY type is not implemented for ingress')
-  })
-  .with({ type: SqlType.VARBINARY }, () => {
-    invariant(false, 'VARBINARY type is not implemented for ingress')
-  })
-  .with({ type: SqlType.INTERVAL }, () => {
-    invariant(false, 'INTERVAL type is not supported for ingress')
-  })
-  .with({ type: SqlType.NULL }, () => {
-    invariant(false, 'NULL type is not supported for ingress')
-  })
-  .exhaustive()
+    .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
+      invariant(BigNumber.isBigNumber(value))
+      return value
+    })
+    .with(
+      { type: SqlType.TINYINT },
+      { type: SqlType.SMALLINT },
+      { type: SqlType.INTEGER },
+      { type: SqlType.REAL },
+      { type: SqlType.DOUBLE },
+      () => {
+        invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+        return value
+      }
+    )
+    .with({ type: SqlType.TIME }, () => {
+      invariant(typeof value === 'string' || isDayjs(value))
+      if (typeof value === 'string') {
+        return value
+      }
+      return value.format('HH:mm:ss')
+    })
+    .with({ type: SqlType.DATE }, () => {
+      invariant(typeof value === 'string' || isDayjs(value))
+      return dayjs(value).format('YYYY-MM-DD')
+    })
+    .with({ type: SqlType.TIMESTAMP }, () => {
+      invariant(typeof value === 'string' || isDayjs(value))
+      return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
+    })
+    .with({ type: SqlType.ARRAY }, () => {
+      invariant(Array.isArray(value))
+      return value.map(v => {
+        invariant(nonNull(type.component))
+        return sqlValueToIngressJSON(type.component, v)
+      })
+    })
+    .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
+      invariant(typeof value === 'string')
+      return value
+    })
+    .with({ type: SqlType.BINARY }, () => {
+      invariant(false, 'BINARY type is not implemented for ingress')
+    })
+    .with({ type: SqlType.VARBINARY }, () => {
+      invariant(false, 'VARBINARY type is not implemented for ingress')
+    })
+    .with({ type: SqlType.INTERVAL }, () => {
+      invariant(false, 'INTERVAL type is not supported for ingress')
+    })
+    .with({ type: SqlType.NULL }, () => {
+      invariant(false, 'NULL type is not supported for ingress')
+    })
+    .exhaustive()
 }
 
-export const rowToIngressJSON = (relation: Relation, row: Row) =>
-  Object.fromEntries(relation.fields.map(field => tuple(getCaseIndependentName(field), sqlValueToIngressJSON(field.columntype, row.record[field.name]))))
+export const sqlRowToXgressJSON = (relation: Relation, row: Row) =>
+  Object.fromEntries(
+    relation.fields.map(field =>
+      tuple(getCaseIndependentName(field), sqlValueToIngressJSON(field.columntype, row.record[field.name]))
+    )
+  )
+
+export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): SQLValueJS => {
+  if (value === null && type.nullable) {
+    return null
+  }
+  invariant(value !== null)
+  return match(type)
+    .with({ type: SqlType.BOOLEAN }, () => {
+      invariant(typeof value === 'boolean')
+      return value
+    })
+    .with({ type: SqlType.BIGINT }, () => {
+      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+      return BigNumber(value)
+    })
+    .with({ type: SqlType.DECIMAL }, () => {
+      invariant(typeof value === 'string')
+      return BigNumber(value)
+    })
+    .with(
+      { type: SqlType.TINYINT },
+      { type: SqlType.SMALLINT },
+      { type: SqlType.INTEGER },
+      { type: SqlType.REAL },
+      { type: SqlType.DOUBLE },
+      () => {
+        invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+        return typeof value === 'number' ? value : value.toNumber()
+      }
+    )
+    .with({ type: SqlType.TIME }, () => {
+      invariant(typeof value === 'string')
+      return dayjs(value, 'HH:mm:ss')
+    })
+    .with({ type: SqlType.DATE }, () => {
+      invariant(typeof value === 'string')
+      return dayjs(value, 'YYYY-MM-DD')
+    })
+    .with({ type: SqlType.TIMESTAMP }, () => {
+      invariant(typeof value === 'string')
+      return dayjs(value, 'YYYY-MM-DD HH:mm:ss')
+    })
+    .with({ type: SqlType.ARRAY }, () => {
+      invariant(Array.isArray(value))
+      return value.map(v => {
+        invariant(nonNull(type.component))
+        return xgressJSONToSQLValue(type.component, v)
+      })
+    })
+    .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
+      invariant(typeof value === 'string')
+      return value
+    })
+    .with({ type: SqlType.BINARY }, () => {
+      invariant(false, 'BINARY type is not implemented for ingress')
+    })
+    .with({ type: SqlType.VARBINARY }, () => {
+      invariant(false, 'VARBINARY type is not implemented for ingress')
+    })
+    .with({ type: SqlType.INTERVAL }, () => {
+      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+      return BigNumber(value)
+    })
+    .with({ type: SqlType.NULL }, () => {
+      invariant(false, 'NULL type is not supported for ingress')
+    })
+    .exhaustive()
+}
+
+export const xgressJSONToSQLRecord = (
+  relation: Relation,
+  value: Record<string, JSONXgressValue>
+): Record<string, SQLValueJS> =>
+  Object.fromEntries(
+    relation.fields.map(field =>
+      tuple(getCaseIndependentName(field), xgressJSONToSQLValue(field.columntype, value[field.name]))
+    )
+  )
 
 // Generate a parser function for a field that converts a value to something
 // that is close to the original value but also acceptable for the SQL type.
@@ -289,27 +371,6 @@ export function clampToSQL(columntype: ColumnType) {
     ) as (value: SQLValueJS) => SQLValueJS
 }
 
-// Convert a row of strings to an object of typed values.
-//
-// The type conversion is important because for sending a row as an anchor later
-// it needs to have proper types (a number can't be a string etc.)
-export function csvLineToRow(relation: Relation, row: string[]): Row {
-  const genId = Number(row[0])
-  const weight = Number(row[row.length - 1])
-  const records = row.slice(1, row.length - 1)
-
-  const record: Record<string, SQLValueJS> = {}
-  relation.fields.forEach((field, i) => {
-    record[field.name] = parseCSVValue(field.columntype, records[i])
-  })
-
-  return {
-    genId,
-    weight,
-    record
-  }
-}
-
 // We convert fields to a tuple so that we can use it as an anchor in the REST
 // API.
 export function rowToAnchor(relation: Relation, obj: Row): any[] {
@@ -330,27 +391,6 @@ export const findBaseType = (type: ColumnType): ColumnType => {
   }
 
   return type
-}
-
-/**
- * Parse a value for a SQL type. This is used for parsing values from the
- * backend directly that can be trusted to satisfy the type constraints.
- * @param sqlType
- * @param value
- * @returns
- */
-export const parseCSVValue = (sqlType: ColumnType, value: string) => {
-  if (sqlType.nullable && ['', 'null'].includes(value)) {
-    return null
-  }
-  return match(sqlType)
-    .returnType<SQLValueJS>()
-    .with({ type: SqlType.BOOLEAN }, () => value === 'true')
-    .with({ type: SqlType.TINYINT }, { type: SqlType.SMALLINT }, { type: SqlType.INTEGER }, () => parseInt(value))
-    .with({ type: SqlType.REAL }, { type: SqlType.DOUBLE }, () => parseFloat(value))
-    .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => new BigNumber(value))
-    .with({ type: SqlType.TIMESTAMP }, { type: SqlType.DATE }, { type: SqlType.TIME }, () => value)
-    .otherwise(() => value)
 }
 
 // Returns the [min, max] (inclusive) range for a SQL type where applicable.
@@ -401,3 +441,38 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
     .otherwise(() => {
       throw new Error('Not a date/time type')
     })
+
+export const sqlValueComparator = (sqlType: ColumnType) =>
+  match(sqlType.type)
+    .returnType<(a: SQLValueJS, b: SQLValueJS) => number>()
+    .with(SqlType.BOOLEAN, () => (a, b) => {
+      return b === a ? 0 : a ? 1 : -1
+    })
+    .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, SqlType.REAL, SqlType.DOUBLE, () => (a, b) => {
+      invariant(typeof a === 'number' && typeof b === 'number')
+      return a - b
+    })
+    .with(SqlType.BIGINT, SqlType.DECIMAL, () => (a, b) => {
+      invariant(BigNumber.isBigNumber(a) && BigNumber.isBigNumber(b))
+      return a.comparedTo(b)
+    })
+    .with(SqlType.CHAR, SqlType.VARCHAR, () => (a, b) => {
+      invariant(typeof a === 'string' && typeof b === 'string')
+      return a.localeCompare(b)
+    })
+    .with(SqlType.TIME, SqlType.DATE, SqlType.TIMESTAMP, () => (a, b) => {
+      invariant(isDayjs(a) && isDayjs(b))
+      return a.isSame(b) ? 0 : a.isAfter(b) ? 1 : -1
+    })
+    .with(SqlType.INTERVAL, () => (a, b) => {
+      invariant(BigNumber.isBigNumber(a) && BigNumber.isBigNumber(b))
+      return a.comparedTo(b)
+    })
+    .with(SqlType.ARRAY, () => (a, b) => {
+      invariant(Array.isArray(a) && Array.isArray(b))
+      return a.length - b.length
+    })
+    .with(SqlType.BINARY, () => () => 0)
+    .with(SqlType.VARBINARY, () => () => 0)
+    .with(SqlType.NULL, () => () => 0)
+    .exhaustive()

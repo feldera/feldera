@@ -69,9 +69,10 @@ export const SQLValueInput = ({
           ...props,
           inputProps: {
             ...props.inputProps,
-            checked: props.value,
+            checked: props.value
           },
-          onChange: (e: ChangeEvent) => props.onChange({...e, target: {...e.target, value: (e.target as any).checked}} as any)
+          onChange: (e: ChangeEvent) =>
+            props.onChange({ ...e, target: { ...e.target, value: (e.target as any).checked } } as any)
         }))
         .with(SqlType.CHAR, () => ({
           type: 'string',
