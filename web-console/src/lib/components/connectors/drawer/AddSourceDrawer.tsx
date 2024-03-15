@@ -1,6 +1,7 @@
 // The drawer component that opens when the user wants to add a connector in the
 // pipeline builder.
 
+import { ConfigEditorDialog } from '$lib/components/connectors/dialogs'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
 import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
@@ -198,7 +199,8 @@ const SideBarAddIo = () => {
             ConnectorType.KAFKA_OUT,
             ConnectorType.DEBEZIUM_IN,
             ConnectorType.SNOWFLAKE_OUT,
-            ConnectorType.URL
+            ConnectorType.URL,
+            ConnectorType.UNKNOWN
           ].map(
             type =>
               shouldDisplayConnector(drawer.direction, type) && (
@@ -214,21 +216,25 @@ const SideBarAddIo = () => {
           )}
         </Grid>
       )}
-      {!!drawer?.connectorType &&
-        (direction => (
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <SelectSourceTable direction={direction} typ={drawer.connectorType} onAddClick={onAddClick(direction)} />
-            </Grid>
+      {!!drawer?.connectorType && (
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <SelectSourceTable
+              direction={drawer.direction}
+              typ={drawer.connectorType}
+              onAddClick={onAddClick(drawer.direction)}
+            />
           </Grid>
-        ))(connectorTypeToDirection(drawer.connectorType!))}
+        </Grid>
+      )}
       {(() => {
         const dialogs = {
           [ConnectorType.KAFKA_IN]: KafkaInputConnectorDialog,
           [ConnectorType.KAFKA_OUT]: KafkaOutputConnectorDialog,
           [ConnectorType.DEBEZIUM_IN]: DebeziumInputConnectorDialog,
           [ConnectorType.SNOWFLAKE_OUT]: SnowflakeOutputConnectorDialog,
-          [ConnectorType.URL]: UrlConnectorDialog
+          [ConnectorType.URL]: UrlConnectorDialog,
+          [ConnectorType.UNKNOWN]: ConfigEditorDialog
         }
         const res = /new\/connector\/(\w+)\/(\w+)/.exec(hash)
         if (!res) {
