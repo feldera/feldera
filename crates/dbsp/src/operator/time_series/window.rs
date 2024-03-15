@@ -1,13 +1,14 @@
 use crate::{
-    trace::BatchReaderFactories,
-    typed_batch::{IndexedZSet, TypedBox},
+    trace::{BatchReaderFactories, Spillable as DynSpillable},
+    typed_batch::{IndexedZSet, Spillable, SpilledBatch, TypedBox},
     Circuit, Stream, ZWeight,
 };
 
 impl<C, B> Stream<C, B>
 where
     C: Circuit,
-    B: IndexedZSet,
+    B: IndexedZSet + Spillable,
+    B::InnerBatch: DynSpillable,
     Box<B::DynK>: Clone,
 {
     /// Extract a subset of values that fall within a moving window from a
@@ -68,10 +69,13 @@ where
     pub fn window(
         &self,
         bounds: &Stream<C, (TypedBox<B::Key, B::DynK>, TypedBox<B::Key, B::DynK>)>,
-    ) -> Stream<C, B> {
-        let factories = BatchReaderFactories::new::<B::Key, B::Val, ZWeight>();
+    ) -> Stream<C, SpilledBatch<B>> {
+        let input_factories = BatchReaderFactories::new::<B::Key, B::Val, ZWeight>();
+        let stored_factories = BatchReaderFactories::new::<B::Key, B::Val, ZWeight>();
 
         let bounds = unsafe { bounds.transmute_payload::<(Box<B::DynK>, Box<B::DynK>)>() };
-        self.inner().dyn_window(&factories, &bounds).typed()
+        self.inner()
+            .dyn_window(&input_factories, &stored_factories, &bounds)
+            .typed()
     }
 }

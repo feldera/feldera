@@ -10,13 +10,13 @@ use crate::{
         },
         distinct::DistinctFactories,
     },
-    trace::{BatchReaderFactories, Deserializable},
+    trace::{BatchReaderFactories, Deserializable, Spillable},
     DBData, Timestamp, ZWeight,
 };
 
 pub struct DistinctCountFactories<Z, O, T>
 where
-    Z: IndexedZSet,
+    Z: IndexedZSet + Spillable,
     O: IndexedZSet<Key = Z::Key>,
     O::Val: DataTrait,
     T: Timestamp,
@@ -27,7 +27,7 @@ where
 
 impl<Z, O, T> DistinctCountFactories<Z, O, T>
 where
-    Z: IndexedZSet,
+    Z: IndexedZSet + Spillable,
     O: IndexedZSet<Key = Z::Key>,
     T: Timestamp,
 {
@@ -112,7 +112,7 @@ where
         factories: &DistinctCountFactories<Z, OrdIndexedZSet<Z::Key, Z::R>, C::Time>,
     ) -> Stream<C, OrdIndexedZSet<Z::Key, Z::R>>
     where
-        Z: Send,
+        Z: Spillable + Send,
     {
         self.dyn_distinct_count_generic(factories, Box::new(|w, out| w.move_to(out)))
     }
@@ -126,7 +126,7 @@ where
     where
         A: DataTrait + ?Sized,
         O: IndexedZSet<Key = Z::Key, Val = A>,
-        Z: Send,
+        Z: Spillable + Send,
     {
         self.dyn_distinct(&factories.distinct_factories)
             .dyn_weighted_count_generic(&factories.aggregate_factories, out_func)
