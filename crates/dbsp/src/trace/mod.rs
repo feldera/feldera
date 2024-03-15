@@ -32,6 +32,7 @@
 //! and upper bounds, one for each category of incomparable time, in an
 //! [`Antichain`](crate::time::Antichain).
 
+use crate::dynamic::ClonableTrait;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use dyn_clone::DynClone;
@@ -360,6 +361,59 @@ where
         RG: Rng;
 }
 
+pub trait Spillable: BatchReader<Time = ()> {
+    type Spilled: Batch<Key = Self::Key, Val = Self::Val, R = Self::R, Time = ()> + Stored;
+
+    fn spill(&self, output_factories: &<Self::Spilled as BatchReader>::Factories) -> Self::Spilled {
+        copy_batch(self, &(), output_factories)
+    }
+}
+
+impl<K, V, R> Spillable for OrdIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    type Spilled = FileIndexedZSet<K, V, R>;
+}
+
+impl<K, R> Spillable for OrdWSet<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    type Spilled = FileZSet<K, R>;
+}
+
+pub trait Stored: BatchReader<Time = ()> {
+    type Unspilled: Batch<Key = Self::Key, Val = Self::Val, R = Self::R, Time = ()> + Spillable;
+
+    fn unspill(
+        &self,
+        output_factories: &<Self::Unspilled as BatchReader>::Factories,
+    ) -> Self::Unspilled {
+        copy_batch(self, &(), output_factories)
+    }
+}
+
+impl<K, V, R> Stored for FileIndexedZSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    type Unspilled = OrdIndexedWSet<K, V, R>;
+}
+
+impl<K, R> Stored for FileZSet<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    type Unspilled = OrdWSet<K, R>;
+}
+
 /// A [`BatchReader`] plus features for constructing new batches.
 ///
 /// [`Batch`] extends [`BatchReader`] with types for constructing new batches
@@ -566,4 +620,39 @@ where
         }
     }
     batches.pop().unwrap_or(B::dyn_empty(factories, ()))
+}
+
+/// Copies a batch.  This uses the [`Builder`] interface to produce the output
+/// batch, which only supports producing batches with a single fixed timestamp,
+/// which must be supplied as `timestamp`.  To avoid discarding meaningful
+/// timestamps in the input, the input batch's time type must be `()`.
+///
+/// This is useful for adding a timestamp to a batch, or for converting between
+/// different batch implementations (e.g. writing an in-memory batch to disk).
+///
+/// TODO: for adding a timestamp to a batch, this could be implemented more
+/// efficiently by having a special batch type where all updates have the same
+/// timestamp, as this is the only kind of batch that we ever create directly in
+/// DBSP; batches with multiple timestamps are only created as a result of
+/// merging.  The main complication is that we will need to extend the trace
+/// implementation to work with batches of multiple types.  This shouldn't be
+/// too hard and is on the todo list.
+pub fn copy_batch<BI, TS, BO>(batch: &BI, timestamp: &TS, factories: &BO::Factories) -> BO
+where
+    TS: Timestamp,
+    BI: BatchReader<Time = ()>,
+    BO: Batch<Key = BI::Key, Val = BI::Val, Time = TS, R = BI::R>,
+{
+    let mut builder = BO::Builder::with_capacity(factories, timestamp.clone(), batch.len());
+    let mut cursor = batch.cursor();
+    let mut weight = batch.factories().weight_factory().default_box();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            cursor.weight().clone_to(&mut weight);
+            builder.push_refs(cursor.key(), cursor.val(), &weight);
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+    builder.done()
 }

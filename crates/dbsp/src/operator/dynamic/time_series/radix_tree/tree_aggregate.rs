@@ -11,7 +11,7 @@ use crate::{
         time_series::radix_tree::treenode::TreeNode,
         trace::{TraceBounds, TraceFeedback},
     },
-    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Spine},
+    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Spillable, Spine},
     Circuit, DBData, DynZWeight, Stream, ZWeight,
 };
 use dyn_clone::clone_box;
@@ -56,11 +56,12 @@ pub type OrdRadixTree<TS, A> = OrdIndexedZSet<DynDataTyped<Prefix<TS>>, DynTreeN
 
 pub struct TreeAggregateFactories<
     TS: DBData + PrimInt,
-    Z: IndexedZSet<Key = DynDataTyped<TS>>,
+    Z: IndexedZSet<Key = DynDataTyped<TS>> + Spillable,
     O: RadixTreeBatch<TS, Acc>,
     Acc: DataTrait + ?Sized,
 > {
     input_factories: Z::Factories,
+    stored_factories: <Z::Spilled as BatchReader>::Factories,
     output_factories: O::Factories,
     radix_tree_factories: RadixTreeFactories<TS, Acc>,
 }
@@ -68,7 +69,7 @@ pub struct TreeAggregateFactories<
 impl<TS, Z, O, Acc> TreeAggregateFactories<TS, Z, O, Acc>
 where
     TS: DBData + PrimInt,
-    Z: IndexedZSet<Key = DynDataTyped<TS>>,
+    Z: IndexedZSet<Key = DynDataTyped<TS>> + Spillable,
     O: RadixTreeBatch<TS, Acc>,
     Acc: DataTrait + ?Sized,
 {
@@ -79,6 +80,7 @@ where
     {
         Self {
             input_factories: BatchReaderFactories::new::<TS, VType, ZWeight>(),
+            stored_factories: BatchReaderFactories::new::<TS, VType, ZWeight>(),
             output_factories: BatchReaderFactories::new::<Prefix<TS>, TreeNode<TS, AType>, ZWeight>(
             ),
             radix_tree_factories: RadixTreeFactories::new::<AType>(),
@@ -89,7 +91,7 @@ where
 impl<C, Z, TS> Stream<C, Z>
 where
     C: Circuit,
-    Z: IndexedZSet<Key = DynDataTyped<TS>> + SizeOf + Send,
+    Z: IndexedZSet<Key = DynDataTyped<TS>> + Spillable + SizeOf + Send,
     TS: DBData + PrimInt,
 {
     /// Given a batch of updates to a time series stream, computes a stream of
@@ -159,7 +161,9 @@ where
                     aggregator,
                 ),
                 &stream,
-                &stream.dyn_integrate_trace(&factories.input_factories),
+                &stream
+                    .dyn_spill(&factories.stored_factories)
+                    .dyn_integrate_trace(&factories.stored_factories),
                 &feedback.delayed_trace,
             );
 
@@ -381,8 +385,10 @@ mod test {
                     &TreeAggregateFactories::new::<u64, u64>(),
                     &DynAggregatorImpl::new(aggregator),
                 );
+            let factory = BatchReaderFactories::new::<Prefix<u64>, TreeNode<u64, u64>, ZWeight>();
             aggregate
-                .dyn_integrate_trace(&BatchReaderFactories::new::<Prefix<u64>, TreeNode<u64, u64>, ZWeight>())
+                .dyn_spill(&factory)
+                .dyn_integrate_trace(&factory)
                 .apply(move |tree_trace| {
                     println!("Radix tree:");
                     let mut treestr = String::new();

@@ -65,7 +65,10 @@ mod product;
 use crate::{
     algebra::{Lattice, PartialOrder},
     dynamic::{DataTrait, WeightTrait},
-    trace::{Batch, OrdIndexedWSet, OrdKeyBatch, OrdValBatch, OrdWSet},
+    trace::{
+        Batch, FileIndexedZSet, FileKeyBatch, FileValBatch, FileZSet, OrdIndexedWSet, OrdKeyBatch,
+        OrdValBatch, OrdWSet,
+    },
     DBData, Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
@@ -100,10 +103,16 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
     /// We automate this choice by making it an associated type of
     /// `trait Timestamp` -- not a very elegant solution, but I couldn't
     /// think of a better one.
-    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
+    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
         + SizeOf;
 
-    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
+    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
+        + SizeOf;
+
+    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
+        + SizeOf;
+
+    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
         + SizeOf;
 
     fn minimum() -> Self;
@@ -220,10 +229,13 @@ impl Lattice for UnitTimestamp {
 impl Timestamp for UnitTimestamp {
     type Nested = ();
 
-    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         OrdValBatch<K, V, Self, R>;
-    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
+    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
 
+    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+        FileValBatch<K, V, Self, R>;
+    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FileKeyBatch<K, Self, R>;
     fn minimum() -> Self {
         UnitTimestamp
     }
@@ -247,9 +259,13 @@ impl Timestamp for UnitTimestamp {
 impl Timestamp for () {
     type Nested = NestedTimestamp32;
 
-    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         OrdIndexedWSet<K, V, R>;
-    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdWSet<K, R>;
+    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdWSet<K, R>;
+
+    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+        FileIndexedZSet<K, V, R>;
+    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FileZSet<K, R>;
 
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
@@ -264,9 +280,13 @@ impl Timestamp for () {
 impl Timestamp for u32 {
     type Nested = NestedTimestamp32;
 
-    type OrdValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+    type MemValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
         OrdValBatch<K, V, Self, R>;
-    type OrdKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
+    type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdKeyBatch<K, Self, R>;
+
+    type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
+        FileValBatch<K, V, Self, R>;
+    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FileKeyBatch<K, Self, R>;
 
     fn minimum() -> Self {
         0

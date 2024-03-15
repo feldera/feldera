@@ -113,7 +113,7 @@ fn main() {
                 })
                 .unwrap();
 
-            paths.gather(0).inspect(|zs: &OrdZSet<_>| {
+            paths.unspill().gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
                     println!("paths: {}", zs.len())
                 }

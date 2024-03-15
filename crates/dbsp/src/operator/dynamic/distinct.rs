@@ -12,7 +12,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::{DynPair, DynWeightedPairs, Erase},
-    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
+    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spillable},
     DBData, Timestamp, ZWeight,
 };
 use size_of::SizeOf;
@@ -27,16 +27,18 @@ use std::{
 circuit_cache_key!(DistinctId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(GlobalNodeId => Stream<C, D>));
 
-pub struct DistinctFactories<Z: IndexedZSet, T: Timestamp> {
+pub struct DistinctFactories<Z: IndexedZSet + Spillable, T: Timestamp> {
     pub input_factories: Z::Factories,
-    trace_factories: <T::OrdValBatch<Z::Key, Z::Val, Z::R> as BatchReader>::Factories,
+    pub stored_factories: <Z::Spilled as BatchReader>::Factories,
+    trace_factories: <T::FileValBatch<Z::Key, Z::Val, Z::R> as BatchReader>::Factories,
     aux_factories: OrdIndexedZSetFactories<Z::Key, Z::Val>,
 }
 
-impl<Z: IndexedZSet, T: Timestamp> Clone for DistinctFactories<Z, T> {
+impl<Z: IndexedZSet + Spillable, T: Timestamp> Clone for DistinctFactories<Z, T> {
     fn clone(&self) -> Self {
         Self {
             input_factories: self.input_factories.clone(),
+            stored_factories: self.stored_factories.clone(),
             trace_factories: self.trace_factories.clone(),
             aux_factories: self.aux_factories.clone(),
         }
@@ -45,7 +47,7 @@ impl<Z: IndexedZSet, T: Timestamp> Clone for DistinctFactories<Z, T> {
 
 impl<Z, T> DistinctFactories<Z, T>
 where
-    Z: IndexedZSet,
+    Z: IndexedZSet + Spillable,
     T: Timestamp,
 {
     pub fn new<KType, VType>() -> Self
@@ -55,6 +57,7 @@ where
     {
         Self {
             input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
+            stored_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             trace_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             aux_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
         }
@@ -139,7 +142,7 @@ where
     /// See [`Stream::distinct`].
     pub fn dyn_distinct(&self, factories: &DistinctFactories<Z, C::Time>) -> Stream<C, Z>
     where
-        Z: IndexedZSet + Send,
+        Z: IndexedZSet + Spillable + Send,
     {
         let circuit = self.circuit();
         let stream = self.dyn_shard(&factories.input_factories);
@@ -155,7 +158,8 @@ where
                                 DistinctIncrementalTotal::new(&factories.input_factories),
                                 &stream,
                                 &stream
-                                    .dyn_integrate_trace(&factories.input_factories)
+                                    .dyn_spill(&factories.stored_factories)
+                                    .dyn_integrate_trace(&factories.stored_factories)
                                     .delay_trace(),
                             )
                         } else {

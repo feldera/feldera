@@ -48,7 +48,7 @@ pub use min::{Min, MinSemigroup};
 
 pub struct IncAggregateFactories<I: BatchReader, O: IndexedZSet, T: Timestamp> {
     pub input_factories: I::Factories,
-    pub trace_factories: <T::OrdValBatch<I::Key, I::Val, I::R> as BatchReader>::Factories,
+    pub trace_factories: <T::FileValBatch<I::Key, I::Val, I::R> as BatchReader>::Factories,
     pub upsert_factories: UpsertFactories<T, O>,
     keys_factory: &'static dyn Factory<DynSet<I::Key>>,
     output_pair_factory: &'static dyn Factory<DynPair<I::Key, DynOpt<O::Val>>>,

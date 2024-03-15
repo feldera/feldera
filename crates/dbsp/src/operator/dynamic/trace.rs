@@ -9,8 +9,8 @@ use crate::{
         Scope, Stream, WithClock,
     },
     circuit_cache_key,
-    dynamic::{ClonableTrait, DataTrait},
-    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Spine, Trace},
+    dynamic::DataTrait,
+    trace::{copy_batch, Batch, BatchReader, Filter, Spillable, Spine, Stored, Trace},
     Error, Runtime, Timestamp,
 };
 use dyn_clone::clone_box;
@@ -20,12 +20,14 @@ use std::{
     cell::{Ref, RefCell},
     cmp::Ordering,
     marker::PhantomData,
-    ops::{Deref, DerefMut},
+    ops::Deref,
     rc::Rc,
 };
 
-circuit_cache_key!(TraceId<C, D: BatchReader>(GlobalNodeId => (Stream<C, D>, TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>)));
+circuit_cache_key!(TraceId<C, D: BatchReader>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(BoundsId<D: BatchReader>(GlobalNodeId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 circuit_cache_key!(DelayedTraceId<C, D>(GlobalNodeId => Stream<C, D>));
+circuit_cache_key!(SpillId<C, D>(GlobalNodeId => Stream<C, D>));
 
 /// Lower bound on keys or values in a trace.
 ///
@@ -207,44 +209,10 @@ struct TraceBoundsInner<K: ?Sized + 'static, V: ?Sized + 'static> {
 
 // TODO: add infrastructure to compact the trace during slack time.
 
-/// Add `timestamp` to all tuples in the input batch.
-///
-/// Given an input batch without timing information (`BatchReader::Time = ()`),
-/// generate an output batch by adding the same time `timestamp` to
-/// each tuple.
-///
-/// Most DBSP operators output untimed batches.  When such a batch is
-/// added to a trace, the current timestamp must be added to it.
-// TODO: this can be implemented more efficiently by having a special batch type
-// where all updates have the same timestamp, as this is the only kind of
-// batch that we ever create directly in DBSP; batches with multiple timestamps
-// are only created as a result of merging.  The main complication is that
-// we will need to extend the trace implementation to work with batches of
-// multiple types.  This shouldn't be too hard and is on the todo list.
-fn batch_add_time<BI, TS, BO>(batch: &BI, timestamp: &TS, factories: &BO::Factories) -> BO
-where
-    TS: Timestamp,
-    BI: BatchReader<Time = ()>,
-    BO: Batch<Key = BI::Key, Val = BI::Val, Time = TS, R = BI::R>,
-{
-    let mut builder = BO::Builder::with_capacity(factories, timestamp.clone(), batch.len());
-    let mut cursor = batch.cursor();
-    let mut weight = batch.factories().weight_factory().default_box();
-    while cursor.key_valid() {
-        while cursor.val_valid() {
-            cursor.weight().clone_to(&mut weight);
-            builder.push_refs(cursor.key(), cursor.val(), &weight);
-            cursor.step_val();
-        }
-        cursor.step_key();
-    }
-    builder.done()
-}
-
 /// A key-only [`Spine`] of `C`'s default batch type, with key and weight types
 /// taken from `B`.
 pub type KeySpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::OrdKeyBatch<
+    <<C as WithClock>::Time as Timestamp>::MemKeyBatch<
         <B as BatchReader>::Key,
         <B as BatchReader>::R,
     >,
@@ -253,7 +221,26 @@ pub type KeySpine<B, C> = Spine<
 /// A [`Spine`] of `C`'s default batch type, with key, value, and weight types
 /// taken from `B`.
 pub type ValSpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::OrdValBatch<
+    <<C as WithClock>::Time as Timestamp>::MemValBatch<
+        <B as BatchReader>::Key,
+        <B as BatchReader>::Val,
+        <B as BatchReader>::R,
+    >,
+>;
+
+/// An on-storage, key-only [`Spine`] of `C`'s default batch type, with key and
+/// weight types taken from `B`.
+pub type FileKeySpine<B, C> = Spine<
+    <<C as WithClock>::Time as Timestamp>::FileKeyBatch<
+        <B as BatchReader>::Key,
+        <B as BatchReader>::R,
+    >,
+>;
+
+/// An on-stroage [`Spine`] of `C`'s default batch type, with key, value, and
+/// weight types taken from `B`.
+pub type FileValSpine<B, C> = Spine<
+    <<C as WithClock>::Time as Timestamp>::FileValBatch<
         <B as BatchReader>::Key,
         <B as BatchReader>::Val,
         <B as BatchReader>::R,
@@ -265,11 +252,65 @@ where
     C: Circuit,
     B: Clone + 'static,
 {
+    /// Spills the in-memory batches in `self` to storage.
+    pub fn dyn_spill(
+        &self,
+        output_factories: &<B::Spilled as BatchReader>::Factories,
+    ) -> Stream<C, B::Spilled>
+    where
+        B: Spillable,
+    {
+        // We construct the trace bounds for the unspilled stream and copy it
+        // into the spilled stream, to ensure that `spilled.trace_bounds()` is
+        // the same as `self.trace_bounds()`.  This is an important property
+        // (see [`Self::trace_bounds`]).
+        //
+        // (We can't do this the same way as for sharded streams, by mapping
+        // from the spilled stream back to the unspilled stream as with
+        // [`Stream::try_unsharded_version`], because the types are different;
+        // we'd need an `Unspillable` trait.)
+        let bounds = self.trace_bounds();
+        let sharded = self.try_sharded_version();
+        let spilled = self
+            .circuit()
+            .cache_get_or_insert_with(SpillId::new(self.origin_node_id().clone()), || {
+                let output_factories = output_factories.clone();
+                let spilled = sharded.apply(move |batch| batch.spill(&output_factories));
+                self.circuit().cache_insert(
+                    BoundsId::<B>::new(spilled.origin_node_id().clone()),
+                    bounds.clone(),
+                );
+                spilled
+            })
+            .clone();
+        spilled.mark_sharded_if(self);
+        spilled
+    }
+
+    /// Reads stored batches back into memory.
+    pub fn dyn_unspill(
+        &self,
+        output_factories: &<B::Unspilled as BatchReader>::Factories,
+    ) -> Stream<C, B::Unspilled>
+    where
+        B: Stored,
+    {
+        let output_factories = output_factories.clone();
+        let unspilled = self.apply(move |batch| batch.unspill(&output_factories));
+        if self.is_sharded() {
+            unspilled.mark_sharded();
+        }
+        if self.is_distinct() {
+            unspilled.mark_distinct();
+        }
+        unspilled
+    }
+
     /// See [`Stream::trace`].
     pub fn dyn_trace(
         &self,
-        output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
-    ) -> Stream<C, ValSpine<B, C>>
+        output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
+    ) -> Stream<C, FileValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
@@ -279,18 +320,18 @@ where
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
-        output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
+        output_factories: &<FileValSpine<B, C> as BatchReader>::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
-    ) -> Stream<C, ValSpine<B, C>>
+    ) -> Stream<C, FileValSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
-        let mut trace_bounds = self.circuit().cache_get_or_insert_with(
-            TraceId::new(self.origin_node_id().clone()),
-            || {
+        let bounds = self.trace_bounds_with_bound(lower_key_bound, lower_val_bound);
+
+        self.circuit()
+            .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
                 let circuit = self.circuit();
-                let bounds = TraceBounds::new();
 
                 circuit.region("trace", || {
                     let persistent_id = format!(
@@ -307,7 +348,10 @@ where
                         persistent_id,
                     ));
                     let trace = circuit.add_binary_operator_with_preference(
-                        <TraceAppend<ValSpine<B, C>, B, C>>::new(output_factories, circuit.clone()),
+                        <TraceAppend<FileValSpine<B, C>, B, C>>::new(
+                            output_factories,
+                            circuit.clone(),
+                        ),
                         (&local, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (
                             &self.try_sharded_version(),
@@ -325,121 +369,134 @@ where
 
                     circuit
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-                    (trace, bounds)
+                    trace
                 })
-            },
-        );
-
-        let (trace, bounds) = trace_bounds.deref_mut();
-
-        bounds.add_key_bound(lower_key_bound);
-        bounds.add_val_bound(lower_val_bound);
-
-        trace.clone()
+            })
+            .clone()
     }
 
     /// See [`Stream::integrate_trace_retain_keys`].
     #[track_caller]
     pub fn dyn_integrate_trace_retain_keys<TS>(
         &self,
-        input_factories: &B::Factories,
         bounds_stream: &Stream<C, Box<TS>>,
         retain_key_func: Box<dyn Fn(&TS) -> Filter<B::Key>>,
-    ) -> Stream<C, Spine<B>>
-    where
-        B: Batch<Time = ()> + Send,
+    ) where
+        B: Batch<Time = ()>,
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        // The following `shard` is important.  It makes sure that the
-        // bound is applied to the sharded version of the stream, which is what
-        // all operators that come with a retainment policy use today.
-        // If this changes in the future, we may need two versions of the operator,
-        // with and without sharding.
-        let (trace, bounds) = self
-            .dyn_shard(input_factories)
-            .integrate_trace_inner(input_factories);
-
+        let bounds = self.trace_bounds();
         bounds_stream.inspect(move |ts| {
             let filter = retain_key_func(ts.as_ref());
             bounds.set_key_filter(filter);
         });
-
-        trace
     }
 
     /// See [`Stream::integrate_trace_retain_values`].
     #[track_caller]
     pub fn dyn_integrate_trace_retain_values<TS>(
         &self,
-        input_factories: &B::Factories,
         bounds_stream: &Stream<C, Box<TS>>,
         retain_val_func: Box<dyn Fn(&TS) -> Filter<B::Val>>,
-    ) -> Stream<C, Spine<B>>
-    where
-        B: Batch<Time = ()> + Send,
+    ) where
+        B: Batch<Time = ()>,
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        // The following `shard` is important.  It makes sure that the
-        // bound is applied to the sharded version of the stream, which is what
-        // all operators that come with a retainment policy use today.
-        // If this changes in the future, we may need two versions of the operator,
-        // with and without sharding.
-        let (trace, bounds) = self
-            .dyn_shard(input_factories)
-            .integrate_trace_inner(input_factories);
-
+        let bounds = self.trace_bounds();
         bounds_stream.inspect(move |ts| {
             let filter = retain_val_func(ts.as_ref());
             bounds.set_val_filter(filter);
         });
+    }
 
-        trace
+    /// Retrieves trace bounds for `self`, creating them if necessary.
+    ///
+    /// It's important that a single `TraceBounds` includes all of the bounds
+    /// relevant to a particular trace.  This can be tricky in the presence of
+    /// multiple versions of a stream that code tends to treat as the same.  We
+    /// manage it by mapping all of those versions to just one single version:
+    ///
+    /// * For a sharded version of some source stream, we use the source stream.
+    ///
+    /// * For a spilled version of some source stream, we use the source stream.
+    ///
+    /// Using the source stream is a safer choice than using the sharded (or
+    /// spilled) version, because it always exists, whereas the sharded version
+    /// might be created only *after* we get the trace bounds for the source
+    /// stream.
+    fn trace_bounds(&self) -> TraceBounds<B::Key, B::Val>
+    where
+        B: BatchReader,
+    {
+        // We handle moving from the sharded to unsharded stream directly here.
+        // Moving from spilled to unspilled is handled by `spill()`.
+        self.circuit()
+            .cache_get_or_insert_with(
+                BoundsId::<B>::new(self.try_unsharded_version().origin_node_id().clone()),
+                TraceBounds::new,
+            )
+            .clone()
+    }
+
+    /// Retrieves trace bounds for `self`, or a sharded version of `self` if it
+    /// exists, creating them if necessary, and adds bounds for
+    /// `lower_key_bound` and `lower_val_bound`.
+    fn trace_bounds_with_bound(
+        &self,
+        lower_key_bound: TraceBound<B::Key>,
+        lower_val_bound: TraceBound<B::Val>,
+    ) -> TraceBounds<B::Key, B::Val>
+    where
+        B: BatchReader,
+    {
+        let bounds = self.trace_bounds();
+        bounds.add_key_bound(lower_key_bound);
+        bounds.add_val_bound(lower_val_bound);
+        bounds
     }
 
     // TODO: this method should replace `Stream::integrate()`.
     #[track_caller]
-    pub fn dyn_integrate_trace(&self, input_factories: &B::Factories) -> Stream<C, Spine<B>>
+    pub fn dyn_integrate_trace(&self, factories: &B::Factories) -> Stream<C, Spine<B>>
     where
-        B: Batch<Time = ()>,
+        B: Batch<Time = ()> + Stored,
         Spine<B>: SizeOf,
     {
-        self.dyn_integrate_trace_with_bound(input_factories, TraceBound::new(), TraceBound::new())
+        self.dyn_integrate_trace_with_bound(factories, TraceBound::new(), TraceBound::new())
     }
 
     pub fn dyn_integrate_trace_with_bound(
         &self,
-        input_factories: &B::Factories,
+        factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
     ) -> Stream<C, Spine<B>>
     where
-        B: Batch<Time = ()>,
+        B: Batch<Time = ()> + Stored,
         Spine<B>: SizeOf,
     {
-        let (trace, bounds) = self.integrate_trace_inner(input_factories);
-
-        bounds.add_key_bound(lower_key_bound);
-        bounds.add_val_bound(lower_val_bound);
-
-        trace
+        self.integrate_trace_inner(
+            factories,
+            self.trace_bounds_with_bound(lower_key_bound, lower_val_bound),
+        )
     }
 
     #[allow(clippy::type_complexity)]
     fn integrate_trace_inner(
         &self,
         input_factories: &B::Factories,
-    ) -> (Stream<C, Spine<B>>, TraceBounds<B::Key, B::Val>)
+        bounds: TraceBounds<B::Key, B::Val>,
+    ) -> Stream<C, Spine<B>>
     where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
-        let mut trace_bounds = self.circuit().cache_get_or_insert_with(
-            TraceId::new(self.origin_node_id().clone()),
-            || {
+        self.circuit()
+            .cache_get_or_insert_with(TraceId::new(self.origin_node_id().clone()), || {
                 let circuit = self.circuit();
-                let bounds = TraceBounds::new();
+                let bounds = bounds.clone();
 
                 circuit.region("integrate_trace", || {
                     let (ExportStream { local, export }, z1feedback) = circuit
@@ -447,7 +504,7 @@ where
                             input_factories,
                             true,
                             circuit.root_scope(),
-                            bounds.clone(),
+                            bounds,
                             self.origin_node_id().persistent_id(),
                         ));
 
@@ -474,14 +531,10 @@ where
                         .cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
                     circuit.cache_insert(ExportId::new(trace.origin_node_id().clone()), export);
 
-                    (trace, bounds)
+                    trace
                 })
-            },
-        );
-
-        let (trace, bounds) = trace_bounds.deref_mut();
-
-        (trace.clone(), bounds.clone())
+            })
+            .clone()
     }
 }
 
@@ -531,9 +584,10 @@ where
             DelayedTraceId::new(trace.origin_node_id().clone()),
             self.delayed_trace.clone(),
         );
+        circuit.cache_insert(TraceId::new(stream.origin_node_id().clone()), trace.clone());
         circuit.cache_insert(
-            TraceId::new(stream.origin_node_id().clone()),
-            (trace.clone(), self.bounds.clone()),
+            BoundsId::<T>::new(stream.origin_node_id().clone()),
+            self.bounds.clone(),
         );
         circuit.cache_insert(
             ExportId::new(trace.origin_node_id().clone()),
@@ -727,7 +781,7 @@ where
     fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
-        trace.insert(batch_add_time(
+        trace.insert(copy_batch(
             batch,
             &self.clock.time(),
             &self.output_factories,
@@ -742,7 +796,7 @@ where
     }
 
     fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
-        trace.insert(batch_add_time(
+        trace.insert(copy_batch(
             &batch,
             &self.clock.time(),
             &self.output_factories,
@@ -967,19 +1021,19 @@ mod test {
                         },
                     );
 
-                let _trace = stream.integrate_trace();
-                let retain_keys = stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0 - 100);
-                retain_keys.apply(|trace| {
+                let trace = stream.spill().integrate_trace();
+                stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0 - 100);
+                trace.apply(|trace| {
                     //println!("retain_keys: {}bytes", trace.size_of().total_bytes());
                     assert!(trace.size_of().total_bytes() < 40000);
                 });
 
                 let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
 
-                let _trace2 = stream2.integrate_trace();
-                let retain_vals = stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1 - 1000);
+                let trace2 = stream2.spill().integrate_trace();
+                stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1 - 1000);
 
-                retain_vals.apply(|trace| {
+                trace2.apply(|trace| {
                     //println!("retain_vals: {}bytes", trace.size_of().total_bytes());
                     assert!(trace.size_of().total_bytes() < 40000);
                 });
