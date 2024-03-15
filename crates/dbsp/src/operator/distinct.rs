@@ -1,6 +1,8 @@
 use crate::{
-    operator::dynamic::distinct::DistinctFactories, trace::BatchReaderFactories,
-    typed_batch::IndexedZSet, Circuit, Stream, ZWeight,
+    operator::dynamic::distinct::DistinctFactories,
+    trace::{BatchReaderFactories, Spillable},
+    typed_batch::IndexedZSet,
+    Circuit, Stream, ZWeight,
 };
 
 impl<C, Z> Stream<C, Z>
@@ -30,7 +32,7 @@ impl<C, Z> Stream<C, Z>
 where
     C: Circuit,
     Z: IndexedZSet,
-    Z::InnerBatch: Send,
+    Z::InnerBatch: Spillable + Send,
 {
     /// Incrementally deduplicate input stream.
     ///
