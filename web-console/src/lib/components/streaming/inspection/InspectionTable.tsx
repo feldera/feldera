@@ -12,7 +12,7 @@ import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
-import { Row, rowToAnchor, sqlValueComparator, SQLValueJS } from '$lib/functions/ddl'
+import { Row, sqlValueComparator, SQLValueJS, sqlValueToXgressJSON } from '$lib/functions/ddl'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
@@ -54,6 +54,12 @@ const DEFAULT_NEIGHBORHOOD: NeighborhoodQuery = { before: PAGE_SIZE, after: PAGE
 // backwards X times until we reach the beginning.
 const INITIAL_PAGINATION_MODEL: GridPaginationModel = { pageSize: PAGE_SIZE, page: 1000 }
 
+// We convert fields to a tuple so that we can use it as an anchor in the REST
+// API.
+export function rowToAnchor(relation: Relation, row: { record: Record<string, SQLValueJS> }) {
+  return relation.fields.map(field => sqlValueToXgressJSON(field.columntype, row.record[field.name]))
+}
+
 /**
  * This specialized hook manages logic required for keeping rows up to date.
  * @param param
@@ -63,7 +69,7 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
   const [paginationModel, setPaginationModel] = useState(INITIAL_PAGINATION_MODEL)
   const [neighborhood, setNeighborhood] = useState<NeighborhoodQuery>(DEFAULT_NEIGHBORHOOD)
-  const [quantiles, setQuantiles] = useState<SQLValueJS[][] | undefined>(undefined)
+  const [quantiles, setQuantiles] = useState<Record<string, SQLValueJS>[] | undefined>(undefined)
   const [quantile, setQuantile] = useState<number>(0)
   const [rows, setRows] = useState<Row[]>([])
   const [isPending, setLoading] = useState<boolean>(true)
@@ -243,7 +249,10 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
     // We map slider 1..100 to array index 0..99 because 100 values divide range
     // into 101 approx equal intervals. If the value is at 0, we just go to the
     // beginning of the table (anchor=null).
-    const anchor = quantiles && quantileNumber > 0 && quantileNumber <= 100 ? quantiles[quantileNumber - 1] : null
+    const anchor =
+      quantiles && relation && quantileNumber > 0 && quantileNumber <= 100
+        ? rowToAnchor(relation, { record: quantiles[quantileNumber - 1] })
+        : null
     setQuantile(value as number)
     setRows([])
     setLoading(true)

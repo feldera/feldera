@@ -17,7 +17,7 @@ function useQuantiles() {
   const readStream = useCallback(
     async (
       egressParams: Arguments<typeof HttpInputOutputService.httpOutput>,
-      setQuantiles: Dispatch<SetStateAction<SQLValueJS[][] | undefined>>,
+      setQuantiles: Dispatch<SetStateAction<Record<string, SQLValueJS>[] | undefined>>,
       relation: Relation,
       controller: AbortController
     ) => {
@@ -62,7 +62,7 @@ function useQuantiles() {
             continue
           }
           const parsedRows = (obj.json_data as any[]).map(item => xgressJSONToSQLRecord(relation, item.insert))
-          setQuantiles(parsedRows.map(Object.values))
+          setQuantiles(parsedRows)
         }
       } catch (e) {
         if (e instanceof TypeError) {

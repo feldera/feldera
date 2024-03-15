@@ -133,7 +133,7 @@ export type JSONXgressValue = string | number | boolean | BigNumber | JSONXgress
 /**
  * Render an SQL Value to a JSON value that can be unambiguously serialized into a body of a HTTP JSON ingress request
  */
-const sqlValueToIngressJSON = (type: ColumnType, value: SQLValueJS): JSONXgressValue => {
+export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONXgressValue => {
   if (value === null && type.nullable) {
     return null
   }
@@ -177,7 +177,7 @@ const sqlValueToIngressJSON = (type: ColumnType, value: SQLValueJS): JSONXgressV
       invariant(Array.isArray(value))
       return value.map(v => {
         invariant(nonNull(type.component))
-        return sqlValueToIngressJSON(type.component, v)
+        return sqlValueToXgressJSON(type.component, v)
       })
     })
     .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
@@ -202,7 +202,7 @@ const sqlValueToIngressJSON = (type: ColumnType, value: SQLValueJS): JSONXgressV
 export const sqlRowToXgressJSON = (relation: Relation, row: Row) =>
   Object.fromEntries(
     relation.fields.map(field =>
-      tuple(getCaseIndependentName(field), sqlValueToIngressJSON(field.columntype, row.record[field.name]))
+      tuple(getCaseIndependentName(field), sqlValueToXgressJSON(field.columntype, row.record[field.name]))
     )
   )
 
@@ -377,17 +377,6 @@ export function clampToSQL(columntype: ColumnType) {
           value
     )
     .exhaustive() as (value: SQLValueJS) => SQLValueJS
-}
-
-// We convert fields to a tuple so that we can use it as an anchor in the REST
-// API.
-export function rowToAnchor(relation: Relation, obj: Row): any[] {
-  const tuple: any[] = []
-  relation.fields.map((col, i) => {
-    tuple[i] = obj.record[col.name]
-  })
-
-  return tuple
 }
 
 // Walk the type tree and find the base type.
