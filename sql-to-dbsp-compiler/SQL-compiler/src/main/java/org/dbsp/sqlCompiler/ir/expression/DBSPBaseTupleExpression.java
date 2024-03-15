@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
@@ -39,6 +40,8 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     }
 
     public DBSPExpression get(int index) {
+        if (index >= this.fields.length)
+            throw new InternalCompilerError("Index " + index + " out of bounds " + this.fields.length);
         return this.fields[index];
     }
 

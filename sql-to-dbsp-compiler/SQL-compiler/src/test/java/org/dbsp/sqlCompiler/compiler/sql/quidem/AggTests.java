@@ -162,12 +162,12 @@ public class AggTests extends PostBaseTests {
                 |        |
                 +--------+
                 (6 rows)""");
-}
+    }
 
-    @Test @Ignore("STDDEV not yet implemented")
-    public void testStddev() {
+    @Test
+    public void remove() {
         this.qs("""
-                -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
+                 -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
                 -- stddev_samp
                 select stddev_samp(deptno) as s from emp;
                 +----+
@@ -176,23 +176,15 @@ public class AggTests extends PostBaseTests {
                 | 19 |
                 +----+
                 (1 row)
-                                
-                -- [CALCITE-3815] Add missing SQL standard aggregate
-                -- functions: EVERY, SOME, INTERSECTION
-                select some(deptno = 100), every(deptno > 0), intersection(multiset[1, 2]) from emp;
-                +--------+--------+--------+
-                | EXPR$0 | EXPR$1 | EXPR$2 |
-                +--------+--------+--------+
-                | false  | true   | [1, 2] |
-                +--------+--------+--------+
-                (1 row)
-                                
-                select some(deptno > 100), every(deptno > 0) from emp where deptno > 1000;
-                +--------+--------+
-                | EXPR$0 | EXPR$1 |
-                +--------+--------+
-                |        |        |
-                +--------+--------+
+   
+                -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
+                -- stddev_samp
+                select stddev_samp(deptno) as s from emp;
+                +----+
+                | S  |
+                +----+
+                | 19 |
+                +----+
                 (1 row)
                                 
                 -- stddev_pop
@@ -224,10 +216,37 @@ public class AggTests extends PostBaseTests {
                 +--------+----+----+----+---+
                 | GENDER | P  | S  | SS | C |
                 +--------+----+----+----+---+
-                | F      | 17 | 19 | 19 | 5 |
-                | M      | 17 | 20 | 20 | 3 |
+                | F|       17 | 19 | 19 | 5 |
+                | M|       17 | 20 | 20 | 3 |
                 +--------+----+----+----+---+
                 (2 rows)""");
+    }
+
+    @Test @Ignore("multiset not yet implemented")
+    public void testIntersection() {
+        this.qs("""
+                -- [CALCITE-3815] Add missing SQL standard aggregate
+                -- functions: EVERY, SOME, INTERSECTION
+                select some(deptno = 100), every(deptno > 0), intersection(multiset[1, 2]) from emp;
+                +--------+--------+--------+
+                | EXPR$0 | EXPR$1 | EXPR$2 |
+                +--------+--------+--------+
+                | false  | true   | [1, 2] |
+                +--------+--------+--------+
+                (1 row)""");
+    }
+
+    @Test
+    public void testEvery() {
+        this.qs("""
+                select some(deptno > 100), every(deptno > 0) from emp where deptno > 1000;
+                +--------+--------+
+                | EXPR$0 | EXPR$1 |
+                +--------+--------+
+                |        |        |
+                +--------+--------+
+                (1 row)
+                """);
     }
 
     @Test

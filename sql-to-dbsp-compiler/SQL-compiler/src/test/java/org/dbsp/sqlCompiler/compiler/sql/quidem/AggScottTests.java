@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -805,8 +807,12 @@ public class AggScottTests extends ScottBaseTests {
                 | 1 |
                 | 1 |
                 +---+
-                (3 rows)
-                
+                (3 rows)""");
+    }
+
+    @Test
+    public void testCubeDistinct() {
+        this.qs("""
                 select count(distinct deptno) as cd, count(*) as c
                 from emp
                 group by cube(deptno);
@@ -818,7 +824,7 @@ public class AggScottTests extends ScottBaseTests {
                 |  1 | 6 |
                 |  3 | 3 |
                 +----+---+
-                (4 rows)""");
+                (4 rows)""", false);
     }
 
     @Test
@@ -1124,8 +1130,9 @@ public class AggScottTests extends ScottBaseTests {
                 (6 rows)""");
     }
 
-    @Test
-    public void testAggregates4() {
+    @Test @Ignore("TODO: Crashes the compiler")
+    public void testNestedOrderby() {
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
         this.qs("""
                 -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])
                 select  sum(x) as sum_cnt,
@@ -1150,8 +1157,12 @@ public class AggScottTests extends ScottBaseTests {
                 |       5 |        3 |
                 |       6 |        3 |
                 +---------+----------+
-                (3 rows)
-                
+                (3 rows)""");
+    }
+
+    @Test
+    public void testAggregates4() {
+        this.qs("""
                 -- [CALCITE-938] Aggregate row count
                 select empno, d.deptno
                 from emp

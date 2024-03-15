@@ -26,6 +26,16 @@ If `WITHIN DISTINCT` is present, argument values are made distinct
 within each value of specified keys before being passed to the
 aggregate function.
 
+*Important*: the aggregate result type is the same as the type of the
+value aggregated.  Since an aggregate combines multiple values, this
+can cause overflows in the computation, which can cause runtime
+exceptions.  We recommend to use explicit casts in SQL programs
+converting the aggregated values to a data type wide enough to store
+all intermediate aggregation results.  Example:
+
+Instead of `SELECT SUM(col)`, you should write `SELECT SUM(CAST col AS
+DECIMAL(10, 4))` if you expect 10-digit results to be possible.
+
 <table>
   <tr>
     <th>Aggregate</th>
@@ -82,6 +92,18 @@ aggregate function.
   <tr>
      <td><code>BIT_XOR( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the bitwise XOR of all non-null input values, or null if none; integer and binary types are supported</td>
+  </tr>
+  <tr>
+     <td><code>STDDEV( [ ALL | DISTINCT ] value)</code></td>
+     <td>Synonym for <code>STDDEV_SAMP</code></td>
+  </tr>
+  <tr>
+     <td><code>STDDEV_SAMP( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the sample standard deviation of numeric across all input values</td>
+  </tr>
+  <tr>
+     <td><code>STDDEV_POP( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the population standard deviation of numeric across all input values</td>
   </tr>
 </table>
 

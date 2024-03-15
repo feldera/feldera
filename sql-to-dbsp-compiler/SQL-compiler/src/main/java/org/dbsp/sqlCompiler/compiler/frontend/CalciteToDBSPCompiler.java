@@ -435,7 +435,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType inputRowType = this.convertType(input.getRowType(), false);
         DBSPVariablePath t = inputRowType.ref().var("t");
         DBSPTupleExpression globalKeys = this.generateKeyExpression(
-                aggregate.getGroupSet(), t, tuple.slice(0, aggregate.getGroupCount()));
+                aggregate.getGroupSet(), t, tuple);
         DBSPType[] aggTypes = Utilities.arraySlice(tuple.tupFields, aggregate.getGroupCount());
         DBSPTypeTuple aggType = new DBSPTypeTuple(aggTypes);
         DBSPAggregate fold = this.createAggregate(aggregate, aggregateCalls, tuple, inputRowType, aggregate.getGroupCount(), localKeys);
@@ -444,7 +444,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple typeFromAggregate = fold.defaultZeroType();
         DBSPTypeIndexedZSet aggregateResultType = this.makeIndexedZSet(globalKeys.getType(), typeFromAggregate);
 
-        DBSPTupleExpression localKeyExpression = this.generateKeyExpression(localKeys, t, tuple.slice(0, aggregate.getGroupCount()));
+        DBSPTupleExpression localKeyExpression = this.generateKeyExpression(localKeys, t, tuple);
         DBSPClosureExpression makeKeys =
                 new DBSPRawTupleExpression(
                         localKeyExpression,
@@ -491,6 +491,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             .applyCloneIfNeeded();
                     localIndex++;
                 } else {
+                    assert globalIndex < reindexFields.length;
                     reindexFields[globalIndex] = DBSPLiteral.none(globalKeys.fields[globalIndex].getType());
                 }
             }

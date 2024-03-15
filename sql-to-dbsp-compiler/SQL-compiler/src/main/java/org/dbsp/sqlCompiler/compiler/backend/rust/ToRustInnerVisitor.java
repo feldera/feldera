@@ -624,10 +624,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPUnaryExpression expression) {
-        if (expression.operation.equals(DBSPOpcode.WRAP_BOOL) ||
-            expression.operation.equals(DBSPOpcode.INDICATOR)) {
-            this.builder.append(expression.operation.toString())
-                    .append("(");
+        if (expression.operation == DBSPOpcode.WRAP_BOOL ||
+            expression.operation == DBSPOpcode.INDICATOR) {
+            this.builder.append(expression.operation.toString());
+            if (expression.operation == DBSPOpcode.INDICATOR) {
+                this.builder.append("::<_, ");
+                expression.getType().accept(this);
+                this.builder.append(">");
+            }
+            this.builder.append("(");
             expression.source.accept(this);
             this.builder.append(")");
             return VisitDecision.STOP;

@@ -629,6 +629,24 @@ where
     }
 }
 
+#[derive(Clone)]
+pub struct TripleSemigroup<T, R, V, TS, RS, VS>(PhantomData<(T, R, V, TS, RS, VS)>);
+
+impl<T, R, V, TS, RS, VS> Semigroup<Tup3<T, R, V>> for TripleSemigroup<T, R, V, TS, RS, VS>
+where
+    TS: Semigroup<T>,
+    RS: Semigroup<R>,
+    VS: Semigroup<V>,
+{
+    fn combine(left: &Tup3<T, R, V>, right: &Tup3<T, R, V>) -> Tup3<T, R, V> {
+        Tup3::new(
+            TS::combine(&left.0, &right.0),
+            RS::combine(&left.1, &right.1),
+            VS::combine(&left.2, &right.2),
+        )
+    }
+}
+
 #[inline(always)]
 pub fn wrap_bool(b: Option<bool>) -> bool {
     match b {
@@ -711,10 +729,13 @@ pub fn is_null<T>(value: Option<T>) -> bool {
 }
 
 #[inline(always)]
-pub fn indicator<T>(value: &Option<T>) -> i64 {
+pub fn indicator<T, R>(value: &Option<T>) -> R
+where
+    R: HasZero + HasOne,
+{
     match value {
-        None => 0,
-        Some(_) => 1,
+        None => R::zero(),
+        Some(_) => R::one(),
     }
 }
 
