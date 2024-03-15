@@ -25,11 +25,9 @@ mod pipeline;
 mod program;
 mod service;
 
-// All service types
-mod services;
-pub use services::{
-    KafkaService, ServiceConfig, ServiceProbe, ServiceProbeError, ServiceProbeRequest,
-    ServiceProbeResponse, ServiceProbeResult, ServiceProbeStatus, ServiceProbeType,
+use crate::prober::service::{
+    ServiceProbeError, ServiceProbeRequest, ServiceProbeResponse, ServiceProbeResult,
+    ServiceProbeStatus, ServiceProbeType,
 };
 
 use crate::auth::JwkCache;
@@ -217,6 +215,8 @@ request is rejected."
         pipeline_types::format::parquet::ParquetEncoderConfig,
         pipeline_types::format::parquet::ParquetParserConfig,
         pipeline_types::error::ErrorResponse,
+        pipeline_types::service::ServiceConfig,
+        pipeline_types::service::KafkaService,
         TenantId,
         ProgramId,
         PipelineId,
@@ -255,8 +255,6 @@ request is rejected."
         service::CreateServiceProbeResponse,
         api_key::NewApiKeyRequest,
         api_key::NewApiKeyResponse,
-        ServiceConfig,
-        KafkaService,
         ServiceProbeType,
         ServiceProbeRequest,
         ServiceProbeResponse,

@@ -26,6 +26,7 @@ proptest-derive = { version = "0.3.0", optional = true }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 # Revert after https://github.com/chmp/serde_arrow/pull/147 is merged:
 serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arrow-50"], rev = "7b604f0" }
+thiserror = "1.0"
 
 [dev-dependencies]
 lazy_static = "1.4.0"

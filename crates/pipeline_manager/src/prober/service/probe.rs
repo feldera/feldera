@@ -1,14 +1,7 @@
 use crate::db::DBError;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use thiserror::Error as ThisError;
 use utoipa::ToSchema;
-
-pub trait ServiceProbe {
-    /// Perform the specified probe. It adheres to the timeout, after which
-    /// it gives up on probing the service and returns immediately.
-    fn probe(&self, probe: ServiceProbeRequest, timeout: Duration) -> ServiceProbeResponse;
-}
 
 /// Service probe status.
 ///
@@ -180,8 +173,8 @@ impl ServiceProbeResponse {
 
 #[cfg(test)]
 mod tests {
-    use crate::api::services::probe::ServiceProbeType;
-    use crate::api::{ServiceProbeRequest, ServiceProbeStatus};
+    use super::ServiceProbeType;
+    use super::{ServiceProbeRequest, ServiceProbeStatus};
     use crate::db::DBError;
 
     /// Tests that the status string conversion is the same in both directions.

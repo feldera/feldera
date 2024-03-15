@@ -7,18 +7,18 @@ use super::{
     ApiKeyDescr, ApiKeyId, ApiPermission, Pipeline, PipelineDescr, PipelineRuntimeState,
     ProgramSchema,
 };
-use crate::api::{
-    KafkaService, ServiceConfig, ServiceProbeRequest, ServiceProbeResponse, ServiceProbeStatus,
-    ServiceProbeType,
-};
 use crate::auth::{self, TenantId, TenantRecord};
 use crate::db::pipeline::convert_bigint_to_time;
 use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
 use crate::db::{ServiceDescr, ServiceId};
+use crate::prober::service::{
+    ServiceProbeRequest, ServiceProbeResponse, ServiceProbeStatus, ServiceProbeType,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::Transaction;
 use openssl::sha::{self};
+use pipeline_types::service::{KafkaService, ServiceConfig};
 use pipeline_types::{
     config::{ConnectorConfig, ResourceConfig, RuntimeConfig},
     program_schema::Relation,

@@ -29,9 +29,10 @@ mod pg_setup;
 pub(crate) mod storage;
 
 mod error;
-use crate::api::{ServiceConfig, ServiceProbeRequest, ServiceProbeResponse, ServiceProbeType};
 pub(crate) use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
+use crate::prober::service::{ServiceProbeRequest, ServiceProbeResponse, ServiceProbeType};
 pub use error::DBError;
+use pipeline_types::service::ServiceConfig;
 
 mod embedded {
     use refinery::embed_migrations;

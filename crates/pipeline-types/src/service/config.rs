@@ -1,7 +1,5 @@
-use crate::api::services::probe::{ServiceProbe, ServiceProbeRequest};
-use crate::api::{KafkaService, ServiceProbeResponse};
+use crate::service::KafkaService;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use utoipa::ToSchema;
 
 /// Configuration for a Service, which typically includes how to establish a
@@ -35,18 +33,10 @@ impl ServiceConfig {
     }
 }
 
-impl ServiceProbe for ServiceConfig {
-    fn probe(&self, probe: ServiceProbeRequest, timeout: Duration) -> ServiceProbeResponse {
-        match self {
-            ServiceConfig::Kafka(config) => config.probe(probe, timeout),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::KafkaService;
     use super::ServiceConfig;
+    use crate::service::KafkaService;
     use std::collections::BTreeMap;
 
     #[test]
