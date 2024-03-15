@@ -4,6 +4,7 @@ use crate::{
     static_compile::{DeScalarHandle, DeScalarHandleImpl},
     Catalog, ControllerError,
 };
+use dbsp::typed_batch::DynSpillable;
 use dbsp::{
     operator::{
         DelayedFeedback, MapHandle, NeighborhoodDescr, NeighborhoodDescrBox,
@@ -63,7 +64,7 @@ impl Catalog {
             + Send
             + 'static,
         Z: ZSet + Debug + Send + Sync,
-        Z::InnerBatch: Send,
+        Z::InnerBatch: DynSpillable + Send,
         Z::Key: Sync + From<D>,
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
@@ -97,7 +98,7 @@ impl Catalog {
             + Send
             + 'static,
         Z: ZSet + Debug + Send + Sync,
-        Z::InnerBatch: Send,
+        Z::InnerBatch: DynSpillable + Send,
         Z::Key: Sync + From<D>,
     {
         let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
@@ -184,7 +185,7 @@ impl Catalog {
             + Send
             + 'static,
         Z: ZSet + Debug + Send + Sync,
-        Z::InnerBatch: Send,
+        Z::InnerBatch: DynSpillable + Send,
         Z::Key: Sync + From<D>,
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
@@ -244,6 +245,7 @@ impl Catalog {
 
         // Output of the quantiles query, only produced when `num_quantiles>0`.
         let quantiles_stream = stream
+            .spill()
             .integrate_trace()
             .stream_key_quantiles(&num_quantiles_stream);
         let quantiles_handle = quantiles_stream
@@ -369,6 +371,7 @@ impl Catalog {
 
         // Output of the quantiles query, only produced when `num_quantiles>0`.
         let quantiles_stream = stream
+            .spill()
             .integrate_trace()
             .stream_unique_key_val_quantiles(&num_quantiles_stream);
         let quantiles_handle = quantiles_stream
