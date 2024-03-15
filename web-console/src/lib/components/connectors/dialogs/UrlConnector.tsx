@@ -34,8 +34,10 @@ import Transition from './tabs/Transition'
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
-  config: va.object({
-    url: va.nonOptional(va.string()),
+  transport: va.object({
+    url: va.nonOptional(va.string())
+  }),
+  format: va.object({
     format_name: va.nonOptional(va.picklist(['json', 'csv'])),
     update_format: va.optional(va.picklist(['raw', 'insert_delete']), 'raw'),
     json_array: va.nonOptional(va.boolean())
@@ -59,8 +61,10 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const defaultValues: UrlSchema = {
     name: '',
     description: '',
-    config: {
-      url: '',
+    transport: {
+      url: ''
+    },
+    format: {
       format_name: 'json',
       update_format: 'raw',
       json_array: false
@@ -76,23 +80,23 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const prepareData = (data: UrlSchema) => ({
     name: data.name,
     description: data.description,
-    config: normalizeConfig(data.config)
+    config: normalizeConfig(data)
   })
 
-  const normalizeConfig = (data: UrlSchema['config']) => ({
+  const normalizeConfig = (data: { transport: UrlSchema['transport']; format: UrlSchema['format'] }) => ({
     transport: {
       name: connectorTransportName(ConnectorType.URL),
       config: {
-        path: data.url
+        path: data.transport.url
       }
     },
     format: {
-      name: data.format_name,
+      name: data.format.format_name,
       config:
-        data.format_name === 'json'
+        data.format.format_name === 'json'
           ? {
-              update_format: data.update_format,
-              array: data.json_array
+              update_format: data.format.update_format,
+              array: data.format.json_array
             }
           : {}
     }
@@ -101,13 +105,13 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, config }: FieldErrors<UrlSchema>) => {
+  const handleErrors = ({ name, description, transport, format }: FieldErrors<UrlSchema>) => {
     if (!props.show) {
       return
     }
-    if (name || description || config?.url) {
+    if (name || description || transport?.url) {
       setActiveTab('detailsTab')
-    } else if (config?.format_name || config?.json_array || config?.update_format) {
+    } else if (format?.format_name || format?.json_array || format?.update_format) {
       setActiveTab('formatTab')
     }
   }
@@ -231,7 +235,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                   </Grid>
                   <Grid item sm={12} xs={12}>
                     <TextFieldElement
-                      name='config.url'
+                      name='transport.url'
                       label='URL'
                       size='small'
                       fullWidth

@@ -26,7 +26,8 @@ import Typography from '@mui/material/Typography'
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
-  config: va.nonOptional(va.any())
+  transport: va.nonOptional(va.object({}, va.unknown())),
+  format: va.nonOptional(va.object({}, va.unknown()))
 })
 
 export type EditorSchema = va.Input<typeof schema>
@@ -44,16 +45,15 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
   const defaultValues: EditorSchema = {
     name: '',
     description: '',
-    config: {
-      transport: {
-        name: 'transport-name',
-        config: {
-          property: 'value'
-        }
-      },
-      format: {
-        name: 'csv'
+    transport: {
+      name: 'transport-name',
+      config: {
+        property: 'value'
       }
+    },
+    format: {
+      name: 'csv',
+      config: {}
     }
   }
 
@@ -61,7 +61,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
     props.setShow(false)
   }
   // Define what should happen when the form is submitted
-  const prepareData = (data: EditorSchema) => data
+  const prepareData = ({ transport, format, ...data }: EditorSchema) => ({ ...data, config: { transport, format } })
 
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 

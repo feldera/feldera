@@ -1,4 +1,4 @@
-import { EditorSchema, KafkaInputSchema, KafkaOutputSchema, UrlSchema } from '$lib/components/connectors/dialogs'
+import { EditorSchema, KafkaInputSchema, KafkaOutputSchema } from '$lib/components/connectors/dialogs'
 import { DebeziumInputSchema } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { SnowflakeOutputSchema } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { assertUnion } from '$lib/functions/common/array'
@@ -155,12 +155,14 @@ export const parseUrlSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(config.transport.config)
 
   return {
-    config: {
-      url: config.transport.config.path,
+    transport: {
+      url: config.transport.config.path
+    },
+    format: {
       format_name: assertUnion(['json', 'csv'] as const, config.format.name),
       update_format: config.format.config?.update_format || 'raw',
       json_array: config.format.config?.array || false
-    } as UrlSchema['config']
+    }
   }
 }
 
@@ -172,7 +174,8 @@ export const parseEditorSchema = (connector: ConnectorDescr): EditorSchema => {
   return {
     name: connector.name,
     description: connector.description,
-    config: connector.config
+    transport: connector.config.transport,
+    format: connector.config.format
   }
 }
 
