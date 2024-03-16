@@ -309,9 +309,43 @@ fn lead_test_circuit(
 )> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
 
-    let lead_handle = input_stream.lead(3, |v| v.cloned()).integrate().output();
+    let lead_handle = input_stream.lag(-3, |v| v.cloned()).integrate().output();
 
     Ok((input_handle, lead_handle))
+}
+
+fn lag_custom_order_test_circuit(
+    circuit: &mut RootCircuit,
+) -> AnyResult<(
+    IndexedZSetHandle<i32, Tup2<i32, String>>,
+    OutputHandle<OrdIndexedZSet<i32, Tup3<i32, String, Option<Tup2<i32, String>>>>>,
+)> {
+    struct AscDesc;
+
+    impl CmpFunc<Tup2<i32, String>> for AscDesc {
+        fn cmp(left: &Tup2<i32, String>, right: &Tup2<i32, String>) -> std::cmp::Ordering {
+            let ord = left.0.cmp(&right.0);
+
+            if ord == Ordering::Equal {
+                right.1.cmp(&left.1)
+            } else {
+                ord
+            }
+        }
+    }
+
+    let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, Tup2<i32, String>>();
+
+    let lag_handle = input_stream
+        .lag_custom_order::<_, _, _, AscDesc, _>(
+            3,
+            |v| v.cloned(),
+            |v, vl| Tup3(v.0, v.1.clone(), vl.clone()),
+        )
+        .integrate()
+        .output();
+
+    Ok((input_handle, lag_handle))
 }
 
 fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
@@ -519,6 +553,103 @@ fn test_topk_custom_ord() {
             &topk_row_number_result,
             &expected_row_number_output.next().unwrap(),
         );
+    }
+}
+
+#[test]
+fn test_lag_custom_ord() {
+    let (mut dbsp, (input_handle, lag_handle)) =
+        Runtime::init_circuit(4, lag_custom_order_test_circuit).unwrap();
+
+    let trace = vec![
+        vec![
+            (1, Tup2(1, "f".to_string()), 1),
+            (1, Tup2(1, "e".to_string()), 1),
+            (1, Tup2(1, "d".to_string()), 1),
+            (1, Tup2(1, "c".to_string()), 1),
+            (1, Tup2(1, "b".to_string()), 1),
+            (1, Tup2(1, "a".to_string()), 1),
+            (1, Tup2(2, "d".to_string()), 1),
+            (1, Tup2(2, "c".to_string()), 1),
+            (1, Tup2(2, "b".to_string()), 1),
+            (1, Tup2(2, "a".to_string()), 1),
+        ],
+        vec![
+            (1, Tup2(2, "e".to_string()), 1),
+            (1, Tup2(2, "d".to_string()), 1),
+            (1, Tup2(3, "d".to_string()), 1),
+            (1, Tup2(3, "c".to_string()), 1),
+            (1, Tup2(3, "b".to_string()), 1),
+            (1, Tup2(3, "a".to_string()), 1),
+        ],
+        vec![
+            (1, Tup2(1, "f".to_string()), -1),
+            (1, Tup2(1, "d".to_string()), -1),
+            (1, Tup2(1, "b".to_string()), -1),
+            (1, Tup2(2, "d".to_string()), -1),
+            (1, Tup2(2, "b".to_string()), -1),
+        ],
+    ];
+    let expected_output: Vec<OrdIndexedZSet<i32, Tup3<i32, String, Option<Tup2<i32, String>>>>> = vec![
+        indexed_zset! {
+            1i32 => { Tup3(1i32, "f".to_string(), None) => 1
+                    , Tup3(1i32, "e".to_string(), None) => 1
+                    , Tup3(1i32, "d".to_string(), None) => 1
+                    , Tup3(1i32, "c".to_string(), Some(Tup2(1, "f".to_string()))) => 1
+                    , Tup3(1i32, "b".to_string(), Some(Tup2(1, "e".to_string()))) => 1
+                    , Tup3(1i32, "a".to_string(), Some(Tup2(1, "d".to_string()))) => 1
+                    , Tup3(2i32, "d".to_string(), Some(Tup2(1, "c".to_string()))) => 1
+                    , Tup3(2i32, "c".to_string(), Some(Tup2(1, "b".to_string()))) => 1
+                    , Tup3(2i32, "b".to_string(), Some(Tup2(1, "a".to_string()))) => 1
+                    , Tup3(2i32, "a".to_string(), Some(Tup2(2, "d".to_string()))) => 1
+            }
+        },
+        indexed_zset! {
+            1i32 => { Tup3(1i32, "f".to_string(), None) => 1
+                , Tup3(1i32, "e".to_string(), None) => 1
+                , Tup3(1i32, "d".to_string(), None) => 1
+                , Tup3(1i32, "c".to_string(), Some(Tup2(1, "f".to_string()))) => 1
+                , Tup3(1i32, "b".to_string(), Some(Tup2(1, "e".to_string()))) => 1
+                , Tup3(1i32, "a".to_string(), Some(Tup2(1, "d".to_string()))) => 1
+                , Tup3(2i32, "e".to_string(), Some(Tup2(1, "c".to_string()))) => 1
+                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "b".to_string()))) => 2
+                , Tup3(2i32, "c".to_string(), Some(Tup2(1, "a".to_string()))) => 1
+                , Tup3(2i32, "b".to_string(), Some(Tup2(2, "e".to_string()))) => 1
+                , Tup3(2i32, "a".to_string(), Some(Tup2(2, "d".to_string()))) => 1
+                , Tup3(3i32, "d".to_string(), Some(Tup2(2, "c".to_string()))) => 1
+                , Tup3(3i32, "c".to_string(), Some(Tup2(2, "b".to_string()))) => 1
+                , Tup3(3i32, "b".to_string(), Some(Tup2(2, "a".to_string()))) => 1
+                , Tup3(3i32, "a".to_string(), Some(Tup2(3, "d".to_string()))) => 1
+            }
+        },
+        indexed_zset! {
+            1i32 => { Tup3(1i32, "e".to_string(), None) => 1
+                , Tup3(1i32, "c".to_string(), None) => 1
+                , Tup3(1i32, "a".to_string(), None) => 1
+                , Tup3(2i32, "e".to_string(), Some(Tup2(1, "e".to_string()))) => 1
+                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "c".to_string()))) => 1
+                , Tup3(2i32, "c".to_string(), Some(Tup2(1, "a".to_string()))) => 1
+                , Tup3(2i32, "a".to_string(), Some(Tup2(2, "e".to_string()))) => 1
+                , Tup3(3i32, "d".to_string(), Some(Tup2(2, "d".to_string()))) => 1
+                , Tup3(3i32, "c".to_string(), Some(Tup2(2, "c".to_string()))) => 1
+                , Tup3(3i32, "b".to_string(), Some(Tup2(2, "a".to_string()))) => 1
+                , Tup3(3i32, "a".to_string(), Some(Tup2(3, "d".to_string()))) => 1
+            }
+        },
+    ];
+
+    let mut expected_output = expected_output.into_iter();
+
+    for batch in trace.into_iter() {
+        println!("step");
+        for (k, v, r) in batch.into_iter() {
+            input_handle.push(k, (v, r));
+        }
+        dbsp.step().unwrap();
+
+        let topk_result = lag_handle.consolidate();
+
+        assert_typed_batch_eq(&topk_result, &expected_output.next().unwrap());
     }
 }
 

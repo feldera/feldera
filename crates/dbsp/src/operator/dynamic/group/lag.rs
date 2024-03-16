@@ -1,10 +1,12 @@
 use super::{GroupTransformer, Monotonicity};
+use crate::algebra::OrdIndexedZSetFactories;
+use crate::operator::dynamic::filter_map::DynFilterMap;
 use crate::{
     algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
     dynamic::{DataTrait, DynPair, DynUnit, DynVec, Erase, Factory, LeanVec, WithFactory},
     trace::{
         cursor::{CursorPair, ReverseKeyCursor},
-        BatchReaderFactories, OrdIndexedWSetFactories,
+        BatchReaderFactories,
     },
     utils::Tup2,
     DBData, DynZWeight, RootCircuit, Stream, ZWeight,
@@ -15,7 +17,7 @@ const MAX_RETRACTIONS_CAPACITY: usize = 100_000usize;
 
 pub struct LagFactories<B: IndexedZSet, OV: DataTrait + ?Sized> {
     input_factories: B::Factories,
-    output_factories: OrdIndexedWSetFactories<B::Key, DynPair<B::Val, OV>, B::R>,
+    output_factories: OrdIndexedZSetFactories<B::Key, DynPair<B::Val, OV>>,
     retraction_factory: &'static dyn Factory<ForwardRetraction<DynPair<B::Val, OV>>>,
     retractions_factory: &'static dyn Factory<ForwardRetractions<DynPair<B::Val, OV>>>,
     output_val_factory: &'static dyn Factory<OV>,
@@ -43,6 +45,38 @@ where
     }
 }
 
+pub struct LagCustomOrdFactories<
+    B: IndexedZSet,
+    V2: DataTrait + ?Sized,
+    VL: DataTrait + ?Sized,
+    OV: DataTrait + ?Sized,
+> {
+    lag_factories: LagFactories<OrdIndexedZSet<B::Key, V2>, VL>,
+    output_factories: OrdIndexedZSetFactories<B::Key, OV>,
+}
+
+impl<B, V2, VL, OV> LagCustomOrdFactories<B, V2, VL, OV>
+where
+    B: IndexedZSet,
+    V2: DataTrait + ?Sized,
+    VL: DataTrait + ?Sized,
+    OV: DataTrait + ?Sized,
+{
+    pub fn new<KType, VType, V2Type, VLType, OVType>() -> Self
+    where
+        KType: DBData + Erase<B::Key>,
+        VType: DBData + Erase<B::Val>,
+        V2Type: DBData + Erase<V2>,
+        VLType: DBData + Erase<VL>,
+        OVType: DBData + Erase<OV>,
+    {
+        Self {
+            lag_factories: LagFactories::new::<KType, V2Type, VLType>(),
+            output_factories: BatchReaderFactories::new::<KType, OVType, ZWeight>(),
+        }
+    }
+}
+
 impl<B> Stream<RootCircuit, B>
 where
     B: IndexedZSet + Send,
@@ -52,7 +86,7 @@ where
     pub fn dyn_lag<OV>(
         &self,
         factories: &LagFactories<B, OV>,
-        offset: usize,
+        offset: isize,
         project: Box<dyn Fn(Option<&B::Val>, &mut OV)>,
     ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, DynPair<B::Val, OV>>>
     where
@@ -66,40 +100,62 @@ where
                 factories.retraction_factory,
                 factories.retractions_factory,
                 factories.output_val_factory,
-                offset,
-                true,
+                offset.unsigned_abs(),
+                offset > 0,
                 project,
-                |k1, k2| k1.cmp(k2),
-                |v1, v2| v1.cmp(v2),
+                if offset > 0 {
+                    |k1: &B::Val, k2: &B::Val| k1.cmp(k2)
+                } else {
+                    |k1: &B::Val, k2: &B::Val| k2.cmp(k1)
+                },
+                if offset > 0 {
+                    |v1: &OV, v2: &OV| v1.cmp(v2)
+                } else {
+                    |v1: &OV, v2: &OV| v2.cmp(v1)
+                },
             )),
         )
     }
+}
 
-    /// See [`Stream::lead`].
-    #[allow(clippy::type_complexity)]
-    pub fn dyn_lead<OV>(
+impl<B, K, V> Stream<RootCircuit, B>
+where
+    B: IndexedZSet<Key = K, Val = V> + Send,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    /// See [`Stream::lag_custom_order`].
+    pub fn dyn_lag_custom_order<V2, VL, OV>(
         &self,
-        factories: &LagFactories<B, OV>,
-        offset: usize,
-        project: Box<dyn Fn(Option<&B::Val>, &mut OV)>,
-    ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, DynPair<B::Val, OV>>>
+        factories: &LagCustomOrdFactories<B, V2, VL, OV>,
+        offset: isize,
+        encode: Box<dyn Fn(&V, &mut V2)>,
+        project: Box<dyn Fn(Option<&V2>, &mut VL)>,
+        decode: Box<dyn Fn(&V2, &VL, &mut OV)>,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<K, OV>>
     where
+        V2: DataTrait + ?Sized,
+        VL: DataTrait + ?Sized,
         OV: DataTrait + ?Sized,
+        B: for<'a> DynFilterMap<DynItemRef<'a> = (&'a K, &'a V)>,
     {
-        self.dyn_group_transform(
-            &factories.input_factories,
+        self.dyn_map_index(
+            &factories.lag_factories.input_factories,
+            Box::new(move |(k, v), kv| {
+                let (out_k, out_v) = kv.split_mut();
+                k.clone_to(out_k);
+                encode(v, out_v);
+            }),
+        )
+        .dyn_lag(&factories.lag_factories, offset, project)
+        .dyn_map_index(
             &factories.output_factories,
-            Box::new(Lag::new(
-                factories.output_factories.val_factory(),
-                factories.retraction_factory,
-                factories.retractions_factory,
-                factories.output_val_factory,
-                offset,
-                false,
-                project,
-                |k1, k2| k2.cmp(k1),
-                |v1, v2| v2.cmp(v1),
-            )),
+            Box::new(move |(k, v), kv| {
+                let (out_k, out_v) = kv.split_mut();
+                let (v1, v2) = v.split();
+                k.clone_to(out_k);
+                decode(v1, v2, out_v);
+            }),
         )
     }
 }
