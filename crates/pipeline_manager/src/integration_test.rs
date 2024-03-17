@@ -401,6 +401,33 @@ impl TestConfig {
         }
     }
 
+    /// Wait for the exact output, potentially split across multiple chunks.
+    async fn read_expected_response_json(
+        &self,
+        response: &mut ClientResponse<Decoder<Payload>>,
+        max_timeout: Duration,
+        expected_response: &[Value],
+    ) {
+        let start = Instant::now();
+        let mut received = Vec::new();
+
+        while received.len() < expected_response.len() {
+            let mut new_received = self
+                .read_response_json(response, Duration::from_millis(1_000))
+                .await
+                .unwrap()
+                .unwrap_or_else(|| json!([]))
+                .as_array()
+                .unwrap()
+                .clone();
+            received.append(&mut new_received);
+
+            assert!(start.elapsed() <= max_timeout);
+        }
+
+        assert_eq!(expected_response, received);
+    }
+
     async fn neighborhood_json(
         &self,
         name: &str,
@@ -1276,19 +1303,21 @@ create view "v1" as select * from table1;"#,
         .await;
     assert!(req.status().is_success());
 
-    let delta1 = config
-        .read_response_json(&mut response1, Duration::from_millis(10_000))
-        .await
-        .unwrap();
+    config
+        .read_expected_response_json(
+            &mut response1,
+            Duration::from_millis(10_000),
+            &[json!({"insert": {"id":1}})],
+        )
+        .await;
 
-    assert_eq!(delta1.unwrap(), json!([{"insert": {"id":1}}]));
-
-    let delta2 = config
-        .read_response_json(&mut response2, Duration::from_millis(10_000))
-        .await
-        .unwrap();
-
-    assert_eq!(delta2.unwrap(), json!([{"insert": {"id":2}}]));
+    config
+        .read_expected_response_json(
+            &mut response2,
+            Duration::from_millis(10_000),
+            &[json!({"insert": {"id":2}})],
+        )
+        .await;
 
     let quantiles = config.quantiles_json("test", "\"V1\"").await;
     assert_eq!(
@@ -1348,15 +1377,13 @@ async fn distinct_outputs() {
         .await;
     assert!(req.status().is_success());
 
-    let delta = config
-        .read_response_json(&mut response, Duration::from_millis(10_000))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        delta.unwrap(),
-        json!([{"insert": {"s":"1"}}, {"insert":{"s":"2"}}])
-    );
+    config
+        .read_expected_response_json(
+            &mut response,
+            Duration::from_millis(10_000),
+            &[json!({"insert": {"s":"1"}}), json!({"insert":{"s":"2"}})],
+        )
+        .await;
 
     // Push some more data
     let req = config
@@ -1369,15 +1396,13 @@ async fn distinct_outputs() {
         .await;
     assert!(req.status().is_success());
 
-    let delta = config
-        .read_response_json(&mut response, Duration::from_millis(10_000))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        delta.unwrap(),
-        json!([{"insert": {"s":"3"}}, {"insert":{"s":"4"}}])
-    );
+    config
+        .read_expected_response_json(
+            &mut response,
+            Duration::from_millis(10_000),
+            &[json!({"insert": {"s":"3"}}), json!({"insert":{"s":"4"}})],
+        )
+        .await;
 
     // Push more records that will create duplicate outputs, which should be
     // suppressed by the `outputsAreSets` SQL compiler switch.
@@ -1441,89 +1466,89 @@ async fn upsert() {
 
     let mut response = config.delta_stream_request_json("test", "T1").await;
 
-    // Push some data using default json config.
+    // Push some data.
+    //
+    // NOTE: we use `array=true` to push data in this test to make sure that all updates are
+    // delivered atomically and all outputs are produced in a single chunk. It is still
+    // theoretically possible that inputs are split across multiple `step`'s due to the
+    // `ZSetHandle::append` method not being atomic.  This is highly improbable, but if it
+    // happens, increasing buffering delay in DBSP should solve that.
     let req = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            // Add several identcal records with different id's
-            r#"{"insert":{"id1":1, "str1": "1", "int1": 1}}
-{"insert":{"id1":2, "str1": "1", "int1": 1}}
-{"insert":{"id1":3, "str1": "1", "int1": 1}}"#
+            format!(
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+            ),
+            // Add several identical records with different id's
+            r#"[{"insert":{"id1":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "str1": "1", "int1": 1}},{"insert":{"id1":3, "str1": "1", "int1": 1}}]"#
                 .to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
-    let delta = config
-        .read_response_json(&mut response, Duration::from_millis(10_000))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        delta.unwrap(),
-        json!([{"insert": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
-{"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
-{"insert": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}])
-    );
+    config
+        .read_expected_response_json(
+            &mut response,
+            Duration::from_millis(10_000),
+            &[
+                json!({"insert": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+            ],
+        )
+        .await;
 
     let req = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            format!(
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+            ),
             // 1: Update 'str1'.
             // 2: Update 'str2'.
             // 3: Overwrite entire record.
-            r#"{"update":{"id1":1, "str1": "2"}}
-{"update":{"id1":2, "str2": "foo"}}
-{"insert":{"id1":3, "str1": "1", "str2": "2", "int1":3, "int2":33}}"#
+            r#"[{"update":{"id1":1, "str1": "2"}},{"update":{"id1":2, "str2": "foo"}},{"insert":{"id1":3, "str1": "1", "str2": "2", "int1":3, "int2":33}}]"#
                 .to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
-    let delta = config
-        .read_response_json(&mut response, Duration::from_millis(10_000))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        delta.unwrap(),
-        json!([{"delete": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
-{"delete": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
-{"delete": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}},
-{"insert": {"id1":1,"id2":null,"str1":"2","str2":null,"int1":1,"int2":null}},
-{"insert": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}},
-{"insert": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}}])
-    );
+    config
+        .read_expected_response_json(
+            &mut response,
+            Duration::from_millis(10_000),
+            &[json!({"delete": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"delete": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"delete": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":1,"id2":null,"str1":"2","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}}),
+                json!({"insert": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}})]
+        )
+        .await;
 
     let req = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            format!(
+                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+            ),
             // 1: Update command that doesn't modify any fields - noop.
             // 2: Clear 'str2' to null.
             // 3: Delete record.
             // 4: Delete non-existing key - noop.
             // 5: Update non-existing key - noop.
-            r#"{"update":{"id1":1}}
-{"update":{"id1":2, "str2": null}}
-{"delete":{"id1":3}}
-{"delete":{"id1":4}}
-{"update":{"id1":4, "int1":0, "str1":""}}"#
+            r#"[{"update":{"id1":1}},{"update":{"id1":2, "str2": null}},{"delete":{"id1":3}},{"delete":{"id1":4}},{"update":{"id1":4, "int1":0, "str1":""}}]"#
                 .to_string(),
         )
         .await;
     assert!(req.status().is_success());
 
-    let delta = config
-        .read_response_json(&mut response, Duration::from_millis(10_000))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        delta.unwrap(),
-        json!([{"delete": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}},
-{"delete": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}},
-{"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}])
-    );
+    config
+        .read_expected_response_json(
+            &mut response,
+            Duration::from_millis(10_000),
+            &[json!({"delete": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}}),
+                json!({"delete": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}}),
+                json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}})]
+        )
+        .await;
 
     // Shutdown the pipeline
     let resp = config
