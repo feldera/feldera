@@ -65,6 +65,11 @@ pub trait BatchReader: 'static {
 
     type Time: Timestamp;
 
+    /// Factories for `Self::Inner`.
+    fn factories() -> <Self::Inner as DynBatchReader>::Factories {
+        BatchReaderFactories::new::<Self::Key, Self::Val, Self::R>()
+    }
+
     /// Extract the dynamically typed batch.
     fn inner(&self) -> &Self::Inner;
 

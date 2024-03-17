@@ -287,8 +287,8 @@ fn parquet_output() {
         vec![Tup2(test_data[0].clone(), 2), Tup2(test_data[1].clone(), 1)],
     );
 
-    let zset = Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>;
-    encoder.encode(&[zset]).unwrap();
+    let zset = &SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatch;
+    encoder.encode(zset).unwrap();
 
     // Verify output buffer...
     // Construct the expected file manually:

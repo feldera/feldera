@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -168,12 +169,16 @@ pub trait SerBatch: Send + Sync {
         self.len() == 0
     }
 
-    /// Create a cursor over the batch that yields record
+    /// Create a cursor over the batch that yields records
     /// formatted using the specified format.
     fn cursor<'a>(
         &'a self,
         record_format: RecordFormat,
     ) -> Result<Box<dyn SerCursor + 'a>, ControllerError>;
+
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send>;
+
+    fn merge(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch>;
 }
 
 impl Debug for dyn SerBatch {

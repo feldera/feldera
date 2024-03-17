@@ -14,7 +14,6 @@ use std::{
     collections::BTreeMap,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
-    sync::Arc,
 };
 
 pub(crate) mod csv;
@@ -488,7 +487,7 @@ pub trait Encoder: Send {
 
     /// Encode a batch of updates, push encoded buffers to the consumer
     /// using [`OutputConsumer::push_buffer`].
-    fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()>;
+    fn encode(&mut self, batch: &dyn SerBatch) -> AnyResult<()>;
 }
 
 pub trait OutputConsumer: Send {

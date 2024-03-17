@@ -11,7 +11,7 @@ use erased_serde::Serialize as ErasedSerialize;
 use pipeline_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use std::{borrow::Cow, mem::take, sync::Arc};
+use std::{borrow::Cow, mem::take};
 
 pub(crate) mod deserializer;
 use crate::catalog::InputCollectionHandle;
@@ -281,57 +281,55 @@ impl Encoder for CsvEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
+    fn encode(&mut self, batch: &dyn SerBatch) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         //let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;
 
-        for batch in batches.iter() {
-            let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Csv)?);
+        let mut cursor = CursorWithPolarity::new(batch.cursor(RecordFormat::Csv)?);
 
-            while cursor.key_valid() {
-                if !cursor.val_valid() {
-                    cursor.step_key();
-                    continue;
-                }
-                let prev_len = buffer.len();
+        while cursor.key_valid() {
+            if !cursor.val_valid() {
+                cursor.step_key();
+                continue;
+            }
+            let prev_len = buffer.len();
 
-                // `serialize_key_weight`
-                cursor.serialize_key_weight(&mut buffer)?;
+            // `serialize_key_weight`
+            cursor.serialize_key_weight(&mut buffer)?;
 
-                // Drop the last encoded record if it exceeds max_buffer_size.
-                // The record will be included in the next buffer.
-                let new_len = buffer.len();
-                let overflow = if new_len > self.max_buffer_size {
-                    if num_records == 0 {
-                        let record =
-                            std::str::from_utf8(&buffer[prev_len..new_len]).unwrap_or_default();
-                        // We should be able to fit at least one record in the buffer.
-                        bail!("CSV record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
+            // Drop the last encoded record if it exceeds max_buffer_size.
+            // The record will be included in the next buffer.
+            let new_len = buffer.len();
+            let overflow = if new_len > self.max_buffer_size {
+                if num_records == 0 {
+                    let record =
+                        std::str::from_utf8(&buffer[prev_len..new_len]).unwrap_or_default();
+                    // We should be able to fit at least one record in the buffer.
+                    bail!("CSV record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
                               self.max_buffer_size,
                               new_len - prev_len,
                               truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "..."));
-                    }
-                    true
-                } else {
-                    num_records += 1;
-                    false
-                };
-
-                if num_records >= self.config.buffer_size_records || overflow {
-                    if overflow {
-                        buffer.truncate(prev_len);
-                    }
-                    // println!("push_buffer {}", buffer.len()
-                    // /*std::str::from_utf8(&buffer).unwrap()*/);
-                    self.output_consumer.push_buffer(&buffer);
-                    buffer.clear();
-                    num_records = 0;
                 }
+                true
+            } else {
+                num_records += 1;
+                false
+            };
 
-                if !overflow {
-                    cursor.step_key();
+            if num_records >= self.config.buffer_size_records || overflow {
+                if overflow {
+                    buffer.truncate(prev_len);
                 }
+                // println!("push_buffer {}", buffer.len()
+                // /*std::str::from_utf8(&buffer).unwrap()*/);
+                self.output_consumer.push_buffer(&buffer);
+                buffer.clear();
+                num_records = 0;
+            }
+
+            if !overflow {
+                cursor.step_key();
             }
         }
 
