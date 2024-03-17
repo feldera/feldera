@@ -553,20 +553,18 @@ impl Controller {
                             let mut delta_batch = output_handles
                                 .delta
                                 .as_ref()
-                                .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
-                            let num_delta_records = delta_batch.as_ref().map(|batch| batch.len());
-
-                            // This is needed to distinguish an empty snapshot from no snapshot.
-                            let snapshot_not_empty = output_handles
-                                .snapshot
+                                .map(|handle| handle.take_from_all());
+                            let num_delta_records = delta_batch
                                 .as_ref()
-                                .map(|handle| handle.num_nonempty_mailboxes() > 0);
+                                .map(|batch| batch.iter().map(|b| b.len()).sum());
+
                             let mut snapshot_batch = output_handles
                                 .snapshot
                                 .as_ref()
-                                .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
-                            let num_snapshot_records =
-                                snapshot_batch.as_ref().map(|batch| batch.len());
+                                .map(|handle| handle.take_from_all());
+                            let num_snapshot_records = snapshot_batch
+                                .as_ref()
+                                .map(|batch| batch.iter().map(|b| b.len()).sum());
 
                             for (i, endpoint_id) in endpoints.iter().enumerate() {
                                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
@@ -577,7 +575,11 @@ impl Controller {
                                 if !endpoint.snapshot_sent.load(Ordering::Acquire)
                                     && output_handles.snapshot.is_some()
                                 {
-                                    if snapshot_not_empty.unwrap_or(false) {
+                                    if snapshot_batch
+                                        .as_ref()
+                                        .map(|batches| !batches.is_empty())
+                                        .unwrap_or(false)
+                                    {
                                         // Increment stats first, so we don't end up with negative
                                         // counts.
                                         controller.status.enqueue_batch(
@@ -597,7 +599,7 @@ impl Controller {
                                         // been sent to the output endpoint, the endpoint will get
                                         // labeled with this
                                         // frontier.
-                                        endpoint.queue.push((step, vec![batch], processed_records));
+                                        endpoint.queue.push((step, batch, processed_records));
                                         endpoint.snapshot_sent.store(true, Ordering::Release);
                                     }
                                 } else if delta_batch.is_some() {
@@ -611,7 +613,7 @@ impl Controller {
                                         delta_batch.as_ref().unwrap().clone()
                                     };
 
-                                    endpoint.queue.push((step, vec![batch], processed_records));
+                                    endpoint.queue.push((step, batch, processed_records));
                                 }
 
                                 // Wake up the output thread.  We're not trying to be smart here and
@@ -1157,6 +1159,12 @@ impl ControllerInner {
         Ok(endpoint_id)
     }
 
+    fn merge_batches(mut data: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch> {
+        let last = data.pop().unwrap();
+
+        last.merge(data)
+    }
+
     fn output_thread_func(
         endpoint_id: EndpointId,
         endpoint_name: String,
@@ -1179,15 +1187,16 @@ impl ControllerInner {
             if let Some((step, data, processed_records)) = queue.pop() {
                 let num_records = data.iter().map(|b| b.len()).sum();
                 encoder.consumer().batch_start(step);
+                let consolidated = Self::merge_batches(data);
                 encoder
-                    .encode(data.as_slice())
+                    .encode(consolidated.as_ref())
                     .unwrap_or_else(|e| controller.encode_error(endpoint_id, &endpoint_name, e));
                 controller.wait_to_commit(step);
                 encoder.consumer().batch_end();
 
                 // `num_records` output records have been transmitted --
                 // update output stats, wake up the circuit thread if the
-                // number of queued records drops below high water mark.
+                // number of queued records drops below high watermark.
                 controller.status.output_batch(
                     endpoint_id,
                     processed_records,
