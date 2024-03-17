@@ -233,9 +233,17 @@ where
         });
 
         info!("Started HTTP server on port {port}");
-        tokio::fs::write(SERVER_PORT_FILE, format!("{}\n", port))
+
+        // We don't want outside observers (e.g., the local runner) to observe a partially
+        // written port file, so we write it to a temporary file first, and then rename the
+        // temporary.
+        let tmp_server_port_file = format!("{SERVER_PORT_FILE}.tmp");
+        tokio::fs::write(&tmp_server_port_file, format!("{}\n", port))
             .await
             .map_err(|e| ControllerError::io_error("writing server port file".to_string(), e))?;
+        tokio::fs::rename(&tmp_server_port_file, SERVER_PORT_FILE)
+            .await
+            .map_err(|e| ControllerError::io_error("renaming server port file".to_string(), e))?;
         server
             .await
             .map_err(|e| ControllerError::io_error("in the HTTP server".to_string(), e))
