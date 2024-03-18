@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Output buffering mechanism to consolidate multiple output
+  updates over time.
+  ([#1558](https://github.com/feldera/feldera/pull/1558))
+
 ## [0.12.0] - 2024-03-19
 
 ### Changed

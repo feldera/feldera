@@ -22,6 +22,7 @@ use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use log::{debug, error, info, warn};
+use pipeline_types::config::OutputBufferConfig;
 use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use serde::Deserialize;
@@ -755,6 +756,7 @@ async fn output_endpoint(
     let config = OutputEndpointConfig {
         stream: Cow::from(table_name),
         query: args.query,
+        output_buffer_config: OutputBufferConfig::default(),
         connector_config: ConnectorConfig {
             transport: HttpOutputTransport::config(),
             format: encoder_config_from_http_request(&endpoint_name, &args.format, &req)?,

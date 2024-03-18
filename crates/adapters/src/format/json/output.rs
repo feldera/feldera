@@ -1,7 +1,8 @@
+use crate::catalog::SerBatchReader;
 use crate::format::json::schema::{build_key_schema, build_value_schema};
 use crate::format::{MAX_DUPLICATES, MAX_RECORD_LEN_IN_ERRMSG};
 use crate::{
-    catalog::{CursorWithPolarity, RecordFormat, SerBatch, SerCursor},
+    catalog::{CursorWithPolarity, RecordFormat, SerCursor},
     util::truncate_ellipse,
     ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
@@ -149,7 +150,7 @@ impl Encoder for JsonEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batch: &dyn SerBatch) -> AnyResult<()> {
+    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         let mut key_buffer = take(&mut self.key_buffer);
 
@@ -341,9 +342,10 @@ impl Encoder for JsonEncoder {
                     //     buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/
                     // );
                     if !key_buffer.is_empty() {
-                        self.output_consumer.push_key(&key_buffer, &buffer);
+                        self.output_consumer
+                            .push_key(&key_buffer, &buffer, num_records);
                     } else {
-                        self.output_consumer.push_buffer(&buffer);
+                        self.output_consumer.push_buffer(&buffer, num_records);
                     }
                     buffer.clear();
                     key_buffer.clear();
@@ -358,7 +360,7 @@ impl Encoder for JsonEncoder {
             if self.config.array {
                 buffer.extend_from_slice(b"]\n");
             }
-            self.output_consumer.push_buffer(&buffer);
+            self.output_consumer.push_buffer(&buffer, num_records);
             buffer.clear();
         }
 
@@ -372,6 +374,7 @@ impl Encoder for JsonEncoder {
 #[cfg(test)]
 mod test {
     use super::{JsonEncoder, JsonEncoderConfig};
+    use crate::catalog::SerBatchReader;
     use crate::format::json::{DebeziumOp, DebeziumPayload, DebeziumUpdate};
     use crate::{
         catalog::SerBatch,
@@ -505,7 +508,7 @@ mod test {
             })
             .collect::<Vec<_>>();
         for zset in zsets {
-            encoder.encode(zset.as_ref()).unwrap();
+            encoder.encode(zset.as_batch_reader()).unwrap();
         }
 
         let seq_number = Rc::new(RefCell::new(0));
@@ -666,7 +669,7 @@ mod test {
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         let err = encoder
-            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatch)
+            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
             .unwrap_err();
         assert_eq!(format!("{err}"), "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 46 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'.");
     }

@@ -1,5 +1,5 @@
 use crate::{
-    catalog::{CursorWithPolarity, DeCollectionStream, RecordFormat, SerBatch, SerCursor},
+    catalog::{CursorWithPolarity, DeCollectionStream, RecordFormat, SerCursor},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     util::{split_on_newline, truncate_ellipse},
     ControllerError, OutputConsumer,
@@ -14,7 +14,7 @@ use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take};
 
 pub(crate) mod deserializer;
-use crate::catalog::InputCollectionHandle;
+use crate::catalog::{InputCollectionHandle, SerBatchReader};
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
 use pipeline_types::program_schema::Relation;
@@ -281,7 +281,7 @@ impl Encoder for CsvEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batch: &dyn SerBatch) -> AnyResult<()> {
+    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         //let mut writer = self.builder.from_writer(buffer);
         let mut num_records = 0;
@@ -323,7 +323,7 @@ impl Encoder for CsvEncoder {
                 }
                 // println!("push_buffer {}", buffer.len()
                 // /*std::str::from_utf8(&buffer).unwrap()*/);
-                self.output_consumer.push_buffer(&buffer);
+                self.output_consumer.push_buffer(&buffer, num_records);
                 buffer.clear();
                 num_records = 0;
             }
@@ -334,7 +334,7 @@ impl Encoder for CsvEncoder {
         }
 
         if num_records > 0 {
-            self.output_consumer.push_buffer(&buffer);
+            self.output_consumer.push_buffer(&buffer, num_records);
             buffer.clear();
         }
 

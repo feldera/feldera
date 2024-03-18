@@ -342,6 +342,130 @@ fn kafka_input_trivial() {
     test_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2");
 }
 
+/// Test the output endpoint buffer.
+#[test]
+fn buffer_test() {
+    init_test_logger();
+    let input_topic = format!("buffer_test_input_topic");
+    let output_topic = format!("buffer_test_output_topic");
+
+    // Total number of records to push.
+    let num_records = 1_000;
+
+    // Output buffer size.
+    // Requires: `num_records % buffer_size = 0`.
+    let buffer_size = 100;
+
+    // Buffer timeout.  Must be much longer than what it takes the pipeline
+    // to process `buffer_size` records.
+    let buffer_timeout_ms = 10_000;
+
+    // Create topics.
+    let _kafka_resources = KafkaResources::create_topics(&[(&input_topic, 1), (&output_topic, 1)]);
+
+    // Create controller.
+    let config_str = format!(
+        r#"
+name: test
+workers: 4
+inputs:
+    test_input1:
+        stream: test_input1
+        transport:
+            name: kafka
+            config:
+                auto.offset.reset: "earliest"
+                group.instance.id: "buffer_test"
+                topics: [{input_topic}]
+                log_level: debug
+        format:
+            name: csv
+outputs:
+    test_output2:
+        stream: test_output1
+        transport:
+            name: kafka
+            config:
+                topic: {output_topic}
+                max_inflight_messages: 0
+                message.max.bytes: "1000000"
+        format:
+            name: csv
+            config:
+        enable_buffer: true
+        max_buffer_size_records: {buffer_size}
+        max_buffer_time_millis: {buffer_timeout_ms}
+"#
+    );
+
+    info!("buffer_test: Creating circuit. Config {config_str}");
+
+    info!("buffer_test: Starting controller");
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    let running = Arc::new(AtomicBool::new(true));
+    let running_clone = running.clone();
+
+    let controller = Controller::with_config(
+        |workers| Ok(test_circuit(workers)),
+        &config,
+        Box::new(move |e| if running_clone.load(Ordering::Acquire) {
+            panic!("buffer_test: error: {e}")
+        } else {
+            info!("buffer_test: error during shutdown (likely caused by Kafka topics being deleted): {e}")
+        }),
+    )
+        .unwrap();
+
+    let buffer_consumer = BufferConsumer::new(&output_topic, "csv", "");
+
+    info!("buffer_test: Sending inputs");
+    let producer = TestProducer::new();
+
+    info!("buffer_test: Starting controller");
+    // Start controller.
+    controller.start();
+
+    // Send `num_records+1` records to the pipeline, make sure they show up in groups of `buffer_size`.
+    // Note: we push `num_records + 1` to keep one leftover record in the buffer, which will get
+    // pushed out on timeout later.
+    let mut buffer = vec![];
+    for i in 0..num_records + 1 {
+        // eprintln!("{i}");
+        let val = TestStruct {
+            id: i,
+            b: false,
+            i: None,
+            s: "foo".to_string(),
+        };
+
+        producer.send_to_topic(&[vec![val.clone()]], &input_topic);
+        buffer.push(val);
+
+        if buffer.len() >= buffer_size {
+            // eprintln!("waiting");
+            buffer_consumer.wait_for_output_unordered(&[std::mem::take(&mut buffer)]);
+            buffer_consumer.clear();
+        } else {
+            assert_eq!(buffer_consumer.len(), 0);
+        }
+    }
+
+    info!("waiting for the leftover records to be pushed out");
+    buffer_consumer.wait_for_output_unordered(&[std::mem::take(&mut buffer)]);
+    buffer_consumer.clear();
+
+    drop(buffer_consumer);
+
+    controller.stop().unwrap();
+
+    // Endpoint threads might still be running (`controller.stop()` doesn't wait
+    // for them to terminate).  Once `KafkaResources` is dropped, these threads
+    // may start throwing errors due to deleted Kafka topics.  Make sure these
+    // errors don't cause panics.
+    running.store(false, Ordering::Release);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
