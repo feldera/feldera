@@ -73,7 +73,8 @@ COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar
 COPY crates/dbsp database-stream-processor/crates/dbsp
 COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
 COPY crates/adapters database-stream-processor/crates/adapters
-COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
+# Storage crate got folded into the dbsp crate for now. Revert if this changes.
+# COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
 COPY README.md database-stream-processor/README.md
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
 
@@ -103,7 +104,8 @@ COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar
 COPY crates/dbsp database-stream-processor/crates/dbsp
 COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
 COPY crates/adapters database-stream-processor/crates/adapters
-COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
+# Storage crate got folded into the dbsp crate for now. Revert if this changes.
+# COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
 COPY README.md database-stream-processor/README.md
 RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
 # Copy over the rust code and sql-to-dbsp script
