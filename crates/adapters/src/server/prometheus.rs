@@ -144,10 +144,10 @@ impl PrometheusMetrics {
             .set(status.metrics.transmitted_records.load(Ordering::Acquire) as i64);
         metrics
             .buffered_records
-            .set(status.metrics.buffered_records.load(Ordering::Acquire) as i64);
+            .set(status.metrics.queued_records.load(Ordering::Acquire) as i64);
         metrics
             .buffered_batches
-            .set(status.metrics.buffered_batches.load(Ordering::Acquire) as i64);
+            .set(status.metrics.queued_batches.load(Ordering::Acquire) as i64);
         metrics
             .num_transport_errors
             .set(status.metrics.num_transport_errors.load(Ordering::Acquire) as i64);

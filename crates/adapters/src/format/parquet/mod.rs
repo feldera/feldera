@@ -17,10 +17,10 @@ use serde_arrow::ArrowBuilder;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
 
-use crate::catalog::CursorWithPolarity;
+use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::format::MAX_DUPLICATES;
 use crate::{
-    catalog::{DeCollectionStream, InputCollectionHandle, RecordFormat, SerBatch},
+    catalog::{DeCollectionStream, InputCollectionHandle, RecordFormat},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     ControllerError, OutputConsumer, SerCursor,
 };
@@ -299,7 +299,7 @@ impl Encoder for ParquetEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batch: &dyn SerBatch) -> AnyResult<()> {
+    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         let props = WriterProperties::builder().build();
         let schema = Arc::new(Schema::new(self.parquet_schema.to_arrow_fields()?));
@@ -356,7 +356,7 @@ impl Encoder for ParquetEncoder {
                     writer.write(&batch)?;
                     writer.close()?;
 
-                    self.output_consumer.push_buffer(&buffer);
+                    self.output_consumer.push_buffer(&buffer, num_records);
                     buffer.clear();
 
                     num_records = 0;
@@ -373,7 +373,7 @@ impl Encoder for ParquetEncoder {
             let batch = RecordBatch::try_new(schema.clone(), arrays)?;
             writer.write(&batch)?;
             writer.close()?;
-            self.output_consumer.push_buffer(&buffer);
+            self.output_consumer.push_buffer(&buffer, num_records);
             buffer.clear();
         }
 

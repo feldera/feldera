@@ -836,10 +836,13 @@
                   "name": "pipeline-67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "outputs": {
                     "Output-To-View": {
+                      "enable_buffer": false,
                       "format": {
                         "config": null,
                         "name": "csv"
                       },
+                      "max_buffer_size_records": 0,
+                      "max_buffer_time_millis": 0,
                       "max_buffered_records": 1000000,
                       "stream": "my_output_view",
                       "transport": {
@@ -3964,6 +3967,9 @@
         "allOf": [
           {
             "$ref": "#/components/schemas/ConnectorConfig"
+          },
+          {
+            "$ref": "#/components/schemas/OutputBufferConfig"
           },
           {
             "type": "object",

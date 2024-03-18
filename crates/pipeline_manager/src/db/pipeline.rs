@@ -12,7 +12,6 @@ use pipeline_types::{
         ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
     },
     error::ErrorResponse,
-    query::OutputQuery,
 };
 use serde_json::Value;
 use tokio_postgres::Row;
@@ -448,8 +447,9 @@ impl PipelineRevision {
                 stream: Cow::from(ac.relation_name.clone()),
                 // This field gets skipped during serialization/deserialization,
                 // so it doesn't matter what value we use here
-                query: OutputQuery::default(),
+                query: Default::default(),
                 connector_config: connector.unwrap().config.clone(),
+                output_buffer_config: Default::default(),
             };
             expanded_outputs.insert(Cow::from(ac.name.clone()), output_endpoint_config);
         }

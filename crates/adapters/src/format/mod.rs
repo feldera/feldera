@@ -1,6 +1,6 @@
-use crate::catalog::InputCollectionHandle;
+use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::format::parquet::{ParquetInputFormat, ParquetOutputFormat};
-use crate::{catalog::SerBatch, transport::Step, ControllerError};
+use crate::{transport::Step, ControllerError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
@@ -487,7 +487,7 @@ pub trait Encoder: Send {
 
     /// Encode a batch of updates, push encoded buffers to the consumer
     /// using [`OutputConsumer::push_buffer`].
-    fn encode(&mut self, batch: &dyn SerBatch) -> AnyResult<()>;
+    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()>;
 }
 
 pub trait OutputConsumer: Send {
@@ -496,7 +496,7 @@ pub trait OutputConsumer: Send {
     fn max_buffer_size_bytes(&self) -> usize;
 
     fn batch_start(&mut self, step: Step);
-    fn push_buffer(&mut self, buffer: &[u8]);
-    fn push_key(&mut self, key: &[u8], val: &[u8]);
+    fn push_buffer(&mut self, buffer: &[u8], num_records: usize);
+    fn push_key(&mut self, key: &[u8], val: &[u8], num_records: usize);
     fn batch_end(&mut self);
 }
