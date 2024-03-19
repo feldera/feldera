@@ -458,7 +458,7 @@ fn merge_times<T, R>(
     let mut i = 0;
     let mut j = 0;
 
-    while i < a.len() && i < b.len() {
+    while i < a.len() && j < b.len() {
         match a[i].fst().cmp(b[j].fst()) {
             Ordering::Less => {
                 output.push_ref(&a[i]);
