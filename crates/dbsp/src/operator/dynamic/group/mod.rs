@@ -26,7 +26,7 @@ mod test;
 use dyn_clone::clone_box;
 
 use crate::dynamic::{ClonableTrait, Erase};
-pub use lag::LagFactories;
+pub use lag::{LagCustomOrdFactories, LagFactories};
 pub use topk::{TopKCustomOrdFactories, TopKFactories, TopKRankCustomOrdFactories};
 
 /// Specifies the order in which a group transformer produces output tuples.
