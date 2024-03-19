@@ -522,7 +522,7 @@ public class AggregateCompiler implements ICompilerComponent {
         // We need to call sqrt, which only works for doubles.
         DBSPType sqrtType = new DBSPTypeDouble(node, this.resultType.mayBeNull);
         DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
-                node, this.resultType, DBSPOpcode.DIV,
+                node, this.resultType, DBSPOpcode.DIV_NULL,
                 sub, denom).cast(sqrtType);
         DBSPExpression sqrt = ExpressionCompiler.compilePolymorphicFunction(
                 "sqrt", node, sqrtType, Linq.list(div), 1);

@@ -165,9 +165,18 @@ public class AggTests extends PostBaseTests {
     }
 
     @Test
-    public void remove() {
+    public void stddevTests() {
         this.qs("""
-                 -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
+                -- Our own test, for denominator of 0 in SAMP
+                select stddev_samp(deptno) as s from emp WHERE deptno = 60;
+                +----+
+                | S  |
+                +----+
+                |    |
+                +----+
+                (1 row)
+                
+                -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
                 -- stddev_samp
                 select stddev_samp(deptno) as s from emp;
                 +----+
