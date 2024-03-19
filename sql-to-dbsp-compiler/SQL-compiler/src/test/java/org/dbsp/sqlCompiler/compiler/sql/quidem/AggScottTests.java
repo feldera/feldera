@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -808,8 +810,8 @@ public class AggScottTests extends ScottBaseTests {
                 (3 rows)""");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1506")
-    public void testDistinctCount() {
+    @Test
+    public void testCubeDistinct() {
         this.qs("""
                 select count(distinct deptno) as cd, count(*) as c
                 from emp
@@ -822,8 +824,13 @@ public class AggScottTests extends ScottBaseTests {
                 |  1 | 6 |
                 |  3 | 3 |
                 +----+---+
-                (4 rows)
+                (4 rows)""", false);
+    }
 
+    @Test
+    public void testDistinctCount() {
+        // These tests cannot be run without optimizations.
+        this.qs("""
                 -- Multiple distinct count and non-distinct aggregates
                 select deptno,
                  count(distinct job) as dj,
@@ -853,12 +860,8 @@ public class AggScottTests extends ScottBaseTests {
                 |     20 | 3 | 4 |
                 |     30 | 3 | 2 |
                 +--------+---+---+
-                (3 rows)""");
-    }
-
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1506")
-    public void moreTestDistinctCount() {
-        this.qs("""                                
+                (3 rows)
+                                           
                 -- Multiple distinct count and non-distinct aggregates, no GROUP BY
                 select count(distinct job) as dj,
                  count(job) as j,
@@ -870,7 +873,7 @@ public class AggScottTests extends ScottBaseTests {
                 +----+----+---+----------+
                 |  5 | 14 | 6 | 29025.00 |
                 +----+----+---+----------+
-                (1 row)""");
+                (1 row)""", false);
     }
 
     @Test @Ignore("https://github.com/feldera/feldera/issues/1507")
@@ -1125,5 +1128,230 @@ public class AggScottTests extends ScottBaseTests {
                 |  5950.00 |
                 +----------+
                 (6 rows)""");
+    }
+
+    @Test @Ignore("TODO: Crashes the compiler")
+    public void testNestedOrderby() {
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
+        this.qs("""
+                -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])
+                select  sum(x) as sum_cnt,
+                  count(distinct y) as cnt_dist
+                from
+                  (
+                  select
+                    count(*) as x,
+                          t1.job      as y,
+                    t1.deptno as z
+                  from
+                    emp t1
+                  group by t1.job, t1.deptno
+                  order by t1.job, t1.deptno
+                ) sq(x,y,z)
+                group by z
+                order by sum_cnt;
+                +---------+----------+
+                | SUM_CNT | CNT_DIST |
+                +---------+----------+
+                |       3 |        3 |
+                |       5 |        3 |
+                |       6 |        3 |
+                +---------+----------+
+                (3 rows)""");
+    }
+
+    @Test
+    public void testAggregates4() {
+        this.qs("""
+                -- [CALCITE-938] Aggregate row count
+                select empno, d.deptno
+                from emp
+                join (select distinct deptno from dept) d
+                using (deptno);
+                +-------+--------+
+                | EMPNO | DEPTNO |
+                +-------+--------+
+                |  7369 |     20 |
+                |  7499 |     30 |
+                |  7521 |     30 |
+                |  7566 |     20 |
+                |  7654 |     30 |
+                |  7698 |     30 |
+                |  7782 |     10 |
+                |  7788 |     20 |
+                |  7839 |     10 |
+                |  7844 |     30 |
+                |  7876 |     20 |
+                |  7900 |     30 |
+                |  7902 |     20 |
+                |  7934 |     10 |
+                +-------+--------+
+                (14 rows)
+                
+                -- [CALCITE-1016] "GROUP BY constant" on empty relation should return 0 rows
+                -- Should return 0 rows
+                select '1' from emp where false group by 1;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                +--------+
+                (0 rows)
+                
+                -- Should return 0 rows
+                select count('1') from emp where false group by 1;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                +--------+
+                (0 rows)
+
+                -- Should return 1 row
+                select count('1') from emp where false group by ();
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      0 |
+                +--------+
+                (1 row)
+
+                -- Should return 1 row
+                select count('1') from emp where false;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      0 |
+                +--------+
+                (1 row)
+
+                -- As above, but on VALUES rather than table
+                -- Should return 0 rows
+                select '1' from (values (1, 2), (3, 4)) where false group by 1;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                +--------+
+                (0 rows)
+                
+                -- Should return 0 rows
+                select count('1') from (values (1, 2), (3, 4)) where false group by 1;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                +--------+
+                (0 rows)
+
+                -- Should return 1 row
+                select count('1') from (values (1, 2), (3, 4)) where false group by ();
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      0 |
+                +--------+
+                (1 row)
+                
+                -- Should return 1 row
+                select count('1') from (values (1, 2), (3, 4)) where false;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      0 |
+                +--------+
+                (1 row)
+                
+                -- As above, but on join
+                -- Should return 0 rows
+                select '1' from emp join dept using (deptno) where false group by 1;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                +--------+
+                (0 rows)
+
+                -- Should return 0 rows
+                select count('1') from emp join dept using (deptno) where false group by 1;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                +--------+
+                (0 rows)
+
+                -- Should return 1 row
+                select count('1') from emp join dept using (deptno) where false group by ();
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      0 |
+                +--------+
+                (1 row)
+
+                -- Should return 1 row
+                select count('1') from emp join dept using (deptno) where false;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      0 |
+                +--------+
+                (1 row)
+
+                -- [CALCITE-5425] Should not pushdown Filter through Aggregate without group keys
+                -- Should return 0 rows
+                select count(*) from emp having false;
+                +--------+
+                | EXPR$0 |
+                +--------+
+                +--------+
+                (0 rows)
+                
+                -- [CALCITE-1023] Planner rule that removes Aggregate keys that are constant
+                select job, sum(sal) as sum_sal, deptno
+                from emp
+                where deptno = 10
+                group by deptno, job;
+                +-----------+---------+--------+
+                | JOB       | SUM_SAL | DEPTNO |
+                +-----------+---------+--------+
+                | CLERK|      1300.00 |     10 |
+                | MANAGER|    2450.00 |     10 |
+                | PRESIDENT|  5000.00 |     10 |
+                +-----------+---------+--------+
+                (3 rows)
+
+                -- Aggregate query that uses no columns throws AssertionError in
+                -- RelFieldTrimmer.trimFields
+                select 2 as two
+                from emp
+                group by ();
+                +-----+
+                | TWO |
+                +-----+
+                |   2 |
+                +-----+
+                (1 row)
+
+                -- As previous, as a scalar sub-query
+                select deptno,
+                  (select 2 as two from emp group by ()) as two
+                from emp
+                group by deptno;
+                +--------+-----+
+                | DEPTNO | TWO |
+                +--------+-----+
+                |     10 |   2 |
+                |     20 |   2 |
+                |     30 |   2 |
+                +--------+-----+
+                (3 rows)
+
+                -- As previous, grand total
+                select (select 2 from emp group by ()) as two
+                from emp
+                group by ();
+                +-----+
+                | TWO |
+                +-----+
+                |   2 |
+                +-----+
+                (1 row)
+                """);
     }
 }

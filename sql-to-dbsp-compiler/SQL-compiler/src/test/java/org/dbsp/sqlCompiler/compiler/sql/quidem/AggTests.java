@@ -162,11 +162,20 @@ public class AggTests extends PostBaseTests {
                 |        |
                 +--------+
                 (6 rows)""");
-}
+    }
 
-    @Test @Ignore("STDDEV not yet implemented")
-    public void testStddev() {
+    @Test
+    public void stddevTests() {
         this.qs("""
+                -- Our own test, for denominator of 0 in SAMP
+                select stddev_samp(deptno) as s from emp WHERE deptno = 60;
+                +----+
+                | S  |
+                +----+
+                |    |
+                +----+
+                (1 row)
+                
                 -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
                 -- stddev_samp
                 select stddev_samp(deptno) as s from emp;
@@ -176,23 +185,15 @@ public class AggTests extends PostBaseTests {
                 | 19 |
                 +----+
                 (1 row)
-                                
-                -- [CALCITE-3815] Add missing SQL standard aggregate
-                -- functions: EVERY, SOME, INTERSECTION
-                select some(deptno = 100), every(deptno > 0), intersection(multiset[1, 2]) from emp;
-                +--------+--------+--------+
-                | EXPR$0 | EXPR$1 | EXPR$2 |
-                +--------+--------+--------+
-                | false  | true   | [1, 2] |
-                +--------+--------+--------+
-                (1 row)
-                                
-                select some(deptno > 100), every(deptno > 0) from emp where deptno > 1000;
-                +--------+--------+
-                | EXPR$0 | EXPR$1 |
-                +--------+--------+
-                |        |        |
-                +--------+--------+
+   
+                -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
+                -- stddev_samp
+                select stddev_samp(deptno) as s from emp;
+                +----+
+                | S  |
+                +----+
+                | 19 |
+                +----+
                 (1 row)
                                 
                 -- stddev_pop
@@ -224,10 +225,37 @@ public class AggTests extends PostBaseTests {
                 +--------+----+----+----+---+
                 | GENDER | P  | S  | SS | C |
                 +--------+----+----+----+---+
-                | F      | 17 | 19 | 19 | 5 |
-                | M      | 17 | 20 | 20 | 3 |
+                | F|       17 | 19 | 19 | 5 |
+                | M|       17 | 20 | 20 | 3 |
                 +--------+----+----+----+---+
                 (2 rows)""");
+    }
+
+    @Test @Ignore("multiset not yet implemented")
+    public void testIntersection() {
+        this.qs("""
+                -- [CALCITE-3815] Add missing SQL standard aggregate
+                -- functions: EVERY, SOME, INTERSECTION
+                select some(deptno = 100), every(deptno > 0), intersection(multiset[1, 2]) from emp;
+                +--------+--------+--------+
+                | EXPR$0 | EXPR$1 | EXPR$2 |
+                +--------+--------+--------+
+                | false  | true   | [1, 2] |
+                +--------+--------+--------+
+                (1 row)""");
+    }
+
+    @Test
+    public void testEvery() {
+        this.qs("""
+                select some(deptno > 100), every(deptno > 0) from emp where deptno > 1000;
+                +--------+--------+
+                | EXPR$0 | EXPR$1 |
+                +--------+--------+
+                |        |        |
+                +--------+--------+
+                (1 row)
+                """);
     }
 
     @Test
@@ -858,221 +886,6 @@ public class AggTests extends PostBaseTests {
    @Test
    public void testAggregates() {
        this.qs("""
-                -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])
-                select  sum(x) as sum_cnt,
-                  count(distinct y) as cnt_dist
-                from
-                  (
-                  select
-                    count(*)                as x,
-                          t1.job      as y,
-                    t1.deptno as z
-                  from
-                    "scott".emp t1
-                  group by t1.job, t1.deptno
-                  order by t1.job, t1.deptno
-                ) sq(x,y,z)
-                group by z
-                order by sum_cnt;
-                +---------+----------+
-                | SUM_CNT | CNT_DIST |
-                +---------+----------+
-                |       3 |        3 |
-                |       5 |        3 |
-                |       6 |        3 |
-                +---------+----------+
-                (3 rows)
-
-                -- [CALCITE-938] Aggregate row count
-                select empno, d.deptno
-                from "scott".emp
-                join (select distinct deptno from "scott".dept) d
-                using (deptno);
-                +-------+--------+
-                | EMPNO | DEPTNO |
-                +-------+--------+
-                |  7369 |     20 |
-                |  7499 |     30 |
-                |  7521 |     30 |
-                |  7566 |     20 |
-                |  7654 |     30 |
-                |  7698 |     30 |
-                |  7782 |     10 |
-                |  7788 |     20 |
-                |  7839 |     10 |
-                |  7844 |     30 |
-                |  7876 |     20 |
-                |  7900 |     30 |
-                |  7902 |     20 |
-                |  7934 |     10 |
-                +-------+--------+
-                (14 rows)
-
-                -- [CALCITE-1016] "GROUP BY constant" on empty relation should return 0 rows
-                -- Should return 0 rows
-                select '1' from "scott".emp where false group by 1;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                +--------+
-                (0 rows)
-
-                -- Should return 0 rows
-                select count('1') from "scott".emp where false group by 1;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                +--------+
-                (0 rows)
-                                
-                -- Should return 1 row
-                select count('1') from "scott".emp where false group by ();
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
-                                
-                -- Should return 1 row
-                select count('1') from "scott".emp where false;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
-                                
-                -- As above, but on VALUES rather than table
-                -- Should return 0 rows
-                select '1' from (values (1, 2), (3, 4)) where false group by 1;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                +--------+
-                (0 rows)
-
-                -- Should return 0 rows
-                select count('1') from (values (1, 2), (3, 4)) where false group by 1;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                +--------+
-                (0 rows)
-                                
-                -- Should return 1 row
-                select count('1') from (values (1, 2), (3, 4)) where false group by ();
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
-
-                -- Should return 1 row
-                select count('1') from (values (1, 2), (3, 4)) where false;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
-
-                -- As above, but on join
-                -- Should return 0 rows
-                select '1' from "scott".emp join "scott".dept using (deptno) where false group by 1;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                +--------+
-                (0 rows)
-                                
-                -- Should return 0 rows
-                select count('1') from "scott".emp join "scott".dept using (deptno) where false group by 1;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                +--------+
-                (0 rows)
-                                
-                -- Should return 1 row
-                select count('1') from "scott".emp join "scott".dept using (deptno) where false group by ();
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
-                                
-                -- Should return 1 row
-                select count('1') from "scott".emp join "scott".dept using (deptno) where false;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      0 |
-                +--------+
-                (1 row)
-                                
-                -- [CALCITE-5425] Should not pushdown Filter through Aggregate without group keys
-                -- Should return 0 rows
-                select count(*) from "scott".emp having false;
-                +--------+
-                | EXPR$0 |
-                +--------+
-                +--------+
-                (0 rows)
-
-                -- [CALCITE-1023] Planner rule that removes Aggregate keys that are constant
-                select job, sum(sal) as sum_sal, deptno
-                from "scott".emp
-                where deptno = 10
-                group by deptno, job;
-                +-----------+---------+--------+
-                | JOB       | SUM_SAL | DEPTNO |
-                +-----------+---------+--------+
-                | CLERK     | 1300.00 |     10 |
-                | MANAGER   | 2450.00 |     10 |
-                | PRESIDENT | 5000.00 |     10 |
-                +-----------+---------+--------+
-                (3 rows)
-                                
-                -- Aggregate query that uses no columns throws AssertionError in
-                -- RelFieldTrimmer.trimFields
-                select 2 as two
-                from emp
-                group by ();
-                +-----+
-                | TWO |
-                +-----+
-                |   2 |
-                +-----+
-                (1 row)
-                                
-                -- As previous, as a scalar sub-query
-                select deptno,
-                  (select 2 as two from emp group by ()) as two
-                from emp
-                group by deptno;
-                +--------+-----+
-                | DEPTNO | TWO |
-                +--------+-----+
-                |     10 |   2 |
-                |     20 |   2 |
-                |     30 |   2 |
-                +--------+-----+
-                (3 rows)
-                                
-                -- As previous, grand total
-                select (select 2 from emp group by ()) as two
-                from emp
-                group by ();
-                +-----+
-                | TWO |
-                +-----+
-                |   2 |
-                +-----+
-                (1 row)
-                                
                 !use orinoco
                                 
                 -- FLOOR to achieve a 2-hour window

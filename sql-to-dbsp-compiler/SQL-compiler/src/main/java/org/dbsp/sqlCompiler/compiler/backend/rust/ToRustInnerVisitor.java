@@ -566,19 +566,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
-        if (expression.operation.equals(DBSPOpcode.MUL_WEIGHT)) {
+        if (expression.operation == DBSPOpcode.MUL_WEIGHT) {
             expression.left.accept(this);
             this.builder.append(".mul_by_ref(&");
             expression.right.accept(this);
             this.builder.append(")");
             return VisitDecision.STOP;
-        } else if (expression.operation.equals(DBSPOpcode.RUST_INDEX)) {
+        } else if (expression.operation == DBSPOpcode.RUST_INDEX) {
             expression.left.accept(this);
             this.builder.append("[");
             expression.right.accept(this);
             this.builder.append("]");
             return VisitDecision.STOP;
-        } else if(expression.operation.equals(DBSPOpcode.SQL_INDEX)) {
+        } else if(expression.operation == DBSPOpcode.SQL_INDEX) {
             this.builder.append("index_")
                     .append(expression.left.getType().nullableSuffix())
                     .append("_")
@@ -588,6 +588,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", ");
             expression.right.accept(this);
             this.builder.append(" - 1)");
+            return VisitDecision.STOP;
+        } else if (expression.operation == DBSPOpcode.DIV_NULL) {
+            if (expression.left.getType().is(DBSPTypeDecimal.class))
+                this.builder.append("decimal_");
+            this.builder.append("div_null")
+                    .append(expression.left.getType().nullableSuffix())
+                    .append(expression.right.getType().nullableSuffix())
+                    .append("(");
+            expression.left.accept(this);
+            this.builder.append(", ");
+            expression.right.accept(this);
+            this.builder.append(")");
             return VisitDecision.STOP;
         }
         RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
@@ -624,10 +636,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPUnaryExpression expression) {
-        if (expression.operation.equals(DBSPOpcode.WRAP_BOOL) ||
-            expression.operation.equals(DBSPOpcode.INDICATOR)) {
-            this.builder.append(expression.operation.toString())
-                    .append("(");
+        if (expression.operation == DBSPOpcode.WRAP_BOOL ||
+            expression.operation == DBSPOpcode.INDICATOR) {
+            this.builder.append(expression.operation.toString());
+            if (expression.operation == DBSPOpcode.INDICATOR) {
+                this.builder.append("::<_, ");
+                expression.getType().accept(this);
+                this.builder.append(">");
+            }
+            this.builder.append("(");
             expression.source.accept(this);
             this.builder.append(")");
             return VisitDecision.STOP;

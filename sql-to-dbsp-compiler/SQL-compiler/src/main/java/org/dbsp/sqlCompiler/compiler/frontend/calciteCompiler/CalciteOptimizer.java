@@ -181,13 +181,23 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new SimpleOptimizerStep("Expand windows",
                 CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
         ));
-        this.addStep(new SimpleOptimizerStep(
-                "Isolate DISTINCT aggregates",
-                // TODO: enable this rule
-                // CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES,
-                // Convert DISTINCT aggregates into separate computations and join the results
-                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN
-        ));
+        this.addStep(new BaseOptimizerStep("Isolate DISTINCT aggregates") {
+            @Override
+            HepProgram getProgram(RelNode node) {
+                AggregationGroupSets finder = new AggregationGroupSets();
+                finder.run(node);
+                if (!finder.hasGroupSets) {
+                    // Convert DISTINCT aggregates into separate computations and join the results.
+                    // The following rule is unsound if aggregates contain groupSets
+                    // https://issues.apache.org/jira/browse/CALCITE-6332
+                    this.addRules(CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN);
+                } else {
+                    // TODO: This sometimes triggers a bug in our compiler
+                    this.addRules(CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES);
+                }
+                return this.builder.build();
+            }
+        });
 
         this.addStep(new BaseOptimizerStep("Join order") {
             @Override

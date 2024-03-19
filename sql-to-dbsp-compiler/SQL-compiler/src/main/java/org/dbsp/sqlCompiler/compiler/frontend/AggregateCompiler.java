@@ -27,6 +27,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.logical.LogicalAggregate;
 import org.apache.calcite.sql.SqlAggFunction;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.fun.SqlAbstractGroupFunction;
 import org.apache.calcite.sql.fun.SqlAvgAggFunction;
 import org.apache.calcite.sql.fun.SqlBitOpAggFunction;
@@ -46,13 +47,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
@@ -219,8 +220,7 @@ public class AggregateCompiler implements ICompilerComponent {
         } else {
             DBSPExpression agg = this.getAggregatedValue();
             if (agg.getType().mayBeNull)
-                argument = new DBSPUnaryExpression(node, this.resultType.setMayBeNull(false),
-                        DBSPOpcode.INDICATOR, agg.borrow());
+                argument = ExpressionCompiler.makeIndicator(node, resultType, agg);
             else
                 argument = one;
         }
@@ -234,8 +234,8 @@ public class AggregateCompiler implements ICompilerComponent {
                     node, DBSPOpcode.AGG_ADD,
                     this.resultType, accumulator, argument, this.filterArgument());
         } else {
-            DBSPExpression weighted = new DBSPBinaryExpression(node, new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
-                    DBSPOpcode.MUL_WEIGHT, argument, this.compiler.weightVar);
+            DBSPExpression weighted = new DBSPBinaryExpression(node,
+                    this.resultType, DBSPOpcode.MUL_WEIGHT, argument, this.compiler.weightVar);
             increment = this.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD, this.resultType,
                     accumulator, weighted, this.filterArgument());
@@ -378,13 +378,11 @@ public class AggregateCompiler implements ICompilerComponent {
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null));
     }
 
-    void processAvg(SqlAvgAggFunction function) {
+    DBSPAggregate.Implementation doAverage(SqlAvgAggFunction function) {
+        assert function.getKind() == SqlKind.AVG;
         CalciteObject node = CalciteObject.create(function);
         DBSPType aggregatedValueType = this.getAggregatedValueType();
         DBSPType intermediateResultType = aggregatedValueType.setMayBeNull(true);
-        if (aggregatedValueType.is(DBSPTypeInteger.class))
-            // If the result type is an integer type use the highest possible precision for intermediate results.
-            intermediateResultType = new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,true);
         DBSPExpression zero = new DBSPTupleExpression(
                 DBSPLiteral.none(intermediateResultType), DBSPLiteral.none(intermediateResultType));
         DBSPType pairType = zero.getType();
@@ -399,9 +397,8 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
 
         if (aggregatedValueType.mayBeNull)
-            plusOne = new DBSPUnaryExpression(node,
-                    new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),
-                    DBSPOpcode.INDICATOR, aggregatedValue.deepCopy().borrow()).cast(intermediateResultTypeNonNull);
+            plusOne = ExpressionCompiler.makeIndicator(
+                    node, intermediateResultTypeNonNull, aggregatedValue.deepCopy());
         if (this.isDistinct) {
             count = this.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD,
@@ -429,7 +426,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPVariablePath a = pairType.var(this.genAccumulatorName());
         DBSPExpression divide = ExpressionCompiler.makeBinaryExpression(
                 node, this.resultType, DBSPOpcode.DIV,
-                Linq.list(a.field(sumIndex), a.field(countIndex)));
+                a.field(sumIndex), a.field(countIndex));
         divide = divide.cast(this.nullableResultType);
         DBSPClosureExpression post = new DBSPClosureExpression(
                 node, divide, a.asParameter());
@@ -438,8 +435,117 @@ public class AggregateCompiler implements ICompilerComponent {
                 intermediateResultType, intermediateResultType,
                 new DBSPTypeUser(node, USER, "DefaultOptSemigroup", false, intermediateResultTypeNonNull),
                 new DBSPTypeUser(node, USER, "DefaultOptSemigroup", false, intermediateResultTypeNonNull));
-        this.setFoldingFunction(new DBSPAggregate.Implementation(
-                node, zero, this.makeRowClosure(increment, accumulator), post, postZero, semigroup, null));
+        return new DBSPAggregate.Implementation(
+                node, zero, this.makeRowClosure(increment, accumulator), post, postZero, semigroup, null);
+    }
+
+    DBSPAggregate.Implementation doStddev(SqlAvgAggFunction function) {
+        assert function.getKind() == SqlKind.STDDEV_POP || function.getKind() == SqlKind.STDDEV_SAMP;
+        boolean isSamp = function.getKind() == SqlKind.STDDEV_SAMP;
+        CalciteObject node = CalciteObject.create(function);
+        DBSPType aggregatedValueType = this.getAggregatedValueType();
+        DBSPType intermediateResultType = aggregatedValueType.setMayBeNull(true);
+        // Compute 3 sums: Sum(value^2), Sum(value), Count(value)
+        DBSPExpression zero = new DBSPTupleExpression(
+                DBSPLiteral.none(intermediateResultType),
+                DBSPLiteral.none(intermediateResultType),
+                DBSPLiteral.none(intermediateResultType));
+        DBSPType tripleType = zero.getType();
+        DBSPExpression count, sum, sumSquares;
+        DBSPVariablePath accumulator = tripleType.var(this.genAccumulatorName());
+        final int sumIndex = 0;
+        final int countIndex = 1;
+        final int sumSquaresIndex = 2;
+        DBSPExpression countAccumulator = accumulator.field(countIndex);
+        DBSPExpression sumAccumulator = accumulator.field(sumIndex);
+        DBSPExpression sumSquaresAccumulator = accumulator.field(sumSquaresIndex);
+
+        DBSPExpression aggregatedValue = this.getAggregatedValue().cast(intermediateResultType);
+        DBSPType intermediateResultTypeNonNull = intermediateResultType.setMayBeNull(false);
+        DBSPExpression plusOne = intermediateResultTypeNonNull.to(IsNumericType.class).getOne();
+
+        if (aggregatedValueType.mayBeNull)
+            plusOne = ExpressionCompiler.makeIndicator(node, intermediateResultTypeNonNull, aggregatedValue.deepCopy());
+        if (this.isDistinct) {
+            count = this.aggregateOperation(
+                    node, DBSPOpcode.AGG_ADD,
+                    intermediateResultType, countAccumulator, plusOne, this.filterArgument());
+            sum = this.aggregateOperation(
+                    node, DBSPOpcode.AGG_ADD,
+                    intermediateResultType, sumAccumulator, aggregatedValue, this.filterArgument());
+            sumSquares = this.aggregateOperation(
+                    node, DBSPOpcode.AGG_ADD,
+                    intermediateResultType, sumAccumulator, ExpressionCompiler.makeBinaryExpression(
+                            node, intermediateResultType, DBSPOpcode.MUL, aggregatedValue, aggregatedValue),
+                    this.filterArgument());
+        } else {
+            DBSPExpression weightedCount = new DBSPBinaryExpression(
+                    node, intermediateResultType.setMayBeNull(plusOne.getType().mayBeNull),
+                    DBSPOpcode.MUL_WEIGHT, plusOne,
+                    this.compiler.weightVar);
+            count = this.aggregateOperation(
+                    node, DBSPOpcode.AGG_ADD, intermediateResultType,
+                    countAccumulator, weightedCount, this.filterArgument());
+
+            DBSPExpression weightedElement = new DBSPBinaryExpression(
+                    node, intermediateResultType, DBSPOpcode.MUL_WEIGHT,
+                    aggregatedValue, this.compiler.weightVar);
+            sum = this.aggregateOperation(
+                    node, DBSPOpcode.AGG_ADD, intermediateResultType,
+                    sumAccumulator, weightedElement, this.filterArgument());
+
+            DBSPExpression weightedSq = ExpressionCompiler.makeBinaryExpression(
+                    node, intermediateResultType, DBSPOpcode.MUL,
+                    aggregatedValue, weightedElement);
+            sumSquares = this.aggregateOperation(
+                    node, DBSPOpcode.AGG_ADD,
+                    intermediateResultType, sumSquaresAccumulator, weightedSq,
+                    this.filterArgument());
+        }
+        DBSPExpression increment = new DBSPTupleExpression(sum, count, sumSquares);
+
+        DBSPVariablePath a = tripleType.var(this.genAccumulatorName());
+        DBSPExpression sumSquared = ExpressionCompiler.makeBinaryExpression(
+                node, this.resultType, DBSPOpcode.MUL,
+                a.field(sumIndex), a.field(sumIndex));
+        DBSPExpression normalized = ExpressionCompiler.makeBinaryExpression(
+                node, this.resultType, DBSPOpcode.DIV,
+                sumSquared, a.field(countIndex));
+        DBSPExpression sub = ExpressionCompiler.makeBinaryExpression(
+                node, this.resultType, DBSPOpcode.SUB,
+                a.field(sumSquaresIndex), normalized);
+
+        DBSPExpression denom = isSamp ? ExpressionCompiler.makeBinaryExpression(
+                node, this.resultType, DBSPOpcode.SUB,
+                a.field(countIndex), this.resultType.to(IsNumericType.class).getOne()) :
+                a.field(countIndex);
+        // We need to call sqrt, which only works for doubles.
+        DBSPType sqrtType = new DBSPTypeDouble(node, this.resultType.mayBeNull);
+        DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
+                node, this.resultType, DBSPOpcode.DIV_NULL,
+                sub, denom).cast(sqrtType);
+        DBSPExpression sqrt = ExpressionCompiler.compilePolymorphicFunction(
+                "sqrt", node, sqrtType, Linq.list(div), 1);
+        sqrt = sqrt.cast(this.resultType);
+        DBSPClosureExpression post = new DBSPClosureExpression(node, sqrt, a.asParameter());
+        DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
+        DBSPType semigroup = new DBSPTypeUser(node, USER, "TripleSemigroup", false,
+                intermediateResultType, intermediateResultType, intermediateResultType,
+                new DBSPTypeUser(node, USER, "DefaultOptSemigroup", false, intermediateResultTypeNonNull),
+                new DBSPTypeUser(node, USER, "DefaultOptSemigroup", false, intermediateResultTypeNonNull),
+                new DBSPTypeUser(node, USER, "DefaultOptSemigroup", false, intermediateResultTypeNonNull));
+        return new DBSPAggregate.Implementation(
+                node, zero, this.makeRowClosure(increment, accumulator), post, postZero, semigroup, null);
+    }
+
+    void processAvg(SqlAvgAggFunction function) {
+        CalciteObject node = CalciteObject.create(function);
+        DBSPAggregate.Implementation implementation = switch (function.getKind()) {
+            case AVG -> this.doAverage(function);
+            case STDDEV_POP, STDDEV_SAMP -> this.doStddev(function);
+            default -> throw new UnimplementedException(node);
+        };
+        this.setFoldingFunction(implementation);
     }
 
     public DBSPAggregate.Implementation compile() {

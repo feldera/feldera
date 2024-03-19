@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.Linq;
@@ -64,6 +65,8 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
     public abstract DBSPTypeTupleBase project(List<Integer> fields);
 
     public DBSPType getFieldType(int index) {
+        if (index >= this.tupFields.length)
+            throw new InternalCompilerError("Index " + index + " out of tuple bounds " + this.tupFields.length);
         return this.tupFields[index];
     }
 

@@ -22,6 +22,8 @@ public enum DBSPOpcode {
     SUB("-", false),
     MUL("*", false),
     DIV("/", false),
+    // DIV_NULL is like DIV, but returns NULL for a 0 denominator
+    DIV_NULL("/", false),
     MOD("%", false),
     EQ("==", false),
     NEQ("!=", false),
