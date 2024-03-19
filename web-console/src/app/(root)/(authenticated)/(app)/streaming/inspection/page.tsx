@@ -24,7 +24,6 @@ import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
 import type { Row } from '$lib/functions/ddl'
-
 const TablesBreadcrumb = (props: {
   pipeline: Pipeline
   caseIndependentName: string
@@ -87,6 +86,7 @@ const TableInspector = ({
     console.error('InspectionTable error: ', error)
   }
   const [rows, setRows] = useState<Row[]>([])
+
   return (
     <TabContext value={tab}>
       <TabList

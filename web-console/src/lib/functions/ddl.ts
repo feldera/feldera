@@ -400,11 +400,11 @@ export const numericRange = (sqlType: ColumnType) =>
     .with({ type: SqlType.INTEGER }, () => ({ min: new BigNumber(-2147483648), max: new BigNumber(2147483647) }))
     .with({ type: SqlType.BIGINT }, () => ({ min: new BigNumber(-2).pow(63), max: new BigNumber(2).pow(63).minus(1) }))
     .with({ type: SqlType.REAL }, () => ({
-      min: new BigNumber('-3.402823466e38'),
-      max: new BigNumber('3.402823466e38')
+      min: new BigNumber('-3.402823466e+38'),
+      max: new BigNumber('3.402823466e+38')
     }))
     .with({ type: SqlType.DOUBLE }, () => ({
-      min: new BigNumber('2.2250738585072014e-308'),
+      min: new BigNumber('-1.7976931348623158e+308'),
       max: new BigNumber('1.7976931348623158e+308')
     }))
     .with({ type: SqlType.DECIMAL }, ct => {

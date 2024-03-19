@@ -3,6 +3,7 @@ import { numericRange } from '$lib/functions/ddl'
 import { ColumnType, SqlType } from '$lib/services/manager'
 import BigNumber from 'bignumber.js'
 import { ChangeEvent } from 'react'
+import { nonNull } from 'src/lib/functions/common/function'
 import { match } from 'ts-pattern'
 import IconX from '~icons/bx/x'
 
@@ -20,14 +21,23 @@ export const SQLValueInput = ({
   TextFieldProps,
   'type' | 'value' | 'onChange'
 >) => {
-  const numericOnChange = {
+  const onChangeEmptyNull = (props: { onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => ({
     onChange: (event: any) => {
       if (event.target.value === '' || event.target.value === undefined) {
         return props.onChange({ ...event, target: { ...event.target, value: null as any } })
       }
       return props.onChange(event)
     }
-  }
+  })
+  const onChangeNumber = (props: { onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => ({
+    onChange: (event: any) => {
+      if (!nonNull(event.target.value)) {
+        return props.onChange(event)
+      }
+      const number = parseFloat(event.target.value)
+      return props.onChange({ ...event, target: { ...event.target, value: number } })
+    }
+  })
   return (
     <TextField
       InputProps={{
@@ -42,20 +52,31 @@ export const SQLValueInput = ({
         ) : undefined
       }}
       {...match(columnType.type)
-        .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, SqlType.REAL, SqlType.DOUBLE, () => ({
+        .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, () => ({
           type: 'number',
+          ...props,
           inputProps: {
+            ...props.inputProps,
             ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType)),
             value: props.value === null ? '' : props.value, // Enable clearing of the input when setting value to null
             placeholder: props.value === null ? 'null' : ''
           },
+          ...onChangeNumber(onChangeEmptyNull(props))
+        }))
+        .with(SqlType.REAL, SqlType.DOUBLE, () => ({
+          type: 'number',
           ...props,
-          ...numericOnChange
+          inputProps: {
+            ...props.inputProps,
+            value: props.value === null ? '' : props.value, // Enable clearing of the input when setting value to null
+            placeholder: props.value === null ? 'null' : ''
+          },
+          ...onChangeNumber(onChangeEmptyNull(props))
         }))
         .with(SqlType.BIGINT, SqlType.DECIMAL, () => ({
           ...bigNumberInputProps({
             ...props,
-            ...numericOnChange,
+            ...onChangeEmptyNull(props),
             defaultValue: props.defaultValue as BigNumber | undefined,
             precision: columnType.precision,
             scale: columnType.scale
@@ -79,7 +100,9 @@ export const SQLValueInput = ({
           inputProps: {
             maxLength: 1
           },
-          ...props
+          ...props,
+          value: props.value === null ? '' : props.value,
+          placeholder: props.value === null ? 'null' : ''
         }))
         .with(SqlType.VARCHAR, () => ({
           type: 'string',
@@ -92,7 +115,9 @@ export const SQLValueInput = ({
         }))
         .with(SqlType.TIME, () => ({
           type: 'string',
-          ...props
+          ...props,
+          value: props.value === null ? '' : props.value,
+          placeholder: props.value === null ? 'null' : ''
         }))
         .with(SqlType.TIMESTAMP, () => ({
           type: 'datetime-local',
