@@ -7,47 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2024-03-19
+
+### Changed
+
+- dbsp: Major refactoring of the dbsp crate to improve
+  to improve compilation speed of SQL programs
+  ([#1516](https://github.com/feldera/feldera/pull/1516))
+
 ### Added
 
-- SQL: Support for GROUPING, GROUPING_ID, and GROUPING SETS
+- SQL: Support for `GROUPING`, `GROUPING_ID`, and `GROUPING SETS`
   ([#1527](https://github.com/feldera/feldera/pull/1527))
-- SQL: Support for aggregation functions: STDDEV,
-  STDDEV_POP, STDDEV_SAMP
+- SQL: Support for aggregation functions: `STDDEV`,
+  `STDDEV_POP`, `STDDEV_SAMP`
   ([#1539](https://github.com/feldera/feldera/pull/1539))
-- SQL: support for SORT_ARRAY function
+- SQL: support for `SORT_ARRAY` function
   ([#1490](https://github.com/feldera/feldera/pull/1490))
-- SQL: support for ARRAY_REVERSE function
+- SQL: support for `ARRAY_REVERSE` function
   ([#1491](https://github.com/feldera/feldera/pull/1491))
-- SQL: support for ARRAY_MAX, ARRAY_MIN functions
+- SQL: support for `ARRAY_MAX`, `ARRAY_MIN` functions
   ([#1492](https://github.com/feldera/feldera/pull/1492))
-- SQL: support for ARRAY_COMPACT function
+- SQL: support for `ARRAY_COMPACT` function
   ([#1493](https://github.com/feldera/feldera/pull/1493))
-- SQL: support for ARRAY_PREPEND function
+- SQL: support for `ARRAY_PREPEND` function
   ([#1496](https://github.com/feldera/feldera/pull/1496))
 - adapters: add an input connector for Amazon S3
   ([#1485](https://github.com/feldera/feldera/pull/1485))
 - pipeline-manager: add option to pick a compilation profile
   ([#1513](https://github.com/feldera/feldera/pull/1513))
-- adapters: add an input connector for Amazon S3 (#1485)
-- SQL: support for ARRAY_CONTAINS function
+- SQL: support for `ARRAY_CONTAINS` function
   ([#1499](https://github.com/feldera/feldera/pull/1499))
-- SQL: support for ARRAY_REPEAT function
+- SQL: support for `ARRAY_REPEAT` function
   ([#1497](https://github.com/feldera/feldera/pull/1497))
-- SQL: support for ROUND(DOUBLE, digit), TRUNCATE(DOUBLE, digit)
+- SQL: support for `ROUND(DOUBLE, digit)`, `TRUNCATE(DOUBLE, digit)`
   ([#1512](https://github.com/feldera/feldera/pull/1512))
-- SQL: support for ARRAY_REMOVE function
+- SQL: support for `ARRAY_REMOVE` function
   ([#1498](https://github.com/feldera/feldera/pull/1498))
-- SQL: support for ARRAY_DISTINCT function
+- SQL: support for `ARRAY_DISTINCT` function
   ([#1515](https://github.com/feldera/feldera/pull/1515))
 - Added basic support to ingest and export data in the parquet format
   ([#1510](https://github.com/feldera/feldera/pull/1510))
 - WebConsole: Services page, Kafka service edit dialog (#1233)
+- adapters: add an input connector for Amazon S3 (#1485)
 
 ## [0.11.0] - 2024-03-05
 
 ### Added
 
-- SQL: support for ARRAY_SIZE, ARRAY_LENGTH functions
+- SQL: support for `ARRAY_SIZE`, `ARRAY_LENGTH functions
   ([#1489](https://github.com/feldera/feldera/pull/1489))
 - SQL: support for ARRAY_POSITION function
   ([#1480](https://github.com/feldera/feldera/pull/1480))
