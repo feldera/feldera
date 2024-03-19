@@ -13,6 +13,7 @@ import { ColumnType, Relation, SqlType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
+import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
 export type SQLValueJS = string | number | boolean | BigNumber | Dayjs | SQLValueJS[] | null
@@ -89,10 +90,10 @@ export function getValueFormatter(columntype: ColumnType) {
     .with({ type: SqlType.ARRAY }, () => {
       return value => {
         invariant(Array.isArray(value))
-        return JSON.stringify(
+        return JSONbig.stringify(
           value.map(v => {
             invariant(nonNull(columntype.component))
-            return clampToSQL(columntype.component)(v)
+            return v
           })
         )
       }
