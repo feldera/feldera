@@ -4,6 +4,9 @@
 # Alternative one-liner:
 export ROC_OS=linux_x86_64 ROC_OUTPUT_LOCATION="roc_nightly-$ROC_OS" && mkdir -p $ROC_OUTPUT_LOCATION && curl --fail --location "https://github.com/roc-lang/roc/releases/download/nightly/roc_nightly-$ROC_OS-latest.tar.gz" | TAR_OPTIONS=--wildcards tar --directory $ROC_OUTPUT_LOCATION --extract --gzip --strip-components 1 --file - 'roc_nightly-*/roc' 'roc_nightly-*/roc_language_server' && export PATH=$PATH:$(realpath ".")/roc_nightly-$ROC_OS
 
+# Export binary location to path:
+# ROC_OS=linux_x86_64 ROC_OUTPUT_LOCATION="roc_nightly-$ROC_OS" && export PATH=$PATH:$(realpath ".")/roc_nightly-$ROC_OS
+
 # # Download and export nightly build into a dir with a unique name
 # platform="linux_x86_64"
 #

@@ -69,3 +69,4 @@ cli-roc/main
 cli-roc/test
 cli-roc/bin/
 cli-roc/local/
+cli-roc/feldera

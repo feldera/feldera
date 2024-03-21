@@ -24,5 +24,6 @@
     "editor.formatOnSave": true,
     "files.trimTrailingWhitespace": true,
     "prettier.requireConfig": true,
-    "rust-analyzer.showUnlinkedFileNotification": false
+    "rust-analyzer.showUnlinkedFileNotification": false,
+    "roc-lang.language-server.exe": "cli-roc/roc_nightly-linux_x86_64/roc_language_server"
 }
