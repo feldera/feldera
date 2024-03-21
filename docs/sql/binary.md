@@ -75,4 +75,14 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     </td>
     <td><code>SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3)</code> => <code>x'12020390'</code></td>
   </tr>
+  <tr>
+    <td><code>GUNZIP</code>(binary)</td>
+    <td>
+        Decompresses a binary string using the GZIP algorithm.
+        The input binary must be in GZIP format, fails at runtime if it isn't.
+        The output is the decompressed data as a `VARCHAR` string.
+        If the input is NULL, NULL is returned.
+    </td>
+    <td><code>SELECT gunzip(x'1f8b08000000000000ff4b4bcd49492d4a0400218115ac07000000')</code> => <code>feldera</code></td>
+  </tr>
 </table>

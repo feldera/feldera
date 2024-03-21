@@ -2,11 +2,13 @@
 
 use crate::{some_function1, some_function2, some_function3, some_function4};
 use dbsp::num_entries_scalar;
+use flate2::read::GzDecoder;
 use hex::ToHex;
 use pipeline_types::{deserialize_without_context, serialize_without_context};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::Debug;
+use std::io::Read;
 
 #[derive(
     Debug,
@@ -179,3 +181,14 @@ pub fn overlay4____(
 }
 
 some_function4!(overlay4, ByteArray, ByteArray, i32, i32, ByteArray);
+
+pub fn gunzip_(source: ByteArray) -> String {
+    let mut gz = GzDecoder::new(&source.data[..]);
+    let mut s = String::new();
+
+    gz.read_to_string(&mut s)
+        .expect("failed to decompress gzipped data");
+    s
+}
+
+some_function1!(gunzip, ByteArray, String);

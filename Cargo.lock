@@ -7125,6 +7125,7 @@ version = "0.1.0"
 dependencies = [
  "chrono 0.4.31",
  "dbsp",
+ "flate2",
  "geo",
  "geo-types",
  "hex",

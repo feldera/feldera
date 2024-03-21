@@ -979,6 +979,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "array":
                         return this.compileFunction(call, node, type, ops, 0);
+                    case "gunzip":
+                        DBSPExpression arg = ops.get(0);
+                        ops.set(0, arg.cast(new DBSPTypeBinary(arg.getNode(), arg.type.mayBeNull)));
+
+                        return this.compileFunction(call, node, type, ops, 1);
                 }
                 return this.compileUDF(node, call, type, ops);
             }

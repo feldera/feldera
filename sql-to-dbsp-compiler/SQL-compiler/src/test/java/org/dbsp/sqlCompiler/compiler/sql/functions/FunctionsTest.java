@@ -1687,6 +1687,42 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testGunzip() {
+        this.qs("""
+                SELECT GUNZIP(x'1f8b08000000000000ff4b4bcd49492d4a0400218115ac07000000'::bytea);
+                 gunzip
+                ------------
+                 feldera
+                (1 row)
+                
+                SELECT GUNZIP(x'1f8b08000000000000ff734bcd49492d4a0400bdb8a86307000000'::bytea);
+                 gunzip
+                ------------
+                 Feldera
+                (1 row)
+                
+                SELECT GUNZIP(x'1f8b08000000000000ffcb48cdc9c9070086a6103605000000'::bytea);
+                 gunzip
+                ------------
+                 hello
+                (1 row)
+                
+                SELECT GUNZIP(x'1f8b08000000000000132bc9c82c5600a2dc4a851282ccd48a12002e7a22ff30000000'::bytea);
+                 gunzip
+                --------------------------------------------------------------------------
+                 this is my this is my this is my this is my text
+                (1 row)
+                
+                SELECT GUNZIP(null);
+                 gunzip
+                --------
+                NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
     public void testIssue1505() {
         this.qs("""
                 SELECT ROUND(123.1234::DOUBLE, 2);
