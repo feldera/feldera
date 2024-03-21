@@ -8,7 +8,6 @@ use clap::Parser;
 use dbsp::utils::Tup2;
 use dbsp::{
     mimalloc::{AllocStats, MiMalloc},
-    utils::Tup3,
     DBSPHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
 };
 use dbsp_nexmark::{
@@ -219,7 +218,7 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
     let expected_num_events = config.max_events;
     let (dbsp, input_handle) =
         Runtime::init_circuit(num_cores, move |circuit: &mut RootCircuit| {
-            let (stream, input_handle) = circuit.add_input_zset::<Event, i64>();
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             query.query(circuit, stream);
             Ok(input_handle)
