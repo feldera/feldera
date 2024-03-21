@@ -59,3 +59,13 @@ gh-pages
 # Playwright
 playwright-artifacts/
 playwright-snapshots/
+
+# Roc lang
+roc_nightly-*
+
+# CLI dev
+cli-roc/feldera.json
+cli-roc/main
+cli-roc/test
+cli-roc/bin/
+cli-roc/local/

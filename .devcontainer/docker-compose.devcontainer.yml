@@ -10,3 +10,4 @@ services:
     environment:
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
+      - ROCLS_LOG=debug
