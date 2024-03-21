@@ -129,8 +129,9 @@ build-webui:
 
 build-dbsp:
     FROM +rust-sources
-    DO rust+CARGO --args="build --package dbsp"
+    DO rust+CARGO --args="build --package dbsp --benches"
     DO rust+CARGO --args="build --package pipeline_types"
+    DO rust+CARGO --args="build --package dbsp_nexmark --benches"
 
 build-sql:
     FROM +build-dbsp
