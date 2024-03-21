@@ -92,7 +92,7 @@ fn main() {
                         if cursor.val_valid() {
                             let count = **cursor.weight();
                             let Tup2(source, target) =
-                                cursor.key().downcast::<Tup2<String, String>>().clone();
+                                unsafe { cursor.key().downcast::<Tup2<String, String>>() }.clone();
                             network_buf.push((source, target, count));
                         }
                         cursor.step_key();
