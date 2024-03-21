@@ -3,6 +3,6 @@ interface Lib.List
     imports []
 
 # TODO: improve performance
-nubOrdOn = \ project, list ->
-  set = list |> List.map project |> Set.fromList
-  list |> List.dropIf \ e -> Set.contains set (project e)
+nubOrdOn = \list, project ->
+    set = list |> List.map project |> Set.fromList
+    list |> List.dropIf \e -> Set.contains set (project e)
