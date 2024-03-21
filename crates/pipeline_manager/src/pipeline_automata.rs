@@ -582,6 +582,7 @@ pub async fn fetch_binary_ref(
                     let path = config.binary_file_path(pipeline_id, program_id, version);
                     let mut file = tokio::fs::File::options()
                         .create(true)
+                        .truncate(true)
                         .write(true)
                         .read(true)
                         .mode(0o760)

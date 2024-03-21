@@ -204,6 +204,8 @@ pub enum Operation {
     Update,
 }
 
+// Rust complains that fields in this enum are never read, even though they are read by `Debug`.
+#[allow(dead_code)]
 #[derive(Debug)]
 enum NotificationError {
     MissingPayloadComponents(String),
