@@ -1,8 +1,14 @@
 import { bigNumberInputProps } from '$lib/components/input/BigNumberInput'
-import { getValueFormatter, numericRange, SQLValueJS, xgressJSONToSQLValue } from '$lib/functions/ddl'
+import {
+  JSONXgressValue,
+  numericRange,
+  SQLValueJS,
+  sqlValueToXgressJSON,
+  xgressJSONToSQLValue
+} from '$lib/functions/ddl'
 import { ColumnType, SqlType } from '$lib/services/manager'
-import { Arguments } from '$lib/types/common/function'
 import BigNumber from 'bignumber.js'
+import Dayjs, { isDayjs } from 'dayjs'
 import { ChangeEvent, Dispatch, useReducer } from 'react'
 import { nonNull } from 'src/lib/functions/common/function'
 import invariant from 'tiny-invariant'
@@ -10,7 +16,7 @@ import JSONbig from 'true-json-bigint'
 import { match } from 'ts-pattern'
 import IconX from '~icons/bx/x'
 
-import { IconButton, TextField, TextFieldProps } from '@mui/material'
+import { IconButton, TextField, TextFieldProps, useTheme } from '@mui/material'
 
 /**
  * Input for a value representable by given SQL type accounting for precision, nullability etc.
@@ -43,8 +49,34 @@ export const SQLValueInput = ({
   })
 
   if (columnType.type === SqlType.ARRAY) {
-    return <SQLArrayInput {...{ columnType, ...props }}></SQLArrayInput>
+    return (
+      <IntermediateValueInput
+        {...{ columnType, type: 'string', ...props, toText: JSONbig.stringify, fromText: JSONbig.parse }}
+      ></IntermediateValueInput>
+    )
   }
+  if (columnType.type === SqlType.TIME) {
+    return (
+      <IntermediateValueInput
+        {...{
+          columnType,
+          type: 'string',
+          step: 1,
+          ...props,
+          toText: v => v as string,
+          fromText: t => t
+        }}
+      ></IntermediateValueInput>
+    )
+  }
+  if (columnType.type === SqlType.DATE) {
+    return (
+      <IntermediateValueInput
+        {...{ columnType, type: 'date', ...props, toText: v => v as string, fromText: t => t }}
+      ></IntermediateValueInput>
+    )
+  }
+
   return (
     <TextField
       InputProps={{
@@ -121,19 +153,15 @@ export const SQLValueInput = ({
           value: props.value === null ? '' : props.value,
           placeholder: props.value === null ? 'null' : ''
         }))
-        .with(SqlType.TIME, () => ({
-          type: 'string',
-          ...props,
-          value: props.value === null ? '' : props.value,
-          placeholder: props.value === null ? 'null' : ''
-        }))
         .with(SqlType.TIMESTAMP, () => ({
           type: 'datetime-local',
-          ...props
-        }))
-        .with(SqlType.DATE, () => ({
-          type: 'date',
-          ...props
+          ...props,
+          value: (() => {
+            invariant(props.value === null || isDayjs(props.value))
+            return props.value?.format('YYYY-MM-DDTHH:mm:ss') ?? ''
+          })(),
+          onChange: (e: ChangeEvent) =>
+            props.onChange({ ...e, target: { ...e.target, value: Dayjs((e.target as any).value) } } as any)
         }))
         .with(SqlType.INTERVAL, () => ({
           type: 'string',
@@ -159,13 +187,64 @@ export const SQLValueInput = ({
   )
 }
 
-type ArrayInputState = { valid: SQLValueJS } | { intermediate: string }
+/**
+ * Input component that can be in an invalid state.
+ * While in invalid state, changes in input are not reflected on edited value.
+ * The valid state is determined by successful serialization of an SQL value.
+ */
+export function IntermediateValueInput(
+  props: {
+    value: SQLValueJS
+    toText: (v: SQLValueJS) => string
+    fromText: (text: string) => JSONXgressValue
+    columnType: ColumnType
+    onChange: (event: ChangeEvent<HTMLInputElement>) => void
+  } & Omit<TextFieldProps, 'value' | 'onChange'>
+) {
+  const [value, setValueText] = useReducer(
+    intermediateInputReducer(
+      text => xgressJSONToSQLValue(props.columnType, props.fromText(text)),
+      value => props.onChange({ target: { value } } as any)
+    ),
+    { valid: props.value }
+  )
+  const theme = useTheme()
+  const error = 'intermediate' in value
+  return (
+    <TextField
+      variant='outlined'
+      {...props}
+      sx={{
+        ...props.sx,
+        backgroundColor: error ? theme.palette.error.light : 'undefined'
+      }}
+      error={error}
+      onChange={e => setValueText(e.target.value)}
+      value={
+        'valid' in value && value.valid === null
+          ? ''
+          : 'valid' in value
+            ? props.toText(sqlValueToXgressJSON(props.columnType, value.valid))
+            : value.intermediate
+      }
+      placeholder={props.value === null ? 'null' : ''}
+      InputProps={{
+        endAdornment: (
+          <IconButton size='small' sx={{ mr: -3 }} onClick={() => setValueText(null)}>
+            <IconX></IconX>
+          </IconButton>
+        )
+      }}
+    ></TextField>
+  )
+}
 
-const sqlArrayInputReducer =
-  (columnType: ColumnType, setValue: Dispatch<SQLValueJS>) =>
-  (_state: ArrayInputState, action: string | null): ArrayInputState => {
+type IntermediateInputState<T> = { valid: T | null } | { intermediate: string }
+
+function intermediateInputReducer<T>(textToValue: (text: string) => T, setValue: Dispatch<T | null>) {
+  return (_state: IntermediateInputState<T>, action: string | null): IntermediateInputState<T> => {
     try {
-      const value = action === null ? null : xgressJSONToSQLValue(columnType, JSONbig.parse(action))
+      const value = action === null ? null : textToValue(action)
       setValue(value)
       return {
         valid: value
@@ -177,34 +256,4 @@ const sqlArrayInputReducer =
       }
     }
   }
-
-export const SQLArrayInput = (props: Arguments<typeof SQLValueInput>[0]) => {
-  const [arrayValue, setArrayText] = useReducer(
-    sqlArrayInputReducer(props.columnType, value => props.onChange({ target: { value } } as any)),
-    { valid: props.value }
-  )
-  return (
-    <TextField
-      InputProps={{
-        endAdornment: props.columnType.nullable ? (
-          <IconButton size='small' sx={{ mr: -3 }} onClick={() => setArrayText(null)}>
-            <IconX></IconX>
-          </IconButton>
-        ) : undefined
-      }}
-      {...{
-        type: 'string',
-        ...props,
-        error: 'intermediate' in arrayValue,
-        onChange: e => setArrayText(e.target.value),
-        value:
-          'valid' in arrayValue && arrayValue.valid === null
-            ? ''
-            : 'valid' in arrayValue
-              ? getValueFormatter(props.columnType)(arrayValue.valid)
-              : arrayValue.intermediate,
-        placeholder: props.value === null ? 'null' : ''
-      }}
-    ></TextField>
-  )
 }

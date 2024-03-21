@@ -5,7 +5,6 @@
 // etc. This issue will go away once we support JSON for the data format. But
 // until then we do the type conversion here.
 
-import { clampBigNumber } from '$lib/functions/common/bigNumber'
 import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
@@ -14,7 +13,7 @@ import { BigNumber } from 'bignumber.js'
 import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
-import { match, P } from 'ts-pattern'
+import { match } from 'ts-pattern'
 
 export type SQLValueJS = string | number | boolean | BigNumber | Dayjs | SQLValueJS[] | null
 
@@ -39,90 +38,13 @@ export interface ValidationError {
  * @returns
  */
 export function getValueFormatter(columntype: ColumnType) {
-  const formatter = match(columntype)
-    .returnType<(value: Exclude<SQLValueJS, null>) => string>()
-    .with({ type: SqlType.BOOLEAN }, () => {
-      return value => {
-        invariant(typeof value === 'boolean')
-        return String(value)
-      }
-    })
-    .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
-      return value => {
-        invariant(BigNumber.isBigNumber(value))
-        return value.toFixed()
-      }
-    })
-    .with(
-      { type: SqlType.TINYINT },
-      { type: SqlType.SMALLINT },
-      { type: SqlType.INTEGER },
-      { type: SqlType.REAL },
-      { type: SqlType.DOUBLE },
-      () => {
-        return value => {
-          invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
-          return value.toString()
-        }
-      }
-    )
-    .with({ type: SqlType.TIME }, () => {
-      return value => {
-        invariant(typeof value === 'string' || isDayjs(value))
-        if (typeof value === 'string') {
-          return value
-        }
-        return value.format('HH:mm:ss')
-      }
-    })
-    .with({ type: SqlType.DATE }, () => {
-      return value => {
-        invariant(typeof value === 'string' || isDayjs(value))
-        return dayjs(value).format('YYYY-MM-DD')
-      }
-    })
-    .with({ type: SqlType.TIMESTAMP }, () => {
-      return value => {
-        invariant(typeof value === 'string' || isDayjs(value))
-        return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
-      }
-    })
-    .with({ type: SqlType.ARRAY }, () => {
-      return value => {
-        invariant(Array.isArray(value))
-        return JSONbig.stringify(
-          value.map(v => {
-            invariant(nonNull(columntype.component))
-            return v
-          })
-        )
-      }
-    })
-    .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
-      return value => {
-        invariant(typeof value === 'string')
-        return value
-      }
-    })
-    .with({ type: SqlType.BINARY }, () => {
-      invariant(false, 'BINARY type is not implemented for display')
-    })
-    .with({ type: SqlType.VARBINARY }, () => {
-      invariant(false, 'VARBINARY type is not implemented for display')
-    })
-    .with({ type: SqlType.INTERVAL }, () => {
-      invariant(false, 'INTERVAL type is not implemented for display')
-    })
-    .with({ type: SqlType.NULL }, () => {
-      invariant(false, 'Unreachable - case handled')
-    })
-    .exhaustive()
-  return (value: SQLValueJS) => {
+  return (value: SQLValueJS): string | null => {
     if ((value === null && columntype.nullable) || columntype.type === SqlType.NULL) {
       return null
     }
     invariant(value !== null)
-    return formatter(value)
+    const formatted = sqlValueToXgressJSON(columntype, value)
+    return typeof formatted === 'string' ? formatted : JSONbig.stringify(formatted) // getNonNullValueFormatter(columntype)(value)
   }
 }
 
@@ -144,9 +66,13 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
       invariant(typeof value === 'boolean')
       return value
     })
-    .with({ type: SqlType.BIGINT }, { type: SqlType.DECIMAL }, () => {
+    .with({ type: SqlType.BIGINT }, () => {
       invariant(BigNumber.isBigNumber(value))
       return value
+    })
+    .with({ type: SqlType.DECIMAL }, () => {
+      invariant(BigNumber.isBigNumber(value))
+      return value.toFixed()
     })
     .with(
       { type: SqlType.TINYINT },
@@ -223,7 +149,10 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
     })
     .with({ type: SqlType.DECIMAL }, () => {
       invariant(typeof value === 'string')
-      return BigNumber(value)
+      invariant(!/\.$/.test(value))
+      const number = BigNumber(value)
+      invariant(!number.isNaN())
+      return number
     })
     .with(
       { type: SqlType.TINYINT },
@@ -237,16 +166,22 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
       }
     )
     .with({ type: SqlType.TIME }, () => {
-      invariant(typeof value === 'string')
-      return dayjs(value, 'HH:mm:ss')
+      invariant(typeof value === 'string' && value.length === 8)
+      const time = dayjs(value, 'HH:mm:ss')
+      invariant(time.isValid())
+      return time
     })
     .with({ type: SqlType.DATE }, () => {
-      invariant(typeof value === 'string')
-      return dayjs(value, 'YYYY-MM-DD')
+      invariant(typeof value === 'string' && value.length === 10)
+      const date = dayjs(value, 'YYYY-MM-DD')
+      invariant(date.isValid())
+      return date
     })
     .with({ type: SqlType.TIMESTAMP }, () => {
-      invariant(typeof value === 'string')
-      return dayjs(value, 'YYYY-MM-DD HH:mm:ss')
+      invariant(typeof value === 'string' && value.length === 19)
+      const date = dayjs(value, 'YYYY-MM-DD HH:mm:ss')
+      invariant(date.isValid())
+      return date
     })
     .with({ type: SqlType.ARRAY }, () => {
       invariant(Array.isArray(value))
@@ -284,101 +219,6 @@ export const xgressJSONToSQLRecord = (
       tuple(getCaseIndependentName(field), xgressJSONToSQLValue(field.columntype, value[field.name]))
     )
   )
-
-// Generate a parser function for a field that converts a value to something
-// that is close to the original value but also acceptable for the SQL type.
-export function clampToSQL(columntype: ColumnType) {
-  return match(columntype)
-    .with(
-      {
-        type: SqlType.VARCHAR,
-        precision: P.when(value => (value ?? -1) >= 0)
-      },
-      () => (value: string | string[]) => {
-        invariant(typeof value === 'string' || Array.isArray(value), `clampToSQL VARCHAR: ${typeof value} ${value}`)
-        invariant(nonNull(columntype.precision))
-        return value.toString().substring(0, columntype.precision)
-      }
-    )
-    .with({ type: SqlType.VARCHAR }, () => (value: string) => value)
-    .with(
-      {
-        type: SqlType.CHAR,
-        precision: P.when(value => (value ?? -1) >= 0)
-      },
-      () => (value: string | string[]) => {
-        invariant(typeof value === 'string' || Array.isArray(value), `clampToSQL CHAR: ${typeof value} ${value}`)
-        invariant(nonNull(columntype.precision))
-        return value.toString().substring(0, columntype.precision).padEnd(columntype.precision)
-      }
-    )
-    .with({ type: SqlType.CHAR }, () => (value: string) => value)
-    .with(
-      { type: SqlType.TINYINT },
-      { type: SqlType.SMALLINT },
-      { type: SqlType.INTEGER },
-      () => (value: BigNumber) => {
-        invariant(BigNumber.isBigNumber(value), `clampToSQL TINYINT: ${typeof value} ${value}`)
-        const number = value
-        const { min, max } = numericRange(columntype)
-        return clampBigNumber(min, max, number.decimalPlaces(0, BigNumber.ROUND_HALF_UP))
-      }
-    )
-    .with({ type: SqlType.BIGINT }, () => (value: BigNumber) => {
-      invariant(BigNumber.isBigNumber(value), `clampToSQL BIGINT: ${typeof value} ${value}`)
-      const number = value
-      const { min, max } = numericRange(columntype)
-      return clampBigNumber(min, max, number.decimalPlaces(0, BigNumber.ROUND_HALF_UP))
-    })
-    .with({ type: SqlType.REAL }, () => (value: BigNumber) => {
-      invariant(BigNumber.isBigNumber(value), `clampToSQL FLOAT: ${typeof value} ${value}`)
-      const { min, max } = numericRange(columntype)
-      return new BigNumber(Float32Array.from([clampBigNumber(min, max, value).toNumber()])[0])
-    })
-    .with({ type: SqlType.DOUBLE }, () => (value: BigNumber) => {
-      invariant(BigNumber.isBigNumber(value), `clampToSQL DOUBLE: ${typeof value} ${value}`)
-      const { min, max } = numericRange(columntype)
-      return new BigNumber(clampBigNumber(min, max, value).toNumber())
-    })
-    .with({ type: SqlType.DECIMAL }, () => (value: BigNumber) => {
-      invariant(BigNumber.isBigNumber(value), `clampToSQL DECIMAL: ${typeof value} ${value}`)
-      // const [precision, scale] = [columntype.precision ?? 1024, columntype.scale ?? 0]
-      invariant(nonNull(columntype.precision))
-      invariant(nonNull(columntype.scale))
-      invariant(columntype.precision >= columntype.scale, 'Precision must be greater or equal than scale')
-      // We want to limit the number of digits that are displayed in the UI to
-      // fit the column decimal type.
-      return new BigNumber(value).decimalPlaces(columntype.scale, BigNumber.ROUND_HALF_UP)
-    })
-    .with({ type: SqlType.TIME }, () => (value: string | Dayjs) => {
-      invariant(typeof value === 'string' || isDayjs(value), `clampToSQL TIME: ${typeof value} ${value}`)
-      // We represent TIME as string for now because the data-grid doesn't
-      // have native support for times yet.
-      // See also
-      return dayjs(value).format('HH:mm:ss')
-    })
-    .with({ type: SqlType.DATE }, { type: SqlType.TIMESTAMP }, () => (value: string | Dayjs) => {
-      invariant(typeof value === 'string' || isDayjs(value), `clampToSQL DATE,TIMESTAMP: ${typeof value} ${value}`)
-      return dayjs(value)
-    })
-    .with({ type: SqlType.ARRAY }, () => (value: SQLValueJS[]): SQLValueJS[] => {
-      return value.map(v => {
-        invariant(columntype.component)
-        return clampToSQL(columntype.component)(v as never)
-      })
-    })
-    .with(
-      { type: SqlType.BOOLEAN },
-      { type: SqlType.BINARY },
-      { type: SqlType.VARBINARY },
-      { type: SqlType.INTERVAL },
-      { type: SqlType.NULL },
-      () =>
-        <T>(value: T) =>
-          value
-    )
-    .exhaustive() as (value: SQLValueJS) => SQLValueJS
-}
 
 // Walk the type tree and find the base type.
 //
