@@ -71,6 +71,10 @@ of minimum integer value by -1) produce run time errors.
     <td><code>MOD(left, right)</code></td>
     <td>integer modulus. Same as <code>left % right</code>.</td>
   </tr>
+  <tr>
+    <td><code>SEQUENCE(start, end)</code></td>
+    <td>returns an array of integers from start to end (inclusive).</td>
+  </tr>
 </table>
 
 ## Operations not supported

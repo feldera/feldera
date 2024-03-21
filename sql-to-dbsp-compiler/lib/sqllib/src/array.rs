@@ -1,6 +1,6 @@
 // Array operations
 
-use crate::some_generic_function2;
+use crate::{some_function2, some_generic_function2};
 use std::hash::Hash;
 use std::ops::Index;
 
@@ -253,3 +253,9 @@ where
 {
     Some(array_distinct(vector?))
 }
+
+pub fn sequence__(start: i32, end: i32) -> Vec<i32> {
+    (start..=end).collect()
+}
+
+some_function2!(sequence, i32, i32, Vec<i32>);

@@ -537,6 +537,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             ops.set(argument, arg.cast(new DBSPTypeDouble(arg.getType().getNode(), arg.getType().mayBeNull)));
     }
 
+    void ensureInteger(List<DBSPExpression> ops, int argument, int length, boolean signed) {
+        DBSPExpression arg = ops.get(argument);
+        if (!arg.getType().is(DBSPTypeInteger.class))
+            ops.set(argument, arg.cast(new DBSPTypeInteger(arg.getType().getNode(), length, signed, arg.getType().mayBeNull)));
+    }
+
     void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
         if (ops.get(arg).is(DBSPNullLiteral.class)) {
             ops.set(arg, new DBSPTypeVec(new DBSPTypeNull(CalciteObject.EMPTY), true).nullValue());
@@ -979,6 +985,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "array":
                         return this.compileFunction(call, node, type, ops, 0);
+                    case "sequence":
+                        for (int i = 0; i < ops.size(); i++)
+                            this.ensureInteger(ops, i, 32, true);
+
+                        return this.compileFunction(call, node, type, ops, 2);
                 }
                 return this.compileUDF(node, call, type, ops);
             }
