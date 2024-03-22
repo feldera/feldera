@@ -290,13 +290,13 @@ pub(crate) async fn update_program(
             )
             .await?;
     let has_code_changed = program_code.as_ref().is_some_and(|c| *c != code);
-    let has_config_changed = config.as_ref().is_some_and(|c| c.profile != profile);
+    let has_profile_changed = config.as_ref().is_some_and(|c| c.profile != profile);
 
-    // Changing the program configuration currently counts as a new version, which in turn
+    // Changing the program compilation profile currently counts as a new version, which in turn
     // triggers recompilation from scratch (including the SQL compilation and resetting the
     // schema). This will likely cause redundant work, but is simpler and is not expected
     // to be the common mode of operation.
-    let new_version = if has_code_changed || has_config_changed {
+    let new_version = if has_code_changed || has_profile_changed {
         latest_version.0 + 1
     } else {
         latest_version.0

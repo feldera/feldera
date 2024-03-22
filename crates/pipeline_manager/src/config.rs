@@ -235,7 +235,11 @@ impl ApiServerConfig {
 }
 
 /// Argument to `cargo build --profile <>` passed to the rust compiler
+///
+/// Note that this is a hint to the backend, and can be overriden by
+/// the Feldera instance depending on the administrator configuration.
 #[derive(Parser, Default, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum CompilationProfile {
     /// Prioritizes compilation speed over runtime speed
     Unoptimized,
