@@ -1808,6 +1808,24 @@ public class FunctionsTest extends SqlIoTest {
                 ----------
                  NULL
                 (1 row)
+                
+                SELECT SEQUENCE(null::tinyint, null::tinyint);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(1::tinyint, 10::tinyint);
+                 sequence
+                ----------
+                 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+                (1 row)
+                
+                SELECT SEQUENCE(1::tinyint, 3::bigint);
+                 sequence
+                ----------
+                 {1, 2, 3}
+                (1 row)
                 """
         );
     }

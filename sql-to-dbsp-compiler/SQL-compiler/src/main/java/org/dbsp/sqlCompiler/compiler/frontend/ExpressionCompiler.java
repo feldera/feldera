@@ -537,10 +537,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             ops.set(argument, arg.cast(new DBSPTypeDouble(arg.getType().getNode(), arg.getType().mayBeNull)));
     }
 
-    void ensureInteger(List<DBSPExpression> ops, int argument, int length, boolean signed) {
+    void ensureInteger(List<DBSPExpression> ops, int argument, int length) {
         DBSPExpression arg = ops.get(argument);
-        if (!arg.getType().is(DBSPTypeInteger.class))
-            ops.set(argument, arg.cast(new DBSPTypeInteger(arg.getType().getNode(), length, signed, arg.getType().mayBeNull)));
+        DBSPTypeInteger expected = new DBSPTypeInteger(arg.getType().getNode(), length, true, arg.getType().mayBeNull);
+
+        if (!arg.getType().sameType(expected))
+            ops.set(argument, arg.cast(expected));
     }
 
     void nullLiteralToNullArray(List<DBSPExpression> ops, int arg) {
@@ -987,7 +989,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         return this.compileFunction(call, node, type, ops, 0);
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
-                            this.ensureInteger(ops, i, 32, true);
+                            this.ensureInteger(ops, i, 32);
 
                         return this.compileFunction(call, node, type, ops, 2);
                 }
