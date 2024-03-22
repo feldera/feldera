@@ -2,8 +2,11 @@
 //! fashion.
 
 use crate::{
-    storage::{buffer_cache::BufferCache, file::cache::FileCacheEntry},
-    trace::ord::file::StorageBackend,
+    storage::{
+        backend::{new_default_backend, tempdir_for_thread, Backend},
+        buffer_cache::BufferCache,
+        file::cache::FileCacheEntry,
+    },
     DetailedError,
 };
 use crossbeam::channel::bounded;
@@ -416,28 +419,28 @@ impl Runtime {
         RUNTIME.with(|rt| rt.borrow().clone())
     }
 
+    fn new_backend() -> Rc<Backend> {
+        let rt = Runtime::runtime();
+        let dir = if let Some(rt) = rt {
+            rt.inner().storage.clone().as_ref().to_path_buf()
+        } else {
+            tempdir_for_thread()
+        };
+        Rc::new(new_default_backend(dir))
+    }
+
     /// Returns the (thread-local) storage backend.
-    pub fn backend() -> Rc<StorageBackend> {
+    pub fn backend() -> Rc<Backend> {
         thread_local! {
-            pub static TEMPDIR: tempfile::TempDir = tempfile::tempdir().unwrap();
-            pub static DEFAULT_BACKEND: Rc<StorageBackend> = {
-                let rt = Runtime::runtime();
-                let io_backend = if let Some(rt) = rt {
-                    crate::storage::backend::DefaultBackend::with_base(rt.inner().storage.clone())
-                } else {
-                    // This else case exists because some nexmark tests run without a runtime :/
-                    crate::storage::backend::DefaultBackend::with_base(TEMPDIR.with(|dir| dir.path().to_path_buf()))
-                };
-                Rc::new(io_backend)
-            };
+            pub static DEFAULT_BACKEND: Rc<Backend> = Runtime::new_backend();
         }
         DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 
     /// Returns the (thread-local) storage backend.
-    pub fn storage() -> Rc<BufferCache<StorageBackend, FileCacheEntry>> {
+    pub fn storage() -> Rc<BufferCache<Backend, FileCacheEntry>> {
         thread_local! {
-            pub static CACHE: Rc<BufferCache<StorageBackend, FileCacheEntry>> =
+            pub static CACHE: Rc<BufferCache<Backend, FileCacheEntry>> =
                 Rc::new(BufferCache::new(Runtime::backend()));
         }
         CACHE.with(|rc| rc.clone())

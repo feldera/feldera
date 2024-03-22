@@ -5,11 +5,11 @@ use std::{
     ops::Range,
 };
 
-use crate::storage::file::reader::Cursor as FileCursor;
+use crate::storage::{backend::Backend, file::reader::Cursor as FileCursor};
 
 use crate::{
     dynamic::{DataTrait, WeightTrait},
-    trace::{layers::Cursor, ord::file::StorageBackend},
+    trace::layers::Cursor,
 };
 
 use super::FileColumnLayer;
@@ -25,7 +25,7 @@ where
     key: Box<K>,
     diff: Box<R>,
     valid: bool,
-    cursor: FileCursor<'s, StorageBackend, K, R, (), (&'static K, &'static R, ())>,
+    cursor: FileCursor<'s, Backend, K, R, (), (&'static K, &'static R, ())>,
 }
 
 impl<'s, K, R> Clone for FileColumnLayerCursor<'s, K, R>

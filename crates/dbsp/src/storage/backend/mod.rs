@@ -14,11 +14,13 @@ use std::{
     rc::Rc,
     sync::{
         atomic::{AtomicI64, Ordering},
-        Arc, OnceLock,
+        Arc, Once, OnceLock,
     },
 };
 
+use log::warn;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+use tempfile::TempDir;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -252,7 +254,83 @@ pub trait Storage {
     fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
 }
 
-//pub use monoio_impl::MonoioBackend as DefaultBackend;
-//pub use memory_impl::MemoryBackend as DefaultBackend;
-//pub use posixio_impl::PosixBackend as DefaultBackend;
-pub use io_uring_impl::IoUringBackend as DefaultBackend;
+impl<S> Storage for Box<S>
+where
+    S: Storage + ?Sized,
+{
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
+        (**self).create_named(name)
+    }
+
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+        (**self).delete(fd)
+    }
+
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+        (**self).delete_mut(fd)
+    }
+
+    fn write_block(
+        &self,
+        fd: &FileHandle,
+        offset: u64,
+        data: FBuf,
+    ) -> Result<Rc<FBuf>, StorageError> {
+        (**self).write_block(fd, offset, data)
+    }
+
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+        (**self).complete(fd)
+    }
+
+    fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize) {
+        (**self).prefetch(fd, offset, size)
+    }
+
+    fn read_block(
+        &self,
+        fd: &ImmutableFileHandle,
+        offset: u64,
+        size: usize,
+    ) -> Result<Rc<FBuf>, StorageError> {
+        (**self).read_block(fd, offset, size)
+    }
+
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        (**self).get_size(fd)
+    }
+}
+
+/// A dynamically chosen storage engine.
+pub type Backend = Box<dyn Storage>;
+
+/// Returns a per-thread temporary directory.
+pub fn tempdir_for_thread() -> PathBuf {
+    thread_local! {
+        pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
+    }
+    TEMPDIR.with(|dir| dir.path().to_path_buf())
+}
+
+/// Create and returns a backend of the default kind.
+pub fn new_default_backend(tempdir: PathBuf) -> Backend {
+    match io_uring_impl::IoUringBackend::with_base(&tempdir) {
+        Ok(backend) => Box::new(backend),
+        Err(error) => {
+            static ONCE: Once = Once::new();
+            ONCE.call_once(|| {
+                warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
+            });
+            Box::new(posixio_impl::PosixBackend::with_base(&tempdir))
+        }
+    }
+}
+
+/// Returns a thread-local default backend.
+pub fn default_backend_for_thread() -> Rc<Backend> {
+    thread_local! {
+        pub static DEFAULT_BACKEND: Rc<Backend>
+            = Rc::new(new_default_backend(tempdir_for_thread()));
+    }
+    DEFAULT_BACKEND.with(|rc| rc.clone())
+}

@@ -9,5 +9,3 @@ pub use indexed_zset_batch::{FileIndexedZSet, FileIndexedZSetFactories};
 pub use key_batch::{FileKeyBatch, FileKeyBatchFactories};
 pub use val_batch::{FileValBatch, FileValBatchFactories};
 pub use zset_batch::{FileZSet, FileZSetFactories};
-
-pub type StorageBackend = crate::storage::backend::DefaultBackend;

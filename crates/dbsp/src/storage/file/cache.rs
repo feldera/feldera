@@ -12,7 +12,7 @@ use binrw::{
 };
 
 use crate::storage::{
-    backend::{DefaultBackend, ImmutableFileHandle, Storage},
+    backend::{default_backend_for_thread, Backend, ImmutableFileHandle, Storage},
     buffer_cache::{BufferCache, CacheEntry, FBuf},
     file::BlockLocation,
 };
@@ -108,18 +108,17 @@ impl FileCacheEntry {
     }
 }
 
-impl FileCache<DefaultBackend> {
-    fn new_default_for_thread() -> Rc<FileCache<DefaultBackend>> {
-        Rc::new(BufferCache::new(DefaultBackend::default_for_thread()))
-    }
+fn new_default_cache_for_thread() -> Rc<FileCache<Backend>> {
+    Rc::new(BufferCache::new(default_backend_for_thread()))
+}
 
-    /// Returns a thread-local default backend.
-    pub fn default_for_thread() -> Rc<FileCache<DefaultBackend>> {
-        thread_local! {
-            pub static DEFAULT_CACHE: Rc<FileCache<DefaultBackend>> = BufferCache::<DefaultBackend, FileCacheEntry>::new_default_for_thread();
-        }
-        DEFAULT_CACHE.with(|rc| rc.clone())
+/// Returns a per-thread `FileCache` suitable for examples, tests, and other
+/// programs that don't need a specific backend configuration.
+pub fn default_cache_for_thread() -> Rc<FileCache<Backend>> {
+    thread_local! {
+        pub static DEFAULT_CACHE: Rc<FileCache<Backend>> = new_default_cache_for_thread();
     }
+    DEFAULT_CACHE.with(|rc| rc.clone())
 }
 
 impl<B> BufferCache<B, FileCacheEntry>

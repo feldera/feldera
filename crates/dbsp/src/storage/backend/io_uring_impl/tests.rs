@@ -45,7 +45,7 @@ impl StateMachineTest for IoUringBackend {
     ) -> Self::SystemUnderTest {
         init_test_logger();
         let tmpdir = tempfile::tempdir().unwrap();
-        let backend = IoUringBackend::new(tmpdir.path(), Default::default());
+        let backend = IoUringBackend::new(tmpdir.path(), Default::default()).unwrap();
 
         IoUringTest { backend, tmpdir }
     }

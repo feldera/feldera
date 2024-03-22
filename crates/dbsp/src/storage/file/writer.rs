@@ -1025,12 +1025,11 @@ where
 ///
 /// ```
 /// # use dbsp::dynamic::{DynData, Erase, DynUnit};
-/// # use dbsp::storage::file::{cache::FileCache, writer::{Parameters, Writer1}};
-/// # use dbsp::storage::backend::DefaultBackend;
+/// # use dbsp::storage::file::{cache::default_cache_for_thread, writer::{Parameters, Writer1}};
 /// use dbsp::storage::file::Factories;
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let mut file =
-///     Writer1::new(&factories, &FileCache::default_for_thread(), Parameters::default()).unwrap();
+///     Writer1::new(&factories, &default_cache_for_thread(), Parameters::default()).unwrap();
 /// for i in 0..1000_u32 {
 ///     file.write0((i.erase(), ().erase())).unwrap();
 /// }
@@ -1122,12 +1121,11 @@ where
 ///
 /// ```
 /// # use dbsp::dynamic::{DynData, DynUnit};
-/// use dbsp::storage::file::{cache::FileCache, writer::{Parameters, Writer2}};
-/// # use dbsp::storage::backend::DefaultBackend;
+/// use dbsp::storage::file::{cache::default_cache_for_thread, writer::{Parameters, Writer2}};
 /// # use dbsp::storage::file::Factories;
 /// let factories = Factories::<DynData, DynUnit>::new::<u32, ()>();
 /// let mut file =
-///     Writer2::new(&factories, &factories, &FileCache::default_for_thread(), Parameters::default()).unwrap();
+///     Writer2::new(&factories, &factories, &default_cache_for_thread(), Parameters::default()).unwrap();
 /// for i in 0..1000_u32 {
 ///     for j in 0..10_u32 {
 ///         file.write1((&j, &())).unwrap();
