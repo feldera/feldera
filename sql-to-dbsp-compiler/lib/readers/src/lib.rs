@@ -101,7 +101,7 @@ async fn sql_test_sqlite() {
         conn.execute("insert into t1 values(73, 'name1', true)")
             .await
             .unwrap();
-        conn.close();
+        conn.close().await.unwrap();
     }
     let zset = read_db::<Tuple3<i32, String, bool>>(conn_str, "t1", |row: &AnyRow| {
         Tuple3::new(row.get(0), row.get(1), row.get(2))
