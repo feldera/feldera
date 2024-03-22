@@ -1,12 +1,12 @@
 use crate::{
     dynamic::{DataTrait, WeightTrait},
-    storage::file::writer::{Parameters, Writer1},
-    trace::{
-        layers::{
-            file::column_layer::{FileColumnLayer, FileLeafFactories},
-            Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
-        },
-        ord::file::StorageBackend,
+    storage::{
+        backend::Backend,
+        file::writer::{Parameters, Writer1},
+    },
+    trace::layers::{
+        file::column_layer::{FileColumnLayer, FileLeafFactories},
+        Builder, Cursor, MergeBuilder, Trie, TupleBuilder,
     },
     Runtime,
 };
@@ -20,7 +20,7 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileLeafFactories<K, R>,
-    writer: Writer1<StorageBackend, K, R>,
+    writer: Writer1<Backend, K, R>,
 }
 
 impl<K, R> Builder for FileColumnLayerBuilder<K, R>

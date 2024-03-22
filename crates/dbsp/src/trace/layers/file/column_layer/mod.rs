@@ -4,14 +4,14 @@ pub(crate) mod cursor;
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
     dynamic::{DataTrait, DynVec, Erase, Factory, WeightTrait, WeightTraitTyped, WithFactory},
-    storage::file::{
-        reader::{FallibleEq, Reader},
-        Factories as FileFactories,
+    storage::{
+        backend::Backend,
+        file::{
+            reader::{FallibleEq, Reader},
+            Factories as FileFactories,
+        },
     },
-    trace::{
-        layers::{Builder, Cursor, Trie, TupleBuilder},
-        ord::file::StorageBackend,
-    },
+    trace::layers::{Builder, Cursor, Trie, TupleBuilder},
     DBData, DBWeight, NumEntries, Runtime,
 };
 use rand::{seq::index::sample, Rng};
@@ -63,7 +63,7 @@ where
 
 pub struct FileColumnLayer<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     pub factories: FileLeafFactories<K, R>,
-    file: Reader<StorageBackend, (&'static K, &'static R, ())>,
+    file: Reader<Backend, (&'static K, &'static R, ())>,
     lower_bound: usize,
 }
 

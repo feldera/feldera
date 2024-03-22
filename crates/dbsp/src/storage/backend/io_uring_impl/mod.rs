@@ -16,7 +16,6 @@ use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
 use metrics::{counter, histogram};
-use tempfile::TempDir;
 
 use crate::storage::backend::{
     metrics::{
@@ -190,7 +189,7 @@ struct Inner {
 }
 
 impl Inner {
-    fn new(next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
+    fn new(next_file_id: Arc<AtomicIncrementOnlyI64>) -> Result<Self, IoError> {
         // Create our io_uring.
         //
         // We specify a submission queue size of 1 because the kernel sizes the
@@ -205,16 +204,15 @@ impl Inner {
             .setup_coop_taskrun()
             .setup_single_issuer()
             .setup_cqsize(512)
-            .build(1)
-            .unwrap(); // XXX
+            .build(1)?;
 
-        Self {
+        Ok(Self {
             io_uring,
             files: HashMap::new(),
             requests: HashMap::new(),
             next_request_id: 0,
             next_file_id,
-        }
+        })
     }
 
     /// Processes all of the entries in the completion queue.
@@ -503,18 +501,21 @@ impl IoUringBackend {
     /// - `next_file_id`: A counter to get unique identifiers for file-handles.
     ///   Note that in case we use a global buffer cache, this counter should be
     ///   shared among all instances of the backend.
-    pub fn new<P: AsRef<Path>>(base: P, next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
+    pub fn new<P: AsRef<Path>>(
+        base: P,
+        next_file_id: Arc<AtomicIncrementOnlyI64>,
+    ) -> Result<Self, IoError> {
         init();
         describe_disk_metrics();
-        Self {
+        Ok(Self {
             base: base.as_ref().to_path_buf(),
-            inner: RefCell::new(Inner::new(next_file_id)),
-        }
+            inner: RefCell::new(Inner::new(next_file_id)?),
+        })
     }
 
     /// See [`IoUringBackend::new`]. This function is a convenience function
     /// that creates a new backend with global unique file-handle counter.
-    pub fn with_base<P: AsRef<Path>>(base: P) -> Self {
+    pub fn with_base<P: AsRef<Path>>(base: P) -> Result<Self, IoError> {
         Self::new(
             base,
             NEXT_FILE_HANDLE
@@ -526,19 +527,6 @@ impl IoUringBackend {
     /// Returns the directory in which the backend creates files.
     pub fn path(&self) -> &Path {
         self.base.as_path()
-    }
-
-    /// Returns a thread-local default backend.
-    pub fn default_for_thread() -> Rc<Self> {
-        thread_local! {
-            pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
-            pub static DEFAULT_BACKEND: Rc<IoUringBackend> = {
-                 Rc::new(IoUringBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf()), NEXT_FILE_HANDLE.get_or_init(|| {
-                    Arc::new(Default::default())
-                }).clone()))
-            };
-        }
-        DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 
     /// Flushes all data and waits for it to reach stable storage.

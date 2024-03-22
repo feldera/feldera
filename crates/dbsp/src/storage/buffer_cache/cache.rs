@@ -221,9 +221,7 @@ where
     /// Creates a new cache on top of `backend`.
     ///
     /// It's best to use a single `StorageCache` for all uses of a given
-    /// `backend`, because otherwise the cache will end up with duplicates.  The
-    /// easiest way is to get the cache from
-    /// [`BufferCache::default_for_thread()`].
+    /// `backend`, because otherwise the cache will end up with duplicates.
     pub fn new(backend: Rc<B>) -> Self {
         Self {
             backend,

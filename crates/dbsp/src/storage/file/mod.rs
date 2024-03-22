@@ -286,9 +286,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::storage::{backend::Storage, buffer_cache::BufferCache, test::init_test_logger};
+    use crate::storage::{backend::Storage, test::init_test_logger};
 
     use super::{
+        cache::default_cache_for_thread,
         reader::{ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Factories,
@@ -545,7 +546,7 @@ mod test {
         let mut layer_file = Writer2::new(
             &factories0,
             &factories1,
-            &BufferCache::default_for_thread(),
+            &default_cache_for_thread(),
             parameters,
         )
         .unwrap();
@@ -641,8 +642,7 @@ mod test {
         A: DBData,
     {
         let factories = Factories::<DynData, DynData>::new::<K, A>();
-        let mut writer =
-            Writer1::new(&factories, &BufferCache::default_for_thread(), parameters).unwrap();
+        let mut writer = Writer1::new(&factories, &default_cache_for_thread(), parameters).unwrap();
         for row in 0..n {
             let (_before, key, _after, aux) = expected(row);
             writer.write0((&key, &aux)).unwrap();
