@@ -68,7 +68,7 @@ impl StateMachineTest for IoUringBackend {
                 state
             }
             Transition::Write(id, offset, content) => {
-                let mut wb = IoUringBackend::allocate_buffer(content.len());
+                let mut wb = state.backend.allocate_buffer(content.len());
                 wb.resize(content.len(), 0);
                 wb.copy_from_slice(content.as_bytes());
                 state

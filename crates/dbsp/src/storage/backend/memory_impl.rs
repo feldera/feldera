@@ -83,13 +83,13 @@ impl MemoryBackend {
 }
 
 impl Storage for MemoryBackend {
-    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
         let file_counter = self.next_file_id.increment();
         let mut files = self.files.write().unwrap();
         files.insert(
             file_counter,
             FileMetaData {
-                name: name.as_ref().to_path_buf(),
+                name: name.to_path_buf(),
                 blocks: HashMap::new(),
                 size: 0,
             },
