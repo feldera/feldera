@@ -139,7 +139,7 @@ fn insert_slice_at_offset(
 }
 
 impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
-    fn create_named<P: AsRef<Path>>(&self, _name: P) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, _name: &Path) -> Result<FileHandle, StorageError> {
         let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
         self.files.borrow_mut().insert(file_counter, Vec::new());
         Ok(FileHandle(file_counter))
@@ -239,7 +239,7 @@ impl<const ALLOW_OVERWRITE: bool> ReferenceStateMachine for InMemoryBackend<ALLO
                 state.error = r.err();
             }
             Transition::Write(id, offset, content) => {
-                let mut buf = InMemoryBackend::<ALLOW_OVERWRITE>::allocate_buffer(content.len());
+                let mut buf = state.allocate_buffer(content.len());
                 buf.resize(content.len(), 0);
                 buf.copy_from_slice(content.as_bytes());
                 let r = state.write_block(&FileHandle(*id), *offset, buf);

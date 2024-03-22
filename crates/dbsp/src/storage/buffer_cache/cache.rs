@@ -280,7 +280,7 @@ where
     fn create(&self) -> Result<FileHandle, StorageError> {
         self.backend.create()
     }
-    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
         self.backend.create_named(name)
     }
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {

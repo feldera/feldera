@@ -247,7 +247,7 @@ impl MonoioBackend {
 }
 
 impl Storage for MonoioBackend {
-    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
         self.block_on(self.create_named_inner(name))
     }
 

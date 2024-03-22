@@ -548,7 +548,7 @@ impl IoUringBackend {
 }
 
 impl Storage for IoUringBackend {
-    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
         self.inner.borrow_mut().create_named(self.base.join(name))
     }
 

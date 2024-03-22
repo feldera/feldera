@@ -131,7 +131,7 @@ impl Eq for StorageError {}
 /// A storage backend.
 pub trait Storage {
     /// Create a new file. See also [`create`](Self::create).
-    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError>;
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError>;
 
     /// Creates a new persistent file used for writing data.
     ///
@@ -142,7 +142,7 @@ pub trait Storage {
     fn create(&self) -> Result<FileHandle, StorageError> {
         let uuid = Uuid::now_v7();
         let name = uuid.to_string() + ".feldera";
-        self.create_named(name)
+        self.create_named(Path::new(&name))
     }
 
     /// Deletes a previously completed file.
@@ -162,7 +162,7 @@ pub trait Storage {
 
     /// Allocates a buffer suitable for writing to a file using Direct I/O over
     /// `io_uring`.
-    fn allocate_buffer(sz: usize) -> FBuf {
+    fn allocate_buffer(&self, sz: usize) -> FBuf {
         FBuf::with_capacity(sz)
     }
 

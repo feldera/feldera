@@ -153,7 +153,7 @@ impl PosixBackend {
 }
 
 impl Storage for PosixBackend {
-    fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
         let path = self.base.join(name);
         let file_counter = self.next_file_id.increment();
         let file = open_as_direct(
