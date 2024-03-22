@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SQL: Support for `GROUPING`, `GROUPING_ID`, and `GROUPING SETS`
   ([#1527](https://github.com/feldera/feldera/pull/1527))
+- SQL: Support for `GUNZIP` function ([#1556](https://github.com/feldera/feldera/pull/1556))
 - SQL: Support for aggregation functions: `STDDEV`,
   `STDDEV_POP`, `STDDEV_SAMP`
   ([#1539](https://github.com/feldera/feldera/pull/1539))

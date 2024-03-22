@@ -2,6 +2,11 @@ package org.dbsp.sqlCompiler.compiler.sql.functions;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
+import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -1720,6 +1725,24 @@ public class FunctionsTest extends SqlIoTest {
                 (1 row)
                 """
         );
+    }
+
+    @Test
+    public void testGunzipFail() {
+        this.runtimeFail("SELECT GUNZIP(x'1f8b08000000000000ffcb48cdc9c9070086a6103605000000'::bytea)",
+                "FunctionsTest#testGunzipFail",
+                new InputOutputChangeStream(
+                ).addPair(new Change(), new Change(new DBSPZSetLiteral(
+                        new DBSPTupleExpression(
+                                new DBSPStringLiteral("feldera") // actually returns hello
+                        )
+                )))
+        );
+    }
+
+    @Test
+    public void testGunzipRuntimeFail() {
+        this.runtimeConstantFail("SELECT GUNZIP(x'1100'::bytea)", "failed to decompress gzipped data");
     }
 
     @Test

@@ -79,7 +79,7 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>GUNZIP</code>(binary)</td>
     <td>
         Decompresses a binary string using the GZIP algorithm.
-        The input binary must be in GZIP format, fails at runtime if it isn't.
+        If the input data is not in the gzip format this function fails at runtime.
         The output is the decompressed data as a `VARCHAR` string.
         If the input is NULL, NULL is returned.
     </td>
