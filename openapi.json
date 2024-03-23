@@ -3291,6 +3291,9 @@
             "description": "SQL code of the program.",
             "example": "CREATE TABLE example(name VARCHAR);"
           },
+          "config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
           "description": {
             "type": "string",
             "description": "Program description.",
@@ -3901,6 +3904,9 @@
             "description": "SQL code of the program.",
             "example": "CREATE TABLE example(name VARCHAR);"
           },
+          "config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
           "description": {
             "type": "string",
             "description": "Program description.",
@@ -4235,13 +4241,17 @@
           "name",
           "description",
           "version",
-          "status"
+          "status",
+          "config"
         ],
         "properties": {
           "code": {
             "type": "string",
             "description": "SQL code",
             "nullable": true
+          },
+          "config": {
+            "$ref": "#/components/schemas/ProgramConfig"
           },
           "description": {
             "type": "string",
@@ -4973,6 +4983,14 @@
           "code": {
             "type": "string",
             "description": "New SQL code for the program. If absent, existing program code will be\nkept unmodified.",
+            "nullable": true
+          },
+          "config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramConfig"
+              }
+            ],
             "nullable": true
           },
           "description": {
