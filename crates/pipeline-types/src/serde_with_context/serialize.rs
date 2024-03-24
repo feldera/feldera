@@ -39,6 +39,29 @@ pub trait SerializeWithContext<C>: Sized + Serialize {
         S: Serializer;
 }
 
+pub struct SerializeWithContextWrapper<'a, C, T> {
+    val: &'a T,
+    context: &'a C,
+}
+
+impl<'a, C, T> SerializeWithContextWrapper<'a, C, T> {
+    pub fn new(val: &'a T, context: &'a C) -> Self {
+        Self { val, context }
+    }
+}
+
+impl<'a, C, T> Serialize for SerializeWithContextWrapper<'a, C, T>
+where
+    T: SerializeWithContext<C>,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.val.serialize_with_context(serializer, self.context)
+    }
+}
+
 /// Implement [`SerializeWithContext`] for types that implement
 /// [`Serialize`] and don't support configurable serialization.
 ///

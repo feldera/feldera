@@ -3151,12 +3151,16 @@
           {
             "type": "object",
             "required": [
-              "transport",
-              "format"
+              "transport"
             ],
             "properties": {
               "format": {
-                "$ref": "#/components/schemas/FormatConfig"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FormatConfig"
+                  }
+                ],
+                "nullable": true
               },
               "max_queued_records": {
                 "type": "integer",
@@ -3291,7 +3295,8 @@
             "description": "Name of the program to create a pipeline for.",
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateOrReplacePipelineResponse": {
         "type": "object",
@@ -3932,7 +3937,8 @@
             "description": "Name of the program to create a pipeline for.",
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "NewPipelineResponse": {
         "type": "object",
@@ -5210,6 +5216,24 @@
           {
             "type": "object",
             "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/DeltaTableWriterConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "delta_table_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
               "name"
             ],
             "properties": {
@@ -5306,7 +5330,8 @@
             "description": "New program to create a pipeline for. If absent, program will be set to\nNULL.",
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "UpdatePipelineResponse": {
         "type": "object",

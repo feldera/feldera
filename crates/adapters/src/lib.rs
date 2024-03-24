@@ -152,6 +152,7 @@ mod catalog;
 mod circuit_handle;
 mod controller;
 pub mod format;
+pub mod integrated;
 pub mod server;
 pub mod static_compile;
 pub mod transport;
@@ -159,6 +160,8 @@ pub(crate) mod util;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test;
+
+pub use integrated::{create_integrated_output_endpoint, IntegratedOutputEndpoint};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive, Serialize)]
 pub enum PipelineState {

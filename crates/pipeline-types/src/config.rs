@@ -12,6 +12,7 @@ use utoipa::ToSchema;
 
 use crate::query::OutputQuery;
 use crate::service::ServiceConfig;
+use crate::transport::delta_table::DeltaTableWriterConfig;
 use crate::transport::error::{TransportReplaceError, TransportResolveError};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
@@ -122,7 +123,7 @@ pub struct ConnectorConfig {
     pub transport: TransportConfig,
 
     /// Parser configuration.
-    pub format: FormatConfig,
+    pub format: Option<FormatConfig>,
 
     /// Output buffer configuration.
     #[serde(flatten)]
@@ -308,6 +309,7 @@ pub enum TransportConfig {
     KafkaOutput(KafkaOutputConfig),
     UrlInput(UrlInputConfig),
     S3Input(S3InputConfig),
+    DeltaTableOutput(DeltaTableWriterConfig),
     /// Direct HTTP input: cannot be instantiated through API
     HttpInput,
     /// Direct HTTP output: cannot be instantiated through API
@@ -323,6 +325,7 @@ impl TransportConfigVariant for TransportConfig {
             TransportConfig::KafkaOutput(config) => config.name(),
             TransportConfig::UrlInput(config) => config.name(),
             TransportConfig::S3Input(config) => config.name(),
+            TransportConfig::DeltaTableOutput(config) => config.name(),
             TransportConfig::HttpInput => "http_input".to_string(),
             TransportConfig::HttpOutput => "http_output".to_string(),
         }
@@ -336,6 +339,7 @@ impl TransportConfigVariant for TransportConfig {
             TransportConfig::KafkaOutput(config) => config.service_names(),
             TransportConfig::UrlInput(config) => config.service_names(),
             TransportConfig::S3Input(config) => config.service_names(),
+            TransportConfig::DeltaTableOutput(config) => config.service_names(),
             TransportConfig::HttpInput => vec![],
             TransportConfig::HttpOutput => vec![],
         }
@@ -362,6 +366,9 @@ impl TransportConfigVariant for TransportConfig {
                 config.replace_any_service_names(replacement_service_names)?,
             )),
             TransportConfig::S3Input(config) => Ok(TransportConfig::S3Input(
+                config.replace_any_service_names(replacement_service_names)?,
+            )),
+            TransportConfig::DeltaTableOutput(config) => Ok(TransportConfig::DeltaTableOutput(
                 config.replace_any_service_names(replacement_service_names)?,
             )),
             TransportConfig::HttpInput | TransportConfig::HttpOutput => {
@@ -400,6 +407,10 @@ impl TransportConfigVariant for TransportConfig {
             TransportConfig::S3Input(config) => Ok(TransportConfig::S3Input(
                 config.resolve_any_services(services)?,
             )),
+            TransportConfig::DeltaTableOutput(config) => Ok(TransportConfig::DeltaTableOutput(
+                config.resolve_any_services(services)?,
+            )),
+
             TransportConfig::HttpInput | TransportConfig::HttpOutput => {
                 if services.is_empty() {
                     Ok(self)

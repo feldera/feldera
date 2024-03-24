@@ -18,7 +18,9 @@ use std::{
 
 pub(crate) mod csv;
 mod json;
-mod parquet;
+pub mod parquet;
+
+pub use parquet::relation_to_parquet_schema;
 
 pub use self::csv::{byte_record_deserializer, string_record_deserializer};
 use self::{
@@ -31,7 +33,7 @@ use self::{
 /// duplicating the record `w` times, which is expensive
 /// for large weights (and is most likely not what the user
 /// intends).
-const MAX_DUPLICATES: i64 = 1_000_000;
+pub const MAX_DUPLICATES: i64 = 1_000_000;
 
 /// When including a long JSON record in an error message,
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.

@@ -104,7 +104,7 @@ outputs:
     let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
 
     match Controller::with_config(
-        |workers| Ok(test_circuit(workers)),
+        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
         &config,
         Box::new(|e| panic!("error: {e}")),
     ) {
@@ -175,7 +175,7 @@ outputs:
     let test_name_clone = test_name.to_string();
 
     let controller = Controller::with_config(
-        |workers| Ok(test_circuit(workers)),
+        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
         &config,
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("{test_name_clone}: error: {e}")
@@ -407,7 +407,7 @@ outputs:
     let running_clone = running.clone();
 
     let controller = Controller::with_config(
-        |workers| Ok(test_circuit(workers)),
+        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
         &config,
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("buffer_test: error: {e}")

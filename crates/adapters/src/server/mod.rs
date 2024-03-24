@@ -22,7 +22,6 @@ use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use log::{debug, error, info, warn};
-use pipeline_types::config::OutputBufferConfig;
 use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use serde::Deserialize;
@@ -574,7 +573,11 @@ async fn input_endpoint(
         stream: Cow::from(table_name),
         connector_config: ConnectorConfig {
             transport: HttpInputTransport::config(),
-            format: parser_config_from_http_request(&endpoint_name, &args.format, &req)?,
+            format: Some(parser_config_from_http_request(
+                &endpoint_name,
+                &args.format,
+                &req,
+            )?),
             output_buffer_config: Default::default(),
             max_queued_records: HttpInputTransport::default_max_buffered_records(),
         },
@@ -759,8 +762,12 @@ async fn output_endpoint(
         query: args.query,
         connector_config: ConnectorConfig {
             transport: HttpOutputTransport::config(),
-            format: encoder_config_from_http_request(&endpoint_name, &args.format, &req)?,
-            output_buffer_config: OutputBufferConfig::default(),
+            format: Some(encoder_config_from_http_request(
+                &endpoint_name,
+                &args.format,
+                &req,
+            )?),
+            output_buffer_config: Default::default(),
             max_queued_records: HttpOutputTransport::default_max_buffered_records(),
         },
     };
@@ -885,7 +892,7 @@ mod test_with_kafka {
             generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
             kafka::{BufferConsumer, KafkaResources, TestProducer},
-            test_circuit,
+            test_circuit, TestStruct,
         },
     };
     use actix_web::{
@@ -974,7 +981,7 @@ outputs:
         thread::spawn(move || {
             bootstrap(
                 args,
-                |workers| Ok(test_circuit(workers)),
+                |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
                 state_clone,
                 std::sync::mpsc::channel().0,
             )

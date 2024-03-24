@@ -81,6 +81,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
                 serializer.serialize_str(&datetime.format(format_string).to_string())
             }
             TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds),
+            TimestampFormat::MicrosSinceEpoch => serializer.serialize_i64(self.milliseconds * 1000),
         }
     }
 }
@@ -109,6 +110,10 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
             TimestampFormat::MillisSinceEpoch => {
                 let millis: i64 = Deserialize::deserialize(deserializer)?;
                 Ok(Self::new(millis))
+            }
+            TimestampFormat::MicrosSinceEpoch => {
+                let micros: i64 = Deserialize::deserialize(deserializer)?;
+                Ok(Self::new(micros / 1000))
             }
         }
     }
@@ -527,7 +532,8 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Date {
     {
         match config.date_format {
             DateFormat::String(format) => {
-                let str: &'de str = Deserialize::deserialize(deserializer)?;
+                let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+
                 let date = NaiveDate::parse_from_str(str.trim(), format)
                     .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
                 Ok(Self::new(
@@ -547,7 +553,7 @@ impl<'de> Deserialize<'de> for Date {
     where
         D: Deserializer<'de>,
     {
-        let str: &'de str = Deserialize::deserialize(deserializer)?;
+        let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
         let date = NaiveDate::parse_from_str(str.trim(), "%Y-%m-%d")
             .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
         Ok(Self::new(
@@ -817,7 +823,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
     {
         match config.time_format {
             TimeFormat::String(format) => {
-                let str: &'de str = Deserialize::deserialize(deserializer)?;
+                let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
                 let time = NaiveTime::parse_from_str(str.trim(), format)
                     .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
                 Ok(Self::from_time(time))

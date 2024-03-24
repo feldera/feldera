@@ -31,7 +31,7 @@ use pipeline_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig}
 use pipeline_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
 
 #[cfg(test)]
-mod test;
+pub mod test;
 
 /// CSV format parser.
 pub struct ParquetInputFormat;
@@ -224,7 +224,9 @@ impl OutputFormat for ParquetOutputFormat {
     }
 }
 
-fn relation_to_parquet_schema(relation: &Relation) -> Result<SerdeArrowSchema, ControllerError> {
+pub fn relation_to_parquet_schema(
+    relation: &Relation,
+) -> Result<SerdeArrowSchema, ControllerError> {
     fn field_to_arrow_field(f: &Field) -> ArrowField {
         ArrowField::new(
             &f.name,
@@ -258,9 +260,11 @@ fn relation_to_parquet_schema(relation: &Relation) -> Result<SerdeArrowSchema, C
                 c.precision.unwrap_or(0).try_into().unwrap(),
                 c.scale.unwrap_or(0).try_into().unwrap(),
             ),
-            SqlType::Char | SqlType::Varchar => DataType::LargeUtf8,
+            SqlType::Char | SqlType::Varchar => DataType::Utf8,
             SqlType::Time => DataType::Time64(TimeUnit::Nanosecond),
-            SqlType::Timestamp => DataType::Timestamp(TimeUnit::Millisecond, None),
+            // DeltaLake only supports microsecond-based timestamp encoding, so we just
+            // hardwire that for now.  We can make it configurable in the future.
+            SqlType::Timestamp => DataType::Timestamp(TimeUnit::Microsecond, None),
             SqlType::Date => DataType::Date32,
             SqlType::Null => DataType::Null,
             SqlType::Binary => DataType::LargeBinary,

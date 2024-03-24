@@ -366,9 +366,10 @@ format:
                 panic!("Expected S3Input transport configuration");
             }
         };
-        let (consumer, input_handle) =
-            mock_parser_pipeline::<TestStruct, TestStruct>(&config.connector_config.format)
-                .unwrap();
+        let (consumer, input_handle) = mock_parser_pipeline::<TestStruct, TestStruct>(
+            &config.connector_config.format.unwrap(),
+        )
+        .unwrap();
         consumer.on_error(Some(Box::new(|_, _| ())));
         let reader = Box::new(S3InputReader::new_inner(
             &transport_config,
