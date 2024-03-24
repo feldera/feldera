@@ -107,6 +107,7 @@ reqwest = { version = "0.11.11", features = ["blocking"] }
 chrono = { git = "https://github.com/chronotope/chrono", rev = "849932", features = ["rkyv-64", "serde"] }
 env_logger = { version = "0.11.2", features = ["color"] }
 serde_json = "1.0.87"
+ijson = { git = "https://github.com/abhizer/ijson.git", branch = "rkyv" }
 
 [[bench]]
 name = "galen"
@@ -144,6 +145,9 @@ name = "orgchart"
 
 [[example]]
 name = "degrees"
+
+[[example]]
+name = "json"
 
 [[example]]
 name = "tutorial1"
