@@ -293,7 +293,7 @@ impl<'de> Deserialize<'de> for SqlType {
             "date" => Ok(SqlType::Date),
             "timestamp" => Ok(SqlType::Timestamp),
             "array" => Ok(SqlType::Array),
-            "type" => Ok(SqlType::Struct),
+            "struct" => Ok(SqlType::Struct),
             "null" => Ok(SqlType::Null),
             _ => Err(serde::de::Error::custom(format!(
                 "Unknown SQL type: {}",

@@ -38,12 +38,12 @@ use crate::transport::Step;
 use crate::transport::{
     input_transport_config_to_endpoint, output_transport_config_to_endpoint, AtomicStep,
 };
-use crate::DbspCircuitHandle;
 use crate::{
     catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
     OutputConsumer, OutputEndpoint, OutputFormat, OutputQueryHandles, ParseError, Parser,
     PipelineState,
 };
+use crate::{create_integrated_output_endpoint, DbspCircuitHandle};
 use anyhow::Error as AnyError;
 use crossbeam::channel::{self, Sender};
 use crossbeam::{
@@ -293,7 +293,7 @@ impl Controller {
         debug!("Adding output endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
         self.inner
-            .add_output_endpoint(endpoint_name, endpoint_config, endpoint)
+            .add_output_endpoint(endpoint_name, endpoint_config, Some(endpoint))
     }
 
     /// Reports whether the circuit is fault tolerant.  A circuit is fault
@@ -915,8 +915,8 @@ impl OutputBuffer {
 ///
 /// A reference to this struct is held by each input probe and by both
 /// controller threads.
-struct ControllerInner {
-    status: Arc<ControllerStatus>,
+pub struct ControllerInner {
+    pub status: Arc<ControllerStatus>,
     num_api_connections: AtomicU64,
     dump_profile_request: AtomicBool,
     catalog: Arc<Mutex<Box<dyn CircuitCatalog>>>,
@@ -1020,19 +1020,17 @@ impl ControllerInner {
             })?;
 
         // Create parser.
-        let format = <dyn InputFormat>::get_format(&endpoint_config.connector_config.format.name)
-            .ok_or_else(|| {
-            ControllerError::unknown_input_format(
-                endpoint_name,
-                &endpoint_config.connector_config.format.name,
-            )
+        let format_config = endpoint_config
+            .connector_config
+            .format
+            .as_ref()
+            .ok_or_else(|| ControllerError::input_format_not_specified(endpoint_name))?
+            .clone();
+        let format = <dyn InputFormat>::get_format(&format_config.name).ok_or_else(|| {
+            ControllerError::unknown_input_format(endpoint_name, &format_config.name)
         })?;
 
-        let parser = format.new_parser(
-            endpoint_name,
-            input_handle,
-            &endpoint_config.connector_config.format.config,
-        )?;
+        let parser = format.new_parser(endpoint_name, input_handle, &format_config.config)?;
 
         // Create probe.
         let endpoint_id = inputs.keys().next_back().map(|k| k + 1).unwrap_or(0);
@@ -1112,12 +1110,14 @@ impl ControllerInner {
         let endpoint =
             output_transport_config_to_endpoint(endpoint_config.connector_config.transport.clone())
                 .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+
+        // If `endpoint` is `None`, it means that the endpoint config specifies and integrated
+        // output connector.  Such endpoints are instantiated inside `add_output_endpoint`.
         match endpoint {
-            None => Err(ControllerError::unknown_output_transport(
-                endpoint_name,
-                &endpoint_config.connector_config.transport.name(),
-            )),
-            Some(endpoint) => self.add_output_endpoint(endpoint_name, endpoint_config, endpoint),
+            None => self.add_output_endpoint(endpoint_name, endpoint_config, None),
+            Some(endpoint) => {
+                self.add_output_endpoint(endpoint_name, endpoint_config, Some(endpoint))
+            }
         }
     }
 
@@ -1137,7 +1137,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
-        mut endpoint: Box<dyn OutputEndpoint>,
+        endpoint: Option<Box<dyn OutputEndpoint>>,
     ) -> Result<EndpointId, ControllerError> {
         let mut outputs = self.outputs.write().unwrap();
 
@@ -1166,37 +1166,53 @@ impl ControllerInner {
         let endpoint_name_str = endpoint_name.to_string();
 
         let self_weak = Arc::downgrade(self);
-        endpoint
-            .connect(Box::new(move |fatal: bool, e: AnyError| {
-                if let Some(controller) = self_weak.upgrade() {
-                    controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
-                }
-            }))
-            .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
-        let is_fault_tolerant = endpoint.is_fault_tolerant();
 
-        // Create probe.
-        let probe = Box::new(OutputProbe::new(
-            endpoint_id,
-            endpoint_name,
-            endpoint,
-            self.clone(),
-        ));
+        let is_fault_tolerant;
 
-        // Create encoder.
-        let format = <dyn OutputFormat>::get_format(&endpoint_config.connector_config.format.name)
-            .ok_or_else(|| {
-                ControllerError::unknown_output_format(
-                    endpoint_name,
-                    &endpoint_config.connector_config.format.name,
-                )
+        let encoder = if let Some(mut endpoint) = endpoint {
+            endpoint
+                .connect(Box::new(move |fatal: bool, e: AnyError| {
+                    if let Some(controller) = self_weak.upgrade() {
+                        controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
+                    }
+                }))
+                .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+            is_fault_tolerant = endpoint.is_fault_tolerant();
+
+            // Create probe.
+            let probe = Box::new(OutputProbe::new(
+                endpoint_id,
+                endpoint_name,
+                endpoint,
+                self.clone(),
+            ));
+
+            // Create encoder.
+            let format_config = endpoint_config
+                .connector_config
+                .format
+                .as_ref()
+                .ok_or_else(|| ControllerError::output_format_not_specified(endpoint_name))?
+                .clone();
+
+            let format = <dyn OutputFormat>::get_format(&format_config.name).ok_or_else(|| {
+                ControllerError::unknown_output_format(endpoint_name, &format_config.name)
             })?;
-        let encoder = format.new_encoder(
-            endpoint_name,
-            &endpoint_config.connector_config.format.config,
-            &handles.schema,
-            probe,
-        )?;
+            format.new_encoder(endpoint_name, &format_config.config, &handles.schema, probe)?
+        } else {
+            // `endpoint` is `None` - instantiate an integrated endpoint.
+            let endpoint = create_integrated_output_endpoint(
+                endpoint_id,
+                endpoint_name,
+                endpoint_config,
+                &handles.schema,
+                self_weak,
+            )?;
+
+            is_fault_tolerant = endpoint.is_fault_tolerant();
+
+            endpoint.into_encoder()
+        };
 
         let parker = Parker::new();
         let endpoint_descr = OutputEndpointDescr::new(
@@ -1309,6 +1325,8 @@ impl ControllerInner {
                 let num_records = data.iter().map(|b| b.len()).sum();
                 let consolidated = Self::merge_batches(data);
 
+                // trace!("Pushing {num_records} records to output endpoint {endpoint_name}");
+
                 // Buffer the new output if buffering is enabled.
                 if output_buffer_config.enable_output_buffer {
                     output_buffer.insert(consolidated, step, processed_records);
@@ -1415,7 +1433,7 @@ impl ControllerInner {
     /// Process an input transport error.
     ///
     /// Update endpoint stats and notify the error callback.
-    fn input_transport_error(
+    pub fn input_transport_error(
         &self,
         endpoint_id: EndpointId,
         endpoint_name: &str,
@@ -1444,7 +1462,7 @@ impl ControllerInner {
     /// Process an output transport error.
     ///
     /// Update endpoint stats and notify the error callback.
-    fn output_transport_error(
+    pub fn output_transport_error(
         &self,
         endpoint_id: EndpointId,
         endpoint_name: &str,
@@ -1725,7 +1743,7 @@ outputs:
             println!("output file: {output_path}");
             let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
             let controller = Controller::with_config(
-                    |circuit_config| Ok(test_circuit(circuit_config)),
+                    |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),
                     &config,
                     Box::new(|e| panic!("error: {e}")),
                 )

@@ -5,9 +5,14 @@ use crate::{
     DbspCircuitHandle, FormatConfig,
 };
 use anyhow::Result as AnyResult;
-use dbsp::Runtime;
+use dbsp::{DBData, Runtime};
 use log::{Log, Metadata, Record};
-use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+use pipeline_types::serde_with_context::{
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+};
+use std::ffi::OsStr;
+use std::fs::read_dir;
+use std::path::{Path, PathBuf};
 use std::{
     thread::sleep,
     time::{Duration, Instant},
@@ -27,14 +32,14 @@ mod mock_output_consumer;
 use crate::catalog::InputCollectionHandle;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
-    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
-    test_struct_schema, TestStruct,
+    generate_test_batch, generate_test_batches, generate_test_batches_with_weights, TestStruct,
+    TestStruct2,
 };
 use dbsp::circuit::CircuitConfig;
 pub use mock_dezset::{MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
-use pipeline_types::program_schema::Relation;
+use pipeline_types::program_schema::{Field, Relation};
 
 pub struct TestLogger;
 
@@ -117,7 +122,8 @@ where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
-    let (consumer, input_handle) = mock_parser_pipeline(&config.connector_config.format)?;
+    let (consumer, input_handle) =
+        mock_parser_pipeline(config.connector_config.format.as_ref().unwrap())?;
 
     let endpoint =
         input_transport_config_to_endpoint(config.connector_config.transport.clone())?.unwrap();
@@ -131,19 +137,26 @@ where
 /// the output.
 // TODO: parameterize with the number (and types?) of input and output streams.
 
-pub fn test_circuit(
+pub fn test_circuit<T>(
     config: CircuitConfig,
-) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>) {
-    let (circuit, catalog) = Runtime::init_circuit(config, |circuit| {
+    schema: &[Field],
+) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+{
+    let schema = schema.to_vec();
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
         let mut catalog = Catalog::new();
-        let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+        let (input, hinput) = circuit.add_input_zset::<T>();
 
-        // Use bogus schema until any of the tests care about having a real one.
         let input_schema =
-            serde_json::to_string(&Relation::new("test_input1", false, vec![])).unwrap();
+            serde_json::to_string(&Relation::new("test_input1", false, schema.clone())).unwrap();
 
         let output_schema =
-            serde_json::to_string(&Relation::new("test_output1", false, vec![])).unwrap();
+            serde_json::to_string(&Relation::new("test_output1", false, schema)).unwrap();
 
         catalog.register_input_zset(input.clone(), hinput, &input_schema);
         catalog.register_output_zset(input, &output_schema);
@@ -152,4 +165,22 @@ pub fn test_circuit(
     })
     .unwrap();
     (Box::new(circuit), Box::new(catalog))
+}
+
+pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf>, std::io::Error> {
+    let mut result = Vec::new();
+
+    // Iterate over the entries in the directory
+    for entry in read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // If the entry is a directory, recursively call list_files_recursive
+        if path.is_dir() {
+            result.append(&mut list_files_recursive(&path, extension)?);
+        } else if path.extension() == Some(extension) {
+            result.push(path);
+        }
+    }
+    Ok(result)
 }
