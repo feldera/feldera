@@ -280,7 +280,7 @@ pub trait OutputEndpoint: Send {
     /// Finishes establishing the connection to the output endpoint.
     ///
     /// If the endpoint encounters any errors during output, now or later, it
-    /// invokes `async_error_callback` notify the client about asynchronous
+    /// invokes `async_error_callback` to notify the client about asynchronous
     /// errors, i.e., errors that happen outside the context of the
     /// [`OutputEndpoint::push_buffer`] method. For instance, a reliable message
     /// bus like Kafka may notify the endpoint about a failure to deliver a

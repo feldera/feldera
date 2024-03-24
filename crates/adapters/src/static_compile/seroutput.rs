@@ -9,10 +9,11 @@ use dbsp::dynamic::DowncastTrait;
 use dbsp::trace::merge_batches;
 use dbsp::typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch};
 use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
+use pipeline_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use pipeline_types::serde_with_context::{
-    SerializationContext, SerializeWithContext, SqlSerdeConfig,
+    DateFormat, SerializationContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
+    TimestampFormat,
 };
-use serde::Serialize;
 use serde_arrow::ArrowBuilder;
 use std::any::Any;
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
@@ -71,7 +72,7 @@ trait BytesSerializer<C>: Send {
 
     fn serialize_arrow<T>(&mut self, _val: &T, _buf: &mut ArrowBuilder) -> AnyResult<()>
     where
-        T: Serialize,
+        T: SerializeWithContext<C>,
     {
         unimplemented!()
     }
@@ -131,12 +132,12 @@ where
 }
 
 struct ParquetSerializer {
-    _context: SqlSerdeConfig,
+    context: SqlSerdeConfig,
 }
 
 impl BytesSerializer<SqlSerdeConfig> for ParquetSerializer {
-    fn create(_context: SqlSerdeConfig) -> Self {
-        Self { _context }
+    fn create(context: SqlSerdeConfig) -> Self {
+        Self { context }
     }
 
     fn serialize<T>(&mut self, _val: &T, _buf: &mut Vec<u8>) -> AnyResult<()>
@@ -148,10 +149,10 @@ impl BytesSerializer<SqlSerdeConfig> for ParquetSerializer {
 
     fn serialize_arrow<T>(&mut self, val: &T, builder: &mut ArrowBuilder) -> AnyResult<()>
     where
-        T: Serialize,
+        T: SerializeWithContext<SqlSerdeConfig>,
     {
         //let fields = Vec::<Field>::from_type::<T>(TracingOptions::default())?;
-        builder.push(val)?;
+        builder.push(&SerializeWithContextWrapper::new(val, &self.context))?;
         Ok(())
     }
 }
@@ -285,7 +286,7 @@ where
                     SqlSerdeConfig,
                 >>::new(&self.batch, config))
             }
-            RecordFormat::Parquet(schema) => Box::new(<SerCursorImpl<
+            RecordFormat::Parquet(_schema) => Box::new(<SerCursorImpl<
                 'a,
                 ParquetSerializer,
                 B,
@@ -294,7 +295,12 @@ where
                 SqlSerdeConfig,
             >>::new(
                 &self.batch,
-                SqlSerdeConfig::from_schema(schema),
+                SqlSerdeConfig::default()
+                    .with_date_format(DateFormat::String("%Y-%m-%d"))
+                    .with_time_format(TimeFormat::Nanos)
+                    // DeltaLake only supports microsecond-based timestamp encoding, so we just
+                    // hardwire that for now.  See also `format/parquet/mod.rs`.
+                    .with_timestamp_format(TimestampFormat::MicrosSinceEpoch),
             )),
         })
     }

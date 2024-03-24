@@ -383,13 +383,12 @@ mod test {
             Encoder,
         },
         static_compile::seroutput::SerBatchImpl,
-        test::{
-            generate_test_batches_with_weights, test_struct_schema, MockOutputConsumer, TestStruct,
-        },
+        test::{generate_test_batches_with_weights, MockOutputConsumer, TestStruct},
     };
     use dbsp::{utils::Tup2, OrdZSet};
     use log::trace;
     use pipeline_types::format::json::JsonUpdateFormat;
+    use pipeline_types::program_schema::Relation;
     use proptest::prelude::*;
     use serde::Deserialize;
     use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
@@ -492,7 +491,11 @@ mod test {
 
         let consumer = MockOutputConsumer::new();
         let consumer_data = consumer.data.clone();
-        let mut encoder = JsonEncoder::new(Box::new(consumer), config, &test_struct_schema());
+        let mut encoder = JsonEncoder::new(
+            Box::new(consumer),
+            config,
+            &Relation::new("TestStruct", false, TestStruct::schema()),
+        );
         let zsets = batches
             .iter()
             .map(|batch| {
@@ -663,7 +666,11 @@ mod test {
         };
 
         let consumer = MockOutputConsumer::with_max_buffer_size_bytes(32);
-        let mut encoder = JsonEncoder::new(Box::new(consumer), config, &test_struct_schema());
+        let mut encoder = JsonEncoder::new(
+            Box::new(consumer),
+            config,
+            &Relation::new("TestStruct", false, TestStruct::schema()),
+        );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         let err = encoder

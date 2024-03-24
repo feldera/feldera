@@ -1867,7 +1867,7 @@ where
 
 /// A circuit.
 ///
-/// A single implementation that can operate as the the top-level
+/// A single implementation that can operate as the top-level
 /// circuit when instantiated with `P = ()` or a nested circuit,
 /// with `P = ChildCircuit<..>` designating the parent circuit type.
 pub struct ChildCircuit<P>

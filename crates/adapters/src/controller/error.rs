@@ -16,7 +16,9 @@ use std::{
 #[serde(untagged)]
 pub enum ConfigError {
     /// Failed to parse pipeline configuration.
-    PipelineConfigParseError { error: String },
+    PipelineConfigParseError {
+        error: String,
+    },
 
     /// Failed to parse parser configuration for an endpoint.
     ParserConfigParseError {
@@ -33,16 +35,24 @@ pub enum ConfigError {
     },
 
     /// Input endpoint with this name already exists.
-    DuplicateInputEndpoint { endpoint_name: String },
+    DuplicateInputEndpoint {
+        endpoint_name: String,
+    },
 
     /// Input table with this name already exists.
-    DuplicateInputStream { stream_name: String },
+    DuplicateInputStream {
+        stream_name: String,
+    },
 
     /// Output endpoint with this name already exists.
-    DuplicateOutputEndpoint { endpoint_name: String },
+    DuplicateOutputEndpoint {
+        endpoint_name: String,
+    },
 
     /// Output view with this name already exists.
-    DuplicateOutputStream { stream_name: String },
+    DuplicateOutputStream {
+        stream_name: String,
+    },
 
     /// Endpoint configuration specifies unknown input format name.
     UnknownInputFormat {
@@ -91,6 +101,14 @@ pub enum ConfigError {
         endpoint_name: String,
         error: String,
     },
+
+    InputFormatNotSpecified {
+        endpoint_name: String,
+    },
+
+    OutputFormatNotSpecified {
+        endpoint_name: String,
+    },
 }
 
 impl StdError for ConfigError {}
@@ -113,6 +131,8 @@ impl DetailedError for ConfigError {
             Self::UnknownOutputStream { .. } => Cow::from("UnknownOutputStream"),
             Self::InputFormatNotSupported { .. } => Cow::from("InputFormatNotSupported"),
             Self::OutputFormatNotSupported { .. } => Cow::from("OutputFormatNotSupported"),
+            Self::InputFormatNotSpecified { .. } => Cow::from("InputFormatNotSpecified"),
+            Self::OutputFormatNotSpecified { .. } => Cow::from("OutputFormatNotSpecified"),
         }
     }
 }
@@ -210,6 +230,18 @@ impl Display for ConfigError {
                 write!(
                     f,
                     "Format not supported on output endpoint '{endpoint_name}': {error}"
+                )
+            }
+            Self::InputFormatNotSpecified { endpoint_name } => {
+                write!(
+                    f,
+                    "Data format is not specified for input endpoint '{endpoint_name}' (set the 'format' field inside connector configuration)"
+                )
+            }
+            Self::OutputFormatNotSpecified { endpoint_name } => {
+                write!(
+                    f,
+                    "Data format is not specified for output endpoint '{endpoint_name}' (set the 'format' field inside connector configuration)"
                 )
             }
         }
@@ -325,6 +357,18 @@ impl ConfigError {
         Self::OutputFormatNotSupported {
             endpoint_name: endpoint_name.to_owned(),
             error: error.to_owned(),
+        }
+    }
+
+    pub fn input_format_not_specified(endpoint_name: &str) -> Self {
+        Self::InputFormatNotSpecified {
+            endpoint_name: endpoint_name.to_owned(),
+        }
+    }
+
+    pub fn output_format_not_specified(endpoint_name: &str) -> Self {
+        Self::OutputFormatNotSpecified {
+            endpoint_name: endpoint_name.to_owned(),
         }
     }
 }
@@ -728,6 +772,18 @@ impl ControllerError {
     pub fn output_format_not_supported(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
             config_error: ConfigError::output_format_not_supported(endpoint_name, error),
+        }
+    }
+
+    pub fn input_format_not_specified(endpoint_name: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::input_format_not_specified(endpoint_name),
+        }
+    }
+
+    pub fn output_format_not_specified(endpoint_name: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::output_format_not_specified(endpoint_name),
         }
     }
 
