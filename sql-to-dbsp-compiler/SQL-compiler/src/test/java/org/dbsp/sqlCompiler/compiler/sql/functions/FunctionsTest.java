@@ -1715,4 +1715,118 @@ public class FunctionsTest extends SqlIoTest {
                 """
         );
     }
+
+    @Test
+    public void testRlike() {
+        this.qs("""
+                SELECT RLIKE('string', 's..i.*');
+                 rlike
+                -------
+                 true
+                (1 row)
+                
+                SELECT RLIKE(null, 's..i.*');
+                 rlike
+                -------
+                 NULL
+                (1 row)
+                
+                SELECT RLIKE('string', null);
+                 rlike
+                -------
+                 NULL
+                (1 row)
+                
+                SELECT RLIKE(null, null);
+                 rlike
+                -------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testSequence() {
+        this.qs("""
+                SELECT SEQUENCE(1, 10);
+                 sequence
+                ----------
+                 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+                (1 row)
+                
+                SELECT SEQUENCE(10, 1);
+                 sequence
+                ----------
+                 {}
+                (1 row)
+                
+                SELECT SEQUENCE(1, 1);
+                 sequence
+                ----------
+                 {1}
+                (1 row)
+                
+                SELECT SEQUENCE(-6, 1);
+                 sequence
+                ----------
+                 {-6, -5, -4, -3, -2, -1, 0, 1}
+                (1 row)
+                
+                SELECT SEQUENCE(-6, -9);
+                 sequence
+                ----------
+                 {}
+                (1 row)
+                
+                SELECT SEQUENCE(0, -2);
+                 sequence
+                ----------
+                 {}
+                (1 row)
+                
+                SELECT SEQUENCE(null::int, 1);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(null, 1);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(1, null);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(null, null);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(null::tinyint, null::tinyint);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(1::tinyint, 10::tinyint);
+                 sequence
+                ----------
+                 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+                (1 row)
+                
+                SELECT SEQUENCE(1::tinyint, 3::bigint);
+                 sequence
+                ----------
+                 {1, 2, 3}
+                (1 row)
+                """
+        );
+    }
 }
