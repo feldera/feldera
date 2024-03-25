@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pipeline-manager: allow programs to be compiled in unoptimized or 
   optimized modes, which tradeoff compilation speed for runtime speed
   ([#1524](https://github.com/feldera/feldera/pull/1524))
+- SQL: Support for `ARRAYS_OVERLAP` function ([#1570](https://github.com/feldera/feldera/pull/1570))
 
 ## [0.12.0] - 2024-03-19
 
