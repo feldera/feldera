@@ -836,10 +836,13 @@
                   "name": "pipeline-67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "outputs": {
                     "Output-To-View": {
+                      "enable_buffer": false,
                       "format": {
                         "config": null,
                         "name": "csv"
                       },
+                      "max_buffer_size_records": 0,
+                      "max_buffer_time_millis": 0,
                       "max_buffered_records": 1000000,
                       "stream": "my_output_view",
                       "transport": {
@@ -3288,6 +3291,9 @@
             "description": "SQL code of the program.",
             "example": "CREATE TABLE example(name VARCHAR);"
           },
+          "config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
           "description": {
             "type": "string",
             "description": "Program description.",
@@ -3898,6 +3904,9 @@
             "description": "SQL code of the program.",
             "example": "CREATE TABLE example(name VARCHAR);"
           },
+          "config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
           "description": {
             "type": "string",
             "description": "Program description.",
@@ -3964,6 +3973,9 @@
         "allOf": [
           {
             "$ref": "#/components/schemas/ConnectorConfig"
+          },
+          {
+            "$ref": "#/components/schemas/OutputBufferConfig"
           },
           {
             "type": "object",
@@ -4229,13 +4241,17 @@
           "name",
           "description",
           "version",
-          "status"
+          "status",
+          "config"
         ],
         "properties": {
           "code": {
             "type": "string",
             "description": "SQL code",
             "nullable": true
+          },
+          "config": {
+            "$ref": "#/components/schemas/ProgramConfig"
           },
           "description": {
             "type": "string",
@@ -4967,6 +4983,14 @@
           "code": {
             "type": "string",
             "description": "New SQL code for the program. If absent, existing program code will be\nkept unmodified.",
+            "nullable": true
+          },
+          "config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramConfig"
+              }
+            ],
             "nullable": true
           },
           "description": {

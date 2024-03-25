@@ -19,11 +19,11 @@ use size_of::SizeOf;
 use sqllib::{Date, Time, Timestamp};
 use tempfile::NamedTempFile;
 
+use crate::catalog::SerBatchReader;
 use crate::format::parquet::ParquetEncoder;
 use crate::format::Encoder;
 use crate::static_compile::seroutput::SerBatchImpl;
 use crate::test::{mock_input_pipeline, wait, MockOutputConsumer, DEFAULT_TIMEOUT_MS};
-use crate::SerBatch;
 use pipeline_types::{deserialize_table_record, serialize_table_record};
 
 /// This struct mimics the field naming schema of the compiler.
@@ -287,8 +287,8 @@ fn parquet_output() {
         vec![Tup2(test_data[0].clone(), 2), Tup2(test_data[1].clone(), 1)],
     );
 
-    let zset = Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>;
-    encoder.encode(&[zset]).unwrap();
+    let zset = &SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader;
+    encoder.encode(zset).unwrap();
 
     // Verify output buffer...
     // Construct the expected file manually:

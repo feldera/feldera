@@ -66,7 +66,9 @@ use std::{
 mod error;
 mod stats;
 
+use crate::catalog::{SerBatchReader, SerTrace};
 pub use error::{ConfigError, ControllerError};
+use pipeline_types::config::OutputBufferConfig;
 pub use pipeline_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
@@ -75,7 +77,7 @@ use pipeline_types::program_schema::canonical_identifier;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
-/// (including both input and output connecions).
+/// (including both input and output connections).
 // TODO: make this configurable.
 pub(crate) const MAX_API_CONNECTIONS: u64 = 100;
 
@@ -548,25 +550,21 @@ impl Controller {
                         for ((_stream, _query), (output_handles, endpoints)) in
                             outputs.iter_by_stream()
                         {
-                            // TODO: add an endpoint config option to consolidate output batches.
-
                             let mut delta_batch = output_handles
                                 .delta
                                 .as_ref()
-                                .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
-                            let num_delta_records = delta_batch.as_ref().map(|batch| batch.len());
-
-                            // This is needed to distinguish an empty snapshot from no snapshot.
-                            let snapshot_not_empty = output_handles
-                                .snapshot
+                                .map(|handle| handle.take_from_all());
+                            let num_delta_records = delta_batch
                                 .as_ref()
-                                .map(|handle| handle.num_nonempty_mailboxes() > 0);
+                                .map(|batch| batch.iter().map(|b| b.len()).sum());
+
                             let mut snapshot_batch = output_handles
                                 .snapshot
                                 .as_ref()
-                                .map(|handle| Arc::<dyn SerBatch>::from(handle.consolidate()));
-                            let num_snapshot_records =
-                                snapshot_batch.as_ref().map(|batch| batch.len());
+                                .map(|handle| handle.take_from_all());
+                            let num_snapshot_records = snapshot_batch
+                                .as_ref()
+                                .map(|batch| batch.iter().map(|b| b.len()).sum());
 
                             for (i, endpoint_id) in endpoints.iter().enumerate() {
                                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
@@ -577,7 +575,11 @@ impl Controller {
                                 if !endpoint.snapshot_sent.load(Ordering::Acquire)
                                     && output_handles.snapshot.is_some()
                                 {
-                                    if snapshot_not_empty.unwrap_or(false) {
+                                    if snapshot_batch
+                                        .as_ref()
+                                        .map(|batches| !batches.is_empty())
+                                        .unwrap_or(false)
+                                    {
                                         // Increment stats first, so we don't end up with negative
                                         // counts.
                                         controller.status.enqueue_batch(
@@ -597,7 +599,7 @@ impl Controller {
                                         // been sent to the output endpoint, the endpoint will get
                                         // labeled with this
                                         // frontier.
-                                        endpoint.queue.push((step, vec![batch], processed_records));
+                                        endpoint.queue.push((step, batch, processed_records));
                                         endpoint.snapshot_sent.store(true, Ordering::Release);
                                     }
                                 } else if delta_batch.is_some() {
@@ -611,7 +613,7 @@ impl Controller {
                                         delta_batch.as_ref().unwrap().clone()
                                     };
 
-                                    endpoint.queue.push((step, vec![batch], processed_records));
+                                    endpoint.queue.push((step, batch, processed_records));
                                 }
 
                                 // Wake up the output thread.  We're not trying to be smart here and
@@ -823,6 +825,85 @@ impl OutputEndpoints {
                 .map(|(_, endpoints)| endpoints.remove(endpoint_id));
             descr
         })
+    }
+}
+
+/// Buffer used by the output endpoint thread to accumulate outputs.
+struct OutputBuffer {
+    endpoint_name: String,
+
+    buffer: Option<Box<dyn SerTrace>>,
+
+    /// Step number of the last update in the buffer.
+    ///
+    /// The endpoint will wait for this step to commit before sending the buffer
+    /// out.
+    buffered_step: Step,
+
+    /// Time when the first batch was pushed to the buffer.
+    buffer_since: Instant,
+
+    /// Number of input records that will be fully processed after the buffer is flushed.
+    ///
+    /// This is a part of the progress tracking mechanism, which tracks the number of inputs
+    /// to the pipeline that have been processed to completion.  It is currently used
+    /// to determine when the circuit has run to completion.
+    buffered_processed_records: u64,
+}
+
+impl OutputBuffer {
+    /// Create an empty buffer.
+    fn new(endpoint_name: &str) -> Self {
+        Self {
+            endpoint_name: endpoint_name.to_string(),
+            buffer: None,
+            buffered_step: 0,
+            buffer_since: Instant::now(),
+            buffered_processed_records: 0,
+        }
+    }
+
+    /// Insert `batch` into the buffer.
+    fn insert(&mut self, batch: Arc<dyn SerBatch>, step: Step, processed_records: u64) {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.insert(batch);
+        } else {
+            self.buffer = Some(batch.into_trace(&format!("output-buffer-{}", &self.endpoint_name)));
+            self.buffer_since = Instant::now();
+        }
+        self.buffered_step = step;
+        self.buffered_processed_records = processed_records;
+    }
+
+    /// Returns `true` when it is time to flush the buffer either because it's full or
+    /// because the max buffering timeout has expired.
+    fn flush_needed(&self, config: &OutputBufferConfig) -> bool {
+        if let Some(buffer) = &self.buffer {
+            let buffer = buffer.as_ref();
+            if buffer.len() >= config.max_buffer_size_records {
+                return true;
+            }
+
+            if self.buffer_since.elapsed().as_millis() > config.max_buffer_time_millis as u128 {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Time when the oldest data was inserted in the buffer.
+    fn buffer_since(&self) -> Option<Instant> {
+        if self.buffer.is_some() {
+            Some(self.buffer_since)
+        } else {
+            None
+        }
+    }
+
+    /// Return the contents of the buffer leaving it empty.
+    fn take_buffer(&mut self) -> Option<Box<dyn SerTrace>> {
+        self.buffer.take()
     }
 }
 
@@ -1135,11 +1216,14 @@ impl ControllerInner {
         outputs.insert(endpoint_id, handles, endpoint_descr);
 
         let endpoint_name_string = endpoint_name.to_string();
+        let output_buffer_config = endpoint_config.output_buffer_config.clone();
+
         // Thread to run the output pipeline.
         spawn(move || {
             Self::output_thread_func(
                 endpoint_id,
                 endpoint_name_string,
+                output_buffer_config,
                 encoder,
                 parker,
                 queue,
@@ -1157,15 +1241,41 @@ impl ControllerInner {
         Ok(endpoint_id)
     }
 
+    fn merge_batches(mut data: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch> {
+        let last = data.pop().unwrap();
+
+        last.merge(data)
+    }
+
+    fn push_batch_to_encoder(
+        batch: &dyn SerBatchReader,
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        encoder: &mut dyn Encoder,
+        step: Step,
+        controller: &ControllerInner,
+    ) {
+        encoder.consumer().batch_start(step);
+        encoder
+            .encode(batch)
+            .unwrap_or_else(|e| controller.encode_error(endpoint_id, endpoint_name, e));
+        controller.wait_to_commit(step);
+        encoder.consumer().batch_end();
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn output_thread_func(
         endpoint_id: EndpointId,
         endpoint_name: String,
+        output_buffer_config: OutputBufferConfig,
         mut encoder: Box<dyn Encoder>,
         parker: Parker,
         queue: Arc<BatchQueue>,
         disconnect_flag: Arc<AtomicBool>,
         controller: Arc<ControllerInner>,
     ) {
+        let mut output_buffer = OutputBuffer::new(&endpoint_name);
+
         loop {
             if controller.state() == PipelineState::Terminated {
                 return;
@@ -1175,28 +1285,70 @@ impl ControllerInner {
                 return;
             }
 
-            // Dequeue the next output batch and push it to the encoder.
-            if let Some((step, data, processed_records)) = queue.pop() {
-                let num_records = data.iter().map(|b| b.len()).sum();
-                encoder.consumer().batch_start(step);
-                encoder
-                    .encode(data.as_slice())
-                    .unwrap_or_else(|e| controller.encode_error(endpoint_id, &endpoint_name, e));
-                controller.wait_to_commit(step);
-                encoder.consumer().batch_end();
-
-                // `num_records` output records have been transmitted --
-                // update output stats, wake up the circuit thread if the
-                // number of queued records drops below high water mark.
-                controller.status.output_batch(
+            if output_buffer.flush_needed(&output_buffer_config) {
+                // One of the triggering conditions for flushing the output buffer is satisfied:
+                // go ahead and flush the buffer; we will check for more messages at the next iteration
+                // of the loop.
+                Self::push_batch_to_encoder(
+                    output_buffer.take_buffer().unwrap().as_batch_reader(),
                     endpoint_id,
-                    processed_records,
-                    num_records,
-                    &controller.circuit_thread_unparker,
+                    &endpoint_name,
+                    encoder.as_mut(),
+                    output_buffer.buffered_step,
+                    &controller,
                 );
+
+                controller
+                    .status
+                    .output_buffered_batches(endpoint_id, output_buffer.buffered_processed_records);
+            } else if let Some((step, data, processed_records)) = queue.pop() {
+                // Dequeue the next output batch. If output buffering is enabled, push it to the
+                // buffer; we will check if the buffer needs to be flushed at the next iteration of
+                // the loop.  If buffering is disabled, push the buffer directly to the encoder.
+
+                let num_records = data.iter().map(|b| b.len()).sum();
+                let consolidated = Self::merge_batches(data);
+
+                // Buffer the new output if buffering is enabled.
+                if output_buffer_config.enable_buffer {
+                    output_buffer.insert(consolidated, step, processed_records);
+                    controller.status.buffer_batch(
+                        endpoint_id,
+                        num_records,
+                        &controller.circuit_thread_unparker,
+                    );
+                } else {
+                    Self::push_batch_to_encoder(
+                        consolidated.as_batch_reader(),
+                        endpoint_id,
+                        &endpoint_name,
+                        encoder.as_mut(),
+                        step,
+                        &controller,
+                    );
+
+                    // `num_records` output records have been transmitted --
+                    // update output stats, wake up the circuit thread if the
+                    // number of queued records drops below high watermark.
+                    controller.status.output_batch(
+                        endpoint_id,
+                        processed_records,
+                        num_records,
+                        &controller.circuit_thread_unparker,
+                    );
+                }
             } else {
                 trace!("Queue is empty -- wait for the circuit thread to wake us up when more data is available");
-                parker.park();
+                if let Some(buffer_since) = output_buffer.buffer_since() {
+                    // Buffering is enabled: wake us up when the buffer timeout has expired.
+                    let timeout = output_buffer_config.max_buffer_time_millis as i128
+                        - buffer_since.elapsed().as_millis() as i128;
+                    if timeout > 0 {
+                        parker.park_timeout(Duration::from_millis(timeout as u64));
+                    }
+                } else {
+                    parker.park();
+                }
             }
         }
     }
@@ -1206,7 +1358,7 @@ impl ControllerInner {
     /// An input step must commit before we can commit any of the output.
     /// Otherwise, if there is a crash, we might have output for which we don't
     /// know the corresponding input, which would break fault tolerance.
-    fn wait_to_commit(self: &Arc<Self>, step: Step) {
+    fn wait_to_commit(&self, step: Step) {
         if !self.status.is_step_committed(step) {
             let mut guard = self.uncommitted_step.lock().unwrap();
             loop {
@@ -1459,14 +1611,14 @@ impl OutputConsumer for OutputProbe {
         })
     }
 
-    fn push_buffer(&mut self, buffer: &[u8]) {
+    fn push_buffer(&mut self, buffer: &[u8], num_records: usize) {
         let num_bytes = buffer.len();
 
         match self.endpoint.push_buffer(buffer) {
             Ok(()) => {
                 self.controller
                     .status
-                    .output_buffer(self.endpoint_id, num_bytes);
+                    .output_buffer(self.endpoint_id, num_bytes, num_records);
             }
             Err(error) => {
                 self.controller.output_transport_error(
@@ -1479,14 +1631,14 @@ impl OutputConsumer for OutputProbe {
         }
     }
 
-    fn push_key(&mut self, key: &[u8], val: &[u8]) {
+    fn push_key(&mut self, key: &[u8], val: &[u8], num_records: usize) {
         let num_bytes = key.len() + val.len();
 
         match self.endpoint.push_key(key, val) {
             Ok(()) => {
                 self.controller
                     .status
-                    .output_buffer(self.endpoint_id, num_bytes);
+                    .output_buffer(self.endpoint_id, num_bytes, num_records);
             }
             Err(error) => {
                 self.controller.output_transport_error(

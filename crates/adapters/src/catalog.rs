@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -152,12 +153,12 @@ pub trait DeCollectionHandle: Send {
 
 /// A type-erased batch whose contents can be serialized.
 ///
-/// This is a wrapper around the DBSP `Batch` trait that returns a cursor that
+/// This is a wrapper around the DBSP `BatchReader` trait that returns a cursor that
 /// yields `erased_serde::Serialize` trait objects that can be used to serialize
 /// the contents of the batch without knowing its key and value types.
 // The reason we need the `Sync` trait below is so that we can wrap batches
 // in `Arc` and send the same batch to multiple output endpoint threads.
-pub trait SerBatch: Send + Sync {
+pub trait SerBatchReader: 'static {
     /// Number of keys in the batch.
     fn key_count(&self) -> usize;
 
@@ -168,7 +169,7 @@ pub trait SerBatch: Send + Sync {
         self.len() == 0
     }
 
-    /// Create a cursor over the batch that yields record
+    /// Create a cursor over the batch that yields records
     /// formatted using the specified format.
     fn cursor<'a>(
         &'a self,
@@ -176,7 +177,7 @@ pub trait SerBatch: Send + Sync {
     ) -> Result<Box<dyn SerCursor + 'a>, ControllerError>;
 }
 
-impl Debug for dyn SerBatch {
+impl Debug for dyn SerBatchReader {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut cursor = self
             .cursor(RecordFormat::Json(Default::default()))
@@ -211,6 +212,35 @@ impl Debug for dyn SerBatch {
 
         Ok(())
     }
+}
+
+impl Debug for dyn SerBatch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.as_batch_reader().fmt(f)
+    }
+}
+
+/// A type-erased `Batch`.
+pub trait SerBatch: SerBatchReader + Send + Sync {
+    /// Convert to `Arc<Any>`, which can then be downcast to a reference
+    /// to a concrete batch type.
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send>;
+
+    /// Merge `self` with all batches in `other`.
+    fn merge(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch>;
+
+    /// Convert batch into a trace with identical contents.
+    fn into_trace(self: Arc<Self>, persistent_id: &str) -> Box<dyn SerTrace>;
+
+    fn as_batch_reader(&self) -> &dyn SerBatchReader;
+}
+
+/// A type-erased `Trace`.
+pub trait SerTrace: SerBatchReader {
+    /// Insert a batch into the trace.
+    fn insert(&mut self, batch: Arc<dyn SerBatch>);
+
+    fn as_batch_reader(&self) -> &dyn SerBatchReader;
 }
 
 /// Cursor that allows serializing the contents of a type-erased batch.

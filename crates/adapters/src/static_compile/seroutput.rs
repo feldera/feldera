@@ -1,3 +1,4 @@
+use crate::catalog::{SerBatchReader, SerTrace};
 use crate::{
     catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
     ControllerError,
@@ -5,13 +6,15 @@ use crate::{
 use anyhow::Result as AnyResult;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::dynamic::DowncastTrait;
-use dbsp::typed_batch::DynBatchReader;
-use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle};
+use dbsp::trace::merge_batches;
+use dbsp::typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch};
+use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
 use pipeline_types::serde_with_context::{
     SerializationContext, SerializeWithContext, SqlSerdeConfig,
 };
 use serde::Serialize;
 use serde_arrow::ArrowBuilder;
+use std::any::Any;
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
 /// Implementation of the [`std::io::Write`] trait that allows swapping out
@@ -217,9 +220,20 @@ pub struct SerBatchImpl<B, KD, VD>
 where
     B: BatchReader,
 {
-    /// `Arc` is necessary for this type to satisfy `Send`.
-    batch: Arc<B>,
+    batch: B,
     phantom: PhantomData<fn() -> (KD, VD)>,
+}
+
+impl<B, KD, VD> Clone for SerBatchImpl<B, KD, VD>
+where
+    B: Batch,
+{
+    fn clone(&self) -> Self {
+        Self {
+            batch: self.batch.clone(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<B, KD, VD> SerBatchImpl<B, KD, VD>
@@ -228,18 +242,18 @@ where
 {
     pub fn new(batch: B) -> Self {
         Self {
-            batch: Arc::new(batch),
+            batch,
             phantom: PhantomData,
         }
     }
 }
 
-impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
+impl<B, KD, VD> SerBatchReader for SerBatchImpl<B, KD, VD>
 where
-    B: BatchReader<Time = ()> + Clone + Send + Sync,
+    B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig>,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig>,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
 {
     fn key_count(&self) -> usize {
         self.batch.inner().key_count()
@@ -286,6 +300,76 @@ where
     }
 }
 
+impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
+where
+    B: Batch<Time = ()> + Send + Sync,
+    B::R: Into<i64>,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
+{
+    fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send> {
+        self
+    }
+
+    fn merge(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch> {
+        if other.is_empty() {
+            return self;
+        }
+
+        let mut typed = Vec::with_capacity(other.len() + 1);
+
+        typed.push(Arc::unwrap_or_clone(self).batch.into_inner());
+
+        for batch in other.into_iter() {
+            let any_batch = batch.as_any();
+            let batch = any_batch.downcast::<Self>().unwrap();
+            typed.push(Arc::unwrap_or_clone(batch).batch.into_inner())
+        }
+
+        Arc::new(Self::new(B::from_inner(merge_batches(
+            &B::factories(),
+            typed,
+        ))))
+    }
+
+    fn into_trace(self: Arc<Self>, persistent_id: &str) -> Box<dyn SerTrace> {
+        let mut spine = TypedBatch::new(DynSpine::<B::Inner>::new(&B::factories(), persistent_id));
+        spine.insert(Arc::unwrap_or_clone(self).batch.into_inner());
+        Box::new(SerBatchImpl::<Spine<B>, KD, VD>::new(spine))
+    }
+
+    fn as_batch_reader(&self) -> &dyn SerBatchReader {
+        self
+    }
+}
+
+impl<T, KD, VD> SerTrace for SerBatchImpl<T, KD, VD>
+where
+    T: Trace<Time = ()>,
+    //TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>: Send + Sync,
+    T::R: Into<i64>,
+    KD: From<T::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    VD: From<T::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
+{
+    fn insert(&mut self, batch: Arc<dyn SerBatch>) {
+        let batch = Arc::unwrap_or_clone(
+            batch
+                .as_any()
+                .downcast::<SerBatchImpl<
+                    TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>,
+                    KD,
+                    VD,
+                >>()
+                .unwrap(),
+        );
+        self.batch.inner_mut().insert(batch.batch.into_inner());
+    }
+
+    fn as_batch_reader(&self) -> &dyn SerBatchReader {
+        self
+    }
+}
+
 /// [`SerCursor`] implementation that wraps a [`Cursor`].
 struct SerCursorImpl<'a, Ser, B, KD, VD, C>
 where
@@ -301,7 +385,7 @@ where
 impl<'a, Ser, B, KD, VD, C> SerCursorImpl<'a, Ser, B, KD, VD, C>
 where
     Ser: BytesSerializer<C>,
-    B: BatchReader<Time = ()> + Clone,
+    B: BatchReader<Time = ()>,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<C>,
     VD: From<B::Val> + SerializeWithContext<C>,
@@ -316,6 +400,7 @@ where
             val: None,
             phantom: PhantomData,
         };
+        result.skip_zero_keys();
         result.update_key();
         result.update_val();
         result
@@ -334,7 +419,7 @@ where
 
     fn update_val(&mut self) {
         if self.val_valid() {
-            // Safety: `trait BatchReader` guarantees that the inner key type is `B::Key`.
+            // Safety: `trait BatchReader` guarantees that the inner value type is `B::Val`.
             self.val = Some(VD::from(
                 unsafe { self.cursor.val().downcast::<B::Val>() }.clone(),
             ));
@@ -342,12 +427,31 @@ where
             self.val = None;
         }
     }
+
+    fn skip_zero_keys(&mut self) {
+        while self.key_valid() {
+            self.skip_zero_vals();
+            if self.val_valid() {
+                return;
+            }
+            self.step_key()
+        }
+    }
+
+    fn skip_zero_vals(&mut self) {
+        while self.val_valid() {
+            if self.weight() != 0 {
+                return;
+            }
+            self.step_val();
+        }
+    }
 }
 
 impl<'a, Ser, B, KD, VD, C> SerCursor for SerCursorImpl<'a, Ser, B, KD, VD, C>
 where
     Ser: BytesSerializer<C>,
-    B: BatchReader<Time = ()> + Clone,
+    B: BatchReader<Time = ()>,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<C>,
     VD: From<B::Val> + SerializeWithContext<C>,
@@ -386,6 +490,7 @@ where
 
     fn step_key(&mut self) {
         self.cursor.step_key();
+        self.skip_zero_keys();
         self.update_key();
         self.update_val();
     }
@@ -393,12 +498,14 @@ where
     /// Advances the cursor to the next value.
     fn step_val(&mut self) {
         self.cursor.step_val();
+        self.skip_zero_vals();
         self.update_val();
     }
 
     /// Rewinds the cursor to the first key.
     fn rewind_keys(&mut self) {
         self.cursor.rewind_keys();
+        self.skip_zero_keys();
         self.update_key();
         self.update_val();
     }
@@ -406,6 +513,7 @@ where
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
+        self.skip_zero_vals();
         self.update_val();
     }
 }

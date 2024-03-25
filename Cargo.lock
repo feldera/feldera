@@ -2800,6 +2800,7 @@ dependencies = [
  "fdlimit",
  "futures",
  "hashbrown 0.14.2",
+ "ijson",
  "impl-trait-for-tuples",
  "indicatif",
  "itertools 0.10.5",
@@ -4083,6 +4084,19 @@ checksum = "634d9b1461af396cad843f47fdba5597a4f9e6ddd4bfb6ff5d85028c25cb12f6"
 dependencies = [
  "unicode-bidi",
  "unicode-normalization",
+]
+
+[[package]]
+name = "ijson"
+version = "0.1.3"
+source = "git+https://github.com/abhizer/ijson.git?branch=rkyv#a8154c1d22406f073b47907e236a527243b31795"
+dependencies = [
+ "dashmap",
+ "lazy_static",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "size-of",
 ]
 
 [[package]]

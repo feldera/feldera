@@ -474,6 +474,23 @@ impl ControllerStatus {
         }
     }
 
+    pub fn buffer_batch(
+        &self,
+        endpoint_id: EndpointId,
+        num_records: usize,
+        circuit_thread_unparker: &Unparker,
+    ) {
+        if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            let old = endpoint_stats.buffer_batch(num_records);
+            if old - (num_records as u64)
+                <= endpoint_stats.config.connector_config.max_buffered_records
+                && old >= endpoint_stats.config.connector_config.max_buffered_records
+            {
+                circuit_thread_unparker.unpark();
+            }
+        };
+    }
+
     pub fn output_batch(
         &self,
         endpoint_id: EndpointId,
@@ -492,9 +509,15 @@ impl ControllerStatus {
         };
     }
 
-    pub fn output_buffer(&self, endpoint_id: EndpointId, num_bytes: usize) {
+    pub fn output_buffered_batches(&self, endpoint_id: EndpointId, total_processed_records: u64) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            endpoint_stats.output_buffer(num_bytes);
+            endpoint_stats.output_buffered_batches(total_processed_records);
+        }
+    }
+
+    pub fn output_buffer(&self, endpoint_id: EndpointId, num_bytes: usize, num_records: usize) {
+        if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            endpoint_stats.output_buffer(num_bytes, num_records);
         };
     }
 
@@ -502,7 +525,7 @@ impl ControllerStatus {
         self.output_status().values().any(|endpoint_stats| {
             let num_buffered_records = endpoint_stats
                 .metrics
-                .buffered_records
+                .queued_records
                 .load(Ordering::Acquire);
             num_buffered_records >= endpoint_stats.config.connector_config.max_buffered_records
         })
@@ -715,6 +738,19 @@ pub struct OutputEndpointMetrics {
     pub transmitted_records: AtomicU64,
     pub transmitted_bytes: AtomicU64,
 
+    /// Number of queued records.
+    ///
+    /// These are the records sent by the main circuit thread to the endpoint thread.
+    /// Upon dequeuing the record, it gets buffered or sent directly to the output
+    /// transport.
+    pub queued_records: AtomicU64,
+    pub queued_batches: AtomicU64,
+
+    /// Number of records pushed to the output buffer.
+    ///
+    /// Note that this may not be equal to the current size of the
+    /// buffer, since the buffer consolidates records, e.g., inserts
+    /// and deletes can cancel out over time.
     pub buffered_records: AtomicU64,
     pub buffered_batches: AtomicU64,
 
@@ -729,7 +765,7 @@ pub struct OutputEndpointMetrics {
     pub total_processed_input_records: AtomicU64,
 }
 
-/// Output endpoint status informations.
+/// Output endpoint status information.
 #[derive(Serialize)]
 pub struct OutputEndpointStatus {
     pub endpoint_name: String,
@@ -763,31 +799,66 @@ impl OutputEndpointStatus {
 
     fn enqueue_batch(&self, num_records: usize) {
         self.metrics
-            .buffered_records
+            .queued_records
             .fetch_add(num_records as u64, Ordering::AcqRel);
-        self.metrics.buffered_batches.fetch_add(1, Ordering::AcqRel);
+        self.metrics.queued_batches.fetch_add(1, Ordering::AcqRel);
     }
 
+    /// A batch has been pushed to the output transport directly from the queue,
+    /// bypassing the buffer.
     fn output_batch(&self, total_processed_input_records: u64, num_records: usize) -> u64 {
         self.metrics
             .total_processed_input_records
             .store(total_processed_input_records, Ordering::Release);
-        self.metrics
-            .transmitted_records
-            .fetch_add(num_records as u64, Ordering::Relaxed);
 
         let old = self
             .metrics
-            .buffered_records
+            .queued_records
             .fetch_sub(num_records as u64, Ordering::AcqRel);
-        self.metrics.buffered_batches.fetch_sub(1, Ordering::AcqRel);
+        self.metrics.queued_batches.fetch_sub(1, Ordering::AcqRel);
+
         old
     }
 
-    fn output_buffer(&self, num_bytes: usize) {
+    /// A batch has been read from a queue into the buffer.
+    fn buffer_batch(&self, num_records: usize) -> u64 {
+        self.metrics
+            .buffered_records
+            .fetch_add(num_records as u64, Ordering::AcqRel);
+        self.metrics.buffered_batches.fetch_add(1, Ordering::AcqRel);
+
+        let old = self
+            .metrics
+            .queued_records
+            .fetch_sub(num_records as u64, Ordering::AcqRel);
+        self.metrics.queued_batches.fetch_sub(1, Ordering::AcqRel);
+
+        old
+    }
+
+    /// The content of the buffer has been pushed to the transport endpoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `total_processed_input_records` - the output of the endpoint is now
+    ///    up to speed with the output of the circuit after processing this
+    ///    many records.
+    fn output_buffered_batches(&self, total_processed_input_records: u64) {
+        self.metrics.buffered_records.store(0, Ordering::Release);
+        self.metrics.buffered_batches.store(0, Ordering::Release);
+
+        self.metrics
+            .total_processed_input_records
+            .store(total_processed_input_records, Ordering::Release);
+    }
+
+    fn output_buffer(&self, num_bytes: usize, num_records: usize) {
         self.metrics
             .transmitted_bytes
             .fetch_add(num_bytes as u64, Ordering::Relaxed);
+        self.metrics
+            .transmitted_records
+            .fetch_add(num_records as u64, Ordering::Relaxed);
     }
 
     /// Increment encoder error counter.

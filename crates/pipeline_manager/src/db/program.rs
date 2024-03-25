@@ -1,11 +1,16 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    str::FromStr,
+};
 
 use deadpool_postgres::Transaction;
 use log::{debug, error};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{api::ProgramStatus, auth::TenantId};
+use crate::{
+    api::ProgramStatus, auth::TenantId, compiler::ProgramConfig, config::CompilationProfile,
+};
 
 use super::{DBError, ProjectDB, Version};
 use serde::{Deserialize, Serialize};
@@ -122,6 +127,9 @@ pub(crate) struct ProgramDescr {
 
     /// SQL code
     pub code: Option<String>,
+
+    /// Program configuration
+    pub config: ProgramConfig,
 }
 
 pub(crate) async fn list_programs(
@@ -133,7 +141,8 @@ pub(crate) async fn list_programs(
     let stmt = manager
         .prepare_cached(
             r#"SELECT id, name, description, version, status, error, schema,
-                CASE WHEN $2 IS TRUE THEN code ELSE null END
+                CASE WHEN $2 IS TRUE THEN code ELSE null END,
+                compilation_profile
                 FROM program WHERE tenant_id = $1"#,
         )
         .await?;
@@ -149,6 +158,8 @@ pub(crate) async fn list_programs(
             .map(|s| serde_json::from_str(&s))
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
+        let profile =
+            CompilationProfile::from_str(row.get(8)).expect("Expected a valid compilation profile");
 
         result.push(ProgramDescr {
             program_id: ProgramId(row.get(0)),
@@ -158,12 +169,14 @@ pub(crate) async fn list_programs(
             schema,
             status,
             code: row.get(7),
+            config: ProgramConfig { profile },
         });
     }
 
     Ok(result)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn new_program(
     db: &ProjectDB,
     tenant_id: TenantId,
@@ -171,12 +184,13 @@ pub(crate) async fn new_program(
     program_name: &str,
     program_description: &str,
     program_code: &str,
+    config: &ProgramConfig,
     txn: Option<&Transaction<'_>>,
 ) -> Result<(ProgramId, Version), DBError> {
     debug!("new_program {program_name} {program_description} {program_code}");
     let query = "INSERT INTO program (id, version, tenant_id, name, description, 
-                                      code, schema, status, error, status_since)
-                 VALUES($1, 1, $2, $3, $4, $5, NULL, $6, $7, now());";
+                                      code, schema, status, error, status_since, compilation_profile)
+                 VALUES($1, 1, $2, $3, $4, $5, NULL, $6, $7, now(), $8);";
     let (status, error) = ProgramStatus::Pending.to_columns();
     let row = if let Some(txn) = txn {
         let stmt = txn.prepare_cached(query).await?;
@@ -190,6 +204,7 @@ pub(crate) async fn new_program(
                 &program_code,
                 &status,
                 &error,
+                &config.profile.to_string(),
             ],
         )
         .await
@@ -207,6 +222,7 @@ pub(crate) async fn new_program(
                     &program_code,
                     &status,
                     &error,
+                    &config.profile.to_string(),
                 ],
             )
             .await
@@ -227,6 +243,7 @@ pub(crate) async fn update_program(
     program_code: &Option<String>,
     status: &Option<ProgramStatus>,
     schema: &Option<ProgramSchema>,
+    config: &Option<ProgramConfig>,
     guard: Option<Version>,
     txn: &Transaction<'_>,
 ) -> Result<Version, DBError> {
@@ -234,7 +251,7 @@ pub(crate) async fn update_program(
     // current version. Only apply a change if the version matched the
     // guard.
     let get_version = txn
-        .prepare_cached("SELECT version, code FROM program WHERE tenant_id = $1 AND id = $2 ")
+        .prepare_cached("SELECT version, code, compilation_profile FROM program WHERE tenant_id = $1 AND id = $2 ")
         .await?;
     let row = txn
         .query_opt(&get_version, &[&tenant_id.0, &program_id.0])
@@ -243,6 +260,8 @@ pub(crate) async fn update_program(
         .ok_or(DBError::UnknownProgram { program_id })?;
     let latest_version = Version(row.get(0));
     let code: String = row.get(1);
+    let profile =
+        CompilationProfile::from_str(row.get(2)).expect("Expected a valid compilation profile");
 
     if let Some(guard) = guard {
         if guard.0 != latest_version.0 {
@@ -263,18 +282,29 @@ pub(crate) async fn update_program(
                             status_since = (CASE WHEN $10 THEN now() ELSE status_since END),
                             schema = (CASE WHEN $11 THEN NULL
                                            WHEN version = $6 THEN COALESCE($9, schema)
-                                           ELSE NULL END)
+                                           ELSE NULL END),
+                            compilation_profile = $12
                     WHERE tenant_id = $1 AND id = $2
                     RETURNING version
                 "#,
             )
             .await?;
     let has_code_changed = program_code.as_ref().is_some_and(|c| *c != code);
-    let new_version = if has_code_changed {
+    let has_profile_changed = config.as_ref().is_some_and(|c| c.profile != profile);
+
+    // Changing the program compilation profile currently counts as a new version, which in turn
+    // triggers recompilation from scratch (including the SQL compilation and resetting the
+    // schema). This will likely cause redundant work, but is simpler and is not expected
+    // to be the common mode of operation.
+    let new_version = if has_code_changed || has_profile_changed {
         latest_version.0 + 1
     } else {
         latest_version.0
     };
+    let new_profile = config
+        .as_ref()
+        .map(|c| c.profile.clone())
+        .unwrap_or(profile);
     let status_change = !has_code_changed && (status.is_some() || schema.is_some());
     let reset_schema = status
         .as_ref()
@@ -306,6 +336,7 @@ pub(crate) async fn update_program(
                 &schema,
                 &status_change,
                 &reset_schema,
+                &new_profile.to_string(),
             ],
         )
         .await
@@ -328,7 +359,8 @@ pub(crate) async fn get_program_by_id(
     let stmt = manager
         .prepare_cached(
             "SELECT name, description, version, status, error, schema,
-                CASE WHEN $3 IS TRUE THEN code ELSE null END
+                CASE WHEN $3 IS TRUE THEN code ELSE null END,
+                compilation_profile
                 FROM program WHERE id = $1 AND tenant_id = $2",
         )
         .await?;
@@ -348,6 +380,8 @@ pub(crate) async fn get_program_by_id(
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
         let code: Option<String> = row.get(6);
+        let profile =
+            CompilationProfile::from_str(row.get(7)).expect("Expected valid compilation profile");
 
         let status = ProgramStatus::from_columns(&status, error)?;
         Ok(ProgramDescr {
@@ -358,6 +392,7 @@ pub(crate) async fn get_program_by_id(
             status,
             schema,
             code,
+            config: ProgramConfig { profile },
         })
     } else {
         Err(DBError::UnknownProgram { program_id })
@@ -373,7 +408,8 @@ pub(crate) async fn get_program_by_name(
     txn: Option<&Transaction<'_>>,
 ) -> Result<ProgramDescr, DBError> {
     let query = "SELECT id, description, version, status, error, schema, tenant_id,
-                 CASE WHEN $3 IS TRUE THEN code ELSE null END
+                 CASE WHEN $3 IS TRUE THEN code ELSE null END,
+                 compilation_profile
                  FROM program WHERE name = $1 AND tenant_id = $2";
     let row = if let Some(txn) = txn {
         let stmt = txn.prepare_cached(query).await?;
@@ -399,6 +435,8 @@ pub(crate) async fn get_program_by_name(
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
         let code: Option<String> = row.get(7);
+        let profile =
+            CompilationProfile::from_str(row.get(8)).expect("Expected valid compilation profile");
 
         let status = ProgramStatus::from_columns(&status, error)?;
         Ok(ProgramDescr {
@@ -409,6 +447,7 @@ pub(crate) async fn get_program_by_name(
             status,
             schema,
             code,
+            config: ProgramConfig { profile },
         })
     } else {
         Err(DBError::UnknownProgramName {
@@ -448,7 +487,7 @@ pub(crate) async fn all_programs(db: &ProjectDB) -> Result<Vec<(TenantId, Progra
     let manager = db.pool.get().await?;
     let stmt = manager
         .prepare_cached(
-            r#"SELECT id, name, description, version, status, error, schema, tenant_id
+            r#"SELECT id, name, description, version, status, error, schema, tenant_id, compilation_profile
                    FROM program"#,
         )
         .await?;
@@ -465,7 +504,8 @@ pub(crate) async fn all_programs(db: &ProjectDB) -> Result<Vec<(TenantId, Progra
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
         let tenant_id = TenantId(row.get(7));
-
+        let profile =
+            CompilationProfile::from_str(row.get(8)).expect("Expected valid compilation profile");
         result.push((
             tenant_id,
             ProgramDescr {
@@ -476,6 +516,7 @@ pub(crate) async fn all_programs(db: &ProjectDB) -> Result<Vec<(TenantId, Progra
                 schema,
                 status,
                 code: None,
+                config: ProgramConfig { profile },
             },
         ));
     }

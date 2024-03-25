@@ -61,7 +61,7 @@ where
         })
 }
 
-pub fn q12(input: NexmarkStream) -> Q12Stream {
+pub fn q12(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q12Stream {
     q12_for_process_time(input, process_time)
 }
 

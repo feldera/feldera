@@ -204,6 +204,8 @@ pub enum Operation {
     Update,
 }
 
+// Rust complains that fields in this enum are never read, even though they are read by `Debug`.
+#[allow(dead_code)]
 #[derive(Debug)]
 enum NotificationError {
     MissingPayloadComponents(String),
@@ -237,6 +239,8 @@ mod test {
 
     use crate::{
         auth::TenantRecord,
+        compiler::ProgramConfig,
+        config::CompilationProfile,
         db::{storage::Storage, PipelineId, ProgramId},
         db_notifier::{DbNotification, Operation},
     };
@@ -262,6 +266,9 @@ mod test {
                     &format!("test{i}").to_string(),
                     "program desc",
                     "ignored",
+                    &ProgramConfig {
+                        profile: CompilationProfile::Unoptimized,
+                    },
                     None,
                 )
                 .await
@@ -307,6 +314,7 @@ mod test {
                     program_id,
                     &Some(updated_program_name.clone()),
                     &Some("some new description".to_string()),
+                    &None,
                     &None,
                     &None,
                     &None,
@@ -383,6 +391,9 @@ mod test {
                 "test0",
                 "program desc",
                 "ignored",
+                &ProgramConfig {
+                    profile: CompilationProfile::Unoptimized,
+                },
                 None,
             )
             .await

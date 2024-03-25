@@ -65,8 +65,15 @@ pub trait BatchReader: 'static {
 
     type Time: Timestamp;
 
+    /// Factories for `Self::Inner`.
+    fn factories() -> <Self::Inner as DynBatchReader>::Factories {
+        BatchReaderFactories::new::<Self::Key, Self::Val, Self::R>()
+    }
+
     /// Extract the dynamically typed batch.
     fn inner(&self) -> &Self::Inner;
+
+    fn inner_mut(&mut self) -> &mut Self::Inner;
 
     /// Drop the statically typed wrapper and return the inner dynamic batch type.  
     fn into_inner(self) -> Self::Inner;
@@ -177,6 +184,7 @@ pub struct TypedBatch<K, V, R, B> {
 // bound to DBData and propagate it through all layers, so that `TypedBatch`
 // is truly `Sync`.
 unsafe impl<K, V, R, B> Sync for TypedBatch<K, V, R, B> where B: DynBatch {}
+unsafe impl<K, V, R, B> Send for TypedBatch<K, V, R, B> where B: DynBatch {}
 
 impl<K, V, R, B> Default for TypedBatch<K, V, R, B>
 where
@@ -404,6 +412,10 @@ where
 
     fn inner(&self) -> &Self::Inner {
         &self.inner
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.inner
     }
 
     fn into_inner(self) -> Self::Inner {

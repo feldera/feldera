@@ -81,12 +81,12 @@ thread_local! {
 thread_local! {
     // Reference to the `Runtime` that manages this worker thread or `None`
     // if the current thread is not running in a multithreaded runtime.
-    static RUNTIME: RefCell<Option<Runtime>> = RefCell::new(None);
+    static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
 
     // 0-based index of the current worker thread within its runtime.
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
-    pub(crate) static WORKER_INDEX: Cell<usize> = Cell::new(0);
+    pub(crate) static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
 }
 
 pub struct LocalStoreMarker;

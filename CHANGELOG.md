@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Output buffering mechanism to consolidate multiple output
+  updates over time.
+  ([#1558](https://github.com/feldera/feldera/pull/1558))
+- pipeline-manager: allow programs to be compiled in unoptimized or 
+  optimized modes, which tradeoff compilation speed for runtime speed
+  ([#1524](https://github.com/feldera/feldera/pull/1524))
+
 ## [0.12.0] - 2024-03-19
 
 ### Changed
@@ -14,9 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - dbsp: Major refactoring of the dbsp crate to improve
   to improve compilation speed of SQL programs
   ([#1516](https://github.com/feldera/feldera/pull/1516))
+- SQL: Fix `RLIKE` to handle `NULL`s correctly ([#1555](https://github.com/feldera/feldera/pull/1555))
 
 ### Added
 
+- SQL: Support for `SEQUENCE` function ([#1555](https://github.com/feldera/feldera/pull/1555))
 - SQL: Support for `GROUPING`, `GROUPING_ID`, and `GROUPING SETS`
   ([#1527](https://github.com/feldera/feldera/pull/1527))
 - SQL: Support for `GUNZIP` function ([#1556](https://github.com/feldera/feldera/pull/1556))

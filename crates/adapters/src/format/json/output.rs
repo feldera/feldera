@@ -1,7 +1,8 @@
+use crate::catalog::SerBatchReader;
 use crate::format::json::schema::{build_key_schema, build_value_schema};
 use crate::format::{MAX_DUPLICATES, MAX_RECORD_LEN_IN_ERRMSG};
 use crate::{
-    catalog::{CursorWithPolarity, RecordFormat, SerBatch, SerCursor},
+    catalog::{CursorWithPolarity, RecordFormat, SerCursor},
     util::truncate_ellipse,
     ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
@@ -14,7 +15,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, io::Write, mem::take, sync::Arc};
+use std::{borrow::Cow, io::Write, mem::take};
 
 /// JSON format encoder.
 pub struct JsonOutputFormat;
@@ -149,7 +150,7 @@ impl Encoder for JsonEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
+    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         let mut key_buffer = take(&mut self.key_buffer);
 
@@ -161,206 +162,205 @@ impl Encoder for JsonEncoder {
         };
 
         let mut num_records = 0;
-        for batch in batches.iter() {
-            let mut cursor = CursorWithPolarity::new(
-                batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?,
-            );
+        let mut cursor = CursorWithPolarity::new(
+            batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?,
+        );
 
-            while cursor.key_valid() {
-                if !cursor.val_valid() {
-                    cursor.step_key();
-                    continue;
-                }
-                let mut w = cursor.weight();
+        while cursor.key_valid() {
+            if !cursor.val_valid() {
+                cursor.step_key();
+                continue;
+            }
+            let mut w = cursor.weight();
 
-                if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                    let mut key_str = String::new();
-                    let _ = cursor.serialize_key(unsafe { key_str.as_mut_vec() });
-                    bail!(
+            if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
+                let mut key_str = String::new();
+                let _ = cursor.serialize_key(unsafe { key_str.as_mut_vec() });
+                bail!(
                         "Unable to output record '{}' with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.",
                         &key_str
                     );
+            }
+
+            while w != 0 {
+                let prev_len = buffer.len();
+
+                if self.config.array {
+                    if num_records == 0 {
+                        buffer.push(b'[');
+                    } else {
+                        buffer.push(b',');
+                    }
                 }
 
-                while w != 0 {
-                    let prev_len = buffer.len();
-
-                    if self.config.array {
-                        if num_records == 0 {
-                            buffer.push(b'[');
+                // FIXME: an alternative to building JSON manually is to create an
+                // `InsDelUpdate` instance and serialize that, but it would require
+                // packaging the serialized key as `serde_json::RawValue`, which is
+                // not supported by the `RawValue` API.  So we need a custom
+                // implementation of `RawValue`. If we ever decide to build one,
+                // check out the "$serde_json::private::RawValue" magic string in
+                // crate `serde_json`.
+                match self.config.update_format {
+                    JsonUpdateFormat::InsertDelete => {
+                        if w > 0 {
+                            buffer.extend_from_slice(br#"{"insert":"#);
                         } else {
+                            buffer.extend_from_slice(br#"{"delete":"#);
+                        }
+                        cursor.serialize_key(&mut buffer)?;
+                        buffer.push(b'}');
+                    }
+                    JsonUpdateFormat::Snowflake => {
+                        cursor.serialize_key(&mut buffer)?;
+
+                        // Remove the closing brace and add '__action' field.
+                        if buffer.pop() != Some(b'}') {
+                            bail!("Serialized JSON value does not end in '}}'");
+                        }
+                        if buffer.last() != Some(&b'{') {
                             buffer.push(b',');
                         }
+                        let action = if w > 0 { "insert" } else { "delete" };
+                        write!(
+                            buffer,
+                            r#""__action":"{action}","__stream_id":{},"__seq_number":{}}}"#,
+                            self.stream_id, self.seq_number
+                        )?;
                     }
+                    JsonUpdateFormat::Debezium => {
+                        // Crate a Debezium-compliant Kafka message.  The key of the messages
+                        // contains the entire record being inserted or deleted, including its
+                        // schema. The value part of the message is a Debezium change record
+                        // with either 'd'elete of 'c'reate operation. When `op` is
+                        // 'c'reate, only the `after` component (no `before`) containing the
+                        // second copy of the record is present. The value also contains a
+                        // schema for the entire payload.  If `op` is 'd'elete, neither
+                        // `before` nor `after` is present.
+                        //
+                        // This encoding is redundant and expensive, but is necessary due
+                        // to several limitations:
+                        //
+                        // - We do not currently work with schema registries and don't implement
+                        //   any other way to transfer the schema to the consumer.  We assume
+                        //   that the output is consumed by Kafka Connect using the
+                        //   `JsonConverter` class, which requires inline schema.
+                        //
+                        // - Feldera doesn't know which part of the output record forms a key.
+                        //   The list of key fields must be configured in the downstream Kafka
+                        //   Connector. As a result we must include all fields in the key and
+                        //   rely on the connector To extract the actual key.
+                        //
+                        // - The specific connector implementation we currently work with is
+                        //   Debezium JDBC sink, which only supports deletions when the primary
+                        //   key of the table is encoded in the key component of the Kafka
+                        //   message, i.e., it cannot extract it from the value.
+                        //
+                        // This encoding assumes the following Debezium sink connector config:
+                        // ```
+                        // "primary.key.mode": "record_key",
+                        // "delete.enabled": True,
+                        // "primary.key.fields": "<list_of_primary_key_columns>"
+                        // ```
 
-                    // FIXME: an alternative to building JSON manually is to create an
-                    // `InsDelUpdate` instance and serialize that, but it would require
-                    // packaging the serialized key as `serde_json::RawValue`, which is
-                    // not supported by the `RawValue` API.  So we need a custom
-                    // implementation of `RawValue`. If we ever decide to build one,
-                    // check out the "$serde_json::private::RawValue" magic string in
-                    // crate `serde_json`.
-                    match self.config.update_format {
-                        JsonUpdateFormat::InsertDelete => {
-                            if w > 0 {
-                                buffer.extend_from_slice(br#"{"insert":"#);
-                            } else {
-                                buffer.extend_from_slice(br#"{"delete":"#);
-                            }
-                            cursor.serialize_key(&mut buffer)?;
-                            buffer.push(b'}');
+                        // Encode key.
+                        if let Some(key_schema_str) = &self.key_schema_str {
+                            key_buffer.extend_from_slice(br#"{"schema":"#);
+                            key_buffer.extend_from_slice(key_schema_str.as_bytes());
+                            key_buffer.extend_from_slice(br#","payload":"#);
+                        } else {
+                            key_buffer.extend_from_slice(br#"{"payload":"#);
                         }
-                        JsonUpdateFormat::Snowflake => {
-                            cursor.serialize_key(&mut buffer)?;
 
-                            // Remove the closing brace and add '__action' field.
-                            if buffer.pop() != Some(b'}') {
-                                bail!("Serialized JSON value does not end in '}}'");
+                        cursor.serialize_key(&mut key_buffer)?;
+                        key_buffer.extend_from_slice(br#"}"#);
+
+                        // Encode value.
+                        if w > 0 {
+                            if let Some(schema_str) = &self.value_schema_str {
+                                buffer.extend_from_slice(br#"{"schema":"#);
+                                buffer.extend_from_slice(schema_str.as_bytes());
+                                write!(buffer, r#","payload":{{"op":"c","after":"#)?;
+                            } else {
+                                write!(buffer, r#"{{"payload":{{"op":"c","after":"#)?;
                             }
-                            if buffer.last() != Some(&b'{') {
-                                buffer.push(b',');
-                            }
-                            let action = if w > 0 { "insert" } else { "delete" };
+
+                            cursor.serialize_key(&mut buffer)?;
+                            buffer.extend_from_slice(br#"}}"#);
+                        } else if let Some(schema_str) = &self.value_schema_str {
                             write!(
                                 buffer,
-                                r#""__action":"{action}","__stream_id":{},"__seq_number":{}}}"#,
-                                self.stream_id, self.seq_number
+                                r#"{{"schema":{schema_str},"payload":{{"op":"d"}}}}"#
                             )?;
-                        }
-                        JsonUpdateFormat::Debezium => {
-                            // Crate a Debezium-compliant Kafka message.  The key of the messages
-                            // contains the entire record being inserted or deleted, including its
-                            // schema. The value part of the message is a Debezium change record
-                            // with either 'd'elete of 'c'reate operation. When `op` is
-                            // 'c'reate, only the `after` component (no `before`) containing the
-                            // second copy of the record is present. The value also contains a
-                            // schema for the entire payload.  If `op` is 'd'elete, neither
-                            // `before` nor `after` is present.
-                            //
-                            // This encoding is redundant and expensive, but is necessary due
-                            // to several limitations:
-                            //
-                            // - We do not currently work with schema registries and don't implement
-                            //   any other way to transfer the schema to the consumer.  We assume
-                            //   that the output is consumed by Kafka Connect using the
-                            //   `JsonConverter` class, which requires inline schema.
-                            //
-                            // - Feldera doesn't know which part of the output record forms a key.
-                            //   The list of key fields must be configured in the downstream Kafka
-                            //   Connector. As a result we must include all fields in the key and
-                            //   rely on the connector To extract the actual key.
-                            //
-                            // - The specific connector implementation we currently work with is
-                            //   Debezium JDBC sink, which only supports deletions when the primary
-                            //   key of the table is encoded in the key component of the Kafka
-                            //   message, i.e., it cannot extract it from the value.
-                            //
-                            // This encoding assumes the following Debezium sink connector config:
-                            // ```
-                            // "primary.key.mode": "record_key",
-                            // "delete.enabled": True,
-                            // "primary.key.fields": "<list_of_primary_key_columns>"
-                            // ```
-
-                            // Encode key.
-                            if let Some(key_schema_str) = &self.key_schema_str {
-                                key_buffer.extend_from_slice(br#"{"schema":"#);
-                                key_buffer.extend_from_slice(key_schema_str.as_bytes());
-                                key_buffer.extend_from_slice(br#","payload":"#);
-                            } else {
-                                key_buffer.extend_from_slice(br#"{"payload":"#);
-                            }
-
-                            cursor.serialize_key(&mut key_buffer)?;
-                            key_buffer.extend_from_slice(br#"}"#);
-
-                            // Encode value.
-                            if w > 0 {
-                                if let Some(schema_str) = &self.value_schema_str {
-                                    buffer.extend_from_slice(br#"{"schema":"#);
-                                    buffer.extend_from_slice(schema_str.as_bytes());
-                                    write!(buffer, r#","payload":{{"op":"c","after":"#)?;
-                                } else {
-                                    write!(buffer, r#"{{"payload":{{"op":"c","after":"#)?;
-                                }
-
-                                cursor.serialize_key(&mut buffer)?;
-                                buffer.extend_from_slice(br#"}}"#);
-                            } else if let Some(schema_str) = &self.value_schema_str {
-                                write!(
-                                    buffer,
-                                    r#"{{"schema":{schema_str},"payload":{{"op":"d"}}}}"#
-                                )?;
-                            } else {
-                                write!(buffer, r#"{{"payload":{{"op":"d"}}}}"#)?;
-                            }
-                        }
-                        _ => {
-                            // Should never happen.  Unsupported formats are rejected during
-                            // initialization.
-                            bail!(
-                                "Unsupported JSON serialization format: {:?}",
-                                self.config.update_format
-                            )
+                        } else {
+                            write!(buffer, r#"{{"payload":{{"op":"d"}}}}"#)?;
                         }
                     }
+                    _ => {
+                        // Should never happen.  Unsupported formats are rejected during
+                        // initialization.
+                        bail!(
+                            "Unsupported JSON serialization format: {:?}",
+                            self.config.update_format
+                        )
+                    }
+                }
 
-                    // Drop the last encoded record if it exceeds max_buffer_size.
-                    // The record will be included in the next buffer.
-                    let buffer_full = buffer.len() > max_buffer_size;
-                    if buffer_full {
-                        if num_records == 0 {
-                            let record = std::str::from_utf8(&buffer[prev_len..buffer.len()])
-                                .unwrap_or_default();
-                            // We should be able to fit at least one record in the buffer.
-                            bail!("JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
+                // Drop the last encoded record if it exceeds max_buffer_size.
+                // The record will be included in the next buffer.
+                let buffer_full = buffer.len() > max_buffer_size;
+                if buffer_full {
+                    if num_records == 0 {
+                        let record = std::str::from_utf8(&buffer[prev_len..buffer.len()])
+                            .unwrap_or_default();
+                        // We should be able to fit at least one record in the buffer.
+                        bail!("JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
                                   self.max_buffer_size,
                                   buffer.len() - prev_len,
                                   truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "..."));
-                        }
-                        buffer.truncate(prev_len);
+                    }
+                    buffer.truncate(prev_len);
+                } else {
+                    if w > 0 {
+                        w -= 1;
                     } else {
-                        if w > 0 {
-                            w -= 1;
-                        } else {
-                            w += 1;
-                        }
-                        num_records += 1;
-                        self.seq_number += 1;
+                        w += 1;
                     }
-                    if !self.config.array {
-                        buffer.push(b'\n');
-                    }
-
-                    if num_records >= self.config.buffer_size_records || buffer_full {
-                        if self.config.array {
-                            buffer.push(b']');
-                        }
-
-                        // println!(
-                        //     "push_buffer: {} bytes",
-                        //     buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/
-                        // );
-                        if !key_buffer.is_empty() {
-                            self.output_consumer.push_key(&key_buffer, &buffer);
-                        } else {
-                            self.output_consumer.push_buffer(&buffer);
-                        }
-                        buffer.clear();
-                        key_buffer.clear();
-                        num_records = 0;
-                    }
+                    num_records += 1;
+                    self.seq_number += 1;
+                }
+                if !self.config.array {
+                    buffer.push(b'\n');
                 }
 
-                cursor.step_key();
+                if num_records >= self.config.buffer_size_records || buffer_full {
+                    if self.config.array {
+                        buffer.push(b']');
+                    }
+
+                    // println!(
+                    //     "push_buffer: {} bytes",
+                    //     buffer.len() /*std::str::from_utf8(&buffer).unwrap()*/
+                    // );
+                    if !key_buffer.is_empty() {
+                        self.output_consumer
+                            .push_key(&key_buffer, &buffer, num_records);
+                    } else {
+                        self.output_consumer.push_buffer(&buffer, num_records);
+                    }
+                    buffer.clear();
+                    key_buffer.clear();
+                    num_records = 0;
+                }
             }
+
+            cursor.step_key();
         }
 
         if num_records > 0 {
             if self.config.array {
                 buffer.extend_from_slice(b"]\n");
             }
-            self.output_consumer.push_buffer(&buffer);
+            self.output_consumer.push_buffer(&buffer, num_records);
             buffer.clear();
         }
 
@@ -374,6 +374,7 @@ impl Encoder for JsonEncoder {
 #[cfg(test)]
 mod test {
     use super::{JsonEncoder, JsonEncoderConfig};
+    use crate::catalog::SerBatchReader;
     use crate::format::json::{DebeziumOp, DebeziumPayload, DebeziumUpdate};
     use crate::{
         catalog::SerBatch,
@@ -506,7 +507,9 @@ mod test {
                 Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>
             })
             .collect::<Vec<_>>();
-        encoder.encode(zsets.as_slice()).unwrap();
+        for zset in zsets {
+            encoder.encode(zset.as_batch_reader()).unwrap();
+        }
 
         let seq_number = Rc::new(RefCell::new(0));
         let expected_output = batches
@@ -666,7 +669,7 @@ mod test {
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         let err = encoder
-            .encode(&[Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>])
+            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
             .unwrap_err();
         assert_eq!(format!("{err}"), "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 46 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'.");
     }

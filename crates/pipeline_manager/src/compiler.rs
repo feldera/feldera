@@ -1,7 +1,7 @@
 use crate::auth::TenantId;
-use crate::config::CompilerConfig;
+use crate::config::{CompilationProfile, CompilerConfig};
 use crate::db::storage::Storage;
-use crate::db::{DBError, ProgramId, ProjectDB, Version};
+use crate::db::{DBError, ProgramDescr, ProgramId, ProjectDB, Version};
 use crate::error::ManagerError;
 use crate::probe::Probe;
 use actix_files::NamedFile;
@@ -118,6 +118,13 @@ impl ProgramStatus {
     pub(crate) fn is_compiling(&self) -> bool {
         *self == ProgramStatus::CompilingRust || *self == ProgramStatus::CompilingSql
     }
+}
+
+/// Program configuration.
+#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+pub struct ProgramConfig {
+    /// Request a compilation profile.
+    pub profile: CompilationProfile,
 }
 
 static METRICS: Lazy<CompilerMetrics> = Lazy::new(init_metrics);
@@ -321,7 +328,8 @@ impl Compiler {
             })?;
 
         // `cargo build`.
-        let mut cargo_process = Compiler::run_cargo_build(config, program_id).await?;
+        let mut cargo_process =
+            Compiler::run_cargo_build(config, program_id, &CompilationProfile::Optimized).await?;
         let exit_status = cargo_process
             .wait()
             .await
@@ -363,6 +371,7 @@ impl Compiler {
     async fn run_cargo_build(
         config: &CompilerConfig,
         program_id: ProgramId,
+        program_profile: &CompilationProfile,
     ) -> Result<Child, ManagerError> {
         let err_file = File::create(&config.compiler_stderr_path(program_id))
             .await
@@ -389,12 +398,18 @@ impl Compiler {
 
         let mut command = Command::new("cargo");
 
+        // Always pick the compiler server's profile if it is configured, instead of
+        // the one the program self-specifies.
+        let profile = &config
+            .compilation_profile
+            .as_ref()
+            .unwrap_or(program_profile);
         command
             .current_dir(&config.workspace_dir())
             .arg("build")
             .arg("--workspace")
             .arg("--profile")
-            .arg(&config.compilation_profile.to_string())
+            .arg(profile.to_string())
             .stdin(Stdio::null())
             .stderr(Stdio::from(err_file.into_std().await))
             .stdout(Stdio::from(out_file.into_std().await));
@@ -407,18 +422,25 @@ impl Compiler {
     async fn version_binary(
         config: &CompilerConfig,
         db: &ProjectDB,
-        program_id: ProgramId,
-        version: Version,
+        program: &ProgramDescr,
     ) -> Result<(), ManagerError> {
+        let program_id = program.program_id;
+        let version = program.version;
+        // Always pick the compiler server's profile if it is configured, instead of
+        // the one the program self-specifies.
+        let profile = &config
+            .compilation_profile
+            .as_ref()
+            .unwrap_or(&program.config.profile);
         info!(
             "Preserve binary {:?} as {:?}",
-            config.target_executable(program_id),
+            config.target_executable(program_id, profile),
             config.versioned_executable(program_id, version)
         );
 
         // Save the file locally and record a path to it as a "file://" scheme URL in the DB.
         // This requires any entity accessing it to have access to the same filesystem
-        let source = config.target_executable(program_id);
+        let source = config.target_executable(program_id, profile);
         let destination = config.versioned_executable(program_id, version);
         fs::copy(&source, &destination).await.map_err(|e| {
             ManagerError::io_error(
@@ -763,10 +785,10 @@ inherits = "release"
                     if let Some(job) = &job {
                         // Program was deleted, updated or the user changed its status
                         // to cancelled -- abort compilation.
-                        let descr = db.lock().await.get_program_by_id(job.tenant_id, job.program_id, false).await;
+                        let descr = db.lock().await.get_program_by_id(job.tenant_id, job.program.program_id, false).await;
                         match descr {
                             Ok(descr) => {
-                                if descr.version != job.version || !descr.status.is_compiling() {
+                                if descr.version != job.program.version || !descr.status.is_compiling() {
                                     cancel = true;
                                 }
                             },
@@ -792,8 +814,8 @@ inherits = "release"
                     }
                 }, if job.is_some() => {
                     let tenant_id = job.as_ref().unwrap().tenant_id;
-                    let program_id = job.as_ref().unwrap().program_id;
-                    let version = job.as_ref().unwrap().version;
+                    let program_id = job.as_ref().unwrap().program.program_id;
+                    let version = job.as_ref().unwrap().program.version;
                     let elapsed = job.as_ref().unwrap().stage_start_time.elapsed().as_secs_f64();
                     let db = db.lock().await;
 
@@ -821,16 +843,17 @@ inherits = "release"
                                 &None,
                                 &Some(ProgramStatus::CompilingRust),
                                 &Some(schema),
+                                &None,
                                 Some(version),
                                 None
                             ).await?;
 
                             info!("Invoking rust compiler for program {program_id} version {version} (tenant {tenant_id}). This will take a while.");
                             debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
-                            job = Some(CompilationJob::rust(tenant_id, config, program_id, version).await?);
+                            job = Some(CompilationJob::rust(config, job.as_ref().unwrap()).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
-                            Self::version_binary(config, &db, program_id, version).await?;
+                            Self::version_binary(config, &db, &job.as_ref().unwrap().program).await?;
                             // Rust compiler succeeded -- declare victory.
                             db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
                             info!("Successfully invoked rust compiler for program {program_id} version {version} (tenant {tenant_id}).");
@@ -879,22 +902,20 @@ inherits = "release"
                     if let Some((tenant_id, program_id, version)) = db.next_job().await? {
                         trace!("Next program in the queue: '{program_id}', version '{version}'");
                         let program = db.get_program_by_id(tenant_id, program_id, true).await?;
-                        Some((tenant_id, program_id, version, program.code.unwrap()))
+                        Some((tenant_id, program))
                     } else {
                         None
                     }
                 };
 
-                if let Some((tenant_id, program_id, version, code)) = program {
-                    job = Some(
-                        CompilationJob::sql(tenant_id, config, &code, program_id, version).await?,
-                    );
+                if let Some((tenant_id, program)) = program {
+                    job = Some(CompilationJob::sql(tenant_id, config, &program).await?);
                     db.lock()
                         .await
                         .set_program_status_guarded(
                             tenant_id,
-                            program_id,
-                            version,
+                            program.program_id,
+                            program.version,
                             ProgramStatus::CompilingSql,
                         )
                         .await?;
@@ -913,10 +934,9 @@ enum Stage {
 struct CompilationJob {
     stage: Stage,
     tenant_id: TenantId,
-    program_id: ProgramId,
-    version: Version,
     compiler_process: Child,
     stage_start_time: Instant,
+    program: ProgramDescr,
 }
 
 impl CompilationJob {
@@ -932,10 +952,14 @@ impl CompilationJob {
     async fn sql(
         tenant_id: TenantId,
         config: &CompilerConfig,
-        code: &str,
-        program_id: ProgramId,
-        version: Version,
+        program: &ProgramDescr,
     ) -> Result<Self, ManagerError> {
+        let code = program
+            .code
+            .as_ref()
+            .expect("Invariant: SQL compiler cannot be invoked on programs without code");
+        let program_id = program.program_id;
+        let version = program.version;
         debug!("Running SQL compiler on program '{program_id}', version '{version}'");
 
         // Create project directory.
@@ -1002,20 +1026,17 @@ impl CompilationJob {
         Ok(Self {
             tenant_id,
             stage: Stage::Sql,
-            program_id,
-            version,
+            program: program.clone(),
             compiler_process,
             stage_start_time: Instant::now(),
         })
     }
 
     // Run `cargo` on the generated Rust workspace.
-    async fn rust(
-        tenant_id: TenantId,
-        config: &CompilerConfig,
-        program_id: ProgramId,
-        version: Version,
-    ) -> Result<Self, ManagerError> {
+    async fn rust(config: &CompilerConfig, job: &Self) -> Result<Self, ManagerError> {
+        let program_id = job.program.program_id;
+        let version = job.program.version;
+        let tenant_id = job.tenant_id;
         debug!("Running Rust compiler on program '{program_id}', version '{version}'");
 
         let rust_path = config.rust_program_path(program_id);
@@ -1039,13 +1060,13 @@ impl CompilationJob {
         Compiler::write_workspace_toml(config, program_id).await?;
 
         // Run cargo, direct stdout and stderr to the same file.
-        let compiler_process = Compiler::run_cargo_build(config, program_id).await?;
+        let profile = &job.program.config.profile;
+        let compiler_process = Compiler::run_cargo_build(config, program_id, profile).await?;
 
         Ok(Self {
             tenant_id,
             stage: Stage::Rust,
-            program_id,
-            version,
+            program: job.program.clone(),
             compiler_process,
             stage_start_time: Instant::now(),
         })
@@ -1064,17 +1085,17 @@ impl CompilationJob {
     async fn error_output(&self, config: &CompilerConfig) -> Result<String, ManagerError> {
         let output = match self.stage {
             Stage::Sql => {
-                let stderr_path = config.compiler_stderr_path(self.program_id);
+                let stderr_path = config.compiler_stderr_path(self.program.program_id);
                 fs::read_to_string(&stderr_path).await.map_err(|e| {
                     ManagerError::io_error(format!("reading '{}'", stderr_path.display()), e)
                 })?
             }
             Stage::Rust => {
-                let stdout_path = config.compiler_stdout_path(self.program_id);
+                let stdout_path = config.compiler_stdout_path(self.program.program_id);
                 let stdout = fs::read_to_string(&stdout_path).await.map_err(|e| {
                     ManagerError::io_error(format!("reading '{}'", stdout_path.display()), e)
                 })?;
-                let stderr_path = config.compiler_stderr_path(self.program_id);
+                let stderr_path = config.compiler_stderr_path(self.program.program_id);
                 let stderr = fs::read_to_string(&stderr_path).await.map_err(|e| {
                     ManagerError::io_error(format!("reading '{}'", stderr_path.display()), e)
                 })?;
@@ -1102,7 +1123,7 @@ mod test {
     use crate::{
         auth::TenantRecord,
         compiler::ProgramStatus,
-        config::CompilerConfig,
+        config::{CompilationProfile, CompilerConfig},
         db::{storage::Storage, ProgramId, ProjectDB, Version},
     };
 
@@ -1116,6 +1137,9 @@ mod test {
                 pname,
                 "program desc",
                 "ignored",
+                &super::ProgramConfig {
+                    profile: CompilationProfile::Unoptimized,
+                },
                 None,
             )
             .await
@@ -1141,7 +1165,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: crate::config::CompilationProfile::Unoptimized,
+            compilation_profile: Some(crate::config::CompilationProfile::Unoptimized),
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1206,7 +1230,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: crate::config::CompilationProfile::Unoptimized,
+            compilation_profile: Some(crate::config::CompilationProfile::Unoptimized),
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1252,7 +1276,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: crate::config::CompilationProfile::Unoptimized,
+            compilation_profile: Some(crate::config::CompilationProfile::Unoptimized),
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),

@@ -17,10 +17,10 @@ use serde_arrow::ArrowBuilder;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
 
-use crate::catalog::CursorWithPolarity;
+use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::format::MAX_DUPLICATES;
 use crate::{
-    catalog::{DeCollectionStream, InputCollectionHandle, RecordFormat, SerBatch},
+    catalog::{DeCollectionStream, InputCollectionHandle, RecordFormat},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     ControllerError, OutputConsumer, SerCursor,
 };
@@ -299,7 +299,7 @@ impl Encoder for ParquetEncoder {
         self.output_consumer.as_mut()
     }
 
-    fn encode(&mut self, batches: &[Arc<dyn SerBatch>]) -> AnyResult<()> {
+    fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
         let mut buffer = take(&mut self.buffer);
         let props = WriterProperties::builder().build();
         let schema = Arc::new(Schema::new(self.parquet_schema.to_arrow_fields()?));
@@ -307,67 +307,62 @@ impl Encoder for ParquetEncoder {
         let mut builder = ArrowBuilder::new(&fields)?;
 
         let mut num_records = 0;
-        for batch in batches.iter() {
-            let mut cursor = CursorWithPolarity::new(
-                batch.cursor(RecordFormat::Parquet(self.parquet_schema.clone()))?,
-            );
-            while cursor.key_valid() {
-                if !cursor.val_valid() {
-                    cursor.step_key();
-                    continue;
-                }
-                let mut w = cursor.weight();
-                if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                    bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
-                }
-                if w < 0 {
-                    // TODO: we don't support deletes in the parquet format yet.
-                    continue;
-                }
+        let mut cursor = CursorWithPolarity::new(
+            batch.cursor(RecordFormat::Parquet(self.parquet_schema.clone()))?,
+        );
+        while cursor.key_valid() {
+            if !cursor.val_valid() {
+                cursor.step_key();
+                continue;
+            }
+            let mut w = cursor.weight();
+            if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
+                bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
+            }
+            if w < 0 {
+                // TODO: we don't support deletes in the parquet format yet.
+                continue;
+            }
 
-                while w != 0 {
-                    let prev_len = buffer.len();
-                    cursor.serialize_key_to_arrow(&mut builder)?;
+            while w != 0 {
+                let prev_len = buffer.len();
+                cursor.serialize_key_to_arrow(&mut builder)?;
 
-                    // TODO: buffer.len() is always 0 here atm:
-                    let buffer_full = buffer.len() > self.max_buffer_size;
-                    if buffer_full {
-                        if num_records == 0 {
-                            // We should be able to fit at least one record in the buffer.
-                            bail!("Parquet record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the record requires {} bytes.",
+                // TODO: buffer.len() is always 0 here atm:
+                let buffer_full = buffer.len() > self.max_buffer_size;
+                if buffer_full {
+                    if num_records == 0 {
+                        // We should be able to fit at least one record in the buffer.
+                        bail!("Parquet record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the record requires {} bytes.",
                                   self.max_buffer_size,
                                   buffer.len() - prev_len);
-                        }
-                        buffer.truncate(prev_len);
+                    }
+                    buffer.truncate(prev_len);
+                } else {
+                    if w > 0 {
+                        w -= 1;
                     } else {
-                        if w > 0 {
-                            w -= 1;
-                        } else {
-                            w += 1;
-                        }
-                        num_records += 1;
+                        w += 1;
                     }
-
-                    if num_records >= self.config.buffer_size_records || buffer_full {
-                        let buffer_cursor = Cursor::new(&mut buffer);
-                        let mut writer = ArrowWriter::try_new(
-                            buffer_cursor,
-                            schema.clone(),
-                            Some(props.clone()),
-                        )?;
-                        let arrays = builder.build_arrays()?;
-                        let batch = RecordBatch::try_new(schema.clone(), arrays)?;
-                        writer.write(&batch)?;
-                        writer.close()?;
-
-                        self.output_consumer.push_buffer(&buffer);
-                        buffer.clear();
-
-                        num_records = 0;
-                    }
+                    num_records += 1;
                 }
-                cursor.step_key();
+
+                if num_records >= self.config.buffer_size_records || buffer_full {
+                    let buffer_cursor = Cursor::new(&mut buffer);
+                    let mut writer =
+                        ArrowWriter::try_new(buffer_cursor, schema.clone(), Some(props.clone()))?;
+                    let arrays = builder.build_arrays()?;
+                    let batch = RecordBatch::try_new(schema.clone(), arrays)?;
+                    writer.write(&batch)?;
+                    writer.close()?;
+
+                    self.output_consumer.push_buffer(&buffer, num_records);
+                    buffer.clear();
+
+                    num_records = 0;
+                }
             }
+            cursor.step_key();
         }
 
         if num_records > 0 {
@@ -378,7 +373,7 @@ impl Encoder for ParquetEncoder {
             let batch = RecordBatch::try_new(schema.clone(), arrays)?;
             writer.write(&batch)?;
             writer.close()?;
-            self.output_consumer.push_buffer(&buffer);
+            self.output_consumer.push_buffer(&buffer, num_records);
             buffer.clear();
         }
 

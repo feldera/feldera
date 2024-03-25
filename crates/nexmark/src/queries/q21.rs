@@ -38,7 +38,7 @@ use regex::Regex;
 type Q21Set = OrdZSet<Tup5<u64, u64, u64, String, String>>;
 type Q21Stream = Stream<RootCircuit, Q21Set>;
 
-pub fn q21(input: NexmarkStream) -> Q21Stream {
+pub fn q21(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q21Stream {
     let channel_regex = Regex::new(r"channel_id=([^&]*)").unwrap();
 
     input.flat_map(move |event| match event {
@@ -123,7 +123,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q21(stream);
+            let output = q21(circuit, stream);
 
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

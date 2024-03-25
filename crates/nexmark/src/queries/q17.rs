@@ -53,7 +53,7 @@ type Q17Output = Tup10<u64, String, ZWeight, ZWeight, ZWeight, ZWeight, u64, u64
 
 type Q17Stream = Stream<RootCircuit, OrdZSet<Q17Output>>;
 
-pub fn q17(input: NexmarkStream) -> Q17Stream {
+pub fn q17(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q17Stream {
     let iso8601_day_format = &Iso8601::<
         {
             iso8601::Config::DEFAULT
@@ -316,7 +316,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q17(stream);
+            let output = q17(circuit, stream);
 
             let mut expected_output = expected_zsets.into_iter();
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));

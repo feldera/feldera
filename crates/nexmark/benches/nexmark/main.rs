@@ -2,25 +2,18 @@
 //!
 //! CLI for running Nexmark benchmarks with DBSP.
 
-#[macro_use]
-mod run_queries;
-
 use anyhow::{anyhow, Result};
 use ascii_table::AsciiTable;
 use clap::Parser;
 use dbsp::utils::Tup2;
 use dbsp::{
     mimalloc::{AllocStats, MiMalloc},
-    utils::Tup3,
     DBSPHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
 };
 use dbsp_nexmark::{
-    config::{Config as NexmarkConfig, Query as NexmarkQuery},
+    config::Config as NexmarkConfig,
     model::Event,
-    queries::{
-        q0, q1, q12, q13, q13_side_input, q14, q15, q16, q17, q18, q19, q2, q20, q21, q22, q3, q4,
-        q5, q6, q7, q8, q9,
-    },
+    queries::{Query, ALL_QUERIES},
     NexmarkSource,
 };
 use indicatif::{ProgressBar, ProgressStyle};
@@ -217,6 +210,92 @@ fn create_ascii_table() -> AsciiTable {
     ascii_table
 }
 
+fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
+    let name = format!("{query:?}");
+    println!("Starting {name} bench of {} events...", config.max_events);
+
+    let num_cores = config.cpu_cores;
+    let expected_num_events = config.max_events;
+    let (dbsp, input_handle) =
+        Runtime::init_circuit(num_cores, move |circuit: &mut RootCircuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<Event>();
+
+            query.query(circuit, stream);
+            Ok(input_handle)
+        })
+        .unwrap();
+
+    // Create a channel for the coordinating thread to determine whether the
+    // producer or consumer step is completed first.
+    let (step_done_tx, step_done_rx) = mpsc::sync_channel(2);
+
+    // Start the DBSP runtime processing steps only when it receives a message to do
+    // so. The DBSP processing happens in its own thread where the resource usage
+    // calculation can also happen.
+    let (dbsp_step_tx, dbsp_step_rx) = mpsc::sync_channel(1);
+    let dbsp_join_handle = spawn_dbsp_consumer(
+        &name,
+        config.profile_path.as_deref(),
+        dbsp,
+        dbsp_step_rx,
+        step_done_tx.clone(),
+    );
+
+    // Start the generator inputting the specified number of batches to the circuit
+    // whenever it receives a message.
+    let (source_step_tx, source_step_rx): (mpsc::SyncSender<()>, mpsc::Receiver<()>) =
+        mpsc::sync_channel(1);
+    let (source_exhausted_tx, source_exhausted_rx) = mpsc::sync_channel(1);
+    spawn_source_producer(
+        config.clone(),
+        input_handle,
+        source_step_rx,
+        step_done_tx,
+        source_exhausted_tx,
+    );
+
+    ALLOC.reset_stats();
+    let before_stats = ALLOC.stats();
+    let start = Instant::now();
+
+    let input_stats = coordinate_input_and_steps(
+        expected_num_events,
+        dbsp_step_tx,
+        source_step_tx,
+        step_done_rx,
+        source_exhausted_rx,
+        dbsp_join_handle,
+    )
+    .unwrap();
+
+    let elapsed = start.elapsed();
+    let after_stats = ALLOC.stats();
+
+    // Return the user/system CPU overhead from the generator/input thread.
+    NexmarkResult {
+        name,
+        num_cores,
+        before_stats,
+        after_stats,
+        elapsed,
+        num_events: input_stats.num_events,
+    }
+}
+
+fn run_queries(nexmark_config: &NexmarkConfig) -> Vec<NexmarkResult> {
+    let queries_to_run = if nexmark_config.query.is_empty() {
+        ALL_QUERIES.as_slice()
+    } else {
+        &nexmark_config.query
+    };
+    let mut results = Vec::new();
+    for &query in queries_to_run {
+        let result = run_query(nexmark_config, query);
+        results.push(result);
+    }
+    results
+}
+
 // TODO(absoludity): Some tools mentioned at
 // https://nnethercote.github.io/perf-book/benchmarking.html but as had been
 // said earlier, most are more suited to micro-benchmarking.  I assume that our
@@ -229,38 +308,9 @@ fn create_ascii_table() -> AsciiTable {
 
 fn main() -> Result<()> {
     let nexmark_config = NexmarkConfig::parse();
-    let max_events = nexmark_config.max_events;
-    let queries_to_run = nexmark_config.query.clone();
     let cpu_cores = nexmark_config.cpu_cores;
 
-    let results = run_queries!(
-        nexmark_config,
-        max_events,
-        queries_to_run,
-        queries => {
-            q0,
-            q1,
-            q2,
-            q3,
-            q4,
-            q5,
-            q6,
-            q7,
-            q8,
-            q9,
-            q12,
-            q13,
-            q14,
-            q15,
-            q16,
-            q17,
-            q18,
-            q19,
-            q20,
-            q21,
-            q22,
-        }
-    );
+    let results = run_queries(&nexmark_config);
 
     let ascii_table = create_ascii_table();
     ascii_table.print(results.iter().map(|result| {

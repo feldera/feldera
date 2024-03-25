@@ -582,6 +582,7 @@ pub async fn fetch_binary_ref(
                     let path = config.binary_file_path(pipeline_id, program_id, version);
                     let mut file = tokio::fs::File::options()
                         .create(true)
+                        .truncate(true)
                         .write(true)
                         .read(true)
                         .mode(0o760)
@@ -652,6 +653,8 @@ mod test {
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;
 
+    use crate::compiler::ProgramConfig;
+    use crate::config::CompilationProfile;
     use crate::db::storage::Storage;
     use crate::db::{PipelineId, PipelineStatus, ProjectDB};
     use crate::pipeline_automata::PipelineAutomaton;
@@ -732,6 +735,9 @@ mod test {
                 "test0",
                 "program desc",
                 "ignored",
+                &ProgramConfig {
+                    profile: CompilationProfile::Unoptimized,
+                },
                 None,
             )
             .await

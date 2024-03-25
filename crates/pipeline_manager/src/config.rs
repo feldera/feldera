@@ -2,7 +2,7 @@ use crate::db::{PipelineId, ProgramId, Version};
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     fs::{canonicalize, create_dir_all},
@@ -10,6 +10,7 @@ use std::{
     str::FromStr,
     string::ParseError,
 };
+use utoipa::ToSchema;
 
 const fn default_server_port() -> u16 {
     8080
@@ -234,7 +235,11 @@ impl ApiServerConfig {
 }
 
 /// Argument to `cargo build --profile <>` passed to the rust compiler
-#[derive(Parser, Default, Deserialize, Debug, Clone)]
+///
+/// Note that this is a hint to the backend, and can be overriden by
+/// the Feldera instance depending on the administrator configuration.
+#[derive(Parser, Default, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum CompilationProfile {
     /// Prioritizes compilation speed over runtime speed
     Unoptimized,
@@ -266,10 +271,6 @@ impl Display for CompilationProfile {
     }
 }
 
-fn default_compilation_profile() -> CompilationProfile {
-    CompilationProfile::Optimized
-}
-
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -280,15 +281,18 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = default_working_directory())]
     pub compiler_working_directory: String,
 
-    /// Pick the profile to use for cargo build.
+    /// Pick the profile to use for cargo build. Setting this option
+    /// will override any configuration specified by the program
+    ///
     /// Available choices are:
+    /// * None: let the program self-specify the profile it wants.
     /// * 'unoptimized', for faster compilation times
     /// at the cost of lower runtime performance.
     /// * 'optimized', for faster runtime performance
     /// at the cost of slower compilation times.
     #[serde(default)]
-    #[arg(long, default_value_t = default_compilation_profile())]
-    pub compilation_profile: CompilationProfile,
+    #[arg(long)]
+    pub compilation_profile: Option<CompilationProfile>,
 
     /// Location of the SQL-to-DBSP compiler.
     #[serde(default = "default_sql_compiler_home")]
@@ -362,10 +366,15 @@ impl CompilerConfig {
     /// Location of the compiled executable for the project in the cargo target
     /// dir.
     /// Note: This is generally not an executable that's run as a pipeline.
-    pub(crate) fn target_executable(&self, program_id: ProgramId) -> PathBuf {
+    pub(crate) fn target_executable(
+        &self,
+        program_id: ProgramId,
+        profile: &CompilationProfile,
+    ) -> PathBuf {
+        // Always pick the compiler server's compilation profile if it is configured.
         Path::new(&self.workspace_dir())
             .join("target")
-            .join(self.compilation_profile.to_string())
+            .join(profile.to_string())
             .join(Self::crate_name(program_id))
     }
 

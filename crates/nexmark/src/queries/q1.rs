@@ -1,5 +1,6 @@
 use super::NexmarkStream;
 use crate::model::{Bid, Event};
+use dbsp::RootCircuit;
 
 /// Currency Conversion
 ///
@@ -26,7 +27,7 @@ use crate::model::{Bid, Event};
 ///     dateTime,
 ///     extra
 /// FROM bid;
-pub fn q1(input: NexmarkStream) -> NexmarkStream {
+pub fn q1(_circuit: &mut RootCircuit, input: NexmarkStream) -> NexmarkStream {
     input.map(|event| match event {
         Event::Bid(b) => Event::Bid(Bid {
             price: b.price * 89 / 100,
@@ -113,7 +114,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q1(stream);
+            let output = q1(circuit, stream);
 
             let mut expected_output = input_vecs().into_iter().map(|v| {
                 let expected_v = v

@@ -141,6 +141,69 @@ impl ConnectorConfig {
     }
 }
 
+fn default_max_buffer_time_millis() -> usize {
+    usize::MAX
+}
+
+fn default_max_buffer_size_records() -> usize {
+    usize::MAX
+}
+
+#[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct OutputBufferConfig {
+    /// Enable output buffering.
+    ///
+    /// The output buffering mechanism allows decoupling the rate at which the pipeline
+    /// pushes changes to the output transport from the rate of input changes.
+    ///
+    /// By default, output updates produced by the pipeline are pushed directly to
+    /// the output transport. Some destinations may prefer to receive updates in fewer
+    /// bigger batches. For instance, when writing Parquet files, producing
+    /// one bigger file every few minutes is usually better than creating
+    /// small files every few milliseconds.
+    ///
+    /// To achieve such input/output decoupling, users can enable output buffering by
+    /// setting the `enable_buffer` flag to `true`.  When buffering is enabled, output
+    /// updates produced by the pipeline are consolidated in an internal buffer and are
+    /// pushed to the output transport when one of several conditions is satisfied:
+    ///
+    /// * data has been accumulated in the buffer for more than `max_buffer_time_millis`
+    ///   milliseconds.
+    /// * buffer size exceeds `max_buffered_records` records.
+    ///
+    /// This flag is `false` by default.
+    // TODO: on-demand output triggered via the API.
+    #[serde(default)]
+    pub enable_buffer: bool,
+
+    /// Maximum time in milliseconds data is kept in the buffer.
+    ///
+    /// By default, data is kept in the buffer indefinitely until one of
+    /// the other output conditions is satisfied.  When this option is
+    /// set the buffer will be flushed at most every
+    /// `max_buffer_time_millis` milliseconds.
+    ///
+    /// NOTE: this configuration option requires the `enable_buffer` flag
+    /// to be set.
+    #[serde(default = "default_max_buffer_time_millis")]
+    pub max_buffer_time_millis: usize,
+
+    /// Maximum number of output updates to be kept in the buffer.
+    ///
+    /// This parameter bounds the maximal size of the buffer.  
+    /// Note that the size of the buffer is not always equal to the
+    /// total number of updates output by the pipeline. Updates to the
+    /// same record can overwrite or cancel previous updates.
+    ///
+    /// By default, the buffer can grow indefinitely until one of
+    /// the other output conditions is satisfied.
+    ///
+    /// NOTE: this configuration option requires the `enable_buffer` flag
+    /// to be set.
+    #[serde(default = "default_max_buffer_size_records")]
+    pub max_buffer_size_records: usize,
+}
+
 /// Describes an output connector configuration
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct OutputEndpointConfig {
@@ -155,6 +218,10 @@ pub struct OutputEndpointConfig {
     /// Connector configuration.
     #[serde(flatten)]
     pub connector_config: ConnectorConfig,
+
+    /// Output buffer configuration.
+    #[serde(flatten)]
+    pub output_buffer_config: OutputBufferConfig,
 }
 
 /// Transport endpoint configuration.

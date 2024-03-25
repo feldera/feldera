@@ -19,7 +19,10 @@ use dbsp::{utils::Tup2, OrdZSet, RootCircuit, Stream};
 /// SELECT auction, price FROM bid WHERE MOD(auction, 123) = 0;
 const AUCTION_ID_MODULO: u64 = 123;
 
-pub fn q2(input: NexmarkStream) -> Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>> {
+pub fn q2(
+    _circuit: &mut RootCircuit,
+    input: NexmarkStream,
+) -> Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>> {
     input.flat_map(|event| match event {
         Event::Bid(b) => match b.auction % AUCTION_ID_MODULO == 0 {
             true => Some(Tup2(b.auction, b.price)),
@@ -90,7 +93,7 @@ mod tests {
         let (circuit, input_handle) = RootCircuit::build(move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
-            let output = q2(stream);
+            let output = q2(circuit, stream);
 
             let mut expected_output = vec![
                 OrdZSet::from_keys((), vec![Tup2(Tup2(AUCTION_ID_MODULO, 111), 1)]),
