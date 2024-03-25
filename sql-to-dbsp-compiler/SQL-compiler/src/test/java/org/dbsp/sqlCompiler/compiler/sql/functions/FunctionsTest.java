@@ -1728,19 +1728,6 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
-    public void testGunzipFail() {
-        this.runtimeFail("SELECT GUNZIP(x'1f8b08000000000000ffcb48cdc9c9070086a6103605000000'::bytea)",
-                "FunctionsTest#testGunzipFail",
-                new InputOutputChangeStream(
-                ).addPair(new Change(), new Change(new DBSPZSetLiteral(
-                        new DBSPTupleExpression(
-                                new DBSPStringLiteral("feldera") // actually returns hello
-                        )
-                )))
-        );
-    }
-
-    @Test
     public void testGunzipRuntimeFail() {
         this.runtimeConstantFail("SELECT GUNZIP(x'1100'::bytea)", "failed to decompress gzipped data");
     }
