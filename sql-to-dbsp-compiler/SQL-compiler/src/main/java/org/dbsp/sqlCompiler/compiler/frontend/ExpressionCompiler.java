@@ -1014,6 +1014,45 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 }
                 return this.compileUDF(node, call, type, ops);
             }
+            case ARRAYS_OVERLAP: {
+                if (ops.size() != 2)
+                    throw new UnimplementedException(node);
+
+                DBSPExpression arg0 = ops.get(0);
+                DBSPTypeVec arg0Vec = arg0.getType().to(DBSPTypeVec.class);
+                DBSPType arg0ElemType = arg0Vec.getElementType();
+
+                DBSPExpression arg1 = ops.get(1);
+                DBSPTypeVec arg1Vec = arg1.getType().to(DBSPTypeVec.class);
+                DBSPType arg1ElemType = arg1Vec.getElementType();
+
+                // if the two arrays are of different types of elements
+                if (!arg0ElemType.sameType(arg1ElemType)) {
+                    // check if the nullability of arg0 needs to change to match arg1
+                    if (arg1ElemType.mayBeNull && !arg0ElemType.mayBeNull) {
+                        if (arg0Vec.mayBeNull && arg0.equals(arg0Vec.nullValue())) {
+                            arg0 = new DBSPTypeVec(arg1ElemType, true).nullValue();
+                            ops.set(0, arg0);
+                        } else {
+                            arg0 = this.ensureArrayElementsOfType(arg0, arg1ElemType);
+                            ops.set(0, arg0);
+                        }
+                    } else if (arg0ElemType.mayBeNull && !arg1ElemType.mayBeNull) {
+                        if (arg1Vec.mayBeNull && arg1.equals(arg1Vec.nullValue())) {
+                            arg1 = new DBSPTypeVec(arg0ElemType, true).nullValue();
+                            ops.set(1, arg1);
+                        }
+                        arg1 = this.ensureArrayElementsOfType(arg1, arg0ElemType);
+                        ops.set(1, arg1);
+                    }
+                    // if the nullability is not the problem, return an unimplemented error as types are different
+                    else {
+                        throw new UnimplementedException(node);
+                    }
+                }
+
+                return this.compileFunction(call, node, type, ops, 2);
+            }
             case OTHER:
                 String opName = call.op.getName().toLowerCase();
                 //noinspection SwitchStatementWithTooFewBranches
