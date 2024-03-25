@@ -1,8 +1,8 @@
-version: "2.2"
 name: nexmark
 services:
   jobmanager:
-    image: localhost/nexmark:latest
+    build:
+      context: .
     ports:
       - "8081:8081"
     command: jobmanager
@@ -12,7 +12,8 @@ services:
         jobmanager.rpc.address: jobmanager
 
   taskmanager:
-    image: localhost/nexmark:latest
+    build:
+      context: .
     depends_on:
       - jobmanager
     command: taskmanager

@@ -21,7 +21,7 @@
 #==============================================================================
 
 # The metric reporter server host.
-nexmark.metric.reporter.host: nexmark_jobmanager_1
+nexmark.metric.reporter.host: nexmark-jobmanager-1
 # The metric reporter server port.
 nexmark.metric.reporter.port: 9098
 

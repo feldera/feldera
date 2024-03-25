@@ -83,7 +83,7 @@ if test -n "$nextarg"; then
 fi
 
 cat > /opt/nexmark/conf/nexmark.yaml <<EOF
-nexmark.metric.reporter.host: nexmark_jobmanager_1
+nexmark.metric.reporter.host: nexmark-jobmanager-1
 nexmark.metric.reporter.port: 9098
 
 nexmark.workload.suite.100m.events.num: $events

@@ -2,7 +2,7 @@
 
 set -o pipefail
 
-runner=dbsp
+runner=feldera
 mode=stream
 events=100k
 language=default
@@ -114,7 +114,7 @@ run-nexmark, for running the Nexmark benchmark with various backends
 Usage: $0 [OPTIONS]
 
 The following options are supported:
-  -r, --runner=RUNNER   Use back end RUNNER, one of: dbsp flink beam.direct
+  -r, --runner=RUNNER   Use back end RUNNER, one of: feldera flink beam.direct
                         beam.flink beam.spark beam.dataflow
   -s, --stream          Run stream analytics (default)
   -b, --batch           Run batch analytics
@@ -153,7 +153,8 @@ if test -n "$nextarg"; then
 fi
 
 case $runner in
-    dbsp | flink | beam.direct | beam.flink | beam.spark) ;;
+    dbsp) runner=feldera ;;
+    feldera | flink | beam.direct | beam.flink | beam.spark) ;;
     beam.dataflow)
 	if ! $parse; then
 	    if test -z "$project"; then
@@ -186,6 +187,10 @@ case $events in
 	echo >&2 "$0: --events must be a number with optional k, M, or G suffix"
 	exit 1
 	;;
+esac
+case $query in
+    all | [0-9] | [0-9][0-9]) ;;
+    *) echo >&2 "$0: --query must be 'all' or a number"; exit 1 ;;
 esac
 case $mode in
     stream | streaming) mode=stream streaming=true ;;
@@ -297,14 +302,14 @@ beam2csv() {
     done | sort | uniq
 }
 
-dbsp2csv() {
-    sed 's/[ 	]//g' | while read line; do
+feldera2csv() {
+    sed 's/[ 	]//g' | tr Q q | while read line; do
 	case $line in
 	    *'│'*)
 		save_IFS=$IFS IFS=│; set $line; IFS=$save_IFS
 		shift
 		case $1:$2 in
-		    q*:*,*) ;;
+		    [qQ]*:*,*) ;;
 		    *) continue ;;
 		esac
 		query=$1 events=$(echo "$2" | sed 's/,//g') cores=$3
@@ -368,7 +373,7 @@ csv_heading=when,runner,mode,language,name,num_cores,num_events,elapsed
 parse() {
     csv_common=$when,$runner,$mode,$language
     case $runner in
-	dbsp) dbsp2csv ;;
+	feldera) feldera2csv ;;
 	flink) flink2csv ;;
 	beam.*) beam2csv ;;
 	*) echo >&2 "unknown runner $runner"; exit 1 ;;
@@ -389,7 +394,7 @@ Running Nexmark suite with configuration:
   cores: $cores
 EOF
 case $runner in
-    dbsp)
+    feldera)
 	rm -f results.csv
 	set -- \
 	    --first-event-rate=10000000 \
@@ -411,19 +416,19 @@ case $runner in
 	# Each Flink replica has two cores.
 	replicas=$(expr \( $cores + 1 \) / 2)
 	yml=flink/docker-compose-${cores}core.yml
-	sed "s/replicas: .*/replicas: $replicas/" < flink/docker-compose.yml > $yml
+	sed "# Generated automatically -- do not modify!    -*- buffer-read-only: t -*-
+s/replicas: .*/replicas: $replicas/" < flink/docker-compose.yml > $yml
 
 	# Query names need 'q' prefix
 	if test "$query" != all; then
 	    query=q$query
 	fi
 
-	DOCKER=$(find_program podman docker)
-	DOCKER_COMPOSE=$(find_program podman-compose docker-compose)
-	run $DOCKER_COMPOSE -p nexmark -f $yml down -t 0
-	run $DOCKER_COMPOSE -p nexmark -f $yml up -d || exit 1
-	run_log $DOCKER exec nexmark_jobmanager_1 run.sh --queries "$query" --events $events || exit 1
-	run $DOCKER_COMPOSE -p nexmark -f $yml down -t 0 || exit 1
+	DOCKER=$(find_program docker podman)
+	run $DOCKER compose -p nexmark -f $yml down -t 0
+	run $DOCKER compose -p nexmark -f $yml up -d --build --force-recreate --renew-anon-volumes || exit 1
+	run_log $DOCKER exec nexmark-jobmanager-1 run.sh --queries "$query" --events $events || exit 1
+	run $DOCKER compose -p nexmark -f $yml down -t 0 || exit 1
 	;;
 
     beam.direct)
