@@ -128,6 +128,9 @@ export function useTableUpdater() {
       try {
         for await (const line of readLineFromStream(response)) {
           const obj = JSONbig.parse(line)
+
+          setLoading(false)
+
           if (!obj.json_data) {
             // A ping message, we ignore this.
             continue
@@ -139,7 +142,6 @@ export function useTableUpdater() {
             )
           )
 
-          setLoading(false)
           rowsCallback(setRows, parsedRows)
         }
       } catch (e) {

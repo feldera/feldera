@@ -1137,19 +1137,17 @@ const STRING_GENERATORS: IRngGenMethod[] = [
       .with(
         {
           type: SqlType.VARCHAR,
-          precision: P.when(nonNull)
+          precision: P.when(value => (value ?? -1) >= 0)
         },
-        ({ precision }) => string.substring(0, precision)
+        ({ precision }) => string.substring(0, precision!)
       )
-      .with({ type: SqlType.VARCHAR }, () => string)
       .with(
         {
           type: SqlType.CHAR,
-          precision: P.when(nonNull)
+          precision: P.when(value => (value ?? -1) >= 0)
         },
-        ({ precision }) => string.substring(0, precision).padEnd(precision)
+        ({ precision }) => string.substring(0, precision!).padEnd(precision!)
       )
-      .with({ type: SqlType.CHAR }, () => string)
       .otherwise(() => string)
   }
 }))

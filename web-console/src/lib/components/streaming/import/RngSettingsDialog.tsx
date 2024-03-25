@@ -2,9 +2,9 @@
 // the table.
 
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-import { ColumnType, Field, Relation, SqlType } from '$lib/services/manager'
+import { displaySQLColumnType } from '$lib/functions/sql'
+import { Field, Relation, SqlType } from '$lib/services/manager'
 import { forwardRef, ReactElement, Ref, useState } from 'react'
-import { match, P } from 'ts-pattern'
 import IconCog from '~icons/bx/cog'
 import IconX from '~icons/bx/x'
 
@@ -56,36 +56,6 @@ const Transition = forwardRef(function Transition(
   return <Fade ref={ref} {...props} />
 })
 
-// Display a Field type in a readable format.
-export function displayFieldType(field: Field): string {
-  const name = formatName(field.columntype)
-
-  function formatName(type: ColumnType | null | undefined): string {
-    if (!type) {
-      return ''
-    }
-    const name = type.type
-    const length = match(type)
-      .with(
-        { precision: P.when(value => value != null && value >= 0), scale: P.when(value => value && value >= 0) },
-        () => {
-          return `(${type.precision}, ${type.scale})`
-        }
-      )
-      .with({ precision: P.when(value => value != null && value >= 0) }, () => {
-        return `(${type.precision})`
-      })
-      .otherwise(() => {
-        return ''
-      })
-
-    return `${name}${length} ` + formatName(type.component)
-  }
-
-  const nullable = field.columntype.nullable ? ' | NULL' : ''
-  return `${name}${nullable}`
-}
-
 const FieldRngSettings = (props: {
   field: Field
   index: number
@@ -101,7 +71,7 @@ const FieldRngSettings = (props: {
           <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>
             {index + 1}. {getCaseIndependentName(field)}:
           </Typography>
-          <Typography sx={{ color: 'text.secondary' }}>{displayFieldType(field)}</Typography>
+          <Typography sx={{ color: 'text.secondary' }}>{displaySQLColumnType(field)}</Typography>
         </Box>
       </Grid>
 
