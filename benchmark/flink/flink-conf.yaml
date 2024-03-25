@@ -15,14 +15,15 @@
 #  See the License for the specific language governing permissions and
 # limitations under the License.
 ################################################################################
-#execution.target: yarn-per-job
+
 taskmanager.memory.process.size: 8G
-jobmanager.rpc.address: nexmark_jobmanager_1
+jobmanager.rpc.address: nexmark-jobmanager-1
 jobmanager.rpc.port: 6123
 jobmanager.memory.process.size: 8G
 taskmanager.numberOfTaskSlots: 1
 parallelism.default: 8
 io.tmp.dirs: /tmp
+
 #==============================================================================
 # JVM
 #==============================================================================
@@ -33,52 +34,11 @@ env.java.opts.jobmanager: -Xloggc:/opt/flink/log/jobmanager-gc.log
 env.java.opts.taskmanager: -Xloggc:/opt/flink/log/taskmanager-gc.log
 
 #==============================================================================
-# Job schedule & failover
-#==============================================================================
-
-# Restart strategy related configuration
-restart-strategy: fixed-delay
-restart-strategy.fixed-delay.attempts: 2147483647
-restart-strategy.fixed-delay.delay: 10 s
-
-# Max task attempts to retain in JM
-jobmanager.execution.attempts-history-size: 100
-
-#==============================================================================
-# Resources & Slots
-#==============================================================================
-
-# Timeout (ms) for an idle TM to be released.
-slotmanager.taskmanager-timeout: 600000
-
-#==============================================================================
-# Network
-#==============================================================================
-
-# Number of extra network buffers to use for each outgoing/incoming gate
-# (result partition/input gate).
-taskmanager.network.memory.floating-buffers-per-gate: 256
-
-# The number of buffers available for each external blocking channel.
-# Will change it to be the default value later.
-taskmanager.network.memory.buffers-per-external-blocking-channel: 16
-
-# The maximum number of concurrent requests in the reduce-side tasks.
-# Will change it to be the default value later.
-task.external.shuffle.max-concurrent-requests: 512
-
-# Whether to enable compress shuffle data when using external shuffle.
-# Will change it to be the default value later.
-task.external.shuffle.compression.enable: true
-
-# Maximum backoff time (ms) for partition requests of input channels.
-taskmanager.network.request-backoff.max: 300000
-
-#==============================================================================
 # State & Checkpoint
 #==============================================================================
 
 state.backend: rocksdb
+# for example, hdfs://benchmark01/checkpoint
 state.checkpoints.dir: file:///tmp/checkpoints
 state.backend.rocksdb.localdir: /tmp/rocksdb
 state.backend.incremental: true
@@ -86,23 +46,9 @@ execution.checkpointing.interval: 180000
 execution.checkpointing.mode: EXACTLY_ONCE
 state.backend.local-recovery: true
 
-# dir to store states
-# state.checkpoints.dir: hdfs://benchmark01/checkpoint
-
 #==============================================================================
 # Runtime Others
 #==============================================================================
-
-# akka configs
-akka.ask.timeout: 120 s
-akka.watch.heartbeat.interval: 10 s
-akka.framesize: 102400kB
-
-# timeout to get response from REST. it is also used as the default future
-# timeout when REST quries Flink job status
-web.timeout: 120000
-
-classloader.resolve-order: parent-first
 
 # configuration options for adjusting and tuning table programs.
 table.exec.mini-batch.enabled: true
@@ -110,5 +56,6 @@ table.exec.mini-batch.allow-latency: 2s
 table.exec.mini-batch.size: 50000
 table.optimizer.distinct-agg.split.enabled: true
 
+# disable final checkpoint to avoid test waiting for the last checkpoint complete
+execution.checkpointing.checkpoints-after-tasks-finish.enabled: false
 ## EOF ##
-

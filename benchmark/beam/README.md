@@ -28,8 +28,8 @@ https://beam.apache.org/documentation/sdks/java/testing/nexmark/.
 
 ## Prerequisites
 
-Install the Java Development Kit.  JDK versions 8, 11, and 17 should
-work.  These instructions were tested with JDK 11.
+Install the Java Development Kit.  These instructions were tested with
+OpenJDK 21.0.2.
 
 ## Setting up Beam
 
@@ -42,10 +42,10 @@ You can follow the instructions below to build Nexmark, or run
    git clone https://github.com/apache/beam.git
    ```
 
-   If you wish to benchmark a particular version, check out its tag:
+   If you wish to benchmark a particular version, check it out:
 
    ```
-   (cd beam && git checkout v2.46.0)
+   (cd beam && git checkout origin/release-2.55.0)
    ```
 
 2. Apply `configurable-spark-master.patch`:

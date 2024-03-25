@@ -1,21 +1,17 @@
 # Running Nexmark Benchmarks on Flink with Kafka
 
-It's useful for comparative purposes to be able to run the same
-benchmark on DBSP and other systems.  These instructions explain how
-to run the [Nexmark benchmarks](https://github.com/nexmark/nexmark) on
-Flink in a reproducible manner.  The benchmarks run on a single
-physical node using multiple containers using Docker Compose.  One
-container runs the Flink jobmanager, and additional containers (by
-default 8) run Flink taskmanager.
+It's useful to be able to run the same benchmark on Feldera and other
+systems.  These instructions explain how to run the [Nexmark
+benchmarks](https://github.com/nexmark/nexmark) on Flink in a
+reproducible manner.  The benchmarks run on a single physical node
+using multiple containers using Docker Compose.  One container runs
+the Flink jobmanager, and additional containers (by default 8) run
+Flink taskmanager.
 
 These instructions run Flink with Kafka as a data source.  **These
 instructions are unsatisfactory because they will use all your disk
 space quickly (1+ TB in 30 minutes).  Presumably that is fixable but
 it is not yet fixed.**
-
-The following instructions use `docker` and `docker-compose`, since
-that's what most people expect, but they were instead tested with
-`podman` and `podman-compose`, which are compatible.
 
 1. `cd` to the directory that contains this `README.md`, because the
    files in this directory are useful for building the Docker
@@ -78,14 +74,14 @@ docker build -t nexmark-kafka .
 7. Start the containers:
 
 ```
-docker-compose -p nexmark up
+docker compose -p nexmark up
 ```
 
    To reduce output spew, add `-d` (but sometimes that output can be
    informative):
 
 ```
-podman-compose up -d -p nexmark
+docker compose up -d -p nexmark
 ```
 
 8. Run the `insert_kafka` query to start inserting data into Kafka.
@@ -94,11 +90,11 @@ podman-compose up -d -p nexmark
    (over 1 TB in 30 minutes).
    
    You might want to do this from a separate terminal, because the
-   `docker-compose` from the previous step will spew tons of
+   `docker compose` from the previous step will spew tons of
    distractions (unless you added `-d` above).
 
 ```
-podman exec nexmark_jobmanager_1 run-nexmark.sh insert_kafka
+docker exec nexmark-jobmanager-1 run-nexmark.sh insert_kafka
 ```
 
 9. Run tests.
@@ -106,15 +102,15 @@ podman exec nexmark_jobmanager_1 run-nexmark.sh insert_kafka
    You can run a single test, a comma-separated list, or all of them:
 
 ```
-podman exec nexmark_jobmanager_1 run-nexmark.sh q0,q1,q2
-podman exec nexmark_jobmanager_1 run-nexmark.sh all
+docker exec nexmark-jobmanager-1 run-nexmark.sh q0,q1,q2
+docker exec nexmark-jobmanager-1 run-nexmark.sh all
 ```
 
    You can also run a shell in any of the containers, e.g.:
 
 ```
-podman exec -it nexmark_jobmanager_1 bash
-podman exec -it nexmark_taskmanager_1 bash
+docker exec -it nexmark-jobmanager-1 bash
+docker exec -it nexmark-taskmanager-1 bash
 ```
 
    You'll probably run out of disk space if you run more than one.
@@ -125,5 +121,5 @@ podman exec -it nexmark_taskmanager_1 bash
 10. When you're done, stop the containers:
 
 ```
-docker-compose -p nexmark down
+docker compose -p nexmark down
 ```

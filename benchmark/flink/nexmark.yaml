@@ -21,7 +21,7 @@
 #==============================================================================
 
 # The metric reporter server host.
-nexmark.metric.reporter.host: nexmark_jobmanager_1
+nexmark.metric.reporter.host: nexmark-jobmanager-1
 # The metric reporter server port.
 nexmark.metric.reporter.port: 9098
 
@@ -35,7 +35,7 @@ nexmark.workload.suite.100m.tps: 10000000
 nexmark.workload.suite.100m.queries: "q0,q1,q2,q3,q4,q5,q7,q8,q9,q11,q12,q13,q14,q15,q16,q17,q18,q19,q20,q21,q22"
 # nexmark.workload.suite.100m.queries: "q0,q1,q2,q3,q4,q5,q7,q8,q9,q10,q11,q12,q13,q14,q15,q16,q17,q18,q19,q20,q21,q22"
 nexmark.workload.suite.100m.queries.cep: "q0,q1,q2,q3"
-nexmark.workload.suite.100m.warmup.durartion: 120s
+nexmark.workload.suite.100m.warmup.duration: 120s
 nexmark.workload.suite.100m.warmup.events.num: 100000000
 nexmark.workload.suite.100m.warmup.tps: 10000000
 

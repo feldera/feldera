@@ -17,7 +17,7 @@
 ################################################################################
 #execution.target: yarn-per-job
 taskmanager.memory.process.size: 8G
-jobmanager.rpc.address: nexmark_jobmanager_1
+jobmanager.rpc.address: nexmark-jobmanager-1
 jobmanager.rpc.port: 6123
 jobmanager.memory.process.size: 8G
 taskmanager.numberOfTaskSlots: 1

@@ -1,6 +1,5 @@
-/* This is SPSS syntax for generating a summary table.  It works with
-/* GNU PSPP's current tip-of-master (the CTABLES command isn't supported
-/* in the latest release version).
+/* This is SPSS syntax for generating a summary table.
+/* It also works with GNU PSPP 2.0 or later.
 
 DATA LIST LIST(',') NOTABLE FILE='|grep -vh when *-100M.csv'
    /when (YMDHMS17)
@@ -13,7 +12,7 @@ DATA LIST LIST(',') NOTABLE FILE='|grep -vh when *-100M.csv'
     elapsed (F5.3).
 VARIABLE LEVEL cores events elapsed (SCALE) query (NOMINAL).
 
-SELECT IF mode='stream'.
+*SELECT IF mode='stream'.
 
 VALUE LABELS language
   'sql' 'SQL'
@@ -26,6 +25,7 @@ VARIABLE LEVEL querynum (NOMINAL).
 
 RECODE runner
   ('dbsp'=0)
+  ('feldera'=0)
   ('flink'=1)
   ('beam.direct'=2)
   ('beam.flink'=3)
@@ -35,7 +35,7 @@ RECODE runner
   INTO nrunner.
 VARIABLE LABEL nrunner 'runner'.
 VALUE LABELS nrunner
-  0 'DBSP'
+  0 'Feldera'
   1 'Flink'
   2 'Beam (direct)'
   3 'Flink on Beam'
@@ -47,7 +47,6 @@ COMPUTE eps=events/elapsed.
 VARIABLE LABEL eps 'events/s'.
 FORMATS eps(COMMA10).
 CTABLES
-    /TABLE=querynum BY nrunner > language > eps
+    /TABLE=querynum BY nrunner > mode > language > eps
     /TITLES
-     TITLE='16-core Nexmark Streaming Performance'
-     CAPTION='Beam Spark performance omitted because Nexmark hangs in streaming mode.'.
+     TITLE='16-core Nexmark Streaming Performance'.
