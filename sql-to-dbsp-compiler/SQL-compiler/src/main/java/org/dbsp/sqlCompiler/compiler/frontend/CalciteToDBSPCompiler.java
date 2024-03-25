@@ -1724,7 +1724,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
 
             String saneName = this.compiler.getSaneStructName(stat.typeName);
-            DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, saneName, fields);
+            DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, saneName, fields, false);
             this.compiler.registerStruct(struct);
             DBSPItem item = new DBSPStructItem(struct);
             this.circuit.addDeclaration(new DBSPTypeDeclaration(item));

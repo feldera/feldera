@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
@@ -60,6 +61,11 @@ public class RustFileWriter {
         @Override
         public void postorder(DBSPTypeTuple type) {
             RustFileWriter.this.used.tupleSizesUsed.add(type.size());
+        }
+
+        @Override
+        public void postorder(DBSPTypeStruct type) {
+            RustFileWriter.this.used.tupleSizesUsed.add(type.fields.size());
         }
 
         @Override

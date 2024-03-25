@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 
@@ -71,12 +72,12 @@ public interface IHasSchema {
     }
 
     default DBSPTypeStruct getRowTypeAsStruct(TypeCompiler compiler) {
-        return compiler.convertType(this.getNode(), this.getName(), this.getColumns(), true)
+        return compiler.convertType(this.getNode(), this.getName(), this.getColumns(), true, false)
                 .to(DBSPTypeStruct.class);
     }
 
     default DBSPTypeTuple getRowTypeAsTuple(TypeCompiler compiler) {
-        return compiler.convertType(this.getNode(), this.getName(), this.getColumns(), false)
-                .to(DBSPTypeTuple.class);
+        DBSPType type = compiler.convertType(this.getNode(), this.getName(), this.getColumns(), false, false);
+        return type.to(DBSPTypeTuple.class);
     }
 }

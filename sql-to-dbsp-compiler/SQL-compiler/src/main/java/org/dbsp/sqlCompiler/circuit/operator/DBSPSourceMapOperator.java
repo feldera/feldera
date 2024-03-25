@@ -83,7 +83,7 @@ public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
             }
             current++;
         }
-        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields);
+        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields, false);
     }
 
     /** Return a struct that is similar with the originalRowType, but where
@@ -104,7 +104,7 @@ public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
             }
             current++;
         }
-        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields);
+        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name, fields, false);
     }
 
     /** Return a closure that describes the key function. */

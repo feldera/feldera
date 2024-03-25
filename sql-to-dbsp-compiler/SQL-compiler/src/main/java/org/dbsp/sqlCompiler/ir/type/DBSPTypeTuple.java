@@ -58,6 +58,10 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         this(node, tupFields.toArray(new DBSPType[0]));
     }
 
+    public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, List<DBSPType> tupFields) {
+        this(node, mayBeNull, tupFields.toArray(new DBSPType[0]));
+    }
+
     public DBSPTypeTuple(List<DBSPType> tupFields) {
         this(CalciteObject.EMPTY, tupFields);
     }
@@ -143,6 +147,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.getName())
+                .append(this.mayBeNull ? "?" : "")
                 .append("<")
                 .join(", ", this.tupFields)
                 .append(">");

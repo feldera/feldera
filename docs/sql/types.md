@@ -37,8 +37,8 @@ The compiler supports the following SQL data types:
   the `FLOAT` type, so we have decided to prohibit its use to avoid
   subtle bugs.
 
-- `NULL` types are not supported in table schemas as field types. They
-  are only used in expressions.
+- `INTERVAL` and `NULL` types are not supported in table schemas as
+  field types. They are only used in expressions.
 
 ## Computations on nullable types
 

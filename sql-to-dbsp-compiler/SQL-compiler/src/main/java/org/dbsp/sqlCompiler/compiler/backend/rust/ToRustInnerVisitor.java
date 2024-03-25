@@ -579,11 +579,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("]");
             return VisitDecision.STOP;
         } else if(expression.operation == DBSPOpcode.SQL_INDEX) {
-            this.builder.append("index_")
+            DBSPTypeVec vec = expression.left.getType().to(DBSPTypeVec.class);
+            this.builder.append("index")
+                    .append("_")
                     .append(expression.left.getType().nullableSuffix())
                     .append("_")
+                    .append(vec.getElementType().nullableSuffix())
+                    .append("_")
                     .append(expression.right.getType().nullableSuffix())
-                    .append("(&");
+                    .append("(");
             expression.left.accept(this);
             this.builder.append(", ");
             expression.right.accept(this);

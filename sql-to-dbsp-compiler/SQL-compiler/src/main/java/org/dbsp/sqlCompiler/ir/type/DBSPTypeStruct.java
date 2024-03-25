@@ -117,8 +117,9 @@ public class DBSPTypeStruct extends DBSPType {
     public final String sanitizedName;
     public final LinkedHashMap<String, Field> fields;
 
-    public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName, Collection<Field> args) {
-        super(node, STRUCT, false);
+    public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName,
+                          Collection<Field> args, boolean mayBeNull) {
+        super(node, STRUCT, mayBeNull);
         this.sanitizedName = sanitizedName;
         this.name = name;
         this.fields = new LinkedHashMap<>();
@@ -130,16 +131,14 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public DBSPTypeStruct rename(String newName) {
-        return new DBSPTypeStruct(this.getNode(), newName, this.sanitizedName, this.fields.values());
+        return new DBSPTypeStruct(this.getNode(), newName, this.sanitizedName, this.fields.values(), this.mayBeNull);
     }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        if (mayBeNull)
-            this.error("Nullable structs not supported");
-        return this;
+        return new DBSPTypeStruct(this.getNode(), this.name, this.sanitizedName, this.fields.values(), mayBeNull);
     }
 
     public boolean hasField(String fieldName) {
@@ -202,8 +201,10 @@ public class DBSPTypeStruct extends DBSPType {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        builder.append("struct ")
-                .append(this.name)
+        return builder.append("struct ")
+                .append(this.mayBeNull ? "?" : "")
+                .append(this.name);
+        /*
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: this.fields.values()) {
@@ -213,6 +214,7 @@ public class DBSPTypeStruct extends DBSPType {
         return builder
                 .decrease()
                 .append("}");
+         */
     }
 
     /** Generate a tuple type by ignoring the struct and field names. */

@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -72,6 +73,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
@@ -126,7 +128,8 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     protected void generateFromTrait(DBSPTypeStruct type) {
-        DBSPTypeTuple tuple = type.toTuple();
+        EliminateStructs es = new EliminateStructs(this.errorReporter);
+        DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
         this.builder.append("impl From<")
                 .append(type.sanitizedName)
                 .append("> for ");
@@ -143,7 +146,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder.append("table.")
                     .append(field.getSanitizedName())
-                    .append(",");
+                    .append(".into(), ");
         }
         this.builder.append(")").newline();
         this.builder.decrease()
@@ -172,7 +175,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(field.getSanitizedName())
                     .append(": tuple.")
                     .append(index++)
-                    .append(",")
+                    .append(".into(), ")
                     .newline();
         }
         this.builder.decrease().append("}").newline();
@@ -413,8 +416,13 @@ public class ToRustVisitor extends CircuitVisitor {
                 return;
         for (DBSPTypeStruct.Field field: struct.fields.values()) {
             DBSPTypeStruct ft = field.type.as(DBSPTypeStruct.class);
-            if (ft != null) {
+            if (ft != null)
                 findNestedStructs(ft, result);
+            DBSPTypeVec vec = field.type.as(DBSPTypeVec.class);
+            if (vec != null) {
+                DBSPTypeStruct elem = vec.getElementType().as(DBSPTypeStruct.class);
+                if (elem != null)
+                    findNestedStructs(elem, result);
             }
         }
         result.add(struct);

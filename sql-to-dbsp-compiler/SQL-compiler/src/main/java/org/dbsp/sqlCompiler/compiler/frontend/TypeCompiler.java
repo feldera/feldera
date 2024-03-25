@@ -80,7 +80,7 @@ public class TypeCompiler implements ICompilerComponent {
 
     public DBSPType convertType(
             CalciteObject node, String name,
-            List<RelColumnMetadata> columns, boolean asStruct) {
+            List<RelColumnMetadata> columns, boolean asStruct, boolean mayBeNull) {
         if (asStruct) {
             List<DBSPTypeStruct.Field> fields = new ArrayList<>();
             int index = 0;
@@ -90,14 +90,14 @@ public class TypeCompiler implements ICompilerComponent {
                         col.node, col.getName(), index++, fType, col.nameIsQuoted));
             }
             String saneName = this.compiler.getSaneStructName(name);
-            return new DBSPTypeStruct(node, name, saneName, fields);
+            return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
         } else {
             List<DBSPType> fields = new ArrayList<>();
             for (RelColumnMetadata col : columns) {
                 DBSPType fType = this.convertType(col.getType(), false);
                 fields.add(fType);
             }
-            return new DBSPTypeTuple(node, fields);
+            return new DBSPTypeTuple(node, mayBeNull, fields);
         }
     }
 
@@ -134,7 +134,7 @@ public class TypeCompiler implements ICompilerComponent {
                     // Struct must be already declared
                     return this.compiler.getStructByName(name);
                 }
-                return new DBSPTypeStruct(node, name, saneName, fields);
+                return new DBSPTypeStruct(node, name, saneName, fields, nullable);
             } else {
                 List<DBSPType> fields = new ArrayList<>();
                 for (RelDataTypeField field : dt.getFieldList()) {
@@ -205,7 +205,7 @@ public class TypeCompiler implements ICompilerComponent {
                     return new DBSPTypeKeyword();
                 case ARRAY: {
                     RelDataType ct = Objects.requireNonNull(dt.getComponentType());
-                    DBSPType elementType = this.convertType(ct, true);
+                    DBSPType elementType = this.convertType(ct, asStruct);
                     return new DBSPTypeVec(elementType, dt.isNullable());
                 }
                 case UNKNOWN:
