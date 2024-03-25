@@ -31,9 +31,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * Base class for CreateTableStatement and CreateViewStatement.
- */
+/** Base class for CreateTableStatement and CreateViewStatement. */
 public abstract class CreateRelationStatement extends FrontEndStatement implements IHasSchema {
     public final String relationName;
     public final boolean nameIsQuoted;

@@ -248,7 +248,7 @@ public abstract class InnerRewriteVisitor
         this.push(field);
         DBSPType type = this.transform(field.type);
         DBSPTypeStruct.Field result = new DBSPTypeStruct.Field(
-                field.getNode(), field.name, field.sanitizedName, type, field.nameIsQuoted);
+                field.getNode(), field.name, field.index, type, field.nameIsQuoted);
         this.pop(field);
         this.map(field, result);
         return VisitDecision.STOP;

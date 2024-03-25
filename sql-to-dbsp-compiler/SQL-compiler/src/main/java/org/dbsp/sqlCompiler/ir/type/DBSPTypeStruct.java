@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -43,27 +42,27 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRUCT;
 
 public class DBSPTypeStruct extends DBSPType {
     public static class Field extends DBSPNode implements IHasType, IDBSPInnerNode {
-        /**
-         * Names coming from SQL may not be usable in Rust.
-         * The sanitized name is the one used in code generation.
-         * Initially names may not be "sane", but prior to code generation they
-         * have to be sanitized.
-         */
-        public final String sanitizedName;
+        /** Position within struct */
+        public final int index;
         public final String name;
         public final boolean nameIsQuoted;
         public final DBSPType type;
 
-        public Field(CalciteObject node, String name, String sanitizedName, DBSPType type, boolean nameIsQuoted) {
+        public Field(CalciteObject node, String name, int index,
+                     DBSPType type, boolean nameIsQuoted) {
             super(node);
-            this.sanitizedName = sanitizedName;
             this.name = name;
+            this.index = index;
             this.type = type;
             this.nameIsQuoted = nameIsQuoted;
         }
 
         public String getName() {
             return this.name;
+        }
+
+        public String getSanitizedName() {
+            return "field" + this.index;
         }
 
         public DBSPType getType() {
@@ -81,7 +80,7 @@ public class DBSPTypeStruct extends DBSPType {
             if (o == null || getClass() != o.getClass()) return false;
             Field that = (Field) o;
             return this.name.equals(that.name) &&
-                    this.sanitizedName.equals(that.sanitizedName) &&
+                    Objects.equals(this.index, that.index) &&
                     this.type.sameType(that.type);
         }
 
@@ -101,7 +100,7 @@ public class DBSPTypeStruct extends DBSPType {
             if (o == null)
                 return false;
             return this.name.equals(o.name) &&
-                    this.sanitizedName.equals(o.sanitizedName) &&
+                    Objects.equals(this.index, o.index) &&
                     this.type.sameType(o.type);
         }
 
@@ -115,14 +114,12 @@ public class DBSPTypeStruct extends DBSPType {
     }
 
     public final String name;
-    @Nullable
     public final String sanitizedName;
     public final LinkedHashMap<String, Field> fields;
 
-    public DBSPTypeStruct(CalciteObject node, String name, @Nullable String sanitizedName, Collection<Field> args) {
+    public DBSPTypeStruct(CalciteObject node, String name, String sanitizedName, Collection<Field> args) {
         super(node, STRUCT, false);
         this.sanitizedName = sanitizedName;
-        assert this.sanitizedName == null || Utilities.isLegalRustIdentifier(sanitizedName);
         this.name = name;
         this.fields = new LinkedHashMap<>();
         for (Field f: args) {
@@ -206,7 +203,7 @@ public class DBSPTypeStruct extends DBSPType {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         builder.append("struct ")
-                .append(this.sanitizedName != null ? this.sanitizedName : this.name)
+                .append(this.name)
                 .append(" {")
                 .increase();
         for (DBSPTypeStruct.Field field: this.fields.values()) {

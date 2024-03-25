@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPTypeDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -81,7 +82,9 @@ import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -94,6 +97,7 @@ public class ToRustVisitor extends CircuitVisitor {
     final boolean useHandles;
     final CompilerOptions options;
     final ProgramMetadata metadata;
+    final Set<String> structsGenerated;
 
     /* Example output generated when 'generateCatalog' is true:
      * pub fn test_circuit(workers: usize) -> (DBSPHandle, Catalog) {
@@ -118,6 +122,7 @@ public class ToRustVisitor extends CircuitVisitor {
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
         this.metadata = metadata;
+        this.structsGenerated = new HashSet<>();
     }
 
     protected void generateFromTrait(DBSPTypeStruct type) {
@@ -128,7 +133,7 @@ public class ToRustVisitor extends CircuitVisitor {
         tuple.accept(this.innerVisitor);
         this.builder.append(" {")
                 .increase()
-                .append("fn from(table: r#")
+                .append("fn from(table: ")
                 .append(type.sanitizedName)
                 .append(") -> Self");
         this.builder.append(" {")
@@ -136,8 +141,8 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(tuple.getName())
                 .append("::new(");
         for (DBSPTypeStruct.Field field: type.fields.values()) {
-            this.builder.append("table.r#")
-                    .append(field.sanitizedName)
+            this.builder.append("table.")
+                    .append(field.getSanitizedName())
                     .append(",");
         }
         this.builder.append(")").newline();
@@ -150,7 +155,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
         this.builder.append("impl From<");
         tuple.accept(this.innerVisitor);
-        this.builder.append("> for r#")
+        this.builder.append("> for ")
                 .append(type.sanitizedName);
         this.builder.append(" {")
                 .increase()
@@ -164,8 +169,7 @@ public class ToRustVisitor extends CircuitVisitor {
         int index = 0;
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder
-                    .append("r#")
-                    .append(field.sanitizedName)
+                    .append(field.getSanitizedName())
                     .append(": tuple.")
                     .append(index++)
                     .append(",")
@@ -184,16 +188,15 @@ public class ToRustVisitor extends CircuitVisitor {
      * Generate calls to the Rust macros that generate serialization and deserialization code
      * for the struct.
      *
-     * @param tableName Table or view whose type is being described.
      * @param type      Type of record in the table.
      * @param metadata  Metadata for the input columns (null for an output view).
      */
-    protected void generateRenameMacro(String tableName, DBSPTypeStruct type,
-                                      @Nullable InputTableMetadata metadata) {
+    protected void generateRenameMacro(DBSPTypeStruct type,
+                                       @Nullable InputTableMetadata metadata) {
         this.builder.append("deserialize_table_record!(");
         this.builder.append(type.sanitizedName)
                 .append("[")
-                .append(Utilities.doubleQuote(tableName))
+                .append(Utilities.doubleQuote(type.name))
                 .append(", ")
                 .append(type.fields.size())
                 .append("] {")
@@ -225,8 +228,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 meta = metadata.getColumnMetadata(field.name);
             }
             this.builder.append("(")
-                    .append("r#")
-                    .append(field.sanitizedName)
+                    .append(field.getSanitizedName())
                     .append(", ")
                     .append(Utilities.doubleQuote(name))
                     .append(", ")
@@ -283,8 +285,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 }
             }
             this.builder
-                    .append("r#")
-                    .append(field.sanitizedName)
+                    .append(field.getSanitizedName())
                     .append("[")
                     .append(Utilities.doubleQuote(name))
                     .append("]")
@@ -320,7 +321,17 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPTypeDeclaration decl) {
+        decl.item.accept(this.innerVisitor);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
+        /*
+        for (DBSPTypeDeclaration item: circuit.circuit.userDefinedTypes)
+            item.accept(this);
+         */
         this.builder.append("pub fn ")
                 .append(circuit.name);
         circuit.circuit.accept(this);
@@ -396,13 +407,41 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    void findNestedStructs(DBSPTypeStruct struct, List<DBSPTypeStruct> result) {
+        for (DBSPTypeStruct str: result)
+            if (str.name.equals(struct.name))
+                return;
+        for (DBSPTypeStruct.Field field: struct.fields.values()) {
+            DBSPTypeStruct ft = field.type.as(DBSPTypeStruct.class);
+            if (ft != null) {
+                findNestedStructs(ft, result);
+            }
+        }
+        result.add(struct);
+    }
+
+    void generateStructDeclarations(DBSPTypeStruct struct) {
+        DBSPStructItem item = new DBSPStructItem(struct);
+        item.accept(this.innerVisitor);
+    }
+
+    void generateStructHelpers(DBSPTypeStruct type, @Nullable InputTableMetadata metadata) {
+        List<DBSPTypeStruct> nested = new ArrayList<>();
+        findNestedStructs(type, nested);
+        for (DBSPTypeStruct s: nested) {
+            if (this.structsGenerated.contains(s.name))
+                continue;
+            this.generateStructDeclarations(s);
+            this.generateFromTrait(s);
+            this.generateRenameMacro(s, metadata);
+            this.structsGenerated.add(s.name);
+        }
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        DBSPStructItem item = new DBSPStructItem(type);
-        item.accept(this.innerVisitor);
-        this.generateFromTrait(type);
-        this.generateRenameMacro(operator.tableName, type, operator.metadata);
+        this.generateStructHelpers(type, operator.metadata);
 
         this.writeComments(operator)
                 .append("let (")
@@ -437,33 +476,15 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        // Generate struct type definition
-        DBSPStructItem item = new DBSPStructItem(type);
-        item.accept(this.innerVisitor);
-        // Traits for serialization
-        this.generateFromTrait(type);
-        // Macro for serialization
-        this.generateRenameMacro(operator.tableName, type, operator.metadata);
+        this.generateStructHelpers(type, operator.metadata);
 
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
-                // TODO: this should be a fresh name.
                 operator.originalRowType.sanitizedName + "_key");
-        // Generate key type definition
-        item = new DBSPStructItem(keyStructType);
-        item.accept(this.innerVisitor);
-
-        // Trait for serialization
-        this.generateFromTrait(keyStructType);
-        this.generateRenameMacro(item.type.name, item.type, operator.metadata);
+        this.generateStructHelpers(keyStructType, operator.metadata);
 
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 operator.originalRowType.sanitizedName + "_upsert");
-        // Generate key type definition
-        item = new DBSPStructItem(upsertStruct);
-        item.accept(this.innerVisitor);
-        // Trait for serialization
-        this.generateFromTrait(upsertStruct);
-        this.generateRenameMacro(item.type.name, item.type, operator.metadata);
+        this.generateStructHelpers(upsertStruct, operator.metadata);
 
         this.writeComments(operator)
                 .append("let (")
@@ -488,7 +509,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("| {");
             int index = 0;
             for (DBSPTypeStruct.Field field: upsertStruct.fields.values()) {
-                String name = field.sanitizedName;
+                String name = field.getSanitizedName();
                 if (!keyStructType.hasField(field.name)) {
                     this.builder.append("if let Some(")
                             .append(name)
@@ -633,10 +654,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator);
         DBSPTypeStruct type = operator.originalRowType;
-        DBSPStructItem item = new DBSPStructItem(type);
-        item.accept(this.innerVisitor);
-        this.generateFromTrait(type);
-        this.generateRenameMacro(operator.viewName, type, null);
+        this.generateStructHelpers(type, null);
         if (!this.useHandles) {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
             DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);

@@ -100,7 +100,7 @@ public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
                 DBSPType some = new DBSPTypeUser(
                         field.getNode(), DBSPTypeCode.USER, "Option", false, field.type);
                 fields.add(new DBSPTypeStruct.Field(
-                        field.getNode(), field.name, field.sanitizedName, some, field.nameIsQuoted));
+                        field.getNode(), field.name, current, some, field.nameIsQuoted));
             }
             current++;
         }

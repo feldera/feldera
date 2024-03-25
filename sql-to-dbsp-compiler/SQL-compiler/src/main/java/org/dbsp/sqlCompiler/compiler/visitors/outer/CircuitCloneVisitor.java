@@ -115,6 +115,8 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
         super.preorder(circuit);
+        for (DBSPTypeDeclaration node : circuit.userDefinedTypes)
+            node.accept(this);
         for (DBSPOperator node : circuit.getAllOperators())
             node.accept(this);
         return VisitDecision.STOP;
@@ -148,6 +150,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPOperator result = operator.withInputs(sources, this.force);
         result.setDerivedFrom(operator.id);
         this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPTypeDeclaration declaration) {
+        this.getResult().addDeclaration(declaration);
     }
 
     @Override

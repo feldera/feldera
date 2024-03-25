@@ -21,13 +21,13 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
     @Override
     public Enumerable<Object[]> scan(DataContext root) {
         // We don't plan to use this method, but the optimizer requires this API
-        throw new UnsupportedException(schema.getNode());
+        throw new UnsupportedException(this.schema.getNode());
     }
 
     @Override
     public RelDataType getRowType(RelDataTypeFactory typeFactory) {
         RelDataTypeFactory.Builder builder = typeFactory.builder();
-        for (RelColumnMetadata meta : schema.getColumns())
+        for (RelColumnMetadata meta : this.schema.getColumns())
             builder.add(meta.field);
         return builder.build();
     }
