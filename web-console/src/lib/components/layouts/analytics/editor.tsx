@@ -76,7 +76,9 @@ const MetadataForm = (props: {
             disabled={props.disabled}
           />
           {props.errors.name && (
-            <FormHelperText sx={{ color: 'error.main' }}>{props.errors.name.message}</FormHelperText>
+            <FormHelperText data-testid='box-error-name' sx={{ color: 'error.main' }}>
+              {props.errors.name.message}
+            </FormHelperText>
           )}
         </FormControl>
       </Grid>

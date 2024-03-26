@@ -16,6 +16,7 @@ As an artificial limitation of scope, currently no services for Kafka, Debezium,
 
 ### Contributing tests
 
+The tests directory is `feldera/web-console/tests`.
 Regression testing is performed by comparing snapshots with the test results.
 Snapshots are expected in the directory `feldera/web-console/playwright-snapshots` and are generated during test run if they are not found.
 Snapshots are not a part of the feldera repo, and are instead stored at https://github.com/feldera/playwright-snapshots.
