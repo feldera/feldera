@@ -2,9 +2,9 @@
 // the table.
 
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-import { ColumnType, Field, Relation } from '$lib/services/manager'
+import { displaySQLColumnType } from '$lib/functions/sql'
+import { Field, Relation, SqlType } from '$lib/services/manager'
 import { forwardRef, ReactElement, Ref, useState } from 'react'
-import { match, P } from 'ts-pattern'
 import IconCog from '~icons/bx/cog'
 import IconX from '~icons/bx/x'
 
@@ -22,21 +22,20 @@ import { StoreSettingsFn } from './ImportToolbar'
 import { FieldNames, RngFieldSettings } from './randomData'
 
 const RNG_SUPPORTED_TYPES = [
-  'BOOLEAN',
-  'TINYINT',
-  'SMALLINT',
-  'INTEGER',
-  'BIGINT',
-  'VARCHAR',
-  'CHAR',
-  'DOUBLE',
-  'FLOAT',
-  'DECIMAL',
-  'TIME',
-  'DATE',
-  'TIMESTAMP',
-  'ARRAY',
-  'GEOMETRY'
+  SqlType.BOOLEAN,
+  SqlType.TINYINT,
+  SqlType.SMALLINT,
+  SqlType.INTEGER,
+  SqlType.BIGINT,
+  SqlType.VARCHAR,
+  SqlType.CHAR,
+  SqlType.DOUBLE,
+  SqlType.REAL,
+  SqlType.DECIMAL,
+  SqlType.TIME,
+  SqlType.DATE,
+  SqlType.TIMESTAMP,
+  SqlType.ARRAY
 ]
 
 // The state for a RNG method stored in local storage.
@@ -57,36 +56,6 @@ const Transition = forwardRef(function Transition(
   return <Fade ref={ref} {...props} />
 })
 
-// Display a Field type in a readable format.
-export function displayFieldType(field: Field): string {
-  const name = formatName(field.columntype)
-
-  function formatName(type: ColumnType | null | undefined): string {
-    if (!type) {
-      return ''
-    }
-    const name = type.type
-    const length = match(type)
-      .with(
-        { precision: P.when(value => value != null && value >= 0), scale: P.when(value => value && value >= 0) },
-        () => {
-          return `(${type.precision}, ${type.scale})`
-        }
-      )
-      .with({ precision: P.when(value => value != null && value >= 0) }, () => {
-        return `(${type.precision})`
-      })
-      .otherwise(() => {
-        return ''
-      })
-
-    return `${name}${length} ` + formatName(type.component)
-  }
-
-  const nullable = field.columntype.nullable ? ' | NULL' : ''
-  return `${name}${nullable}`
-}
-
 const FieldRngSettings = (props: {
   field: Field
   index: number
@@ -102,7 +71,7 @@ const FieldRngSettings = (props: {
           <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>
             {index + 1}. {getCaseIndependentName(field)}:
           </Typography>
-          <Typography sx={{ color: 'text.secondary' }}>{displayFieldType(field)}</Typography>
+          <Typography sx={{ color: 'text.secondary' }}>{displaySQLColumnType(field)}</Typography>
         </Box>
       </Grid>
 

@@ -1,4 +1,5 @@
 import { useInsertDeleteRows } from '$lib/compositions/streaming/inspection/useDeleteRows'
+import { Row } from '$lib/functions/ddl'
 import { Relation } from '$lib/services/manager'
 import { PipelineStatus } from '$lib/types/pipeline'
 import { ReactNode, useCallback } from 'react'
@@ -10,7 +11,6 @@ import {
   GridToolbarDensitySelector,
   GridToolbarExport,
   GridToolbarProps,
-  GridValidRowModel,
   useGridApiContext
 } from '@mui/x-data-grid-pro'
 
@@ -29,12 +29,12 @@ export const InspectionToolbar = (
   const gridRef = useGridApiContext()
   const updateRows = useInsertDeleteRows()
   const onDeleteRows = useCallback(
-    (rows: Map<GridRowId, GridValidRowModel>) => {
+    (rows: Map<GridRowId, Row>) => {
       updateRows(
         props.pipelineName,
         props.relation,
         props.status !== PipelineStatus.RUNNING,
-        Array.from(rows.values()).map(row => ({ delete: row.record }))
+        Array.from(rows.values()).map(row => ({ delete: row }))
       )
       gridRef.current.setRowSelectionModel([])
     },

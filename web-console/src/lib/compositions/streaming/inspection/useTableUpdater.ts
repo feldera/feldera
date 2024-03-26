@@ -4,12 +4,11 @@
 // In dbsp-speak this maintains an integral for a part of a relation.
 
 import { readLineFromStream } from '$lib/functions/common/stream'
-import { csvLineToRow, Row } from '$lib/functions/ddl'
+import { JSONXgressValue, Row, xgressJSONToSQLRecord } from '$lib/functions/ddl'
 import { getUrl, httpOutputOptions } from '$lib/services/HttpInputOutputService'
 import { HttpInputOutputService, OpenAPI, Relation } from '$lib/services/manager'
 import { getHeaders } from '$lib/services/manager/core/request'
 import { Arguments } from '$lib/types/common/function'
-import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo, useState } from 'react'
 import JSONbig from 'true-json-bigint'
 
@@ -22,12 +21,13 @@ import JSONbig from 'true-json-bigint'
 const updateRowsIntegral = (oldRows: Map<number, Row>, deltaRows: Row[]) => {
   for (const row of deltaRows) {
     const curRow = oldRows.get(row.genId)
-    if (curRow && curRow.weight + row.weight > 0) {
-      oldRows.set(row.genId, { ...row, weight: curRow.weight + row.weight })
-    } else if (curRow && curRow.weight + row.weight <= 0) {
-      oldRows.delete(row.genId)
-    } else {
+    const weight = curRow ? curRow.weight + row.weight : null
+    if (weight === null) {
       oldRows.set(row.genId, row)
+    } else if (weight > 0) {
+      oldRows.set(row.genId, { ...row, weight })
+    } else if (weight <= 0) {
+      oldRows.delete(row.genId)
     }
   }
   return oldRows
@@ -127,28 +127,22 @@ export function useTableUpdater() {
 
       try {
         for await (const line of readLineFromStream(response)) {
-          const obj = JSON.parse(line)
-          if (obj.text_data === undefined) {
+          const obj = JSONbig.parse(line)
+
+          setLoading(false)
+
+          if (!obj.json_data) {
             // A ping message, we ignore this.
             continue
           }
 
-          parse(
-            obj.text_data,
-            {
-              delimiter: ',',
-              cast: false
-            },
-            (error, result: string[][]) => {
-              if (error) {
-                console.error('useTableUpdater error', error)
-              }
-              const parsedRows = result.map(row => csvLineToRow(relation, row))
-
-              setLoading(false)
-              rowsCallback(setRows, parsedRows)
-            }
+          const parsedRows = (obj.json_data as any[]).map(item =>
+            (([action, row]) => xgressJSONToSQLRow(relation, row as any, action === 'insert' ? 1 : -1))(
+              Object.entries(item)[0]
+            )
           )
+
+          rowsCallback(setRows, parsedRows)
         }
       } catch (e) {
         if (e instanceof TypeError) {
@@ -170,5 +164,17 @@ export function useTableUpdater() {
     updateTable: readStream,
     pause: pause?.(setState),
     resume: resume?.(setState)
+  }
+}
+
+const xgressJSONToSQLRow = (
+  relation: Relation,
+  entry: { key: Record<string, JSONXgressValue>; index: number },
+  weight: number
+): Row => {
+  return {
+    genId: entry.index,
+    weight,
+    record: xgressJSONToSQLRecord(relation, entry.key)
   }
 }

@@ -5,12 +5,11 @@
 // support streaming yet.
 
 import { readLineFromStream } from '$lib/functions/common/stream'
-import { parseValueSafe } from '$lib/functions/ddl'
+import { SQLValueJS, xgressJSONToSQLRecord } from '$lib/functions/ddl'
 import { getUrl, httpOutputOptions } from '$lib/services/HttpInputOutputService'
 import { Chunk, HttpInputOutputService, OpenAPI, Relation } from '$lib/services/manager'
 import { getHeaders } from '$lib/services/manager/core/request'
 import { Arguments } from '$lib/types/common/function'
-import { parse } from 'csv-parse'
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 
 function useQuantiles() {
@@ -18,7 +17,7 @@ function useQuantiles() {
   const readStream = useCallback(
     async (
       egressParams: Arguments<typeof HttpInputOutputService.httpOutput>,
-      setQuantiles: Dispatch<SetStateAction<any[][] | undefined>>,
+      setQuantiles: Dispatch<SetStateAction<Record<string, SQLValueJS>[] | undefined>>,
       relation: Relation,
       controller: AbortController
     ) => {
@@ -59,32 +58,11 @@ function useQuantiles() {
       try {
         for await (const line of readLineFromStream(response)) {
           const obj: Chunk = JSON.parse(line)
-          if (obj.text_data) {
-            parse(
-              obj.text_data,
-              {
-                delimiter: ','
-              },
-              (error, result: string[][]) => {
-                if (error) {
-                  console.error(error)
-                }
-                // Convert a row of strings to a typed record. This is important
-                // because for sending a row as an anchor later it needs to have
-                // proper types (a number can't be a string etc.)
-                const typedRecords: any[][] = result.map(row => {
-                  const fields = row
-                  const newRow = [] as any
-                  relation.fields.forEach((col, i) => {
-                    newRow[i] = parseValueSafe(col.columntype, fields[i])
-                  })
-                  return newRow
-                })
-
-                setQuantiles(typedRecords)
-              }
-            )
+          if (!obj.json_data) {
+            continue
           }
+          const parsedRows = (obj.json_data as any[]).map(item => xgressJSONToSQLRecord(relation, item.insert))
+          setQuantiles(parsedRows)
         }
       } catch (e) {
         if (e instanceof TypeError) {

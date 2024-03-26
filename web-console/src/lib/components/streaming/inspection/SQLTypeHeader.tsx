@@ -1,20 +1,16 @@
-import { nonNull } from '$lib/functions/common/function'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { displaySQLColumnType } from '$lib/functions/sql'
 import { Field } from '$lib/services/manager'
 
-import { Typography } from '@mui/material'
+import { Stack, Typography } from '@mui/material'
 
 export const SQLTypeHeader = ({ col }: { col: Field }) => {
   return (
-    <span>
+    <Stack spacing={-1}>
       <Typography component={'span'}>{getCaseIndependentName(col)}</Typography>
-      <Typography variant='subtitle2' component={'span'} sx={{ pl: 2 }}>
-        {col.columntype.type}
-        {((p, s) => (p && p > 0 ? '(' + [p, ...(nonNull(s) ? [s] : [])].join(',') + ')' : ''))(
-          col.columntype.precision,
-          col.columntype.scale
-        )}
+      <Typography variant='caption' component={'span'}>
+        {displaySQLColumnType(col)}
       </Typography>
-    </span>
+    </Stack>
   )
 }

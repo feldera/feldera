@@ -2,7 +2,7 @@
 // for a given field in a table.
 
 import { useDynamicValidationForm } from '$lib/compositions/streaming/import/useDynamicValidationForm/valibot'
-import { clampToSQL, ColumnTypeJS } from '$lib/functions/ddl'
+import { SQLValueJS } from '$lib/functions/ddl'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { Field } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
@@ -65,8 +65,8 @@ export const RngFieldSettings = (props: {
     fieldSettings ? getRngMethodByName(fieldSettings.method, field.columntype) : null
   )
   // An random example value that is generated if a method is selected.
-  const [example, setExample] = useState<ColumnTypeJS | undefined>(undefined)
-  const [parsedExample, setParsedExample] = useState<ColumnTypeJS | undefined>(undefined)
+  const [example, setExample] = useState<SQLValueJS | undefined>(undefined)
+  const [parsedExample, setParsedExample] = useState<SQLValueJS | undefined>(undefined)
 
   // Instantiate a react hook form.
   //
@@ -134,7 +134,7 @@ export const RngFieldSettings = (props: {
     if (selectedMethod && validateCallback(myFormData)) {
       const newExample = selectedMethod.generator(field.columntype, myFormData)
       setExample(newExample)
-      setParsedExample(clampToSQL(field.columntype)(newExample))
+      setParsedExample(newExample)
       setSettings(prev => {
         const newSettings = new Map(prev)
         newSettings.set(getCaseIndependentName(field), { method: selectedMethod.title, config: myFormData })
