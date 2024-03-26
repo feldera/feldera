@@ -80,8 +80,8 @@ import org.junit.Test;
 import javax.imageio.ImageIO;
 import javax.sql.DataSource;
 import java.io.File;
-import java.io.FilenameFilter;
 import java.io.FileWriter;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -132,15 +132,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String str = circuit.toString();
         String expected = """
                 Circuit circuit {
-                    // DBSPSourceMultisetOperator 53
+                    // DBSPSourceMultisetOperator 39
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
-                    let stream53 = T();
-                    // DBSPMapOperator 75
-                    let stream75: stream<WSet<Tup1<b>>> = stream53.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
+                    let stream39 = T();
+                    // DBSPMapOperator 61
+                    let stream61: stream<WSet<Tup1<b>>> = stream39.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream82: stream<WSet<Tup1<b>>> = stream75;
+                    let stream68: stream<WSet<Tup1<b>>> = stream61;
                 }
                 """;
         Assert.assertEquals(expected, str);

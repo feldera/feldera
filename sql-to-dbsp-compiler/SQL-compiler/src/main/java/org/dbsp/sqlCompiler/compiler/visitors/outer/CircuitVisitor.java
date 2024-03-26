@@ -106,6 +106,8 @@ public abstract class CircuitVisitor
         this.circuit = circuit;
     }
 
+    public VisitDecision preorder(DBSPTypeDeclaration ignored) { return VisitDecision.CONTINUE; }
+
     public VisitDecision preorder(DBSPCircuit circuit) {
         return VisitDecision.CONTINUE;
     }
@@ -287,14 +289,16 @@ public abstract class CircuitVisitor
     ////////////////////////////////////
 
     @SuppressWarnings("EmptyMethod")
+    public void postorder(IDBSPOuterNode ignored) {}
+
+    @SuppressWarnings("EmptyMethod")
     public void postorder(DBSPCircuit ignored) {}
 
     public void postorder(DBSPPartialCircuit ignoredCircuit) {}
 
     public void postorder(DBSPOperator ignored) {}
 
-    @SuppressWarnings("EmptyMethod")
-    public void postorder(IDBSPOuterNode ignored) {}
+    public void postorder(DBSPTypeDeclaration ignored) {}
 
     public void postorder(DBSPUnaryOperator node) {
         this.postorder(node.to(DBSPOperator.class));

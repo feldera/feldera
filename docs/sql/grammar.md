@@ -18,6 +18,7 @@ statement
   :   createTableStatement
   |   createViewStatement
   |   createFunctionStatement
+  |   createTypeStatement
 
 generalType
   :   type [NOT NULL]
@@ -28,6 +29,13 @@ createFunctionStatement
 createTableStatement
   :   CREATE TABLE name
       '(' tableElement [, tableElement ]* ')'
+
+createTypeStatement
+  :   CREATE TYPE name AS '(' typedef ')'
+
+typedef
+  : generalType
+  | name generalType [, name type ]*
 
 createViewStatement
   :   CREATE VIEW name

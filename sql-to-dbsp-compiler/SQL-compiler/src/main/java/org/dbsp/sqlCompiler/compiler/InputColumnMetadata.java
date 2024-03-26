@@ -6,9 +6,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 
-/**
- * Metadata describing an input table column.
- */
+/** Metadata describing an input table column. */
 public class InputColumnMetadata {
     public final CalciteObject node;
     /** Column name. */

@@ -85,7 +85,9 @@ public class ParserTests {
                    postal_code     VARCHAR(6));
                 CREATE TYPE person_type AS (
                    firstname       VARCHAR(30),
-                   lastname        VARCHAR(30));""";
+                   lastname        VARCHAR(30),
+                   address         ADDRESS_TYP);
+                CREATE TABLE T(p PERSON_TYPE);""";
         SqlNode node = calcite.parseStatements(ddl);
         Assert.assertNotNull(node);
     }

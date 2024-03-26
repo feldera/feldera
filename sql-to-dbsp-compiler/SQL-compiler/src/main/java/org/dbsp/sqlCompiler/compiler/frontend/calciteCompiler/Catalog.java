@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
+import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
@@ -38,19 +39,19 @@ import org.dbsp.util.Utilities;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Maintains the catalog: a mapping from table names to table objects.
- */
+/** Maintains the catalog: a mapping from names to objects. */
 public class Catalog extends AbstractSchema {
     public final String schemaName;
     private final Map<String, Table> tableMap;
     private final Map<String, FrontEndStatement> definition;
     private final Multimap<String, Function> functionMap;
+    private final Map<String, RelProtoDataType> typeMap;
 
     public Catalog(String schemaName) {
         this.schemaName = schemaName;
         this.tableMap = new HashMap<>();
         this.definition = new HashMap<>();
+        this.typeMap = new HashMap<>();
         this.functionMap = ArrayListMultimap.create();
     }
 
@@ -74,7 +75,10 @@ public class Catalog extends AbstractSchema {
         return true;
     }
 
-    public void addFunction(String name, Function function) { this.functionMap.put(name, function); }
+    @Override
+    public Map<String, RelProtoDataType> getTypeMap() {
+        return this.typeMap;
+    }
 
     @Override
     public Map<String, Table> getTableMap() {

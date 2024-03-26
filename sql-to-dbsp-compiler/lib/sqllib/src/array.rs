@@ -34,32 +34,93 @@ pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
     Some(value.len() as i32)
 }
 
-pub fn index__<T>(value: &Vec<T>, index: usize) -> T
+// 8 versions of index, depending on
+// nullability of vector
+// nullability of vector element
+// nullability of index
+
+pub fn index___<T>(value: Vec<T>, index: usize) -> Option<T>
 where
     T: Clone,
 {
-    (*value.index(index)).clone()
+    if index >= value.len() {
+        None
+    } else {
+        Some(value.index(index).clone())
+    }
 }
 
-pub fn index__N<T>(value: &Vec<T>, index: Option<usize>) -> T
+pub fn index___N<T>(value: Vec<T>, index: Option<usize>) -> Option<T>
 where
     T: Clone,
 {
-    index__(value, index.unwrap())
+    let index = index?;
+    index___(value, index)
 }
 
-pub fn index_N_<T>(value: &Option<Vec<T>>, index: usize) -> Option<T>
+pub fn index__N_<T>(value: Vec<Option<T>>, index: usize) -> Option<T>
 where
     T: Clone,
 {
-    value.as_ref().map(|value| index__(value, index))
+    if index >= value.len() {
+        None
+    } else {
+        value.index(index).clone()
+    }
 }
 
-pub fn index_N_N<T>(value: &Option<Vec<T>>, index: Option<usize>) -> Option<T>
+pub fn index__N_N<T>(value: Vec<Option<T>>, index: Option<usize>) -> Option<T>
 where
     T: Clone,
 {
-    value.as_ref().map(|value| index__N(value, index))
+    let index = index?;
+    if index >= value.len() {
+        None
+    } else {
+        value.index(index).clone()
+    }
+}
+
+pub fn index_N__<T>(value: Option<Vec<T>>, index: usize) -> Option<T>
+where
+    T: Clone,
+{
+    match value {
+        None => None,
+        Some(value) => index___(value, index),
+    }
+}
+
+pub fn index_N__N<T>(value: Option<Vec<T>>, index: Option<usize>) -> Option<T>
+where
+    T: Clone,
+{
+    let index = index?;
+    match value {
+        None => None,
+        Some(value) => index___(value, index),
+    }
+}
+
+pub fn index_N_N_<T>(value: Option<Vec<Option<T>>>, index: usize) -> Option<T>
+where
+    T: Clone,
+{
+    match value {
+        None => None,
+        Some(value) => index__N_(value, index),
+    }
+}
+
+pub fn index_N_N_N<T>(value: Option<Vec<Option<T>>>, index: Option<usize>) -> Option<T>
+where
+    T: Clone,
+{
+    let index = index?;
+    match value {
+        None => None,
+        Some(value) => index__N_(value, index),
+    }
 }
 
 pub fn array<T>() -> Vec<T> {

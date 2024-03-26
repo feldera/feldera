@@ -130,8 +130,8 @@ public class CompilerOptions {
         public String metadataSource = "";
 
         /** Only compare fields that matter. */
-        public boolean same(IO ignoredIo) {
-            return true;
+        public boolean same(IO other) {
+            return this.emitHandles == other.emitHandles;
         }
 
         @Override
@@ -140,6 +140,7 @@ public class CompilerOptions {
                     "outputFile=" + Utilities.singleQuote(this.outputFile) +
                     ", metadataSource=" + this.metadataSource +
                     ", emitJpeg=" + this.emitJpeg +
+                    ", emitHandles=" + this.emitHandles +
                     ", emitPng=" + this.emitPng +
                     ", emitJsonErrors=" + this.emitJsonErrors +
                     ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +

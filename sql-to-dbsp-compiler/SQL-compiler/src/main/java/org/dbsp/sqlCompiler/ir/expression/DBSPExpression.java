@@ -31,8 +31,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 
 import javax.annotation.Nullable;

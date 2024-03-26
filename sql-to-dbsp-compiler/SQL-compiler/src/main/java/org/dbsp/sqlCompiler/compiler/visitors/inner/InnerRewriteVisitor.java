@@ -208,7 +208,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType[] elements = this.transform(type.tupFields);
         this.pop(type);
-        DBSPType result = new DBSPTypeTuple(elements);
+        DBSPType result = new DBSPTypeTuple(type.getNode(), type.mayBeNull, elements);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -248,7 +248,7 @@ public abstract class InnerRewriteVisitor
         this.push(field);
         DBSPType type = this.transform(field.type);
         DBSPTypeStruct.Field result = new DBSPTypeStruct.Field(
-                field.getNode(), field.name, field.sanitizedName, type, field.nameIsQuoted);
+                field.getNode(), field.name, field.index, type, field.nameIsQuoted);
         this.pop(field);
         this.map(field, result);
         return VisitDecision.STOP;
@@ -264,7 +264,7 @@ public abstract class InnerRewriteVisitor
             fields.add(field);
         }
         this.pop(type);
-        DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, type.sanitizedName, fields);
+        DBSPType result = new DBSPTypeStruct(type.getNode(), type.name, type.sanitizedName, fields, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
