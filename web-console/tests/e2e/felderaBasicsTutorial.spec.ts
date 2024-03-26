@@ -3,6 +3,7 @@ import invariant from 'tiny-invariant'
 import { expect, Page, test } from '@playwright/test'
 
 import { apiOrigin, appOrigin } from '../../playwright.config'
+import { deleteConnectors, deletePipeline, deleteProgram } from '../util'
 import felderaBasicsTutorialSql from './felderaBasicsTutorial.sql'
 
 // Insert data rows into an empty table
@@ -302,29 +303,12 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   })
 
   await test.step('Cleanup: Delete pipeline', async () => {
-    await page.getByTestId('button-vertical-nav-pipelines').click()
-    await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-delete').click()
-    await page.getByTestId('button-confirm-delete').click()
+    await deletePipeline(page, pipelineName)
   })
   await test.step('Cleanup: Delete connectors', async () => {
-    await page.getByTestId('button-vertical-nav-connectors').click()
-    for (const connectorName of [
-      'price-redpanda',
-      'preferred_vendor-redpanda',
-      'parts-s3',
-      'vendors-s3',
-      'prices-s3'
-    ]) {
-      await page.getByTestId(`box-connector-actions-${connectorName}`).getByTestId('button-delete').click()
-      await page.getByTestId('button-confirm-delete').click()
-    }
+    await deleteConnectors(page, ['price-redpanda', 'preferred_vendor-redpanda', 'parts-s3', 'vendors-s3', 'prices-s3'])
   })
   await test.step('Cleanup: Delete program', async () => {
-    await page.getByTestId('button-vertical-nav-sql-programs').click()
-    await page
-      .getByTestId('box-program-actions-' + programName)
-      .getByTestId('button-delete')
-      .click()
-    await page.getByTestId('button-confirm-delete').click()
+    await deleteProgram(page, programName)
   })
 })

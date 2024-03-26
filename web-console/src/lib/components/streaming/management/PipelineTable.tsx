@@ -378,8 +378,17 @@ function CustomDetailPanelToggle({
     return <></>
   }
 
+  // Display a temporary chevron although full details are not yet available
   if (!pipelineRevisionQuery.data) {
-    return <></>
+    return (
+      <IconButton size='small' data-testid={`button-expand-pipeline-temporary`}>
+        <ExpandMoreIcon
+          sx={{
+            transform: `rotateZ(${isExpanded ? 180 : 0}deg)`
+          }}
+        />
+      </IconButton>
+    )
   }
 
   return (
