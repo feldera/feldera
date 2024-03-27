@@ -57,9 +57,9 @@ const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
     },
     warning: {
       light: '#FFB826',
-      main: '#FFAB00',
+      main: mode === 'light' ? '#FFAB00' : '#FFAB00',
       dark: '#E89C00',
-      contrastText: mode === 'light' ? '#BD7817' : '#E89C00'
+      contrastText: mode === 'light' ? '#000000' : '#000000'
     },
     info: {
       light: '#29CCEF',
