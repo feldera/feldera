@@ -51,7 +51,8 @@ export const PipelineMemoryGraph = (props: {
       padding: {
         left: 20,
         right: 20
-      }
+      },
+      borderColor: theme.palette.text.disabled
     },
     fill: {
       type: 'gradient',
@@ -104,6 +105,9 @@ export const PipelineMemoryGraph = (props: {
           const time = new Date(0)
           time.setMilliseconds(ms)
           return '-' + time.toISOString().substring(14, 19)
+        },
+        style: {
+          colors: theme.palette.text.primary
         }
       },
       tickAmount: 1,
@@ -119,6 +123,9 @@ export const PipelineMemoryGraph = (props: {
       tickAmount: 2,
       labels: {
         show: true,
+        style: {
+          colors: theme.palette.text.primary
+        },
         formatter(val) {
           return humanSize(val)
         }
