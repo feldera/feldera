@@ -273,7 +273,7 @@ export const ProgramEditorImpl = ({
       <CardContent>
         <Grid item xs={12}>
           <EntitySyncIndicator getLabel={stateToEditorLabel} state={status} />
-          <CompileIndicator state={program.status} />
+          <CompileIndicator program={program} />
         </Grid>
       </CardContent>
       <CardContent>

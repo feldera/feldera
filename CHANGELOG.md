@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strongly typed, and the transport names have the `_input` and `_output`
   suffix added ([#1532](https://github.com/feldera/feldera/pull/1532))
 
+### Fixed
+
+- WebConsole: State shows InQueue when program is empty (#1443)
+
 ## [0.12.0] - 2024-03-19
 
 ### Changed
