@@ -225,7 +225,7 @@ we will define an HTTP source for each of the tables:
     "description": "Connector for part",
     "config": {
         "transport": {
-            "name": "url",
+            "name": "url_input",
             "config": {
                 "path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
             }
@@ -246,7 +246,7 @@ we will define an HTTP source for each of the tables:
     "description": "Connector for vendor",
     "config": {
         "transport": {
-            "name": "url",
+            "name": "url_input",
             "config": {
                 "path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"
             }
@@ -267,7 +267,7 @@ we will define an HTTP source for each of the tables:
     "description": "Connector for price",
     "config": {
         "transport": {
-            "name": "url",
+            "name": "url_input",
             "config": {
                 "path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"
             }

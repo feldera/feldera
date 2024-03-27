@@ -273,7 +273,7 @@ the connector configuration:
 ```json
 {
     "transport": {
-        "name": "url",
+        "name": "url_input",
         "config": {
             "path":"https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
         }

@@ -2,7 +2,7 @@
 
 use crate::{
     controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
-    DbspCircuitHandle, FormatConfig, InputTransport,
+    DbspCircuitHandle, FormatConfig,
 };
 use anyhow::Result as AnyResult;
 use dbsp::Runtime;
@@ -25,6 +25,7 @@ mod mock_input_consumer;
 mod mock_output_consumer;
 
 use crate::catalog::InputCollectionHandle;
+use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
     generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
     test_struct_schema, TestStruct,
@@ -118,9 +119,8 @@ where
 {
     let (consumer, input_handle) = mock_parser_pipeline(&config.connector_config.format)?;
 
-    let transport =
-        <dyn InputTransport>::get_transport(&config.connector_config.transport.name).unwrap();
-    let endpoint = transport.new_endpoint(&config.connector_config.transport.config)?;
+    let endpoint =
+        input_transport_config_to_endpoint(config.connector_config.transport.clone())?.unwrap();
 
     let reader = endpoint.open(Box::new(consumer.clone()), 0)?;
 

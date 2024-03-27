@@ -1,80 +1,19 @@
-use anyhow::{Error as AnyError, Result as AnyResult};
-use pipeline_types::{
-    config::OutputEndpointConfig,
-    transport::kafka::{KafkaInputConfig, KafkaLogLevel, KafkaOutputConfig},
-};
+use anyhow::Error as AnyError;
+use pipeline_types::transport::kafka::KafkaLogLevel;
 use rdkafka::{
     client::{Client as KafkaClient, ClientContext},
     config::RDKafkaLogLevel,
     error::KafkaError,
     types::RDKafkaErrorCode,
 };
-use serde::Deserialize;
-use serde_yaml::Value as YamlValue;
-use std::borrow::Cow;
 #[cfg(test)]
 use std::sync::Mutex;
 
-use crate::{InputEndpoint, InputTransport, OutputEndpoint, OutputTransport};
-
-use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
-use nonft::{KafkaInputEndpoint, KafkaOutputEndpoint};
+pub use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
+pub use nonft::{KafkaInputEndpoint, KafkaOutputEndpoint};
 
 mod ft;
 mod nonft;
-
-/// [`InputTransport`] implementation that reads data from one or more
-/// Kafka topics.
-///
-/// This input transport is only available if the crate is configured with
-/// `with-kafka` feature.
-///
-/// The input transport factory gives this transport the name `kafka`.
-pub struct KafkaInputTransport;
-
-impl InputTransport for KafkaInputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("kafka")
-    }
-
-    /// Creates a new [`InputEndpoint`] for reading from Kafka topics,
-    /// interpreting `config` as a [`KafkaInputConfig`].
-    ///
-    /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
-        let config = KafkaInputConfig::deserialize(config)?;
-        match config.fault_tolerance {
-            None => Ok(Box::new(KafkaInputEndpoint::new(config)?)),
-            Some(_) => Ok(Box::new(KafkaFtInputEndpoint::new(config)?)),
-        }
-    }
-}
-
-/// [`OutputTransport`] implementation that writes data to a Kafka topic.
-///
-/// This output transport is only available if the crate is configured with
-/// `with-kafka` feature.
-///
-/// The output transport factory gives this transport the name `kafka`.
-pub struct KafkaOutputTransport;
-
-impl OutputTransport for KafkaOutputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("kafka")
-    }
-
-    /// Creates a new [`OutputEndpoint`] fpor writing to a Kafka topic,
-    /// interpreting `config` as a [`KafkaOutputConfig`].
-    ///
-    /// See [`OutputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config = KafkaOutputConfig::deserialize(&config.connector_config.transport.config)?;
-        match config.fault_tolerance {
-            None => Ok(Box::new(KafkaOutputEndpoint::new(config)?)),
-            Some(_) => Ok(Box::new(KafkaFtOutputEndpoint::new(config)?)),
-        }
-    }
-}
 
 pub(crate) fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {
     match level {

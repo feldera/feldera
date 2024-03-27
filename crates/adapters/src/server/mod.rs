@@ -936,7 +936,7 @@ inputs:
     test_input1:
         stream: test_input1
         transport:
-            name: kafka
+            name: kafka_input
             config:
                 auto.offset.reset: "earliest"
                 topics: [test_server_input_topic]
@@ -947,7 +947,7 @@ outputs:
     test_output2:
         stream: test_output1
         transport:
-            name: kafka
+            name: kafka_output
             config:
                 topic: test_server_output_topic
                 max_inflight_messages: 0

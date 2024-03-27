@@ -33,14 +33,16 @@
 //! of transmitted bytes and records and updating respective performance
 //! counters in the controller.
 
-use crate::transport::AtomicStep;
 use crate::transport::InputReader;
 use crate::transport::Step;
+use crate::transport::{
+    input_transport_config_to_endpoint, output_transport_config_to_endpoint, AtomicStep,
+};
 use crate::DbspCircuitHandle;
 use crate::{
     catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
-    InputTransport, OutputConsumer, OutputEndpoint, OutputFormat, OutputQueryHandles,
-    OutputTransport, ParseError, Parser, PipelineState,
+    OutputConsumer, OutputEndpoint, OutputFormat, OutputQueryHandles, ParseError, Parser,
+    PipelineState,
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{self, Sender};
@@ -964,21 +966,18 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
-        // Create transport endpoint.
-        let transport =
-            <dyn InputTransport>::get_transport(&endpoint_config.connector_config.transport.name)
-                .ok_or_else(|| {
-                ControllerError::unknown_input_transport(
-                    endpoint_name,
-                    &endpoint_config.connector_config.transport.name,
-                )
-            })?;
-
-        let endpoint = transport
-            .new_endpoint(&endpoint_config.connector_config.transport.config)
-            .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
-
-        self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
+        let endpoint =
+            input_transport_config_to_endpoint(endpoint_config.connector_config.transport.clone())
+                .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+        match endpoint {
+            None => Err(ControllerError::unknown_input_transport(
+                endpoint_name,
+                &endpoint_config.connector_config.transport.name(),
+            )),
+            Some(endpoint) => {
+                self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
+            }
+        }
     }
 
     fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -1108,20 +1107,16 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
-        // Create transport endpoint.
-        let transport =
-            <dyn OutputTransport>::get_transport(&endpoint_config.connector_config.transport.name)
-                .ok_or_else(|| {
-                    ControllerError::unknown_output_transport(
-                        endpoint_name,
-                        &endpoint_config.connector_config.transport.name,
-                    )
-                })?;
-
-        let endpoint = transport
-            .new_endpoint(endpoint_config)
-            .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
-        self.add_output_endpoint(endpoint_name, endpoint_config, endpoint)
+        let endpoint =
+            output_transport_config_to_endpoint(endpoint_config.connector_config.transport.clone())
+                .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+        match endpoint {
+            None => Err(ControllerError::unknown_output_transport(
+                endpoint_name,
+                &endpoint_config.connector_config.transport.name(),
+            )),
+            Some(endpoint) => self.add_output_endpoint(endpoint_name, endpoint_config, endpoint),
+        }
     }
 
     fn disconnect_output(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -1698,7 +1693,7 @@ inputs:
     test_input1:
         stream: test_input1
         transport:
-            name: file
+            name: file_input
             config:
                 path: {:?}
                 buffer_size_bytes: {input_buffer_size_bytes}
@@ -1709,7 +1704,7 @@ outputs:
     test_output1:
         stream: test_output1
         transport:
-            name: file
+            name: file_output
             config:
                 path: {:?}
         format:

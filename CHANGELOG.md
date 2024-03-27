@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1524](https://github.com/feldera/feldera/pull/1524))
 - WebConsole: Support NULL values on Data Inspection and Insertion page (#1392)
 
+### Changed
+
+- pipeline-manager: connector transport configuration in the API is now
+  strongly typed, and the transport names have the `_input` and `_output`
+  suffix added ([#1532](https://github.com/feldera/feldera/pull/1532))
+
 ## [0.12.0] - 2024-03-19
 
 ### Changed

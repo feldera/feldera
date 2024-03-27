@@ -201,7 +201,7 @@ def prepare_feldera(api_url):
                     }
                 },
                 "transport": {
-                    "name": "kafka",
+                    "name": "kafka_output",
                     "config": {
                         "bootstrap.servers": pipeline_to_redpanda_server,
                         "topic": topic

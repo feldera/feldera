@@ -138,7 +138,7 @@ pub(crate) fn pipeline_config() -> PipelineConfig {
         config: ConnectorConfig::from_yaml_str(
             r#"
 transport:
-    name: kafka
+    name: kafka_input
     config:
         auto.offset.reset: "earliest"
         group.instance.id: "group0"
@@ -160,11 +160,9 @@ format:
         config: ConnectorConfig::from_yaml_str(
             r#"
 transport:
-    name: kafka
+    name: kafka_output
     config:
-        auto.offset.reset: "earliest"
-        group.instance.id: "group0"
-        topics: [test_input2]
+        topic: test_output1
 format:
     name: csv"#,
         ),

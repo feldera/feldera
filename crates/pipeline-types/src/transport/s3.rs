@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Configuration for reading data from AWS S3.
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct S3InputConfig {
     /// Credentials to authenticate against AWS
     pub credentials: AwsCredentials,
@@ -23,7 +23,7 @@ fn default_consume_strategy() -> ConsumeStrategy {
 }
 
 /// Configuration to authenticate against AWS
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(tag = "type")]
 pub enum AwsCredentials {
     /// Do not sign requests. This is equivalent to
@@ -37,7 +37,7 @@ pub enum AwsCredentials {
 }
 
 /// Strategy that determines which objects to read from a given bucket
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(tag = "type")]
 pub enum ReadStrategy {
     /// Read a single object specified by a key
@@ -47,7 +47,7 @@ pub enum ReadStrategy {
 }
 
 /// Strategy to feed a fetched object into an InputConsumer.
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(tag = "type")]
 pub enum ConsumeStrategy {
     /// Write the object as a series of fragments (see

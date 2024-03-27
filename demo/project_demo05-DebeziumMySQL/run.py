@@ -155,7 +155,7 @@ def prepare_feldera_pipeline(api_url, start_pipeline):
                     }
                 },
                 "transport": {
-                    "name": "kafka",
+                    "name": "kafka_input",
                     "config": {
                         "bootstrap.servers": pipeline_to_redpanda_server,
                         "auto.offset.reset": "earliest",
