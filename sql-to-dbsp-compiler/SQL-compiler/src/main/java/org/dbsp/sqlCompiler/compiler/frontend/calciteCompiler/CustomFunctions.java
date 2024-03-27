@@ -41,6 +41,7 @@ public class CustomFunctions {
 
     public CustomFunctions() {
         this.initial.add(new RlikeFunction());
+        this.initial.add(new GunzipFunction());
         this.initial.add(new WriteLogFunction());
         this.initial.add(new SequenceFunction());
         this.udf = new HashMap<>();
@@ -60,6 +61,28 @@ public class CustomFunctions {
         @Override
         public boolean isDeterministic() {
             // TODO: change this when we learn how to constant-fold in the RexToLixTranslator
+            return false;
+        }
+    }
+
+    /**
+     * GUNZIP(binary) returns the string that results from decompressing the
+     * input binary using the GZIP algorithm.  The input binary must be a
+     * valid GZIP binary string.
+     */
+    public static class GunzipFunction extends SqlFunction {
+        public GunzipFunction() {
+            super("GUNZIP",
+                    SqlKind.OTHER_FUNCTION,
+                    ReturnTypes.VARCHAR
+                            .andThen(SqlTypeTransforms.TO_NULLABLE),
+                    null,
+                    OperandTypes.BINARY,
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
+        }
+
+        @Override
+        public boolean isDeterministic() {
             return false;
         }
     }

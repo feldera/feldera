@@ -23,6 +23,7 @@ regex = { version = "1.9.1" }
 rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
 hex = "0.4.3"
 num-traits = "0.2"
+flate2 = "1.0.28"
 
 [dev-dependencies]
 lazy_static = "1.4.0"
