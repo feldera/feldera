@@ -3,7 +3,7 @@
 // Changes color depending on compilation status and displays a tooltip with
 // more information.
 
-import { ProgramStatus } from '$lib/services/manager'
+import { ProgramDescr } from '$lib/services/manager'
 import CustomChip from 'src/@core/components/mui/chip'
 import { ThemeColor } from 'src/@core/layouts/types'
 import { match, P } from 'ts-pattern'
@@ -12,7 +12,7 @@ import DoneIcon from '@mui/icons-material/Done'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import { CircularProgress, Tooltip } from '@mui/material'
 
-export const CompileIndicator = (props: { state: ProgramStatus }) => {
+export const CompileIndicator = (props: { program: ProgramDescr }) => {
   const labelSuccess = 'Success'
   const labelCompiling = 'Compiling …'
   const labelPending = 'In queue'
@@ -21,17 +21,19 @@ export const CompileIndicator = (props: { state: ProgramStatus }) => {
   const doneIcon = <DoneIcon />
   const errIcon = <ErrorOutlineIcon />
 
-  interface ButtonState {
-    color: ThemeColor
-    isCompiling: boolean
-    label: string
-    status: string
-    toolTip?: string
-    visible: boolean
-  }
+  type ButtonState =
+    | {
+        color: ThemeColor
+        isCompiling: boolean
+        label: string
+        status: string
+        toolTip?: string
+        visible: boolean
+      }
+    | { visible: false }
 
-  const buttonState: ButtonState = match(props.state)
-    .with({ SqlError: P.select() }, errs => ({
+  const buttonState: ButtonState = match(props.program)
+    .with({ status: { SqlError: P.select() } }, errs => ({
       visible: true,
       color: 'error' as const,
       isCompiling: false,
@@ -44,42 +46,45 @@ export const CompileIndicator = (props: { state: ProgramStatus }) => {
         (errs.length > 1 ? 'errors' : 'error') +
         ', check highlighted lines in the editor for more details.'
     }))
-    .with({ RustError: P._ }, () => ({
+    .with({ status: { RustError: P._ } }, () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
       label: labelSuccess,
       status: 'success'
     }))
-    .with({ SystemError: P._ }, () => ({
+    .with({ status: { SystemError: P._ } }, () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
       label: labelSuccess,
       status: 'success'
     }))
-    .with('Pending', () => ({
+    .with({ version: 0 }, () => ({
+      visible: false as const
+    }))
+    .with({ status: 'Pending' }, () => ({
       visible: true,
       color: 'warning' as const,
       isCompiling: true,
       label: labelPending,
       status: 'queued'
     }))
-    .with('CompilingSql', () => ({
+    .with({ status: 'CompilingSql' }, () => ({
       visible: true,
       color: 'warning' as const,
       isCompiling: true,
       label: labelCompiling,
       status: 'compiling'
     }))
-    .with('CompilingRust', () => ({
+    .with({ status: 'CompilingRust' }, () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
       label: labelSuccess,
       status: 'success'
     }))
-    .with('Success', () => ({
+    .with({ status: 'Success' }, () => ({
       visible: true,
       color: 'success' as const,
       isCompiling: false,
