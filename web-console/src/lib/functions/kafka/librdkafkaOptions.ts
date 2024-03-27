@@ -41,7 +41,9 @@ const deduceType = (row: string[]) =>
         ? ('enum' as const)
         : row[5].includes('Type: CSV list')
           ? ('list' as const)
-          : ('string' as const)
+          : row[5].includes('Type: array')
+            ? ('array' as const)
+            : ('string' as const)
 
 /**
  * Columns: Property, C/P, Range, Default, Importance, Description
@@ -934,7 +936,7 @@ export const librdkafkaOptions = [
       '               ',
       '             ',
       'high      ',
-      `A comma-delimited list of Kafka topics  \n*Type: CSV list*`
+      `A comma-delimited list of Kafka topics  \n*Type: array*`
     ]
   ])
   .map(row => ({
@@ -968,6 +970,24 @@ export const librdkafkaAuthOptions = [
 
 export type LibrdkafkaOptionType = string | number | boolean | string[]
 
+const toKafkaOption = (optionName: string, v: LibrdkafkaOptionType, type: ReturnType<typeof deduceType>) => {
+  return match(type)
+    .with('boolean', 'number', () => String(v))
+    .with('list', () => {
+      invariant(Array.isArray(v), 'librdkafka option ' + optionName + ' ' + v + ' is not an array')
+      return v.join(', ')
+    })
+    .with('array', () => {
+      invariant(Array.isArray(v), 'librdkafka option ' + optionName + ' ' + v + ' is not an array')
+      return v as unknown as string // TODO: the hiding of string[] type is temporary until better typing in kafka-related APIs
+    })
+    .with('string', 'enum', () => {
+      invariant(typeof v === 'string', 'librdkafka option ' + optionName + ' ' + v + ' is not a string')
+      return v
+    })
+    .exhaustive()
+}
+
 /**
  * Convert a form object with underscore-delimited fields to a config object with dot-delimited fields
  *
@@ -984,17 +1004,7 @@ export const toKafkaConfig = (formFields: Record<string, LibrdkafkaOptionType>) 
     const optionName = fieldName.replaceAll('_', '.')
     // TODO: Optimize .find()
     const type = librdkafkaOptions.find(option => option.name === optionName)?.type ?? 'string'
-    config[optionName] = match(type)
-      .with('boolean', 'number', () => String(v))
-      .with('list', () => {
-        invariant(Array.isArray(v), 'librdkafka option ' + optionName + ' ' + v + ' is not an array')
-        return v.join(', ')
-      })
-      .with('string', 'enum', () => {
-        invariant(typeof v === 'string', 'librdkafka option ' + optionName + ' ' + v + ' is not a string')
-        return v
-      })
-      .exhaustive()
+    config[optionName] = toKafkaOption(optionName, v, type)
   })
   return config
 }
@@ -1005,7 +1015,7 @@ export const toKafkaConfig = (formFields: Record<string, LibrdkafkaOptionType>) 
  * Underscore-delimited fields are used with react-hook-form because its implementation
  * conflicts with dot-delimited fields
  */
-export const fromKafkaConfig = (config: Record<string, string>) => {
+export const fromKafkaConfig = (config: Record<string, string | string[]>) => {
   const formFields = {} as Record<string, LibrdkafkaOptionType>
   Object.keys(config).forEach(optionName => {
     const v = config[optionName]
@@ -1020,8 +1030,9 @@ export const fromKafkaConfig = (config: Record<string, string>) => {
             ? false
             : (invariant(false, 'librdkafka option ' + optionName + ' ' + v + ' is not a boolean') as never)
       )
-      .with('number', () => parseInt(v))
-      .with('list', () => v.split(', '))
+      .with('number', () => parseInt(v as string))
+      .with('list', () => (v as string).split(', '))
+      .with('array', () => v)
       .with('string', 'enum', () => v)
       .exhaustive()
   })
@@ -1036,4 +1047,5 @@ export const librdkafkaDefaultValue = (
     .with('number', () => parseInt(option.default))
     .with('enum', 'string', () => option.default)
     .with('list', () => option.default.split(', '))
+    .with('array', () => option.default.split(', '))
     .exhaustive()

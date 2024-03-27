@@ -6,11 +6,11 @@ use std::{
 };
 
 use anyhow::{Error as AnyError, Result as AnyResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Configuration for reading data from Kafka topics with `InputTransport`.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -42,7 +42,7 @@ pub struct KafkaInputConfig {
 }
 
 /// Fault tolerance configuration for Kafka input connector.
-#[derive(Deserialize, Clone, Debug, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct KafkaInputFtConfig {
     /// Options passed to `rdkafka` for consumers only, as documented at
     /// [`librdkafka`
@@ -86,7 +86,7 @@ pub struct KafkaInputFtConfig {
 }
 
 /// Kafka logging levels.
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ToSchema)]
 pub enum KafkaLogLevel {
     #[serde(rename = "emerg")]
     Emerg,
@@ -188,7 +188,7 @@ const fn default_initialization_timeout_secs() -> u32 {
 }
 
 /// Configuration for writing data to a Kafka topic with `OutputTransport`.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct KafkaOutputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -232,7 +232,7 @@ pub struct KafkaOutputConfig {
 }
 
 /// Fault tolerance configuration for Kafka output connector.
-#[derive(Deserialize, Clone, Debug, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct KafkaOutputFtConfig {
     /// Options passed to `rdkafka` for consumers only, as documented at
     /// [`librdkafka`

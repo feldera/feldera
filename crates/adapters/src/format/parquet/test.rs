@@ -227,7 +227,7 @@ fn parquet_input() {
         r#"
 stream: test_input
 transport:
-    name: file
+    name: file_input
     config:
         path: {:?}
         buffer_size_bytes: 5

@@ -62,7 +62,7 @@ def main():
                 }
             },
             "transport": {
-                "name": "url",
+                "name": "url_input",
                 "config": {
                     "path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
                 }
@@ -76,7 +76,7 @@ def main():
                 }
             },
             "transport": {
-                "name": "url",
+                "name": "url_input",
                 "config": {
                     "path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"
                 }
@@ -90,7 +90,7 @@ def main():
                 }
             },
             "transport": {
-                "name": "url",
+                "name": "url_input",
                 "config": {
                     "path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"
                 }
@@ -104,7 +104,7 @@ def main():
                 }
             },
             "transport": {
-                "name": "kafka",
+                "name": "kafka_input",
                 "config": {
                     "topics": ["price"],
                     "bootstrap.servers": pipeline_to_redpanda_server,
@@ -121,7 +121,7 @@ def main():
                 }
             },
             "transport": {
-                "name": "kafka",
+                "name": "kafka_output",
                 "config": {
                     "topic": "preferred_vendor",
                     "bootstrap.servers": pipeline_to_redpanda_server,

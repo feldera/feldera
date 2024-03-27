@@ -89,7 +89,7 @@ outputs:
     test_output:
         stream: test_output1
         transport:
-            name: kafka
+            name: kafka_output
             config:
                 bootstrap.servers: localhost:11111
                 topic: end_to_end_test_output_topic
@@ -141,7 +141,7 @@ inputs:
     test_input1:
         stream: test_input1
         transport:
-            name: kafka
+            name: kafka_input
             config:
                 auto.offset.reset: "earliest"
                 group.instance.id: "{test_name}"
@@ -153,7 +153,7 @@ outputs:
     test_output2:
         stream: test_output1
         transport:
-            name: kafka
+            name: kafka_output
             config:
                 topic: {output_topic}
                 max_inflight_messages: 0
@@ -222,7 +222,7 @@ fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
         r#"
 stream: test_input
 transport:
-    name: kafka
+    name: kafka_input
     config:
         bootstrap.servers: localhost:11111
         auto.offset.reset: "earliest"
@@ -244,7 +244,7 @@ format:
     let config_str = r#"
 stream: test_input
 transport:
-    name: kafka
+    name: kafka_input
     config:
         auto.offset.reset: "earliest"
         topics: [input_test_topic1, this_topic_does_not_exist]
@@ -266,7 +266,7 @@ format:
         r#"
 stream: test_input
 transport:
-    name: kafka
+    name: kafka_input
     config:
         auto.offset.reset: "earliest"
         topics: [{topic1}, {topic2}]
@@ -372,7 +372,7 @@ inputs:
     test_input1:
         stream: test_input1
         transport:
-            name: kafka
+            name: kafka_input
             config:
                 auto.offset.reset: "earliest"
                 group.instance.id: "buffer_test"
@@ -384,7 +384,7 @@ outputs:
     test_output2:
         stream: test_output1
         transport:
-            name: kafka
+            name: kafka_output
             config:
                 topic: {output_topic}
                 max_inflight_messages: 0

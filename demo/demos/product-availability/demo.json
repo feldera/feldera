@@ -21,7 +21,7 @@
             "description": "Kafka input connector for the warehouse table of the Product Availability demo.",
             "config": {
               "transport": {
-                "name": "kafka",
+                "name": "kafka_input",
                 "config": {
                   "bootstrap.servers": "${secret:product-availability-bootstrap-servers}",
                   "security.protocol": "SASL_PLAINTEXT",
@@ -51,7 +51,7 @@
             "description": "Kafka input connector for the product table of the Product Availability demo.",
             "config": {
               "transport": {
-                "name": "kafka",
+                "name": "kafka_input",
                 "config": {
                   "bootstrap.servers": "${secret:product-availability-bootstrap-servers}",
                   "security.protocol": "SASL_PLAINTEXT",
@@ -81,7 +81,7 @@
             "description": "Kafka input connector for the storage table of the Product Availability demo.",
             "config": {
               "transport": {
-                "name": "kafka",
+                "name": "kafka_input",
                 "config": {
                   "bootstrap.servers": "${secret:product-availability-bootstrap-servers}",
                   "security.protocol": "SASL_PLAINTEXT",

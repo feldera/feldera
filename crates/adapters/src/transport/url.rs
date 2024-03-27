@@ -1,4 +1,4 @@
-use super::{InputConsumer, InputEndpoint, InputReader, InputTransport, Step};
+use super::{InputConsumer, InputEndpoint, InputReader, Step};
 use crate::PipelineState;
 use actix::System;
 use actix_web::http::header::{ByteRangeSpec, ContentRangeSpec, Range, CONTENT_RANGE};
@@ -8,39 +8,23 @@ use futures::StreamExt;
 use lazy_static::lazy_static;
 use pipeline_types::transport::url::UrlInputConfig;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
-use serde::Deserialize;
-use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, cmp::Ordering, str::FromStr, sync::Arc, thread::spawn};
+use std::{cmp::Ordering, str::FromStr, sync::Arc, thread::spawn};
 use tokio::{
     select,
     sync::watch::{channel, Receiver, Sender},
 };
 use webpki_roots::TLS_SERVER_ROOTS;
 
-/// [`InputTransport`] implementation that reads data from an HTTP or HTTPS URL.
-///
-/// The input transport factory gives this transport the name `url`.
-pub struct UrlInputTransport;
-
-impl InputTransport for UrlInputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("url")
-    }
-
-    /// Creates a new [`InputEndpoint`] for reading from an HTTP or HTTPS URL,
-    /// interpreting `config` as a [`UrlInputConfig`].
-    ///
-    /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
-        let ep = UrlInputEndpoint {
-            config: Arc::new(UrlInputConfig::deserialize(config)?),
-        };
-        Ok(Box::new(ep))
-    }
+pub(crate) struct UrlInputEndpoint {
+    config: Arc<UrlInputConfig>,
 }
 
-struct UrlInputEndpoint {
-    config: Arc<UrlInputConfig>,
+impl UrlInputEndpoint {
+    pub(crate) fn new(config: UrlInputConfig) -> Self {
+        Self {
+            config: Arc::new(config),
+        }
+    }
 }
 
 impl InputEndpoint for UrlInputEndpoint {
@@ -340,7 +324,7 @@ mod test {
             r#"
 stream: test_input
 transport:
-    name: url
+    name: url_input
     config:
         path: http://{addr}/{path}
 format:

@@ -78,9 +78,6 @@
 //!
 //! The transport adapter API consists of the following traits:
 //!
-//! * [`InputTransport`] is a factory trait that creates [`InputEndpoint`]
-//!   instances from configurations.
-//!
 //! * [`InputEndpoint`] represents a configured data connection, e.g., a file,
 //!   an S3 bucket or a Kafka topic.  By providing an [`InputConsumer`], a
 //!   client may open an endpoint and thereby obtain an [`InputReader`].
@@ -92,9 +89,6 @@
 //! * [`InputConsumer`] is provided by the client, not the API.  An
 //!   [`InputReader`] with new data or status information provides it by calling
 //!   the consumer's methods.
-//!
-//! * [`OutputTransport`] is a factory trait that creates [`OutputEndpoint`]
-//!   instances.
 //!
 //! * [`OutputEndpoint`] represents an individual outgoing data connection,
 //!   e.g., a file, an S3 bucket or a Kafka topic.
@@ -196,6 +190,5 @@ pub use controller::{
     InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig, TransportConfig,
 };
 pub use transport::{
-    AsyncErrorCallback, FileInputTransport, InputConsumer, InputEndpoint, InputReader,
-    InputTransport, OutputEndpoint, OutputTransport,
+    AsyncErrorCallback, InputConsumer, InputEndpoint, InputReader, OutputEndpoint,
 };

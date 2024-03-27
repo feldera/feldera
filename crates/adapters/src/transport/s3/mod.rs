@@ -1,39 +1,28 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use log::error;
-use serde::Deserialize;
 use tokio::sync::{
     mpsc,
     watch::{channel, Receiver, Sender},
 };
 
-use crate::{InputConsumer, InputEndpoint, InputReader, InputTransport, PipelineState};
+use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState};
 #[cfg(test)]
 use mockall::automock;
 
 use pipeline_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
 
-pub struct S3InputTransport;
-
-impl InputTransport for S3InputTransport {
-    fn name(&self) -> std::borrow::Cow<'static, str> {
-        Cow::Borrowed("s3")
-    }
-
-    fn new_endpoint(
-        &self,
-        config: &serde_yaml::Value,
-    ) -> anyhow::Result<Box<dyn crate::InputEndpoint>> {
-        let ep = S3InputEndpoint {
-            config: Arc::new(S3InputConfig::deserialize(config)?),
-        };
-        Ok(Box::new(ep))
-    }
+pub struct S3InputEndpoint {
+    config: Arc<S3InputConfig>,
 }
 
-struct S3InputEndpoint {
-    config: Arc<S3InputConfig>,
+impl S3InputEndpoint {
+    pub fn new(config: S3InputConfig) -> Self {
+        Self {
+            config: Arc::new(config),
+        }
+    }
 }
 
 impl InputEndpoint for S3InputEndpoint {
@@ -309,7 +298,9 @@ mod test {
         types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
     };
     use mockall::predicate::eq;
-    use pipeline_types::{config::InputEndpointConfig, deserialize_without_context};
+    use pipeline_types::{
+        config::InputEndpointConfig, config::TransportConfig, deserialize_without_context,
+    };
     use serde::{Deserialize, Serialize};
     use std::{sync::Arc, time::Duration};
 
@@ -322,7 +313,7 @@ mod test {
     const MULTI_KEY_CONFIG_STR: &str = r#"
 stream: test_input
 transport:
-    name: s3
+    name: s3_input
     config:
         credentials:
             type: AccessKey
@@ -342,7 +333,7 @@ format:
     const SINGLE_KEY_CONFIG_STR: &str = r#"
 stream: test_input
 transport:
-    name: s3
+    name: s3_input
     config:
         credentials:
             type: AccessKey
@@ -368,9 +359,13 @@ format:
         MockDeZSet<TestStruct, TestStruct>,
     ) {
         let config: InputEndpointConfig = serde_yaml::from_str(&config_str).unwrap();
-        let transport_config: Arc<S3InputConfig> = Arc::new(
-            S3InputConfig::deserialize(config.connector_config.transport.config.clone()).unwrap(),
-        );
+        let transport_config = config.connector_config.transport.clone();
+        let transport_config: Arc<S3InputConfig> = match transport_config {
+            TransportConfig::S3Input(config) => Arc::new(config),
+            _ => {
+                panic!("Expected S3Input transport configuration");
+            }
+        };
         let (consumer, input_handle) =
             mock_parser_pipeline::<TestStruct, TestStruct>(&config.connector_config.format)
                 .unwrap();

@@ -129,7 +129,7 @@ def main():
                 "description": "",
                 "config": {
                     "transport": {
-                        "name": "file",
+                        "name": "file_" + ("input" if is_input else "output"),
                         "config": {
                             "path": filepath,
                         }
