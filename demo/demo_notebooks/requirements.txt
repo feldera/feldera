@@ -5,5 +5,7 @@ geopy==2.3.0
 pandas==1.5.3
 scikit_learn==1.2.1
 xgboost==1.7.3
+tensorflow==2.16.1
+jupyterplot==0.2.2
 # Used by the snowflake demo
 snowflake-connector-python==3.2.1
