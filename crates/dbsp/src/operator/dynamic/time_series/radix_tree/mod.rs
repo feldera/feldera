@@ -98,7 +98,7 @@ mod updater;
 
 use crate::dynamic::{ClonableTrait, DynVec, Erase, Factory, LeanVec, WithFactory};
 pub use partitioned_tree_aggregate::{
-    FilePartitionedRadixTreeFactories, OrdPartitionedTreeAggregateFactories,
+    OrdPartitionedRadixTreeFactories, OrdPartitionedTreeAggregateFactories,
     PartitionedRadixTreeReader,
 };
 pub use prefix::{DynPrefix, Prefix};
