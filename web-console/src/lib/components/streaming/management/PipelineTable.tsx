@@ -406,7 +406,6 @@ function CustomDetailPanelToggle({
               duration: theme.transitions.duration.shortest
             })
         }}
-        fontSize='inherit'
       />
     </IconButton>
   )
