@@ -18,10 +18,10 @@ use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 
-/// Default value of `InputEndpointConfig::max_buffered_records`.
+/// Default value of `ConnectorConfig::max_queued_records`.
 /// It is declared as a function and not as a constant, so it can
-/// be used in `#[serde(default="default_max_buffered_records")]`.
-pub(crate) const fn default_max_buffered_records() -> u64 {
+/// be used in `#[serde(default="default_max_queued_records")]`.
+pub(crate) const fn default_max_queued_records() -> u64 {
     1_000_000
 }
 
@@ -124,17 +124,31 @@ pub struct ConnectorConfig {
     /// Parser configuration.
     pub format: FormatConfig,
 
+    /// Output buffer configuration.
+    #[serde(flatten)]
+    pub output_buffer_config: OutputBufferConfig,
+
     /// Backpressure threshold.
     ///
-    /// Maximal amount of records buffered by the endpoint before the endpoint
-    /// is paused by the backpressure mechanism.  Note that this is not a
-    /// hard bound: there can be a small delay between the backpressure
-    /// mechanism is triggered and the endpoint is paused, during which more
-    /// data may be received.
+    /// Maximal number of records queued by the endpoint before the endpoint
+    /// is paused by the backpressure mechanism.
+    ///
+    /// For input endpoints, this setting bounds the number of records that have
+    /// been received from the input transport but haven't yet been consumed by
+    /// the circuit since the circuit, since the circuit is still busy processing
+    /// previous inputs.
+    ///
+    /// For output endpoints, this setting bounds the number of records that have
+    /// been produced by the circuit but not yet sent via the output transport endpoint
+    /// nor stored in the output buffer (see `enable_output_buffer`).
+    ///
+    /// Note that this is not a hard bound: there can be a small delay between
+    /// the backpressure mechanism is triggered and the endpoint is paused, during
+    /// which more data may be queued.
     ///
     /// The default is 1 million.
-    #[serde(default = "default_max_buffered_records")]
-    pub max_buffered_records: u64,
+    #[serde(default = "default_max_queued_records")]
+    pub max_queued_records: u64,
 }
 
 impl ConnectorConfig {
@@ -169,32 +183,32 @@ pub struct OutputBufferConfig {
     /// small files every few milliseconds.
     ///
     /// To achieve such input/output decoupling, users can enable output buffering by
-    /// setting the `enable_buffer` flag to `true`.  When buffering is enabled, output
+    /// setting the `enable_output_buffer` flag to `true`.  When buffering is enabled, output
     /// updates produced by the pipeline are consolidated in an internal buffer and are
     /// pushed to the output transport when one of several conditions is satisfied:
     ///
-    /// * data has been accumulated in the buffer for more than `max_buffer_time_millis`
+    /// * data has been accumulated in the buffer for more than `max_output_buffer_time_millis`
     ///   milliseconds.
-    /// * buffer size exceeds `max_buffered_records` records.
+    /// * buffer size exceeds `max_output_buffer_size_records` records.
     ///
     /// This flag is `false` by default.
     // TODO: on-demand output triggered via the API.
     #[serde(default)]
-    pub enable_buffer: bool,
+    pub enable_output_buffer: bool,
 
-    /// Maximum time in milliseconds data is kept in the buffer.
+    /// Maximum time in milliseconds data is kept in the output buffer.
     ///
     /// By default, data is kept in the buffer indefinitely until one of
     /// the other output conditions is satisfied.  When this option is
     /// set the buffer will be flushed at most every
-    /// `max_buffer_time_millis` milliseconds.
+    /// `max_output_buffer_time_millis` milliseconds.
     ///
-    /// NOTE: this configuration option requires the `enable_buffer` flag
+    /// NOTE: this configuration option requires the `enable_output_buffer` flag
     /// to be set.
     #[serde(default = "default_max_buffer_time_millis")]
-    pub max_buffer_time_millis: usize,
+    pub max_output_buffer_time_millis: usize,
 
-    /// Maximum number of output updates to be kept in the buffer.
+    /// Maximum number of updates to be kept in the output buffer.
     ///
     /// This parameter bounds the maximal size of the buffer.  
     /// Note that the size of the buffer is not always equal to the
@@ -204,10 +218,10 @@ pub struct OutputBufferConfig {
     /// By default, the buffer can grow indefinitely until one of
     /// the other output conditions is satisfied.
     ///
-    /// NOTE: this configuration option requires the `enable_buffer` flag
+    /// NOTE: this configuration option requires the `enable_output_buffer` flag
     /// to be set.
     #[serde(default = "default_max_buffer_size_records")]
-    pub max_buffer_size_records: usize,
+    pub max_output_buffer_size_records: usize,
 }
 
 /// Describes an output connector configuration
@@ -224,10 +238,6 @@ pub struct OutputEndpointConfig {
     /// Connector configuration.
     #[serde(flatten)]
     pub connector_config: ConnectorConfig,
-
-    /// Output buffer configuration.
-    #[serde(flatten)]
-    pub output_buffer_config: OutputBufferConfig,
 }
 
 /// Required trait for every transport configuration, as it needs to be

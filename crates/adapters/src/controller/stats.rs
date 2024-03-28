@@ -324,16 +324,16 @@ impl ControllerStatus {
     }
 
     /// True if the number of records buffered by the endpoint exceeds
-    /// its `max_buffered_records` config parameter.
+    /// its `max_queued_records` config parameter.
     pub fn input_endpoint_full(&self, endpoint_id: &EndpointId) -> bool {
         let buffered_records = self.num_input_endpoint_buffered_records(endpoint_id);
 
-        let max_buffered_records = match self.inputs.read().unwrap().get(endpoint_id) {
+        let max_queued_records = match self.inputs.read().unwrap().get(endpoint_id) {
             None => return false,
-            Some(endpoint) => endpoint.config.connector_config.max_buffered_records,
+            Some(endpoint) => endpoint.config.connector_config.max_queued_records,
         };
 
-        buffered_records >= max_buffered_records
+        buffered_records >= max_queued_records
     }
 
     /// Update counters after receiving a new input batch.
@@ -347,7 +347,7 @@ impl ControllerStatus {
     /// * `circuit_thread_unparker` - unparker used to wake up the circuit
     ///   thread if the total number of buffered records exceeds
     ///   `min_batch_size_records`.
-    /// * `backpressure_thread_unparker` - unparker used to wake up the the
+    /// * `backpressure_thread_unparker` - unparker used to wake up the
     ///   backpressure thread if the endpoint is full.
     pub fn input_batch(
         &self,
@@ -375,15 +375,15 @@ impl ControllerStatus {
         let inputs = self.inputs.read().unwrap();
 
         // Update endpoint counters; unpark backpressure thread if endpoint's
-        // `max_buffered_records` exceeded.
+        // `max_queued_records` exceeded.
         //
         // There is a potential race condition if the endpoint is currently being
         // removed. In this case, it's safe to ignore this operation.
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
             let old = endpoint_stats.add_buffered(num_bytes, num_records);
 
-            if old < endpoint_stats.config.connector_config.max_buffered_records
-                && old + num_records >= endpoint_stats.config.connector_config.max_buffered_records
+            if old < endpoint_stats.config.connector_config.max_queued_records
+                && old + num_records >= endpoint_stats.config.connector_config.max_queued_records
             {
                 backpressure_thread_unparker.unpark();
             }
@@ -483,8 +483,8 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let old = endpoint_stats.buffer_batch(num_records);
             if old - (num_records as u64)
-                <= endpoint_stats.config.connector_config.max_buffered_records
-                && old >= endpoint_stats.config.connector_config.max_buffered_records
+                <= endpoint_stats.config.connector_config.max_queued_records
+                && old >= endpoint_stats.config.connector_config.max_queued_records
             {
                 circuit_thread_unparker.unpark();
             }
@@ -501,8 +501,8 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             let old = endpoint_stats.output_batch(total_processed_records, num_records);
             if old - (num_records as u64)
-                <= endpoint_stats.config.connector_config.max_buffered_records
-                && old >= endpoint_stats.config.connector_config.max_buffered_records
+                <= endpoint_stats.config.connector_config.max_queued_records
+                && old >= endpoint_stats.config.connector_config.max_queued_records
             {
                 circuit_thread_unparker.unpark();
             }
@@ -527,7 +527,7 @@ impl ControllerStatus {
                 .metrics
                 .queued_records
                 .load(Ordering::Acquire);
-            num_buffered_records >= endpoint_stats.config.connector_config.max_buffered_records
+            num_buffered_records >= endpoint_stats.config.connector_config.max_queued_records
         })
     }
 

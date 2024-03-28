@@ -813,11 +813,14 @@
                   "cpu_profiler": false,
                   "inputs": {
                     "Input-To-Table": {
+                      "enable_output_buffer": false,
                       "format": {
                         "config": null,
                         "name": "csv"
                       },
-                      "max_buffered_records": 1000000,
+                      "max_output_buffer_size_records": 18446744073709551615,
+                      "max_output_buffer_time_millis": 18446744073709551615,
+                      "max_queued_records": 1000000,
                       "stream": "my_input_table",
                       "transport": {
                         "config": {
@@ -841,14 +844,14 @@
                   "name": "pipeline-67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "outputs": {
                     "Output-To-View": {
-                      "enable_buffer": false,
+                      "enable_output_buffer": false,
                       "format": {
                         "config": null,
                         "name": "csv"
                       },
-                      "max_buffer_size_records": 0,
-                      "max_buffer_time_millis": 0,
-                      "max_buffered_records": 1000000,
+                      "max_output_buffer_size_records": 18446744073709551615,
+                      "max_output_buffer_time_millis": 18446744073709551615,
+                      "max_queued_records": 1000000,
                       "stream": "my_output_view",
                       "transport": {
                         "config": {
@@ -3141,26 +3144,33 @@
         }
       },
       "ConnectorConfig": {
-        "type": "object",
-        "description": "A data connector's configuration",
-        "required": [
-          "transport",
-          "format"
-        ],
-        "properties": {
-          "format": {
-            "$ref": "#/components/schemas/FormatConfig"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OutputBufferConfig"
           },
-          "max_buffered_records": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Backpressure threshold.\n\nMaximal amount of records buffered by the endpoint before the endpoint\nis paused by the backpressure mechanism.  Note that this is not a\nhard bound: there can be a small delay between the backpressure\nmechanism is triggered and the endpoint is paused, during which more\ndata may be received.\n\nThe default is 1 million.",
-            "minimum": 0
-          },
-          "transport": {
-            "$ref": "#/components/schemas/TransportConfig"
+          {
+            "type": "object",
+            "required": [
+              "transport",
+              "format"
+            ],
+            "properties": {
+              "format": {
+                "$ref": "#/components/schemas/FormatConfig"
+              },
+              "max_queued_records": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Backpressure threshold.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
+                "minimum": 0
+              },
+              "transport": {
+                "$ref": "#/components/schemas/TransportConfig"
+              }
+            }
           }
-        }
+        ],
+        "description": "A data connector's configuration"
       },
       "ConnectorDescr": {
         "type": "object",
@@ -4003,18 +4013,18 @@
       "OutputBufferConfig": {
         "type": "object",
         "properties": {
-          "enable_buffer": {
+          "enable_output_buffer": {
             "type": "boolean",
-            "description": "Enable output buffering.\n\nThe output buffering mechanism allows decoupling the rate at which the pipeline\npushes changes to the output transport from the rate of input changes.\n\nBy default, output updates produced by the pipeline are pushed directly to\nthe output transport. Some destinations may prefer to receive updates in fewer\nbigger batches. For instance, when writing Parquet files, producing\none bigger file every few minutes is usually better than creating\nsmall files every few milliseconds.\n\nTo achieve such input/output decoupling, users can enable output buffering by\nsetting the `enable_buffer` flag to `true`.  When buffering is enabled, output\nupdates produced by the pipeline are consolidated in an internal buffer and are\npushed to the output transport when one of several conditions is satisfied:\n\n* data has been accumulated in the buffer for more than `max_buffer_time_millis`\nmilliseconds.\n* buffer size exceeds `max_buffered_records` records.\n\nThis flag is `false` by default."
+            "description": "Enable output buffering.\n\nThe output buffering mechanism allows decoupling the rate at which the pipeline\npushes changes to the output transport from the rate of input changes.\n\nBy default, output updates produced by the pipeline are pushed directly to\nthe output transport. Some destinations may prefer to receive updates in fewer\nbigger batches. For instance, when writing Parquet files, producing\none bigger file every few minutes is usually better than creating\nsmall files every few milliseconds.\n\nTo achieve such input/output decoupling, users can enable output buffering by\nsetting the `enable_output_buffer` flag to `true`.  When buffering is enabled, output\nupdates produced by the pipeline are consolidated in an internal buffer and are\npushed to the output transport when one of several conditions is satisfied:\n\n* data has been accumulated in the buffer for more than `max_output_buffer_time_millis`\nmilliseconds.\n* buffer size exceeds `max_output_buffer_size_records` records.\n\nThis flag is `false` by default."
           },
-          "max_buffer_size_records": {
+          "max_output_buffer_size_records": {
             "type": "integer",
-            "description": "Maximum number of output updates to be kept in the buffer.\n\nThis parameter bounds the maximal size of the buffer.\nNote that the size of the buffer is not always equal to the\ntotal number of updates output by the pipeline. Updates to the\nsame record can overwrite or cancel previous updates.\n\nBy default, the buffer can grow indefinitely until one of\nthe other output conditions is satisfied.\n\nNOTE: this configuration option requires the `enable_buffer` flag\nto be set.",
+            "description": "Maximum number of updates to be kept in the output buffer.\n\nThis parameter bounds the maximal size of the buffer.\nNote that the size of the buffer is not always equal to the\ntotal number of updates output by the pipeline. Updates to the\nsame record can overwrite or cancel previous updates.\n\nBy default, the buffer can grow indefinitely until one of\nthe other output conditions is satisfied.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
             "minimum": 0
           },
-          "max_buffer_time_millis": {
+          "max_output_buffer_time_millis": {
             "type": "integer",
-            "description": "Maximum time in milliseconds data is kept in the buffer.\n\nBy default, data is kept in the buffer indefinitely until one of\nthe other output conditions is satisfied.  When this option is\nset the buffer will be flushed at most every\n`max_buffer_time_millis` milliseconds.\n\nNOTE: this configuration option requires the `enable_buffer` flag\nto be set.",
+            "description": "Maximum time in milliseconds data is kept in the output buffer.\n\nBy default, data is kept in the buffer indefinitely until one of\nthe other output conditions is satisfied.  When this option is\nset the buffer will be flushed at most every\n`max_output_buffer_time_millis` milliseconds.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
             "minimum": 0
           }
         }
@@ -4023,9 +4033,6 @@
         "allOf": [
           {
             "$ref": "#/components/schemas/ConnectorConfig"
-          },
-          {
-            "$ref": "#/components/schemas/OutputBufferConfig"
           },
           {
             "type": "object",
