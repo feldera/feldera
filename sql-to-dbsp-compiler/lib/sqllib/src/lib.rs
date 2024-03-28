@@ -16,6 +16,7 @@ pub use geopoint::GeoPoint;
 pub use interval::LongInterval;
 pub use interval::ShortInterval;
 use num_traits::Pow;
+use num_traits::PrimInt;
 use num_traits::Zero;
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::Date;
@@ -549,6 +550,58 @@ macro_rules! some_operator {
             some_existing_operator!($new_func_name, $short_name, $arg_type, $ret_type);
         }
     }
+}
+
+// Macro to create variants for all integer types of a function that takes
+// T: PrimInt, and returns T.
+// Consider you have a function: f<T: PrimInt>(T) -> T
+// Creates f_i8(i8) -> i8 / f_i8N(Option<i8>) -> Option<i8>
+// And similar functions for i16, i32, i64
+#[macro_export]
+macro_rules! for_all_primint_function1 {
+    ($func_name: ident) => {
+        ::paste::paste! {
+            #[inline(always)]
+            pub fn [<$func_name _i8>](arg0: i8) -> i8 {
+                [<$func_name _>](arg0)
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _i8N>](arg0: Option<i8>) -> Option<i8> {
+                Some([<$func_name _>](arg0?))
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _i16>](arg0: i16) -> i16 {
+                [<$func_name _>](arg0)
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _i16N>](arg0: Option<i16>) -> Option<i16> {
+                Some([<$func_name _>](arg0?))
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _i32>](arg0: i32) -> i32 {
+                [<$func_name _>](arg0)
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _i32N>](arg0: Option<i32>) -> Option<i32> {
+                Some([<$func_name _>](arg0?))
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _i64>](arg0: i64) -> i64 {
+                [<$func_name _>](arg0)
+            }
+
+            #[inline(always)]
+            pub fn [<$func_name _i64N>](arg0: Option<i64>) -> Option<i64> {
+                Some([<$func_name _>](arg0?))
+            }
+        }
+    };
 }
 
 #[macro_export]
@@ -1147,6 +1200,13 @@ pub fn floor_decimal(value: Decimal) -> Decimal {
     value.floor()
 }
 
+#[inline(always)]
+pub fn floor_<T: PrimInt>(value: T) -> T {
+    value
+}
+
+for_all_primint_function1!(floor);
+
 some_polymorphic_function1!(floor, f, F32, F32);
 some_polymorphic_function1!(floor, d, F64, F64);
 some_polymorphic_function1!(floor, decimal, Decimal, Decimal);
@@ -1167,6 +1227,13 @@ pub fn ceil_f(value: F32) -> F32 {
 pub fn ceil_decimal(value: Decimal) -> Decimal {
     value.ceil()
 }
+
+#[inline(always)]
+pub fn ceil_<T: PrimInt>(value: T) -> T {
+    value
+}
+
+for_all_primint_function1!(ceil);
 
 some_polymorphic_function1!(ceil, f, F32, F32);
 some_polymorphic_function1!(ceil, d, F64, F64);
