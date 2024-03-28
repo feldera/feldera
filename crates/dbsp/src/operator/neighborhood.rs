@@ -3,7 +3,6 @@ use crate::{
     operator::dynamic::neighborhood::{
         DynNeighborhoodDescr, NeighborhoodDescr, NeighborhoodFactories,
     },
-    trace::Spillable,
     typed_batch::{BatchReader, DynBatchReader, DynOrdZSet, IndexedZSet, TypedBatch, TypedBox},
     utils::Tup2,
     RootCircuit, Stream, ZWeight,
@@ -51,7 +50,6 @@ pub type NeighborhoodStream<B> = Stream<
 impl<B> Stream<RootCircuit, B>
 where
     B: IndexedZSet,
-    B::InnerBatch: Spillable,
 {
     /// Returns a small contiguous range of rows ([`Neighborhood`]) of the input
     /// table.

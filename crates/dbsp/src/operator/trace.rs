@@ -1,47 +1,12 @@
 use crate::{
     dynamic::{DowncastTrait, DynData, Erase},
-    operator::TraceBound,
+    operator::{dynamic::trace::ValSpine, TraceBound},
     trace::BatchReaderFactories,
-    typed_batch::{
-        Batch, DynBatch, DynBatchReader, DynSpillable, DynStored, Spillable, Spine, Stored,
-        TypedBatch, TypedBox,
-    },
-    BatchReader, Circuit, DBData, DBWeight, Stream,
+    typed_batch::{Batch, DynBatch, DynBatchReader, Spine, TypedBatch, TypedBox},
+    Circuit, DBData, DBWeight, Stream,
 };
 use dyn_clone::clone_box;
 use size_of::SizeOf;
-
-use super::dynamic::trace::FileValSpine;
-
-impl<C, B> Stream<C, B>
-where
-    C: Circuit,
-    B: BatchReader<Time = ()>,
-{
-    // TODO: derive timestamp type from the parent circuit.
-
-    pub fn spill(
-        &self,
-    ) -> Stream<C, TypedBatch<B::Key, B::Val, B::R, <B::InnerBatch as DynSpillable>::Spilled>>
-    where
-        B: Spillable,
-        B::InnerBatch: DynSpillable,
-    {
-        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
-        self.inner().dyn_spill(&factories).typed()
-    }
-
-    pub fn unspill(
-        &self,
-    ) -> Stream<C, TypedBatch<B::Key, B::Val, B::R, <B::InnerBatch as DynStored>::Unspilled>>
-    where
-        B: Stored,
-        B::InnerBatch: DynStored,
-    {
-        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
-        self.inner().dyn_unspill(&factories).typed()
-    }
-}
 
 impl<C, K, V, R, B> Stream<C, TypedBatch<K, V, R, B>>
 where
@@ -57,7 +22,7 @@ where
     ///
     /// This operator labels each untimed batch in the stream with the current
     /// timestamp and adds it to a trace.
-    pub fn trace(&self) -> Stream<C, TypedBatch<K, V, R, FileValSpine<B, C>>> {
+    pub fn trace(&self) -> Stream<C, TypedBatch<K, V, R, ValSpine<B, C>>> {
         let factories = BatchReaderFactories::new::<K, V, R>();
         self.inner().dyn_trace(&factories).typed()
     }
@@ -79,7 +44,7 @@ where
         &self,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
-    ) -> Stream<C, TypedBatch<K, V, R, FileValSpine<B, C>>> {
+    ) -> Stream<C, TypedBatch<K, V, R, ValSpine<B, C>>> {
         let factories = BatchReaderFactories::new::<K, V, R>();
         self.inner()
             .dyn_trace_with_bound(&factories, lower_key_bound, lower_val_bound)
@@ -194,22 +159,29 @@ where
         &self,
         bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
         retain_key_func: RK,
-    ) where
+    ) -> Stream<C, Spine<B>>
+    where
         TS: DBData + Erase<DynData>,
         RK: Fn(&B::Key, &TS) -> bool + Clone + 'static,
+        B::InnerBatch: Send,
     {
-        self.inner().dyn_integrate_trace_retain_keys(
-            &bounds_stream.inner_data(),
-            Box::new(move |ts| {
-                let ts = clone_box(ts);
-                let retain_key_func = retain_key_func.clone();
-                Box::new(move |k| {
-                    retain_key_func(unsafe { k.downcast::<B::Key>() }, unsafe {
-                        ts.as_ref().downcast::<TS>()
+        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+
+        self.inner()
+            .dyn_integrate_trace_retain_keys(
+                &factories,
+                &bounds_stream.inner_data(),
+                Box::new(move |ts| {
+                    let ts = clone_box(ts);
+                    let retain_key_func = retain_key_func.clone();
+                    Box::new(move |k| {
+                        retain_key_func(unsafe { k.downcast::<B::Key>() }, unsafe {
+                            ts.as_ref().downcast::<TS>()
+                        })
                     })
-                })
-            }),
-        );
+                }),
+            )
+            .typed()
     }
 
     /// Similar to
@@ -220,54 +192,41 @@ where
         &self,
         bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
         retain_value_func: RV,
-    ) where
+    ) -> Stream<C, Spine<B>>
+    where
         TS: DBData + Erase<DynData>,
         RV: Fn(&B::Val, &TS) -> bool + Clone + 'static,
+        B::InnerBatch: Send,
     {
-        self.inner().dyn_integrate_trace_retain_values(
-            &bounds_stream.inner_data(),
-            Box::new(move |ts: &DynData| {
-                let ts = clone_box(ts);
-                let retain_val_func = retain_value_func.clone();
-                Box::new(move |v| {
-                    retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
-                        ts.as_ref().downcast::<TS>()
+        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+
+        self.inner()
+            .dyn_integrate_trace_retain_values(
+                &factories,
+                &bounds_stream.inner_data(),
+                Box::new(move |ts: &DynData| {
+                    let ts = clone_box(ts);
+                    let retain_val_func = retain_value_func.clone();
+                    Box::new(move |v| {
+                        retain_val_func(unsafe { v.downcast::<B::Val>() }, unsafe {
+                            ts.as_ref().downcast::<TS>()
+                        })
                     })
-                })
-            }),
-        );
+                }),
+            )
+            .typed()
     }
 
-    /// Constructs and returns a untimed trace of this stream.
-    ///
-    /// The trace is unbounded, meaning that data will not be discarded because
-    /// it has a low key or value.  Filter functions set with
-    /// [`integrate_trace_retain_keys`](Self::integrate_trace_retain_keys) or
-    /// [`integrate_trace_retain_values`](Self::integrate_trace_retain_values)
-    /// can still discard data.
-    ///
-    /// The result batch is stored durably for fault tolerance.
     #[track_caller]
     pub fn integrate_trace(&self) -> Stream<C, Spine<B>>
     where
-        B: Stored,
-        B::InnerBatch: DynStored,
+        Spine<B>: SizeOf,
     {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
         self.inner().dyn_integrate_trace(&factories).typed()
     }
 
-    /// Constructs and returns a untimed trace of this stream.
-    ///
-    /// Data in the trace with a key less than `lower_key_bound` or value less
-    /// than `lower_val_bound` can be discarded, although these bounds can be
-    /// lowered later (discarding less data).  Filter functions set with
-    /// [`integrate_trace_retain_keys`](Self::integrate_trace_retain_keys) or
-    /// [`integrate_trace_retain_values`](Self::integrate_trace_retain_values)
-    /// can still discard data.
-    ///
-    /// The result batch is stored durably for fault tolerance.
     pub fn integrate_trace_with_bound(
         &self,
         lower_key_bound: TraceBound<<B::Inner as DynBatchReader>::Key>,
@@ -275,8 +234,6 @@ where
     ) -> Stream<C, Spine<B>>
     where
         Spine<B>: SizeOf,
-        B: Stored,
-        B::InnerBatch: DynStored,
     {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 

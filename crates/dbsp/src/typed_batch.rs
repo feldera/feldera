@@ -13,8 +13,7 @@ pub use crate::{
         Batch as DynBatch, BatchReader as DynBatchReader, FileIndexedZSet as DynFileIndexedZSet,
         FileKeyBatch as DynFileKeyBatch, FileValBatch as DynFileValBatch, FileZSet as DynFileZSet,
         OrdIndexedWSet as DynOrdIndexedWSet, OrdKeyBatch as DynOrdKeyBatch,
-        OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spillable as DynSpillable,
-        Spine as DynSpine, Stored as DynStored, Trace as DynTrace,
+        OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spine as DynSpine, Trace as DynTrace,
     },
     DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
 };
@@ -97,32 +96,6 @@ pub trait BatchReader: 'static {
         Self: Sized;
 }
 
-pub trait Spillable: Batch<Time = ()>
-where
-    Self::InnerBatch: DynSpillable,
-{
-}
-
-impl<B> Spillable for B
-where
-    B: Batch<Time = ()>,
-    B::InnerBatch: DynSpillable,
-{
-}
-
-pub trait Stored: Batch<Time = ()>
-where
-    Self::InnerBatch: DynStored,
-{
-}
-
-impl<B> Stored for B
-where
-    B: Batch<Time = ()>,
-    B::InnerBatch: DynStored,
-{
-}
-
 /// A statically typed wrapper around [`DynBatch`].
 pub trait Batch: BatchReader<Inner = Self::InnerBatch> + Clone {
     type InnerBatch: DynBatch<Time = Self::Time, Key = Self::DynK, Val = Self::DynV, R = Self::DynR>;
@@ -197,21 +170,12 @@ where
 
 /// A statically typed wrapper around a dynamically typed batch `B` with concrete key, value, and
 /// weight types `K`, `V`, and `R` respectively.
-#[derive(Debug, Clone, Eq, SizeOf)]
+#[derive(Debug, Clone, PartialEq, Eq, SizeOf)]
 // repr(transparent) guarantees that we can safely transmute this to `inner`.
 #[repr(transparent)]
 pub struct TypedBatch<K, V, R, B> {
     inner: B,
     phantom: PhantomData<fn(&K, &V, &R)>,
-}
-
-impl<K, V, R, B, B2> PartialEq<TypedBatch<K, V, R, B2>> for TypedBatch<K, V, R, B>
-where
-    B: PartialEq<B2>,
-{
-    fn eq(&self, other: &TypedBatch<K, V, R, B2>) -> bool {
-        self.inner.eq(&other.inner)
-    }
 }
 
 // FIXME: this is needed so that batches can be wrapped in Arc and shared
@@ -502,19 +466,6 @@ pub type Spine<B> = TypedBatch<
     <B as BatchReader>::Val,
     <B as BatchReader>::R,
     DynSpine<<B as BatchReader>::Inner>,
->;
-pub type SpilledSpine<B> = TypedBatch<
-    <B as BatchReader>::Key,
-    <B as BatchReader>::Val,
-    <B as BatchReader>::R,
-    DynSpine<<<B as Batch>::InnerBatch as DynSpillable>::Spilled>,
->;
-
-pub type SpilledBatch<B> = TypedBatch<
-    <B as BatchReader>::Key,
-    <B as BatchReader>::Val,
-    <B as BatchReader>::R,
-    <<B as Batch>::InnerBatch as DynSpillable>::Spilled,
 >;
 
 impl<C: Clone, B: BatchReader> Stream<C, B> {

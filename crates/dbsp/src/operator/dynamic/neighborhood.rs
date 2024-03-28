@@ -6,12 +6,9 @@ use crate::{
     },
     declare_trait_object,
     dynamic::{Data, DataTrait, DynDataTyped, DynPair, Erase},
-    trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, FileIndexedZSet,
-        FileIndexedZSetFactories, Spillable, Spine,
-    },
+    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
     utils::Tup2,
-    Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
+    Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
 };
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
@@ -183,16 +180,15 @@ pub type NeighborhoodStream<K, V> = Stream<RootCircuit, DynNeighborhood<K, V>>;
 pub type NeighborhoodDescrStream<K, V> =
     Stream<RootCircuit, Option<Box<DynNeighborhoodDescr<K, V>>>>;
 
-pub struct NeighborhoodFactories<B: IndexedZSetReader + Spillable> {
-    input_factories: <B::Spilled as BatchReader>::Factories,
+pub struct NeighborhoodFactories<B: IndexedZSetReader> {
+    input_factories: B::Factories,
     local_factories: OrdIndexedZSetFactories<B::Key, B::Val>,
-    stored_factories: FileIndexedZSetFactories<B::Key, B::Val, DynZWeight>,
     output_factories: <DynNeighborhood<B::Key, B::Val> as BatchReader>::Factories,
 }
 
 impl<B> NeighborhoodFactories<B>
 where
-    B: IndexedZSetReader + Spillable,
+    B: IndexedZSetReader,
 {
     pub fn new<KType, VType>() -> Self
     where
@@ -202,7 +198,6 @@ where
         Self {
             input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             local_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
-            stored_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             output_factories: BatchReaderFactories::new::<Tup2<i64, Tup2<KType, VType>>, (), ZWeight>(
             ),
         }
@@ -211,7 +206,7 @@ where
 
 impl<B> Stream<RootCircuit, B>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
 {
     /// Returns a small contiguous range of rows ([`DynNeighborhood`]) of the input
     /// table.
@@ -273,9 +268,7 @@ where
                 .circuit()
                 .add_binary_operator(
                     NeighborhoodLocal::new(&factories.local_factories),
-                    &stream
-                        .dyn_spill(&factories.input_factories)
-                        .dyn_integrate_trace(&factories.input_factories),
+                    &stream.dyn_integrate_trace(&factories.input_factories),
                     neighborhood_descr,
                 )
                 .differentiate_with_zero(Batch::dyn_empty(&factories.local_factories, ()));
@@ -284,13 +277,12 @@ where
             // the final neighborhood.
             // TODO: use different workers for different collections.
             let output = self.circuit().add_binary_operator(
-                NeighborhoodNumbered::<Spine<FileIndexedZSet<B::Key, B::Val, DynZWeight>>>::new(
+                NeighborhoodNumbered::<Spine<OrdIndexedZSet<B::Key, B::Val>>>::new(
                     &factories.output_factories,
                 ),
                 &local_output
                     .dyn_gather(&factories.local_factories, 0)
-                    .dyn_spill(&factories.stored_factories)
-                    .dyn_integrate_trace(&factories.stored_factories),
+                    .dyn_integrate_trace(&factories.local_factories),
                 neighborhood_descr,
             );
 
