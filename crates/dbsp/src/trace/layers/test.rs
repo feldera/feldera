@@ -3,10 +3,6 @@
 use crate::{
     algebra::{HasZero, ZRingValue},
     dynamic::{DowncastTrait, DynData, DynWeight, Erase, LeanVec},
-    trace::layers::file::{
-        column_layer::{FileColumnLayer, FileLeafFactories},
-        ordered::{FileOrderedLayer, FileOrderedLayerFactories},
-    },
     utils::consolidate_pairs,
     DBData, DBWeight,
 };
@@ -267,9 +263,6 @@ type Trie1 /* <T, R> */ = Leaf<DynData, DynWeight>;
 type Trie2 /* <K, T, R> */ = Layer<DynData, Trie1>;
 type Trie3 /* <K, V, T, R> */ = Layer<DynData, Trie2>;
 
-type FileTrie1 /* <T, R> */ = FileColumnLayer<DynData, DynWeight>;
-type FileTrie2 /* <K, V, R> */ = FileOrderedLayer<DynData, DynData, DynWeight>;
-
 // Generate a layer-based representation of the trie.
 fn tuples_to_trie1<T: DBData, R: DBWeight + ZRingValue, L: Trie>(
     factories: &L::Factories,
@@ -386,49 +379,6 @@ where
     result
 }
 
-fn file_leaf_to_map1<T, R>(trie: &FileTrie1) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight + ZRingValue,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(
-            t.downcast_checked::<T>().clone(),
-            r.downcast_checked::<R>().clone(),
-        );
-        cursor.step();
-    }
-
-    result
-}
-
-fn file_leaf_to_map1_reverse<T, R>(trie: &FileTrie1) -> Map1<T, R>
-where
-    T: DBData,
-    R: DBWeight + ZRingValue,
-{
-    let mut result: Map1<T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        let (t, r) = Cursor::item(&cursor);
-        result.insert(
-            t.downcast_checked::<T>().clone(),
-            r.downcast_checked::<R>().clone(),
-        );
-        cursor.step_reverse();
-    }
-
-    result
-}
-
 fn vec_trie2_to_map2<K, T, R>(trie: &Trie2) -> Map2<K, T, R>
 where
     K: DBData,
@@ -464,79 +414,7 @@ where
     result
 }
 
-fn file_trie2_to_map2<K, T, R>(trie: &FileTrie2) -> Map2<K, T, R>
-where
-    K: DBData,
-    T: DBData,
-    R: DBWeight + ZRingValue,
-{
-    let mut result: Map2<K, T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-
-    while cursor.valid() {
-        result.insert(
-            cursor.item().downcast_checked::<K>().clone(),
-            BTreeMap::new(),
-        );
-
-        let mut leaf_cursor = cursor.values();
-
-        while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.item();
-
-            let entry = result.get_mut(cursor.item().downcast_checked()).unwrap();
-            entry.insert(
-                t.downcast_checked::<T>().clone(),
-                r.downcast_checked::<R>().clone(),
-            );
-
-            leaf_cursor.step();
-        }
-        cursor.step();
-    }
-
-    result
-}
-
 fn vec_trie2_to_map2_reverse<K, T, R>(trie: &Trie2) -> Map2<K, T, R>
-where
-    K: DBData,
-    T: DBData,
-    R: DBWeight,
-{
-    let mut result: Map2<K, T, R> = BTreeMap::new();
-
-    let mut cursor = trie.cursor();
-    cursor.fast_forward();
-
-    while cursor.valid() {
-        result.insert(
-            cursor.item().downcast_checked::<K>().clone(),
-            BTreeMap::new(),
-        );
-
-        let mut leaf_cursor = cursor.values();
-        leaf_cursor.fast_forward();
-
-        while leaf_cursor.valid() {
-            let (t, r) = leaf_cursor.item();
-
-            let entry = result.get_mut(cursor.item().downcast_checked()).unwrap();
-            entry.insert(
-                t.downcast_checked::<T>().clone(),
-                r.downcast_checked::<R>().clone(),
-            );
-
-            leaf_cursor.step_reverse();
-        }
-        cursor.step_reverse();
-    }
-
-    result
-}
-
-fn file_trie2_to_map2_reverse<K, T, R>(trie: &FileTrie2) -> Map2<K, T, R>
 where
     K: DBData,
     T: DBData,
@@ -834,22 +712,9 @@ proptest! {
     }
 
     #[test]
-    fn test_file_leaf_layers(left in tuples1(10, 3, 5000), right in tuples1(10, 3, 5000)) {
-        test_trie1::<_, _, _, FileTrie1>(&FileLeafFactories::new::<i32, i32>(), &left, &right, &file_leaf_to_map1);
-        test_trie1::<_, _, _, FileTrie1>(&FileLeafFactories::new::<i32, i32>(), &left, &right, &file_leaf_to_map1_reverse);
-    }
-
-
-    #[test]
     fn test_nested_layers(left in tuples2(10, 10, 2, 5000), right in tuples2(10, 5, 2, 5000)) {
         test_trie2(&LayerFactories::new::<i32>(LeafFactories::new::<i32, i32>()), &left, &right, &vec_trie2_to_map2);
         test_trie2(&LayerFactories::new::<i32>(LeafFactories::new::<i32, i32>()), &left, &right, &vec_trie2_to_map2_reverse);
-    }
-
-    #[test]
-    fn test_file_nested_layers(left in tuples2(10, 10, 2, 5000), right in tuples2(10, 5, 2, 5000)) {
-        test_trie2(&FileOrderedLayerFactories::new::<i32, i32,i32>(), &left, &right, &file_trie2_to_map2);
-        test_trie2(&FileOrderedLayerFactories::new::<i32, i32,i32>(), &left, &right, &file_trie2_to_map2_reverse);
     }
 
     #[test]
