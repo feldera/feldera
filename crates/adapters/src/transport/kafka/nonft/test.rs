@@ -392,9 +392,9 @@ outputs:
         format:
             name: csv
             config:
-        enable_buffer: true
-        max_buffer_size_records: {buffer_size}
-        max_buffer_time_millis: {buffer_timeout_ms}
+        enable_output_buffer: true
+        max_output_buffer_size_records: {buffer_size}
+        max_output_buffer_time_millis: {buffer_timeout_ms}
 "#
     );
 

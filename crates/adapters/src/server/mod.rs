@@ -575,7 +575,8 @@ async fn input_endpoint(
         connector_config: ConnectorConfig {
             transport: HttpInputTransport::config(),
             format: parser_config_from_http_request(&endpoint_name, &args.format, &req)?,
-            max_buffered_records: HttpInputTransport::default_max_buffered_records(),
+            output_buffer_config: Default::default(),
+            max_queued_records: HttpInputTransport::default_max_buffered_records(),
         },
     };
 
@@ -756,11 +757,11 @@ async fn output_endpoint(
     let config = OutputEndpointConfig {
         stream: Cow::from(table_name),
         query: args.query,
-        output_buffer_config: OutputBufferConfig::default(),
         connector_config: ConnectorConfig {
             transport: HttpOutputTransport::config(),
             format: encoder_config_from_http_request(&endpoint_name, &args.format, &req)?,
-            max_buffered_records: HttpOutputTransport::default_max_buffered_records(),
+            output_buffer_config: OutputBufferConfig::default(),
+            max_queued_records: HttpOutputTransport::default_max_buffered_records(),
         },
     };
 
