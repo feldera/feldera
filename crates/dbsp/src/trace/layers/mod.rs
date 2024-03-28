@@ -3,19 +3,9 @@ use std::{
     ops::{Add, Sub},
 };
 
-mod file;
 mod layer;
 mod leaf;
 
-pub use file::{
-    column_layer::{
-        FileColumnLayer, FileColumnLayerBuilder, FileColumnLayerCursor, FileLeafFactories,
-    },
-    ordered::{
-        FileOrderedCursor, FileOrderedLayer, FileOrderedLayerFactories, FileOrderedTupleBuilder,
-        FileOrderedValueCursor,
-    },
-};
 pub use layer::{Layer, LayerBuilder, LayerCursor, LayerFactories};
 pub use leaf::{Leaf, LeafBuilder, LeafCursor, LeafFactories};
 use size_of::SizeOf;

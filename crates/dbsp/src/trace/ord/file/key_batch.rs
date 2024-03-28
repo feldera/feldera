@@ -1,27 +1,33 @@
 use crate::{
     dynamic::{
-        DataTrait, DynDataTyped, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory,
-        LeanVec, WeightTrait, WithFactory,
+        DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
+        Factory, LeanVec, WeightTrait, WithFactory,
+    },
+    storage::{
+        backend::Backend,
+        file::{
+            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+            writer::{Parameters, Writer2},
+            Factories as FileFactories,
+        },
     },
     time::{Antichain, AntichainRef},
     trace::{
-        layers::{
-            Builder as TrieBuilder, Cursor as TrieCursor, FileOrderedCursor, FileOrderedLayer,
-            FileOrderedLayerFactories, FileOrderedTupleBuilder, MergeBuilder, Trie, TupleBuilder,
-        },
-        ord::merge_batcher::MergeBatcher,
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Merger,
-        WeightedItem,
+        ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
+        Builder, Cursor, Filter, Merger, WeightedItem,
     },
     utils::Tup2,
-    DBData, DBWeight, NumEntries, Timestamp,
+    DBData, DBWeight, NumEntries, Runtime, Timestamp,
 };
 use dyn_clone::clone_box;
-use rand::Rng;
+use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::fmt::{self, Debug, Display};
-use std::path::PathBuf;
+use std::{
+    cmp::{min, Ordering},
+    fmt::{self, Debug},
+    path::PathBuf,
+};
 
 pub struct FileKeyBatchFactories<K, T, R>
 where
@@ -29,9 +35,13 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    layer_factories: FileOrderedLayerFactories<K, DynDataTyped<T>, R>,
+    key_factory: &'static dyn Factory<K>,
+    weight_factory: &'static dyn Factory<R>,
     keys_factory: &'static dyn Factory<DynVec<K>>,
     item_factory: &'static dyn Factory<DynPair<K, DynUnit>>,
+    factories0: FileFactories<K, DynUnit>,
+    factories1: FileFactories<DynDataTyped<T>, R>,
+    opt_key_factory: &'static dyn Factory<DynOpt<K>>,
     weighted_item_factory: &'static dyn Factory<WeightedItem<K, DynUnit, R>>,
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
 }
@@ -44,9 +54,13 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            layer_factories: self.layer_factories.clone(),
+            key_factory: self.key_factory,
+            weight_factory: self.weight_factory,
             keys_factory: self.keys_factory,
             item_factory: self.item_factory,
+            factories0: self.factories0.clone(),
+            factories1: self.factories1.clone(),
+            opt_key_factory: self.opt_key_factory,
             weighted_item_factory: self.weighted_item_factory,
             weighted_items_factory: self.weighted_items_factory,
         }
@@ -66,16 +80,20 @@ where
         RType: DBWeight + Erase<R>,
     {
         Self {
-            layer_factories: FileOrderedLayerFactories::new::<KType, T, RType>(),
+            key_factory: WithFactory::<KType>::FACTORY,
+            weight_factory: WithFactory::<RType>::FACTORY,
             keys_factory: WithFactory::<LeanVec<KType>>::FACTORY,
             item_factory: WithFactory::<Tup2<KType, ()>>::FACTORY,
+            factories0: FileFactories::new::<KType, ()>(),
+            factories1: FileFactories::new::<T, RType>(),
+            opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             weighted_item_factory: WithFactory::<Tup2<Tup2<KType, ()>, RType>>::FACTORY,
             weighted_items_factory: WithFactory::<LeanVec<Tup2<Tup2<KType, ()>, RType>>>::FACTORY,
         }
     }
 
     fn key_factory(&self) -> &'static dyn Factory<K> {
-        self.layer_factories.factories0.key_factory
+        self.key_factory
     }
 
     fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
@@ -87,7 +105,7 @@ where
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.layer_factories.diff_factory
+        self.weight_factory
     }
 }
 
@@ -123,7 +141,16 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileKeyBatchFactories<K, T, R>,
-    pub layer: FileOrderedLayer<K, DynDataTyped<T>, R>,
+    #[allow(clippy::type_complexity)]
+    file: Reader<
+        Backend,
+        (
+            &'static K,
+            &'static DynUnit,
+            (&'static DynDataTyped<T>, &'static R, ()),
+        ),
+    >,
+    lower_bound: usize,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
 }
@@ -135,11 +162,31 @@ where
     R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FileKeyBatch")
-            .field("layer", &self.layer)
-            .field("lower", &self.lower)
-            .field("upper", &self.upper)
-            .finish()
+        write!(
+            f,
+            "FileKeyBatch {{ lower_bound: {}, data: ",
+            self.lower_bound
+        )?;
+        let mut cursor = self.cursor();
+        let mut n_keys = 0;
+        while cursor.key_valid() {
+            if n_keys > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{:?}(", cursor.key())?;
+            let mut n_values = 0;
+            cursor.map_times(&mut |time, diff| {
+                if n_values > 0 {
+                    let _ = write!(f, ", ");
+                }
+                let _ = write!(f, "({time:?}, {diff:+?})");
+                n_values += 1;
+            });
+            write!(f, ")")?;
+            n_keys += 1;
+            cursor.step_key();
+        }
+        write!(f, " }}")
     }
 }
 
@@ -152,26 +199,11 @@ where
     fn clone(&self) -> Self {
         Self {
             factories: self.factories.clone(),
-            layer: self.layer.clone(),
+            file: self.file.clone(),
+            lower_bound: self.lower_bound,
             lower: self.lower.clone(),
             upper: self.upper.clone(),
         }
-    }
-}
-
-impl<K, T, R> Display for FileKeyBatch<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-    FileOrderedLayer<K, DynDataTyped<T>, R>: Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "layer:\n{}",
-            textwrap::indent(&self.layer.to_string(), "    ")
-        )
     }
 }
 
@@ -181,17 +213,14 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    const CONST_NUM_ENTRIES: Option<usize> =
-        <FileOrderedLayer<K, DynDataTyped<T>, R>>::CONST_NUM_ENTRIES;
+    const CONST_NUM_ENTRIES: Option<usize> = None;
 
-    #[inline]
     fn num_entries_shallow(&self) -> usize {
-        self.layer.num_entries_shallow()
+        self.file.rows().len() as usize
     }
 
-    #[inline]
     fn num_entries_deep(&self) -> usize {
-        self.layer.num_entries_deep()
+        self.file.n_rows(1) as usize
     }
 }
 
@@ -216,12 +245,14 @@ where
         FileKeyCursor::new(self)
     }
 
+    #[inline]
     fn key_count(&self) -> usize {
-        <FileOrderedLayer<K, DynDataTyped<T>, R> as Trie>::keys(&self.layer)
+        self.file.n_rows(0) as usize - self.lower_bound
     }
 
+    #[inline]
     fn len(&self) -> usize {
-        <FileOrderedLayer<K, DynDataTyped<T>, R> as Trie>::tuples(&self.layer)
+        self.file.n_rows(1) as usize
     }
 
     fn lower(&self) -> AntichainRef<'_, T> {
@@ -233,14 +264,38 @@ where
     }
 
     fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        self.layer.truncate_keys_below(lower_bound);
+        let mut cursor = self.file.rows().before();
+        unsafe { cursor.advance_to_value_or_larger(lower_bound) }.unwrap();
+
+        let lower_bound = cursor.absolute_position() as usize;
+        if lower_bound > self.lower_bound {
+            self.lower_bound = min(lower_bound, self.file.rows().len() as usize);
+        }
     }
 
-    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
+    fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
     where
         RG: Rng,
     {
-        self.layer.sample_keys(rng, sample_size, sample);
+        let size = self.key_count();
+        let mut cursor = self.cursor();
+        if sample_size >= size {
+            output.reserve(size);
+
+            while cursor.key_valid() {
+                output.push_ref(cursor.key());
+                cursor.step_key();
+            }
+        } else {
+            output.reserve(sample_size);
+
+            let mut indexes = sample(rng, size, sample_size).into_vec();
+            indexes.sort_unstable();
+            for index in indexes.into_iter() {
+                cursor.move_key(|key_cursor| key_cursor.move_to_row(index as u64));
+                output.push_ref(cursor.key());
+            }
+        }
     }
 }
 
@@ -267,7 +322,7 @@ where
     }
 
     fn persistent_id(&self) -> Option<PathBuf> {
-        Some(self.layer.path())
+        Some(self.file.path())
     }
 }
 
@@ -290,9 +345,104 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileKeyBatchFactories<K, T, R>,
-    result: Option<FileOrderedLayer<K, DynDataTyped<T>, R>>,
     lower: Antichain<T>,
     upper: Antichain<T>,
+
+    // Position in first batch.
+    lower1: usize,
+    // Position in second batch.
+    lower2: usize,
+
+    // Output so far.
+    writer: Writer2<Backend, K, DynUnit, DynDataTyped<T>, R>,
+}
+
+impl<K, T, R> FileKeyMerger<K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn copy_values_if(
+        &mut self,
+        cursor: &mut FileKeyCursor<K, T, R>,
+        key_filter: &Option<Filter<K>>,
+        fuel: &mut isize,
+    ) {
+        if filter(key_filter, cursor.key.as_ref()) {
+            cursor.map_times(&mut |time, diff| {
+                self.writer.write1((time, diff)).unwrap();
+                *fuel -= 1;
+            });
+            self.writer
+                .write0((cursor.key.as_ref(), ().erase()))
+                .unwrap();
+        } else {
+            *fuel -= 1;
+        }
+        cursor.step_key();
+    }
+
+    fn merge_values<'a>(
+        &mut self,
+        cursor1: &mut FileKeyCursor<'a, K, T, R>,
+        cursor2: &mut FileKeyCursor<'a, K, T, R>,
+        sum: &mut R,
+        fuel: &mut isize,
+    ) -> bool {
+        let mut n = 0;
+
+        let mut subcursor1 = cursor1.cursor.next_column().unwrap().first().unwrap();
+        let mut subcursor2 = cursor2.cursor.next_column().unwrap().first().unwrap();
+        while subcursor1.has_value() && subcursor2.has_value() {
+            let (time1, diff1) =
+                unsafe { subcursor1.item((cursor1.time.as_mut(), &mut cursor1.diff)) }.unwrap();
+            let (time2, diff2) =
+                unsafe { subcursor2.item((cursor2.time.as_mut(), &mut cursor2.diff)) }.unwrap();
+            let cmp = time1.cmp(&time2);
+            match cmp {
+                Ordering::Less => {
+                    self.writer.write1((time1, diff1)).unwrap();
+                    subcursor1.move_next().unwrap();
+                    n += 1;
+                }
+                Ordering::Equal => {
+                    diff1.add(diff2, sum);
+                    if !sum.is_zero() {
+                        self.writer.write1((time1, sum)).unwrap();
+                        n += 1;
+                    }
+                    subcursor1.move_next().unwrap();
+                    subcursor2.move_next().unwrap();
+                }
+
+                Ordering::Greater => {
+                    self.writer.write1((time2, diff2)).unwrap();
+                    n += 1;
+                    subcursor2.move_next().unwrap();
+                }
+            }
+            *fuel -= 1;
+        }
+
+        while let Some((time, diff)) =
+            unsafe { subcursor1.item((cursor1.time.as_mut(), &mut cursor1.diff)) }
+        {
+            self.writer.write1((time, diff)).unwrap();
+            subcursor1.move_next().unwrap();
+            n += 1;
+            *fuel -= 1;
+        }
+        while let Some((time, diff)) =
+            unsafe { subcursor2.item((cursor2.time.as_mut(), &mut cursor2.diff)) }
+        {
+            self.writer.write1((time, diff)).unwrap();
+            subcursor2.move_next().unwrap();
+            n += 1;
+            *fuel -= 1;
+        }
+        n > 0
+    }
 }
 
 impl<K, T, R> Merger<K, DynUnit, T, R, FileKeyBatch<K, T, R>> for FileKeyMerger<K, T, R>
@@ -305,19 +455,25 @@ where
     fn new_merger(batch1: &FileKeyBatch<K, T, R>, batch2: &FileKeyBatch<K, T, R>) -> Self {
         FileKeyMerger {
             factories: batch1.factories.clone(),
-            result: None,
             lower: batch1.lower().meet(batch2.lower()),
             upper: batch1.upper().join(batch2.upper()),
+            lower1: batch1.lower_bound,
+            lower2: batch2.lower_bound,
+            writer: Writer2::new(
+                &batch1.factories.factories0,
+                &batch1.factories.factories1,
+                &Runtime::storage(),
+                Parameters::default(),
+            )
+            .unwrap(),
         }
     }
 
-    fn done(mut self) -> FileKeyBatch<K, T, R> {
+    fn done(self) -> FileKeyBatch<K, T, R> {
         FileKeyBatch {
             factories: self.factories.clone(),
-            layer: self
-                .result
-                .take()
-                .unwrap_or_else(|| FileOrderedLayer::empty(&self.factories.layer_factories)),
+            file: self.writer.into_reader().unwrap(),
+            lower_bound: 0,
             lower: self.lower,
             upper: self.upper,
         }
@@ -328,26 +484,56 @@ where
         source1: &FileKeyBatch<K, T, R>,
         source2: &FileKeyBatch<K, T, R>,
         key_filter: &Option<Filter<K>>,
-        _value_filter: &Option<Filter<DynUnit>>,
+        value_filter: &Option<Filter<DynUnit>>,
         fuel: &mut isize,
     ) {
-        debug_assert!(*fuel > 0);
-        if self.result.is_none() {
-            let mut builder =
-                <<FileOrderedLayer<K, DynDataTyped<T>, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
-                    &source1.layer,
-                    &source2.layer,
-                );
-            let cursor1 = source1.layer.cursor();
-            let cursor2 = source2.layer.cursor();
-            if let Some(key_filter) = key_filter {
-                builder.push_merge_retain_keys(cursor1, cursor2, key_filter)
-            } else {
-                builder.push_merge(cursor1, cursor2);
-            }
-            self.result = Some(builder.done());
+        if !filter(value_filter, &()) {
+            return;
         }
+
+        let mut cursor1 = FileKeyCursor::new_from(source1, self.lower1);
+        let mut cursor2 = FileKeyCursor::new_from(source2, self.lower2);
+        let mut sum = self.factories.weight_factory.default_box();
+        while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
+            match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
+                Ordering::Less => {
+                    self.copy_values_if(&mut cursor1, key_filter, fuel);
+                }
+                Ordering::Equal => {
+                    if filter(key_filter, cursor1.key.as_ref())
+                        && self.merge_values(&mut cursor1, &mut cursor2, &mut sum, fuel)
+                    {
+                        self.writer
+                            .write0((cursor1.key.as_ref(), ().erase()))
+                            .unwrap();
+                    }
+                    *fuel -= 1;
+                    cursor1.step_key();
+                    cursor2.step_key();
+                }
+
+                Ordering::Greater => {
+                    self.copy_values_if(&mut cursor2, key_filter, fuel);
+                }
+            }
+        }
+
+        while cursor1.key_valid() && *fuel > 0 {
+            self.copy_values_if(&mut cursor1, key_filter, fuel);
+        }
+        while cursor2.key_valid() && *fuel > 0 {
+            self.copy_values_if(&mut cursor2, key_filter, fuel);
+        }
+        self.lower1 = cursor1.cursor.absolute_position() as usize;
+        self.lower2 = cursor2.cursor.absolute_position() as usize;
     }
+}
+
+fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
+where
+    T: ?Sized,
+{
+    f.as_ref().map_or(true, |f| f(t))
 }
 
 impl<K, T, R> SizeOf for FileKeyMerger<K, T, R>
@@ -361,6 +547,19 @@ where
     }
 }
 
+type RawCursor<'s, K, T, R> = FileCursor<
+    's,
+    Backend,
+    K,
+    DynUnit,
+    (&'static DynDataTyped<T>, &'static R, ()),
+    (
+        &'static K,
+        &'static DynUnit,
+        (&'static DynDataTyped<T>, &'static R, ()),
+    ),
+>;
+
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
 pub struct FileKeyCursor<'s, K, T, R>
@@ -369,9 +568,13 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    weight: Box<R>,
+    batch: &'s FileKeyBatch<K, T, R>,
+    cursor: RawCursor<'s, K, T, R>,
+    key: Box<K>,
     val_valid: bool,
-    cursor: FileOrderedCursor<'s, K, DynDataTyped<T>, R>,
+
+    time: Box<DynDataTyped<T>>,
+    diff: Box<R>,
 }
 
 impl<'s, K, T, R> Clone for FileKeyCursor<'s, K, T, R>
@@ -382,9 +585,15 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            weight: clone_box(&self.weight),
-            val_valid: self.val_valid,
+            batch: self.batch,
             cursor: self.cursor.clone(),
+            key: clone_box(&self.key),
+            val_valid: self.val_valid,
+
+            // These don't need to be cloned because they're only used for
+            // temporary storage.
+            time: self.batch.factories.factories1.key_factory.default_box(),
+            diff: self.batch.factories.weight_factory.default_box(),
         }
     }
 }
@@ -395,12 +604,37 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn new(batch: &'s FileKeyBatch<K, T, R>) -> Self {
+    fn new_from(batch: &'s FileKeyBatch<K, T, R>, lower_bound: usize) -> Self {
+        let cursor = batch
+            .file
+            .rows()
+            .subset(lower_bound as u64..)
+            .first()
+            .unwrap();
+        let mut key = batch.factories.key_factory.default_box();
+        let key_valid = unsafe { cursor.key(&mut key) }.is_some();
+
         Self {
-            weight: batch.factories.weight_factory().default_box(),
-            cursor: batch.layer.cursor(),
-            val_valid: true,
+            batch,
+            cursor,
+            key,
+            val_valid: key_valid,
+            time: batch.factories.factories1.key_factory.default_box(),
+            diff: batch.factories.weight_factory.default_box(),
         }
+    }
+
+    fn new(batch: &'s FileKeyBatch<K, T, R>) -> Self {
+        Self::new_from(batch, batch.lower_bound)
+    }
+
+    fn move_key<F>(&mut self, op: F)
+    where
+        F: Fn(&mut RawCursor<'s, K, T, R>) -> Result<(), ReaderError>,
+    {
+        op(&mut self.cursor).unwrap();
+        let key_valid = unsafe { self.cursor.key(&mut self.key) }.is_some();
+        self.val_valid = key_valid;
     }
 }
 
@@ -411,11 +645,12 @@ where
     R: WeightTrait + ?Sized,
 {
     fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.cursor.storage.factories.diff_factory
+        self.batch.factories.weight_factory
     }
 
     fn key(&self) -> &K {
-        self.cursor.item()
+        debug_assert!(self.key_valid());
+        self.key.as_ref()
     }
 
     fn val(&self) -> &DynUnit {
@@ -423,20 +658,20 @@ where
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
-        let mut subcursor = self.cursor.values();
-        while let Some((time, diff)) = subcursor.get_current_item() {
-            logic(time, diff);
-            subcursor.step();
+        let mut val_cursor = self.cursor.next_column().unwrap().first().unwrap();
+        while unsafe { val_cursor.item((self.time.as_mut(), &mut self.diff)) }.is_some() {
+            logic(self.time.as_ref(), self.diff.as_ref());
+            val_cursor.move_next().unwrap();
         }
     }
 
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
-        let mut subcursor = self.cursor.values();
-        while let Some((time, diff)) = subcursor.get_current_item() {
-            if time.less_equal(upper) {
-                logic(time, diff);
+        let mut val_cursor = self.cursor.next_column().unwrap().first().unwrap();
+        while unsafe { val_cursor.item((self.time.as_mut(), &mut self.diff)) }.is_some() {
+            if self.time.less_equal(upper) {
+                logic(self.time.as_ref(), self.diff.as_ref());
             }
-            subcursor.step();
+            val_cursor.move_next().unwrap();
         }
     }
 
@@ -444,8 +679,8 @@ where
     where
         T: PartialEq<()>,
     {
-        if self.val_valid() {
-            logic(&(), self.cursor.values().get_current_item().unwrap().1)
+        if self.val_valid {
+            logic(&(), self.weight())
         }
     }
 
@@ -453,17 +688,13 @@ where
     where
         T: PartialEq<()>,
     {
-        self.cursor
-            .values()
-            .get_current_item()
-            .unwrap()
-            .1
-            .clone_to(&mut self.weight);
-        self.weight.as_ref()
+        let val_cursor = self.cursor.next_column().unwrap().first().unwrap();
+        unsafe { val_cursor.aux(&mut self.diff) }.unwrap();
+        self.diff.as_ref()
     }
 
     fn key_valid(&self) -> bool {
-        self.cursor.valid()
+        self.cursor.has_value()
     }
 
     fn val_valid(&self) -> bool {
@@ -471,33 +702,27 @@ where
     }
 
     fn step_key(&mut self) {
-        self.cursor.step();
-        self.val_valid = true;
+        self.move_key(|key_cursor| key_cursor.move_next());
     }
 
     fn step_key_reverse(&mut self) {
-        self.cursor.step_reverse();
-        self.val_valid = true;
+        self.move_key(|key_cursor| key_cursor.move_prev());
     }
 
     fn seek_key(&mut self, key: &K) {
-        self.cursor.seek(key);
-        self.val_valid = true;
+        self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) });
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.cursor.seek_with(predicate);
-        self.val_valid = true;
+        self.move_key(|key_cursor| unsafe { key_cursor.seek_forward_until(predicate) });
     }
 
     fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.cursor.seek_with_reverse(predicate);
-        self.val_valid = true;
+        self.move_key(|key_cursor| unsafe { key_cursor.seek_backward_until(predicate) });
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
-        self.cursor.seek_reverse(key);
-        self.val_valid = true;
+        self.move_key(|key_cursor| unsafe { key_cursor.rewind_to_value_or_smaller(key) });
     }
 
     fn step_val(&mut self) {
@@ -513,13 +738,11 @@ where
     }
 
     fn rewind_keys(&mut self) {
-        self.cursor.rewind();
-        self.val_valid = true;
+        self.move_key(|key_cursor| key_cursor.move_first());
     }
 
     fn fast_forward_keys(&mut self) {
-        self.cursor.fast_forward();
-        self.val_valid = true;
+        self.move_key(|key_cursor| key_cursor.move_last());
     }
 
     fn rewind_vals(&mut self) {
@@ -552,7 +775,8 @@ where
 {
     factories: FileKeyBatchFactories<K, T, R>,
     time: T,
-    builder: FileOrderedTupleBuilder<K, DynDataTyped<T>, R>,
+    writer: Writer2<Backend, K, DynUnit, DynDataTyped<T>, R>,
+    key: Box<DynOpt<K>>,
 }
 
 impl<K, T, R> Builder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
@@ -563,31 +787,28 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_builder(factories: &<FileKeyBatch<K, T, R> as BatchReader>::Factories, time: T) -> Self {
+    fn new_builder(factories: &FileKeyBatchFactories<K, T, R>, time: T) -> Self {
         Self {
             factories: factories.clone(),
             time,
-            builder: <FileOrderedTupleBuilder<K, DynDataTyped<T>, R> as TupleBuilder>::new(
-                &factories.layer_factories,
-            ),
+            writer: Writer2::new(
+                &factories.factories0,
+                &factories.factories1,
+                &Runtime::storage(),
+                Parameters::default(),
+            )
+            .unwrap(),
+            key: factories.opt_key_factory.default_box(),
         }
     }
 
     #[inline]
     fn with_capacity(
-        factories: &<FileKeyBatch<K, T, R> as BatchReader>::Factories,
+        factories: &FileKeyBatchFactories<K, T, R>,
         time: T,
-        cap: usize,
+        _capacity: usize,
     ) -> Self {
-        Self {
-            factories: factories.clone(),
-            time,
-            builder:
-                <FileOrderedTupleBuilder<K, DynDataTyped<T>, R> as TupleBuilder>::with_capacity(
-                    &factories.layer_factories,
-                    cap,
-                ),
-        }
+        Self::new_builder(factories, time)
     }
 
     #[inline]
@@ -597,19 +818,28 @@ where
     fn push(&mut self, item: &mut WeightedItem<K, DynUnit, R>) {
         let (kv, weight) = item.split();
         let k = kv.fst();
-        self.builder.push_refs((k, (&self.time, weight)));
+        self.push_refs(k, &(), weight);
     }
 
+    #[inline]
     fn push_refs(&mut self, key: &K, _val: &DynUnit, weight: &R) {
-        self.builder.push_refs((key, (&self.time, weight)));
+        if let Some(cur_key) = self.key.get() {
+            if cur_key != key {
+                self.writer.write0((cur_key, ().erase())).unwrap();
+                self.key.from_ref(key);
+            }
+        } else {
+            self.key.from_ref(key);
+        }
+        self.writer.write1((&self.time, weight)).unwrap();
     }
 
-    fn push_vals(&mut self, key: &mut K, _val: &mut DynUnit, weight: &mut R) {
-        self.builder.push_refs((key, (&self.time, weight)));
+    fn push_vals(&mut self, key: &mut K, val: &mut DynUnit, weight: &mut R) {
+        self.push_refs(key, val, weight);
     }
 
     #[inline(never)]
-    fn done(self) -> FileKeyBatch<K, T, R> {
+    fn done(mut self) -> FileKeyBatch<K, T, R> {
         let time_next = self.time.advance(0);
         let upper = if time_next <= self.time {
             Antichain::new()
@@ -617,11 +847,15 @@ where
             Antichain::from_elem(time_next)
         };
 
+        if let Some(key) = self.key.get() {
+            self.writer.write0((key, ().erase())).unwrap();
+        }
         FileKeyBatch {
             factories: self.factories,
-            layer: self.builder.done(),
+            file: self.writer.into_reader().unwrap(),
             lower: Antichain::from_elem(self.time),
             upper,
+            lower_bound: 0,
         }
     }
 }
@@ -636,88 +870,6 @@ where
         // XXX
     }
 }
-
-/*
-pub struct FileKeyConsumer<K, T, R>
-
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    consumer: FileOrderedLayerConsumer<K, T, R>,
-}
-
-impl<K, T, R> Consumer<K, (), R, T> for FileKeyConsumer<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    type ValueConsumer<'a> = FileKeyValueConsumer<'a, K, T, R>
-    where
-        Self: 'a;
-
-    fn key_valid(&self) -> bool {
-        self.consumer.key_valid()
-    }
-
-    fn peek_key(&self) -> &K {
-        self.consumer.peek_key()
-    }
-
-    fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
-        let (key, values) = self.consumer.next_key();
-        (key, FileKeyValueConsumer::new(values))
-    }
-
-    fn seek_key(&mut self, key: &K)
-    where
-        K: Ord,
-    {
-        self.consumer.seek_key(key);
-    }
-}
-
-pub struct FileKeyValueConsumer<'a, K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    consumer: FileOrderedLayerValues<'a, K, T, R>,
-}
-
-impl<'a, K, T, R> FileKeyValueConsumer<'a, K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    const fn new(consumer: FileOrderedLayerValues<'a, K, T, R>) -> Self {
-        Self { consumer }
-    }
-}
-
-impl<'a, K, T, R> ValueConsumer<'a, (), R, T> for FileKeyValueConsumer<'a, K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn value_valid(&self) -> bool {
-        self.consumer.value_valid()
-    }
-
-    fn next_value(&mut self) -> ((), R, T) {
-        let (time, diff, ()) = self.consumer.next_value();
-        ((), diff, time)
-    }
-
-    fn remaining_values(&self) -> usize {
-        self.consumer.remaining_values()
-    }
-}*/
 
 impl<K, T, R> SizeOf for FileKeyBatch<K, T, R>
 where
