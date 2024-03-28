@@ -208,7 +208,10 @@ test('Entity rename test', async ({ page, request }) => {
 
   await test.step('Add kafka output to pipeline2', async () => {
     await page.getByTestId('button-builder-add-output').click()
-    await page.getByTestId('box-connector-' + 'KafkaOut').getByTestId('button-add-connector').hover()
+    await page
+      .getByTestId('box-connector-' + 'KafkaOut')
+      .getByTestId('button-add-connector')
+      .hover()
     await expect(page).toHaveScreenshot('9-1-output-connectors-drawer.png')
     await page
       .getByTestId('box-connector-' + 'KafkaOut')
