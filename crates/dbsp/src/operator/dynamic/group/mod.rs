@@ -11,8 +11,7 @@ use crate::{
     operator::dynamic::trace::{TraceBounds, TraceFeedback},
     trace::{
         cursor::{CursorEmpty, CursorGroup, CursorPair},
-        BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
-        OrdIndexedWSetFactories, Spillable, Spine,
+        BatchFactories, BatchReaderFactories, Builder, Cursor, OrdIndexedWSetFactories, Spine,
     },
     Circuit, DynZWeight, RootCircuit, Stream,
 };
@@ -274,7 +273,7 @@ where
 
 impl<B> Stream<RootCircuit, B>
 where
-    B: IndexedZSet + Spillable + Send,
+    B: IndexedZSet + Send,
 {
     /// Apply group `transformer` to each partition in the input stream.
     ///
@@ -283,19 +282,13 @@ where
     fn dyn_group_transform<OV>(
         &self,
         input_factories: &B::Factories,
-        stored_factories: &<B::Spilled as BatchReader>::Factories,
         output_factories: &OrdIndexedWSetFactories<B::Key, OV, DynZWeight>,
         transformer: Box<dyn GroupTransformer<B::Val, OV>>,
     ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, OV>>
     where
         OV: DataTrait + ?Sized,
     {
-        self.dyn_group_transform_generic(
-            input_factories,
-            stored_factories,
-            output_factories,
-            transformer,
-        )
+        self.dyn_group_transform_generic(input_factories, output_factories, transformer)
     }
 
     /// Like [`group_transform`](`Self::group_transform`), but can output any
@@ -303,7 +296,6 @@ where
     fn dyn_group_transform_generic<OB>(
         &self,
         input_factories: &B::Factories,
-        stored_factories: &<B::Spilled as BatchReader>::Factories,
         output_factories: &OB::Factories,
         transform: Box<dyn GroupTransformer<B::Val, OB::Val>>,
     ) -> Stream<RootCircuit, OB>
@@ -333,10 +325,7 @@ where
             .add_ternary_operator(
                 GroupTransform::new(output_factories, transform),
                 &stream,
-                &stream
-                    .dyn_spill(stored_factories)
-                    .dyn_integrate_trace(stored_factories)
-                    .delay_trace(),
+                &stream.dyn_integrate_trace(input_factories).delay_trace(),
                 &feedback.delayed_trace,
             )
             .mark_sharded();

@@ -6,18 +6,16 @@ use crate::{
     },
     dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
     operator::dynamic::trace::{
-        DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
+        DelayedTraceId, KeySpine, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace,
     },
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     Circuit, DBData, Stream, Timestamp, ZWeight,
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
-use super::trace::{BoundsId, FileKeySpine};
-
 pub struct UpdateSetFactories<T: Timestamp, B: ZSet> {
     pub batch_factories: B::Factories,
-    pub trace_factories: <T::FileKeyBatch<B::Key, B::R> as BatchReader>::Factories,
+    pub trace_factories: <T::OrdKeyBatch<B::Key, B::R> as BatchReader>::Factories,
 }
 
 impl<T: Timestamp, B: ZSet> Clone for UpdateSetFactories<T, B> {
@@ -47,7 +45,7 @@ where
 
 pub struct UpsertFactories<T: Timestamp, B: IndexedZSet> {
     pub batch_factories: B::Factories,
-    pub trace_factories: <T::MemValBatch<B::Key, B::Val, B::R> as BatchReader>::Factories,
+    pub trace_factories: <T::OrdValBatch<B::Key, B::Val, B::R> as BatchReader>::Factories,
 }
 
 impl<T: Timestamp, B: IndexedZSet> Clone for UpsertFactories<T, B> {
@@ -136,10 +134,7 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <Upsert<FileKeySpine<B, C>, B>>::new(
-                        &factories.batch_factories,
-                        bounds.clone(),
-                    ),
+                    <Upsert<KeySpine<B, C>, B>>::new(&factories.batch_factories, bounds.clone()),
                     &local,
                     &self.try_sharded_version(),
                 )
@@ -147,7 +142,7 @@ where
             delta.mark_sharded_if(self);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<FileKeySpine<B, C>, B, C>>::new(
+                <TraceAppend<KeySpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
@@ -161,8 +156,10 @@ where
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
             circuit.cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-            circuit.cache_insert(TraceId::new(delta.origin_node_id().clone()), trace);
-            circuit.cache_insert(BoundsId::<B>::new(delta.origin_node_id().clone()), bounds);
+            circuit.cache_insert(
+                TraceId::new(delta.origin_node_id().clone()),
+                (trace, bounds),
+            );
             delta
         })
     }
@@ -250,8 +247,10 @@ where
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
             circuit.cache_insert(DelayedTraceId::new(trace.origin_node_id().clone()), local);
-            circuit.cache_insert(TraceId::new(delta.origin_node_id().clone()), trace);
-            circuit.cache_insert(BoundsId::<B>::new(delta.origin_node_id().clone()), bounds);
+            circuit.cache_insert(
+                TraceId::new(delta.origin_node_id().clone()),
+                (trace, bounds),
+            );
             delta
         })
     }

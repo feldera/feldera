@@ -5,7 +5,6 @@ use crate::{
         count::{DistinctCountFactories, StreamDistinctCountFactories},
     },
     storage::file::Deserializable,
-    trace::Spillable,
     typed_batch::{DynOrdIndexedZSet, IndexedZSet, OrdIndexedZSet},
     Circuit, DynZWeight, Stream, ZWeight,
 };
@@ -58,10 +57,7 @@ where
     /// that maps from the original keys to the unique value counts.  Both
     /// the input and output are streams of updates.
     #[allow(clippy::type_complexity)]
-    pub fn distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>>
-    where
-        Z::InnerBatch: Spillable,
-    {
+    pub fn distinct_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
         let factories: DistinctCountFactories<
             Z::Inner,
             DynOrdIndexedZSet<DynData, DynData>,
@@ -80,7 +76,6 @@ where
     pub fn distinct_count_generic<O>(&self) -> Stream<C, O>
     where
         O: IndexedZSet<Key = Z::Key, DynK = DynData>,
-        Z::InnerBatch: Spillable,
     {
         let factories: DistinctCountFactories<Z::Inner, O::Inner, C::Time> =
             DistinctCountFactories::new::<Z::Key, Z::Val, O::Val>();

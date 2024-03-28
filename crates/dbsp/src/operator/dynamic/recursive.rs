@@ -4,7 +4,7 @@ use crate::{
     algebra::IndexedZSet,
     circuit::{schedule::Error as SchedulerError, ChildCircuit, Circuit, Stream, WithClock},
     operator::{dynamic::distinct::DistinctFactories, DelayedFeedback},
-    trace::{Spillable, Spine},
+    trace::Spine,
 };
 
 use impl_trait_for_tuples::impl_for_tuples;
@@ -54,12 +54,12 @@ impl<C, B> RecursiveStreams<C> for Stream<C, B>
 where
     C: Circuit,
     C::Parent: Circuit,
-    B: IndexedZSet + Spillable + Send,
+    B: IndexedZSet + Send,
     Spine<B>: SizeOf,
 {
     type Feedback = DelayedFeedback<C, B>;
-    type Export = Stream<C::Parent, Spine<B::Spilled>>;
-    type Output = Stream<C::Parent, B::Spilled>;
+    type Export = Stream<C::Parent, Spine<B>>;
+    type Output = Stream<C::Parent, B>;
     type Factories = DistinctFactories<B, C::Time>;
 
     fn new(circuit: &C, factories: &Self::Factories) -> (Self::Feedback, Self) {
@@ -78,15 +78,11 @@ where
     }
 
     fn export(self, factories: &Self::Factories) -> Self::Export {
-        Stream::export(
-            &self
-                .dyn_spill(&factories.stored_factories)
-                .dyn_integrate_trace(&factories.stored_factories),
-        )
+        Stream::export(&self.dyn_integrate_trace(&factories.input_factories))
     }
 
     fn consolidate(exports: Self::Export, factories: &Self::Factories) -> Self::Output {
-        Stream::dyn_consolidate(&exports, &factories.stored_factories)
+        Stream::dyn_consolidate(&exports, &factories.input_factories)
     }
 }
 
@@ -180,8 +176,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        operator::Generator, typed_batch::FileZSet, typed_batch::OrdZSet, utils::Tup2, zset,
-        Circuit, RootCircuit, Stream,
+        operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset, Circuit, RootCircuit, Stream,
     };
     use std::vec;
 
@@ -231,7 +226,7 @@ mod test {
             })
             .unwrap();
 
-            paths.integrate().unspill().stream_distinct().inspect(move |ps| {
+            paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
             Ok(())
@@ -285,7 +280,7 @@ mod test {
             let edges = circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let (paths, reverse_paths):  (Stream<_, FileZSet<Tup2<u64, u64>>>, Stream<_, FileZSet<Tup2<u64, u64>>>) =
+            let (paths, reverse_paths):  (Stream<_, OrdZSet<Tup2<u64, u64>>>, Stream<_, OrdZSet<Tup2<u64, u64>>>) =
                 circuit.recursive(|child, (paths, reverse_paths): (Edges<_>, Edges<_>)| {
                 let edges = edges.delta0(child);
 
@@ -301,7 +296,7 @@ mod test {
             })
             .unwrap();
 
-            paths.unspill().integrate().stream_distinct().inspect(move |ps| {
+            paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
 

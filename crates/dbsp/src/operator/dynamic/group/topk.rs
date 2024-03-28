@@ -6,10 +6,7 @@ use crate::{
         HasOne, HasZero, IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, ZCursor, ZRingValue,
     },
     dynamic::{DataTrait, DynUnit, Erase, Factory, WeightTrait},
-    trace::{
-        BatchReader, BatchReaderFactories, FileIndexedZSetFactories, OrdIndexedWSetFactories,
-        Spillable,
-    },
+    trace::{BatchReaderFactories, OrdIndexedWSetFactories},
     DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
 use std::{
@@ -17,15 +14,14 @@ use std::{
     ops::{AddAssign, Neg},
 };
 
-pub struct TopKFactories<B: IndexedZSet + Spillable> {
+pub struct TopKFactories<B: IndexedZSet> {
     input_factories: B::Factories,
-    stored_factories: <B::Spilled as BatchReader>::Factories,
     output_factories: OrdIndexedWSetFactories<B::Key, B::Val, B::R>,
 }
 
 impl<B> TopKFactories<B>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
 {
     pub fn new<KType, VType>() -> Self
     where
@@ -34,7 +30,6 @@ where
     {
         Self {
             input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
-            stored_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             output_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
         }
     }
@@ -48,7 +43,6 @@ where
     R: WeightTrait + ?Sized,
 {
     input_factories: OrdIndexedWSetFactories<K, V, R>,
-    stored_factories: FileIndexedZSetFactories<K, V2, R>,
     inner_factories: OrdIndexedWSetFactories<K, V2, R>,
 }
 
@@ -68,7 +62,6 @@ where
     {
         Self {
             input_factories: BatchReaderFactories::new::<KType, VType, RType>(),
-            stored_factories: BatchReaderFactories::new::<KType, V2Type, RType>(),
             inner_factories: BatchReaderFactories::new::<KType, V2Type, RType>(),
         }
     }
@@ -81,7 +74,6 @@ where
     OV: DataTrait + ?Sized,
 {
     inner_factories: OrdIndexedZSetFactories<K, V2>,
-    stored_factories: FileIndexedZSetFactories<K, V2, DynZWeight>,
     output_factories: OrdIndexedZSetFactories<K, OV>,
 }
 
@@ -99,7 +91,6 @@ where
     {
         Self {
             inner_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
-            stored_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
             output_factories: BatchReaderFactories::new::<KType, OVType, ZWeight>(),
         }
     }
@@ -107,7 +98,7 @@ where
 
 impl<B> Stream<RootCircuit, B>
 where
-    B: IndexedZSet + Spillable + Send,
+    B: IndexedZSet + Send,
 {
     /// See [`Stream::topk_asc`].
     #[allow(clippy::type_complexity)]
@@ -118,7 +109,6 @@ where
     ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
         self.dyn_group_transform(
             &factories.input_factories,
-            &factories.stored_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
                 factories.output_factories.val_factory(),
@@ -136,7 +126,6 @@ where
     ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
         self.dyn_group_transform(
             &factories.input_factories,
-            &factories.stored_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
                 factories.output_factories.val_factory(),
@@ -172,7 +161,6 @@ where
         )
         .dyn_group_transform(
             &factories.inner_factories,
-            &factories.stored_factories,
             &factories.inner_factories,
             Box::new(DiffGroupTransformer::new(
                 factories.inner_factories.val_factory(),
@@ -212,7 +200,6 @@ where
         )
         .dyn_group_transform(
             &factories.inner_factories,
-            &factories.stored_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
                 factories.output_factories.val_factory(),
@@ -249,7 +236,6 @@ where
         )
         .dyn_group_transform(
             &factories.inner_factories,
-            &factories.stored_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
                 factories.output_factories.val_factory(),
@@ -285,7 +271,6 @@ where
         )
         .dyn_group_transform(
             &factories.inner_factories,
-            &factories.stored_factories,
             &factories.output_factories,
             Box::new(DiffGroupTransformer::new(
                 factories.output_factories.val_factory(),
