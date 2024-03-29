@@ -223,7 +223,7 @@ impl OutputFormat for ParquetOutputFormat {
 }
 
 fn relation_to_parquet_schema(relation: &Relation) -> Result<SerdeArrowSchema, ControllerError> {
-    fn struct_to_arrow_fields(fields: &Vec<Field>) -> Fields {
+    fn struct_to_arrow_fields(fields: &[Field]) -> Fields {
         Fields::from(
             fields
                 .iter()
