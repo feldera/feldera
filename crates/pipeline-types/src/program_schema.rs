@@ -258,5 +258,6 @@ pub struct ColumnType {
     ///  ColumnType { name: "address", fields: [ ... ] }
     /// ]
     /// ```
+    #[cfg_attr(feature = "testing", proptest(value = "Some(Vec::new())"))]
     pub fields: Option<Vec<Field>>,
 }
