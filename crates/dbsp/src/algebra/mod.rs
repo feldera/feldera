@@ -20,11 +20,7 @@ pub use zset::{
     OrdZSetFactories, ZBatch, ZBatchReader, ZCursor, ZSet, ZSetReader, ZTrace, ZWeight,
 };
 
-use rust_decimal::{
-    prelude::One,
-    prelude::Zero,
-    Decimal,
-};
+use rust_decimal::{prelude::One, prelude::Zero, Decimal};
 use size_of::SizeOf;
 use std::{
     marker::PhantomData,
