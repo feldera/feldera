@@ -4,7 +4,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Field as ArrowField, Fields, Schema, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
@@ -26,7 +26,7 @@ use crate::{
 };
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
-use pipeline_types::program_schema::{ColumnType, Relation, SqlType};
+use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
 
 #[cfg(test)]
 mod test;
@@ -223,6 +223,21 @@ impl OutputFormat for ParquetOutputFormat {
 }
 
 fn relation_to_parquet_schema(relation: &Relation) -> Result<SerdeArrowSchema, ControllerError> {
+    fn struct_to_arrow_fields(fields: &Vec<Field>) -> Fields {
+        Fields::from(
+            fields
+                .iter()
+                .map(|f| {
+                    ArrowField::new(
+                        &f.name,
+                        columntype_to_datatype(&f.columntype),
+                        f.columntype.nullable,
+                    )
+                })
+                .collect::<Vec<ArrowField>>(),
+        )
+    }
+
     // The type conversion is chosen in accordance with our internal
     // data types (see sqllib). This may need to be adjusted in the future
     // or made configurable.
@@ -246,6 +261,7 @@ fn relation_to_parquet_schema(relation: &Relation) -> Result<SerdeArrowSchema, C
             SqlType::Null => DataType::Null,
             SqlType::Binary | SqlType::Varbinary | SqlType::Interval => todo!(),
             SqlType::Array => todo!("handle array types"),
+            SqlType::Struct => DataType::Struct(struct_to_arrow_fields(c.fields.as_ref().unwrap())),
         }
     }
 
@@ -253,13 +269,13 @@ fn relation_to_parquet_schema(relation: &Relation) -> Result<SerdeArrowSchema, C
         .fields
         .iter()
         .map(|f| {
-            Field::new(
+            ArrowField::new(
                 &f.name,
                 columntype_to_datatype(&f.columntype),
                 f.columntype.nullable,
             )
         })
-        .collect::<Vec<Field>>();
+        .collect::<Vec<ArrowField>>();
 
     SerdeArrowSchema::from_arrow_fields(&fields).map_err(|e| ControllerError::SchemaParseError {
         error: format!("Unable to convert schema to parquet/arrow: {e}"),

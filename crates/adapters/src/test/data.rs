@@ -47,6 +47,7 @@ pub fn test_struct_schema() -> Relation {
                     precision: None,
                     scale: None,
                     component: None,
+                    fields: None,
                 },
             },
             Field {
@@ -58,6 +59,7 @@ pub fn test_struct_schema() -> Relation {
                     precision: None,
                     scale: None,
                     component: None,
+                    fields: None,
                 },
             },
             Field {
@@ -69,6 +71,7 @@ pub fn test_struct_schema() -> Relation {
                     precision: None,
                     scale: None,
                     component: None,
+                    fields: None,
                 },
             },
             Field {
@@ -80,6 +83,7 @@ pub fn test_struct_schema() -> Relation {
                     precision: None,
                     scale: None,
                     component: None,
+                    fields: None,
                 },
             },
         ],

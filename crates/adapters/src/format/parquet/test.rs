@@ -4,7 +4,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use arrow::array::{
-    ArrayRef, BooleanArray, Date32Array, Int64Array, LargeStringArray, RecordBatch,
+    ArrayRef, BooleanArray, Date32Array, Int64Array, LargeStringArray, RecordBatch, StructArray,
     Time64NanosecondArray, TimestampMillisecondArray,
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
@@ -45,6 +45,38 @@ use pipeline_types::{deserialize_table_record, serialize_table_record};
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
+struct EmbeddedStruct {
+    #[serde(rename = "a")]
+    field: bool,
+}
+
+serialize_table_record!(EmbeddedStruct[1]{
+    r#field["a"]: bool
+});
+
+deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", 1] {
+    (r#field, "a", false, bool, None)
+});
+
+/// This struct mimics the field naming schema of the compiler.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
 struct TestStruct {
     #[serde(rename = "id")]
     field: i64,
@@ -58,6 +90,8 @@ struct TestStruct {
     field_3: Date,
     #[serde(rename = "t")]
     field_4: Time,
+    #[serde(rename = "es")]
+    field_5: EmbeddedStruct,
 }
 
 impl TestStruct {
@@ -70,6 +104,7 @@ impl TestStruct {
                 field_2: Timestamp::new(1000),
                 field_3: Date::new(1),
                 field_4: Time::new(1),
+                field_5: EmbeddedStruct { field: false },
             },
             TestStruct {
                 field: 2,
@@ -78,6 +113,7 @@ impl TestStruct {
                 field_2: Timestamp::new(2000),
                 field_3: Date::new(12),
                 field_4: Time::new(1_000_000_000),
+                field_5: EmbeddedStruct { field: true },
             },
         ]
     }
@@ -94,6 +130,13 @@ impl TestStruct {
             ),
             arrow::datatypes::Field::new("dt", DataType::Date32, false),
             arrow::datatypes::Field::new("t", DataType::Time64(TimeUnit::Nanosecond), false),
+            arrow::datatypes::Field::new(
+                "es",
+                DataType::Struct(arrow::datatypes::Fields::from(vec![
+                    arrow::datatypes::Field::new("a", DataType::Boolean, false),
+                ])),
+                false,
+            ),
         ]))
     }
 
@@ -111,6 +154,7 @@ impl TestStruct {
                         precision: None,
                         scale: None,
                         component: None,
+                        fields: None,
                     },
                 },
                 Field {
@@ -122,6 +166,7 @@ impl TestStruct {
                         precision: None,
                         scale: None,
                         component: None,
+                        fields: None,
                     },
                 },
                 Field {
@@ -133,6 +178,7 @@ impl TestStruct {
                         precision: None,
                         scale: None,
                         component: None,
+                        fields: None,
                     },
                 },
                 Field {
@@ -144,6 +190,7 @@ impl TestStruct {
                         precision: None,
                         scale: None,
                         component: None,
+                        fields: None,
                     },
                 },
                 Field {
@@ -155,6 +202,7 @@ impl TestStruct {
                         precision: None,
                         scale: None,
                         component: None,
+                        fields: None,
                     },
                 },
                 Field {
@@ -166,6 +214,30 @@ impl TestStruct {
                         precision: None,
                         scale: None,
                         component: None,
+                        fields: None,
+                    },
+                },
+                Field {
+                    name: "es".to_string(),
+                    case_sensitive: false,
+                    columntype: ColumnType {
+                        typ: SqlType::Struct,
+                        nullable: false,
+                        precision: None,
+                        scale: None,
+                        component: None,
+                        fields: Some(vec![Field {
+                            name: "a".to_string(),
+                            case_sensitive: false,
+                            columntype: ColumnType {
+                                typ: SqlType::Boolean,
+                                nullable: false,
+                                precision: None,
+                                scale: None,
+                                component: None,
+                                fields: None,
+                            },
+                        }]),
                     },
                 },
             ],
@@ -182,6 +254,9 @@ impl TestStruct {
             .iter()
             .map(|r| r.field_4.nanoseconds() as i64)
             .collect();
+        let row6_field = Arc::new(arrow::datatypes::Field::new("a", DataType::Boolean, false));
+        let row6: Vec<bool> = data.iter().map(|r| r.field_5.field).collect();
+        let row6_booleans = Arc::new(BooleanArray::from(row6));
 
         vec![
             Arc::new(Int64Array::from(row0)),
@@ -190,26 +265,32 @@ impl TestStruct {
             Arc::new(TimestampMillisecondArray::from(row3)),
             Arc::new(Date32Array::from(row4)),
             Arc::new(Time64NanosecondArray::from(row5)),
+            Arc::new(StructArray::from(vec![(
+                row6_field,
+                row6_booleans as ArrayRef,
+            )])),
         ]
     }
 }
 
-serialize_table_record!(TestStruct[6]{
+serialize_table_record!(TestStruct[7]{
     r#field["id"]: i64,
     r#field_0["name"]: Option<String>,
     r#field_1["b"]: bool,
     r#field_2["ts"]: Timestamp,
     r#field_3["dt"]: Date,
-    r#field_4["t"]: Time
+    r#field_4["t"]: Time,
+    r#field_5["es"]: EmbeddedStruct
 });
 
-deserialize_table_record!(TestStruct["TestStruct", 6] {
+deserialize_table_record!(TestStruct["TestStruct", 7] {
     (r#field, "id", false, i64, None),
     (r#field_0, "name", false, Option<String>, Some(None)),
     (r#field_1, "b", false, bool, None),
     (r#field_2, "ts", false, Timestamp, None),
     (r#field_3, "dt", false, Date, None),
-    (r#field_4, "t", false, Time, None)
+    (r#field_4, "t", false, Time, None),
+    (r#field_5, "es", false, EmbeddedStruct, None)
 });
 
 #[test]

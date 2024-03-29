@@ -10,7 +10,7 @@ public class StructTests extends BaseSQLTests {
     @Override
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
         CompilerOptions options = super.testOptions(incremental, optimize);
-        // options.ioOptions.emitHandles = false;
+        options.ioOptions.emitHandles = false;
         return options;
     }
 

@@ -138,6 +138,9 @@ pub enum SqlType {
     /// SQL `ARRAY` type.
     #[serde(rename = "ARRAY")]
     Array,
+    /// A complex SQL struct type (`CREATE TYPE x ...`).
+    #[serde(rename = "struct")]
+    Struct,
     /// SQL `NULL` type.
     #[serde(rename = "NULL")]
     Null,
@@ -163,6 +166,7 @@ impl From<SqlType> for &'static str {
             SqlType::Timestamp => "TIMESTAMP",
             SqlType::Interval => "INTERVAL",
             SqlType::Array => "ARRAY",
+            SqlType::Struct => "STRUCT",
             SqlType::Null => "NULL",
         }
     }
@@ -188,10 +192,15 @@ impl<S: AsRef<str>> From<S> for SqlType {
             "timestamp" => SqlType::Timestamp,
             "interval" => SqlType::Interval,
             "array" => SqlType::Array,
+            "type" => SqlType::Struct,
             "null" => SqlType::Null,
             _ => panic!("Found unknown SQL type: {}", s.as_ref()),
         }
     }
+}
+
+const fn default_is_struct() -> SqlType {
+    SqlType::Struct
 }
 
 /// A SQL column type description.
@@ -200,8 +209,9 @@ impl<S: AsRef<str>> From<S> for SqlType {
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct ColumnType {
-    #[serde(rename = "type")]
     /// Identifier for the type (e.g., `VARCHAR`, `BIGINT`, `ARRAY` etc.)
+    #[serde(rename = "type")]
+    #[serde(default = "default_is_struct")]
     pub typ: SqlType,
     /// Does the type accept NULL values?
     pub nullable: bool,
@@ -227,4 +237,26 @@ pub struct ColumnType {
     /// ARRAY` type.
     #[cfg_attr(feature = "testing", proptest(value = "None"))]
     pub component: Option<Box<ColumnType>>,
+    /// The fields of the type (if available).
+    ///
+    /// For example this would specify the fields of a `CREATE TYPE` construct.
+    ///
+    /// ```sql
+    /// CREATE TYPE person_typ AS (
+    ///   firstname       VARCHAR(30),
+    ///   lastname        VARCHAR(30),
+    ///   address         ADDRESS_TYP
+    /// );
+    /// ```
+    ///
+    /// Would lead to the following `fields` value:
+    ///
+    /// ```sql
+    /// [
+    ///  ColumnType { name: "firstname, ... },
+    ///  ColumnType { name: "lastname", ... },
+    ///  ColumnType { name: "address", fields: [ ... ] }
+    /// ]
+    /// ```
+    pub fields: Option<Vec<Field>>,
 }
