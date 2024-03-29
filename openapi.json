@@ -3074,7 +3074,6 @@
         "type": "object",
         "description": "A SQL column type description.\n\nMatches the Calcite JSON format.",
         "required": [
-          "type",
           "nullable"
         ],
         "properties": {
@@ -3084,6 +3083,14 @@
                 "$ref": "#/components/schemas/ColumnType"
               }
             ],
+            "nullable": true
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "description": "The fields of the type (if available).\n\nFor example this would specify the fields of a `CREATE TYPE` construct.\n\n```sql\nCREATE TYPE person_typ AS (\nfirstname       VARCHAR(30),\nlastname        VARCHAR(30),\naddress         ADDRESS_TYP\n);\n```\n\nWould lead to the following `fields` value:\n\n```sql\n[\nColumnType { name: \"firstname, ... },\nColumnType { name: \"lastname\", ... },\nColumnType { name: \"address\", fields: [ ... ] }\n]\n```",
             "nullable": true
           },
           "nullable": {
@@ -4873,6 +4880,7 @@
           "TIMESTAMP",
           "INTERVAL",
           "ARRAY",
+          "STRUCT",
           "NULL"
         ]
       },
