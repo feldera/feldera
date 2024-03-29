@@ -1193,7 +1193,15 @@ impl ProjectDB {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<(PipelineDescr, ProgramDescr, Vec<ConnectorDescr>), DBError> {
+    ) -> Result<
+        (
+            PipelineDescr,
+            ProgramDescr,
+            Vec<ConnectorDescr>,
+            Vec<Vec<ServiceDescr>>,
+        ),
+        DBError,
+    > {
         pipeline::is_pipeline_deployable(self, tenant_id, pipeline_id).await
     }
 

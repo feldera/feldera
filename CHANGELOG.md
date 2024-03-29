@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   optimized modes, which tradeoff compilation speed for runtime speed
   ([#1524](https://github.com/feldera/feldera/pull/1524))
 - WebConsole: Support NULL values on Data Inspection and Insertion page (#1392)
+- pipeline-manager: Kafka input and output connector transport can refer
+  to a service using the `kafka_service` field. The service is used to provide
+  defaults for the Kafka options.
+  ([#1582](https://github.com/feldera/feldera/pull/1582))
 
 ### Changed
 

@@ -2254,3 +2254,144 @@ async fn service_probe_basic() {
     let response: Value = request.json().await.unwrap();
     assert_eq!(response.as_array().unwrap().len(), 0);
 }
+
+#[actix_web::test]
+#[serial]
+async fn service_integrated_connector_transport() {
+    let config = setup().await;
+
+    // Create a service
+    let request = config
+        .post(
+            format!("/v0/services"),
+            &json!({
+              "name": "kafka-service1",
+              "description": "Description of the service used to test integrated connector",
+              "config": {
+                "kafka": {
+                  "bootstrap_servers": [
+                    "localhost:9092",
+                    "localhost:19092"
+                  ],
+                  "options": {
+                    "key1": "value1"
+                  }
+                }
+              }
+            }),
+        )
+        .await;
+    assert_eq!(request.status(), StatusCode::CREATED);
+
+    // Create a connector that uses the service
+    let mut request = config
+        .post(
+            format!("/v0/connectors"),
+            &json!({
+              "name": "kafka-connector1",
+              "description": "Description of the integrated connector",
+              "config": {
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topics": ["a", "b"],
+                    "auto.offset.reset": "earliest",
+                    "kafka_service": "kafka-service1"
+                  }
+                },
+                "format": {
+                  "name": "json",
+                  "config": {
+                    "update_format": "insert_delete"
+                  }
+                }
+              }
+            }),
+        )
+        .await;
+    println!("{:?}", request.body().await);
+    assert_eq!(request.status(), StatusCode::CREATED);
+
+    // Rename service
+    let patch = json!({
+        "name": "kafka-service1-renamed-to-2",
+    });
+    let resp = config
+        .patch(format!("/v0/services/kafka-service1"), &patch)
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Check connector has correct service name
+    let mut request = config
+        .get_ok(format!("/v0/connectors/kafka-connector1"))
+        .await;
+    let response: Value = request.json().await.unwrap();
+    let response = response.as_object().unwrap();
+    assert_eq!(
+        response["config"].as_object().unwrap()["transport"]
+            .as_object()
+            .unwrap()["config"]
+            .as_object()
+            .unwrap()["kafka_service"],
+        "kafka-service1-renamed-to-2"
+    );
+
+    // Create a program
+    let request = config
+        .post(
+            format!("/v0/programs"),
+            &json!({
+              "name": "program1",
+              "description": "",
+              "code": "CREATE TABLE example(name VARCHAR);",
+            }),
+        )
+        .await;
+    assert_eq!(request.status(), StatusCode::CREATED);
+
+    // Create a pipeline
+    let request = config
+        .post(
+            format!("/v0/pipelines"),
+            &json!({
+              "name": "pipeline1",
+              "description": "",
+              "program_name": "program1",
+              "config": {
+                "workers": 4
+              },
+              "connectors": [
+                {
+                  "connector_name": "kafka-connector1",
+                  "is_input": true,
+                  "name": "example123",
+                  "relation_name": "example"
+                }
+              ],
+            }),
+        )
+        .await;
+    assert_eq!(request.status(), StatusCode::OK);
+
+    // Fetch pipeline config and compare to resolved expectation
+    let mut request = config
+        .get_ok(format!("/v0/pipelines/pipeline1/config"))
+        .await;
+    let response: Value = request.json().await.unwrap();
+    let response = response.as_object().unwrap();
+    let transport_config = response["inputs"].as_object().unwrap()["example123"]
+        .as_object()
+        .unwrap()["transport"]
+        .as_object()
+        .unwrap()["config"]
+        .as_object()
+        .unwrap();
+    assert_eq!(transport_config["topics"], json!(["a", "b"]));
+    assert_eq!(transport_config["auto.offset.reset"], json!("earliest"));
+    assert_eq!(transport_config["kafka_service"], json!(null));
+    assert_eq!(
+        transport_config["bootstrap.servers"],
+        json!("localhost:9092,localhost:19092")
+    );
+    assert_eq!(transport_config["key1"], json!("value1"));
+}

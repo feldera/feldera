@@ -316,6 +316,8 @@ build-demo-container:
     COPY +install-python/bin /root/.local/bin
     # Needed by the JDBC demo.
     RUN pip3 install "psycopg[binary]"
+    # Needed by the simple-count demo.
+    RUN pip3 install kafka-python
     COPY demo demo
     CMD bash
 
@@ -411,7 +413,7 @@ test-s3:
         RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile s3 up --force-recreate --exit-code-from s3-demo
     END
 
-test-service-probe:
+test-service-related:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
@@ -421,7 +423,7 @@ test-service-probe:
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile service-probe-demo up --force-recreate --exit-code-from service-probe-demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile demo-service-related up --force-recreate --exit-code-from demo-service-related
     END
 
 # Fetches the test binary from test-manager, and produces a container image out of it
@@ -528,4 +530,4 @@ all-tests:
     BUILD +test-debezium-jdbc-sink
     BUILD +test-snowflake
     BUILD +test-s3
-    BUILD +test-service-probe
+    BUILD +test-service-related
