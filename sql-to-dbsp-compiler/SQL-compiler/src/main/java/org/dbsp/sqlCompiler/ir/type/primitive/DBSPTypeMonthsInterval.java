@@ -30,17 +30,16 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
-/**
- * Models the SQL Interval type for months-years.
- * Always stores the interval value in days.
- */
-public class DBSPTypeMonthsInterval extends DBSPTypeBaseType implements IsNumericType, IsDateType {
+/** Models the SQL Interval type for months-years.
+ * Always stores the interval value in days. */
+public class DBSPTypeMonthsInterval
+        extends DBSPTypeBaseType
+        implements IsDateType, IHasZero {
     public DBSPTypeMonthsInterval(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.INTERVAL_LONG, mayBeNull);
     }
@@ -68,27 +67,12 @@ public class DBSPTypeMonthsInterval extends DBSPTypeBaseType implements IsNumeri
 
     @Override
     public DBSPLiteral defaultValue() {
-        return this.getZero();
+        return new DBSPIntervalMonthsLiteral(0, this.mayBeNull);
     }
 
     @Override
     public DBSPLiteral getZero() {
         return new DBSPIntervalMonthsLiteral(0, this.mayBeNull);
-    }
-
-    @Override
-    public DBSPLiteral getOne() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getMaxValue() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getMinValue() {
-        throw new UnsupportedException(this.getNode());
     }
 
     @Override

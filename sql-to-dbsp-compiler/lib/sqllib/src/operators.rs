@@ -1,6 +1,6 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use dbsp::algebra::{F32, F64};
+use dbsp::algebra::{HasZero, F32, F64};
 use num::PrimInt;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
@@ -265,91 +265,39 @@ pub fn plus_u_u(left: usize, right: usize) -> usize {
 #[inline(always)]
 pub fn div_null__<T>(left: T, right: T) -> Option<T>
 where
-    T: PrimInt,
+    T: Div<Output = T> + HasZero,
 {
-    if Some(0) == right.to_isize() {
+    if right.is_zero() {
         None
     } else {
-        Some(left / right)
+        Some(left.div(right))
     }
 }
 
 #[inline(always)]
 pub fn div_nullN_<T>(left: Option<T>, right: T) -> Option<T>
 where
-    T: PrimInt,
+    T: Div<Output = T> + HasZero,
 {
     let left = left?;
-    if Some(0) == right.to_isize() {
-        None
-    } else {
-        Some(left / right)
-    }
+    div_null__::<T>(left, right)
 }
 
 #[inline(always)]
 pub fn div_null_N<T>(left: T, right: Option<T>) -> Option<T>
 where
-    T: PrimInt,
+    T: Div<Output = T> + HasZero,
 {
     let right = right?;
-    if Some(0) == right.to_isize() {
-        None
-    } else {
-        Some(left / right)
-    }
+    div_null__(left, right)
 }
 
 #[inline(always)]
 pub fn div_nullNN<T>(left: Option<T>, right: Option<T>) -> Option<T>
 where
-    T: PrimInt,
+    T: Div<Output = T> + HasZero,
 {
     let left = left?;
     let right = right?;
-    if Some(0) == right.to_isize() {
-        None
-    } else {
-        Some(left / right)
-    }
-}
-
-#[inline(always)]
-pub fn decimal_div_null(left: Decimal, right: Decimal) -> Option<Decimal> {
-    if Decimal::ZERO == right {
-        None
-    } else {
-        Some(left / right)
-    }
-}
-
-#[inline(always)]
-pub fn decimal_div_nullN_(left: Option<Decimal>, right: Decimal) -> Option<Decimal> {
-    let left = left?;
-    if Decimal::ZERO == right {
-        None
-    } else {
-        Some(left / right)
-    }
-}
-
-#[inline(always)]
-pub fn decimal_div_null_N(left: Decimal, right: Option<Decimal>) -> Option<Decimal> {
-    let right = right?;
-    if Decimal::ZERO == right {
-        None
-    } else {
-        Some(left / right)
-    }
-}
-
-#[inline(always)]
-pub fn decimal_div_nullNN(left: Option<Decimal>, right: Option<Decimal>) -> Option<Decimal> {
-    let left = left?;
-    let right = right?;
-    if Decimal::ZERO == right {
-        None
-    } else {
-        Some(left / right)
-    }
+    div_null__(left, right)
 }

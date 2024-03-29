@@ -20,7 +20,11 @@ pub use zset::{
     OrdZSetFactories, ZBatch, ZBatchReader, ZCursor, ZSet, ZSetReader, ZTrace, ZWeight,
 };
 
-use rust_decimal::Decimal;
+use rust_decimal::{
+    prelude::One,
+    prelude::Zero,
+    Decimal,
+};
 use size_of::SizeOf;
 use std::{
     marker::PhantomData,
@@ -73,6 +77,18 @@ impl_has_zero! {
     isize,
 }
 
+impl HasZero for Decimal {
+    #[inline]
+    fn is_zero(&self) -> bool {
+        Zero::is_zero(self)
+    }
+
+    #[inline]
+    fn zero() -> Self {
+        Zero::zero()
+    }
+}
+
 impl<T> HasZero for Option<T> {
     #[inline]
     fn is_zero(&self) -> bool {
@@ -120,6 +136,13 @@ macro_rules! impl_has_one {
             }
         )*
     };
+}
+
+impl HasOne for Decimal {
+    #[inline]
+    fn one() -> Self {
+        One::one()
+    }
 }
 
 impl_has_one! {
@@ -279,6 +302,24 @@ where
 
 /// `MulByRef<isize>`
 
+impl MulByRef<isize> for i8 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        (*self as isize * w) as Self
+    }
+}
+
+impl MulByRef<isize> for i16 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &isize) -> Self::Output {
+        (*self as isize * w) as Self
+    }
+}
+
 impl MulByRef<isize> for i32 {
     type Output = Self;
 
@@ -344,6 +385,24 @@ impl MulByRef<isize> for Decimal {
 
 /////////// `MulByRef<i64>`
 
+impl MulByRef<i64> for i8 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        (*self as i64 * w) as Self
+    }
+}
+
+impl MulByRef<i64> for i16 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i64) -> Self::Output {
+        (*self as i64 * w) as Self
+    }
+}
+
 impl MulByRef<i64> for i32 {
     type Output = Self;
 
@@ -408,6 +467,24 @@ impl MulByRef<i64> for Decimal {
 }
 
 /////////// `MulByRef<i32>`
+
+impl MulByRef<i32> for i8 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        (*self as i32 * w) as Self
+    }
+}
+
+impl MulByRef<i32> for i16 {
+    type Output = Self;
+
+    #[inline]
+    fn mul_by_ref(&self, w: &i32) -> Self::Output {
+        (*self as i32 * w) as Self
+    }
+}
 
 impl MulByRef<i32> for i64 {
     type Output = Self;
@@ -476,6 +553,8 @@ impl MulByRef<i32> for Decimal {
 
 trait OptionWeightType {}
 impl OptionWeightType for isize {}
+impl OptionWeightType for i8 {}
+impl OptionWeightType for i16 {}
 impl OptionWeightType for i32 {}
 impl OptionWeightType for i64 {}
 impl OptionWeightType for f32 {}

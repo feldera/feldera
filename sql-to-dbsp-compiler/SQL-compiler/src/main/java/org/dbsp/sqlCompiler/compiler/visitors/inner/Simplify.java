@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -379,7 +380,7 @@ public class Simplify extends InnerRewriteVisitor {
         } else if (expression.operation.equals(DBSPOpcode.ADD)) {
             if (left.is(DBSPLiteral.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
-                IsNumericType iLeftType = leftType.to(IsNumericType.class);
+                IHasZero iLeftType = leftType.to(IHasZero.class);
                 if (iLeftType.isZero(leftLit)) {
                     result = right;
                 } else if (leftLit.isNull) {
@@ -387,7 +388,7 @@ public class Simplify extends InnerRewriteVisitor {
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IsNumericType iRightType = rightType.to(IsNumericType.class);
+                IHasZero iRightType = rightType.to(IHasZero.class);
                 if (iRightType.isZero(rightLit)) {
                     result = left;
                 } else if (rightLit.isNull) {

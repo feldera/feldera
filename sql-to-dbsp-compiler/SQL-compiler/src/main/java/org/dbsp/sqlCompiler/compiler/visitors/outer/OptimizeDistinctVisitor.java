@@ -39,7 +39,7 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
         // distinct (distinct) = distinct
         DBSPOperator input = this.mapped(distinct.input());
         if (input.is(DBSPStreamDistinctOperator.class)) {
-            this.map(distinct, input);
+            this.map(distinct, input, false);
             return;
         }
         if (input.is(DBSPStreamJoinOperator.class) ||

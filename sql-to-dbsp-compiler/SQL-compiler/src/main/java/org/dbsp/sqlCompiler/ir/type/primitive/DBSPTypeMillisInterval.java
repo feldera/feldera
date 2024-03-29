@@ -29,19 +29,18 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INTERVAL_SHORT;
 
-/**
- * Models the SQL Interval type for days-seconds.
- * Always stores the interval value in milliseconds.
- */
-public class DBSPTypeMillisInterval extends DBSPTypeBaseType implements IsNumericType, IsDateType {
+/** Models the SQL Interval type for days-seconds.
+ * Always stores the interval value in milliseconds. */
+public class DBSPTypeMillisInterval
+        extends DBSPTypeBaseType
+        implements IsDateType, IHasZero {
     public DBSPTypeMillisInterval(CalciteObject node, boolean mayBeNull) {
         super(node, INTERVAL_SHORT, mayBeNull);
     }
@@ -69,27 +68,12 @@ public class DBSPTypeMillisInterval extends DBSPTypeBaseType implements IsNumeri
 
     @Override
     public DBSPLiteral defaultValue() {
-        return this.getZero();
+        return new DBSPIntervalMillisLiteral(0, this.mayBeNull);
     }
 
     @Override
     public DBSPLiteral getZero() {
         return new DBSPIntervalMillisLiteral(0, this.mayBeNull);
-    }
-
-    @Override
-    public DBSPLiteral getOne() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getMaxValue() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getMinValue() {
-        throw new UnsupportedException(this.getNode());
     }
 
     @Override
