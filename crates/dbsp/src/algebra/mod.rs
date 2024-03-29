@@ -646,9 +646,9 @@ mod integer_ring_tests {
 
     #[test]
     fn fixed_integer_tests() {
-        assert_eq!(0, i64::zero());
-        assert_eq!(1, i64::one());
-        let two = i64::one().add_by_ref(&i64::one());
+        assert_eq!(0, <i64 as algebra::HasZero>::zero());
+        assert_eq!(1, <i64 as algebra::HasOne>::one());
+        let two = <i64 as algebra::HasOne>::one().add_by_ref(&<i64 as algebra::HasOne>::one());
         assert_eq!(2, two);
         assert_eq!(-2, two.neg_by_ref());
         assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
@@ -656,9 +656,9 @@ mod integer_ring_tests {
 
     #[test]
     fn fixed_isize_tests() {
-        assert_eq!(0, isize::zero());
-        assert_eq!(1, isize::one());
-        let two = isize::one().add_by_ref(&isize::one());
+        assert_eq!(0, <isize as algebra::HasZeo>::zero());
+        assert_eq!(1, <isize as algebra::HasOne>::one());
+        let two = <isize as algebra::HasOne>::one().add_by_ref(&<isize as algebra::HasOne>::one());
         assert_eq!(2, two);
         assert_eq!(-2, two.neg_by_ref());
         assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
@@ -666,9 +666,9 @@ mod integer_ring_tests {
 
     #[test]
     fn fixed_i64_tests() {
-        assert_eq!(0, i64::zero());
-        assert_eq!(1, i64::one());
-        let two = i64::one().add_by_ref(&i64::one());
+        assert_eq!(0, <i64 as algebra::HasZero>::zero());
+        assert_eq!(1, <i64 as algebra::HasOne>::one());
+        let two = <i64 as algebra::HasOne>::one().add_by_ref(&<i64 as algebra::HasOne>::one());
         assert_eq!(2, two);
         assert_eq!(-2, two.neg_by_ref());
         assert_eq!(-4, two.mul_by_ref(&two.neg_by_ref()));
