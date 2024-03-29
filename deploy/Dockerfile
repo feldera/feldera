@@ -166,6 +166,7 @@ RUN apt update && apt install pkg-config \
   # TODO: only required for running the fraud detection demo. Remove when we clean that up.
   && pip3 install gdown \
   && pip3 install "psycopg[binary]" \
+  && pip3 install kafka-python \
   # cleanup packages we don't need anymore
   && apt remove python3-pip unzip pkg-config -y && apt autoremove -y
 CMD bash

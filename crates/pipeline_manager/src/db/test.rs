@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::Transaction;
 use openssl::sha::{self};
+use pipeline_types::config::TransportConfigVariant;
 use pipeline_types::service::{KafkaService, ServiceConfig};
 use pipeline_types::{
     config::{ConnectorConfig, ResourceConfig, RuntimeConfig},
@@ -2343,58 +2344,69 @@ impl Storage for Mutex<DbModel> {
                 })
                 .cloned()
                 .collect::<Vec<ConnectorDescr>>();
+            let mut services_for_connectors = vec![];
+            for connector in &connectors {
+                services_for_connectors.push(
+                    s.services
+                        .values()
+                        .filter(|s| {
+                            connector
+                                .config
+                                .transport
+                                .service_names()
+                                .iter()
+                                .any(|attached_service_name| *attached_service_name == s.name)
+                        })
+                        .cloned()
+                        .collect::<Vec<ServiceDescr>>(),
+                );
+            }
 
             let pipeline = pipeline.descriptor.clone();
             let connectors = connectors.clone();
+            let services_for_connectors = services_for_connectors.clone();
             let program_data = program_data.clone();
 
             // Gives an answer if the relevant configuration state for the
             // pipeline has changed since our last commit.
-            fn detect_changes(
-                cur_pipeline: &PipelineDescr,
-                cur_sql: &str,
-                cur_connectors: &Vec<ConnectorDescr>,
-                prev: &PipelineRevision,
-            ) -> bool {
-                cur_sql != &prev.program.code.clone().unwrap()
-                    || cur_pipeline.config != prev.pipeline.config
-                    || cur_pipeline
-                        .attached_connectors
-                        .iter()
-                        .map(|ac| (&ac.name, ac.is_input, &ac.relation_name))
-                        .ne(prev
-                            .pipeline
-                            .attached_connectors
-                            .iter()
-                            .map(|ach| (&ach.name, ach.is_input, &ach.relation_name)))
-                    || cur_connectors
-                        .iter()
-                        .map(|c| &c.config)
-                        .ne(prev.connectors.iter().map(|c| &c.config))
-            }
-
             let prev = s.history.get(&(tenant_id, pipeline_id));
             let (has_changed, next_revision) = match prev {
-                Some(prev) => (
-                    detect_changes(
-                        &pipeline,
-                        &program_data.0.code.clone().unwrap(),
-                        &connectors,
-                        prev,
-                    ),
-                    prev.revision,
-                ),
+                Some(prev_revision) => {
+                    // TODO: the revision ID is taken into account when doing the comparison,
+                    //       which means that it will always differ
+                    let new_revision = PipelineRevision::new(
+                        Revision(new_revision_id),
+                        pipeline.clone(),
+                        connectors.clone(),
+                        services_for_connectors.clone(),
+                        program_data.0.clone(),
+                    );
+                    let prev_serialized = serde_json::to_string(&prev_revision).unwrap();
+                    let new_serialized = serde_json::to_string(&new_revision).unwrap();
+                    let detected_changes = prev_serialized != new_serialized;
+                    if detected_changes {
+                        (detected_changes, Revision(new_revision_id))
+                    } else {
+                        (detected_changes, prev_revision.revision)
+                    }
+                }
                 None => (true, Revision(new_revision_id)),
             };
 
             if has_changed {
-                PipelineRevision::validate(&pipeline, &connectors, &program_data.0)?;
+                PipelineRevision::validate(
+                    &pipeline,
+                    &connectors,
+                    &services_for_connectors,
+                    &program_data.0,
+                )?;
                 s.history.insert(
                     (tenant_id, pipeline_id),
                     PipelineRevision::new(
                         next_revision,
                         pipeline,
                         connectors,
+                        services_for_connectors,
                         program_data.0.clone(),
                     ),
                 );
@@ -2841,6 +2853,20 @@ impl Storage for Mutex<DbModel> {
             }
         }
 
+        // Each service of the connector must exist
+        if let Some(config) = config {
+            for attached_service_name in config.transport.service_names() {
+                s.services
+                    .iter()
+                    .filter(|k| k.0 .0 == tenant_id)
+                    .map(|k| k.1.clone())
+                    .find(|c| c.name == *attached_service_name)
+                    .ok_or(DBError::UnknownName {
+                        name: attached_service_name.clone(),
+                    })?;
+            }
+        }
+
         let c = s
             .connectors
             .get_mut(&(tenant_id, connector_id))
@@ -2853,6 +2879,21 @@ impl Storage for Mutex<DbModel> {
         }
         if let Some(config) = config {
             c.config = config.clone();
+        }
+        // Change the connector name for all pipelines that have it attached
+        if let Some(name) = connector_name {
+            s.pipelines.values_mut().for_each(|pipeline| {
+                for ac in &mut pipeline.descriptor.attached_connectors {
+                    if ac.connector_name == name.to_string() {
+                        *ac = AttachedConnector {
+                            name: ac.name.clone(),
+                            is_input: ac.is_input,
+                            connector_name: name.to_string(),
+                            relation_name: ac.connector_name.clone(),
+                        };
+                    }
+                }
+            });
         }
         Ok(())
     }
@@ -3137,7 +3178,7 @@ impl Storage for Mutex<DbModel> {
             .get_mut(&(tenant_id, service_id))
             .ok_or(DBError::UnknownService { service_id })?;
         if let Some(name) = name {
-            c.name = name.to_string()
+            c.name = name.to_string();
         }
         if let Some(description) = description {
             c.description = description.to_string()
@@ -3145,6 +3186,16 @@ impl Storage for Mutex<DbModel> {
         if let Some(config) = config {
             c.config = config.clone();
             c.config_type = config.config_type();
+        }
+        // Change the service name for all connectors that have it in their transport
+        if let Some(name) = name {
+            s.connectors.values_mut().for_each(|connector| {
+                for used_service_name in &mut connector.config.transport.service_names() {
+                    if used_service_name == name {
+                        *used_service_name = name.to_string()
+                    }
+                }
+            });
         }
         Ok(())
     }
@@ -3163,6 +3214,34 @@ impl Storage for Mutex<DbModel> {
 
         // Cascade: remove any service probes of the service
         s.service_probes.retain(|_, (_, id)| *id != service_id);
+
+        // Find all connectors which have the service
+        let connectors_with_the_service: Vec<ConnectorDescr> = s
+            .connectors
+            .iter()
+            .filter(|k| {
+                k.1.config
+                    .transport
+                    .service_names()
+                    .contains(&service_name.to_string())
+            })
+            .map(|k| k.1.clone())
+            .collect();
+
+        for connector_descr in connectors_with_the_service {
+            // Remove connector from all the pipelines
+            s.pipelines.values_mut().for_each(|c| {
+                c.descriptor
+                    .attached_connectors
+                    .retain(|c| c.name != connector_descr.name);
+            });
+            // Remove connector
+            s.connectors
+                .remove(&(tenant_id, connector_descr.connector_id))
+                .ok_or(DBError::UnknownConnector {
+                    connector_id: connector_descr.connector_id,
+                })?;
+        }
 
         // Remove the service
         s.services

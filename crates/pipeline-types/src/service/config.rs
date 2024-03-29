@@ -2,6 +2,12 @@ use crate::service::KafkaService;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// Required trait for every service configuration.
+pub trait ServiceConfigVariant {
+    /// Unique service configuration type used for classification.
+    fn config_type() -> String;
+}
+
 /// Configuration for a Service, which typically includes how to establish a
 /// connection (e.g., hostname, port) and authenticate (e.g., credentials).
 ///
@@ -15,10 +21,9 @@ pub enum ServiceConfig {
 }
 
 impl ServiceConfig {
-    /// Unique service configuration type used for classification.
     pub fn config_type(&self) -> String {
         match self {
-            ServiceConfig::Kafka(_) => "kafka".to_string(),
+            ServiceConfig::Kafka(_) => KafkaService::config_type(),
         }
     }
 

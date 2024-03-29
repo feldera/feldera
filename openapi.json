@@ -822,9 +822,11 @@
                       "transport": {
                         "config": {
                           "auto.offset.reset": "earliest",
+                          "bootstrap.servers": "localhost:9092",
                           "fault_tolerance": null,
                           "group.instance.id": "group0",
                           "group_join_timeout_secs": 10,
+                          "kafka_service": null,
                           "log_level": null,
                           "topics": [
                             "test_input1"
@@ -852,6 +854,7 @@
                         "config": {
                           "fault_tolerance": null,
                           "initialization_timeout_secs": 60,
+                          "kafka_service": null,
                           "log_level": null,
                           "max_inflight_messages": 1000,
                           "topic": "test_output1"
@@ -3585,6 +3588,11 @@
             "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
             "minimum": 0
           },
+          "kafka_service": {
+            "type": "string",
+            "description": "If specified, this service is used to provide defaults for the Kafka options.",
+            "nullable": true
+          },
           "log_level": {
             "allOf": [
               {
@@ -3684,6 +3692,11 @@
             "format": "int32",
             "description": "Maximum timeout in seconds to wait for the endpoint to connect to\na Kafka broker.\n\nDefaults to 60.",
             "minimum": 0
+          },
+          "kafka_service": {
+            "type": "string",
+            "description": "If specified, this service is used to provide defaults for the Kafka options.",
+            "nullable": true
           },
           "log_level": {
             "allOf": [
@@ -4160,6 +4173,7 @@
           "revision",
           "pipeline",
           "connectors",
+          "services_for_connectors",
           "program",
           "config"
         ],
@@ -4182,6 +4196,16 @@
           },
           "revision": {
             "$ref": "#/components/schemas/Revision"
+          },
+          "services_for_connectors": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ServiceDescr"
+              }
+            },
+            "description": "The versioned services for each connector."
           }
         }
       },

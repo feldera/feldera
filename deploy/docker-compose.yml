@@ -53,7 +53,7 @@ services:
       retries: 5
 
   redpanda:
-    profiles: [ "demo", "debezium", "snowflake", "service-probe-demo" ]
+    profiles: [ "demo", "debezium", "snowflake", "demo-service-related" ]
     command:
       - redpanda
       - start
@@ -186,8 +186,8 @@ services:
       - -c
       - "sleep 1 && env && cd demo/project_demo09-S3/ && python3 run.py --api-url http://pipeline-manager:8080"
 
-  service-probe-demo:
-    profiles: [ "service-probe-demo" ]
+  demo-service-related:
+    profiles: [ "demo-service-related" ]
     depends_on:
       pipeline-manager:
         condition: service_healthy
@@ -200,4 +200,4 @@ services:
     command:
       - bash
       - -c
-      - "sleep 1 && cd demo/service-probe && python3 run.py --api-url http://pipeline-manager:8080"
+      - "sleep 1 && cd demo/service-probe && python3 run.py --api-url http://pipeline-manager:8080 && sleep 1 && cd ../simple-count && python3 run.py --api-url http://pipeline-manager:8080"

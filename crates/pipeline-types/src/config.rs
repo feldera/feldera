@@ -11,6 +11,8 @@ use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
 
 use crate::query::OutputQuery;
+use crate::service::ServiceConfig;
+use crate::transport::error::{TransportReplaceError, TransportResolveError};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::s3::S3InputConfig;
@@ -228,6 +230,62 @@ pub struct OutputEndpointConfig {
     pub output_buffer_config: OutputBufferConfig,
 }
 
+/// Required trait for every transport configuration, as it needs to be
+/// convertible to its storable variant with the service names resolved
+/// to identifiers that are stored in separate columns alongside it.
+pub trait TransportConfigVariant {
+    /// Returns the name of the transport config variant.
+    fn name(&self) -> String;
+
+    /// Retrieves all the service names in the configuration.
+    /// This is used just before storing in the database, such that the names
+    /// are resolved to identifiers while stored. Upon deserialization from
+    /// the database, the exact same order of names is expected in
+    /// [replace_any_service_names](Self::replace_any_service_names).
+    fn service_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Replaces the service names in the direct deserialized version with the
+    /// service names fetched using the identifier foreign key relations.
+    fn replace_any_service_names(
+        self,
+        replacement_service_names: &[String],
+    ) -> Result<Self, TransportReplaceError>
+    where
+        Self: Sized,
+    {
+        if replacement_service_names.is_empty() {
+            Ok(self)
+        } else {
+            Err(TransportReplaceError {
+                expected: 0,
+                actual: replacement_service_names.len(),
+            })
+        }
+    }
+
+    /// Converts the configuration to its final form by resolving the services
+    /// that it refers to. Resolution in this case means applying the service
+    /// configuration as basis (e.g., providing defaults for certain fields).
+    fn resolve_any_services(
+        self,
+        services: &BTreeMap<String, ServiceConfig>,
+    ) -> Result<Self, TransportResolveError>
+    where
+        Self: Sized,
+    {
+        if services.is_empty() {
+            Ok(self)
+        } else {
+            Err(TransportResolveError::IncorrectNumServices {
+                expected: 0,
+                actual: services.len(),
+            })
+        }
+    }
+}
+
 /// Transport-specific endpoint configuration passed to
 /// `crate::OutputTransport::new_endpoint`
 /// and `crate::InputTransport::new_endpoint`.
@@ -246,17 +304,102 @@ pub enum TransportConfig {
     HttpOutput,
 }
 
-impl TransportConfig {
-    pub fn name(&self) -> String {
+impl TransportConfigVariant for TransportConfig {
+    fn name(&self) -> String {
         match self {
-            TransportConfig::FileInput(_) => "file_input".to_string(),
-            TransportConfig::FileOutput(_) => "file_output".to_string(),
-            TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
-            TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
-            TransportConfig::UrlInput(_) => "url_input".to_string(),
-            TransportConfig::S3Input(_) => "s3_input".to_string(),
+            TransportConfig::FileInput(config) => config.name(),
+            TransportConfig::FileOutput(config) => config.name(),
+            TransportConfig::KafkaInput(config) => config.name(),
+            TransportConfig::KafkaOutput(config) => config.name(),
+            TransportConfig::UrlInput(config) => config.name(),
+            TransportConfig::S3Input(config) => config.name(),
             TransportConfig::HttpInput => "http_input".to_string(),
             TransportConfig::HttpOutput => "http_output".to_string(),
+        }
+    }
+
+    fn service_names(&self) -> Vec<String> {
+        match self {
+            TransportConfig::FileInput(config) => config.service_names(),
+            TransportConfig::FileOutput(config) => config.service_names(),
+            TransportConfig::KafkaInput(config) => config.service_names(),
+            TransportConfig::KafkaOutput(config) => config.service_names(),
+            TransportConfig::UrlInput(config) => config.service_names(),
+            TransportConfig::S3Input(config) => config.service_names(),
+            TransportConfig::HttpInput => vec![],
+            TransportConfig::HttpOutput => vec![],
+        }
+    }
+
+    fn replace_any_service_names(
+        self,
+        replacement_service_names: &[String],
+    ) -> Result<Self, TransportReplaceError> {
+        match self {
+            TransportConfig::FileInput(config) => Ok(TransportConfig::FileInput(
+                config.replace_any_service_names(replacement_service_names)?,
+            )),
+            TransportConfig::FileOutput(config) => Ok(TransportConfig::FileOutput(
+                config.replace_any_service_names(replacement_service_names)?,
+            )),
+            TransportConfig::KafkaInput(config) => Ok(TransportConfig::KafkaInput(
+                config.replace_any_service_names(replacement_service_names)?,
+            )),
+            TransportConfig::KafkaOutput(config) => Ok(TransportConfig::KafkaOutput(
+                config.replace_any_service_names(replacement_service_names)?,
+            )),
+            TransportConfig::UrlInput(config) => Ok(TransportConfig::UrlInput(
+                config.replace_any_service_names(replacement_service_names)?,
+            )),
+            TransportConfig::S3Input(config) => Ok(TransportConfig::S3Input(
+                config.replace_any_service_names(replacement_service_names)?,
+            )),
+            TransportConfig::HttpInput | TransportConfig::HttpOutput => {
+                if replacement_service_names.is_empty() {
+                    Ok(self)
+                } else {
+                    Err(TransportReplaceError {
+                        expected: 0,
+                        actual: replacement_service_names.len(),
+                    })
+                }
+            }
+        }
+    }
+
+    fn resolve_any_services(
+        self,
+        services: &BTreeMap<String, ServiceConfig>,
+    ) -> Result<TransportConfig, TransportResolveError> {
+        match self {
+            TransportConfig::FileInput(config) => Ok(TransportConfig::FileInput(
+                config.resolve_any_services(services)?,
+            )),
+            TransportConfig::FileOutput(config) => Ok(TransportConfig::FileOutput(
+                config.resolve_any_services(services)?,
+            )),
+            TransportConfig::KafkaInput(config) => Ok(TransportConfig::KafkaInput(
+                config.resolve_any_services(services)?,
+            )),
+            TransportConfig::KafkaOutput(config) => Ok(TransportConfig::KafkaOutput(
+                config.resolve_any_services(services)?,
+            )),
+            TransportConfig::UrlInput(config) => Ok(TransportConfig::UrlInput(
+                config.resolve_any_services(services)?,
+            )),
+            TransportConfig::S3Input(config) => Ok(TransportConfig::S3Input(
+                config.resolve_any_services(services)?,
+            )),
+            TransportConfig::HttpInput | TransportConfig::HttpOutput => {
+                if services.is_empty() {
+                    Ok(self)
+                } else {
+                    Err(TransportResolveError::IncorrectNumServices {
+                        expected: 0,
+                        actual: services.len(),
+                    })
+                }
+            }
         }
     }
 }

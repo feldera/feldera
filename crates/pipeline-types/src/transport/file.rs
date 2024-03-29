@@ -1,3 +1,4 @@
+use crate::config::TransportConfigVariant;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -28,4 +29,16 @@ pub struct FileInputConfig {
 pub struct FileOutputConfig {
     /// File path.
     pub path: String,
+}
+
+impl TransportConfigVariant for FileInputConfig {
+    fn name(&self) -> String {
+        "file_input".to_string()
+    }
+}
+
+impl TransportConfigVariant for FileOutputConfig {
+    fn name(&self) -> String {
+        "file_output".to_string()
+    }
 }

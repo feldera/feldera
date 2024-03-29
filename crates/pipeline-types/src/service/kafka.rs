@@ -1,3 +1,4 @@
+use crate::service::config::ServiceConfigVariant;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error as ThisError;
@@ -26,6 +27,12 @@ pub struct KafkaService {
 pub enum KafkaServiceError {
     #[error("bootstrap.servers cannot be set in options as it is a separate field")]
     DuplicateBootstrapServers,
+}
+
+impl ServiceConfigVariant for KafkaService {
+    fn config_type() -> String {
+        "kafka".to_string()
+    }
 }
 
 impl KafkaService {
