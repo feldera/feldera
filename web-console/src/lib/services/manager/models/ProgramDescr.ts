@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ProgramConfig } from './ProgramConfig'
 import type { ProgramId } from './ProgramId'
 import type { ProgramSchema } from './ProgramSchema'
 import type { ProgramStatus } from './ProgramStatus'
@@ -14,6 +15,7 @@ export type ProgramDescr = {
    * SQL code
    */
   code?: string | null
+  config: ProgramConfig
   /**
    * Program description.
    */

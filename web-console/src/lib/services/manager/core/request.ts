@@ -3,9 +3,10 @@
 /* tslint:disable */
 /* eslint-disable */
 import { ApiError } from './ApiError'
+import { CancelablePromise } from './CancelablePromise'
+
 import type { ApiRequestOptions } from './ApiRequestOptions'
 import type { ApiResult } from './ApiResult'
-import { CancelablePromise } from './CancelablePromise'
 import type { OnCancel } from './CancelablePromise'
 import type { OpenAPIConfig } from './OpenAPI'
 
@@ -167,7 +168,7 @@ export const getHeaders = async (config: OpenAPIConfig, options: ApiRequestOptio
     headers['Authorization'] = `Basic ${credentials}`
   }
 
-  if (options.body) {
+  if (options.body !== undefined) {
     if (options.mediaType) {
       headers['Content-Type'] = options.mediaType
     } else if (isBlob(options.body)) {

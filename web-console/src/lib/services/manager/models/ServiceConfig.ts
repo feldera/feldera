@@ -4,15 +4,11 @@
 /* eslint-disable */
 import type { KafkaService } from './KafkaService'
 /**
- * Service configuration for the API
+ * Configuration for a Service, which typically includes how to establish a
+ * connection (e.g., hostname, port) and authenticate (e.g., credentials).
  *
- * A Service is an API object, with as one of its properties its config.
- * The config is a variant of this enumeration, and is stored serialized
- * in the database.
- *
- * How a service configuration is applied can vary by connector, e.g., some
- * might have options that are mutually exclusive whereas others might be
- * defaults that can be overriden.
+ * This configuration can be used to easily derive connectors for the service
+ * as well as probe it for information.
  */
 export type ServiceConfig = {
   kafka: KafkaService

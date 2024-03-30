@@ -3,14 +3,14 @@ import { DebeziumInputSchema } from '$lib/components/connectors/dialogs/Debezium
 import { SnowflakeOutputSchema } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { assertUnion } from '$lib/functions/common/array'
 import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
-import { ConnectorDescr } from '$lib/services/manager'
+import { fromKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
+import { ConnectorDescr, TransportConfig } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import ImageBoilingFlask from '$public/icons/generic/boiling-flask.svg'
 import ImageHttpGet from '$public/images/generic/http-get.svg'
 import DebeziumLogo from '$public/images/vendors/debezium-logo-color.svg'
 import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
-import { fromKafkaConfig } from 'src/lib/functions/kafka/librdkafkaOptions'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import iconBoilingFlask from '~icons/generic/boiling-flask'
@@ -24,19 +24,25 @@ import { SVGImport } from '../types/imports'
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (config: ConnectorDescr['config']): ConnectorType => {
   return match(config)
-    .with({ transport: { name: 'kafka_input' }, format: { config: { update_format: 'debezium' } } }, () => {
-      return ConnectorType.DEBEZIUM_IN
-    })
-    .with({ transport: { name: 'kafka_output' }, format: { config: { update_format: 'snowflake' } } }, () => {
-      return ConnectorType.SNOWFLAKE_OUT
-    })
-    .with({ transport: { name: 'kafka_input' } }, () => {
+    .with(
+      { transport: { name: TransportConfig.name.KAFKA_INPUT }, format: { config: { update_format: 'debezium' } } },
+      () => {
+        return ConnectorType.DEBEZIUM_IN
+      }
+    )
+    .with(
+      { transport: { name: TransportConfig.name.KAFKA_OUTPUT }, format: { config: { update_format: 'snowflake' } } },
+      () => {
+        return ConnectorType.SNOWFLAKE_OUT
+      }
+    )
+    .with({ transport: { name: TransportConfig.name.KAFKA_INPUT } }, () => {
       return ConnectorType.KAFKA_IN
     })
-    .with({ transport: { name: 'kafka_output' } }, () => {
+    .with({ transport: { name: TransportConfig.name.KAFKA_OUTPUT } }, () => {
       return ConnectorType.KAFKA_OUT
     })
-    .with({ transport: { name: 'url_input' } }, () => {
+    .with({ transport: { name: TransportConfig.name.URL_INPUT } }, () => {
       return ConnectorType.URL
     })
     .otherwise(() => {
@@ -59,8 +65,7 @@ export const parseConnectorDescrWith =
  * if connector is of type KAFKA_IN.
  */
 export const parseKafkaInputSchemaConfig = (config: ConnectorDescr['config']) => {
-  invariant(connectorDescrToType(config) === ConnectorType.KAFKA_IN)
-  invariant(config.transport.config)
+  invariant(config.transport.name === TransportConfig.name.KAFKA_INPUT)
 
   const authConfig = parseAuthParams(config.transport.config)
 
@@ -82,8 +87,7 @@ export const parseKafkaInputSchema = parseConnectorDescrWith(parseKafkaInputSche
 // Given an existing ConnectorDescr return the KafkaOutputSchema
 // if connector is of type KAFKA_OUT.
 export const parseKafkaOutputSchemaConfig = (config: ConnectorDescr['config']) => {
-  invariant(connectorDescrToType(config) === ConnectorType.KAFKA_OUT)
-  invariant(config.transport.config)
+  invariant(config.transport.name === TransportConfig.name.KAFKA_OUTPUT)
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
@@ -103,8 +107,7 @@ export const parseKafkaOutputSchema = parseConnectorDescrWith(parseKafkaOutputSc
 // Given an existing ConnectorDescr return the DebeziumInputSchema
 // if connector is of type DEBEZIUM_IN.
 export const parseDebeziumInputSchemaConfig = (config: ConnectorDescr['config']) => {
-  invariant(connectorDescrToType(config) === ConnectorType.DEBEZIUM_IN)
-  invariant(config.transport.config)
+  invariant(config.transport.name === TransportConfig.name.KAFKA_INPUT)
 
   const authConfig = parseAuthParams(config.transport.config)
   return {
@@ -123,8 +126,7 @@ export const parseDebeziumInputSchemaConfig = (config: ConnectorDescr['config'])
 export const parseDebeziumInputSchema = parseConnectorDescrWith(parseDebeziumInputSchemaConfig)
 
 export const parseSnowflakeOutputSchemaConfig = (config: ConnectorDescr['config']) => {
-  invariant(connectorDescrToType(config) === ConnectorType.SNOWFLAKE_OUT)
-  invariant(config.transport.config)
+  invariant(config.transport.name === TransportConfig.name.KAFKA_OUTPUT)
 
   const authConfig = parseAuthParams(config.transport.config)
 
@@ -145,8 +147,7 @@ export const parseSnowflakeOutputSchema = parseConnectorDescrWith(parseSnowflake
 // Given an existing ConnectorDescr return the CsvFileSchema
 // if connector is of type FILE.
 export const parseUrlSchemaConfig = (config: ConnectorDescr['config']) => {
-  invariant(connectorDescrToType(config) === ConnectorType.URL)
-  invariant(config.transport.config)
+  invariant(config.transport.name === TransportConfig.name.URL_INPUT)
 
   return {
     transport: {

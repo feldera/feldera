@@ -12,6 +12,7 @@ import { invalidateQuery } from '$lib/functions/common/tanstack'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import {
   ApiError,
+  CompilationProfile,
   NewProgramRequest,
   NewProgramResponse,
   ProgramDescr,
@@ -308,6 +309,7 @@ export const ProgramEditor = ({ programName }: { programName: string }) => {
       description: '',
       program_id: '',
       status: 'Pending',
+      config: { profile: CompilationProfile.UNOPTIMIZED },
       version: 0
     },
     refetchOnWindowFocus: false
