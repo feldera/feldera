@@ -139,7 +139,7 @@ pub enum SqlType {
     #[serde(rename = "ARRAY")]
     Array,
     /// A complex SQL struct type (`CREATE TYPE x ...`).
-    #[serde(rename = "struct")]
+    #[serde(rename = "STRUCT")]
     Struct,
     /// SQL `NULL` type.
     #[serde(rename = "NULL")]
