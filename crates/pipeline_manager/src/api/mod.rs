@@ -31,6 +31,8 @@ use crate::prober::service::{
 };
 
 use crate::auth::JwkCache;
+use crate::compiler;
+use crate::config;
 use crate::probe::Probe;
 use actix_web::dev::Service;
 use actix_web::Scope;
@@ -60,6 +62,7 @@ use crate::db::{
 };
 pub use crate::error::ManagerError;
 use crate::runner::RunnerApi;
+use pipeline_types::config as pipeline_types_config;
 
 use crate::auth::TenantId;
 
@@ -261,6 +264,10 @@ request is rejected."
         ServiceProbeResult,
         ServiceProbeError,
         ServiceProbeStatus,
+        compiler::ProgramConfig,
+        config::CompilationProfile,
+        pipeline_types_config::OutputBufferConfig,
+        pipeline_types_config::OutputEndpointConfig
     ),),
     tags(
         (name = "Manager", description = "Configure system behavior"),

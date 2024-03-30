@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ProgramConfig } from './ProgramConfig'
 /**
  * Request to create a new program.
  */
@@ -10,6 +11,7 @@ export type NewProgramRequest = {
    * SQL code of the program.
    */
   code: string
+  config?: ProgramConfig
   /**
    * Program description.
    */

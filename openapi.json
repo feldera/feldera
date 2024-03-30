@@ -3120,6 +3120,14 @@
           }
         }
       },
+      "CompilationProfile": {
+        "type": "string",
+        "description": "Argument to `cargo build --profile <>` passed to the rust compiler\n\nNote that this is a hint to the backend, and can be overriden by\nthe Feldera instance depending on the administrator configuration.",
+        "enum": [
+          "unoptimized",
+          "optimized"
+        ]
+      },
       "CompileProgramRequest": {
         "type": "object",
         "description": "Request to queue a program for compilation.",
@@ -3992,6 +4000,25 @@
           }
         }
       },
+      "OutputBufferConfig": {
+        "type": "object",
+        "properties": {
+          "enable_buffer": {
+            "type": "boolean",
+            "description": "Enable output buffering.\n\nThe output buffering mechanism allows decoupling the rate at which the pipeline\npushes changes to the output transport from the rate of input changes.\n\nBy default, output updates produced by the pipeline are pushed directly to\nthe output transport. Some destinations may prefer to receive updates in fewer\nbigger batches. For instance, when writing Parquet files, producing\none bigger file every few minutes is usually better than creating\nsmall files every few milliseconds.\n\nTo achieve such input/output decoupling, users can enable output buffering by\nsetting the `enable_buffer` flag to `true`.  When buffering is enabled, output\nupdates produced by the pipeline are consolidated in an internal buffer and are\npushed to the output transport when one of several conditions is satisfied:\n\n* data has been accumulated in the buffer for more than `max_buffer_time_millis`\nmilliseconds.\n* buffer size exceeds `max_buffered_records` records.\n\nThis flag is `false` by default."
+          },
+          "max_buffer_size_records": {
+            "type": "integer",
+            "description": "Maximum number of output updates to be kept in the buffer.\n\nThis parameter bounds the maximal size of the buffer.\nNote that the size of the buffer is not always equal to the\ntotal number of updates output by the pipeline. Updates to the\nsame record can overwrite or cancel previous updates.\n\nBy default, the buffer can grow indefinitely until one of\nthe other output conditions is satisfied.\n\nNOTE: this configuration option requires the `enable_buffer` flag\nto be set.",
+            "minimum": 0
+          },
+          "max_buffer_time_millis": {
+            "type": "integer",
+            "description": "Maximum time in milliseconds data is kept in the buffer.\n\nBy default, data is kept in the buffer indefinitely until one of\nthe other output conditions is satisfied.  When this option is\nset the buffer will be flushed at most every\n`max_buffer_time_millis` milliseconds.\n\nNOTE: this configuration option requires the `enable_buffer` flag\nto be set.",
+            "minimum": 0
+          }
+        }
+      },
       "OutputEndpointConfig": {
         "allOf": [
           {
@@ -4266,6 +4293,18 @@
           "ShuttingDown",
           "Failed"
         ]
+      },
+      "ProgramConfig": {
+        "type": "object",
+        "description": "Program configuration.",
+        "required": [
+          "profile"
+        ],
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/CompilationProfile"
+          }
+        }
       },
       "ProgramDescr": {
         "type": "object",

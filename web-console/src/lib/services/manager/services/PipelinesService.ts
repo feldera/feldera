@@ -14,6 +14,7 @@ import type { UpdatePipelineResponse } from '../models/UpdatePipelineResponse'
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
+
 export class PipelinesService {
   /**
    * Fetch pipelines, optionally filtered by name or ID.

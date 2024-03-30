@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ProgramConfig } from './ProgramConfig'
 import type { Version } from './Version'
 /**
  * Request to update an existing program.
@@ -12,6 +13,7 @@ export type UpdateProgramRequest = {
    * kept unmodified.
    */
   code?: string | null
+  config?: ProgramConfig | null
   /**
    * New program description. If absent, existing description will be kept
    * unmodified.
