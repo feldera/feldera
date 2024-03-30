@@ -2,11 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.functions;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -1871,6 +1866,126 @@ public class FunctionsTest extends SqlIoTest {
                  sequence
                 ----------
                  {1, 2, 3}
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testCeilInt() {
+        this.qs("""
+                SELECT ceil(2::tinyint);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(2::smallint);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(2::int);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(2::bigint);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(null::tinyint);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null::smallint);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null::int);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null::bigint);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testFloorInt() {
+        this.qs("""
+                SELECT floor(2::tinyint);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(2::smallint);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(2::int);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(2::bigint);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(null::tinyint);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null::smallint);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null::int);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null::bigint);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null);
+                 floor
+                ------
+                 NULL
                 (1 row)
                 """
         );

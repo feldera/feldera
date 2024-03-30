@@ -874,7 +874,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                                 ops, 2);
                     }
                     case "pi": {
-                        return this.compileFunction(call, node, type, ops, 0);
+                        return compileFunction(call, node, type, ops, 0);
                     }
                     case "sin":
                     case "sinh":
@@ -921,7 +921,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         // Calcite should be doing this, but it doesn't.
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureString(ops, i);
-                        return this.compileFunction(call, node, type, ops, 1, 2);
+                        return compileFunction(call, node, type, ops, 1, 2);
                     case "overlay": {
                         // case "regexp_replace":
                         String module_prefix;
@@ -930,7 +930,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         } else {
                             module_prefix = "string::";
                         }
-                        return this.compileFunction(module_prefix + getCallName(call), node, type, ops, 3, 4);
+                        return compileFunction(module_prefix + getCallName(call), node, type, ops, 3, 4);
                     }
                     case "char_length":
                     case "ascii":
@@ -940,10 +940,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "to_hex":
                     case "octet_length":
                     case "initcap": {
-                        return this.compileFunction(call, node, type, ops, 1);
+                        return compileFunction(call, node, type, ops, 1);
                     }
                     case "cardinality": {
-                        this.validateArgCount(node, ops.size(), 1);
+                        validateArgCount(node, ops.size(), 1);
                         String name = "cardinality";
 
                         nullLiteralToNullArray(ops, 0);
@@ -957,9 +957,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     case "repeat":
                     case "left":
                     case "format_date":
-                        return this.compileFunction(call, node, type, ops, 2);
+                        return compileFunction(call, node, type, ops, 2);
                     case "replace":
-                        return this.compileFunction(call, node, type, ops, 3);
+                        return compileFunction(call, node, type, ops, 3);
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "element": {
@@ -981,22 +981,22 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                         } else {
                             module_prefix = "string::";
                         }
-                        return this.compileFunction(module_prefix + opName, node, type, ops, 2, 3);
+                        return compileFunction(module_prefix + opName, node, type, ops, 2, 3);
                     }
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "array":
-                        return this.compileFunction(call, node, type, ops, 0);
+                        return compileFunction(call, node, type, ops, 0);
                     case "gunzip":
                         DBSPExpression arg = ops.get(0);
                         ops.set(0, arg.cast(new DBSPTypeBinary(arg.getNode(), arg.type.mayBeNull)));
 
-                        return this.compileFunction(call, node, type, ops, 1);
+                        return compileFunction(call, node, type, ops, 1);
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureInteger(ops, i, 32);
 
-                        return this.compileFunction(call, node, type, ops, 2);
+                        return compileFunction(call, node, type, ops, 2);
                 }
                 return this.compileUDF(node, call, type, ops);
             }
@@ -1012,13 +1012,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 throw new UnimplementedException(node);
             case EXTRACT: {
                 // This is also hit for "date_part", which is an alias for "extract".
-                return this.compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
+                return compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
             }
             case RLIKE: {
                 // Calcite does not enforce the type of the arguments, why?
                 for (int i = 0; i < 2; i++)
                     this.ensureString(ops, i);
-                return this.compileFunction(call, node, type, ops, 2);
+                return compileFunction(call, node, type, ops, 2);
             }
             case POSITION: {
                 String module_prefix;
@@ -1027,24 +1027,31 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 } else {
                     module_prefix = "string::";
                 }
-                return this.compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
+                return compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
             }
             case ARRAY_TO_STRING: {
                 // Calcite does not enforce the type of the arguments, why?
                 this.ensureString(ops, 1);
                 if (ops.size() > 2)
                     this.ensureString(ops, 2);
-                return this.compileFunction(call, node, type, ops, 2, 3);
+                return compileFunction(call, node, type, ops, 2, 3);
             }
             case LIKE:
             case SIMILAR: {
-                return this.compileFunction(call, node, type, ops, 2, 3);
+                return compileFunction(call, node, type, ops, 2, 3);
             }
             case FLOOR:
             case CEIL: {
                 if (call.operands.size() == 2) {
-                    return this.compileKeywordFunction(call, node, null, type, ops, 1, 2);
+                    return compileKeywordFunction(call, node, null, type, ops, 1, 2);
                 } else if (call.operands.size() == 1) {
+                    DBSPType opType = ops.get(0).getType();
+                    if (opType.is(DBSPTypeInteger.class)) {
+                        this.compiler.reportWarning(node.getPositionRange(), "Noop",
+                                "Function " + Utilities.singleQuote(getCallName(call))
+                                        + " applied to integer arguments is useless.");
+                        return ops.get(0);
+                    }
                     return compilePolymorphicFunction(call, node, type, ops, 1);
                 } else {
                     throw new UnimplementedException(node);
@@ -1064,7 +1071,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             }
             case TIMESTAMP_DIFF:
             case TRIM: {
-                return this.compileKeywordFunction(call, node, null, type, ops, 0, 3);
+                return compileKeywordFunction(call, node, null, type, ops, 0, 3);
             }
             case TUMBLE:
                 return compilePolymorphicFunction(
