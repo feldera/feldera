@@ -54,7 +54,7 @@ import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
 
 import { useLocalStorage } from '@mantine/hooks'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { alpha, Button, Typography, useTheme } from '@mui/material'
+import { alpha, Button, ChipProps, Typography, useTheme } from '@mui/material'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -676,167 +676,123 @@ const PipelineStatusCell = (params: GridRenderCellParams<Pipeline>) => {
   const [status, programStatus] = usePipelineStatus(params)
 
   const shutdownPipelineClick = usePipelineMutation(mutationShutdownPipeline)
-  const testIdPrefix = `box-pipeline-${params.row.descriptor.name}-status-`
-  const chip = match([status, programStatus])
-    .with([PipelineStatus.UNKNOWN, P._], () => <CustomChip rounded size='small' skin='light' label={status} />)
-    .with([PipelineStatus.SHUTDOWN, 'NotReady'], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='primary'
-        label='Compiling'
-        data-testid={testIdPrefix + 'Compiling'}
-      />
-    ))
-    .with([PipelineStatus.SHUTDOWN, 'Pending'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Queued' data-testid={testIdPrefix + 'Queued'} />
-    ))
-    .with([PipelineStatus.SHUTDOWN, 'CompilingRust'], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='primary'
-        label='Compiling binary'
-        data-testid={testIdPrefix + 'Compiling binary'}
-      />
-    ))
-    .with([PipelineStatus.SHUTDOWN, 'Error'], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='error'
-        label='Program error'
-        data-testid={testIdPrefix + 'Program error'}
-      />
-    ))
-    .with([PipelineStatus.SHUTDOWN, 'NoProgram'], () => (
-      <Tooltip
-        title='A pipeline requires a program to be set in order to run. Please set one by editing the pipeline.'
-        disableInteractive
-      >
-        <CustomChip rounded size='small' skin='light' label='No program' data-testid={testIdPrefix + 'No program'} />
-      </Tooltip>
-    ))
-    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => (
-      <CustomChip rounded size='small' skin='light' label='Ready to run' data-testid={testIdPrefix + 'Ready to run'} />
-    ))
-    .with([PipelineStatus.INITIALIZING, P._], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='secondary'
-        label={status}
-        data-testid={testIdPrefix + status}
-      />
-    ))
-    .with([PipelineStatus.PROVISIONING, P._], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='secondary'
-        label={status}
-        data-testid={testIdPrefix + status}
-      />
-    ))
-    .with([PipelineStatus.CREATE_FAILURE, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} data-testid={testIdPrefix + status} />
-    ))
-    .with([PipelineStatus.STARTING, P._], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='secondary'
-        label={status}
-        data-testid={testIdPrefix + status}
-      />
-    ))
-    .with([PipelineStatus.STARTUP_FAILURE, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='error' label={status} data-testid={testIdPrefix + status} />
-    ))
-    .with([PipelineStatus.RUNNING, P._], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='success'
-        label={status}
-        data-testid={testIdPrefix + status}
-      />
-    ))
-    .with([PipelineStatus.PAUSING, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={status} data-testid={testIdPrefix + status} />
-    ))
-    .with([PipelineStatus.PAUSED, 'NotReady'], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='primary'
-        label='Compiling'
-        data-testid={testIdPrefix + 'Compiling'}
-      />
-    ))
-    .with([PipelineStatus.PAUSED, 'Pending'], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label='Queued' data-testid={testIdPrefix + 'Queued'} />
-    ))
-    .with([PipelineStatus.PAUSED, 'CompilingRust'], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='primary'
-        label='Compiling binary'
-        data-testid={testIdPrefix + 'Compiling binary'}
-      />
-    ))
-    .with([PipelineStatus.PAUSED, 'Error'], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='error'
-        label='Program error'
-        data-testid={testIdPrefix + 'Program error'}
-      />
-    ))
-    .with([PipelineStatus.PAUSED, P._], () => (
-      <CustomChip rounded size='small' skin='light' color='info' label={status} data-testid={testIdPrefix + status} />
-    ))
-    .with([PipelineStatus.FAILED, P._], () => (
-      <Tooltip title={params.row.state.error?.message || 'Unknown Error'} disableInteractive>
-        <CustomChip
-          rounded
-          size='small'
-          skin='light'
-          color='error'
-          label={status}
-          onDelete={() => shutdownPipelineClick(params.row.descriptor.name)}
-          data-testid={testIdPrefix + status}
-        />
-      </Tooltip>
-    ))
-    .with([PipelineStatus.SHUTTING_DOWN, P._], () => (
-      <CustomChip
-        rounded
-        size='small'
-        skin='light'
-        color='secondary'
-        label={status}
-        data-testid={testIdPrefix + status}
-      />
-    ))
+  const testIdPrefix = `box-status-pipeline-${params.row.descriptor.name}-`
+  const chipProps = match([status, programStatus])
+    .returnType<ChipProps & { tooltip?: string }>()
+    .with([PipelineStatus.UNKNOWN, P._], () => ({ label: status }))
+    .with([PipelineStatus.SHUTDOWN, 'NotReady'], () => ({
+      color: 'primary',
+      label: 'Compiling',
+      'data-testid': testIdPrefix + 'Compiling'
+    }))
+    .with([PipelineStatus.SHUTDOWN, 'Pending'], () => ({
+      color: 'info',
+      label: 'Queued',
+      'data-testid': testIdPrefix + 'Queued'
+    }))
+    .with([PipelineStatus.SHUTDOWN, 'CompilingRust'], () => ({
+      color: 'primary',
+      label: 'Compiling bin',
+      'data-testid': testIdPrefix + 'Compiling binary'
+    }))
+    .with([PipelineStatus.SHUTDOWN, 'Error'], () => ({
+      color: 'error',
+      label: 'Program err',
+      'data-testid': testIdPrefix + 'Program error'
+    }))
+    .with([PipelineStatus.SHUTDOWN, 'NoProgram'], () => ({
+      tooltip: 'A pipeline requires a program to be set in order to run. Please set one by editing the pipeline.',
+      label: 'No program',
+      'data-testid': testIdPrefix + 'No program'
+    }))
+    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => ({
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.INITIALIZING, P._], () => ({
+      color: 'secondary',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.PROVISIONING, P._], () => ({
+      color: 'secondary',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.CREATE_FAILURE, P._], () => ({
+      color: 'error',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.STARTING, P._], () => ({
+      color: 'secondary',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.STARTUP_FAILURE, P._], () => ({
+      color: 'error',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.RUNNING, P._], () => ({
+      color: 'success',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.PAUSING, P._], () => ({
+      color: 'info',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.PAUSED, 'NotReady'], () => ({
+      color: 'primary',
+      label: 'Compiling',
+      'data-testid': testIdPrefix + 'Compiling'
+    }))
+    .with([PipelineStatus.PAUSED, 'Pending'], () => ({
+      color: 'info',
+      label: 'Queued',
+      'data-testid': testIdPrefix + 'Queued'
+    }))
+    .with([PipelineStatus.PAUSED, 'CompilingRust'], () => ({
+      color: 'primary',
+      label: 'Compiling bin',
+      'data-testid': testIdPrefix + 'Compiling binary'
+    }))
+    .with([PipelineStatus.PAUSED, 'Error'], () => ({
+      color: 'error',
+      label: 'Program err',
+      'data-testid': testIdPrefix + 'Program error'
+    }))
+    .with([PipelineStatus.PAUSED, P._], () => ({
+      color: 'info',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.FAILED, P._], () => ({
+      tooltip: params.row.state.error?.message || 'Unknown Error',
+      color: 'error',
+      label: status,
+      onDelete: () => shutdownPipelineClick(params.row.descriptor.name),
+      'data-testid': testIdPrefix + status
+    }))
+    .with([PipelineStatus.SHUTTING_DOWN, P._], () => ({
+      color: 'secondary',
+      label: status,
+      'data-testid': testIdPrefix + status
+    }))
     .exhaustive()
 
   return (
     <Badge badgeContent={(params.row as any).warn_cnt} color='warning'>
       <Badge badgeContent={(params.row as any).error_cnt} color='error'>
-        {chip}
+        {chipProps.tooltip ? (
+          <Tooltip title={chipProps.tooltip} disableInteractive>
+            <CustomChip rounded size='small' skin='light' sx={{ width: 120 }} {...chipProps} />
+          </Tooltip>
+        ) : (
+          <CustomChip rounded size='small' skin='light' sx={{ width: 120 }} {...chipProps} />
+        )}
       </Badge>
     </Badge>
   )

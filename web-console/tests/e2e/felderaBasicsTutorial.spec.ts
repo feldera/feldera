@@ -80,7 +80,7 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
     await expect(page).toHaveScreenshot('compiling program binary.png')
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor({ timeout: 60000 })
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Ready to run`).waitFor({ timeout: 60000 })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
   })
   const pipelineUUID = await test.step('Part 1: Populate PART table', async () => {
@@ -161,11 +161,11 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   await test.step('Part 1: Stop the pipeline', async () => {
     await page.getByTestId('button-current-pipeline').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-shutdown').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor()
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Ready to run`).waitFor()
   })
   await test.step('Part 2: Restart the pipeline', async () => {
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Running`).waitFor()
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Running`).waitFor()
   })
   await test.step('Part 2: Repopulate PART table', async () => {
     await request.post(apiOrigin + `v0/pipelines/${pipelineUUID}/ingress/PART?format=json`, {
@@ -221,7 +221,7 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   await test.step('Part 2: Shutdown pipeline', async () => {
     await page.getByTestId('button-vertical-nav-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-shutdown').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor()
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Ready to run`).waitFor()
   })
   await test.step('Part 3: Create HTTP GET connectors', async () => {
     await page.getByTestId('button-vertical-nav-connectors').click()
@@ -297,9 +297,9 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
   await test.step('Part 3: Start the pipleine', async () => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Running`).waitFor()
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Running`).waitFor()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-shutdown').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor()
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Ready to run`).waitFor()
   })
 
   await test.step('Cleanup: Delete pipeline', async () => {

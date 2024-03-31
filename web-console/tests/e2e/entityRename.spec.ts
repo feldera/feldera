@@ -35,8 +35,8 @@ test('Entity rename test', async ({ page, request }) => {
 
     await page.getByTestId('input-program-name').fill('program1_1')
     await page.getByTestId('box-save-saved').waitFor()
-    await page.getByTestId('box-compile-status-compiling').waitFor()
     await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
+    await page.getByTestId('box-compile-status-success').waitFor()
     await expect(page).toHaveScreenshot('1-3-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -117,22 +117,30 @@ test('Entity rename test', async ({ page, request }) => {
   await test.step('Rename program2 in the list', async () => {
     await page.getByTestId('button-breadcrumb-sql-programs').click()
     await page.getByTestId('box-column-header-name').click()
-    await expect(page).toHaveScreenshot('4-1-program-list.png')
+    await expect(page).toHaveScreenshot('4-1-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
 
     await page.getByTestId(`box-program-name-program2_1`).dblclick()
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').fill('program1_2')
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').press('Enter')
-    await expect(page).toHaveScreenshot('4-2-program-list.png')
+    await expect(page).toHaveScreenshot('4-2-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
 
     await page.getByTestId(`box-program-name-program2_1`).dblclick()
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').fill('program2_2')
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').press('Enter')
-    await expect(page).toHaveScreenshot('4-3-program-list.png')
+    await expect(page).toHaveScreenshot('4-3-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
 
     await page.getByTestId(`box-program-description-program2_2`).locator('..').dblclick()
     await page.getByTestId(`box-grid-row-program2_2`).locator('input').fill('A description for program2')
     await page.getByTestId(`box-grid-row-program2_2`).locator('input').press('Enter')
-    await expect(page).toHaveScreenshot('4-4-program-list.png')
+    await expect(page).toHaveScreenshot('4-4-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
   })
 
   await test.step('Wait for all programs to compile', async () => {
@@ -273,14 +281,14 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId(`box-grid-row-pipeline1`).locator('input').press('Enter')
     await expect(page).toHaveScreenshot('b-3-edit-pipeline-in-list.png')
     await page.getByTestId(`box-grid-row-pipeline3`).getByTestId('button-start').click()
-    await page.getByTestId(`box-pipeline-pipeline3-status-Running`).waitFor()
+    await page.getByTestId(`box-status-pipeline-pipeline3-Running`).waitFor()
     await expect(page).toHaveScreenshot('b-4-edit-pipeline-in-list.png')
     await page.getByTestId('box-pipeline-name-pipeline3').dblclick()
     await page.getByTestId(`box-grid-row-pipeline3`).locator('input').fill('pipeline4')
     await page.getByTestId(`box-grid-row-pipeline3`).locator('input').press('Enter')
     await expect(page).toHaveScreenshot('b-5-edit-pipeline-in-list.png')
     await page.getByTestId(`box-grid-row-pipeline4`).getByTestId('button-shutdown').click()
-    await page.getByTestId(`box-pipeline-pipeline4-status-Ready to run`).waitFor()
+    await page.getByTestId(`box-status-pipeline-pipeline4-Ready to run`).waitFor()
     await expect(page).toHaveScreenshot('b-6-edit-pipeline-in-list.png')
   })
 

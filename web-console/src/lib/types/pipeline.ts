@@ -79,21 +79,21 @@ export enum PipelineStatus {
   // Maps to PipelineStatus.SHUTDOWN
   SHUTDOWN = 'Ready to run',
   // Maps to PipelineStatus.PROVISIONING
-  PROVISIONING = 'Provisioning …',
+  PROVISIONING = 'Provisioning',
   // Maps to PipelineStatus.INITIALIZING
-  INITIALIZING = 'Creating …',
+  INITIALIZING = 'Creating',
   CREATE_FAILURE = 'Create failed',
-  STARTING = 'Starting …',
-  STARTUP_FAILURE = 'Starting failed',
+  STARTING = 'Starting',
+  STARTUP_FAILURE = 'Start failed',
   // Maps to PipelineStatus.RUNNING
   RUNNING = 'Running',
-  PAUSING = 'Pausing …',
+  PAUSING = 'Pausing',
   // Maps to PipelineStatus.PAUSED
   PAUSED = 'Paused',
   // Maps to PipelineStatus.FAILED
   FAILED = 'Failed',
   // Maps to PipelineStatus.SHUTTING_DOWN
-  SHUTTING_DOWN = 'Shutting down …'
+  SHUTTING_DOWN = 'Shutting dwn'
 }
 
 export type PipelineWithStatus<Field extends string, Status> = Omit<RawPipeline, 'state'> & {
