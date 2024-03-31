@@ -33,12 +33,10 @@ export default (props: { children: ReactNode }) => {
         <link rel='apple-touch-icon' sizes='180x180' href='/favicon.svg' />
         <link rel='shortcut icon' href='/favicon.svg' />
       </head>
-      <body>
-        {/* <Suspense> resolves the warning of
+      {/* <Suspense> resolves the warning of
         https://nextjs.org/docs/messages/deopted-into-client-rendering
         caused by the next layout in the hierarchy being Client Component */}
-        <Suspense>{props.children}</Suspense>
-      </body>
+      <Suspense>{props.children}</Suspense>
     </html>
   )
 }
