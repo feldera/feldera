@@ -1,7 +1,9 @@
 import { GridItems } from '$lib/components/common/GridItems'
+import { PresetServiceElement } from '$lib/components/connectors/dialogs/elements/PresetServiceElement'
+import { tuple } from '$lib/functions/common/tuple'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
-import { TextFieldElement } from 'react-hook-form-mui'
+import { TextFieldElement, useFormContext } from 'react-hook-form-mui'
 
 import { Grid } from '@mui/material'
 
@@ -10,7 +12,17 @@ import { Grid } from '@mui/material'
  * @param props
  * @returns
  */
-export const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: boolean }) => {
+export const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: boolean; parentName: string }) => {
+  const ctx = useFormContext()
+  const onPresetChange = (preset: string | null) => {
+    if (!preset) {
+      ;[tuple('bootstrap_servers', [''])].forEach(([field, value]) =>
+        ctx.register(props.parentName + '.' + field, { value })
+      )
+      return
+    }
+    ;['bootstrap_servers'].forEach(field => ctx.unregister(props.parentName + '.' + field))
+  }
   return (
     <Grid container spacing={4}>
       <GridItems xs={12}>
@@ -38,16 +50,12 @@ export const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: bo
             'data-testid': 'input-datasource-description'
           }}
         />
-        <TextFieldElement
-          name='transport.preset_service'
-          label='Optional service preset'
-          size='small'
-          fullWidth
+        <PresetServiceElement
+          serviceType='kafka'
           disabled={props.disabled}
-          inputProps={{
-            'data-testid': 'input-preset_service'
-          }}
-        />
+          onChange={onPresetChange}
+          parentName={props.parentName}
+        ></PresetServiceElement>
       </GridItems>
     </Grid>
   )

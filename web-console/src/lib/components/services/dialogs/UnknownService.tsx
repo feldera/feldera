@@ -1,5 +1,6 @@
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
-import { ServiceDialogProps, ServiceType } from '$lib/types/xgressServices/ServiceDialog'
+import { ServiceType } from '$lib/types/xgressServices'
+import { ServiceDialogProps } from '$lib/types/xgressServices/ServiceDialog'
 
 import { useQuery } from '@tanstack/react-query'
 

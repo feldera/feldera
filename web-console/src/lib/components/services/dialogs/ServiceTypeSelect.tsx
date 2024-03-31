@@ -1,6 +1,6 @@
 import { GridItems } from '$lib/components/common/GridItems'
 import { SVGImport } from '$lib/types/imports'
-import { ServiceType } from '$lib/types/xgressServices/ServiceDialog'
+import { ServiceType } from '$lib/types/xgressServices'
 import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import { Dispatch, SetStateAction } from 'react'
 import { match } from 'ts-pattern'

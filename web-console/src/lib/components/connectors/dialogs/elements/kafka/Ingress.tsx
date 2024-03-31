@@ -38,7 +38,7 @@ export const KafkaGroupIdElement = (props: { disabled?: boolean; parentName: str
       aria-describedby='validation-group-id'
       disabled={props.disabled}
       inputProps={{
-        'data-testid': 'input-group-id'
+        'data-testid': 'input-group_id'
       }}
     />
   )
@@ -69,7 +69,7 @@ export const KafkaTopicsElement = (props: { disabled?: boolean; parentName: stri
                 '& .MuiChip-label': { textTransform: 'none' }
               }
             }}
-            data-testid='input-wrapper-topics'
+            data-testid='input-topics'
             renderInput={params => (
               <TextField {...params} inputRef={ref} label='topics' placeholder='Add topic, press Enter to add…' />
             )}

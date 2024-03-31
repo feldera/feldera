@@ -1,22 +1,22 @@
-import { GridItems } from '$lib/components/common/GridItems'
-import { KafkaBootstrapServersElement } from '$lib/components/connectors/dialogs/elements/kafka/Common'
-import {
-  KafkaAutoOffsetResetElement,
-  KafkaGroupIdElement,
-  KafkaTopicsElement
-} from '$lib/components/connectors/dialogs/elements/kafka/Ingress'
+import { LibrdkafkaOptionsElement } from '$lib/components/services/dialogs/elements/LibrdkafkaOptionsElement'
+import { librdkafkaAuthOptions, LibrdkafkaOptions, librdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
+import { useWatch } from 'react-hook-form-mui'
 
-import Grid from '@mui/material/Grid'
+const fieldOptions = librdkafkaOptions
+  .filter(o => o.scope === '*' || o.scope === 'C')
+  .filter(o => !librdkafkaAuthOptions.includes(o.name as any))
+  .reduce((acc, { name, ...o }) => ((acc[name.replaceAll('.', '_')] = o), acc), {} as Record<string, LibrdkafkaOptions>)
 
 export const TabKafkaInputDetails = (props: { disabled?: boolean; parentName: string }) => {
+  const preset = useWatch({ name: props.parentName + '.preset_service' })
+
+  const requiredFields = [preset ? [] : ['bootstrap_servers'], 'auto_offset_reset', 'group_id', 'topics'].flat()
   return (
-    <Grid container spacing={4}>
-      <GridItems xs={12}>
-        <KafkaBootstrapServersElement {...props}></KafkaBootstrapServersElement>
-        <KafkaAutoOffsetResetElement {...props}></KafkaAutoOffsetResetElement>
-        <KafkaGroupIdElement {...props}></KafkaGroupIdElement>
-        <KafkaTopicsElement {...props}></KafkaTopicsElement>
-      </GridItems>
-    </Grid>
+    <LibrdkafkaOptionsElement
+      parentName={props.parentName}
+      fieldOptions={fieldOptions}
+      requiredFields={requiredFields}
+      disabled={props.disabled}
+    ></LibrdkafkaOptionsElement>
   )
 }

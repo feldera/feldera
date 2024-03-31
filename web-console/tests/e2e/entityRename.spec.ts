@@ -8,6 +8,8 @@ import { deleteConnectors, deletePipeline, deleteProgram } from '../util'
 import demoAccrualSql from './demoAccrual.sql'
 import felderaBasicsTutorialSql from './felderaBasicsTutorial.sql'
 
+const codeEditorScrollbarFadeTimeout = 1000
+
 /**
  * The usage of API entity names as identifiers introduces more complex UI states when editing the names.
  * This test performs renames of program, connector and pipeline entities in various circumstances,
@@ -26,6 +28,7 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({ state: 'attached' })
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').fill(felderaBasicsTutorialSql)
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('1-2-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -33,6 +36,7 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('input-program-name').fill('program1_1')
     await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-compile-status-compiling').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('1-3-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -40,6 +44,7 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('input-program-name').fill('program1_2')
     await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-compile-status-success').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('1-4-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -64,6 +69,7 @@ test('Entity rename test', async ({ page, request }) => {
 
     await page.getByTestId('input-program-name').fill('program2_0')
     await page.getByTestId('box-save-saved').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('2-2-saved-program2.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -82,6 +88,7 @@ test('Entity rename test', async ({ page, request }) => {
 
     await page.getByTestId('input-program-name').fill('program2_1')
     await page.getByTestId('box-save-saved').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('2-5-saved-program2.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -193,9 +200,9 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('input-datasource-name').fill('kafka_in_1')
     await page.getByTestId('input-datasource-description').fill('Description for kafka_in_1')
     await page.getByTestId('button-tab-server').click()
-    await page.getByTestId('input-server-hostname').fill('redpanda:9092')
-    await page.getByTestId('input-group-id').fill('topic-1')
-    await page.getByTestId('input-wrapper-topics').locator('input').fill('topic-1')
+    await page.getByTestId('input-bootstrap_servers').fill('redpanda:9092')
+    await page.getByTestId('input-group_id').fill('topic-1')
+    await page.getByTestId('input-topics').fill('topic-1')
     await page.getByTestId('button-tab-format').click()
     await page.getByTestId('button-create').click()
     await expect(page).toHaveScreenshot('8-1-edit-pipeline2.png')
@@ -219,7 +226,7 @@ test('Entity rename test', async ({ page, request }) => {
       .click()
     await page.getByTestId('input-datasource-name').fill('preferred_vendor-redpanda')
     await page.getByTestId('button-next').click()
-    await page.getByTestId('input-server-hostname').fill('redpanda:9092')
+    await page.getByTestId('input-bootstrap_servers').fill('redpanda:9092')
     await page.getByTestId('input-topic').fill('preferred_vendor')
     await page.getByTestId('button-tab-auth').click()
     await page.getByTestId('button-next').click()

@@ -21,7 +21,7 @@ export const KafkaBootstrapServersElement = (props: { disabled?: boolean; parent
       fullWidth
       disabled={props.disabled}
       inputProps={{
-        'data-testid': 'input-server-hostname'
+        'data-testid': 'input-bootstrap_servers'
       }}
     />
   )
