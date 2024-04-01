@@ -1,20 +1,11 @@
+import { handleNumericKeyDown } from '$lib/components/input/NumberInput'
 import { nonNull } from '$lib/functions/common/function'
 import { Arguments } from '$lib/types/common/function'
 import { BigNumber } from 'bignumber.js'
-import { FormEventHandler, WheelEventHandler } from 'react'
+import { ChangeEventHandler, ClipboardEventHandler, WheelEventHandler } from 'react'
 import invariant from 'tiny-invariant'
 
-import { StandardTextFieldProps, SxProps, TextField, TextFieldProps, Theme } from '@mui/material'
-
-type EventElementType = Omit<HTMLInputElement, 'value'> & { value?: BigNumber | null }
-
-const callOnChange = <E1 extends { target: any }, E2 extends { target: { value: any } }>(
-  cb: ((event: E1) => void) | undefined,
-  event: E2,
-  value: BigNumber | undefined
-) => {
-  cb?.({ ...(event as any), target: { ...event.target, value } })
-}
+import { SxProps, TextField, TextFieldProps, Theme } from '@mui/material'
 
 const validValue = (value: BigNumber | undefined, props: { precision?: number | null; scale?: number | null }) => {
   if (!nonNull(value)) {
@@ -27,15 +18,12 @@ const validValue = (value: BigNumber | undefined, props: { precision?: number | 
   )
 }
 
-const handleChange = (
+const handleValueInput = (
   props: { min?: BigNumber.Value; max?: BigNumber.Value; precision?: number | null; scale?: number | null },
-  event: any,
-  value: string,
-  cb: any
+  value: string
 ) => {
   if (value === '') {
-    callOnChange(cb, event, undefined)
-    return
+    return undefined
   }
 
   const newValue = new BigNumber(value)
@@ -43,10 +31,10 @@ const handleChange = (
   const isInvalidValue =
     (props.min && newValue.lt(props.min)) || (props.max && newValue.gt(props.max)) || !validValue(newValue, props)
   if (isInvalidValue) {
-    return
+    return 'ignore' as const
   }
 
-  callOnChange(cb, event, newValue)
+  return newValue
 }
 
 export const bigNumberInputProps = (
@@ -55,19 +43,18 @@ export const bigNumberInputProps = (
     defaultValue: BigNumber
     precision: number | null
     scale: number | null
-    onChange: React.ChangeEventHandler<EventElementType>
-    onInput: FormEventHandler
+    onChange: ChangeEventHandler<HTMLInputElement>
     min: BigNumber.Value
     max: BigNumber.Value
     sx: SxProps<Theme>
   }>
 ) => {
   // In a sane world we could expect value to be BigNumber
-  const value = props.value ? BigNumber(props.value) : undefined
+  const propsValue = props.value ? BigNumber(props.value) : undefined
 
   invariant(
-    validValue(value, props),
-    `BigNumber input value ${value} doesn't fit precision ${props.precision} scale ${props.scale}`
+    validValue(propsValue, props),
+    `BigNumber input value ${propsValue} doesn't fit precision ${props.precision} scale ${props.scale}`
   )
   invariant(
     validValue(props.defaultValue, props),
@@ -77,29 +64,35 @@ export const bigNumberInputProps = (
     }}`
   )
 
-  const onChange: TextFieldProps['onChange'] = !props.onChange
-    ? undefined
-    : event => handleChange(props, event, event.target.value, props.onChange)
-  const onInput: TextFieldProps['onInput'] = !props.onInput
-    ? undefined
-    : event => handleChange(props, event, (event.target as any).value, props.onInput)
-  const onWheel: WheelEventHandler = event => {
-    handleChange(props, event, (value ?? new BigNumber(0)).plus(event.deltaY < 0 ? 1 : -1).toFixed(), props.onChange)
+  const handleChange: ChangeEventHandler<HTMLInputElement> = event => {
+    const value = handleValueInput(props, event.target.value)
+    if (value === 'ignore') {
+      return
+    }
+    return props.onChange?.({ ...event, target: { ...event.target, value: value as any } })
+  }
+  const handlePaste: ClipboardEventHandler<HTMLInputElement> = event => {
+    const value = handleValueInput(props, event.clipboardData.getData('text/plain'))
+    if (value === 'ignore') {
+      event.preventDefault()
+      return
+    }
+  }
+  const handleWheel: WheelEventHandler = event => {
+    const value = handleValueInput(props, (propsValue ?? new BigNumber(0)).plus(event.deltaY < 0 ? 1 : -1).toFixed())
+    return props.onChange?.({ ...event, target: { ...event.target, value: value } } as any)
   }
 
   return {
     type: 'number',
     inputProps: {
-      onWheel: onWheel,
-      value: value?.toFixed() ?? '',
+      onWheel: handleWheel,
+      value: propsValue?.toFixed() ?? '',
       defaultValue: props.defaultValue?.toFixed(),
-      onChange: (e => {
-        onChange?.(e)
-      }) satisfies StandardTextFieldProps['onChange'],
-      onInput: (e => {
-        onInput?.(e)
-      }) satisfies FormEventHandler<HTMLInputElement>
+      onChange: handleChange,
+      onPaste: handlePaste
     },
+    onKeyDown: handleNumericKeyDown,
     sx: {
       ...props.sx,
       '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': {

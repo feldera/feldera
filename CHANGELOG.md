@@ -111,6 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - WebConsole: State shows InQueue when program is empty (#1443)
+- WebConsole: Fix behavior of numeric inputs in some browsers, including Firefox
 
 ## [0.12.0] - 2024-03-19
 

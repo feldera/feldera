@@ -1,4 +1,5 @@
 import { bigNumberInputProps } from '$lib/components/input/BigNumberInput'
+import { numberInputProps } from '$lib/components/input/NumberInput'
 import {
   JSONXgressValue,
   numericRange,
@@ -10,7 +11,6 @@ import { ColumnType } from '$lib/services/manager'
 import BigNumber from 'bignumber.js'
 import Dayjs, { isDayjs } from 'dayjs'
 import { ChangeEvent, Dispatch, useReducer } from 'react'
-import { nonNull } from 'src/lib/functions/common/function'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
@@ -35,15 +35,6 @@ export const SQLValueInput = ({
         return props.onChange({ ...event, target: { ...event.target, value: null as any } })
       }
       return props.onChange(event)
-    }
-  })
-  const onChangeNumber = (props: { onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => ({
-    onChange: (event: any) => {
-      if (!nonNull(event.target.value)) {
-        return props.onChange(event)
-      }
-      const number = parseFloat(event.target.value)
-      return props.onChange({ ...event, target: { ...event.target, value: number } })
     }
   })
   invariant(columnType.type)
@@ -98,25 +89,19 @@ export const SQLValueInput = ({
       }}
       {...match(columnType.type)
         .with('TINYINT', 'SMALLINT', 'INTEGER', () => ({
-          type: 'number',
-          ...props,
-          inputProps: {
-            ...props.inputProps,
+          ...numberInputProps({
+            ...props,
             ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType)),
-            value: props.value === null ? '' : props.value, // Enable clearing of the input when setting value to null
+            value: props.value as null | number,
             placeholder: props.value === null ? 'null' : ''
-          },
-          ...onChangeNumber(onChangeEmptyNull(props))
+          })
         }))
         .with('REAL', 'DOUBLE', () => ({
-          type: 'number',
-          ...props,
-          inputProps: {
-            ...props.inputProps,
-            value: props.value === null ? '' : props.value, // Enable clearing of the input when setting value to null
+          ...numberInputProps({
+            ...props,
+            value: props.value as null | number,
             placeholder: props.value === null ? 'null' : ''
-          },
-          ...onChangeNumber(onChangeEmptyNull(props))
+          })
         }))
         .with('BIGINT', 'DECIMAL', () => ({
           ...bigNumberInputProps({

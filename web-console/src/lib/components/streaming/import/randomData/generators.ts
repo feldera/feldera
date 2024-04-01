@@ -2,6 +2,7 @@
 // generator may have custom generation and validation methods.
 
 import { BigNumberInput } from '$lib/components/input/BigNumberInput'
+import { numberInputProps } from '$lib/components/input/NumberInput'
 import { clampBigNumber } from '$lib/functions/common/bigNumber'
 import {
   randomExponentialBigNumber,
@@ -177,11 +178,12 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
   return (
     match(type.type)
       .with('TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT', () => INTEGER_GENERATORS)
+      .with('BIGINT', () => BIGINTEGER_GENERATORS)
       .with('REAL', 'DOUBLE', () => FLOAT_GENERATORS)
       // There aren't any good random generator libraries for arbitrary
       // precision numbers. So we just use the same generators as FLOAT and
       // DOUBLE for now.
-      .with('DECIMAL', () => FLOAT_GENERATORS)
+      .with('DECIMAL', () => DECIMAL_GENERATORS)
       .with('VARCHAR', 'CHAR', () => STRING_GENERATORS)
       .with('BOOLEAN', () => BOOLEAN_GENERATORS)
       .with('TIME', () => TIME_GENERATORS)
@@ -251,10 +253,9 @@ const BOOLEAN_GENERATORS: IRngGenMethod[] = [
         sm: 4,
         component: TextField,
         props: {
+          ...numberInputProps({ min: 0, max: 1, step: 0.01 }),
           name: FieldNames.TRUE_PCT,
-          label: 'True [%]',
-          type: 'number',
-          inputProps: { min: 0, max: 1, step: 0.01 }
+          label: 'True [%]'
         }
       }
     ],
@@ -359,7 +360,7 @@ const NUMBER_GENERATORS: IRngGenMethod[] = [
   }
 ]
 
-const INTEGER_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
+const BIGINTEGER_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
   {
     title: 'Uniform',
     category: Categories.DISTRIBUTION,
@@ -409,10 +410,15 @@ const INTEGER_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
   }
 ])
 
+const INTEGER_GENERATORS: IRngGenMethod[] = BIGINTEGER_GENERATORS.map(({ generator, ...rest }) => ({
+  generator: (config, settings) => (generator(config, settings) as BigNumber).toNumber(),
+  ...rest
+}))
+
 // Generators for floating point numbers.
 //
 // This 'inherits' all the integer generators.
-const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
+const DECIMAL_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
   {
     title: 'Uniform',
     category: Categories.DISTRIBUTION,
@@ -498,6 +504,11 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
       })
   }
 ])
+
+const FLOAT_GENERATORS: IRngGenMethod[] = DECIMAL_GENERATORS.map(({ generator, ...rest }) => ({
+  generator: (config, settings) => (generator(config, settings) as BigNumber).toNumber(),
+  ...rest
+}))
 
 const TIME_GENERATORS: IRngGenMethod[] = [
   {
