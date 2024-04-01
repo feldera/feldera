@@ -1009,10 +1009,11 @@ export const toLibrdkafkaConfig = (formFields: Record<string, LibrdkafkaOptionTy
   return { kafka_service: preset_service, ...config } as typeof config
 }
 
-export const toKafkaConfig = ({ preset_service, ...formFields }: Record<string, LibrdkafkaOptionType>) => ({
-  kafka_service: preset_service,
-  ...toLibrdkafkaConfig(formFields)
-})
+export const toKafkaConfig = ({ preset_service, ...formFields }: Record<string, LibrdkafkaOptionType>) =>
+  ({
+    kafka_service: preset_service,
+    ...toLibrdkafkaConfig(formFields)
+  }) as ReturnType<typeof toLibrdkafkaConfig>
 
 /**
  * Convert a config with dot-delimited fields to a form object with underscore-delimited fields
@@ -1020,7 +1021,7 @@ export const toKafkaConfig = ({ preset_service, ...formFields }: Record<string, 
  * Underscore-delimited fields are used with react-hook-form because its implementation
  * conflicts with dot-delimited fields
  */
-export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, string | string[]>) => {
+export const fromLibrdkafkaConfig = (config: Record<string, string | string[]>) => {
   const formFields = {} as Record<string, LibrdkafkaOptionType>
   delete config.log_level
   delete config.group_join_timeout_secs
@@ -1044,7 +1045,22 @@ export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, str
       .with('string', 'enum', () => v)
       .exhaustive()
   })
-  return { preset_service: kafka_service, ...formFields } as typeof formFields
+
+  return formFields
+}
+
+export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, string | string[]>) => {
+  return {
+    ...(kafka_service ? { preset_service: kafka_service } : {}),
+    ...fromLibrdkafkaConfig(config)
+  } as ReturnType<typeof fromLibrdkafkaConfig>
+}
+
+export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, string | string[]>) => {
+  return {
+    ...(kafka_service ? { preset_service: kafka_service } : {}),
+    ...fromLibrdkafkaConfig(config)
+  } as ReturnType<typeof fromLibrdkafkaConfig>
 }
 
 export type LibrdkafkaOptions = Omit<(typeof librdkafkaOptions)[number], 'name'>

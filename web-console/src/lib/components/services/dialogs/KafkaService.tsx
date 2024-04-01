@@ -5,7 +5,7 @@ import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import { LibrdkafkaOptionsElement } from '$lib/components/services/dialogs/elements/LibrdkafkaOptionsElement'
 import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
 import {
-  fromKafkaConfig,
+  fromLibrdkafkaConfig,
   librdkafkaAuthOptions,
   LibrdkafkaOptions,
   librdkafkaOptions,
@@ -56,7 +56,7 @@ const parseKafkaServiceDescriptor = (service: ServiceDescr) => ({
   description: service.description,
   config: {
     bootstrap_servers: service.config.kafka.bootstrap_servers,
-    ...fromKafkaConfig(service.config.kafka.options)
+    ...fromLibrdkafkaConfig(service.config.kafka.options)
   }
 })
 
@@ -342,7 +342,7 @@ export const ServiceConfigEditorElement = (props: {
   return (
     <JSONEditor
       disabled={props.disabled}
-      valueFromText={text => fromKafkaConfig(JSON.parse(text))}
+      valueFromText={text => fromLibrdkafkaConfig(JSON.parse(text))}
       valueToText={config => JSON.stringify(toLibrdkafkaConfig(config as any), undefined, '\t')}
       errors={(errors?.config as Record<string, { message: string }>) ?? {}}
       value={config}

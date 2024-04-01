@@ -21,7 +21,14 @@ export const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: bo
       )
       return
     }
-    ;['bootstrap_servers'].forEach(field => ctx.unregister(props.parentName + '.' + field))
+    ;['bootstrap_servers'].forEach(field => {
+      const fieldName = props.parentName + '.' + field
+      const value = ctx.getValues(fieldName)
+      // Remove field if it is an empty string or array
+      if (!(Array.isArray(value) ? value.join() : value)) {
+        ctx.unregister(fieldName)
+      }
+    })
   }
   return (
     <Grid container spacing={4}>
