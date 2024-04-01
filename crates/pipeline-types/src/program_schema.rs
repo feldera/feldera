@@ -329,6 +329,8 @@ impl From<SqlType> for &'static str {
     }
 }
 
+/// It so happens that when the type field is missing in the Calcite schema, it's a struct,
+/// so we use it as the default.
 const fn default_is_struct() -> SqlType {
     SqlType::Struct
 }
