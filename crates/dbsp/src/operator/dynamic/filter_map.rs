@@ -1,6 +1,6 @@
 //! Filter and transform data record-by-record.
 
-use crate::trace::ord::file::indexed_zset_batch::FileIndexedZSet;
+use crate::trace::ord::fallback::indexed_zset::FallbackIndexedZSet;
 use crate::trace::ord::file::zset_batch::FileZSet;
 use crate::{
     circuit::{
@@ -290,7 +290,7 @@ where
     }
 }
 
-impl<K, V, R> DynFilterMap for FileIndexedZSet<K, V, R>
+impl<K, V, R> DynFilterMap for FallbackIndexedZSet<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,

@@ -209,8 +209,18 @@ impl StdError for LayoutError {}
 /// run the circuit and where they store data, e.g., state typically not
 /// tunable/exposed by the user.
 pub struct CircuitConfig {
+    /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
+
+    /// Directory where the circuit stores data, either for working with data
+    /// bigger than more or for fault tolerance.
     pub storage: Option<String>,
+
+    /// Maximum number of rows of any given persistent trace to keep in memory
+    /// before spilling it to storage. If this is 0, then all traces will be
+    /// stored on disk; if it is `usize::MAX`, then all traces will be kept in
+    /// memory; and intermediate values specify a threshold.
+    pub max_memory_rows: usize,
 }
 
 impl CircuitConfig {
@@ -218,6 +228,7 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             storage: None,
+            max_memory_rows: usize::MAX,
         }
     }
 }
@@ -230,6 +241,10 @@ impl IntoCircuitConfig for CircuitConfig {
     fn storage(&self) -> Option<String> {
         self.storage.clone()
     }
+
+    fn max_memory_rows(&self) -> usize {
+        self.max_memory_rows
+    }
 }
 
 /// Convenience trait that allows specifying a [`Layout`] as a `usize` for a
@@ -239,6 +254,10 @@ pub trait IntoCircuitConfig {
 
     fn storage(&self) -> Option<String> {
         None
+    }
+
+    fn max_memory_rows(&self) -> usize {
+        usize::MAX
     }
 }
 

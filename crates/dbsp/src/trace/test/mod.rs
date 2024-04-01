@@ -12,13 +12,9 @@ use crate::{
     trace::{
         cursor::CursorPair,
         ord::{
-            file::{
-                indexed_zset_batch::{FileIndexedZSet, FileIndexedZSetFactories},
-                key_batch::{FileKeyBatch, FileKeyBatchFactories},
-                val_batch::{FileValBatch, FileValBatchFactories},
-                zset_batch::{FileZSet, FileZSetFactories},
-            },
-            OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories,
+            FallbackIndexedZSet, FallbackIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories,
+            FileValBatch, FileValBatchFactories, FileZSet, FileZSetFactories, OrdKeyBatch,
+            OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories,
         },
         test::test_batch::{
             assert_batch_cursors_eq, assert_batch_eq, assert_trace_eq, test_batch_sampling,
@@ -454,8 +450,8 @@ proptest! {
 
     #[test]
     fn test_file_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 200, 10), seed in 0..u64::max_value()) {
-        let factories = <FileIndexedZSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
-        test_indexed_zset_spine::<FileIndexedZSet<DynI32, DynI32, DynZWeight>>(&factories, batches, seed)
+        let factories = <FallbackIndexedZSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        test_indexed_zset_spine::<FallbackIndexedZSet<DynI32, DynI32, DynZWeight>>(&factories, batches, seed)
     }
 
 

@@ -179,6 +179,7 @@ impl WorkerPanicInfo {
 struct RuntimeInner {
     layout: Layout,
     storage: StorageLocation,
+    max_memory_rows: usize,
     store: LocalStore,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
@@ -238,7 +239,7 @@ impl Debug for RuntimeInner {
 }
 
 impl RuntimeInner {
-    fn new(layout: Layout, storage: Option<String>) -> Self {
+    fn new(layout: Layout, storage: Option<String>, max_memory_rows: usize) -> Self {
         let local_workers = layout.local_workers().len();
         let mut panic_info = Vec::with_capacity(local_workers);
         for _ in 0..local_workers {
@@ -254,6 +255,7 @@ impl RuntimeInner {
         Self {
             layout,
             storage,
+            max_memory_rows,
             store: TypedDashMap::new(),
             panic_info,
         }
@@ -357,7 +359,11 @@ impl Runtime {
 
         let workers = layout.local_workers();
         let nworkers = workers.len();
-        let runtime = Self(Arc::new(RuntimeInner::new(layout, storage)));
+        let runtime = Self(Arc::new(RuntimeInner::new(
+            layout,
+            storage,
+            cconf.max_memory_rows(),
+        )));
 
         // Install custom panic hook.
 
@@ -453,6 +459,17 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
+    }
+
+    /// Returns the maximum number of rows of a trace that should be kept in
+    /// memory. For threads that run without a runtime, this method returns
+    /// `usize::MAX`.
+    pub fn max_memory_rows() -> usize {
+        RUNTIME.with(|rt| {
+            rt.borrow()
+                .as_ref()
+                .map_or(usize::MAX, |runtime| runtime.0.max_memory_rows)
+        })
     }
 
     fn inner(&self) -> &RuntimeInner {
@@ -690,6 +707,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: Some(path.to_str().unwrap().to_string()),
+            max_memory_rows: usize::MAX,
         };
 
         let hruntime = Runtime::run(cconf, move || {
@@ -708,6 +726,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: None,
+            max_memory_rows: usize::MAX,
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {
@@ -728,6 +747,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: None,
+            max_memory_rows: usize::MAX,
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {
