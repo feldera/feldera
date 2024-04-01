@@ -11,6 +11,7 @@ ENV CARGO_HOME=$HOME/.cargo
 ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
 ENV RUST_VERSION=1.76.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 install-deps:
     RUN apt-get update
