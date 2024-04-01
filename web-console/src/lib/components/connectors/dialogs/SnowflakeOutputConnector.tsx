@@ -46,14 +46,18 @@ const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
   transport: va.intersect([
-    va.object({
-      bootstrap_servers: va.nonOptional(
-        va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
-          va.minLength(1, 'Specify at least one server')
-        ])
-      ),
-      topic: va.nonOptional(va.string([va.minLength(1, 'Topic name should not be empty')]))
-    }),
+    va.object(
+      {
+        bootstrap_servers: va.nonOptional(
+          va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+            va.minLength(1, 'Specify at least one server')
+          ])
+        ),
+        topic: va.nonOptional(va.string([va.minLength(1, 'Topic name should not be empty')])),
+        preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
+      },
+      va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
+    ),
     authParamsSchema
   ]),
   format: va.object({

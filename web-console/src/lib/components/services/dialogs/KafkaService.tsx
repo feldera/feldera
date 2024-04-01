@@ -60,16 +60,18 @@ const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify service name')])),
   description: va.optional(va.string(), ''),
   config: va.intersect([
-    va.object({
-      bootstrap_servers: va.nonOptional(
-        va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
-          va.minLength(1, 'Specify at least one server')
-        ]),
-        'Specify at least one server'
-      )
-    }),
-    authParamsSchema,
-    va.partial(va.object({}, va.union([va.string(), va.number(), va.boolean(), va.array(va.string())])))
+    va.object(
+      {
+        bootstrap_servers: va.nonOptional(
+          va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+            va.minLength(1, 'Specify at least one server')
+          ]),
+          'Specify at least one server'
+        )
+      },
+      va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
+    ),
+    authParamsSchema
   ])
 })
 export type KafkaServiceSchema = va.Output<typeof schema>
