@@ -94,7 +94,7 @@ as well as an "Add Pipeline" button for creating a new pipeline.  Each
 row in the list has a
 name and description (which one can edit), and an indication of whether the
 pipeline is stopped, running, or paused. When you start the demo for the first
-time, all of the pipelines should be shown as `INACTIVE`, meaning stopped, with
+time, all of the pipelines should be shown as `READY TO RUN`, with
 available actions the familiar pencil and trash can plus a new one, the play
 symbol <icon icon="bx:play-circle" />, which starts the pipeline:
 
@@ -114,7 +114,7 @@ pipeline does not need them:
 ### Running a Pipeline
 
 Click on the back button to return to the list of pipelines. Then, click on the
-pipeline's play action. The pipeline status should change to `STARTING`, then a
+pipeline's play action. The pipeline status should change to `STARTING...`, then a
 few seconds later to `RUNNING`. Once the pipeline has started, on the left side
 of the row, a downward arrow icon <icon icon="material-symbols:expand-more" />
 appears. Click it to expand. The expanded row now shows metrics for each SQL
