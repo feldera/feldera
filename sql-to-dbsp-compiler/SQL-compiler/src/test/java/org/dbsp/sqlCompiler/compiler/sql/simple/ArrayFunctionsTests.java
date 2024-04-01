@@ -556,6 +556,19 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
+    // Test for https://github.com/feldera/feldera/issues/1472
+    @Test
+    public void testArrayCompact2() {
+        this.qs("""
+                SELECT array_compact(ARRAY [NULL]);
+                 array_compact
+                ---------------
+                 {}
+                (1 row)
+                """, false
+        );
+    }
+
     @Test
     public void testArrayCompact() {
         this.qs("""

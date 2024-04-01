@@ -48,6 +48,10 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
         return new DBSPNullLiteral();
     }
 
+    public static DBSPTypeNull getDefault() {
+        return new DBSPTypeNull(CalciteObject.EMPTY);
+    }
+
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
