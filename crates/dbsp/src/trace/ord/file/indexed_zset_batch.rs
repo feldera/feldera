@@ -215,26 +215,8 @@ where
     Other: BatchReader<Key = K, Val = V, R = R, Time = ()>,
 {
     fn eq(&self, other: &Other) -> bool {
-        let mut c1 = self.cursor();
-        let mut c2 = other.cursor();
-        while c1.key_valid() && c2.key_valid() {
-            if c1.key() != c2.key() {
-                return false;
-            }
-            while c1.val_valid() && c2.val_valid() {
-                if c1.val() != c2.val() || c1.weight() != c2.weight() {
-                    return false;
-                }
-                c1.step_val();
-                c2.step_val();
-            }
-            if c1.val_valid() || c2.val_valid() {
-                return false;
-            }
-            c1.step_key();
-            c2.step_key();
-        }
-        !c1.key_valid() && !c2.key_valid()
+        use crate::trace::eq_batch;
+        eq_batch(self, other)
     }
 }
 
@@ -722,7 +704,7 @@ where
 
     val_cursor: ValCursor<'s, K, V, R>,
     val: Box<V>,
-    diff: Box<R>,
+    pub(crate) diff: Box<R>,
 }
 
 impl<'s, K, V, R> Clone for FileIndexedZSetCursor<'s, K, V, R>
@@ -749,7 +731,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn new_from(zset: &'s FileIndexedZSet<K, V, R>, lower_bound: usize) -> Self {
+    pub fn new_from(zset: &'s FileIndexedZSet<K, V, R>, lower_bound: usize) -> Self {
         let key_cursor = zset
             .file
             .rows()
@@ -773,7 +755,7 @@ where
         }
     }
 
-    fn new(zset: &'s FileIndexedZSet<K, V, R>) -> Self {
+    pub fn new(zset: &'s FileIndexedZSet<K, V, R>) -> Self {
         Self::new_from(zset, zset.lower_bound)
     }
 

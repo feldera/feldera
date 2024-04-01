@@ -445,9 +445,7 @@ where
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
-        VecIndexedWSetCursor {
-            cursor: self.layer.cursor(),
-        }
+        VecIndexedWSetCursor::new(self)
     }
 
     fn factories(&self) -> Self::Factories {
@@ -526,7 +524,7 @@ where
 
 /// State for an in-progress merge.
 #[derive(SizeOf)]
-pub struct OrdIndexedWSetMerger<K, V, R, O>
+pub struct OrdIndexedWSetMerger<K, V, R, O = usize>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -629,16 +627,37 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
-pub struct VecIndexedWSetCursor<'s, K, V, R, O>
+pub struct VecIndexedWSetCursor<'s, K, V, R, O = usize>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    cursor: LayerCursor<'s, K, Leaf<V, R>, O>,
+    pub(crate) cursor: LayerCursor<'s, K, Leaf<V, R>, O>,
 }
 
+impl<'s, K, V, R, O> VecIndexedWSetCursor<'s, K, V, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    pub fn new(zset: &'s VecIndexedWSet<K, V, R, O>) -> Self {
+        Self {
+            cursor: zset.layer.cursor(),
+        }
+    }
+
+    pub fn new_from(zset: &'s VecIndexedWSet<K, V, R, O>, lower_bound: usize) -> Self {
+        Self {
+            cursor: zset
+                .layer
+                .cursor_from(lower_bound, zset.layer.lower_bound() + zset.layer.keys()),
+        }
+    }
+}
 impl<'s, K, V, R, O> Clone for VecIndexedWSetCursor<'s, K, V, R, O>
 where
     K: DataTrait + ?Sized,
@@ -779,7 +798,7 @@ type IndexBuilder<K, V, R, O> = LayerBuilder<K, LeafBuilder<V, R>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
-pub struct VecIndexedWSetBuilder<K, V, R, O>
+pub struct VecIndexedWSetBuilder<K, V, R, O = usize>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,

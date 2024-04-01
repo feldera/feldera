@@ -1432,7 +1432,7 @@ mod test {
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_rolling_aggregate_quasi_monotone(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
             // 10_000 is an empirically established bound: without GC this test needs >10KB.
-            let (mut circuit, input) = partition_rolling_aggregate_circuit(10000, Some(20_000));
+            let (mut circuit, input) = partition_rolling_aggregate_circuit(10000, Some(30_000));
 
             for mut batch in trace {
                 input.append(&mut batch);

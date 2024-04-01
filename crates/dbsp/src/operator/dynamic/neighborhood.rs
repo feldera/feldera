@@ -7,8 +7,9 @@ use crate::{
     declare_trait_object,
     dynamic::{Data, DataTrait, DynDataTyped, DynPair, Erase},
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, FileIndexedZSet,
-        FileIndexedZSetFactories, Spillable, Spine,
+        ord::fallback::indexed_zset::{FallbackIndexedZSet, FallbackIndexedZSetFactories},
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spillable,
+        Spine,
     },
     utils::Tup2,
     Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
@@ -186,7 +187,7 @@ pub type NeighborhoodDescrStream<K, V> =
 pub struct NeighborhoodFactories<B: IndexedZSetReader + Spillable> {
     input_factories: <B::Spilled as BatchReader>::Factories,
     local_factories: OrdIndexedZSetFactories<B::Key, B::Val>,
-    stored_factories: FileIndexedZSetFactories<B::Key, B::Val, DynZWeight>,
+    stored_factories: FallbackIndexedZSetFactories<B::Key, B::Val, DynZWeight>,
     output_factories: <DynNeighborhood<B::Key, B::Val> as BatchReader>::Factories,
 }
 
@@ -284,7 +285,7 @@ where
             // the final neighborhood.
             // TODO: use different workers for different collections.
             let output = self.circuit().add_binary_operator(
-                NeighborhoodNumbered::<Spine<FileIndexedZSet<B::Key, B::Val, DynZWeight>>>::new(
+                NeighborhoodNumbered::<Spine<FallbackIndexedZSet<B::Key, B::Val, DynZWeight>>>::new(
                     &factories.output_factories,
                 ),
                 &local_output

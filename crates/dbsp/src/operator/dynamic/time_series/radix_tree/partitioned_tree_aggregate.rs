@@ -17,8 +17,8 @@ use crate::{
         trace::{TraceBounds, TraceFeedback},
     },
     trace::{
-        cursor::CursorEmpty, BatchReader, BatchReaderFactories, Builder, Cursor, FileIndexedZSet,
-        Spillable, Spine,
+        cursor::CursorEmpty, ord::fallback::indexed_zset::FallbackIndexedZSet, BatchReader,
+        BatchReaderFactories, Builder, Cursor, Spillable, Spine,
     },
     utils::Tup2,
     Circuit, DBData, DynZWeight, RootCircuit, Stream, ZWeight,
@@ -58,7 +58,7 @@ pub type OrdPartitionedRadixTree<PK, TS, A> =
     OrdIndexedZSet<PK, DynPair<DynPrefix<TS>, DynTreeNode<TS, A>>>;
 
 pub type FilePartitionedRadixTree<PK, TS, A> =
-    FileIndexedZSet<PK, DynPair<DynPrefix<TS>, DynTreeNode<TS, A>>, DynZWeight>;
+    FallbackIndexedZSet<PK, DynPair<DynPrefix<TS>, DynTreeNode<TS, A>>, DynZWeight>;
 
 pub type FilePartitionedRadixTreeFactories<PK, TS, A> =
     <FilePartitionedRadixTree<PK, TS, A> as BatchReader>::Factories;

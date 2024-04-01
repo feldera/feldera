@@ -43,6 +43,13 @@ export type PipelineConfig = {
    */
   inputs: Record<string, InputEndpointConfig>
   /**
+   * Maximum number of rows of any given persistent trace to keep in memory
+   * before spilling it to storage. If this is 0, then all traces will be
+   * stored on disk; if it is `usize::MAX`, then all traces will be kept in
+   * memory; and intermediate values specify a threshold.
+   */
+  max_memory_rows?: number
+  /**
    * Pipeline name
    */
   name?: string | null

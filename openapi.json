@@ -840,6 +840,7 @@
                     }
                   },
                   "max_buffering_delay_usecs": 0,
+                  "max_memory_rows": 18446744073709551615,
                   "min_batch_size_records": 0,
                   "name": "pipeline-67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "outputs": {
@@ -4158,6 +4159,12 @@
                 "additionalProperties": {
                   "$ref": "#/components/schemas/InputEndpointConfig"
                 }
+              },
+              "max_memory_rows": {
+                "type": "integer",
+                "description": "Maximum number of rows of any given persistent trace to keep in memory\nbefore spilling it to storage. If this is 0, then all traces will be\nstored on disk; if it is `usize::MAX`, then all traces will be kept in\nmemory; and intermediate values specify a threshold.",
+                "default": "default_max_memory_rows",
+                "minimum": 0
               },
               "name": {
                 "type": "string",

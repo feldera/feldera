@@ -10,7 +10,8 @@ pub use crate::{
         ZSetReader as DynZSetReader,
     },
     trace::{
-        Batch as DynBatch, BatchReader as DynBatchReader, FileIndexedZSet as DynFileIndexedZSet,
+        Batch as DynBatch, BatchReader as DynBatchReader,
+        FallbackIndexedZSet as DynFallbackIndexedZSet, FileIndexedZSet as DynFileIndexedZSet,
         FileKeyBatch as DynFileKeyBatch, FileValBatch as DynFileValBatch, FileZSet as DynFileZSet,
         OrdIndexedWSet as DynOrdIndexedWSet, OrdKeyBatch as DynOrdKeyBatch,
         OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spillable as DynSpillable,

@@ -47,6 +47,7 @@ pub mod spine_fueled;
 #[cfg(test)]
 pub mod test;
 
+pub use ord::{FallbackIndexedZSet, FallbackIndexedZSetFactories};
 pub use ord::{
     FileIndexedZSet, FileIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
     FileValBatchFactories, FileZSet, FileZSetFactories,
@@ -375,7 +376,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Spilled = FileIndexedZSet<K, V, R>;
+    type Spilled = FallbackIndexedZSet<K, V, R>;
 }
 
 impl<K, R> Spillable for OrdWSet<K, R>
@@ -397,7 +398,7 @@ pub trait Stored: BatchReader<Time = ()> {
     }
 }
 
-impl<K, V, R> Stored for FileIndexedZSet<K, V, R>
+impl<K, V, R> Stored for FallbackIndexedZSet<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -655,4 +656,44 @@ where
         cursor.step_key();
     }
     builder.done()
+}
+
+/// Compares two batches for equality.  This works regardless of whether the
+/// batches are the same type, as long as their key, value, and weight types can
+/// be compared for equality.
+///
+/// This can't be implemented as `PartialEq` because that is specialized for
+/// comparing particular batch types (often in faster ways than this generic
+/// function).  This function is mainly useful for testing in any case.
+pub fn eq_batch<A, B, KA, VA, RA, KB, VB, RB>(a: &A, b: &B) -> bool
+where
+    A: BatchReader<Key = KA, Val = VA, Time = (), R = RA>,
+    B: BatchReader<Key = KB, Val = VB, Time = (), R = RB>,
+    KA: PartialEq<KB> + ?Sized,
+    VA: PartialEq<VB> + ?Sized,
+    RA: PartialEq<RB> + ?Sized,
+    KB: ?Sized,
+    VB: ?Sized,
+    RB: ?Sized,
+{
+    let mut c1 = a.cursor();
+    let mut c2 = b.cursor();
+    while c1.key_valid() && c2.key_valid() {
+        if c1.key() != c2.key() {
+            return false;
+        }
+        while c1.val_valid() && c2.val_valid() {
+            if c1.val() != c2.val() || c1.weight() != c2.weight() {
+                return false;
+            }
+            c1.step_val();
+            c2.step_val();
+        }
+        if c1.val_valid() || c2.val_valid() {
+            return false;
+        }
+        c1.step_key();
+        c2.step_key();
+    }
+    !c1.key_valid() && !c2.key_valid()
 }
