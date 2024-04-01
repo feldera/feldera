@@ -38,6 +38,16 @@ export const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: bo
             'data-testid': 'input-datasource-description'
           }}
         />
+        <TextFieldElement
+          name='transport.preset_service'
+          label='Optional service preset'
+          size='small'
+          fullWidth
+          disabled={props.disabled}
+          inputProps={{
+            'data-testid': 'input-preset_service'
+          }}
+        />
       </GridItems>
     </Grid>
   )
