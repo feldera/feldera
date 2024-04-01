@@ -196,7 +196,7 @@ mod kafka_connect_json_converter {
                 parameters: BTreeMap::new(),
             }),
             // TODO: add serialization for intervals to `sqllib`.
-            SqlType::Interval => Some(LogicalType {
+            SqlType::Interval(_) => Some(LogicalType {
                 name: "io.debezium.time.Interval".to_string(),
                 parameters: BTreeMap::new(),
             }),
@@ -236,7 +236,7 @@ mod kafka_connect_json_converter {
                     .map(field_schema)
                     .collect::<Vec<_>>(),
             },
-            SqlType::Interval => RepresentationType::String,
+            SqlType::Interval(_) => RepresentationType::String,
             SqlType::Null => RepresentationType::String,
         }
     }
