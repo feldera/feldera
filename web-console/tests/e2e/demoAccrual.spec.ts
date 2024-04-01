@@ -4,6 +4,7 @@ import { faker } from '@faker-js/faker'
 import { expect, test } from '@playwright/test'
 
 import { apiOrigin, appOrigin } from '../../playwright.config'
+import { deletePipeline, deleteProgram } from '../util'
 import demoAccrualSql from './demoAccrual.sql'
 
 const programName = 'Accrual demo'
@@ -22,7 +23,7 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
     await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-compile-status-success').waitFor()
-    await expect(page).toHaveScreenshot('saved-sql-program.png')
+    await expect(page).toHaveScreenshot('1-1-saved-sql-program.png')
   })
 
   const pipelineNameUrlEncoded = await test.step('Create a pipeline', async () => {
@@ -46,7 +47,7 @@ test('Accrual demo test', async ({ page, request }) => {
   await test.step('Start the pipeline', async () => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
-    await expect(page).toHaveScreenshot('compiling-program-binary.png')
+    await expect(page).toHaveScreenshot('3-1-compiling-program-binary.png')
     await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor({ timeout: 270000 })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
     await page.getByTestId(`box-pipeline-${pipelineName}-status-Running`).waitFor({ timeout: 10000 })
@@ -161,12 +162,13 @@ test('Accrual demo test', async ({ page, request }) => {
 
   await test.step('Expand pipeline and open data browser', async () => {
     await page.getByTestId(`button-expand-pipeline-${pipelineName}`).click()
-    await expect(page).toHaveScreenshot('pipeline details.png', {
+    await expect(page).toHaveScreenshot('4-1-pipeline details.png', {
       mask: [
         'box-pipeline-id',
         'box-pipeline-date-created',
         'box-pipeline-port',
         'box-pipeline-throughput-graph',
+        'box-pipeline-throughput-value',
         'box-pipeline-memory-graph',
         'box-pipeline-memory-value'
       ].map(id => page.getByTestId(id))
@@ -195,19 +197,22 @@ test('Accrual demo test', async ({ page, request }) => {
     ]) {
       await page.getByTestId('button-expand-relations').click()
       await page.getByTestId('box-relation-options').getByTestId(`button-option-relation-${relation}`).click()
+      await page.getByTestId('button-expand-relations').hover() // Prevent the cursor causing flakes by tooltip popups
       await page.getByTestId('box-relation-options').waitFor({ state: 'hidden' })
-      await expect(page).toHaveScreenshot(`relation ${relation}.png`)
+      await page.getByTestId('box-relation-row').first().waitFor()
+      await expect(page).toHaveScreenshot(`5-1-relation ${relation}.png`)
     }
   })
 
   await test.step('Stop the pipeline', async () => {
     await page.getByTestId('button-current-pipeline').click()
-    await expect(page).toHaveScreenshot('pipeline details final.png', {
+    await expect(page).toHaveScreenshot('6-1-pipeline details final.png', {
       mask: [
         'box-pipeline-id',
         'box-pipeline-date-created',
         'box-pipeline-port',
         'box-pipeline-throughput-graph',
+        'box-pipeline-throughput-value',
         'box-pipeline-memory-graph',
         'box-pipeline-memory-value'
       ].map(id => page.getByTestId(id))
@@ -217,18 +222,11 @@ test('Accrual demo test', async ({ page, request }) => {
   })
 
   await test.step('Cleanup: Delete pipeline', async () => {
-    await page.getByTestId('button-vertical-nav-pipelines').click()
-    await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-delete').click()
-    await page.getByTestId('button-confirm-delete').click()
+    await deletePipeline(page, pipelineName)
   })
 
   await test.step('Cleanup: Delete program', async () => {
-    await page.getByTestId('button-vertical-nav-sql-programs').click()
-    await page
-      .getByTestId('box-program-actions-' + programName)
-      .getByTestId('button-delete')
-      .click()
-    await page.getByTestId('button-confirm-delete').click()
+    await deleteProgram(page, programName)
   })
 })
 

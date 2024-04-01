@@ -86,25 +86,15 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     GlobalTypes globalTypes = new GlobalTypes();
 
-    /**
-     * Where does the compiled program come from?
-     */
+    /** Where does the compiled program come from? */
     public enum InputSource {
-        /**
-         * No data source set yet.
-         */
+        /** No data source set yet. */
         None,
-        /**
-         * Data received from stdin.
-         */
+        /** Data received from stdin. */
         Stdin,
-        /**
-         * Data read from a file.  We read the entire file upfront, and then we compile.
-         */
+        /** Data read from a file.  We read the entire file upfront, and then we compile. */
         File,
-        /**
-         * Data received through API calls (compileStatement/s).
-         */
+        /** Data received through API calls (compileStatement/s). */
         API,
     }
 
@@ -124,9 +114,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
 
-    /**
-     * Circuit produced by the compiler.
-     */
+    /** Circuit produced by the compiler. */
     public @Nullable DBSPCircuit circuit;
 
     public DBSPCompiler(CompilerOptions options) {

@@ -1,5 +1,6 @@
 'use client'
 
+import { useAuth } from '$lib/compositions/auth/useAuth'
 import VerticalNavItems from '$lib/functions/navigation/vertical'
 import { ReactNode } from 'react'
 import { useSettings } from 'src/@core/hooks/useSettings'
@@ -18,6 +19,8 @@ interface Props {
 export const StandardVerticalLayout = ({ children }: Props) => {
   const { settings, saveSettings } = useSettings()
 
+  const { auth } = useAuth()
+
   /**
    *  The below variable will hide the current layout menu at given screen size.
    *  The menu will be accessible from the Hamburger icon only (Vertical Overlay Menu).
@@ -32,7 +35,7 @@ export const StandardVerticalLayout = ({ children }: Props) => {
       hidden={hidden}
       settings={settings}
       saveSettings={saveSettings}
-      verticalNavItems={VerticalNavItems()} // Navigation Items
+      verticalNavItems={VerticalNavItems({ showSettings: auth !== 'NoAuth' })} // Navigation Items
       afterVerticalNavMenuContent={() => <></>}
       verticalAppBarContent={(
         props // AppBar Content

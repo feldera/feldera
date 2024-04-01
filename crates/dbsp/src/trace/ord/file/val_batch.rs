@@ -7,18 +7,16 @@ use std::{
     ops::DerefMut,
 };
 
+use crate::storage::backend::Backend;
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
         Factory, LeanVec, WeightTrait, WithFactory,
     },
-    storage::{
-        backend::{StorageControl, StorageExecutor, StorageRead},
-        file::{
-            reader::{ColumnSpec, Cursor as FileCursor, Reader},
-            writer::{Parameters, Writer2},
-            Factories as FileFactories,
-        },
+    storage::file::{
+        reader::{ColumnSpec, Cursor as FileCursor, Reader},
+        writer::{Parameters, Writer2},
+        Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -31,8 +29,6 @@ use crate::{
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-
-use super::StorageBackend;
 
 pub struct FileValBatchFactories<K, V, T, R>
 where
@@ -139,7 +135,7 @@ where
 }
 
 type RawValBatch<K, V, T, R> = Reader<
-    StorageBackend,
+    Backend,
     (
         &'static K,
         &'static DynUnit,
@@ -153,7 +149,7 @@ type RawValBatch<K, V, T, R> = Reader<
 
 type RawKeyCursor<'s, K, V, T, R> = FileCursor<
     's,
-    StorageBackend,
+    Backend,
     K,
     DynUnit,
     (
@@ -174,7 +170,7 @@ type RawKeyCursor<'s, K, V, T, R> = FileCursor<
 
 type RawValCursor<'s, K, V, T, R> = FileCursor<
     's,
-    StorageBackend,
+    Backend,
     V,
     DynWeightedPairs<DynDataTyped<T>, R>,
     (),
@@ -422,13 +418,12 @@ fn include<K: ?Sized>(x: &K, filter: &Option<Filter<K>>) -> bool {
     }
 }
 
-fn read_filtered<'a, S, K, A, N, T>(
-    cursor: &mut FileCursor<S, K, A, N, T>,
+fn read_filtered<'a, K, A, N, T>(
+    cursor: &mut FileCursor<Backend, K, A, N, T>,
     filter: &Option<Filter<K>>,
     key: &'a mut K,
 ) -> Option<&'a K>
 where
-    S: StorageRead + StorageControl + StorageExecutor,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
@@ -458,7 +453,7 @@ fn merge_times<T, R>(
     let mut i = 0;
     let mut j = 0;
 
-    while i < a.len() && i < b.len() {
+    while i < a.len() && j < b.len() {
         match a[i].fst().cmp(b[j].fst()) {
             Ordering::Less => {
                 output.push_ref(&a[i]);
@@ -491,7 +486,7 @@ where
 {
     fn copy_values_if(
         &self,
-        output: &mut Writer2<StorageBackend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
+        output: &mut Writer2<Backend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
         key: &K,
         key_cursor: &mut RawKeyCursor<'_, K, V, T, R>,
         value_filter: &Option<Filter<V>>,
@@ -519,7 +514,7 @@ where
 
     fn copy_value(
         &self,
-        output: &mut Writer2<StorageBackend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
+        output: &mut Writer2<Backend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
         cursor: &mut RawValCursor<'_, K, V, T, R>,
         value: &V,
     ) {
@@ -532,7 +527,7 @@ where
 
     fn merge_values(
         &self,
-        output: &mut Writer2<StorageBackend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
+        output: &mut Writer2<Backend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
         cursor1: &mut RawValCursor<'_, K, V, T, R>,
         cursor2: &mut RawValCursor<'_, K, V, T, R>,
         value_filter: &Option<Filter<V>>,
@@ -972,7 +967,7 @@ where
 {
     factories: FileValBatchFactories<K, V, T, R>,
     time: T,
-    writer: Writer2<StorageBackend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
+    writer: Writer2<Backend, K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
     cur_key: Box<DynOpt<K>>,
 }
 

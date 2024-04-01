@@ -19,7 +19,7 @@
             "description": "Accrual customers input connector",
             "config": {
               "transport": {
-                "name": "kafka",
+                "name": "kafka_input",
                 "config": {
                   "bootstrap.servers": "redpanda:9092",
                   "auto.offset.reset": "earliest",

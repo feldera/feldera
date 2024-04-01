@@ -1,7 +1,14 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
-use crate::{storage::buffer_cache::TinyLfuCache, trace::ord::file::StorageBackend, DetailedError};
+use crate::{
+    storage::{
+        backend::{new_default_backend, tempdir_for_thread, Backend},
+        buffer_cache::BufferCache,
+        file::cache::FileCacheEntry,
+    },
+    DetailedError,
+};
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use once_cell::sync::Lazy;
@@ -412,25 +419,31 @@ impl Runtime {
         RUNTIME.with(|rt| rt.borrow().clone())
     }
 
-    /// Returns the (thread-local) storage backend.
-    pub fn storage() -> Rc<StorageBackend> {
-        static LFU_CACHE: Lazy<Arc<TinyLfuCache>> = Lazy::new(|| Arc::new(TinyLfuCache::default()));
-        thread_local! {
-            pub static TEMPDIR: tempfile::TempDir = tempfile::tempdir().unwrap();
-            pub static DEFAULT_BACKEND: Rc<StorageBackend> = {
-                let rt = Runtime::runtime();
-                let io_backend = if let Some(rt) = rt {
-                    crate::storage::backend::DefaultBackend::with_base(rt.inner().storage.clone())
-                } else {
-                    // This else case exists because some nexmark tests run without a runtime :/
-                    crate::storage::backend::DefaultBackend::with_base(TEMPDIR.with(|dir| dir.path().to_path_buf()))
-                };
+    fn new_backend() -> Rc<Backend> {
+        let rt = Runtime::runtime();
+        let dir = if let Some(rt) = rt {
+            rt.inner().storage.clone().as_ref().to_path_buf()
+        } else {
+            tempdir_for_thread()
+        };
+        Rc::new(new_default_backend(dir))
+    }
 
-                let sb = StorageBackend::with_backend_lfu(io_backend, LFU_CACHE.clone());
-                Rc::new(sb)
-            };
+    /// Returns the (thread-local) storage backend.
+    pub fn backend() -> Rc<Backend> {
+        thread_local! {
+            pub static DEFAULT_BACKEND: Rc<Backend> = Runtime::new_backend();
         }
         DEFAULT_BACKEND.with(|rc| rc.clone())
+    }
+
+    /// Returns the (thread-local) storage backend.
+    pub fn storage() -> Rc<BufferCache<Backend, FileCacheEntry>> {
+        thread_local! {
+            pub static CACHE: Rc<BufferCache<Backend, FileCacheEntry>> =
+                Rc::new(BufferCache::new(Runtime::backend()));
+        }
+        CACHE.with(|rc| rc.clone())
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.

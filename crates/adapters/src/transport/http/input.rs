@@ -11,9 +11,7 @@ use futures_util::StreamExt;
 use log::debug;
 use num_traits::FromPrimitive;
 use serde::Deserialize;
-use serde_yaml::Value as YamlValue;
 use std::{
-    borrow::Cow,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
@@ -53,10 +51,7 @@ impl HttpInputTransport {
     // }
 
     pub(crate) fn config() -> TransportConfig {
-        TransportConfig {
-            name: Cow::from("api"),
-            config: YamlValue::Null,
-        }
+        TransportConfig::HttpInput
     }
 }
 

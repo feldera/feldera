@@ -1,3 +1,8 @@
+//! Storage APIs for Feldera.
+//!
+//! The API consists of a lower layer, [backend], that provides block-based
+//! access to storage, a middle layer, [buffer_cache], that implements
+//! buffering, and an upper layer, [mod@file], that implements data access.
 pub mod backend;
 pub mod buffer_cache;
 pub mod file;
@@ -58,7 +63,7 @@ fn init_locked_memory() {
 #[cfg(not(unix))]
 fn init_locked_memory() {}
 
-/// Performs global crate initialization.
+/// Performs storage module initialization.
 ///
 /// On Unix, this raises the process's file descriptor and locked memory limits
 /// from their "soft" to "hard" limits.  On Windows, this has no effect.

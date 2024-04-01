@@ -11,6 +11,10 @@ use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
 
 use crate::query::OutputQuery;
+use crate::transport::file::{FileInputConfig, FileOutputConfig};
+use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
+use crate::transport::s3::S3InputConfig;
+use crate::transport::url::UrlInputConfig;
 
 /// Default value of `InputEndpointConfig::max_buffered_records`.
 /// It is declared as a function and not as a constant, so it can
@@ -224,18 +228,37 @@ pub struct OutputEndpointConfig {
     pub output_buffer_config: OutputBufferConfig,
 }
 
-/// Transport endpoint configuration.
+/// Transport-specific endpoint configuration passed to
+/// `crate::OutputTransport::new_endpoint`
+/// and `crate::InputTransport::new_endpoint`.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct TransportConfig {
-    /// Data transport name, e.g., `file`, `kafka`, `kinesis`
-    pub name: Cow<'static, str>,
+#[serde(tag = "name", content = "config", rename_all = "snake_case")]
+pub enum TransportConfig {
+    FileInput(FileInputConfig),
+    FileOutput(FileOutputConfig),
+    KafkaInput(KafkaInputConfig),
+    KafkaOutput(KafkaOutputConfig),
+    UrlInput(UrlInputConfig),
+    S3Input(S3InputConfig),
+    /// Direct HTTP input: cannot be instantiated through API
+    HttpInput,
+    /// Direct HTTP output: cannot be instantiated through API
+    HttpOutput,
+}
 
-    /// Transport-specific endpoint configuration passed to
-    /// `crate::OutputTransport::new_endpoint`
-    /// and `crate::InputTransport::new_endpoint`.
-    #[serde(default)]
-    #[schema(value_type = Object)]
-    pub config: YamlValue,
+impl TransportConfig {
+    pub fn name(&self) -> String {
+        match self {
+            TransportConfig::FileInput(_) => "file_input".to_string(),
+            TransportConfig::FileOutput(_) => "file_output".to_string(),
+            TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
+            TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
+            TransportConfig::UrlInput(_) => "url_input".to_string(),
+            TransportConfig::S3Input(_) => "s3_input".to_string(),
+            TransportConfig::HttpInput => "http_input".to_string(),
+            TransportConfig::HttpOutput => "http_output".to_string(),
+        }
+    }
 }
 
 /// Data format specification used to parse raw data received from the

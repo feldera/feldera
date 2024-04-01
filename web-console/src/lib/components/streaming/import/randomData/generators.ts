@@ -1,22 +1,25 @@
 // Contains a lists of random generators for every SQL type, each random
 // generator may have custom generation and validation methods.
 
+import { BigNumberInput } from '$lib/components/input/BigNumberInput'
+import { clampBigNumber } from '$lib/functions/common/bigNumber'
 import {
   randomExponentialBigNumber,
   randomIntBigNumber,
   randomNormalBigNumber
 } from '$lib/functions/common/d3-random-bignumber'
 import { getRandomDate } from '$lib/functions/common/date'
+import { nonNull } from '$lib/functions/common/function'
+import { tuple } from '$lib/functions/common/tuple'
 import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
-import { clampToSQL, dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
+import { dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
 import { ColumnType, Field, SqlType } from '$lib/services/manager'
 import assert from 'assert'
 import BigNumber from 'bignumber.js'
 import * as d3 from 'd3-random'
 import dayjs from 'dayjs'
-import { BigNumberInput } from 'src/lib/components/input/BigNumberInput'
 import invariant from 'tiny-invariant'
-import { match } from 'ts-pattern'
+import { match, P } from 'ts-pattern'
 import * as va from 'valibot'
 
 import { faker } from '@faker-js/faker'
@@ -37,8 +40,7 @@ import {
 import { FieldNames } from './'
 import { BooleanSwitch } from './BooleanSwitch'
 
-import type { ColumnTypeJS } from '$lib/functions/ddl'
-
+import type { SQLValueJS } from '$lib/functions/ddl'
 type AddFieldName<T> = { name: FieldNames } & Partial<T>
 
 // A list of categories for grouping the generators in the selector.
@@ -66,7 +68,7 @@ export interface IRngGenMethod {
   // The random generator function, receives the type, plus additional
   // properties (coming from the defined `form_fields` see below) to generate a
   // random value.
-  generator: (config: ColumnType, settings?: Partial<Record<FieldNames, any>>) => ColumnTypeJS
+  generator: (config: ColumnType, settings?: Partial<Record<FieldNames, any>>) => SQLValueJS
   // Additional form fields that are displayed when this generation method is
   // selected.
   //
@@ -111,7 +113,11 @@ const getDefaultRngMethodName = (sqlType: ColumnType): string =>
       assert(sqlType.component !== null && sqlType.component !== undefined, 'Array type must have a component type')
       return getDefaultRngMethodName(sqlType.component)
     })
-    .otherwise(() => 'Constant')
+    .with({ type: SqlType.BINARY }, () => 'BINARY type not implemented')
+    .with({ type: SqlType.VARBINARY }, () => 'VARBINARY type not implemented')
+    .with({ type: SqlType.INTERVAL }, () => 'INTERVAL type not supported')
+    .with({ type: SqlType.NULL }, () => 'NULL type not supported')
+    .exhaustive()
 
 // Given a title & SQL type, returns the corresponding generator method.
 export const getRngMethodByName = (title: string, sqlType: ColumnType): IRngGenMethod | null => {
@@ -145,7 +151,7 @@ const transformToArrayGenerator = (type: ColumnType, generators: IRngGenMethod[]
       }
     }
 
-    const generator = (ct: ColumnType, settings: Record<string, any> | undefined): ColumnTypeJS[] => {
+    const generator = (ct: ColumnType, settings: Record<string, any> | undefined): SQLValueJS[] => {
       invariant(ct.component)
       const c = ct.component
       const { min, max } = numericRange(ct)
@@ -164,32 +170,27 @@ const transformToArrayGenerator = (type: ColumnType, generators: IRngGenMethod[]
 // Given a ColumType returns a list of applicable generator methods.
 export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
   return (
-    match(type)
-      .with(
-        { type: SqlType.TINYINT },
-        { type: SqlType.SMALLINT },
-        { type: SqlType.INTEGER },
-        { type: SqlType.BIGINT },
-        () => INTEGER_GENERATORS
-      )
-      .with({ type: SqlType.REAL }, { type: SqlType.DOUBLE }, () => FLOAT_GENERATORS)
+    match(type.type)
+      .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, SqlType.BIGINT, () => INTEGER_GENERATORS)
+      .with(SqlType.REAL, SqlType.DOUBLE, () => FLOAT_GENERATORS)
       // There aren't any good random generator libraries for arbitrary
       // precision numbers. So we just use the same generators as FLOAT and
       // DOUBLE for now.
-      .with({ type: SqlType.DECIMAL }, () => FLOAT_GENERATORS)
-      .with({ type: SqlType.VARCHAR }, { type: SqlType.CHAR }, () => STRING_GENERATORS)
-      .with({ type: SqlType.BOOLEAN }, () => BOOLEAN_GENERATORS)
-      .with({ type: SqlType.TIME }, () => TIME_GENERATORS)
-      .with({ type: SqlType.DATE }, () => DATE_GENERATORS)
-      .with({ type: SqlType.TIMESTAMP }, () => TIMESTAMP_GENERATORS)
-      .with({ type: SqlType.ARRAY }, () => {
+      .with(SqlType.DECIMAL, () => FLOAT_GENERATORS)
+      .with(SqlType.VARCHAR, SqlType.CHAR, () => STRING_GENERATORS)
+      .with(SqlType.BOOLEAN, () => BOOLEAN_GENERATORS)
+      .with(SqlType.TIME, () => TIME_GENERATORS)
+      .with(SqlType.DATE, () => DATE_GENERATORS)
+      .with(SqlType.TIMESTAMP, () => TIMESTAMP_GENERATORS)
+      .with(SqlType.ARRAY, () => {
         invariant(type.component)
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
-      .otherwise(() => UNSUPPORTED_TYPE_GENERATORS)
+      .with(SqlType.INTERVAL, SqlType.BINARY, SqlType.VARBINARY, SqlType.NULL, () => UNSUPPORTED_TYPE_GENERATORS)
+      .exhaustive()
       .map(({ generator, ...rng }) => ({
         ...rng,
-        generator: (ct, settings) => clampToSQL(ct)(generator(ct, settings))
+        generator: (ct, settings) => generator(ct, settings)
       }))
   )
 }
@@ -262,6 +263,11 @@ const BOOLEAN_GENERATORS: IRngGenMethod[] = [
 
 const rangeBigNumber = ({ min, max }: { min: BigNumber; max: BigNumber }) => [minBigNumber(min), maxBigNumber(max)]
 
+const clampToRange = (ct: ColumnType, n: BigNumber) =>
+  clampBigNumber(...(({ min, max }) => tuple(min, max))(numericRange(ct)), n)
+const clampToScale = (ct: ColumnType, n: BigNumber) =>
+  nonNull(ct.scale) ? n.decimalPlaces(ct.scale, BigNumber.ROUND_HALF_UP) : n
+
 // Generic generators for integer (and floating point) numbers.
 const NUMBER_GENERATORS: IRngGenMethod[] = [
   {
@@ -295,9 +301,12 @@ const NUMBER_GENERATORS: IRngGenMethod[] = [
     title: 'Normal',
     category: Categories.DISTRIBUTION,
     generator: (ct, props) =>
-      randomNormalBigNumber(props?.mu ?? new BigNumber(100), props?.sigma ?? new BigNumber(10))().decimalPlaces(
-        0,
-        BigNumber.ROUND_FLOOR
+      clampToRange(
+        ct,
+        randomNormalBigNumber(props?.mu ?? new BigNumber(100), props?.sigma ?? new BigNumber(10))().decimalPlaces(
+          0,
+          BigNumber.ROUND_FLOOR
+        )
       ),
     form_fields: () => [
       {
@@ -327,7 +336,10 @@ const NUMBER_GENERATORS: IRngGenMethod[] = [
     title: 'Exponential',
     category: Categories.DISTRIBUTION,
     generator: (ct, props) => {
-      return randomExponentialBigNumber(props?.lambda ?? new BigNumber(0.1))().decimalPlaces(0, BigNumber.ROUND_FLOOR)
+      return clampToRange(
+        ct,
+        randomExponentialBigNumber(props?.lambda ?? new BigNumber(0.1))().decimalPlaces(0, BigNumber.ROUND_FLOOR)
+      )
     },
     form_fields: () => [
       {
@@ -423,7 +435,7 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
       //
       // See also:
       // https://stackoverflow.com/questions/28461796/randomint-function-that-can-uniformly-handle-the-full-range-of-min-and-max-safe
-      return new BigNumber(d3.randomUniform(min, max)())
+      return clampToScale(ct, new BigNumber(d3.randomUniform(min, max)()))
     },
     form_fields: () => [
       {
@@ -454,7 +466,10 @@ const FLOAT_GENERATORS: IRngGenMethod[] = NUMBER_GENERATORS.concat([
     category: Categories.DISTRIBUTION,
     // TODO: refactor from casting to actual BigNumber implementation of randomBeta
     generator: (ct, props) => {
-      return new BigNumber(d3.randomBeta(props?.alpha?.toNumber() ?? 1, props?.beta?.toNumber() ?? 1)())
+      return clampToScale(
+        ct,
+        clampToRange(ct, new BigNumber(d3.randomBeta(props?.alpha?.toNumber() ?? 1, props?.beta?.toNumber() ?? 1)()))
+      )
     },
     form_fields: () => [
       {
@@ -1114,4 +1129,25 @@ const STRING_GENERATORS: IRngGenMethod[] = [
     category: Categories.PHYSICAL,
     generator: () => faker.science.unit().symbol
   }
-]
+].map(g => ({
+  ...g,
+  generator: ({ type, precision }) => {
+    const string = g.generator()
+    return match({ type, precision })
+      .with(
+        {
+          type: SqlType.VARCHAR,
+          precision: P.when(value => (value ?? -1) >= 0)
+        },
+        ({ precision }) => string.substring(0, precision!)
+      )
+      .with(
+        {
+          type: SqlType.CHAR,
+          precision: P.when(value => (value ?? -1) >= 0)
+        },
+        ({ precision }) => string.substring(0, precision!).padEnd(precision!)
+      )
+      .otherwise(() => string)
+  }
+}))

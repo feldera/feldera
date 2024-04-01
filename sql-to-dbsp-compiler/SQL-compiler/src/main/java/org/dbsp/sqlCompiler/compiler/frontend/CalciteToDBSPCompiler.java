@@ -427,7 +427,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] keys = new DBSPExpression[fields.cardinality()];
         int next = 0;
         for (int index : fields) {
-            keys[next] = t.deref().field(index).applyCloneIfNeeded().cast(slice.getFieldType(index));
+            keys[next] = t.deepCopy().deref().field(index).applyCloneIfNeeded().cast(slice.getFieldType(index));
             next++;
         }
         return new DBSPTupleExpression(keys);

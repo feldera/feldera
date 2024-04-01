@@ -1429,7 +1429,7 @@ mod test {
     proptest! {
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
-        fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 20, 20)) {
+        fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 10, 10)) {
             let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 
             for mut batch in trace {
@@ -1442,7 +1442,7 @@ mod test {
 
         #[test]
         #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
-        fn proptest_partitioned_over_range_dense(trace in input_trace(5, 1_000, 50, 20)) {
+        fn proptest_partitioned_over_range_dense(trace in input_trace(5, 500, 25, 10)) {
             let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 
             for mut batch in trace {

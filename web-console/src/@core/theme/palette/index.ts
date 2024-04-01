@@ -50,16 +50,16 @@ const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
       contrastText: whiteColor
     },
     error: {
-      light: '#FF5B3F',
+      light: mode === 'light' ? '#FFD1C9' : '#731100',
       main: '#FF3E1D',
       dark: '#E8381A',
       contrastText: whiteColor
     },
     warning: {
       light: '#FFB826',
-      main: '#FFAB00',
+      main: mode === 'light' ? '#FFAB00' : '#FFAB00',
       dark: '#E89C00',
-      contrastText: mode === 'light' ? '#BD7817' : '#E89C00'
+      contrastText: mode === 'light' ? '#000000' : '#000000'
     },
     info: {
       light: '#29CCEF',

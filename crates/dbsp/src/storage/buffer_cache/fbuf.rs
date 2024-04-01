@@ -1,5 +1,5 @@
-//! An implementation of a custom buffer type that works with our read/write
-//! APIs and the buffer-cache.
+//! A custom buffer type that works with our read/write APIs and the
+//! buffer-cache.
 
 // The code in this file is originally derived from the rkyv `AlignedVec`
 // type, and adapted for use within the Feldera storage engine.
@@ -13,14 +13,18 @@
 use std::{
     alloc,
     borrow::{Borrow, BorrowMut},
+    cmp::Ordering,
     fmt,
-    io::{self, ErrorKind, Read},
+    fs::File,
+    io::{self, Error as IoError, ErrorKind, Read},
     mem,
     ops::{Deref, DerefMut, Index, IndexMut},
+    os::fd::AsRawFd,
     ptr::NonNull,
     slice,
 };
 
+use libc::c_void;
 use monoio::buf::{IoBuf, IoBufMut};
 use rkyv::{
     ser::{ScratchSpace, Serializer},
@@ -29,7 +33,7 @@ use rkyv::{
 };
 use rkyv::{vec::VecResolver, ArchiveUnsized, Fallible, Infallible, RelPtr};
 
-/// This is a custom buffer type that works with our read/write APIs and the
+/// A custom buffer type that works with our read/write APIs and the
 /// buffer-cache.
 ///
 /// # Invariants
@@ -546,6 +550,44 @@ impl FBuf {
             }
         }
     }
+
+    /// Reads `len` bytes from `file` at the given `offset` and appends them to
+    /// this `FBuf`.
+    ///
+    /// This avoids zero-initializing the buffer before reading into it.
+    pub fn read_exact_at(
+        &mut self,
+        file: &File,
+        mut offset: u64,
+        mut len: usize,
+    ) -> Result<(), IoError> {
+        self.reserve(len);
+        while len > 0 {
+            let retval = unsafe {
+                libc::pread(
+                    file.as_raw_fd(),
+                    self.as_mut_ptr().add(self.len) as *mut c_void,
+                    len,
+                    offset as i64,
+                )
+            };
+            match retval.cmp(&0) {
+                Ordering::Equal => return Err(ErrorKind::UnexpectedEof.into()),
+                Ordering::Less => {
+                    let error = IoError::last_os_error();
+                    if error.kind() != ErrorKind::Interrupted {
+                        return Err(error);
+                    }
+                }
+                Ordering::Greater => {
+                    self.len += retval as usize;
+                    len -= retval as usize;
+                    offset += retval as u64;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl From<FBuf> for Vec<u8> {
@@ -736,7 +778,7 @@ unsafe impl Sync for FBuf {}
 
 impl Unpin for FBuf {}
 
-/// A serializer made specifically to work with [`FBuf`].
+/// An [`rkyv`] serializer made specifically to work with [`FBuf`].
 ///
 /// This serializer makes it easier for the compiler to perform emplacement
 /// optimizations and may give better performance than a basic

@@ -497,6 +497,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
+    public void testIOT() throws IOException, InterruptedException, SQLException {
+        // Iot code from different repository checked out in a specific place
+        final String iotSql = "../../../iot/iot.sql";
+        File sql = new File(iotSql);
+        if (!sql.exists())
+            return;
+        String script = Utilities.readFile(sql.toPath());
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = true;
+        compiler.compileStatements(script);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("testIOT", ccs);
+    }
+
+    @Test
     public void testProjectFiles() throws IOException, InterruptedException, SQLException {
         // Compiles all the programs in the tests directory
         final String projectsDirectory = "../../demo/";

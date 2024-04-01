@@ -78,7 +78,7 @@ def prepare_feldera(api_url, start_pipeline):
                     "config": {}
                 },
                 "transport": {
-                    "name": "kafka",
+                    "name": "kafka_" + ("input" if is_input else "output"),
                     "config": {
                         "bootstrap.servers": pipeline_to_redpanda_server,
                         "topic": topic_topics

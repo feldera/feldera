@@ -74,7 +74,7 @@ def prepare_feldera_pipeline(api_url, start_pipeline):
                 "name": "csv",
             },
             "transport": {
-                "name": "s3",
+                "name": "s3_input",
                 "config": {
                     "credentials": {
                         "type": "AccessKey",

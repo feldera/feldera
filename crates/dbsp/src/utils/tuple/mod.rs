@@ -58,6 +58,7 @@ deserialize_without_context!(Tup10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound())]
 #[archive(compare(PartialEq, PartialOrd))]
+/// A unit tuple type on which `dbsp` controls trait implementations.
 pub struct Tup0();
 
 impl Tup0 {

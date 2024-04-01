@@ -1,3 +1,4 @@
+use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
     test::{
         generate_test_batches,
@@ -5,7 +6,7 @@ use crate::{
         mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct, DEFAULT_TIMEOUT_MS,
     },
     transport::Step,
-    Controller, InputConsumer, InputTransport, OutputTransport, ParseError, PipelineConfig,
+    Controller, InputConsumer, ParseError, PipelineConfig,
 };
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
@@ -94,7 +95,7 @@ outputs:
     test_output:
         stream: test_output1
         transport:
-            name: kafka
+            name: kafka_output
             config:
                 bootstrap.servers: localhost:11111
                 topic: ft_end_to_end_test_output_topic
@@ -149,7 +150,7 @@ inputs:
     test_input1:
         stream: test_input1
         transport:
-            name: kafka
+            name: kafka_input
             config:
                 topics: ["{input_topic}"]
                 log_level: debug
@@ -160,7 +161,7 @@ outputs:
     test_output2:
         stream: test_output1
         transport:
-            name: kafka
+            name: kafka_output
             config:
                 topic: {output_topic}
                 max_inflight_messages: 0
@@ -232,19 +233,19 @@ fn test_empty_input() {
         .create_topic("empty_input-index", 1, 1)
         .unwrap();
 
-    let transport = <dyn InputTransport>::get_transport("kafka").unwrap();
-
     let config_str = format!(
         r#"
-bootstrap.servers: "{bootstrap_servers}"
-topics: [empty]
-log_level: debug
-fault_tolerance: {{}}
+name: kafka_input
+config:
+    bootstrap.servers: "{bootstrap_servers}"
+    topics: [empty]
+    log_level: debug
+    fault_tolerance: {{}}
 "#
     );
 
-    let endpoint = transport
-        .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
+    let endpoint = input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+        .unwrap()
         .unwrap();
     assert!(endpoint.is_fault_tolerant());
 
@@ -307,17 +308,17 @@ fn test_input() {
 
     let config_str = format!(
         r#"
-topics: [{topic}]
-log_level: debug
-fault_tolerance:
-    max_step_messages: 5
+name: kafka_input
+config:
+    topics: [{topic}]
+    log_level: debug
+    fault_tolerance:
+        max_step_messages: 5
 "#
     );
 
-    let transport = <dyn InputTransport>::get_transport("kafka").unwrap();
-
-    let endpoint = transport
-        .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
+    let endpoint = input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+        .unwrap()
         .unwrap();
     assert!(endpoint.is_fault_tolerant());
 
@@ -557,24 +558,19 @@ fn kafka_output_test(
     // Create topics.
     let _kafka_resources = KafkaResources::create_topics(&[(&output_topic, 1)]);
 
-    let transport = <dyn OutputTransport>::get_transport("kafka").unwrap();
-
     let config_str = format!(
         r#"
-stream: test_output1
-transport:
-    name: kafka
-    config:
-        topic: {output_topic}
-        fault_tolerance: {{}}
-format:
-    name: csv
+name: kafka_output
+config:
+    topic: {output_topic}
+    fault_tolerance: {{}}
 "#
     );
 
-    let mut endpoint = transport
-        .new_endpoint(&serde_yaml::from_str(&config_str).unwrap())
-        .unwrap();
+    let mut endpoint =
+        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
@@ -589,22 +585,17 @@ format:
 }
 
 fn _test() {
-    let transport = <dyn OutputTransport>::get_transport("kafka").unwrap();
-
     let config_str = r#"
-stream: my_test_stream
-transport:
-    name: kafka
-    config:
-        topic: my_topic
-        fault_tolerance: {{}}
-format:
-    name: csv
+name: kafka_output
+config:
+    topic: my_topic
+    fault_tolerance: {{}}
 "#;
 
-    let mut endpoint = transport
-        .new_endpoint(&serde_yaml::from_str(config_str).unwrap())
-        .unwrap();
+    let mut endpoint =
+        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
@@ -638,7 +629,7 @@ fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
         r#"
 stream: test_input
 transport:
-    name: kafka
+    name: kafka_input
     config:
         bootstrap.servers: localhost:11111
         topics: ["{topic1}", "{topic2}"]
@@ -665,7 +656,7 @@ format:
     let config_str = r#"
 stream: test_input
 transport:
-    name: kafka
+    name: kafka_input
     config:
         topics: ["this_topic_does_not_exist"]
         log_level: debug
@@ -689,7 +680,7 @@ format:
         r#"
 stream: test_input
 transport:
-    name: kafka
+    name: kafka_input
     config:
         topics: [{topic1}, {topic2}]
         log_level: debug

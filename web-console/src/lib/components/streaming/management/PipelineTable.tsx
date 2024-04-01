@@ -378,8 +378,17 @@ function CustomDetailPanelToggle({
     return <></>
   }
 
+  // Display a temporary chevron although full details are not yet available
   if (!pipelineRevisionQuery.data) {
-    return <></>
+    return (
+      <IconButton size='small' data-testid={`button-expand-pipeline-temporary`}>
+        <ExpandMoreIcon
+          sx={{
+            transform: `rotateZ(${isExpanded ? 180 : 0}deg)`
+          }}
+        />
+      </IconButton>
+    )
   }
 
   return (
@@ -397,7 +406,6 @@ function CustomDetailPanelToggle({
               duration: theme.transitions.duration.shortest
             })
         }}
-        fontSize='inherit'
       />
     </IconButton>
   )
@@ -704,8 +712,16 @@ const PipelineStatusCell = (params: GridRenderCellParams<Pipeline>) => {
         data-testid={testIdPrefix + 'Program error'}
       />
     ))
-    .with([PipelineStatus.SHUTDOWN, P._], () => (
-      <CustomChip rounded size='small' skin='light' label={status} data-testid={testIdPrefix + status} />
+    .with([PipelineStatus.SHUTDOWN, 'NoProgram'], () => (
+      <Tooltip
+        title='A pipeline requires a program to be set in order to run. Please set one by editing the pipeline.'
+        disableInteractive
+      >
+        <CustomChip rounded size='small' skin='light' label='No program' data-testid={testIdPrefix + 'No program'} />
+      </Tooltip>
+    ))
+    .with([PipelineStatus.SHUTDOWN, 'Ready'], () => (
+      <CustomChip rounded size='small' skin='light' label='Ready to run' data-testid={testIdPrefix + 'Ready to run'} />
     ))
     .with([PipelineStatus.INITIALIZING, P._], () => (
       <CustomChip

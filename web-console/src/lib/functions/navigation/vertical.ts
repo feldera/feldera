@@ -13,7 +13,10 @@ import IconUnite from '~icons/bx/unite'
 import IconSlack from '~icons/bxl/slack'
 import CogOutline from '~icons/mdi/cog-outline'
 
-const navigation = (): VerticalNavItemsType => {
+// TODO: remove conditional Settings page link display
+// after more content is added to Settings page
+// so it is never empty
+const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
   return [
     {
       title: 'Home',
@@ -84,11 +87,17 @@ const navigation = (): VerticalNavItemsType => {
     {
       sectionTitle: 'Platform'
     },
-    {
-      title: 'Settings',
-      path: '/settings',
-      icon: CogOutline
-    },
+    [
+      props.showSettings
+        ? [
+            {
+              title: 'Settings',
+              path: '/settings',
+              icon: CogOutline
+            }
+          ]
+        : []
+    ],
     {
       title: 'Documentation',
       path: 'https://www.feldera.com/docs/',
@@ -117,7 +126,7 @@ const navigation = (): VerticalNavItemsType => {
       openInNewTab: true,
       testid: 'button-vertical-nav-slack'
     }
-  ]
+  ].flat() as VerticalNavItemsType
 }
 
 export default navigation

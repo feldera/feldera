@@ -1,16 +1,10 @@
-use super::{
-    InputConsumer, InputEndpoint, InputReader, InputTransport, OutputEndpoint, OutputTransport,
-    Step,
-};
-use crate::{OutputEndpointConfig, PipelineState};
+use super::{InputConsumer, InputEndpoint, InputReader, OutputEndpoint, Step};
+use crate::PipelineState;
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use num_traits::FromPrimitive;
 use pipeline_types::transport::file::{FileInputConfig, FileOutputConfig};
-use serde::Deserialize;
-use serde_yaml::Value as YamlValue;
 use std::{
-    borrow::Cow,
     fs::File,
     io::{BufRead, BufReader, Write},
     sync::{
@@ -23,30 +17,14 @@ use std::{
 
 const SLEEP_MS: u64 = 200;
 
-/// [`InputTransport`] implementation that reads data from a file.
-///
-/// The input transport factory gives this transport the name `file`.
-pub struct FileInputTransport;
-
-impl InputTransport for FileInputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("file")
-    }
-
-    /// Creates a new [`InputEndpoint`] for reading a file, interpreting
-    /// `config` as a [`FileInputConfig`].
-    ///
-    /// See [`InputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>> {
-        let ep = FileInputEndpoint {
-            config: FileInputConfig::deserialize(config)?,
-        };
-        Ok(Box::new(ep))
-    }
+pub(crate) struct FileInputEndpoint {
+    config: FileInputConfig,
 }
 
-struct FileInputEndpoint {
-    config: FileInputConfig,
+impl FileInputEndpoint {
+    pub(crate) fn new(config: FileInputConfig) -> Self {
+        Self { config }
+    }
 }
 
 impl InputEndpoint for FileInputEndpoint {
@@ -171,34 +149,12 @@ impl Drop for FileInputReader {
     }
 }
 
-/// [`OutputTransport`] implementation that writes data to a file.
-///
-/// The output transport factory gives this transport the name `file`.
-pub struct FileOutputTransport;
-
-impl OutputTransport for FileOutputTransport {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("file")
-    }
-
-    /// Creates a new [`OutputEndpoint`] for writing a file, interpreting
-    /// `config` as a [`FileOutputConfig`].
-    ///
-    /// See [`OutputTransport::new_endpoint()`] for more information.
-    fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>> {
-        let config = FileOutputConfig::deserialize(&config.connector_config.transport.config)?;
-        let ep = FileOutputEndpoint::new(config)?;
-
-        Ok(Box::new(ep))
-    }
-}
-
-struct FileOutputEndpoint {
+pub(crate) struct FileOutputEndpoint {
     file: File,
 }
 
 impl FileOutputEndpoint {
-    fn new(config: FileOutputConfig) -> AnyResult<Self> {
+    pub(crate) fn new(config: FileOutputConfig) -> AnyResult<Self> {
         let file = File::create(&config.path).map_err(|e| {
             AnyError::msg(format!(
                 "Failed to create output file '{}': {e}",
@@ -278,7 +234,7 @@ mod test {
             r#"
 stream: test_input
 transport:
-    name: file
+    name: file_input
     config:
         path: {:?}
         buffer_size_bytes: 5
@@ -334,7 +290,7 @@ format:
             r#"
 stream: test_input
 transport:
-    name: file
+    name: file_input
     config:
         path: {:?}
         buffer_size_bytes: 5

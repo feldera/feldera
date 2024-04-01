@@ -21,7 +21,7 @@
             "description": "ProductItems Kafka input connector for product table",
             "config": {
               "transport": {
-                "name": "kafka",
+                "name": "kafka_input",
                 "config": {
                   "bootstrap.servers": "${secret:productitems-bootstrap-servers}",
                   "security.protocol": "SASL_PLAINTEXT",
@@ -51,7 +51,7 @@
             "description": "ProductItems Kafka input connector for item table",
             "config": {
               "transport": {
-                "name": "kafka",
+                "name": "kafka_input",
                 "config": {
                   "bootstrap.servers": "${secret:productitems-bootstrap-servers}",
                   "security.protocol": "SASL_PLAINTEXT",

@@ -397,7 +397,7 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
                         <SwitchElement key={field} name={'config.' + field} label={''}></SwitchElement>
                       </Box>
                     ))
-                    .with('list', () => (
+                    .with('list', 'array', () => (
                       <TextFieldElement
                         key={field}
                         multiline

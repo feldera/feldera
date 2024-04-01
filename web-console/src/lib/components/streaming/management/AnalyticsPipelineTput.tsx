@@ -47,7 +47,8 @@ export const AnalyticsPipelineTput = (props: {
       padding: {
         left: 20,
         right: 20
-      }
+      },
+      borderColor: theme.palette.text.disabled
     },
     fill: {
       type: 'gradient',
@@ -100,6 +101,9 @@ export const AnalyticsPipelineTput = (props: {
           const time = new Date(0)
           time.setMilliseconds(ms)
           return '-' + time.toISOString().substring(14, 19)
+        },
+        style: {
+          colors: theme.palette.text.primary
         }
       },
       tickAmount: 3,
@@ -117,6 +121,9 @@ export const AnalyticsPipelineTput = (props: {
         show: true,
         formatter(val) {
           return format(val >= 1000 ? '.3s' : '.0f')(val)
+        },
+        style: {
+          colors: theme.palette.text.primary
         }
       }
     }
@@ -124,7 +131,7 @@ export const AnalyticsPipelineTput = (props: {
 
   return (
     <Card sx={{ height: '100%' }}>
-      <Box sx={{ px: '1rem', pt: '0.5rem' }}>
+      <Box sx={{ px: '1rem', pt: '0.5rem', width: '100%' }} data-testid='box-pipeline-throughput-value'>
         <Typography sx={{ fontWeight: 600, color: 'text.secondary' }}>Throughput</Typography>
         <Typography variant='h5'>{format(smoothTput >= 1000 ? '.3s' : '.0f')(smoothTput)} rows/s</Typography>
       </Box>

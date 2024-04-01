@@ -13,32 +13,17 @@
 //! configure it.  Transport configuration is encapsulated in
 //! [`dbsp_adapters::TransportConfig`](crate::TransportConfig).
 //!
-//! The following transports are currently supported:
-//!
-//!   * `file`, for input from a file via [`FileInputTransport`] or output to a
-//!     file via [`FileOutputTransport`].
-//!
-//!   * `url`, for input from an HTTP or HTTPS url via [`UrlInputTransport`].
-//!
-//!   * `kafka`, for input from [Kafka](https://kafka.apache.org/) via
-//!     [`KafkaInputTransport`] or output to Kafka via [`KafkaOutputTransport`],
-//!     if the `with-kafka` feature is enabled.
-//!
 //! To obtain a transport, create an endpoint with it, and then start reading it
 //! from the beginning:
 //!
 //! ```ignore
-//! let transport = <dyn InputTransport>::get_transport(transport_name).unwrap();
-//! let endpoint = transport.new_endpoint(endpoint_name, &config);
+//! let endpoint = input_transport_config_to_endpoint(config.clone());
 //! let reader = endpoint.open(consumer, 0);
 //! ```
-use crate::{format::ParseError, OutputEndpointConfig};
+use crate::format::ParseError;
 use anyhow::{Error as AnyError, Result as AnyResult};
-use once_cell::sync::Lazy;
-use serde_yaml::Value as YamlValue;
-use std::collections::BTreeMap;
+use std::ops::Range;
 use std::sync::atomic::AtomicU64;
-use std::{borrow::Cow, ops::Range};
 
 mod file;
 pub mod http;
@@ -51,13 +36,15 @@ mod secret_resolver;
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
 
-pub use file::{FileInputTransport, FileOutputTransport};
-pub use url::UrlInputTransport;
+use pipeline_types::config::TransportConfig;
 
+use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 #[cfg(feature = "with-kafka")]
-pub use kafka::{KafkaInputTransport, KafkaOutputTransport};
-
-pub use s3::S3InputTransport;
+use crate::transport::kafka::{
+    KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaInputEndpoint, KafkaOutputEndpoint,
+};
+use crate::transport::s3::S3InputEndpoint;
+use crate::transport::url::UrlInputEndpoint;
 
 /// Step number for fault-tolerant input and output.
 ///
@@ -73,76 +60,41 @@ pub type Step = u64;
 /// Atomic version of [`Step`].
 pub type AtomicStep = AtomicU64;
 
-/// Static map of supported input transports.
-// TODO: support for registering new transports at runtime in order to allow
-// external crates to implement new transports.
-static INPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn InputTransport>>> = Lazy::new(|| {
-    BTreeMap::from([
-        (
-            "file",
-            Box::new(FileInputTransport) as Box<dyn InputTransport>,
-        ),
-        (
-            "url",
-            Box::new(UrlInputTransport) as Box<dyn InputTransport>,
-        ),
-        ("s3", Box::new(S3InputTransport) as Box<dyn InputTransport>),
-        #[cfg(feature = "with-kafka")]
-        (
-            "kafka",
-            Box::new(KafkaInputTransport) as Box<dyn InputTransport>,
-        ),
-    ])
-});
-
-/// Static map of supported output transports.
-static OUTPUT_TRANSPORT: Lazy<BTreeMap<&'static str, Box<dyn OutputTransport>>> = Lazy::new(|| {
-    BTreeMap::from([
-        (
-            "file",
-            Box::new(FileOutputTransport) as Box<dyn OutputTransport>,
-        ),
-        #[cfg(feature = "with-kafka")]
-        (
-            "kafka",
-            Box::new(KafkaOutputTransport) as Box<dyn OutputTransport>,
-        ),
-    ])
-});
-
-/// Trait that represents a specific data transport.
+/// Creates an input transport endpoint instance using an input transport configuration.
 ///
-/// This is a factory trait that creates transport endpoints for one kind of
-/// transports.
-pub trait InputTransport: Send + Sync {
-    /// Unique name of the data transport.
-    fn name(&self) -> Cow<'static, str>;
-
-    /// Create a new transport endpoint.
-    ///
-    /// Create and initializes a transport endpoint.  The endpoint will push
-    /// received data to the provided input consumer.  The endpoint is created
-    /// in a paused state.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Transport-specific configuration.
-    ///
-    /// * `consumer` - Input consumer that will receive data from the endpoint.
-    ///
-    /// # Errors
-    ///
-    /// Fails if the specified configuration is invalid or the endpoint failed
-    /// to initialize (e.g., the endpoint was not able to establish a network
-    /// connection).
-    fn new_endpoint(&self, config: &YamlValue) -> AnyResult<Box<dyn InputEndpoint>>;
+/// Returns an error if there is a invalid configuration for the endpoint.
+/// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
+pub fn input_transport_config_to_endpoint(
+    config: TransportConfig,
+) -> AnyResult<Option<Box<dyn InputEndpoint>>> {
+    match config {
+        TransportConfig::FileInput(config) => Ok(Some(Box::new(FileInputEndpoint::new(config)))),
+        #[cfg(feature = "with-kafka")]
+        TransportConfig::KafkaInput(config) => match config.fault_tolerance {
+            None => Ok(Some(Box::new(KafkaInputEndpoint::new(config)?))),
+            Some(_) => Ok(Some(Box::new(KafkaFtInputEndpoint::new(config)?))),
+        },
+        TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
+        TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)))),
+        _ => Ok(None),
+    }
 }
 
-impl dyn InputTransport {
-    /// Lookup input transport by `name`, which should be e.g. `file` for a file
-    /// transport.
-    pub fn get_transport(name: &str) -> Option<&'static dyn InputTransport> {
-        INPUT_TRANSPORT.get(name).map(|f| &**f)
+/// Creates an output transport endpoint instance using an output transport configuration.
+///
+/// Returns an error if there is a invalid configuration for the endpoint.
+/// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
+pub fn output_transport_config_to_endpoint(
+    config: TransportConfig,
+) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+    match config {
+        TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
+        #[cfg(feature = "with-kafka")]
+        TransportConfig::KafkaOutput(config) => match config.fault_tolerance {
+            None => Ok(Some(Box::new(KafkaOutputEndpoint::new(config)?))),
+            Some(_) => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
+        },
+        _ => Ok(None),
     }
 }
 
@@ -158,9 +110,6 @@ impl dyn InputTransport {
 ///   not yield the same data each time it is read.
 pub trait InputEndpoint: Send {
     /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
-    ///
-    /// A given [`InputTransport`] might support fault tolerance in some
-    /// configurations and not others.
     fn is_fault_tolerant(&self) -> bool;
 
     /// Returns an [`InputReader`] for reading the endpoint's data.  For a
@@ -309,35 +258,6 @@ pub trait InputConsumer: Send {
     fn fork(&self) -> Box<dyn InputConsumer>;
 }
 
-/// Trait that represents a specific data transport.
-///
-/// This is a factory trait that creates output transport endpoint instances.
-pub trait OutputTransport: Send + Sync {
-    /// Unique name of the data transport.
-    fn name(&self) -> Cow<'static, str>;
-
-    /// Create a new transport endpoint.
-    ///
-    /// Create and initializes a transport endpoint.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Transport-specific configuration.
-    ///
-    /// # Errors
-    ///
-    /// Fails if the specified configuration is invalid or the endpoint failed
-    /// to initialize.
-    fn new_endpoint(&self, config: &OutputEndpointConfig) -> AnyResult<Box<dyn OutputEndpoint>>;
-}
-
-impl dyn OutputTransport {
-    /// Lookup output transport by name.
-    pub fn get_transport(name: &str) -> Option<&'static dyn OutputTransport> {
-        OUTPUT_TRANSPORT.get(name).map(|f| &**f)
-    }
-}
-
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
 
 /// A configured output transport endpoint.
@@ -410,8 +330,5 @@ pub trait OutputEndpoint: Send {
     }
 
     /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
-    ///
-    /// A given [`OutputTransport`] might support fault tolerance in some
-    /// configurations and not others.
     fn is_fault_tolerant(&self) -> bool;
 }

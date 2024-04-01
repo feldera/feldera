@@ -1687,6 +1687,47 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testGunzip() {
+        this.qs("""
+                SELECT GUNZIP(x'1f8b08000000000000ff4b4bcd49492d4a0400218115ac07000000'::bytea);
+                 gunzip
+                ------------
+                 feldera
+                (1 row)
+                
+                SELECT GUNZIP(x'1f8b08000000000000ff734bcd49492d4a0400bdb8a86307000000'::bytea);
+                 gunzip
+                ------------
+                 Feldera
+                (1 row)
+                
+                SELECT GUNZIP(x'1f8b08000000000000ffcb48cdc9c9070086a6103605000000'::bytea);
+                 gunzip
+                ------------
+                 hello
+                (1 row)
+                
+                SELECT GUNZIP(x'1f8b08000000000000132bc9c82c5600a2dc4a851282ccd48a12002e7a22ff30000000'::bytea);
+                 gunzip
+                --------------------------------------------------------------------------
+                 this is my this is my this is my this is my text
+                (1 row)
+                
+                SELECT GUNZIP(null);
+                 gunzip
+                --------
+                NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testGunzipRuntimeFail() {
+        this.runtimeConstantFail("SELECT GUNZIP(x'1100'::bytea)", "failed to decompress gzipped data");
+    }
+
+    @Test
     public void testIssue1505() {
         this.qs("""
                 SELECT ROUND(123.1234::DOUBLE, 2);
@@ -1711,6 +1752,240 @@ public class FunctionsTest extends SqlIoTest {
                  round
                 -------
                  123
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testRlike() {
+        this.qs("""
+                SELECT RLIKE('string', 's..i.*');
+                 rlike
+                -------
+                 true
+                (1 row)
+                
+                SELECT RLIKE(null, 's..i.*');
+                 rlike
+                -------
+                 NULL
+                (1 row)
+                
+                SELECT RLIKE('string', null);
+                 rlike
+                -------
+                 NULL
+                (1 row)
+                
+                SELECT RLIKE(null, null);
+                 rlike
+                -------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testSequence() {
+        this.qs("""
+                SELECT SEQUENCE(1, 10);
+                 sequence
+                ----------
+                 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+                (1 row)
+                
+                SELECT SEQUENCE(10, 1);
+                 sequence
+                ----------
+                 {}
+                (1 row)
+                
+                SELECT SEQUENCE(1, 1);
+                 sequence
+                ----------
+                 {1}
+                (1 row)
+                
+                SELECT SEQUENCE(-6, 1);
+                 sequence
+                ----------
+                 {-6, -5, -4, -3, -2, -1, 0, 1}
+                (1 row)
+                
+                SELECT SEQUENCE(-6, -9);
+                 sequence
+                ----------
+                 {}
+                (1 row)
+                
+                SELECT SEQUENCE(0, -2);
+                 sequence
+                ----------
+                 {}
+                (1 row)
+                
+                SELECT SEQUENCE(null::int, 1);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(null, 1);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(1, null);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(null, null);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(null::tinyint, null::tinyint);
+                 sequence
+                ----------
+                 NULL
+                (1 row)
+                
+                SELECT SEQUENCE(1::tinyint, 10::tinyint);
+                 sequence
+                ----------
+                 {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+                (1 row)
+                
+                SELECT SEQUENCE(1::tinyint, 3::bigint);
+                 sequence
+                ----------
+                 {1, 2, 3}
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testCeilInt() {
+        this.qs("""
+                SELECT ceil(2::tinyint);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(2::smallint);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(2::int);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(2::bigint);
+                 ceil
+                ------
+                     2
+                (1 row)
+                
+                SELECT ceil(null::tinyint);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null::smallint);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null::int);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null::bigint);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT ceil(null);
+                 ceil
+                ------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testFloorInt() {
+        this.qs("""
+                SELECT floor(2::tinyint);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(2::smallint);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(2::int);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(2::bigint);
+                 floor
+                ------
+                     2
+                (1 row)
+                
+                SELECT floor(null::tinyint);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null::smallint);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null::int);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null::bigint);
+                 floor
+                ------
+                 NULL
+                (1 row)
+                
+                SELECT floor(null);
+                 floor
+                ------
+                 NULL
                 (1 row)
                 """
         );

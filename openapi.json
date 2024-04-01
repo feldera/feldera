@@ -822,12 +822,15 @@
                       "transport": {
                         "config": {
                           "auto.offset.reset": "earliest",
+                          "fault_tolerance": null,
                           "group.instance.id": "group0",
+                          "group_join_timeout_secs": 10,
+                          "log_level": null,
                           "topics": [
                             "test_input1"
                           ]
                         },
-                        "name": "kafka"
+                        "name": "kafka_input"
                       }
                     }
                   },
@@ -847,13 +850,13 @@
                       "stream": "my_output_view",
                       "transport": {
                         "config": {
-                          "auto.offset.reset": "earliest",
-                          "group.instance.id": "group0",
-                          "topics": [
-                            "test_input2"
-                          ]
+                          "fault_tolerance": null,
+                          "initialization_timeout_secs": 60,
+                          "log_level": null,
+                          "max_inflight_messages": 1000,
+                          "topic": "test_output1"
                         },
-                        "name": "kafka"
+                        "name": "kafka_output"
                       }
                     }
                   },
@@ -5006,20 +5009,147 @@
         "format": "uuid"
       },
       "TransportConfig": {
-        "type": "object",
-        "description": "Transport endpoint configuration.",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "config": {
+        "oneOf": [
+          {
             "type": "object",
-            "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`."
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/FileInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file_input"
+                ]
+              }
+            }
           },
-          "name": {
-            "type": "string",
-            "description": "Data transport name, e.g., `file`, `kafka`, `kinesis`"
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/FileOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/KafkaInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "kafka_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/KafkaOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "kafka_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/UrlInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "url_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/S3InputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "s3_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "http_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "http_output"
+                ]
+              }
+            }
           }
+        ],
+        "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`.",
+        "discriminator": {
+          "propertyName": "name"
         }
       },
       "UpdateConnectorRequest": {

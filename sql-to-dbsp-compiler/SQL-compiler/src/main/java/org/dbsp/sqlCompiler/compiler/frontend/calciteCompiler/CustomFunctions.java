@@ -19,6 +19,7 @@ import org.apache.calcite.sql.type.SqlOperandTypeInference;
 import org.apache.calcite.sql.type.SqlSingleOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeTransforms;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.util.Linq;
@@ -40,7 +41,9 @@ public class CustomFunctions {
 
     public CustomFunctions() {
         this.initial.add(new RlikeFunction());
+        this.initial.add(new GunzipFunction());
         this.initial.add(new WriteLogFunction());
+        this.initial.add(new SequenceFunction());
         this.udf = new HashMap<>();
     }
 
@@ -49,7 +52,7 @@ public class CustomFunctions {
         public RlikeFunction() {
             super("RLIKE",
                     SqlKind.RLIKE,
-                    ReturnTypes.BOOLEAN,
+                    ReturnTypes.BOOLEAN_NULLABLE,
                     null,
                     OperandTypes.STRING_STRING,
                     SqlFunctionCategory.STRING);
@@ -58,6 +61,28 @@ public class CustomFunctions {
         @Override
         public boolean isDeterministic() {
             // TODO: change this when we learn how to constant-fold in the RexToLixTranslator
+            return false;
+        }
+    }
+
+    /**
+     * GUNZIP(binary) returns the string that results from decompressing the
+     * input binary using the GZIP algorithm.  The input binary must be a
+     * valid GZIP binary string.
+     */
+    public static class GunzipFunction extends SqlFunction {
+        public GunzipFunction() {
+            super("GUNZIP",
+                    SqlKind.OTHER_FUNCTION,
+                    ReturnTypes.VARCHAR
+                            .andThen(SqlTypeTransforms.TO_NULLABLE),
+                    null,
+                    OperandTypes.BINARY,
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
+        }
+
+        @Override
+        public boolean isDeterministic() {
             return false;
         }
     }
@@ -73,6 +98,28 @@ public class CustomFunctions {
                     ARG1,
                     null,
                     family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return false;
+        }
+    }
+
+    /**
+     * SEQUENCE(start, end) returns an array of integers from start to end (inclusive).
+     * The array is empty if start > end.
+     */
+    public static class SequenceFunction extends SqlFunction {
+        public SequenceFunction() {
+            super("SEQUENCE",
+                    SqlKind.OTHER_FUNCTION,
+                    ReturnTypes.INTEGER
+                            .andThen(SqlTypeTransforms.TO_ARRAY)
+                            .andThen(SqlTypeTransforms.TO_NULLABLE),
+                    null,
+                    family(SqlTypeFamily.INTEGER, SqlTypeFamily.INTEGER),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
         }
 

@@ -1,6 +1,6 @@
 use deadpool_postgres::Transaction;
 use log::debug;
-use pipeline_types::config::ConnectorConfig;
+use pipeline_types::config::{ConnectorConfig, TransportConfig};
 use uuid::Uuid;
 
 use crate::auth::TenantId;
@@ -37,6 +37,21 @@ pub(crate) struct ConnectorDescr {
     pub config: ConnectorConfig,
 }
 
+/// Validates the connector transport configuration.
+/// In particular, checks that http_input and http_output
+/// are not created directly in connectors via the API.
+fn validate_connector_transport(config: &ConnectorConfig) -> Result<(), DBError> {
+    match config.transport {
+        TransportConfig::HttpInput => Err(DBError::InvalidConnectorTransport {
+            reason: "Transport type http_input cannot be created directly".to_string(),
+        }),
+        TransportConfig::HttpOutput => Err(DBError::InvalidConnectorTransport {
+            reason: "Transport type http_output cannot be created directly".to_string(),
+        }),
+        _ => Ok(()),
+    }
+}
+
 pub(crate) async fn new_connector(
     db: &ProjectDB,
     tenant_id: TenantId,
@@ -47,6 +62,7 @@ pub(crate) async fn new_connector(
     txn: Option<&Transaction<'_>>,
 ) -> Result<ConnectorId, DBError> {
     debug!("new_connector {name} {description} {config:?}");
+    validate_connector_transport(config)?;
     let query = "INSERT INTO connector (id, name, description, config, tenant_id) VALUES($1, $2, $3, $4, $5)";
     let row = if let Some(txn) = txn {
         let stmt = txn.prepare_cached(query).await?;
@@ -170,6 +186,9 @@ pub(crate) async fn update_connector(
     config: &Option<ConnectorConfig>,
     txn: Option<&Transaction<'_>>,
 ) -> Result<(), DBError> {
+    if let Some(internal_config) = config {
+        validate_connector_transport(internal_config)?;
+    }
     let query = r#"UPDATE connector
                          SET name = COALESCE($1, name),
                              description = COALESCE($2, description),

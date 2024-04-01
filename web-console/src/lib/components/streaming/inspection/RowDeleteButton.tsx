@@ -1,15 +1,16 @@
+import { Row } from '$lib/functions/ddl'
 import { useState } from 'react'
 
 import DeleteIcon from '@mui/icons-material/Delete'
 import { Button, ButtonProps, Dialog, DialogActions, DialogTitle } from '@mui/material'
-import { GridRowId, GridValidRowModel, useGridApiContext } from '@mui/x-data-grid-pro'
+import { GridRowId, useGridApiContext } from '@mui/x-data-grid-pro'
 
 export const RowDeleteButton = ({
   onDeleteRows,
   ...props
-}: ButtonProps & { onDeleteRows: (rows: Map<GridRowId, GridValidRowModel>) => void }) => {
+}: ButtonProps & { onDeleteRows: (rows: Map<GridRowId, Row>) => void }) => {
   const { current: ref } = useGridApiContext()
-  const rows = ref.getSelectedRows()
+  const rows = ref.getSelectedRows() as Map<GridRowId, Row>
   const [dialogOpen, setDialogOpen] = useState(false)
 
   return (

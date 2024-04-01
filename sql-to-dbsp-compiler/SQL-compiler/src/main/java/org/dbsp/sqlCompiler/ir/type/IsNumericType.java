@@ -25,18 +25,11 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 
-/**
- * Interface implemented by numeric types.
- */
-public interface IsNumericType {
-    default String getRustString() { return this.toString(); }
-    DBSPLiteral getZero();
+/** Interface implemented by numeric types. */
+public interface IsNumericType extends IHasZero {
     DBSPLiteral getOne();
     DBSPLiteral getMaxValue();
     DBSPLiteral getMinValue();
-    default boolean isZero(DBSPLiteral literal) {
-        return this.getZero().sameValue(literal);
-    }
     default boolean isOne(DBSPLiteral literal) {
         return this.getOne().sameValue(literal);
     }

@@ -594,8 +594,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(" - 1)");
             return VisitDecision.STOP;
         } else if (expression.operation == DBSPOpcode.DIV_NULL) {
-            if (expression.left.getType().is(DBSPTypeDecimal.class))
-                this.builder.append("decimal_");
             this.builder.append("div_null")
                     .append(expression.left.getType().nullableSuffix())
                     .append(expression.right.getType().nullableSuffix())

@@ -6,8 +6,8 @@
 //! value to the output stream (except that nested circuits can execute multiple
 //! operations for each outer clock tick).
 //!
-//! Use `RootCircuit::build` to create and populate an circuit that executes in
-//! the calling thread, or `Runtime::init_circuit` to create a multi-circuit,
+//! Use [`RootCircuit::build`] to create and populate an circuit that executes in
+//! the calling thread, or [`Runtime::init_circuit`] to create a multi-circuit,
 //! multi-worker threaded runtime.  These functions return a [`CircuitHandle`]
 //! or [`DBSPHandle`], respectively, that control the circuits' execution,
 //! plus, when used in the recommended way, additional input handles for

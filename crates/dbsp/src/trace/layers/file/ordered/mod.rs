@@ -3,15 +3,15 @@ use crate::{
     dynamic::{
         DataTrait, DynOpt, DynUnit, Erase, Factory, WeightTrait, WeightTraitTyped, WithFactory,
     },
-    storage::file::{
-        reader::{Cursor as FileCursor, FallibleEq, Reader},
-        writer::{Parameters, Writer2},
-        Factories as FileFactories,
+    storage::{
+        backend::Backend,
+        file::{
+            reader::{Cursor as FileCursor, FallibleEq, Reader},
+            writer::{Parameters, Writer2},
+            Factories as FileFactories,
+        },
     },
-    trace::{
-        layers::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
-        ord::file::StorageBackend,
-    },
+    trace::layers::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder},
     DBData, DBWeight, NumEntries, Runtime,
 };
 
@@ -84,7 +84,7 @@ where
 {
     pub(crate) factories: FileOrderedLayerFactories<K, V, R>,
     #[allow(clippy::type_complexity)]
-    file: Reader<StorageBackend, (&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
+    file: Reader<Backend, (&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
     lower_bound: usize,
 }
 
@@ -277,7 +277,7 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileOrderedLayerFactories<K, V, R>,
-    writer: Writer2<StorageBackend, K, DynUnit, V, R>,
+    writer: Writer2<Backend, K, DynUnit, V, R>,
 }
 
 impl<K, V, R> FileOrderedMergeBuilder<K, V, R>
@@ -502,7 +502,7 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileOrderedLayerFactories<K, V, R>,
-    writer: Writer2<StorageBackend, K, DynUnit, V, R>,
+    writer: Writer2<Backend, K, DynUnit, V, R>,
     key: Box<DynOpt<K>>,
 }
 
@@ -592,7 +592,7 @@ where
     #[allow(clippy::type_complexity)]
     cursor: FileCursor<
         's,
-        StorageBackend,
+        Backend,
         K,
         DynUnit,
         (&'static V, &'static R, ()),
@@ -665,7 +665,7 @@ where
         f: impl FnOnce(
             &mut FileCursor<
                 's,
-                StorageBackend,
+                Backend,
                 K,
                 DynUnit,
                 (&'static V, &'static R, ()),
@@ -782,7 +782,7 @@ where
     #[allow(clippy::type_complexity)]
     cursor: FileCursor<
         's,
-        StorageBackend,
+        Backend,
         V,
         R,
         (),
@@ -820,7 +820,7 @@ where
         factories: &FileOrderedLayerFactories<K, V, R>,
         cursor: &FileCursor<
             's,
-            StorageBackend,
+            Backend,
             K,
             DynUnit,
             (&'static V, &'static R, ()),
@@ -875,7 +875,7 @@ where
         f: impl Fn(
             &mut FileCursor<
                 's,
-                StorageBackend,
+                Backend,
                 V,
                 R,
                 (),

@@ -12,7 +12,7 @@ import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
 import { fromKafkaConfig } from 'src/lib/functions/kafka/librdkafkaOptions'
 import invariant from 'tiny-invariant'
-import { match, P } from 'ts-pattern'
+import { match } from 'ts-pattern'
 import iconBoilingFlask from '~icons/generic/boiling-flask'
 import iconHttpGet from '~icons/tabler/http-get'
 import iconKafka from '~icons/vendors/apache-kafka-icon'
@@ -24,25 +24,19 @@ import { SVGImport } from '../types/imports'
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (config: ConnectorDescr['config']): ConnectorType => {
   return match(config)
-    .with(
-      { transport: { name: 'kafka', config: { topics: P._ } }, format: { config: { update_format: 'debezium' } } },
-      () => {
-        return ConnectorType.DEBEZIUM_IN
-      }
-    )
-    .with(
-      { transport: { name: 'kafka', config: { topic: P._ } }, format: { config: { update_format: 'snowflake' } } },
-      () => {
-        return ConnectorType.SNOWFLAKE_OUT
-      }
-    )
-    .with({ transport: { name: 'kafka', config: { topics: P._ } } }, () => {
+    .with({ transport: { name: 'kafka_input' }, format: { config: { update_format: 'debezium' } } }, () => {
+      return ConnectorType.DEBEZIUM_IN
+    })
+    .with({ transport: { name: 'kafka_output' }, format: { config: { update_format: 'snowflake' } } }, () => {
+      return ConnectorType.SNOWFLAKE_OUT
+    })
+    .with({ transport: { name: 'kafka_input' } }, () => {
       return ConnectorType.KAFKA_IN
     })
-    .with({ transport: { name: 'kafka', config: { topic: P._ } } }, () => {
+    .with({ transport: { name: 'kafka_output' } }, () => {
       return ConnectorType.KAFKA_OUT
     })
-    .with({ transport: { name: 'url' } }, () => {
+    .with({ transport: { name: 'url_input' } }, () => {
       return ConnectorType.URL
     })
     .otherwise(() => {
@@ -207,19 +201,19 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
 export const connectorTransportName = (status: ConnectorType) =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
-      return 'kafka'
+      return 'kafka_input'
     })
     .with(ConnectorType.KAFKA_OUT, () => {
-      return 'kafka'
+      return 'kafka_output'
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
-      return 'kafka'
+      return 'kafka_input'
     })
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
-      return 'kafka'
+      return 'kafka_output'
     })
     .with(ConnectorType.URL, () => {
-      return 'url'
+      return 'url_input'
     })
     .with(ConnectorType.UNKNOWN, () => {
       return ''

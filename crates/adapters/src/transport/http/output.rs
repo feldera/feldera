@@ -7,9 +7,7 @@ use log::debug;
 use log::error;
 use serde::{ser::SerializeStruct, Serializer};
 use serde_json::value::RawValue;
-use serde_yaml::Value as YamlValue;
 use std::{
-    borrow::Cow,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -40,10 +38,7 @@ pub(crate) struct HttpOutputTransport;
 
 impl HttpOutputTransport {
     pub(crate) fn config() -> TransportConfig {
-        TransportConfig {
-            name: Cow::from("api"),
-            config: YamlValue::Null,
-        }
+        TransportConfig::HttpOutput
     }
 
     pub(crate) fn default_format() -> String {

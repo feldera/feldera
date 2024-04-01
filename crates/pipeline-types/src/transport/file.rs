@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Configuration for reading data from a file with `FileInputTransport`
-#[derive(Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct FileInputConfig {
     /// File path.
     pub path: String,
@@ -24,7 +24,7 @@ pub struct FileInputConfig {
 }
 
 /// Configuration for writing data to a file with `FileOutputTransport`.
-#[derive(Deserialize, Debug, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct FileOutputConfig {
     /// File path.
     pub path: String,

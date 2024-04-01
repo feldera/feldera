@@ -73,6 +73,9 @@ pub enum DBError {
     UnknownConnectorName {
         connector_name: String,
     },
+    InvalidConnectorTransport {
+        reason: String,
+    },
     UnknownService {
         service_id: ServiceId,
     },
@@ -426,6 +429,9 @@ impl Display for DBError {
             DBError::UnknownConnectorName { connector_name } => {
                 write!(f, "Unknown connector name '{connector_name}'")
             }
+            DBError::InvalidConnectorTransport { reason } => {
+                write!(f, "Invalid connector transport: '{reason}'")
+            }
             DBError::UnknownService { service_id } => {
                 write!(f, "Unknown service id '{service_id}'")
             }
@@ -529,6 +535,7 @@ impl DetailedError for DBError {
             Self::UnknownPipelineName { .. } => Cow::from("UnknownPipelineName"),
             Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
             Self::UnknownConnectorName { .. } => Cow::from("UnknownConnectorName"),
+            Self::InvalidConnectorTransport { .. } => Cow::from("InvalidConnectorTransport"),
             Self::UnknownService { .. } => Cow::from("UnknownService"),
             Self::UnknownServiceName { .. } => Cow::from("UnknownServiceName"),
             Self::UnknownServiceProbe { .. } => Cow::from("UnknownServiceProbe"),
@@ -588,6 +595,7 @@ impl ResponseError for DBError {
             Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnector { .. } => StatusCode::NOT_FOUND,
             Self::UnknownConnectorName { .. } => StatusCode::NOT_FOUND,
+            Self::InvalidConnectorTransport { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownService { .. } => StatusCode::NOT_FOUND,
             Self::UnknownServiceName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownServiceProbe { .. } => StatusCode::NOT_FOUND,

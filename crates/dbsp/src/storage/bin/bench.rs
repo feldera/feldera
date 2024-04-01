@@ -9,31 +9,27 @@
 //! Run `metrics-observer` in another terminal to see the metrics.
 //!
 //! There are still some issues with this benchmark to make it useful:
-//! - Threads indicate they're done writing but are still writing, potentially
-//!   async code is just wrong/needs join.
+//! - Threads indicate they're done writing but are still writing.
 
-#![allow(async_fn_in_trait)]
-
-use async_lock::Barrier;
+use libc::timespec;
 use std::fs::create_dir_all;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use monoio::{FusionDriver, RuntimeBuilder};
 
-#[cfg(feature = "glommio")]
-use feldera_storage::backend::glommio_impl::GlommioBackend;
-
+use feldera_storage::backend::io_uring_impl::IoUringBackend;
 use feldera_storage::backend::monoio_impl::MonoioBackend;
-use feldera_storage::backend::{AtomicIncrementOnlyI64, StorageControl, StorageRead, StorageWrite};
-use feldera_storage::buffer_cache::{BufferCache, FBuf, TinyLfuCache};
+use feldera_storage::backend::posixio_impl::PosixBackend;
+use feldera_storage::backend::{AtomicIncrementOnlyI64, Storage};
+use feldera_storage::buffer_cache::FBuf;
 
 #[derive(Debug, Clone, Default)]
 struct ThreadBenchResult {
     read_time: Duration,
     write_time: Duration,
+    cpu_time: Duration,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -130,24 +126,39 @@ impl BenchResult {
         .unwrap()
     }
 
+    fn cpu_time_mean(&self) -> f64 {
+        mean(
+            &self
+                .times
+                .iter()
+                .map(|t| t.cpu_time.as_secs_f64())
+                .collect::<Vec<f64>>(),
+        )
+        .unwrap()
+    }
+
     fn display(&self, args: Args) {
         let read_time = self.read_time_mean();
         let write_time = self.write_time_mean();
+        let cpu_time = self.cpu_time_mean();
         const ONE_MIB: f64 = 1024f64 * 1024f64;
 
         if !args.csv {
-            println!(
-                "read: {} MiB/s (mean: {}s, std: {}s)",
-                ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / read_time,
-                read_time,
-                self.read_time_std()
-            );
+            if !args.write_only {
+                println!(
+                    "read: {} MiB/s (mean: {}s, std: {}s)",
+                    ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / read_time,
+                    read_time,
+                    self.read_time_std()
+                );
+            }
             println!(
                 "write: {} MiB/s (mean: {}s, std: {}s)",
                 ((args.per_thread_file_size * args.threads) as f64 / ONE_MIB) / write_time,
                 write_time,
                 self.write_time_std()
             );
+            println!("cpu: {}s (mean))", cpu_time,);
         } else {
             println!(
                 "backend,cache,per_thread_file_size,threads,buffer_size,read_time,read_time_std,write_time,write_time_std",
@@ -170,29 +181,32 @@ impl BenchResult {
 
 #[derive(Debug, Clone)]
 enum Backend {
-    #[cfg(feature = "glommio")]
-    Glommio,
     Monoio,
+    Posix,
+    IoUring,
 }
 
 impl From<String> for Backend {
     fn from(s: String) -> Self {
         match s.as_str() {
-            #[cfg(feature = "glommio")]
-            "Glommio" => Backend::Glommio,
             "Monoio" => Backend::Monoio,
+            "Posix" => Backend::Posix,
+            "IoUring" => Backend::IoUring,
             _ => panic!("invalid backend"),
         }
     }
 }
 
 /// Simple program to benchmark files.
+///
 /// Spawns multiple threads, each thread writes one file sequentially
 /// and then reads it back.
 ///
-/// The program prints the write and read throughput.
+/// The program prints read and write throughput, and the CPU time used by the
+/// benchmark threads, which includes system and user time for those threads
+/// (but not for other user or kernel threads spawned by them for I/O, if any).
 #[derive(Parser, Debug, Clone)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version)]
 struct Args {
     /// Path to a file or directory
     #[clap(short, long, default_value = "/tmp/feldera-storage")]
@@ -222,6 +236,10 @@ struct Args {
     #[clap(long)]
     cache: Option<usize>,
 
+    /// Write without reading back?
+    #[clap(long, default_value = "false")]
+    write_only: bool,
+
     /// Print data as CSV.
     #[clap(long, default_value = "false")]
     csv: bool,
@@ -231,14 +249,33 @@ fn allocate_buffer(sz: usize) -> FBuf {
     FBuf::with_capacity(sz)
 }
 
-async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
-    backend: T,
-    barrier: Arc<Barrier>,
-) -> ThreadBenchResult {
-    let args = Args::parse();
-    let file = backend.create().await.unwrap();
+/// Returns the amount of CPU time (user + system) used by the current thread.
+///
+/// It was difficult to determine that the result includes both user and system
+/// time, so for future reference, see [the original commit] that added support,
+/// which includes:
+///
+/// ```patch
+/// +static inline unsigned long thread_ticks(task_t *p) {
+/// +       return p->utime + current->stime;
+/// +}
+/// ```
+///
+/// [the original commit]: https://git.kernel.org/pub/scm/linux/kernel/git/tglx/history.git/commit/?id=bb82e8a53042a91688fd819d0c475a1c9a2b982a
+fn thread_cpu_time() -> Duration {
+    let mut tp = timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut tp as *mut timespec) };
+    Duration::new(tp.tv_sec as u64, tp.tv_nsec as u32)
+}
 
-    barrier.wait_blocking();
+fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenchResult {
+    let args = Args::parse();
+    let file = backend.create().unwrap();
+
+    barrier.wait();
     let start_write = Instant::now();
     for i in 0..args.per_thread_file_size / args.buffer_size {
         let mut wb = allocate_buffer(args.buffer_size);
@@ -248,117 +285,124 @@ async fn benchmark<T: StorageControl + StorageWrite + StorageRead>(
         debug_assert!(wb.len() == args.buffer_size);
         backend
             .write_block(&file, (i * args.buffer_size) as u64, wb)
-            .await
             .expect("write failed");
     }
-    let (ih, _path) = backend.complete(file).await.expect("complete failed");
+    let (ih, _path) = backend.complete(file).expect("complete failed");
     let write_time = start_write.elapsed();
 
-    barrier.wait_blocking();
+    barrier.wait();
     let start_read = Instant::now();
-    for i in 0..args.per_thread_file_size / args.buffer_size {
-        let rr = backend
-            .read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size)
-            .await
-            .expect("read failed");
-        if args.verify {
-            assert_eq!(rr.len(), args.buffer_size);
-            assert_eq!(
-                rr.iter().as_slice(),
-                vec![0xffu8; args.buffer_size].as_slice()
-            );
+    if !args.write_only {
+        for i in 0..args.per_thread_file_size / args.buffer_size {
+            let rr = backend
+                .read_block(&ih, (i * args.buffer_size) as u64, args.buffer_size)
+                .expect("read failed");
+            if args.verify {
+                assert_eq!(rr.len(), args.buffer_size);
+                assert_eq!(
+                    rr.iter().as_slice(),
+                    vec![0xffu8; args.buffer_size].as_slice()
+                );
+            }
         }
     }
     let read_time = start_read.elapsed();
 
-    backend.delete(ih).await.expect("delete failed");
+    backend.delete(ih).expect("delete failed");
     ThreadBenchResult {
         write_time,
         read_time,
+        cpu_time: thread_cpu_time(),
     }
 }
 
-#[cfg(feature = "glommio")]
-fn glommio_main(args: Args) -> BenchResult {
-    use glommio::{
-        timer::Timer, DefaultStallDetectionHandler, LocalExecutorPoolBuilder, PoolPlacement,
-    };
-
-    let mut br = BenchResult::default();
-    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
-    let barrier = Arc::new(Barrier::new(args.threads));
-
-    LocalExecutorPoolBuilder::new(PoolPlacement::Unbound(args.threads))
-        .ring_depth(4096)
-        .spin_before_park(Duration::from_millis(10))
-        .detect_stalls(Some(Box::new(|| Box::new(DefaultStallDetectionHandler {}))))
-        .on_all_shards(|| async move {
-            let barrier = barrier.clone();
-            let counter = counter.clone();
-            let backend = GlommioBackend::new(args.path.clone(), counter);
-            Timer::new(Duration::from_millis(100)).await;
-            benchmark(backend, barrier).await
-        })
-        .expect("failed to spawn local executors")
-        .join_all()
-        .into_iter()
-        .map(|r| r.unwrap_or_else(|_e| panic!("unable to get result from benchmark thread")))
-        .for_each(|tres| br.times.push(tres.clone()));
-
-    br
-}
-
 fn monoio_main(args: Args) -> BenchResult {
-    let lfu_cache: Option<Arc<TinyLfuCache>> = args
-        .cache
-        .map(|cap| Arc::new(TinyLfuCache::with_capacity(cap)));
-
     let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
     let barrier = Arc::new(Barrier::new(args.threads));
     // spawn n-1 threads
     let threads: Vec<_> = (1..args.threads)
         .map(|_| {
             let args = args.clone();
-            let lfu_cache = lfu_cache.clone();
             let barrier = barrier.clone();
             let counter = counter.clone();
             thread::spawn(move || {
                 let barrier = barrier.clone();
                 let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
-                let mut rt = RuntimeBuilder::<FusionDriver>::new()
-                    .enable_timer()
-                    .with_entries(4096)
-                    .build()
-                    .expect("Failed building the Runtime");
-                if let Some(lfu_cache) = lfu_cache {
-                    rt.block_on(benchmark(
-                        BufferCache::with_backend_lfu(monoio_backend, lfu_cache),
-                        barrier,
-                    ))
-                } else {
-                    rt.block_on(benchmark(monoio_backend, barrier))
-                }
+                benchmark(&monoio_backend, barrier)
             })
         })
         .collect();
 
     // Run on main thread
     let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
-    let mut rt = RuntimeBuilder::<FusionDriver>::new()
-        .enable_timer()
-        .with_entries(4096)
-        .build()
-        .expect("Failed building the Runtime");
+    let mut br = BenchResult::default();
+    let main_res = benchmark(&monoio_backend, barrier);
+    br.times.push(main_res);
+
+    // Wait for other n-1 threads
+    threads.into_iter().for_each(|t| {
+        let tres = t.join().expect("thread panicked");
+        br.times.push(tres);
+    });
+
+    br
+}
+
+fn posixio_main(args: Args) -> BenchResult {
+    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
+    let barrier = Arc::new(Barrier::new(args.threads));
+    // spawn n-1 threads
+    let threads: Vec<_> = (1..args.threads)
+        .map(|_| {
+            let args = args.clone();
+            let barrier = barrier.clone();
+            let counter = counter.clone();
+            thread::spawn(move || {
+                let barrier = barrier.clone();
+                let posixio_backend = PosixBackend::new(args.path.clone(), counter);
+                benchmark(&posixio_backend, barrier)
+            })
+        })
+        .collect();
+
+    // Run on main thread
+    let posixio_backend = PosixBackend::new(args.path.clone(), counter);
 
     let mut br = BenchResult::default();
-    let main_res = if let Some(lfu_cache) = lfu_cache {
-        rt.block_on(benchmark(
-            BufferCache::with_backend_lfu(monoio_backend, lfu_cache),
-            barrier,
-        ))
-    } else {
-        rt.block_on(benchmark(monoio_backend, barrier))
-    };
+    let main_res = benchmark(&posixio_backend, barrier);
+    br.times.push(main_res);
+
+    // Wait for other n-1 threads
+    threads.into_iter().for_each(|t| {
+        let tres = t.join().expect("thread panicked");
+        br.times.push(tres);
+    });
+
+    br
+}
+
+fn io_uring_main(args: Args) -> BenchResult {
+    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
+    let barrier = Arc::new(Barrier::new(args.threads));
+    // spawn n-1 threads
+    let threads: Vec<_> = (1..args.threads)
+        .map(|_| {
+            let args = args.clone();
+            let barrier = barrier.clone();
+            let counter = counter.clone();
+            thread::spawn(move || {
+                let barrier = barrier.clone();
+                let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
+                benchmark(&io_uring_backend, barrier)
+            })
+        })
+        .collect();
+
+    // Run on main thread
+    let io_uring_backend = IoUringBackend::new(args.path.clone(), counter);
+
+    let mut br = BenchResult::default();
+    let main_res = benchmark(&io_uring_backend, barrier);
     br.times.push(main_res);
 
     // Wait for other n-1 threads
@@ -387,9 +431,9 @@ fn main() {
     }
 
     let br = match args.backend {
-        #[cfg(feature = "glommio")]
-        Backend::Glommio => glommio_main(args.clone()),
         Backend::Monoio => monoio_main(args.clone()),
+        Backend::Posix => posixio_main(args.clone()),
+        Backend::IoUring => io_uring_main(args.clone()),
     };
 
     br.display(args.clone());

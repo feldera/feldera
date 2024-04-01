@@ -8,21 +8,18 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     fmt::{self, Debug},
+    io::{Error as IoError, ErrorKind},
     iter,
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicI64, Ordering},
-        Arc,
-    },
+    rc::Rc,
+    sync::atomic::{AtomicI64, Ordering},
 };
 
 use proptest::prelude::*;
 use proptest_state_machine::ReferenceStateMachine;
 
 use crate::storage::{
-    backend::{
-        FileHandle, ImmutableFileHandle, StorageControl, StorageError, StorageRead, StorageWrite,
-    },
+    backend::{FileHandle, ImmutableFileHandle, Storage, StorageError},
     buffer_cache::FBuf,
 };
 
@@ -46,8 +43,8 @@ pub(crate) const MAX_TRANSITIONS: usize = 20;
 /// How many files the test case try to read/write to.
 const MAX_FILES: i64 = 10;
 
-/// What the backend does, models the operations that the traits
-/// [`StorageControl`], [`StorageWrite`], and [`StorageRead`]) provide.
+/// What the backend does, models the operations that the [`Storage`] trait
+/// provides.
 #[derive(Clone)]
 pub enum Transition {
     Create,
@@ -111,24 +108,6 @@ impl<const ALLOW_OVERWRITE: bool> Clone for InMemoryBackend<ALLOW_OVERWRITE> {
     }
 }
 
-impl<const ALLOW_OVERWRITE: bool> StorageControl for InMemoryBackend<ALLOW_OVERWRITE> {
-    async fn create_named<P: AsRef<Path>>(&self, _name: P) -> Result<FileHandle, StorageError> {
-        let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
-        self.files.borrow_mut().insert(file_counter, Vec::new());
-        Ok(FileHandle(file_counter))
-    }
-
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.immutable_files.borrow_mut().remove(&fd.0);
-        Ok(())
-    }
-
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.files.borrow_mut().remove(&fd.0);
-        Ok(())
-    }
-}
-
 fn insert_slice_at_offset(
     vec: &Vec<Option<u8>>,
     offset: usize,
@@ -159,44 +138,55 @@ fn insert_slice_at_offset(
     Ok(new_vec)
 }
 
-impl<const ALLOW_OVERWRITE: bool> StorageWrite for InMemoryBackend<ALLOW_OVERWRITE> {
-    async fn write_block(
+impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
+    fn create_named(&self, _name: &Path) -> Result<FileHandle, StorageError> {
+        let file_counter = self.file_counter.fetch_add(1, Ordering::Relaxed);
+        self.files.borrow_mut().insert(file_counter, Vec::new());
+        Ok(FileHandle(file_counter))
+    }
+
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+        self.immutable_files.borrow_mut().remove(&fd.0);
+        Ok(())
+    }
+
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+        self.files.borrow_mut().remove(&fd.0);
+        Ok(())
+    }
+
+    fn write_block(
         &self,
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let mut files = self.files.borrow_mut();
         let file = files.get(&fd.0).unwrap();
         let new_file = insert_slice_at_offset(file, offset as usize, &data, ALLOW_OVERWRITE)?;
         files.insert(fd.0, new_file);
-        Ok(Arc::new(data))
+        Ok(Rc::new(data))
     }
 
-    async fn complete(
-        &self,
-        fd: FileHandle,
-    ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let file = self.files.borrow_mut().remove(&fd.0).unwrap();
         self.immutable_files.borrow_mut().insert(fd.0, file);
         Ok((ImmutableFileHandle(fd.0), PathBuf::from("")))
     }
-}
 
-impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRITE> {
-    async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {}
+    fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {}
 
-    async fn read_block(
+    fn read_block(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let files = self.immutable_files.borrow();
         let file = files.get(&fd.0).unwrap();
         let offset = offset as usize;
         if offset > file.len() || offset + size > file.len() {
-            return Err(StorageError::ShortRead);
+            return Err(IoError::from(ErrorKind::UnexpectedEof).into());
         }
         let end = offset + size;
         debug_assert!(end <= file.len());
@@ -208,10 +198,10 @@ impl<const ALLOW_OVERWRITE: bool> StorageRead for InMemoryBackend<ALLOW_OVERWRIT
             .map(|x| x.unwrap_or_default())
             .collect();
         buf.extend_from_slice(&slice);
-        Ok(Arc::new(buf))
+        Ok(Rc::new(buf))
     }
 
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         let files = self.immutable_files.borrow();
         let file = files.get(&fd.0).unwrap();
         Ok(file.len() as u64)
@@ -241,23 +231,22 @@ impl<const ALLOW_OVERWRITE: bool> ReferenceStateMachine for InMemoryBackend<ALLO
         state.error = None;
         match transition {
             Transition::Create => {
-                let r = futures::executor::block_on(state.create());
+                let r = state.create();
                 state.error = r.err();
             }
             Transition::DeleteMut(id) => {
-                let r = futures::executor::block_on(state.delete_mut(FileHandle(*id)));
+                let r = state.delete_mut(FileHandle(*id));
                 state.error = r.err();
             }
             Transition::Write(id, offset, content) => {
-                let mut buf = InMemoryBackend::<ALLOW_OVERWRITE>::allocate_buffer(content.len());
+                let mut buf = state.allocate_buffer(content.len());
                 buf.resize(content.len(), 0);
                 buf.copy_from_slice(content.as_bytes());
-                let r =
-                    futures::executor::block_on(state.write_block(&FileHandle(*id), *offset, buf));
+                let r = state.write_block(&FileHandle(*id), *offset, buf);
                 state.error = r.err()
             }
             Transition::Complete(id) => {
-                let r = futures::executor::block_on(state.complete(FileHandle(*id)));
+                let r = state.complete(FileHandle(*id));
                 state.error = r.err();
             }
             Transition::Read(_ident, _offset, _length) => {}

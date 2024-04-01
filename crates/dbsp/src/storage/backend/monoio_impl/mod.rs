@@ -1,5 +1,5 @@
-//! Implementation of the storage backend APIs ([`StorageControl`],
-//! [`StorageRead`], and [`StorageWrite`]) using the Monoio library.
+//! Implementation of the storage backend ([`Storage`] API, using the Monoio
+//! library.
 
 use std::{
     cell::RefCell,
@@ -23,19 +23,16 @@ use monoio::{
 };
 use tempfile::TempDir;
 
-use crate::storage::{
-    backend::{
-        describe_disk_metrics, AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle,
-        StorageControl, StorageError, StorageRead, StorageWrite, METRIC_FILES_CREATED,
-        METRIC_FILES_DELETED, METRIC_READS_FAILED, METRIC_READS_SUCCESS, METRIC_READ_LATENCY,
-        METRIC_TOTAL_BYTES_READ, METRIC_TOTAL_BYTES_WRITTEN, METRIC_WRITES_SUCCESS,
-        METRIC_WRITE_LATENCY, NEXT_FILE_HANDLE,
-    },
-    buffer_cache::FBuf,
-    init,
-};
+use crate::storage::{buffer_cache::FBuf, init};
 
-use super::StorageExecutor;
+use super::{
+    metrics::{
+        describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
+        READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+    },
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
+    NEXT_FILE_HANDLE,
+};
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -106,7 +103,8 @@ impl MonoioBackend {
     async fn delete_inner(&self, fd: i64) -> Result<(), StorageError> {
         let fm = self.files.write().await.remove(&fd).unwrap();
         fm.file.close().await?;
-        std::fs::remove_file(fm.path).unwrap();
+        std::fs::remove_file(fm.path)?;
+        counter!(FILES_DELETED).increment(1);
         Ok(())
     }
 
@@ -127,10 +125,11 @@ impl MonoioBackend {
         }
         DEFAULT_BACKEND.with(|rc| rc.clone())
     }
-}
 
-impl StorageControl for MonoioBackend {
-    async fn create_named<P: AsRef<Path>>(&self, name: P) -> Result<FileHandle, StorageError> {
+    async fn create_named_inner<P: AsRef<Path>>(
+        &self,
+        name: P,
+    ) -> Result<FileHandle, StorageError> {
         let path = self.base.join(name);
         let file = open_as_direct(
             &path,
@@ -148,31 +147,17 @@ impl StorageControl for MonoioBackend {
                 size: RefCell::new(0),
             },
         );
-        counter!(METRIC_FILES_CREATED).increment(1);
+        counter!(FILES_CREATED).increment(1);
 
         Ok(FileHandle(file_counter))
     }
 
-    async fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.delete_inner(fd.0)
-            .await
-            .map(|_| counter!(METRIC_FILES_DELETED).increment(1))
-    }
-
-    async fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.delete_inner(fd.0)
-            .await
-            .map(|_| counter!(METRIC_FILES_DELETED).increment(1))
-    }
-}
-
-impl StorageWrite for MonoioBackend {
-    async fn write_block(
+    async fn write_block_inner(
         &self,
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let files = self.files.read().await;
         let request_start = Instant::now();
         let fm = files.get(&fd.0).unwrap();
@@ -181,14 +166,14 @@ impl StorageWrite for MonoioBackend {
         res?;
 
         fm.size.replace_with(|size| max(*size, end_offset));
-        counter!(METRIC_TOTAL_BYTES_WRITTEN).increment(buf.len() as u64);
-        counter!(METRIC_WRITES_SUCCESS).increment(1);
-        histogram!(METRIC_WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
+        counter!(TOTAL_BYTES_WRITTEN).increment(buf.len() as u64);
+        counter!(WRITES_SUCCESS).increment(1);
+        histogram!(WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
 
-        Ok(Arc::new(buf))
+        Ok(Rc::new(buf))
     }
 
-    async fn complete(
+    async fn complete_inner(
         &self,
         fd: FileHandle,
     ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
@@ -201,53 +186,40 @@ impl StorageWrite for MonoioBackend {
 
         Ok((ImmutableFileHandle(fd.0), path))
     }
-}
 
-impl StorageRead for MonoioBackend {
-    async fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
-        unimplemented!()
-    }
-
-    async fn read_block(
+    async fn read_block_inner(
         &self,
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Arc<FBuf>, StorageError> {
+    ) -> Result<Rc<FBuf>, StorageError> {
         let buffer = FBuf::with_capacity(size);
 
         let files = self.files.read().await;
         let fm = files.get(&fd.0).unwrap();
         let request_start = Instant::now();
-        let (res, buf) = fm.file.read_at(buffer, offset).await;
+        let (res, buf) = fm.file.read_exact_at(buffer, offset).await;
         match res {
-            Ok(len) => {
-                counter!(METRIC_TOTAL_BYTES_READ).increment(len as u64);
-                histogram!(METRIC_READ_LATENCY).record(request_start.elapsed().as_secs_f64());
-                if size != buf.len() {
-                    counter!(METRIC_READS_FAILED).increment(1);
-                    Err(StorageError::ShortRead)
-                } else {
-                    counter!(METRIC_READS_SUCCESS).increment(1);
-                    Ok(Arc::new(buf))
-                }
+            Ok(()) => {
+                counter!(TOTAL_BYTES_READ).increment(size as u64);
+                histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
+                counter!(READS_SUCCESS).increment(1);
+                Ok(Rc::new(buf))
             }
             Err(e) => {
-                counter!(METRIC_READS_FAILED).increment(1);
+                counter!(READS_FAILED).increment(1);
                 Err(e.into())
             }
         }
     }
 
-    async fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+    async fn get_size_inner(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         let files = self.files.read().await;
         let fm = files.get(&fd.0).unwrap();
         let size = *fm.size.borrow();
         Ok(size)
     }
-}
 
-impl StorageExecutor for MonoioBackend {
     fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
@@ -271,5 +243,49 @@ impl StorageExecutor for MonoioBackend {
             }
         }
         RUNTIME.with(|runtime| runtime.borrow_mut().block_on(future))
+    }
+}
+
+impl Storage for MonoioBackend {
+    fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
+        self.block_on(self.create_named_inner(name))
+    }
+
+    fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+        self.block_on(self.delete_inner(fd.0))
+    }
+
+    fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
+        self.block_on(self.delete_inner(fd.0))
+    }
+
+    fn write_block(
+        &self,
+        fd: &FileHandle,
+        offset: u64,
+        data: FBuf,
+    ) -> Result<Rc<FBuf>, StorageError> {
+        self.block_on(self.write_block_inner(fd, offset, data))
+    }
+
+    fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
+        self.block_on(self.complete_inner(fd))
+    }
+
+    fn prefetch(&self, _fd: &ImmutableFileHandle, _offset: u64, _size: usize) {
+        unimplemented!()
+    }
+
+    fn read_block(
+        &self,
+        fd: &ImmutableFileHandle,
+        offset: u64,
+        size: usize,
+    ) -> Result<Rc<FBuf>, StorageError> {
+        self.block_on(self.read_block_inner(fd, offset, size))
+    }
+
+    fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
+        self.block_on(self.get_size_inner(fd))
     }
 }

@@ -76,7 +76,9 @@ const MetadataForm = (props: {
             disabled={props.disabled}
           />
           {props.errors.name && (
-            <FormHelperText sx={{ color: 'error.main' }}>{props.errors.name.message}</FormHelperText>
+            <FormHelperText data-testid='box-error-name' sx={{ color: 'error.main' }}>
+              {props.errors.name.message}
+            </FormHelperText>
           )}
         </FormControl>
       </Grid>
@@ -271,7 +273,7 @@ export const ProgramEditorImpl = ({
       <CardContent>
         <Grid item xs={12}>
           <EntitySyncIndicator getLabel={stateToEditorLabel} state={status} />
-          <CompileIndicator state={program.status} />
+          <CompileIndicator program={program} />
         </Grid>
       </CardContent>
       <CardContent>

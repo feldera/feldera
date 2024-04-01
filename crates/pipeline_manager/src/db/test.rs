@@ -177,7 +177,7 @@ pub fn test_connector_config() -> ConnectorConfig {
     ConnectorConfig::from_yaml_str(
         r#"
 transport:
-    name: kafka
+    name: kafka_input
     config:
         auto.offset.reset: "earliest"
         group.instance.id: "group0"
@@ -1192,7 +1192,7 @@ pub(crate) fn limited_connector() -> impl Strategy<Value = ConnectorConfig> {
             format!(
                 "
                 transport:
-                    name: kafka
+                    name: kafka_input
                     config:
                         auto.offset.reset: \"earliest\"
                         group.instance.id: \"group0\"
@@ -1214,7 +1214,7 @@ pub(crate) fn limited_option_connector() -> impl Strategy<Value = Option<Connect
                 format!(
                     "
                 transport:
-                    name: kafka
+                    name: kafka_input
                     config:
                         auto.offset.reset: \"earliest\"
                         group.instance.id: \"group0\"

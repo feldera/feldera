@@ -108,7 +108,7 @@ export function JSONEditor<T>(props: {
       return getRangeErrorMarker(monaco, error, offenderPos)
     })
     monaco.editor.setModelMarkers(editorRef.current.getModel()!, 'config-errors', errorMarkers)
-  }, [props.errors, editorRef, monaco.MarkerSeverity.Error, monaco.editor])
+  }, [props.errors, editorRef, monaco])
 
   const handleContentUpdate = (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
     try {
