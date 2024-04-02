@@ -30,6 +30,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
@@ -60,6 +62,39 @@ public class TimeTests extends BaseSQLTests {
 
     public Change createInput() {
         return new Change(new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
+    }
+
+    @Test
+    public void testInterval() {
+        this.testQuery("SELECT INTERVAL '20' YEAR",
+                new DBSPIntervalMonthsLiteral(240));
+        this.testQuery("SELECT INTERVAL '20-7' YEAR TO MONTH",
+                new DBSPIntervalMonthsLiteral(247));
+        this.testQuery("SELECT INTERVAL '10' MONTH",
+                new DBSPIntervalMonthsLiteral(10));
+        this.testQuery("SELECT INTERVAL '10' DAY",
+                new DBSPIntervalMillisLiteral(10L * 86400 * 1000, false));
+        this.testQuery("SELECT INTERVAL '10 10' DAY TO HOUR",
+                new DBSPIntervalMillisLiteral(10L * 86400 * 1000 + 10 * 3600 * 1000, false));
+        this.testQuery("SELECT INTERVAL '10 10:30' DAY TO MINUTE",
+                new DBSPIntervalMillisLiteral(10L * 86400 * 1000 + 10 * 3600 * 1000 + 30 * 60 * 1000, false));
+        this.testQuery("SELECT INTERVAL '10 10:30:40.999' DAY TO SECOND",
+                new DBSPIntervalMillisLiteral(
+                        10L * 86400 * 1000 + 10 * 3600 * 1000 + 30 * 60 * 1000 + 40999, false));
+        this.testQuery("SELECT INTERVAL '12' HOUR",
+                new DBSPIntervalMillisLiteral(12L * 3600 * 1000, false));
+        this.testQuery("SELECT INTERVAL '12:10' HOUR TO MINUTE",
+                new DBSPIntervalMillisLiteral(12L * 3600 * 1000 + 10 * 60 * 1000, false));
+        this.testQuery("SELECT INTERVAL '12:10:59' HOUR TO SECOND",
+                new DBSPIntervalMillisLiteral(12L * 3600 * 1000 + 10 * 60 * 1000 + 59000, false));
+        this.testQuery("SELECT INTERVAL '10' MINUTE",
+                new DBSPIntervalMillisLiteral(10L * 60 * 1000, false));
+        this.testQuery("SELECT INTERVAL '80:01.001' MINUTE TO SECOND",
+                new DBSPIntervalMillisLiteral(80L * 60 * 1000 + 1001, false));
+        this.testQuery("SELECT INTERVAL '80.001' SECOND",
+                new DBSPIntervalMillisLiteral(80001, false));
+        this.testQuery("SELECT INTERVAL '100' HOUR(3)",
+                new DBSPIntervalMillisLiteral(100L * 3600 * 1000, false));
     }
 
     @Test
