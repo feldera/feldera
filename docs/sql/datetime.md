@@ -203,23 +203,27 @@ the following combinations are supported:
 
 |Type|Example literal|
 |----|---------------|
-|`INTERVAL YEAR`             | `INTERVAL '2021' YEAR`                          |
-|`INTERVAL YEAR TO MONTH`    | `INTERVAL '2021-07' YEAR TO MONTH`              |
-|`INTERVAL MONTH`            | `INTERVAL '10' MONTH`                           |
-|`INTERVAL DAY`              | `INTERVAL '100' DAY`                            |
-|`INTERVAL DAY TO HOUR`      | `INTERVAL '100 10' DAY TO HOUR`                 |
-|`INTERVAL DAY TO MINUTE`    | `INTERVAL '100 10:30' DAY TO MINUTE`            |
-|`INTERVAL DAY TO SECOND`    | `INTERVAL '100 10:30:40.999999' DAY TO SECOND`  |
-|`INTERVAL HOUR`             | `INTERVAL '123' HOUR`                           |
-|`INTERVAL HOUR TO MINUTE`   | `INTERVAL '123:10' HOUR TO MINUTE`              |
-|`INTERVAL HOUR TO SECOND`   | `INTERVAL '123:10:59' HOUR TO SECOND`           |
-|`INTERVAL MINUTE`           | `INTERVAL '1000' MINUTE`                        |
-|`INTERVAL MINUTE TO SECOND` | `INTERVAL '1000:01.001' MINUTE TO SECOND`       |
-|`INTERVAL SECOND`           | `INTERVAL '1000.000001' SECOND`                 |
+|`INTERVAL YEAR`             | `INTERVAL '20' YEAR`                          |
+|`INTERVAL YEAR TO MONTH`    | `INTERVAL '20-07' YEAR TO MONTH`              |
+|`INTERVAL MONTH`            | `INTERVAL '10' MONTH`                         |
+|`INTERVAL DAY`              | `INTERVAL '10' DAY`                           |
+|`INTERVAL DAY TO HOUR`      | `INTERVAL '10 10' DAY TO HOUR`                |
+|`INTERVAL DAY TO MINUTE`    | `INTERVAL '10 10:30' DAY TO MINUTE`           |
+|`INTERVAL DAY TO SECOND`    | `INTERVAL '10 10:30:40.999' DAY TO SECOND`    |
+|`INTERVAL HOUR`             | `INTERVAL '12' HOUR`                          |
+|`INTERVAL HOUR TO MINUTE`   | `INTERVAL '12:10' HOUR TO MINUTE`             |
+|`INTERVAL HOUR TO SECOND`   | `INTERVAL '12:10:59' HOUR TO SECOND`          |
+|`INTERVAL MINUTE`           | `INTERVAL '10' MINUTE`                        |
+|`INTERVAL MINUTE TO SECOND` | `INTERVAL '80:01.001' MINUTE TO SECOND`       |
+|`INTERVAL SECOND`           | `INTERVAL '80.001' SECOND`                    |
 
 A leading negative sign applies to all fields; for example the
 negative sign in the interval literal `INTERVAL '-1 2:03:04' DAYS TO
 SECONDS` applies to both the days and hour/minute/second parts.
+
+To specify an interval value with more than 2 digits you must specify
+an increased precision for the corresponding type, e.g.:
+`INTERVAL '100' HOUR(3)`
 
 ## Other date/time/timestamp/time interval operations
 
