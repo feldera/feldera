@@ -29,7 +29,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VEC;
 
 /** Represents the type of a Rust Vec as a TypeUser. */
-@SuppressWarnings("GrazieInspection")
 public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
     public DBSPTypeVec(DBSPType vectorElementType, boolean mayBeNull) {
         super(vectorElementType.getNode(), VEC, "Vec", mayBeNull, vectorElementType);

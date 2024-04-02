@@ -54,6 +54,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
@@ -82,6 +83,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Name of the Rust file that will contain the user-defined functions.
      * The definitions supplied by the user will be copied here. */
     public static final String UDF_FILE_NAME = "udf.rs";
+
+    GlobalTypes globalTypes = new GlobalTypes();
 
     /** Where does the compiled program come from? */
     public enum InputSource {
@@ -143,6 +146,22 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public TypeCompiler getTypeCompiler() {
         return this.typeCompiler;
+    }
+
+    public String getSaneStructName(String name) {
+        return this.globalTypes.generateSaneName(name);
+    }
+
+    public void registerStruct(DBSPTypeStruct type) {
+        this.globalTypes.register(type);
+    }
+
+    public DBSPTypeStruct getStructByName(String name) {
+        return this.globalTypes.getStructByName(name);
+    }
+
+    public boolean isStructConstructor(String name) {
+        return this.globalTypes.containsStruct(name);
     }
 
     /**
@@ -216,7 +235,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         .append("Parsing result: ")
                         .append(node.toString())
                         .newline();
-                if (node.getKind().equals(SqlKind.CREATE_FUNCTION)) {
+                if (node.getKind() == SqlKind.CREATE_FUNCTION) {
                     SqlFunction function = this.frontend.compileFunction(node);
                     functions.add(function);
                 }

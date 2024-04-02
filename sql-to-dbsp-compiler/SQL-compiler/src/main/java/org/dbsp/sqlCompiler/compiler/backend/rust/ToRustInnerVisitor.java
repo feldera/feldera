@@ -579,11 +579,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("]");
             return VisitDecision.STOP;
         } else if(expression.operation == DBSPOpcode.SQL_INDEX) {
-            this.builder.append("index_")
+            DBSPTypeVec vec = expression.left.getType().to(DBSPTypeVec.class);
+            this.builder.append("index")
+                    .append("_")
                     .append(expression.left.getType().nullableSuffix())
                     .append("_")
+                    .append(vec.getElementType().nullableSuffix())
+                    .append("_")
                     .append(expression.right.getType().nullableSuffix())
-                    .append("(&");
+                    .append("(");
             expression.left.accept(this);
             this.builder.append(", ");
             expression.right.accept(this);
@@ -1085,8 +1089,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeStruct.Field field) {
-        this.builder.append("r#")
-                .append(field.sanitizedName)
+        this.builder.append(field.getSanitizedName())
                 .append(": ");
         field.type.accept(this);
         return VisitDecision.STOP;
@@ -1096,7 +1099,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPStructItem item) {
         this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default, serde::Serialize)]")
                 .newline();
-        builder.append("struct r#")
+        builder.append("struct ")
                     .append(Objects.requireNonNull(item.type.sanitizedName))
                 .append(" {")
                 .increase();
@@ -1117,8 +1120,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeStruct type) {
         // A *reference* to a struct type is just the type name.
-        this.builder.append("r#")
-                .append(Objects.requireNonNull(type.sanitizedName));
+        this.builder.append(type.sanitizedName);
         return VisitDecision.STOP;
     }
 

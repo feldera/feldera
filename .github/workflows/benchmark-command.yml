@@ -26,7 +26,7 @@ jobs:
 
       - uses: earthly/actions/setup-earthly@v1
         with:
-          version: v0.8.3
+          version: v0.8.6
 
       - name: MUIX license
         run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env

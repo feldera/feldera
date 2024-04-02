@@ -3077,7 +3077,6 @@
         "type": "object",
         "description": "A SQL column type description.\n\nMatches the Calcite JSON format.",
         "required": [
-          "type",
           "nullable"
         ],
         "properties": {
@@ -3087,6 +3086,14 @@
                 "$ref": "#/components/schemas/ColumnType"
               }
             ],
+            "nullable": true
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "description": "The fields of the type (if available).\n\nFor example this would specify the fields of a `CREATE TYPE` construct.\n\n```sql\nCREATE TYPE person_typ AS (\nfirstname       VARCHAR(30),\nlastname        VARCHAR(30),\naddress         ADDRESS_TYP\n);\n```\n\nWould lead to the following `fields` value:\n\n```sql\n[\nColumnType { name: \"firstname, ... },\nColumnType { name: \"lastname\", ... },\nColumnType { name: \"address\", fields: [ ... ] }\n]\n```",
             "nullable": true
           },
           "nullable": {
@@ -3735,7 +3742,7 @@
             "items": {
               "type": "string"
             },
-            "description": "List of bootstrap servers, each formatted as hostname:port (e.g.,\n\"example.com:1234\"). It will be used to set the bootstrap.servers\nKafka option."
+            "description": "List of bootstrap servers, each formatted as hostname:port (e.g.,\n\"example.com:1234\"). It will be used to set the `bootstrap.servers`\nKafka option."
           },
           "options": {
             "type": "object",
@@ -4856,28 +4863,146 @@
         }
       },
       "SqlType": {
-        "type": "string",
-        "description": "The available SQL types as specified in `CREATE` statements.",
-        "enum": [
-          "BOOLEAN",
-          "TINYINT",
-          "SMALLINT",
-          "INTEGER",
-          "BIGINT",
-          "REAL",
-          "DOUBLE",
-          "DECIMAL",
-          "CHAR",
-          "VARCHAR",
-          "BINARY",
-          "VARBINARY",
-          "TIME",
-          "DATE",
-          "TIMESTAMP",
-          "INTERVAL",
-          "ARRAY",
-          "NULL"
-        ]
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "SQL `BOOLEAN` type.",
+            "enum": [
+              "BOOLEAN"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `TINYINT` type.",
+            "enum": [
+              "TINYINT"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `SMALLINT` or `INT2` type.",
+            "enum": [
+              "SMALLINT"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `INTEGER`, `INT`, `SIGNED`, `INT4` type.",
+            "enum": [
+              "INTEGER"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `BIGINT` or `INT64` type.",
+            "enum": [
+              "BIGINT"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `REAL` or `FLOAT4` or `FLOAT32` type.",
+            "enum": [
+              "REAL"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `DOUBLE` or `FLOAT8` or `FLOAT64` type.",
+            "enum": [
+              "DOUBLE"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `DECIMAL` or `DEC` or `NUMERIC` type.",
+            "enum": [
+              "DECIMAL"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `CHAR(n)` or `CHARACTER(n)` type.",
+            "enum": [
+              "CHAR"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `VARCHAR`, `CHARACTER VARYING`, `TEXT`, or `STRING` type.",
+            "enum": [
+              "VARCHAR"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `BINARY(n)` type.",
+            "enum": [
+              "BINARY"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `VARBINARY` or `BYTEA` type.",
+            "enum": [
+              "VARBINARY"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `TIME` type.",
+            "enum": [
+              "TIME"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `DATE` type.",
+            "enum": [
+              "DATE"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `TIMESTAMP` type.",
+            "enum": [
+              "TIMESTAMP"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Interval"
+            ],
+            "properties": {
+              "Interval": {
+                "$ref": "#/components/schemas/IntervalUnit"
+              }
+            }
+          },
+          {
+            "type": "string",
+            "description": "SQL `ARRAY` type.",
+            "enum": [
+              "ARRAY"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "A complex SQL struct type (`CREATE TYPE x ...`).",
+            "enum": [
+              "STRUCT"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `NULL` type.",
+            "enum": [
+              "NULL"
+            ]
+          }
+        ],
+        "description": "The available SQL types as specified in `CREATE` statements."
       },
       "TenantId": {
         "type": "string",

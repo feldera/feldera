@@ -5,10 +5,10 @@ use utoipa::ToSchema;
 
 /// Configuration for accessing a Kafka service.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct KafkaService {
     /// List of bootstrap servers, each formatted as hostname:port (e.g.,
-    /// "example.com:1234"). It will be used to set the bootstrap.servers
+    /// "example.com:1234"). It will be used to set the `bootstrap.servers`
     /// Kafka option.
     pub bootstrap_servers: Vec<String>,
 

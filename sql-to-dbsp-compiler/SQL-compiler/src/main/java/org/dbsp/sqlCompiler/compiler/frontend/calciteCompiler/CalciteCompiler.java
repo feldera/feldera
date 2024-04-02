@@ -43,6 +43,7 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
+import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
@@ -62,9 +63,11 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlTypeNameSpec;
+import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
+import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.ddl.SqlCreateView;
 import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.ddl.SqlKeyConstraint;
@@ -93,6 +96,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
@@ -150,6 +154,8 @@ public class CalciteCompiler implements IWritesLogs {
     boolean generateOutputForNextView = true;
     private final SchemaPlus rootSchema;
     private final CustomFunctions customFunctions;
+    /** User-defined types */
+    private final HashMap<String, RelStruct> udt = new HashMap<>();
 
     public CustomFunctions getCustomFunctions() {
         return this.customFunctions;
@@ -183,12 +189,10 @@ public class CalciteCompiler implements IWritesLogs {
      * We need to do these before conversion to Rel, because Rel
      * does not have source position information anymore.
      */
-    public static class ValidateTypes extends SqlShuttle {
-        final SqlValidator validator;
+    public class ValidateTypes extends SqlShuttle {
         final IErrorReporter reporter;
 
-        public ValidateTypes(SqlValidator validator, IErrorReporter reporter) {
-            this.validator = validator;
+        public ValidateTypes(IErrorReporter reporter) {
             this.reporter = reporter;
         }
 
@@ -198,7 +202,7 @@ public class CalciteCompiler implements IWritesLogs {
             if (typeNameSpec instanceof SqlBasicTypeNameSpec) {
                 SqlBasicTypeNameSpec basic = (SqlBasicTypeNameSpec) typeNameSpec;
                 // I don't know how to get the SqlTypeName otherwise
-                RelDataType relDataType = basic.deriveType(this.validator);
+                RelDataType relDataType = CalciteCompiler.this.specToRel(type);
                 if (relDataType.getSqlTypeName() == SqlTypeName.DECIMAL) {
                     if (basic.getPrecision() < basic.getScale()) {
                         SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
@@ -324,7 +328,7 @@ public class CalciteCompiler implements IWritesLogs {
                 this.typeFactory,
                 validatorConfig
         );
-        this.validateTypes = new ValidateTypes(this.validator, errorReporter);
+        this.validateTypes = new ValidateTypes(errorReporter);
         this.converter = new SqlToRelConverter(
                 (type, query, schema, path) -> null,
                 this.validator,
@@ -418,11 +422,27 @@ public class CalciteCompiler implements IWritesLogs {
         return rel;
     }
 
-    public RelDataType convertType(SqlDataTypeSpec spec) {
-        SqlTypeNameSpec type = spec.getTypeNameSpec();
-        RelDataType result = type.deriveType(this.validator);
-        if (Objects.requireNonNull(spec.getNullable()))
+    public RelDataType specToRel(SqlDataTypeSpec spec) {
+        SqlTypeNameSpec typeName = spec.getTypeNameSpec();
+        String name = "";
+        if (typeName instanceof SqlUserDefinedTypeNameSpec) {
+            SqlUserDefinedTypeNameSpec udt = (SqlUserDefinedTypeNameSpec) typeName;
+            name = Catalog.identifierToString(udt.getTypeName());
+            if (this.udt.containsKey(name))
+                return Utilities.getExists(this.udt, name);
+        }
+        RelDataType result = typeName.deriveType(this.validator);
+        Boolean nullable = spec.getNullable();
+        if (nullable != null && nullable)
             result = this.typeFactory.createTypeWithNullability(result, true);
+        if (typeName instanceof SqlUserDefinedTypeNameSpec) {
+            SqlUserDefinedTypeNameSpec udt = (SqlUserDefinedTypeNameSpec) typeName;
+            if (result.isStruct()) {
+                RelStruct retval = new RelStruct(udt.getTypeName(), result.getFieldList(), result.isNullable());
+                Utilities.putNew(this.udt, name, retval);
+                return retval;
+            }
+        }
         return result;
     }
 
@@ -534,7 +554,7 @@ public class CalciteCompiler implements IWritesLogs {
             } else {
                 columnDefinition.put(colName, col);
             }
-            RelDataType type = this.convertType(typeSpec);
+            RelDataType type = this.specToRel(typeSpec);
             RelDataTypeField field = new RelDataTypeFieldImpl(
                     Catalog.identifierToString(name), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
@@ -619,11 +639,11 @@ public class CalciteCompiler implements IWritesLogs {
                 decl.getParameters(), param -> {
                     SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
                     String name = attr.name.getSimple();
-                    RelDataType type = this.convertType(attr.dataType);
+                    RelDataType type = this.specToRel(attr.dataType);
                     return new MapEntry<>(name, type);
                 });
         RelDataType structType = this.typeFactory.createStructType(parameters);
-        RelDataType returnType = this.convertType(decl.getReturnType());
+        RelDataType returnType = this.specToRel(decl.getReturnType());
         return this.customFunctions.createUDF(
                 CalciteObject.create(node), decl.getName(), structType, returnType
         );
@@ -646,12 +666,12 @@ public class CalciteCompiler implements IWritesLogs {
                 .append(sqlStatement)
                 .newline();
         if (SqlKind.DDL.contains(node.getKind())) {
-            if (node.getKind().equals(SqlKind.DROP_TABLE)) {
+            if (node.getKind() == SqlKind.DROP_TABLE) {
                 SqlDropTable dt = (SqlDropTable) node;
                 String tableName = Catalog.identifierToString(dt.name);
                 this.calciteCatalog.dropTable(tableName);
                 return new DropTableStatement(node, sqlStatement, tableName, comment);
-            } else if (node.getKind().equals(SqlKind.CREATE_TABLE)) {
+            } else if (node.getKind() == SqlKind.CREATE_TABLE) {
                 SqlCreateTable ct = (SqlCreateTable)node;
                 if (ct.ifNotExists)
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
@@ -680,7 +700,7 @@ public class CalciteCompiler implements IWritesLogs {
                 if (!success)
                     return null;
                 return table;
-            } else if (node.getKind().equals(SqlKind.CREATE_VIEW)) {
+            } else if (node.getKind() == SqlKind.CREATE_VIEW) {
                 SqlToRelConverter converter = this.getConverter();
                 SqlCreateView cv = (SqlCreateView) node;
                 SqlNode query = cv.query;
@@ -704,6 +724,34 @@ public class CalciteCompiler implements IWritesLogs {
                 if (!success)
                     return null;
                 return view;
+            } else if (node.getKind() == SqlKind.CREATE_TYPE) {
+                SqlCreateType ct = (SqlCreateType) node;
+                RelProtoDataType proto = typeFactory -> {
+                    if (ct.dataType != null) {
+                        return this.specToRel(ct.dataType);
+                    } else {
+                        String name = Catalog.identifierToString(ct.name);
+                        if (CalciteCompiler.this.udt.containsKey(name))
+                            return CalciteCompiler.this.udt.get(name);
+                        final RelDataTypeFactory.Builder builder = typeFactory.builder();
+                        for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
+                            final SqlAttributeDefinition attributeDef =
+                                    (SqlAttributeDefinition) def;
+                            final SqlDataTypeSpec typeSpec = attributeDef.dataType;
+                            final RelDataType type = this.specToRel(typeSpec);
+                            builder.add(attributeDef.name.getSimple(), type);
+                        }
+                        RelDataType result = builder.build();
+                        RelStruct retval = new RelStruct(ct.name, result.getFieldList(), result.isNullable());
+                        Utilities.putNew(CalciteCompiler.this.udt, name, retval);
+                        return retval;
+                    }
+                };
+
+                String typeName = Catalog.identifierToString(ct.name);
+                this.rootSchema.add(typeName, proto);
+                RelDataType relDataType = proto.apply(this.typeFactory);
+                return new CreateTypeStatement(node, sqlStatement, ct, typeName, relDataType);
             }
         }
 

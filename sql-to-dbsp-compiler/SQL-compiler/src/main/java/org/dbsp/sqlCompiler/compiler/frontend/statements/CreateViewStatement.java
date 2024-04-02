@@ -36,9 +36,7 @@ import java.util.Objects;
  * The representation of a CREATE VIEW AS ... DDL statement.
  */
 public class CreateViewStatement extends CreateRelationStatement {
-    /**
-     * Compiled and optimized query.
-     */
+    /** Compiled and optimized query. */
     private final RelRoot compiled;
     public final SqlNode query;
 

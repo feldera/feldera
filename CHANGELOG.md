@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [SQL] Support for user-defined structure types
+  ([#1567](https://github.com/feldera/feldera/pull/1567))
 - Output buffering mechanism to consolidate multiple output
   updates over time.
   ([#1558](https://github.com/feldera/feldera/pull/1558))

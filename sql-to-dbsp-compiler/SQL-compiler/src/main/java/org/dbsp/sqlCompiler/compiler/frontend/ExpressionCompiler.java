@@ -24,8 +24,10 @@
 package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
@@ -49,8 +51,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
@@ -79,7 +83,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeResult;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -611,6 +617,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         }
 
         return arg;
+    }
+
+    @Override
+    public DBSPExpression visitFieldAccess(RexFieldAccess field) {
+        CalciteObject node = CalciteObject.create(field);
+        DBSPExpression source = field.getReferenceExpr().accept(this);
+        RelDataTypeField dataField = field.getField();
+        return new DBSPFieldExpression(node, source, dataField.getIndex());
     }
 
     @Override
@@ -1251,6 +1265,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
 
     private DBSPExpression compileUDF(CalciteObject node, RexCall call, DBSPType type, List<DBSPExpression> ops) {
         String function = call.op.getName();  // no lowercase applied
+        boolean isConstructor = this.compiler.isStructConstructor(function);
+        if (isConstructor) {
+            DBSPTypeStruct struct = this.compiler.getStructByName(function);
+            assert struct.toTuple().sameType(type);
+            DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
+            for (int i = 0; i < ops.size(); i++) {
+                DBSPExpression opi = ops.get(i);
+                opi = opi.applyCloneIfNeeded().cast(tuple.getFieldType(i));
+                ops.set(i, opi);
+            }
+            return new DBSPTupleExpression(node, ops);
+        }
+
         CustomFunctions.ExternalFunction ef = this.compiler.getCustomFunctions()
                 .getImplementation(function);
         if (ef == null)

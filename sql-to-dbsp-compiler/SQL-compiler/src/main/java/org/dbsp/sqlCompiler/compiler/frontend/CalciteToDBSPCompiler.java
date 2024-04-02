@@ -55,12 +55,17 @@ import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexWindowBound;
+import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlRankFunction;
+import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
+import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
+import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
@@ -84,6 +89,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPTypeDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -95,8 +101,10 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.Catalog;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
@@ -127,6 +135,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
+import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
@@ -613,7 +623,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     // Create external tables table
                     JdbcTableScan jscan = (JdbcTableScan) scan;
                     RelDataType tableRowType = jscan.jdbcTable.getRowType(this.compiler.frontend.typeFactory);
-                    DBSPTypeStruct originalRowType = this.convertType(tableRowType, true).to(DBSPTypeStruct.class);
+                    DBSPTypeStruct originalRowType = this.convertType(tableRowType, true)
+                            .to(DBSPTypeStruct.class)
+                            .rename(tableName);
                     DBSPType rowType = originalRowType.toTuple();
                     HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, false, tableRowType);
                     this.metadata.addTable(withSchema);
@@ -1682,6 +1694,41 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.modifyTableTranslation = null;
             this.tableContents.addToTable(modify.tableName, result);
             return result;
+        } else if (statement.is(CreateTypeStatement.class)) {
+            CreateTypeStatement stat = statement.to(CreateTypeStatement.class);
+            CalciteObject object = CalciteObject.create(stat.createType.name);
+            SqlCreateType ct = stat.createType;
+            int index = 0;
+            List<RelDataTypeField> relFields = stat.relDataType.getFieldList();
+            List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+            for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
+                DBSPType fieldType;
+                final SqlAttributeDefinition attributeDef =
+                        (SqlAttributeDefinition) def;
+                final SqlDataTypeSpec typeSpec = attributeDef.dataType;
+                if (typeSpec.getTypeNameSpec() instanceof SqlUserDefinedTypeNameSpec) {
+                    // Reference to another struct
+                    String referred = Catalog.identifierToString(typeSpec.getTypeNameSpec().getTypeName());
+                    fieldType = this.compiler.getStructByName(referred);
+                } else {
+                    RelDataTypeField ft = relFields.get(index);
+                    fieldType = this.convertType(ft.getType(), true);
+                }
+                DBSPTypeStruct.Field field = new DBSPTypeStruct.Field(
+                        object,
+                        Catalog.identifierToString(attributeDef.name),
+                        index++,
+                        fieldType,
+                        Utilities.identifierIsQuoted(attributeDef.name));
+                fields.add(field);
+            }
+
+            String saneName = this.compiler.getSaneStructName(stat.typeName);
+            DBSPTypeStruct struct = new DBSPTypeStruct(object, stat.typeName, saneName, fields, false);
+            this.compiler.registerStruct(struct);
+            DBSPItem item = new DBSPStructItem(struct);
+            this.circuit.addDeclaration(new DBSPTypeDeclaration(item));
+            return null;
         }
         throw new UnimplementedException(statement.getCalciteObject());
     }

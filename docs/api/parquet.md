@@ -27,8 +27,9 @@ and [Arrow types](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.htm
 | `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT` | `Int8`, `Int16`, `Int32`, `Int64`                                                  |
 | `FLOAT`, `DOUBLE`, `DECIMAL`               | `Float32`, `Float64`, `Decimal`                                                    |
 | `VARCHAR`, `CHAR`, `STRING`                | `LargeUtf8`                                                                        |
+| `BINARY`, `VARBINARY`                      | `DataType::Binary`                                                                 |
 | `TIME`                                     | `DataType::UInt64` (time in nanoseconds)                                           |
 | `TIMESTAMP`                                | `DataType::Timestamp(TimeUnit::Millisecond, None)` (milliseconds since unix epoch) |
 | `DATE`                                     | `DataType::Int32` (days since unix epoch)                                          |
-| `BIGINT ARRAY`                             | TBD                                                                                |
-| `VARCHAR ARRAY ARRAY`                      | TBD                                                                                |
+| `ARRAY`                                    | `DataType::LargeList`                                                              |
+| `STRUCT`                                   | `DataType::Struct`                                                                 |

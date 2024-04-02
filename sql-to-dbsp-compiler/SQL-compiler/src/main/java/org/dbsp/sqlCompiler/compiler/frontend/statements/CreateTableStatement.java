@@ -29,9 +29,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * Describes a table as produced by a CREATE TABLE DDL statement.
- */
+/** Describes a table as produced by a CREATE TABLE DDL statement. */
 public class CreateTableStatement extends CreateRelationStatement {
     public CreateTableStatement(SqlNode node, String statement,
                                 String tableName, boolean nameIsQuoted,

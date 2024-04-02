@@ -3,45 +3,38 @@
 //! The schema can be inlined in each message or distributed separately, e.g.,
 //! via a schema registry.
 
-use crate::ControllerError;
 use pipeline_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
 use pipeline_types::program_schema::Relation;
 
 /// Build a schema for the value component of the payload.
-pub fn build_value_schema(
-    config: &JsonEncoderConfig,
-    schema: &Relation,
-) -> Result<Option<String>, ControllerError> {
+pub fn build_value_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option<String> {
     match config.json_flavor {
         Some(JsonFlavor::KafkaConnectJsonConverter) => {
             if matches!(config.update_format, JsonUpdateFormat::Debezium) {
-                Ok(Some(
-                    kafka_connect_json_converter::debezium_value_schema_str(schema)?,
+                Some(kafka_connect_json_converter::debezium_value_schema_str(
+                    schema,
                 ))
             } else {
-                Ok(None)
+                None
             }
         }
-        _ => Ok(None),
+        _ => None,
     }
 }
 
 /// Build a schema for the key component of the payload.
-pub fn build_key_schema(
-    config: &JsonEncoderConfig,
-    schema: &Relation,
-) -> Result<Option<String>, ControllerError> {
+pub fn build_key_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option<String> {
     match config.json_flavor {
         Some(JsonFlavor::KafkaConnectJsonConverter) => {
             if matches!(config.update_format, JsonUpdateFormat::Debezium) {
-                Ok(Some(kafka_connect_json_converter::debezium_key_schema_str(
+                Some(kafka_connect_json_converter::debezium_key_schema_str(
                     schema,
-                )?))
+                ))
             } else {
-                Ok(None)
+                None
             }
         }
-        _ => Ok(None),
+        _ => None,
     }
 }
 
@@ -57,7 +50,6 @@ pub fn build_key_schema(
 /// types can have additional parameters, e.g., scale and precision for
 /// decimals.
 mod kafka_connect_json_converter {
-    use crate::ControllerError;
     use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
@@ -117,21 +109,21 @@ mod kafka_connect_json_converter {
         optional: bool,
     }
 
-    pub fn debezium_value_schema_str(schema: &Relation) -> Result<String, ControllerError> {
-        Ok(serde_json::to_string(&debezium_value_schema(schema)?).unwrap())
+    pub fn debezium_value_schema_str(schema: &Relation) -> String {
+        serde_json::to_string(&debezium_value_schema(schema)).unwrap()
     }
 
-    pub fn debezium_key_schema_str(schema: &Relation) -> Result<String, ControllerError> {
-        Ok(serde_json::to_string(&debezium_key_schema(schema)?).unwrap())
+    pub fn debezium_key_schema_str(schema: &Relation) -> String {
+        serde_json::to_string(&debezium_key_schema(schema)).unwrap()
     }
 
-    fn debezium_value_schema(schema: &Relation) -> Result<Type, ControllerError> {
-        Ok(Type {
+    fn debezium_value_schema(schema: &Relation) -> Type {
+        Type {
             representation_type: RepresentationType::Struct {
                 fields: vec![
                     JsonField {
                         field: "after".to_string(),
-                        typ: relation_schema(schema)?,
+                        typ: relation_schema(schema),
                         optional: true,
                     },
                     JsonField {
@@ -148,49 +140,49 @@ mod kafka_connect_json_converter {
                 name: "Envelope".to_string(),
                 parameters: Default::default(),
             }),
-        })
+        }
     }
 
-    fn debezium_key_schema(schema: &Relation) -> Result<Type, ControllerError> {
-        let mut typ = relation_schema(schema)?;
+    fn debezium_key_schema(schema: &Relation) -> Type {
+        let mut typ = relation_schema(schema);
         typ.logical_type = Some(LogicalType {
             name: "Key".to_string(),
             parameters: Default::default(),
         });
 
-        Ok(typ)
+        typ
     }
 
-    fn relation_schema(schema: &Relation) -> Result<Type, ControllerError> {
+    fn relation_schema(schema: &Relation) -> Type {
         let mut fields = Vec::new();
 
         for field in schema.fields.iter() {
-            fields.push(field_schema(field)?)
+            fields.push(field_schema(field))
         }
 
-        Ok(Type {
+        Type {
             representation_type: RepresentationType::Struct { fields },
             logical_type: None,
-        })
+        }
     }
 
-    fn field_schema(schema: &Field) -> Result<JsonField, ControllerError> {
-        Ok(JsonField {
+    fn field_schema(schema: &Field) -> JsonField {
+        JsonField {
             field: schema.name.clone(),
-            typ: type_schema(&schema.columntype)?,
+            typ: type_schema(&schema.columntype),
             optional: schema.columntype.nullable,
-        })
+        }
     }
 
-    fn type_schema(schema: &ColumnType) -> Result<Type, ControllerError> {
-        Ok(Type {
-            representation_type: representation_type_schema(schema)?,
-            logical_type: logical_type_schema(schema)?,
-        })
+    fn type_schema(schema: &ColumnType) -> Type {
+        Type {
+            representation_type: representation_type_schema(schema),
+            logical_type: logical_type_schema(schema),
+        }
     }
 
-    fn logical_type_schema(schema: &ColumnType) -> Result<Option<LogicalType>, ControllerError> {
-        Ok(match schema.typ {
+    fn logical_type_schema(schema: &ColumnType) -> Option<LogicalType> {
+        match schema.typ {
             SqlType::Time => Some(LogicalType {
                 name: "org.apache.kafka.connect.data.Time".to_string(),
                 parameters: BTreeMap::new(),
@@ -204,40 +196,48 @@ mod kafka_connect_json_converter {
                 parameters: BTreeMap::new(),
             }),
             // TODO: add serialization for intervals to `sqllib`.
-            SqlType::Interval => Some(LogicalType {
+            SqlType::Interval(_) => Some(LogicalType {
                 name: "io.debezium.time.Interval".to_string(),
                 parameters: BTreeMap::new(),
             }),
             _ => None,
-        })
+        }
     }
 
-    fn representation_type_schema(
-        schema: &ColumnType,
-    ) -> Result<RepresentationType, ControllerError> {
+    fn representation_type_schema(schema: &ColumnType) -> RepresentationType {
         match schema.typ {
-            SqlType::Boolean => Ok(RepresentationType::Boolean),
-            SqlType::Varchar | SqlType::Char => Ok(RepresentationType::String),
-            SqlType::TinyInt => Ok(RepresentationType::Int8),
-            SqlType::SmallInt => Ok(RepresentationType::Int16),
-            SqlType::Int => Ok(RepresentationType::Int32),
-            SqlType::BigInt => Ok(RepresentationType::Int64),
+            SqlType::Boolean => RepresentationType::Boolean,
+            SqlType::Varchar | SqlType::Char => RepresentationType::String,
+            SqlType::TinyInt => RepresentationType::Int8,
+            SqlType::SmallInt => RepresentationType::Int16,
+            SqlType::Int => RepresentationType::Int32,
+            SqlType::BigInt => RepresentationType::Int64,
             // This requires Kafka connector to be configure with `"decimal.handling.mode":
             // "string"`. Other encodings would require serde to know the scale of the
             // decimal number, which isn't preserved in Rust.
-            SqlType::Decimal => Ok(RepresentationType::String),
-            SqlType::Real => Ok(RepresentationType::Float),
-            SqlType::Double => Ok(RepresentationType::Double),
-            SqlType::Time => Ok(RepresentationType::Int64),
-            SqlType::Timestamp => Ok(RepresentationType::Int64),
-            SqlType::Date => Ok(RepresentationType::Int32),
-            SqlType::Binary | SqlType::Varbinary => Ok(RepresentationType::Bytes),
-            SqlType::Array => Ok(RepresentationType::Array {
+            SqlType::Decimal => RepresentationType::String,
+            SqlType::Real => RepresentationType::Float,
+            SqlType::Double => RepresentationType::Double,
+            SqlType::Time => RepresentationType::Int64,
+            SqlType::Timestamp => RepresentationType::Int64,
+            SqlType::Date => RepresentationType::Int32,
+            SqlType::Binary | SqlType::Varbinary => RepresentationType::Bytes,
+            SqlType::Array => RepresentationType::Array {
                 // unwrap() is ok here as Array type is guaranteed to have a component.
-                items: Box::new(type_schema(schema.component.as_ref().unwrap())?),
-            }),
-            SqlType::Interval => Ok(RepresentationType::String),
-            SqlType::Null => Ok(RepresentationType::String),
+                items: Box::new(type_schema(schema.component.as_ref().unwrap())),
+            },
+            SqlType::Struct => RepresentationType::Struct {
+                fields: schema
+                    .fields
+                    .as_ref()
+                    // `SqlType::Struct` implies `fields.is_some()`
+                    .unwrap()
+                    .iter()
+                    .map(field_schema)
+                    .collect::<Vec<_>>(),
+            },
+            SqlType::Interval(_) => RepresentationType::String,
+            SqlType::Null => RepresentationType::String,
         }
     }
 
@@ -328,12 +328,29 @@ mod kafka_connect_json_converter {
         "nullable" : true,
         "precision" : 1
       }
+    }, {
+      "name": "f10",
+      "case_sensitive": false,
+      "columntype": {
+        "fields": [],
+        "nullable": true
+      }
+    }, {
+      "name": "f11",
+      "case_sensitive": false,
+      "columntype":  {
+        "fields": [
+            {  "name": "f11_0", "columntype": { "type": "BOOLEAN", "nullable": false } },
+            {  "name": "f11_1", "columntype": { "fields": [{ "name": "f11_1_0", "columntype": { "type": "BOOLEAN", "nullable": false } }], "nullable": false } }
+        ],
+        "nullable": false
+      }
     } ],
     "primary_key" : [ "id" ]
 }"#,
             )
             .unwrap();
-            let connect_schema = debezium_value_schema_str(&schema).unwrap();
+            let connect_schema = debezium_value_schema_str(&schema);
             let connect_schema_value: serde_json::Value =
                 serde_json::from_str(&connect_schema).unwrap();
             let expected_value: serde_json::Value = serde_json::from_str(
@@ -396,6 +413,21 @@ mod kafka_connect_json_converter {
           "field": "f9",
           "type": "bytes",
           "optional": true
+        },
+        {
+          "field": "f10",
+          "type": "struct",
+          "optional": true,
+          "fields": []
+        },
+        {
+          "field": "f11",
+          "type": "struct",
+          "optional": false,
+          "fields": [
+            { "field": "f11_0", "type": "boolean", "optional": false },
+            { "field": "f11_1", "type": "struct", "optional": false, "fields": [ { "field": "f11_1_0", "type": "boolean", "optional": false } ] }
+          ]
         }
       ],
       "optional": true

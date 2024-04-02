@@ -72,7 +72,7 @@ impl OutputFormat for JsonOutputFormat {
             config.buffer_size_records = 1;
         }
 
-        Ok(Box::new(JsonEncoder::new(consumer, config, schema)?))
+        Ok(Box::new(JsonEncoder::new(consumer, config, schema)))
     }
 }
 
@@ -115,7 +115,7 @@ impl JsonEncoder {
         output_consumer: Box<dyn OutputConsumer>,
         mut config: JsonEncoderConfig,
         schema: &Relation,
-    ) -> Result<Self, ControllerError> {
+    ) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
         if config.json_flavor.is_none() {
@@ -126,10 +126,10 @@ impl JsonEncoder {
             });
         }
 
-        let value_schema_str = build_value_schema(&config, schema)?;
-        let key_schema_str = build_key_schema(&config, schema)?;
+        let value_schema_str = build_value_schema(&config, schema);
+        let key_schema_str = build_key_schema(&config, schema);
 
-        Ok(Self {
+        Self {
             output_consumer,
             config,
             value_schema_str,
@@ -141,7 +141,7 @@ impl JsonEncoder {
             // id into a negative number.
             stream_id: StdRng::from_entropy().gen_range(0..i64::MAX) as u64,
             seq_number: 0,
-        })
+        }
     }
 }
 
@@ -492,8 +492,7 @@ mod test {
 
         let consumer = MockOutputConsumer::new();
         let consumer_data = consumer.data.clone();
-        let mut encoder =
-            JsonEncoder::new(Box::new(consumer), config, &test_struct_schema()).unwrap();
+        let mut encoder = JsonEncoder::new(Box::new(consumer), config, &test_struct_schema());
         let zsets = batches
             .iter()
             .map(|batch| {
@@ -664,8 +663,7 @@ mod test {
         };
 
         let consumer = MockOutputConsumer::with_max_buffer_size_bytes(32);
-        let mut encoder =
-            JsonEncoder::new(Box::new(consumer), config, &test_struct_schema()).unwrap();
+        let mut encoder = JsonEncoder::new(Box::new(consumer), config, &test_struct_schema());
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         let err = encoder

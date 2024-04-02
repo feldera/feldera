@@ -5,13 +5,13 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.SanitizeNames;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
@@ -61,6 +61,11 @@ public class RustFileWriter {
         @Override
         public void postorder(DBSPTypeTuple type) {
             RustFileWriter.this.used.tupleSizesUsed.add(type.size());
+        }
+
+        @Override
+        public void postorder(DBSPTypeStruct type) {
+            RustFileWriter.this.used.tupleSizesUsed.add(type.fields.size());
         }
 
         @Override
@@ -351,7 +356,6 @@ public class RustFileWriter {
         FindResources findResources = new FindResources(compiler);
         CircuitRewriter findCircuitResources = findResources.getCircuitVisitor();
         LowerCircuitVisitor lower = new LowerCircuitVisitor(compiler);
-        SanitizeNames sanitizer = new SanitizeNames(compiler);
 
         for (IDBSPNode node: this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
@@ -364,8 +368,6 @@ public class RustFileWriter {
                 outer = lower.apply(outer);
                 // Beta reduction is beneficial after implementing aggregates.
                 outer = reducer.apply(outer);
-                // Sanitize structure names
-                outer = sanitizer.apply(outer);
                 // Find the resources used to generate the correct Rust preamble
                 outer = findCircuitResources.apply(outer);
                 lowered.add(outer);
