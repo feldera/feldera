@@ -401,7 +401,7 @@ impl JsonParser {
 
 impl Parser for JsonParser {
     fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        println!("input_fragment {}", std::str::from_utf8(data).unwrap());
+        // println!("input_fragment {}", std::str::from_utf8(data).unwrap());
         let leftover = split_on_newline(data); // This returns the index of the first character following the last newline, which will be the closing }
 
         if leftover == 0 {
