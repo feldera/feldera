@@ -319,6 +319,17 @@ impl TestConfig {
             .unwrap()
     }
 
+    async fn post_string<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        s: String,
+    ) -> ClientResponse<Decoder<Payload>> {
+        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
+            .send_body(s)
+            .await
+            .unwrap()
+    }
+
     async fn patch<S: AsRef<str>>(
         &self,
         endpoint: S,
@@ -2253,4 +2264,117 @@ async fn service_probe_basic() {
         .await;
     let response: Value = request.json().await.unwrap();
     assert_eq!(response.as_array().unwrap().len(), 0);
+}
+
+#[actix_web::test]
+#[serial]
+async fn http_input_pretty_json() {
+    let config = setup().await;
+
+    // Create program
+    assert_eq!(
+        config
+            .post(
+                format!("/v0/programs"),
+                &json!({
+                  "name": "program1",
+                  "description": "",
+                  "code": "CREATE TABLE example(col1 VARCHAR, col2 VARCHAR, col3 VARCHAR, col4 VARCHAR, col5 VARCHAR, col6 VARCHAR, col7 VARCHAR, col8 VARCHAR);",
+                }),
+            )
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+
+    // Wait for the program to be compiled
+    println!("Awaiting program compilation...");
+    let start = Instant::now();
+    loop {
+        let result = config
+            .get("/v0/programs/program1")
+            .await
+            .json::<Value>()
+            .await
+            .unwrap();
+        if result.as_object().unwrap().get("status").unwrap() == "Success" {
+            break;
+        }
+        sleep(Duration::from_secs(5)).await;
+        if Instant::now() - start > Duration::from_secs(600) {
+            panic!("Compilation took too long")
+        }
+    }
+    println!(
+        "Program compilation finished, took {:.2} seconds",
+        (Instant::now() - start).as_secs_f64()
+    );
+
+    // Create pipeline
+    assert_eq!(
+        config
+            .post(
+                format!("/v0/pipelines"),
+                &json!({
+                  "name": "pipeline1",
+                  "description": "",
+                  "program_name": "program1",
+                  "config": {
+                    "workers": 4
+                  },
+                  "connectors": [],
+                }),
+            )
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    // Start pipeline
+    assert_eq!(
+        config
+            .post_no_body(format!("/v0/pipelines/pipeline1/start"))
+            .await
+            .status(),
+        StatusCode::ACCEPTED
+    );
+    config
+        .wait_for_pipeline_status(
+            "pipeline1",
+            PipelineStatus::Running,
+            config.shutdown_timeout,
+        )
+        .await;
+
+    // Two JSON strings for HTTP INPUT
+    let value: Value = json!({
+        "insert": {
+            "col1": "val1",
+            "col2": "val2",
+            "col3": "val3",
+            "col4": "val4",
+            "col5": "val5",
+            "col6": "val6",
+            "col7": "val7",
+            "col8": "val8"
+        }
+    });
+    let simple_string = serde_json::to_string(&value).unwrap();
+    let pretty_string = serde_json::to_string_pretty(&value).unwrap();
+
+    // HTTP INPUT POST both the simple and pretty JSON
+    for s in [simple_string, pretty_string] {
+        let mut response = config.post_string(
+            "/v0/pipelines/pipeline1/ingress/example?format=json&array=false&update_format=insert_delete",
+            s.clone()
+        ).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "HTTP INPUT POST request failed for string:\n=====\n{}\n=====\nServer response (code: {}):\n{}",
+            s.clone(),
+            response.status(),
+            std::str::from_utf8(&response.body().await.unwrap()).unwrap()
+        );
+    }
 }

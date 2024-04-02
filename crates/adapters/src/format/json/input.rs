@@ -401,8 +401,8 @@ impl JsonParser {
 
 impl Parser for JsonParser {
     fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        // println!("input_fragment {}", std::str::from_utf8(data).unwrap());
-        let leftover = split_on_newline(data);
+        println!("input_fragment {}", std::str::from_utf8(data).unwrap());
+        let leftover = split_on_newline(data); // This returns the index of the first character following the last newline, which will be the closing }
 
         if leftover == 0 {
             // `data` doesn't contain a new-line character; append it to
@@ -411,11 +411,11 @@ impl Parser for JsonParser {
             self.leftover.extend_from_slice(data);
             (0, Vec::new())
         } else {
-            self.leftover.extend_from_slice(&data[0..leftover]);
+            self.leftover.extend_from_slice(&data[0..leftover]); // This will add everything except the closing }
             let mut leftover_data = take(&mut self.leftover);
-            let res = self.input_from_slice(&leftover_data);
+            let res = self.input_from_slice(&leftover_data); // This will process everything except the closing }
             leftover_data.clear();
-            leftover_data.extend_from_slice(&data[leftover..]);
+            leftover_data.extend_from_slice(&data[leftover..]); // This will only put the closing } as the leftover
             self.leftover = leftover_data;
             res
         }
@@ -436,7 +436,7 @@ impl Parser for JsonParser {
 
         // Try to interpret the leftover chunk as a complete JSON.
         let leftover = take(&mut self.leftover);
-        let res = self.input_from_slice(leftover.as_slice());
+        let res = self.input_from_slice(leftover.as_slice()); // This will process just the remaining closing }
         res
     }
 
