@@ -4043,11 +4043,12 @@ dependencies = [
 
 [[package]]
 name = "ijson"
-version = "0.1.3"
-source = "git+https://github.com/abhizer/ijson#29b197d92e01d1db8783616a43bec85e4628e1fb"
+version = "0.1.4"
+source = "git+https://github.com/abhizer/ijson.git#539097223774b7520991fc968f1c637f7db782b3"
 dependencies = [
  "dashmap",
  "lazy_static",
+ "ordered-float 3.9.2",
  "rkyv",
  "serde",
  "serde_json",
