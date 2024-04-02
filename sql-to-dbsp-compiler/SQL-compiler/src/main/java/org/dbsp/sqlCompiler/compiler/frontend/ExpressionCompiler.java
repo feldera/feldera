@@ -1200,23 +1200,24 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                 if (call.operands.size() != 1)
                     throw new UnimplementedException(node);
 
-                DBSPTypeVec vec = type.to(DBSPTypeVec.class);
                 DBSPExpression arg0 = ops.get(0);
-
-                DBSPTypeVec arg0type = arg0.getType().to(DBSPTypeVec.class);
-
-                if (arg0type.sameType(vec)) {
-                    // the expected result type is the same as the argument type
-                    // meaning no element in the array can be nullable
-                    // so just return the current argument as is
+                DBSPTypeVec vecType = arg0.getType().to(DBSPTypeVec.class);
+                DBSPType elemType = vecType.getElementType();
+                if (!elemType.mayBeNull) {
+                    // The element type is not nullable.
                     String warningMessage =
                             node + ": no null elements in the array";
                     this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
                     return arg0;
                 }
+                if (elemType.sameType(DBSPTypeNull.getDefault())) {
+                    String warningMessage =
+                            node + ": all elements are null; result is always an empty array";
+                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
+                    return new DBSPVecLiteral(arg0.getNode(), arg0.getType(), Linq.list());
+                }
 
                 String method = getArrayCallName(call, arg0);
-
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
             case ARRAY_REPEAT: {
