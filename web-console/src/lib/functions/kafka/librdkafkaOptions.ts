@@ -975,7 +975,7 @@ const toKafkaOption = (optionName: string, v: LibrdkafkaOptionType, type: Return
     .with('boolean', 'number', () => String(v))
     .with('list', () => {
       invariant(Array.isArray(v), 'librdkafka option ' + optionName + ' ' + v + ' is not an array')
-      return v.join(', ')
+      return v?.join(', ')
     })
     .with('array', () => {
       invariant(Array.isArray(v), 'librdkafka option ' + optionName + ' ' + v + ' is not an array')
