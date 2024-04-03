@@ -1,6 +1,6 @@
 // Generates rows and inserts them into a table.
 
-import { Row, SQLValueJS } from '$lib/functions/ddl'
+import { Row, SQLValueJS } from '$lib/functions/sqlValue'
 import { ColumnType, Field, Relation } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import dayjs from 'dayjs'

@@ -1,4 +1,4 @@
-import { getValueFormatter, SQLValueJS } from '$lib/functions/ddl'
+import { getValueFormatter, SQLValueJS } from '$lib/functions/sqlValue'
 import { useMemo } from 'react'
 import { ColumnType } from 'src/lib/services/manager'
 

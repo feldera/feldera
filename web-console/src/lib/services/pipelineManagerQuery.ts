@@ -1,8 +1,8 @@
 import { assertUnion } from '$lib/functions/common/array'
 import { compose } from '$lib/functions/common/function'
 import { getQueryData, invalidateQuery, mkQuery, mkQueryKey, setQueryData } from '$lib/functions/common/tanstack'
-import { JSONXgressValue } from '$lib/functions/ddl'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { JSONXgressValue } from '$lib/functions/sqlValue'
 import {
   ApiError,
   ApiKeyDescr,

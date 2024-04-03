@@ -2,7 +2,7 @@
 
 import { getDefaultRngMethod, getRngMethodByName } from '$lib/components/streaming/import/randomData/generators'
 import { StoredFieldSettings } from '$lib/components/streaming/import/RngSettingsDialog'
-import { Row } from '$lib/functions/ddl'
+import { Row } from '$lib/functions/sqlValue'
 import { Field, Relation } from '$lib/services/manager'
 import { Dispatch, SetStateAction, useCallback } from 'react'
 

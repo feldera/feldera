@@ -4,24 +4,22 @@ export type CaseDependentName = {
 }
 
 export const getCaseIndependentName = (entity: CaseDependentName) =>
-  entity.case_sensitive ? `"${entity.name}"` : entity.name
+  entity.case_sensitive ? `"${entity.name}"` : normalizeCaseIndependentName(entity)
 
 const isCaseSensitive = (caseIndependentName: string) => caseIndependentName.includes('"')
 
 /**
  * Convert case insensitive names to lowercase, leave names in quotes as-is
  */
-export const normalizeCaseIndependentName = (
-  caseIndependentName: string,
-  caseSensitive = isCaseSensitive(caseIndependentName)
-) => (caseSensitive ? caseIndependentName : caseIndependentName.toLocaleLowerCase())
+export const normalizeCaseIndependentName = ({ name, case_sensitive = isCaseSensitive(name) }: CaseDependentName) =>
+  case_sensitive ? name : name.toLocaleLowerCase()
 
 // TODO: update implementation when double quotes become a legal symbol in a name
 export const getCaseDependentName = (caseIndependentName: string) => {
-  const caseSensitive = isCaseSensitive(caseIndependentName)
+  const case_sensitive = isCaseSensitive(caseIndependentName)
   return {
-    name: normalizeCaseIndependentName(caseIndependentName.replaceAll('"', ''), caseSensitive),
-    case_sensitive: caseSensitive
+    name: normalizeCaseIndependentName({ name: caseIndependentName.replaceAll('"', ''), case_sensitive }),
+    case_sensitive
   }
 }
 

@@ -1,5 +1,5 @@
 import { inRangeInclusive } from '$lib/functions/common/bigNumber'
-import { getValueFormatter, numericRange, SQLValueJS } from '$lib/functions/ddl'
+import { getValueFormatter, numericRange, SQLValueJS } from '$lib/functions/sqlValue'
 import { Field } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import invariant from 'tiny-invariant'

@@ -5,7 +5,7 @@
 // support streaming yet.
 
 import { readLineFromStream } from '$lib/functions/common/stream'
-import { SQLValueJS, xgressJSONToSQLRecord } from '$lib/functions/ddl'
+import { SQLValueJS, xgressJSONToSQLRecord } from '$lib/functions/sqlValue'
 import { getUrl, httpOutputOptions } from '$lib/services/HttpInputOutputService'
 import { Chunk, HttpInputOutputService, OpenAPI, Relation } from '$lib/services/manager'
 import { getHeaders } from '$lib/services/manager/core/request'
