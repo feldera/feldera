@@ -68,6 +68,7 @@ const schema = va.object({
         ),
         preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
       },
+      // Allow configurations options not mentioned in the schema
       va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
     ),
     authParamsSchema

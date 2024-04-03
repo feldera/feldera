@@ -69,6 +69,7 @@ const schema = va.object({
           'Specify at least one server'
         )
       },
+      // Allow configurations options not mentioned in the schema
       va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
     ),
     authParamsSchema
