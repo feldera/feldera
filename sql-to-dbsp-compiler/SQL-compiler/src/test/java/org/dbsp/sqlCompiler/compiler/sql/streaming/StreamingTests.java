@@ -5,13 +5,9 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneFunctions;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneOperators;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -343,7 +339,8 @@ public class StreamingTests extends StreamingTest {
         this.addRustTestCase("testJoin", ccs);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1462")
+    // Test for https://github.com/feldera/feldera/issues/1462
+    @Test
     public void testJoinNonMonotoneColumn() {
         String script = """
             CREATE TABLE series (
@@ -363,6 +360,30 @@ public class StreamingTests extends StreamingTest {
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testJoinNonMonotoneColumn", ccs);
+    }
+
+    @Test
+    public void testJoinTwoColumns() {
+        // One joined column is monotone, the other one isn't.
+        String script = """
+            CREATE TABLE series (
+                    metadata VARCHAR NOT NULL,
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
+            );
+            
+            CREATE TABLE shift(
+                    person VARCHAR NOT NULL,
+                    on_call DATE
+            );
+        
+            CREATE VIEW V AS
+            (SELECT * FROM series JOIN shift
+             ON series.metadata = shift.person AND CAST(series.event_time AS DATE) = shift.on_call);
+            """;
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(script);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("testJoinTwoColumns", ccs);
     }
 
     @Test

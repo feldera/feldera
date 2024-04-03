@@ -9,8 +9,8 @@ import java.util.Map;
 
 /** Holds information about the user-defined struct types */
 class GlobalTypes {
-    NameGen structNameGen = new NameGen("struct_");
-    Map<String, DBSPTypeStruct> declarations = new HashMap<>();
+    final NameGen structNameGen = new NameGen("struct_");
+    final Map<String, DBSPTypeStruct> declarations = new HashMap<>();
 
     public String generateSaneName(String name) {
         if (this.declarations.containsKey(name))

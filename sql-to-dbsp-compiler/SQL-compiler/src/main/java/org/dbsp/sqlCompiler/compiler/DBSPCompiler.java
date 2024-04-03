@@ -84,7 +84,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      * The definitions supplied by the user will be copied here. */
     public static final String UDF_FILE_NAME = "udf.rs";
 
-    GlobalTypes globalTypes = new GlobalTypes();
+    final GlobalTypes globalTypes = new GlobalTypes();
 
     /** Where does the compiled program come from? */
     public enum InputSource {

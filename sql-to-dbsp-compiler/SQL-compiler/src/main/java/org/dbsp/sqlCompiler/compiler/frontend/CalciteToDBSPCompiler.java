@@ -834,10 +834,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTupleExpression lr = DBSPTupleExpression.flatten(l.deref(), r.deref());
         List<DBSPExpression> leftKeyFields = Linq.map(
                 decomposition.comparisons,
-                c -> l.deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
+                c -> l.deepCopy().deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
         List<DBSPExpression> rightKeyFields = Linq.map(
                 decomposition.comparisons,
-                c -> r.deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
+                c -> r.deepCopy().deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
         DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
         DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
 
@@ -856,8 +856,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPVariablePath k = leftKey.getType().ref().var("k");
 
-        DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(
-                leftKey, DBSPTupleExpression.flatten(l.deref()))
+        DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.deref());
+        DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, tuple)
                 .closure(l.asParameter());
         DBSPIndexOperator leftIndex = new DBSPIndexOperator(
                 node, toLeftKey,

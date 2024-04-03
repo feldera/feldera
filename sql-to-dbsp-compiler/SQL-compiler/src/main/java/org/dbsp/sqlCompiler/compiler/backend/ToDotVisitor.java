@@ -61,7 +61,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        String name = node.getOutputName();
+        String name = node.tableName;
         if (node.is(DBSPDelayOutputOperator.class))
             name = "delay";
         this.stream.append(node.getOutputName())
@@ -69,6 +69,18 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(node.getIdString())
                 .append(" ")
                 .append(name)
+                .append("\" ]")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPConstantOperator node) {
+        this.stream.append(node.getOutputName())
+                .append(" [ shape=box,label=\"")
+                .append(node.getIdString())
+                .append(" ")
+                .append(getFunction(node))
                 .append("\" ]")
                 .newline();
         return VisitDecision.STOP;
@@ -105,7 +117,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(" ")
-                .append(node.getOutputName())
+                .append(node.viewName)
                 .append("\" ]")
                 .newline();
         this.addInputs(node);
@@ -123,7 +135,6 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         }
         if (expression == null)
             return "";
-        // Do some manually some lowering.
         if (node.is(DBSPFlatMapOperator.class)) {
             expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
         }

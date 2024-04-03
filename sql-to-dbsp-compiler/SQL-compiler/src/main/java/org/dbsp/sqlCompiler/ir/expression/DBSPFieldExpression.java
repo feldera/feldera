@@ -41,6 +41,7 @@ public class DBSPFieldExpression extends DBSPExpression {
         super(node, type);
         this.expression = expression;
         this.fieldNo = fieldNo;
+        assert fieldNo >= 0: "Negative field index " + fieldNo;
     }
 
     protected DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {

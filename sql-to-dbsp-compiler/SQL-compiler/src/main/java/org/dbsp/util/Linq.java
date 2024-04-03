@@ -200,13 +200,14 @@ public class Linq {
         return result;
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> T[] where(T[] data, Predicate<T> function) {
+    public static <T> T[] where(T[] data, Predicate<T> function, Class<T> tc) {
         List<T> result = new ArrayList<>();
         for (T datum : data)
             if (function.test(datum))
                 result.add(datum);
-        return (T[]) result.toArray();
+        @SuppressWarnings("unchecked")
+        T[] array = (T[])Array.newInstance(tc, result.size());
+        return result.toArray(array);
     }
 
     public static boolean all(Iterable<Boolean> data) {
