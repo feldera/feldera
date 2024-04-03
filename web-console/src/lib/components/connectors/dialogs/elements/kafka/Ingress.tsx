@@ -1,48 +1,6 @@
-import { Controller, SelectElement, TextFieldElement, useFormContext } from 'react-hook-form-mui'
+import { Controller, useFormContext } from 'react-hook-form-mui'
 
 import { Autocomplete, FormControl, FormHelperText, TextField } from '@mui/material'
-
-export const KafkaAutoOffsetResetElement = (props: { disabled?: boolean; parentName: string }) => {
-  return (
-    <SelectElement
-      name={props.parentName + '.auto_offset_reset'}
-      label='auto.offset.reset'
-      size='small'
-      options={[
-        {
-          id: 'earliest',
-          label: 'Earliest'
-        },
-        {
-          id: 'latest',
-          label: 'Latest'
-        }
-      ]}
-      helperText='From when to consume the topics.'
-      disabled={props.disabled}
-      inputProps={{
-        'data-testid': 'input-auto-offset-reset'
-      }}
-    ></SelectElement>
-  )
-}
-
-export const KafkaGroupIdElement = (props: { disabled?: boolean; parentName: string }) => {
-  return (
-    <TextFieldElement
-      name={props.parentName + '.group_id'}
-      label='group.id'
-      size='small'
-      fullWidth
-      placeholder='my-group-id'
-      aria-describedby='validation-group-id'
-      disabled={props.disabled}
-      inputProps={{
-        'data-testid': 'input-group_id'
-      }}
-    />
-  )
-}
 
 export const KafkaTopicsElement = (props: { disabled?: boolean; parentName: string }) => {
   const ctx = useFormContext()
