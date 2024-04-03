@@ -1,5 +1,6 @@
 import { bigNumberInputProps } from '$lib/components/input/BigNumberInput'
-import { numberInputProps } from '$lib/components/input/NumberInput'
+import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
+import { numberRangeInputProps } from '$lib/components/input/NumberInput'
 import {
   JSONXgressValue,
   numericRange,
@@ -10,12 +11,12 @@ import {
 import { ColumnType } from '$lib/services/manager'
 import BigNumber from 'bignumber.js'
 import Dayjs, { isDayjs } from 'dayjs'
-import { ChangeEvent, Dispatch, useReducer } from 'react'
+import { ChangeEvent } from 'react'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
-import { IconButton, TextField, TextFieldProps, useTheme } from '@mui/material'
+import { IconButton, TextField, TextFieldProps } from '@mui/material'
 
 /**
  * Input for a value representable by given SQL type accounting for precision, nullability etc.
@@ -37,59 +38,67 @@ export const SQLValueInput = ({
       return props.onChange(event)
     }
   })
+
+  const extraProps = {
+    InputProps: {
+      endAdornment: columnType.nullable ? (
+        <IconButton
+          size='small'
+          sx={{ mr: -3 }}
+          onClick={() => props.onChange({ target: { value: null as any } } as any)}
+        >
+          <i className='bx bx-x' />
+        </IconButton>
+      ) : undefined
+    }
+  }
   invariant(columnType.type)
   if (columnType.type === 'ARRAY') {
     return (
-      <IntermediateValueInput
-        {...{ columnType, type: 'string', ...props, toText: JSONbig.stringify, fromText: JSONbig.parse }}
-      ></IntermediateValueInput>
+      <SqlValueTextInput
+        {...extraProps}
+        {...{ columnType, type: 'string', ...props, valueToText: JSONbig.stringify, fromText: JSONbig.parse }}
+      ></SqlValueTextInput>
     )
   }
   if (columnType.type === 'TIME') {
     return (
-      <IntermediateValueInput
+      <SqlValueTextInput
+        {...extraProps}
         {...{
           columnType,
           type: 'string',
           step: 1,
           ...props,
-          toText: v => v as string,
+          valueToText: v => v as string,
           fromText: t => t
         }}
-      ></IntermediateValueInput>
+      ></SqlValueTextInput>
     )
   }
   if (columnType.type === 'DATE') {
     return (
-      <IntermediateValueInput
-        {...{ columnType, type: 'date', ...props, toText: v => v as string, fromText: t => t }}
-      ></IntermediateValueInput>
+      <SqlValueTextInput
+        {...extraProps}
+        {...{ columnType, type: 'date', ...props, valueToText: v => v as string, fromText: t => t }}
+      ></SqlValueTextInput>
     )
   }
   if (columnType.type === 'STRUCT') {
     return (
-      <IntermediateValueInput
-        {...{ columnType, type: 'string', ...props, toText: v => v as string, fromText: t => t }}
-      ></IntermediateValueInput>
+      <SqlValueTextInput
+        {...extraProps}
+        {...{ columnType, type: 'string', ...props, valueToText: v => v as string, fromText: t => t }}
+      ></SqlValueTextInput>
     )
   }
 
   return (
     <TextField
-      InputProps={{
-        endAdornment: columnType.nullable ? (
-          <IconButton
-            size='small'
-            sx={{ mr: -3 }}
-            onClick={() => props.onChange({ target: { value: null as any } } as any)}
-          >
-            <i className='bx bx-x' />
-          </IconButton>
-        ) : undefined
-      }}
+      {...extraProps}
       {...match(columnType.type)
         .with('TINYINT', 'SMALLINT', 'INTEGER', () => ({
-          ...numberInputProps({
+          ...numberRangeInputProps({
             ...props,
             ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType)),
             value: props.value as null | number,
@@ -97,7 +106,7 @@ export const SQLValueInput = ({
           })
         }))
         .with('REAL', 'DOUBLE', () => ({
-          ...numberInputProps({
+          ...numberRangeInputProps({
             ...props,
             value: props.value as null | number,
             placeholder: props.value === null ? 'null' : ''
@@ -179,72 +188,30 @@ export const SQLValueInput = ({
 }
 
 /**
- * Input component that can be in an invalid state.
- * While in invalid state, changes in input are not reflected on edited value.
- * The valid state is determined by successful serialization of an SQL value.
+ * The input is valid if the serialization of an SQL value is successful.
  */
-export function IntermediateValueInput(
+function SqlValueTextInput(
   props: {
     value: SQLValueJS
-    toText: (v: SQLValueJS) => string
+    valueToText: (v: SQLValueJS) => string
     fromText: (text: string) => JSONXgressValue
     columnType: ColumnType
     onChange: (event: ChangeEvent<HTMLInputElement>) => void
   } & Omit<TextFieldProps, 'value' | 'onChange'>
 ) {
-  const [value, setValueText] = useReducer(
-    intermediateInputReducer(
-      text => xgressJSONToSQLValue(props.columnType, props.fromText(text)),
-      value => props.onChange({ target: { value } } as any)
-    ),
-    { valid: props.value }
-  )
-  const theme = useTheme()
-  const error = 'intermediate' in value
+  const intermediateInputProps = useIntermediateInput({
+    ...props,
+    textToValue: text => xgressJSONToSQLValue(props.columnType, props.fromText(text)),
+    valueToText: valid => props.valueToText(sqlValueToXgressJSON(props.columnType, valid))
+  })
   return (
     <TextField
       variant='outlined'
       {...props}
-      sx={{
-        ...props.sx,
-        backgroundColor: error ? theme.palette.error.light : 'undefined'
-      }}
-      error={error}
-      onChange={e => setValueText(e.target.value)}
-      value={
-        'valid' in value && value.valid === null
-          ? ''
-          : 'valid' in value
-            ? props.toText(sqlValueToXgressJSON(props.columnType, value.valid))
-            : value.intermediate
-      }
+      {...intermediateInputProps}
       placeholder={props.value === null ? 'null' : ''}
-      InputProps={{
-        endAdornment: (
-          <IconButton size='small' sx={{ mr: -3 }} onClick={() => setValueText(null)}>
-            <i className='bx bx-x' />
-          </IconButton>
-        )
-      }}
-    ></TextField>
+    >
+      {props.children}
+    </TextField>
   )
-}
-
-type IntermediateInputState<T> = { valid: T | null } | { intermediate: string }
-
-function intermediateInputReducer<T>(textToValue: (text: string) => T, setValue: Dispatch<T | null>) {
-  return (_state: IntermediateInputState<T>, action: string | null): IntermediateInputState<T> => {
-    try {
-      const value = action === null ? null : textToValue(action)
-      setValue(value)
-      return {
-        valid: value
-      }
-    } catch {
-      invariant(action !== null)
-      return {
-        intermediate: action
-      }
-    }
-  }
 }

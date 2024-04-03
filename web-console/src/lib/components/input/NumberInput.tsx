@@ -1,19 +1,34 @@
+import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
 import { nonNull } from '$lib/functions/common/function'
 import { ChangeEventHandler, ClipboardEventHandler, KeyboardEventHandler } from 'react'
 import invariant from 'tiny-invariant'
 
-import { TextField, TextFieldProps } from '@mui/material'
+import { TextField } from '@mui/material'
+
+import type { TextFieldProps } from '@mui/material'
 
 export const handleNumericKeyDown: KeyboardEventHandler<Element> = event => {
-  if (/Key[ACVXYZ]/.test(event.code) && event.ctrlKey) {
+  // Allow keyboard shotcuts for Copy, Paste, etc.
+  // .ctrlKey is true when Ctrl is pressed in most OS-s
+  // .metaKey is true when Cmd is pressed in MacOS
+  if (/Key[ACVXYZ]/.test(event.code) && (event.ctrlKey || event.metaKey)) {
     return
   }
+  // Forbid text character keys
   if (/Key\w/.test(event.code)) {
     event.preventDefault()
     return
   }
+  // Allow keys:
+  // Digit\d|Numpad\d - keyboard and numpad digits
+  // Minus|NumpadSubtract - minus sign
+  // Period|Comma|NumpadDecimal - decimal point symbol for different locales
+  // Backspace|Delete - text delete keys
+  // Arrow[Up|Down|Left|Right] - keyboard arrows for cursor navigation
   if (
-    !/Digit\d|Numpad\d|Minus|NumpadSubtract|Period|Comma|NumpadDecimal|Backspace|Delete/.test(event.code) ||
+    !/Digit\d|Numpad\d|Minus|NumpadSubtract|Period|Comma|NumpadDecimal|Backspace|Delete|Arrow[Up|Down|Left|Right]/.test(
+      event.code
+    ) ||
     event.shiftKey
   ) {
     event.preventDefault()
@@ -38,14 +53,18 @@ const handleValueInput = (min: number | undefined, max: number | undefined, valu
   return number
 }
 
-export const numberInputProps = (
+/**
+ * Generate props to pass to TextField component as-is to get a strict number input
+ * Doesn't allow typing up numbers if the min value is larger than zero
+ */
+export const numberRangeInputProps = (
   props: Omit<TextFieldProps, 'value'> & {
     value?: number | null
     min?: number
     max?: number
     step?: number
   }
-): TextFieldProps => {
+) => {
   invariant(props.value === null || props.value === undefined || typeof props.value === 'number')
 
   const handleChange: ChangeEventHandler<HTMLInputElement> = event => {
@@ -65,22 +84,44 @@ export const numberInputProps = (
 
   return {
     ...props,
+    ...('value' in props ? { value: props.value === null ? '' : props.value } : {}),
     inputProps: {
       ...{
         ...props.inputProps,
         min: props.min,
         max: props.max,
         step: props.step
-      },
-      ...('value' in props ? { value: props.value === null ? '' : props.value } : {})
+      }
     },
     type: 'number',
     onChange: handleChange,
     onPaste: handlePaste,
     onKeyDown: handleNumericKeyDown
-  }
+  } as TextFieldProps & { value?: number }
 }
 
-export const NumberInput = (props: TextFieldProps & { min?: number; max?: number; value?: number | null }) => (
-  <TextField {...numberInputProps(props)}></TextField>
+/**
+ * Doesn't allow typing up numbers if the min value is larger than zero
+ */
+export const NumberRangeInput = (props: TextFieldProps & { min?: number; max?: number; value?: number | null }) => (
+  <TextField {...numberRangeInputProps(props)}></TextField>
 )
+
+/**
+ * Input highlights in red when the value doesn't fit the provided range
+ * Error value is not applied
+ */
+export const NumberInput = (props: TextFieldProps & { min?: number; max?: number; value?: number | null }) => {
+  const intermediateInputProps = useIntermediateInput<number>({
+    ...numberRangeInputProps(props),
+    textToValue: text => {
+      const v = parseFloat(text)
+      if (Number.isNaN(v) || (nonNull(props.min) && props.min > v) || (nonNull(props.max) && props.max < v)) {
+        throw new Error()
+      }
+      return v
+    },
+    valueToText: valid => valid?.toFixed() ?? ''
+  })
+  return <TextField {...intermediateInputProps}></TextField>
+}

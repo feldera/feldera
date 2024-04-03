@@ -947,15 +947,34 @@ export const librdkafkaOptions = [
       `The Kafka topic to write to  \n*Type: string*`
     ]
   ])
-  .map(row => ({
-    name: row[0].trim(),
-    scope: row[1].trim() as 'C' | 'P' | '*',
-    range: row[2].trim(),
-    default: row[3].trim(),
-    importance: row[4].trim(),
-    description: row[5],
-    type: deduceType(row)
-  }))
+  .map(row => {
+    const data = {
+      name: row[0].trim(),
+      scope: row[1].trim() as 'C' | 'P' | '*',
+      range: row[2].trim(),
+      default: row[3].trim(),
+      importance: row[4].trim(),
+      description: row[5],
+      type: deduceType(row)
+    }
+    if (data.type === 'number') {
+      return {
+        ...data,
+        type: 'number' as const,
+        range: (([, min, max]) => ({ min: parseInt(min), max: parseInt(max) }))(
+          data.range.match(/(\d+) .. (\d+)/) ?? []
+        )
+      }
+    }
+    if (data.type === 'enum') {
+      return {
+        ...data,
+        type: 'enum' as const,
+        range: data.range.split(', ')
+      }
+    }
+    return { ...data, type: data.type }
+  })
 
 export const librdkafkaAuthOptions = [
   'security.protocol',

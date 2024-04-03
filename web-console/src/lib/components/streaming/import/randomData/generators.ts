@@ -2,7 +2,7 @@
 // generator may have custom generation and validation methods.
 
 import { BigNumberInput } from '$lib/components/input/BigNumberInput'
-import { numberInputProps } from '$lib/components/input/NumberInput'
+import { numberRangeInputProps } from '$lib/components/input/NumberInput'
 import { clampBigNumber } from '$lib/functions/common/bigNumber'
 import {
   randomExponentialBigNumber,
@@ -253,7 +253,7 @@ const BOOLEAN_GENERATORS: IRngGenMethod[] = [
         sm: 4,
         component: TextField,
         props: {
-          ...numberInputProps({ min: 0, max: 1, step: 0.01 }),
+          ...numberRangeInputProps({ min: 0, max: 1, step: 0.01 }),
           name: FieldNames.TRUE_PCT,
           label: 'True [%]'
         }
