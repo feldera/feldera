@@ -286,9 +286,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public void postorder(DBSPCastExpression expression) {
         // Casts always preserve monotonicity in SQL
         MonotoneExpression source = this.get(expression.source);
+        DBSPExpression reduced = null;
+        if (source.mayBeMonotone()) {
+            reduced = expression.replaceSource(source.getReducedExpression());
+        }
         MonotoneExpression result = new MonotoneExpression(
-                expression, source.copyMonotonicity(expression.getType()),
-                expression.replaceSource(source.getReducedExpression()));
+                expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
     }
 
