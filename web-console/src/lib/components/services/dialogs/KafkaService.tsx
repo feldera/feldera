@@ -405,7 +405,7 @@ const TabKafkaConfig = (props: { disabled?: boolean }) => {
                         multiline
                         transform={{
                           input: (v: string[]) => {
-                            return v.join(', ')
+                            return v?.join(', ')
                           },
                           output: (v: string) => {
                             return v.split(', ')

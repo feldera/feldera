@@ -55,7 +55,7 @@ RUN ARCH=`dpkg --print-architecture`; \
 ## Install python dependencies for the demos
 
 RUN \
-   pip3 install gdown
+   pip3 install gdown kafka-python
 
 ## Switch to non-root user
 
