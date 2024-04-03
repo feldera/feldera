@@ -1,4 +1,4 @@
-import { Row } from '$lib/functions/ddl'
+import { Row } from '$lib/functions/sqlValue'
 import { useState } from 'react'
 
 import DeleteIcon from '@mui/icons-material/Delete'

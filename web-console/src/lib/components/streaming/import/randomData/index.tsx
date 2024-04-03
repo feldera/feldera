@@ -2,8 +2,8 @@
 // for a given field in a table.
 
 import { useDynamicValidationForm } from '$lib/compositions/streaming/import/useDynamicValidationForm/valibot'
-import { SQLValueJS } from '$lib/functions/ddl'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { SQLValueJS } from '$lib/functions/sqlValue'
 import { Field } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import dayjs from 'dayjs'

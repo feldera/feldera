@@ -4,7 +4,7 @@
 // In dbsp-speak this maintains an integral for a part of a relation.
 
 import { readLineFromStream } from '$lib/functions/common/stream'
-import { JSONXgressValue, Row, xgressJSONToSQLRecord } from '$lib/functions/ddl'
+import { JSONXgressValue, Row, xgressJSONToSQLRecord } from '$lib/functions/sqlValue'
 import { getUrl, httpOutputOptions } from '$lib/services/HttpInputOutputService'
 import { HttpInputOutputService, OpenAPI, Relation } from '$lib/services/manager'
 import { getHeaders } from '$lib/services/manager/core/request'
@@ -135,7 +135,6 @@ export function useTableUpdater() {
             // A ping message, we ignore this.
             continue
           }
-
           const parsedRows = (obj.json_data as any[]).map(item =>
             (([action, row]) => xgressJSONToSQLRow(relation, row as any, action === 'insert' ? 1 : -1))(
               Object.entries(item)[0]
@@ -171,10 +170,8 @@ const xgressJSONToSQLRow = (
   relation: Relation,
   entry: { key: Record<string, JSONXgressValue>; index: number },
   weight: number
-): Row => {
-  return {
-    genId: entry.index,
-    weight,
-    record: xgressJSONToSQLRecord(relation, entry.key)
-  }
-}
+): Row => ({
+  genId: entry.index,
+  weight,
+  record: xgressJSONToSQLRecord(relation, entry.key)
+})

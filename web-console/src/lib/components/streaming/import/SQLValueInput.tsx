@@ -7,7 +7,7 @@ import {
   SQLValueJS,
   sqlValueToXgressJSON,
   xgressJSONToSQLValue
-} from '$lib/functions/ddl'
+} from '$lib/functions/sqlValue'
 import { ColumnType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import Dayjs, { isDayjs } from 'dayjs'

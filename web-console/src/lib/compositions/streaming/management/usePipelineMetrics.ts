@@ -77,8 +77,12 @@ export function usePipelineMetrics(props: {
       const globalWithTimestamp = { ...newData.global_metrics, timeMs: lastTimestamp ? now - lastTimestamp : 0 }
 
       return {
-        input: new Map(newData.inputs.map(cs => tuple(normalizeCaseIndependentName(cs.config.stream), cs.metrics))),
-        output: new Map(newData.outputs.map(cs => tuple(normalizeCaseIndependentName(cs.config.stream), cs.metrics))),
+        input: new Map(
+          newData.inputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
+        ),
+        output: new Map(
+          newData.outputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
+        ),
         global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, props.refetchMs, props.keepMs)
       } as any
     }

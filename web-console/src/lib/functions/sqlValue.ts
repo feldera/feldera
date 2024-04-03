@@ -219,7 +219,7 @@ export const xgressJSONToSQLRecord = (
 ): Record<string, SQLValueJS> =>
   Object.fromEntries(
     relation.fields.map(field =>
-      tuple(getCaseIndependentName(field), xgressJSONToSQLValue(field.columntype, value[field.name]))
+      tuple(getCaseIndependentName(field), xgressJSONToSQLValue(field.columntype, value[getCaseIndependentName(field)]))
     )
   )
 

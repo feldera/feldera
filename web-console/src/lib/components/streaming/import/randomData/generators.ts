@@ -12,7 +12,7 @@ import {
 import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
-import { dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
+import { dateTimeRange, findBaseType, numericRange } from '$lib/functions/sqlValue'
 import { ColumnType, Field } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import * as d3 from 'd3-random'
@@ -39,7 +39,7 @@ import {
 import { FieldNames } from './'
 import { BooleanSwitch } from './BooleanSwitch'
 
-import type { SQLValueJS } from '$lib/functions/ddl'
+import type { SQLValueJS } from '$lib/functions/sqlValue'
 
 type AddFieldName<T> = { name: FieldNames } & Partial<T>
 

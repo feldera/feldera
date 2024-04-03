@@ -12,8 +12,8 @@ import useQuantiles from '$lib/compositions/streaming/inspection/useQuantiles'
 import { useTableUpdater } from '$lib/compositions/streaming/inspection/useTableUpdater'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useAsyncError } from '$lib/functions/common/react'
-import { Row, sqlValueComparator, SQLValueJS, sqlValueToXgressJSON } from '$lib/functions/ddl'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { Row, sqlValueComparator, SQLValueJS, sqlValueToXgressJSON } from '$lib/functions/sqlValue'
 import { EgressMode, Field, NeighborhoodQuery, OutputQuery, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
@@ -342,9 +342,7 @@ const InspectionTableImpl = ({
               description: getCaseIndependentName(col),
               width: 150,
               display: 'flex',
-              valueGetter: (_, row) => {
-                return row.record[col.name]
-              },
+              valueGetter: (_, row) => row.record[getCaseIndependentName(col)],
               renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,
               renderCell: (props: GridRenderCellParams) => (
                 <SQLValueDisplay value={props.value} type={col.columntype} />

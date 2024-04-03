@@ -1,5 +1,5 @@
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
-import { Row, sqlRowToXgressJSON } from '$lib/functions/ddl'
+import { Row, sqlRowToXgressJSON } from '$lib/functions/sqlValue'
 import { Relation } from '$lib/services/manager'
 import { mutationHttpIngressJson } from '$lib/services/pipelineManagerQuery'
 import { useCallback } from 'react'

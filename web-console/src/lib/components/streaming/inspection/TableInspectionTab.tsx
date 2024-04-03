@@ -1,7 +1,7 @@
 import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
 import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { ViewInspectionTab } from '$lib/components/streaming/inspection/ViewInspectionTab'
-import { Row } from '$lib/functions/ddl'
+import { Row } from '$lib/functions/sqlValue'
 import { PipelineRevision, Relation } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { SetStateAction, useEffect, useReducer, useState } from 'react'
