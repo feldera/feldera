@@ -928,7 +928,7 @@ export const librdkafkaOptions = [
       '               ',
       '             ',
       'high      ',
-      `A comma-delimited list of Kafka topics  \n*Type: array*`
+      `A comma-delimited list of Kafka topics to read from  \n*Type: array*`
     ],
     [
       'topic                                   ',
@@ -936,7 +936,7 @@ export const librdkafkaOptions = [
       '               ',
       '             ',
       'high      ',
-      `A Kafka topic  \n*Type: string*`
+      `The Kafka topic to write to  \n*Type: string*`
     ]
   ])
   .map(row => ({
@@ -1023,14 +1023,15 @@ export const toKafkaConfig = ({ preset_service, ...formFields }: Record<string, 
  */
 export const fromLibrdkafkaConfig = (config: Record<string, string | string[]>) => {
   const formFields = {} as Record<string, LibrdkafkaOptionType>
-  delete config.log_level
-  delete config.group_join_timeout_secs
-  delete config.fault_tolerance
   Object.keys(config).forEach(optionName => {
     const v = config[optionName]
     const fieldName = optionName.replaceAll('.', '_')
     // TODO: Optimize .find()
-    const type = librdkafkaOptions.find(option => option.name === optionName)?.type ?? 'string'
+    const type = librdkafkaOptions.find(option => option.name === optionName)?.type
+    if (!type) {
+      // Ignore options that are not in librdkafka spec
+      return
+    }
     formFields[fieldName] = match(type)
       .with('boolean', () =>
         v === 'true'

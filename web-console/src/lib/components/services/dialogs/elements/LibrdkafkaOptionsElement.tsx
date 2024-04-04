@@ -48,6 +48,7 @@ export const LibrdkafkaOptionsElement = (props: {
                       }
                     </Markdown>
                   }
+                  disableInteractive
                 >
                   <Typography>{field.replaceAll('_', '.')}</Typography>
                 </Tooltip>
