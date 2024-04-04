@@ -8,7 +8,7 @@
 export type KafkaService = {
   /**
    * List of bootstrap servers, each formatted as hostname:port (e.g.,
-   * "example.com:1234"). It will be used to set the bootstrap.servers
+   * "example.com:1234"). It will be used to set the `bootstrap.servers`
    * Kafka option.
    */
   bootstrap_servers: Array<string>

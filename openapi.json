@@ -3525,6 +3525,25 @@
         ],
         "description": "Describes an input connector configuration"
       },
+      "IntervalUnit": {
+        "type": "string",
+        "description": "The specified units for SQL Interval types.\n\n`INTERVAL 1 DAY`, `INTERVAL 1 DAY TO HOUR`, `INTERVAL 1 DAY TO MINUTE`,\nwould yield `Day`, `DayToHour`, `DayToMinute`, as the `IntervalUnit` respectively.",
+        "enum": [
+          "DAY",
+          "DAYTOHOUR",
+          "DAYTOMINUTE",
+          "DAYTOSECOND",
+          "HOUR",
+          "HOURTOMINUTE",
+          "HOURTOSECOND",
+          "MINUTE",
+          "MINUTETOSECOND",
+          "MONTH",
+          "SECOND",
+          "YEAR",
+          "YEARTOMONTH"
+        ]
+      },
       "JsonEncoderConfig": {
         "type": "object",
         "properties": {
