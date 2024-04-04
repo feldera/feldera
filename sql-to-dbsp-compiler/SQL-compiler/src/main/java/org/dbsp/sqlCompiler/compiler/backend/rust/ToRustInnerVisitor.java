@@ -1120,7 +1120,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeStruct type) {
         // A *reference* to a struct type is just the type name.
+        if (type.mayBeNull)
+            this.builder.append("Option<");
         this.builder.append(type.sanitizedName);
+        if (type.mayBeNull)
+            this.builder.append(">");
         return VisitDecision.STOP;
     }
 
