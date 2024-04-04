@@ -1,12 +1,7 @@
 // The drawer component that opens when the user wants to add a connector in the
 // pipeline builder.
 
-import { ConfigEditorDialog } from '$lib/components/connectors/dialogs'
-import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
-import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
-import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
-import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
-import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
+import { getConnectorDialogComponent } from '$lib/components/connectors/dialogs/AnyConnector'
 import { useAddConnector } from '$lib/compositions/streaming/builder/useAddIoNode'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
@@ -199,7 +194,8 @@ const SideBarAddIo = () => {
             ConnectorType.KAFKA_OUT,
             ConnectorType.DEBEZIUM_IN,
             ConnectorType.SNOWFLAKE_OUT,
-            ConnectorType.URL,
+            ConnectorType.S3_IN,
+            ConnectorType.URL_IN,
             ConnectorType.UNKNOWN
           ].map(
             type =>
@@ -228,20 +224,12 @@ const SideBarAddIo = () => {
         </Grid>
       )}
       {(() => {
-        const dialogs = {
-          [ConnectorType.KAFKA_IN]: KafkaInputConnectorDialog,
-          [ConnectorType.KAFKA_OUT]: KafkaOutputConnectorDialog,
-          [ConnectorType.DEBEZIUM_IN]: DebeziumInputConnectorDialog,
-          [ConnectorType.SNOWFLAKE_OUT]: SnowflakeOutputConnectorDialog,
-          [ConnectorType.URL]: UrlConnectorDialog,
-          [ConnectorType.UNKNOWN]: ConfigEditorDialog
-        }
         const res = /new\/connector\/(\w+)\/(\w+)/.exec(hash)
         if (!res) {
           return <></>
         }
         const [, direction, type] = res
-        const Dialog = dialogs[type as keyof typeof dialogs]
+        const Dialog = getConnectorDialogComponent(type as ConnectorType)
         return (
           <Dialog
             {...showOnHash('new/connector/')}

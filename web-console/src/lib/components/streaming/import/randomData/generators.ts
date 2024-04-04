@@ -13,7 +13,7 @@ import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
 import { dateTimeRange, findBaseType, numericRange } from '$lib/functions/ddl'
-import { ColumnType, Field, SqlType } from '$lib/services/manager'
+import { ColumnType, Field } from '$lib/services/manager'
 import assert from 'assert'
 import BigNumber from 'bignumber.js'
 import * as d3 from 'd3-random'
@@ -94,30 +94,33 @@ export interface IRngGenMethod {
   validationSchema?: (field: ColumnType) => va.ObjectSchema<any>
 }
 
-const getDefaultRngMethodName = (sqlType: ColumnType): string =>
-  match(sqlType)
-    .with({ type: SqlType.BOOLEAN }, () => 'Percentage')
-    .with({ type: SqlType.TINYINT }, () => 'Uniform')
-    .with({ type: SqlType.SMALLINT }, () => 'Uniform')
-    .with({ type: SqlType.INTEGER }, () => 'Uniform')
-    .with({ type: SqlType.BIGINT }, () => 'Uniform')
-    .with({ type: SqlType.DECIMAL }, () => 'Uniform')
-    .with({ type: SqlType.REAL }, () => 'Uniform')
-    .with({ type: SqlType.DOUBLE }, () => 'Uniform')
-    .with({ type: SqlType.VARCHAR }, () => 'Word')
-    .with({ type: SqlType.CHAR }, () => 'Word')
-    .with({ type: SqlType.TIME }, () => 'Uniform')
-    .with({ type: SqlType.TIMESTAMP }, () => 'Uniform')
-    .with({ type: SqlType.DATE }, () => 'Uniform')
-    .with({ type: SqlType.ARRAY }, () => {
+const getDefaultRngMethodName = (sqlType: ColumnType): string => {
+  return match(sqlType)
+    .with({ type: undefined }, () => invariant(sqlType.type) as never)
+    .with({ type: 'BOOLEAN' }, () => 'Percentage')
+    .with({ type: 'TINYINT' }, () => 'Uniform')
+    .with({ type: 'SMALLINT' }, () => 'Uniform')
+    .with({ type: 'INTEGER' }, () => 'Uniform')
+    .with({ type: 'BIGINT' }, () => 'Uniform')
+    .with({ type: 'DECIMAL' }, () => 'Uniform')
+    .with({ type: 'REAL' }, () => 'Uniform')
+    .with({ type: 'DOUBLE' }, () => 'Uniform')
+    .with({ type: 'VARCHAR' }, () => 'Word')
+    .with({ type: 'CHAR' }, () => 'Word')
+    .with({ type: 'TIME' }, () => 'Uniform')
+    .with({ type: 'TIMESTAMP' }, () => 'Uniform')
+    .with({ type: 'DATE' }, () => 'Uniform')
+    .with({ type: 'ARRAY' }, () => {
       assert(sqlType.component !== null && sqlType.component !== undefined, 'Array type must have a component type')
       return getDefaultRngMethodName(sqlType.component)
     })
-    .with({ type: SqlType.BINARY }, () => 'BINARY type not implemented')
-    .with({ type: SqlType.VARBINARY }, () => 'VARBINARY type not implemented')
-    .with({ type: SqlType.INTERVAL }, () => 'INTERVAL type not supported')
-    .with({ type: SqlType.NULL }, () => 'NULL type not supported')
+    .with({ type: 'BINARY' }, () => 'BINARY type not implemented')
+    .with({ type: 'VARBINARY' }, () => 'VARBINARY type not implemented')
+    .with({ type: { Interval: P._ } }, () => 'INTERVAL type not supported')
+    .with({ type: 'STRUCT' }, () => 'STRUCT type not supported')
+    .with({ type: 'NULL' }, () => 'NULL type not supported')
     .exhaustive()
+}
 
 // Given a title & SQL type, returns the corresponding generator method.
 export const getRngMethodByName = (title: string, sqlType: ColumnType): IRngGenMethod | null => {
@@ -169,24 +172,25 @@ const transformToArrayGenerator = (type: ColumnType, generators: IRngGenMethod[]
 
 // Given a ColumType returns a list of applicable generator methods.
 export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
+  invariant(type.type)
   return (
     match(type.type)
-      .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, SqlType.BIGINT, () => INTEGER_GENERATORS)
-      .with(SqlType.REAL, SqlType.DOUBLE, () => FLOAT_GENERATORS)
+      .with('TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT', () => INTEGER_GENERATORS)
+      .with('REAL', 'DOUBLE', () => FLOAT_GENERATORS)
       // There aren't any good random generator libraries for arbitrary
       // precision numbers. So we just use the same generators as FLOAT and
       // DOUBLE for now.
-      .with(SqlType.DECIMAL, () => FLOAT_GENERATORS)
-      .with(SqlType.VARCHAR, SqlType.CHAR, () => STRING_GENERATORS)
-      .with(SqlType.BOOLEAN, () => BOOLEAN_GENERATORS)
-      .with(SqlType.TIME, () => TIME_GENERATORS)
-      .with(SqlType.DATE, () => DATE_GENERATORS)
-      .with(SqlType.TIMESTAMP, () => TIMESTAMP_GENERATORS)
-      .with(SqlType.ARRAY, () => {
+      .with('DECIMAL', () => FLOAT_GENERATORS)
+      .with('VARCHAR', 'CHAR', () => STRING_GENERATORS)
+      .with('BOOLEAN', () => BOOLEAN_GENERATORS)
+      .with('TIME', () => TIME_GENERATORS)
+      .with('DATE', () => DATE_GENERATORS)
+      .with('TIMESTAMP', () => TIMESTAMP_GENERATORS)
+      .with('ARRAY', () => {
         invariant(type.component)
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
-      .with(SqlType.INTERVAL, SqlType.BINARY, SqlType.VARBINARY, SqlType.NULL, () => UNSUPPORTED_TYPE_GENERATORS)
+      .with({ Interval: P._ }, 'BINARY', 'VARBINARY', 'STRUCT', 'NULL', () => UNSUPPORTED_TYPE_GENERATORS)
       .exhaustive()
       .map(({ generator, ...rng }) => ({
         ...rng,
@@ -1136,14 +1140,14 @@ const STRING_GENERATORS: IRngGenMethod[] = [
     return match({ type, precision })
       .with(
         {
-          type: SqlType.VARCHAR,
+          type: 'VARCHAR',
           precision: P.when(value => (value ?? -1) >= 0)
         },
         ({ precision }) => string.substring(0, precision!)
       )
       .with(
         {
-          type: SqlType.CHAR,
+          type: 'CHAR',
           precision: P.when(value => (value ?? -1) >= 0)
         },
         ({ precision }) => string.substring(0, precision!).padEnd(precision!)

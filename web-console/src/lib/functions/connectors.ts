@@ -8,6 +8,7 @@ import { ConnectorDescr, TransportConfig } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import ImageBoilingFlask from '$public/icons/generic/boiling-flask.svg'
 import ImageHttpGet from '$public/images/generic/http-get.svg'
+import S3Logo from '$public/images/vendors/amazon-s3-logo.svg'
 import DebeziumLogo from '$public/images/vendors/debezium-logo-color.svg'
 import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
@@ -15,6 +16,7 @@ import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import iconBoilingFlask from '~icons/generic/boiling-flask'
 import iconHttpGet from '~icons/tabler/http-get'
+import iconS3 from '~icons/vendors/amazon-s3-icon'
 import iconKafka from '~icons/vendors/apache-kafka-icon'
 import iconDebezium from '~icons/vendors/debezium-icon-color'
 import iconSnowflake from '~icons/vendors/snowflake-icon'
@@ -43,7 +45,7 @@ export const connectorDescrToType = (config: ConnectorDescr['config']): Connecto
       return ConnectorType.KAFKA_OUT
     })
     .with({ transport: { name: TransportConfig.name.URL_INPUT } }, () => {
-      return ConnectorType.URL
+      return ConnectorType.URL_IN
     })
     .otherwise(() => {
       return ConnectorType.UNKNOWN
@@ -190,7 +192,10 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return Direction.OUTPUT
     })
-    .with(ConnectorType.URL, () => {
+    .with(ConnectorType.S3_IN, () => {
+      return Direction.INPUT
+    })
+    .with(ConnectorType.URL_IN, () => {
       return Direction.INPUT
     })
     .with(ConnectorType.UNKNOWN, () => {
@@ -213,7 +218,10 @@ export const connectorTransportName = (status: ConnectorType) =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return 'kafka_output'
     })
-    .with(ConnectorType.URL, () => {
+    .with(ConnectorType.S3_IN, () => {
+      return 's3_input'
+    })
+    .with(ConnectorType.URL_IN, () => {
       return 'url_input'
     })
     .with(ConnectorType.UNKNOWN, () => {
@@ -236,7 +244,10 @@ export const connectorTypeToTitle = (status: ConnectorType) =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return 'Snowflake Output'
     })
-    .with(ConnectorType.URL, () => {
+    .with(ConnectorType.S3_IN, () => {
+      return 'S3 Compatible Input'
+    })
+    .with(ConnectorType.URL_IN, () => {
       return 'HTTP URL'
     })
     .with(ConnectorType.UNKNOWN, () => {
@@ -259,7 +270,10 @@ export const connectorTypeToLogo = (status: ConnectorType): SVGImport =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return SnowflakeLogo
     })
-    .with(ConnectorType.URL, () => {
+    .with(ConnectorType.S3_IN, () => {
+      return S3Logo
+    })
+    .with(ConnectorType.URL_IN, () => {
       return ImageHttpGet
     })
     .with(ConnectorType.UNKNOWN, () => {
@@ -282,7 +296,10 @@ export const connectorTypeToIcon = (status: ConnectorType) =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return iconSnowflake
     })
-    .with(ConnectorType.URL, () => {
+    .with(ConnectorType.S3_IN, () => {
+      return iconS3
+    })
+    .with(ConnectorType.URL_IN, () => {
       return iconHttpGet
     })
     .with(ConnectorType.UNKNOWN, () => {
@@ -305,7 +322,10 @@ export const getStatusObj = (status: ConnectorType) =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return { title: 'Snowflake Out', color: 'secondary' as const }
     })
-    .with(ConnectorType.URL, () => {
+    .with(ConnectorType.S3_IN, () => {
+      return { title: 'S3 In', color: 'secondary' as const }
+    })
+    .with(ConnectorType.URL_IN, () => {
       return { title: 'HTTP GET', color: 'secondary' as const }
     })
     .with(ConnectorType.UNKNOWN, () => {

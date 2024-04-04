@@ -8,14 +8,14 @@
 import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-import { ColumnType, Relation, SqlType } from '$lib/services/manager'
+import { ColumnType, Relation } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 import dayjs, { Dayjs, isDayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
-import { match } from 'ts-pattern'
+import { match, P } from 'ts-pattern'
 
-export type SQLValueJS = string | number | boolean | BigNumber | Dayjs | SQLValueJS[] | null
+export type SQLValueJS = string | number | boolean | BigNumber | Dayjs | SQLValueJS[] | Map<string, SQLValueJS> | null
 
 /**
  * The format we get back from the ingress rest API.
@@ -39,7 +39,7 @@ export interface ValidationError {
  */
 export function getValueFormatter(columntype: ColumnType) {
   return (value: SQLValueJS): string | null => {
-    if ((value === null && columntype.nullable) || columntype.type === SqlType.NULL) {
+    if ((value === null && columntype.nullable) || columntype.type === 'NULL') {
       return null
     }
     invariant(value !== null)
@@ -62,65 +62,67 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
   }
   invariant(value !== null)
   return match(type)
-    .with({ type: SqlType.BOOLEAN }, () => {
+    .with({ type: 'BOOLEAN' }, () => {
       invariant(typeof value === 'boolean')
       return value
     })
-    .with({ type: SqlType.BIGINT }, () => {
+    .with({ type: 'BIGINT' }, () => {
       invariant(BigNumber.isBigNumber(value))
       return value
     })
-    .with({ type: SqlType.DECIMAL }, () => {
+    .with({ type: 'DECIMAL' }, () => {
       invariant(BigNumber.isBigNumber(value))
       return value.toFixed()
     })
-    .with(
-      { type: SqlType.TINYINT },
-      { type: SqlType.SMALLINT },
-      { type: SqlType.INTEGER },
-      { type: SqlType.REAL },
-      { type: SqlType.DOUBLE },
-      () => {
-        invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
-        return value
-      }
-    )
-    .with({ type: SqlType.TIME }, () => {
+    .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, { type: 'REAL' }, { type: 'DOUBLE' }, () => {
+      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+      return value
+    })
+    .with({ type: 'TIME' }, () => {
       invariant(typeof value === 'string' || isDayjs(value))
       if (typeof value === 'string') {
         return value
       }
       return value.format('HH:mm:ss')
     })
-    .with({ type: SqlType.DATE }, () => {
+    .with({ type: 'DATE' }, () => {
       invariant(typeof value === 'string' || isDayjs(value))
       return dayjs(value).format('YYYY-MM-DD')
     })
-    .with({ type: SqlType.TIMESTAMP }, () => {
+    .with({ type: 'TIMESTAMP' }, () => {
       invariant(typeof value === 'string' || isDayjs(value))
       return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
     })
-    .with({ type: SqlType.ARRAY }, () => {
+    .with({ type: 'ARRAY' }, () => {
       invariant(Array.isArray(value))
       return value.map(v => {
         invariant(nonNull(type.component))
         return sqlValueToXgressJSON(type.component, v)
       })
     })
-    .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
+    .with({ type: 'CHAR' }, { type: 'VARCHAR' }, () => {
       invariant(typeof value === 'string')
       return value
     })
-    .with({ type: SqlType.BINARY }, () => {
+    .with({ type: 'BINARY' }, () => {
       invariant(false, 'BINARY type is not implemented for ingress')
     })
-    .with({ type: SqlType.VARBINARY }, () => {
+    .with({ type: 'VARBINARY' }, () => {
       invariant(false, 'VARBINARY type is not implemented for ingress')
     })
-    .with({ type: SqlType.INTERVAL }, () => {
+    .with({ type: { Interval: P._ } }, () => {
       invariant(false, 'INTERVAL type is not supported for ingress')
     })
-    .with({ type: SqlType.NULL }, () => {
+    .with({ type: 'STRUCT' }, () => {
+      invariant(value instanceof Map)
+      console.log('Ingress STRUCT', value)
+      // return value.map(v => {
+      //   invariant(nonNull(type.component))
+      //   return sqlValueToXgressJSON(type.component, v)
+      // })
+      return ''
+    })
+    .with({ type: 'NULL' }, () => {
       invariant(false, 'NULL type is not supported for ingress')
     })
     .exhaustive()
@@ -139,72 +141,73 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
   }
   invariant(value !== null)
   return match(type)
-    .with({ type: SqlType.BOOLEAN }, () => {
+    .with({ type: 'BOOLEAN' }, () => {
       invariant(typeof value === 'boolean')
       return value
     })
-    .with({ type: SqlType.BIGINT }, () => {
+    .with({ type: 'BIGINT' }, () => {
       invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
       return BigNumber(value)
     })
-    .with({ type: SqlType.DECIMAL }, () => {
+    .with({ type: 'DECIMAL' }, () => {
       invariant(typeof value === 'string')
       invariant(!/\.$/.test(value))
       const number = BigNumber(value)
       invariant(!number.isNaN())
       return number
     })
-    .with(
-      { type: SqlType.TINYINT },
-      { type: SqlType.SMALLINT },
-      { type: SqlType.INTEGER },
-      { type: SqlType.REAL },
-      { type: SqlType.DOUBLE },
-      () => {
-        invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
-        return typeof value === 'number' ? value : value.toNumber()
-      }
-    )
-    .with({ type: SqlType.TIME }, () => {
+    .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, { type: 'REAL' }, { type: 'DOUBLE' }, () => {
+      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+      return typeof value === 'number' ? value : value.toNumber()
+    })
+    .with({ type: 'TIME' }, () => {
       invariant(typeof value === 'string' && value.length === 8)
       const time = dayjs(value, 'HH:mm:ss')
       invariant(time.isValid())
       return time
     })
-    .with({ type: SqlType.DATE }, () => {
+    .with({ type: 'DATE' }, () => {
       invariant(typeof value === 'string' && value.length === 10)
       const date = dayjs(value, 'YYYY-MM-DD')
       invariant(date.isValid())
       return date
     })
-    .with({ type: SqlType.TIMESTAMP }, () => {
+    .with({ type: 'TIMESTAMP' }, () => {
       invariant(typeof value === 'string' && value.length === 19)
       const date = dayjs(value, 'YYYY-MM-DD HH:mm:ss')
       invariant(date.isValid())
       return date
     })
-    .with({ type: SqlType.ARRAY }, () => {
+    .with({ type: 'ARRAY' }, () => {
       invariant(Array.isArray(value))
       return value.map(v => {
         invariant(nonNull(type.component))
         return xgressJSONToSQLValue(type.component, v)
       })
     })
-    .with({ type: SqlType.CHAR }, { type: SqlType.VARCHAR }, () => {
+    .with({ type: 'CHAR' }, { type: 'VARCHAR' }, () => {
       invariant(typeof value === 'string')
       return value
     })
-    .with({ type: SqlType.BINARY }, () => {
+    .with({ type: 'BINARY' }, () => {
       invariant(false, 'BINARY type is not implemented for ingress')
     })
-    .with({ type: SqlType.VARBINARY }, () => {
+    .with({ type: 'VARBINARY' }, () => {
       invariant(false, 'VARBINARY type is not implemented for ingress')
     })
-    .with({ type: SqlType.INTERVAL }, () => {
+    .with({ type: { Interval: P._ } }, () => {
       invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
       return BigNumber(value)
     })
-    .with({ type: SqlType.NULL }, () => {
+    .with({ type: 'STRUCT' }, () => {
+      console.log('Ingress STRUCT', value)
+      // return value.map(v => {
+      //   invariant(nonNull(type.component))
+      //   return sqlValueToXgressJSON(type.component, v)
+      // })
+      return new Map()
+    })
+    .with({ type: 'NULL' }, () => {
       invariant(false, 'NULL type is not supported for ingress')
     })
     .exhaustive()
@@ -236,19 +239,19 @@ export const findBaseType = (type: ColumnType): ColumnType => {
 // Throws an error if the type does not have a range.
 export const numericRange = (sqlType: ColumnType) =>
   match(sqlType)
-    .with({ type: SqlType.TINYINT }, () => ({ min: new BigNumber(-128), max: new BigNumber(127) }))
-    .with({ type: SqlType.SMALLINT }, () => ({ min: new BigNumber(-32768), max: new BigNumber(32767) }))
-    .with({ type: SqlType.INTEGER }, () => ({ min: new BigNumber(-2147483648), max: new BigNumber(2147483647) }))
-    .with({ type: SqlType.BIGINT }, () => ({ min: new BigNumber(-2).pow(63), max: new BigNumber(2).pow(63).minus(1) }))
-    .with({ type: SqlType.REAL }, () => ({
+    .with({ type: 'TINYINT' }, () => ({ min: new BigNumber(-128), max: new BigNumber(127) }))
+    .with({ type: 'SMALLINT' }, () => ({ min: new BigNumber(-32768), max: new BigNumber(32767) }))
+    .with({ type: 'INTEGER' }, () => ({ min: new BigNumber(-2147483648), max: new BigNumber(2147483647) }))
+    .with({ type: 'BIGINT' }, () => ({ min: new BigNumber(-2).pow(63), max: new BigNumber(2).pow(63).minus(1) }))
+    .with({ type: 'REAL' }, () => ({
       min: new BigNumber('-3.402823466e+38'),
       max: new BigNumber('3.402823466e+38')
     }))
-    .with({ type: SqlType.DOUBLE }, () => ({
+    .with({ type: 'DOUBLE' }, () => ({
       min: new BigNumber('-1.7976931348623158e+308'),
       max: new BigNumber('1.7976931348623158e+308')
     }))
-    .with({ type: SqlType.DECIMAL }, ct => {
+    .with({ type: 'DECIMAL' }, ct => {
       invariant(nonNull(ct.precision))
       invariant(nonNull(ct.scale))
       const max = new BigNumber(10).pow(ct.precision!).minus(1).div(new BigNumber(10).pow(ct.scale!))
@@ -256,18 +259,19 @@ export const numericRange = (sqlType: ColumnType) =>
       return { min, max }
     })
     // Limit array lengths to 0-5 for random generation.
-    .with({ type: SqlType.ARRAY }, () => ({ min: new BigNumber(0), max: new BigNumber(5) }))
+    .with({ type: 'ARRAY' }, () => ({ min: new BigNumber(0), max: new BigNumber(5) }))
     .with(
-      { type: SqlType.BOOLEAN },
-      { type: SqlType.CHAR },
-      { type: SqlType.VARCHAR },
-      { type: SqlType.BINARY },
-      { type: SqlType.VARBINARY },
-      { type: SqlType.DATE },
-      { type: SqlType.TIME },
-      { type: SqlType.TIMESTAMP },
-      { type: SqlType.INTERVAL },
-      { type: SqlType.NULL },
+      { type: 'BOOLEAN' },
+      { type: 'CHAR' },
+      { type: 'VARCHAR' },
+      { type: 'BINARY' },
+      { type: 'VARBINARY' },
+      { type: 'DATE' },
+      { type: 'TIME' },
+      { type: 'TIMESTAMP' },
+      { type: { Interval: P._ } },
+      { type: 'STRUCT' },
+      { type: 'NULL' },
       () => {
         throw new Error(`Not a numeric type: ${sqlType.type}`)
       }
@@ -281,27 +285,25 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
     // is also a rendering issue if we have too many years for the datepicker
     // components so we're a bit more conservative than we need to be.
     // - https://github.com/mui/mui-x/issues/4746
-    .with(SqlType.DATE, SqlType.TIMESTAMP, () => [
-      dayjs(new Date('1500-01-01 00:00:00')),
-      dayjs(new Date('2500-12-31 23:59:59'))
-    ])
-    .with(SqlType.TIME, () => [dayjs(new Date('1500-01-01 00:00:00')), dayjs(new Date('1500-01-01 23:59:59'))])
+    .with('DATE', 'TIMESTAMP', () => [dayjs(new Date('1500-01-01 00:00:00')), dayjs(new Date('2500-12-31 23:59:59'))])
+    .with('TIME', () => [dayjs(new Date('1500-01-01 00:00:00')), dayjs(new Date('1500-01-01 23:59:59'))])
     .with(
-      SqlType.BOOLEAN,
-      SqlType.TINYINT,
-      SqlType.SMALLINT,
-      SqlType.INTEGER,
-      SqlType.REAL,
-      SqlType.DOUBLE,
-      SqlType.BIGINT,
-      SqlType.DECIMAL,
-      SqlType.INTERVAL,
-      SqlType.CHAR,
-      SqlType.VARCHAR,
-      SqlType.BINARY,
-      SqlType.VARBINARY,
-      SqlType.ARRAY,
-      SqlType.NULL,
+      'BOOLEAN',
+      'TINYINT',
+      'SMALLINT',
+      'INTEGER',
+      'REAL',
+      'DOUBLE',
+      'BIGINT',
+      'DECIMAL',
+      { Interval: P._ },
+      'CHAR',
+      'VARCHAR',
+      'BINARY',
+      'VARBINARY',
+      'ARRAY',
+      'STRUCT',
+      'NULL',
       () => {
         throw new Error('Not a date/time type')
       }
@@ -311,34 +313,35 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
 export const sqlValueComparator = (sqlType: ColumnType) =>
   match(sqlType.type)
     .returnType<(a: SQLValueJS, b: SQLValueJS) => number>()
-    .with(SqlType.BOOLEAN, () => (a, b) => {
+    .with('BOOLEAN', () => (a, b) => {
       return b === a ? 0 : a ? 1 : -1
     })
-    .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, SqlType.REAL, SqlType.DOUBLE, () => (a, b) => {
+    .with('TINYINT', 'SMALLINT', 'INTEGER', 'REAL', 'DOUBLE', () => (a, b) => {
       invariant(typeof a === 'number' && typeof b === 'number')
       return a - b
     })
-    .with(SqlType.BIGINT, SqlType.DECIMAL, () => (a, b) => {
+    .with('BIGINT', 'DECIMAL', () => (a, b) => {
       invariant(BigNumber.isBigNumber(a) && BigNumber.isBigNumber(b))
       return a.comparedTo(b)
     })
-    .with(SqlType.CHAR, SqlType.VARCHAR, () => (a, b) => {
+    .with('CHAR', 'VARCHAR', () => (a, b) => {
       invariant(typeof a === 'string' && typeof b === 'string')
       return a.localeCompare(b)
     })
-    .with(SqlType.TIME, SqlType.DATE, SqlType.TIMESTAMP, () => (a, b) => {
+    .with('TIME', 'DATE', 'TIMESTAMP', () => (a, b) => {
       invariant(isDayjs(a) && isDayjs(b))
       return a.isSame(b) ? 0 : a.isAfter(b) ? 1 : -1
     })
-    .with(SqlType.INTERVAL, () => (a, b) => {
+    .with({ Interval: P._ }, () => (a, b) => {
       invariant(BigNumber.isBigNumber(a) && BigNumber.isBigNumber(b))
       return a.comparedTo(b)
     })
-    .with(SqlType.ARRAY, () => (a, b) => {
+    .with('ARRAY', () => (a, b) => {
       invariant(Array.isArray(a) && Array.isArray(b))
       return a.length - b.length
     })
-    .with(SqlType.BINARY, () => () => 0)
-    .with(SqlType.VARBINARY, () => () => 0)
-    .with(SqlType.NULL, () => () => 0)
+    .with('BINARY', () => () => 0)
+    .with('VARBINARY', () => () => 0)
+    .with('STRUCT', () => () => 0)
+    .with('NULL', () => () => 0)
     .exhaustive()
