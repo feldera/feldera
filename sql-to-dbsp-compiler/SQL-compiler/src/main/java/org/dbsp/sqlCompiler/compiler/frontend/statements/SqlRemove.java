@@ -18,6 +18,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.dataflow.qual.Pure;
 
 import java.util.List;
+import java.util.Objects;
 
 /** This implements our own extension of SQL DML statement.
  * The REMOVE statement is almost like an INSERT statement,
@@ -32,8 +33,8 @@ public class SqlRemove extends SqlCall {
                                                     @Nullable SqlNode... operands) {
                     return new SqlRemove(
                             pos,
-                            operands[0],
-                            operands[1],
+                            Objects.requireNonNull(operands[0]),
+                            Objects.requireNonNull(operands[1]),
                             (SqlNodeList) operands[2]);
                 }
             };
@@ -73,7 +74,7 @@ public class SqlRemove extends SqlCall {
                 this.targetTable = operand;
                 break;
             case 1:
-                this.source = operand;
+                this.source = Objects.requireNonNull(operand);
                 break;
             case 3:
                 this.columnList = (SqlNodeList) operand;

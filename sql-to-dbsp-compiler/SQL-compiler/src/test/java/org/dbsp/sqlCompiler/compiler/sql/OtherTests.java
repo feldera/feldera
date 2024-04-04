@@ -497,7 +497,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testIOT() throws IOException, InterruptedException, SQLException {
+    public void testIOT() throws IOException {
         // Iot code from different repository checked out in a specific place
         final String iotSql = "../../../iot/iot.sql";
         File sql = new File(iotSql);

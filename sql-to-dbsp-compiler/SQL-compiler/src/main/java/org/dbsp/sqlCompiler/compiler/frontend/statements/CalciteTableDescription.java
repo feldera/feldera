@@ -12,7 +12,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 /** A description of a table wrapping the attributes that Calcite needs
  * to compile SQL programs that refer to this table. */
 public class CalciteTableDescription extends AbstractTable implements ScannableTable {
-    IHasSchema schema;
+    final IHasSchema schema;
 
     public CalciteTableDescription(IHasSchema schema) {
         this.schema = schema;

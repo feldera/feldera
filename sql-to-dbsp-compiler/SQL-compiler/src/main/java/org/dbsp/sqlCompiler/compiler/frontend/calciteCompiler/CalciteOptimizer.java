@@ -96,7 +96,7 @@ public class CalciteOptimizer implements IWritesLogs {
     }
 
     /** Helper class to discover whether a query contains outer joins */
-    class OuterJoinFinder extends RelVisitor {
+    static class OuterJoinFinder extends RelVisitor {
         public int outerJoinCount = 0;
         public int joinCount = 0;
         @Override public void visit(
@@ -119,7 +119,7 @@ public class CalciteOptimizer implements IWritesLogs {
     /** Helper class to discover whether a query contains aggregations with group sets. */
     /* Should be removed when https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6317
      * is fixed. */
-    class AggregationGroupSets extends RelVisitor {
+    static class AggregationGroupSets extends RelVisitor {
         public boolean hasGroupSets = false;
 
         @Override public void visit(
