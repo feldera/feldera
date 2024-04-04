@@ -10,10 +10,12 @@ pub type Json = ijson::IValue;
 /// # Panics
 /// - Panics if it fails to deserialize to a valid Json.
 pub fn parse_json(value: impl AsRef<str>) -> Json {
-    serde_json::from_str(value.as_ref()).unwrap_or_else(|_| {
+    let str = value.as_ref();
+
+    serde_json::from_str(str).unwrap_or_else(|_| {
         panic!(
-            "cannot deserialize given string to JSON: {}",
-            value.as_ref()
+            "cannot deserialize given string to JSON: {}...",
+            str.chars().take(100).collect::<String>()
         )
     })
 }
@@ -41,6 +43,12 @@ pub fn try_json_field(value: Json, field: impl AsRef<str>) -> Option<Json> {
     value.as_object()?.get(field.as_ref()).cloned()
 }
 
+/// Inner private function to convert the 1-based index of
+/// JSON array literals to 0-based index.
+fn subtract_one(idx: usize) -> Option<usize> {
+    idx.checked_sub(1)
+}
+
 /// Extracts the value at the given JSON index from this JSON array literal.
 /// Indexing starts from 1 to match other SQL functions.
 /// Use [`try_json_index`] for a non panicking implementation.
@@ -49,11 +57,11 @@ pub fn try_json_field(value: Json, field: impl AsRef<str>) -> Option<Json> {
 /// - Panics if the JSON value isn't a JSON array literal.
 /// - Panics if called with the index `0`.
 pub fn json_index(value: Json, mut idx: usize) -> Json {
-    idx = idx
-        .checked_sub(1)
-        .expect("invalid: JSON_INDEX called with index 0");
+    idx = subtract_one(idx).expect("invalid: JSON_INDEX called with index 0");
 
     value
+        .as_array()
+        .expect("invalid: JSON_INDEX called on a non-array literal")
         .get(idx)
         .expect("invalid: no value in the given index")
         .clone()
@@ -61,13 +69,12 @@ pub fn json_index(value: Json, mut idx: usize) -> Json {
 
 /// Tries to extract the value at the given index from this JSON array literal.
 pub fn try_json_index(value: Json, mut idx: usize) -> Option<Json> {
-    idx = idx.checked_sub(1)?;
+    idx = subtract_one(idx)?;
 
     value.as_array()?.get(idx).cloned()
 }
 
 /// Deserialize this JSON `value` as the given type: `T`.
-/// `T` must have implement [`serde::de::DeserializeOwned`]
 ///
 /// # Panics
 /// - Panics if deserializing to the given type `T` fails.
@@ -80,7 +87,7 @@ pub fn json_as<T: serde::de::DeserializeOwned>(value: Json) -> T {
 /// # Panics
 /// - Panics if serialization fails.
 pub fn to_string(value: Json) -> String {
-    serde_json::to_string(&value).expect("failed to cast JSON to string")
+    serde_json::to_string(&value).expect("failed to serialize JSON to string")
 }
 
 // TODO: check_schema()
@@ -90,8 +97,9 @@ mod tests {
     use std::collections::HashMap;
 
     use ijson::ijson;
+    use rust_decimal::{prelude::FromPrimitive, Decimal};
 
-    use crate::{check_json, json_as, json_index, parse_json, to_string};
+    use crate::{check_json, json_as, json_field, json_index, parse_json, to_string};
 
     #[test]
     fn test_parse_json0() {
@@ -135,7 +143,7 @@ mod tests {
         assert_eq!(expected, got);
     }
 
-    #[derive(Debug, serde::Deserialize, PartialEq)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
     struct TestData {
         name: String,
         age: u32,
@@ -160,6 +168,26 @@ mod tests {
     }
 
     #[test]
+    fn test_json_as_decimal() {
+        let expected = Decimal::from_f64(10.1234567890123).unwrap();
+
+        let json = ijson!({
+            "amount": expected
+        });
+
+        assert_eq!(expected, json_as::<Decimal>(json_field(json, "amount")));
+    }
+
+    #[test]
+    fn test_json_as_bool() {
+        let expected = true;
+
+        let json = ijson!(expected);
+
+        assert_eq!(expected, json_as::<bool>(json));
+    }
+
+    #[test]
     #[should_panic(expected = "failed to deserialize JSON to the given type")]
     fn test_json_as_struct_fail() {
         let invalid_json_value = ijson!({
@@ -176,6 +204,51 @@ mod tests {
         });
 
         let _ = json_as::<HashMap<String, String>>(json);
+    }
+
+    #[test]
+    fn test_json_as_string() {
+        let expected = "Hello, world!".to_string();
+
+        let json = ijson!(expected);
+
+        assert_eq!(expected, json_as::<String>(json));
+    }
+
+    #[test]
+    fn test_json_as_integer() {
+        let expected = 42;
+
+        let json = ijson!(expected);
+
+        assert_eq!(expected, json_as::<i32>(json));
+    }
+
+    #[test]
+    fn test_json_as_float() {
+        let expected: f64 = 1.11;
+
+        let json = ijson!(expected);
+
+        assert_eq!(expected, json_as::<f64>(json));
+    }
+
+    #[test]
+    fn test_json_as_vec_of_objects() {
+        let expected = vec![
+            TestData {
+                name: "John Doe".to_owned(),
+                age: 30,
+            },
+            TestData {
+                name: "Jane Doe".to_owned(),
+                age: 28,
+            },
+        ];
+
+        let json = ijson!(expected);
+
+        assert_eq!(expected, json_as::<Vec<TestData>>(json));
     }
 
     #[test]
