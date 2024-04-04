@@ -10,7 +10,6 @@ import type { OutputQuery } from '../models/OutputQuery'
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class HttpInputOutputService {
   /**
    * Subscribe to a stream of updates from a SQL view or table.
