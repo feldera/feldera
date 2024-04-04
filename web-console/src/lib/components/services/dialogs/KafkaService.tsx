@@ -56,6 +56,7 @@ const parseKafkaServiceDescriptor = (service: ServiceDescr) => ({
   description: service.description,
   config: {
     bootstrap_servers: service.config.kafka.bootstrap_servers,
+    ...defaultLibrdkafkaAuthOptions,
     ...fromLibrdkafkaConfig(service.config.kafka.options)
   }
 })
