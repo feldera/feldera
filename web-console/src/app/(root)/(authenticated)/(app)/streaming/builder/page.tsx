@@ -23,7 +23,7 @@ import {
   NewPipelineRequest,
   NewPipelineResponse,
   PipelineDescr,
-  PipelineRuntimeState,
+  PipelineStatus as RawPipelineStatus,
   UpdatePipelineRequest
 } from '$lib/services/manager'
 import {
@@ -356,8 +356,8 @@ const defaultPipelineData: Pipeline = {
   },
   state: {
     current_status: PipelineStatus.FAILED,
-    desired_status: PipelineStatus.FAILED
-  } as PipelineRuntimeState
+    desired_status: RawPipelineStatus.FAILED
+  } as Pipeline['state']
 }
 
 export default () => {
