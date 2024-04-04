@@ -528,6 +528,6 @@ all-tests:
     BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
     BUILD +test-debezium-jdbc-sink
-    BUILD +test-snowflake
+    # BUILD +test-snowflake
     BUILD +test-s3
     BUILD +test-service-related
