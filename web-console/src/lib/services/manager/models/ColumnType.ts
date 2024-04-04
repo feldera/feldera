@@ -57,5 +57,5 @@ export type ColumnType = {
    * - `DECIMAL(1,2)` sets scale to `2`.
    */
   scale?: number | null
-  type?: SqlType
+  type: SqlType
 }
