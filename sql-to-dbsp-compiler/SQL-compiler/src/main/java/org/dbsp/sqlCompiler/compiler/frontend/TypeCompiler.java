@@ -141,7 +141,7 @@ public class TypeCompiler implements ICompilerComponent {
                     DBSPType type = this.convertType(field.getType(), asStruct);
                     fields.add(type);
                 }
-                return new DBSPTypeTuple(node, fields);
+                return new DBSPTypeTuple(node, nullable, fields);
             }
         } else {
             SqlTypeName tn = dt.getSqlTypeName();

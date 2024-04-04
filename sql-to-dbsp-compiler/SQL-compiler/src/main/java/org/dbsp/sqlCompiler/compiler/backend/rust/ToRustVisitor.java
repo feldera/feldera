@@ -145,8 +145,19 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append("::new(");
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder.append("table.")
-                    .append(field.getSanitizedName())
-                    .append(".into(), ");
+                    .append(field.getSanitizedName());
+            if (field.type.mayBeNull) {
+                this.builder.append(".map(|x| x");
+            }
+            if (field.type.is(DBSPTypeVec.class)) {
+                this.builder.append(".into_iter().map(|y| y.into()).collect()");
+            } else {
+                this.builder.append(".into()");
+            }
+            if (field.type.mayBeNull) {
+                this.builder.append(")");
+            }
+            this.builder.append(", ");
         }
         this.builder.append(")").newline();
         this.builder.decrease()
@@ -174,9 +185,20 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder
                     .append(field.getSanitizedName())
                     .append(": tuple.")
-                    .append(index++)
-                    .append(".into(), ")
-                    .newline();
+                    .append(index++);
+            if (field.type.mayBeNull) {
+                this.builder.append(".map(|x| x");
+            }
+            if (field.type.is(DBSPTypeVec.class)) {
+                this.builder.append(".into_iter().map(|y| y.into()).collect()");
+            } else {
+                this.builder.append(".into()");
+            }
+            if (field.type.mayBeNull) {
+                this.builder.append(")");
+            }
+            this.builder.append(", ")
+                .newline();
         }
         this.builder.decrease().append("}").newline();
         this.builder.decrease()
@@ -439,6 +461,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPTypeStruct s: nested) {
             if (this.structsGenerated.contains(s.name))
                 continue;
+            s = s.setMayBeNull(false).to(DBSPTypeStruct.class);
             this.generateStructDeclarations(s);
             this.generateFromTrait(s);
             this.generateRenameMacro(s, metadata);

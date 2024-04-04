@@ -506,6 +506,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String script = Utilities.readFile(sql.toPath());
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = true;
+        compiler.options.ioOptions.emitHandles = false;
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testIOT", ccs);

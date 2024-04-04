@@ -184,8 +184,10 @@ public class BaseSQLTests {
         String[] extraArgs = new String[0];
         for (TestCase test: testsToRun) {
             if (!test.ccs.compiler.options.same(firstCompiler.options))
-                throw new RuntimeException("Tests are not compiled with the same options: "
-                        + test.ccs.compiler.options + " and " + firstCompiler.options);
+                throw new RuntimeException("Test " + Utilities.singleQuote(testsToRun.get(0).javaTestName) +
+                        " and " + Utilities.singleQuote(test.javaTestName) +
+                        " are not compiled with the same options: "
+                        + test.ccs.compiler.options.diff(firstCompiler.options));
             ProgramAndTester pt;
             // Standard test
             pt = new ProgramAndTester(test.ccs.circuit, test.createTesterCode(testNumber, rustDirectory));
