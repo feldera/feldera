@@ -274,8 +274,10 @@ fn panic_hook(panic_info: &PanicInfo<'_>, default_panic_hook: &dyn Fn(&PanicInfo
     default_panic_hook(panic_info);
 
     RUNTIME.with(|runtime| {
-        if let Some(runtime) = runtime.borrow().clone() {
-            runtime.panic(panic_info)
+        if let Ok(runtime) = runtime.try_borrow() {
+            if let Some(runtime) = runtime.as_ref() {
+                runtime.panic(panic_info);
+            }
         }
     })
 }
