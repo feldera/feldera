@@ -1006,7 +1006,7 @@ export const toLibrdkafkaConfig = (formFields: Record<string, LibrdkafkaOptionTy
     const type = librdkafkaOptions.find(option => option.name === optionName)?.type ?? 'string'
     config[optionName] = toKafkaOption(optionName, v, type)
   })
-  return { kafka_service: preset_service, ...config } as typeof config
+  return config
 }
 
 export const toKafkaConfig = ({ preset_service, ...formFields }: Record<string, LibrdkafkaOptionType>) =>
@@ -1047,13 +1047,6 @@ export const fromLibrdkafkaConfig = (config: Record<string, string | string[]>) 
   })
 
   return formFields
-}
-
-export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, string | string[]>) => {
-  return {
-    ...(kafka_service ? { preset_service: kafka_service } : {}),
-    ...fromLibrdkafkaConfig(config)
-  } as ReturnType<typeof fromLibrdkafkaConfig>
 }
 
 export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, string | string[]>) => {

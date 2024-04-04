@@ -41,7 +41,7 @@ const schema = va.object({
   transport: va.intersect([
     va.object(
       {
-        bootstrap_servers: va.nonOptional(
+        bootstrap_servers: va.optional(
           va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
             va.minLength(1, 'Specify at least one server')
           ])
