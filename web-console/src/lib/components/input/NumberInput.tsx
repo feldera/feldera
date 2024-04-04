@@ -111,15 +111,21 @@ export const NumberRangeInput = (props: TextFieldProps & { min?: number; max?: n
  * Input highlights in red when the value doesn't fit the provided range
  * Error value is not applied
  */
-export const NumberInput = (props: TextFieldProps & { min?: number; max?: number; value?: number | null }) => {
+export const NumberInput = (
+  props: TextFieldProps & { min?: number; max?: number; value?: number | null; allowInvalidRange?: boolean }
+) => {
   const intermediateInputProps = useIntermediateInput<number>({
     ...numberRangeInputProps(props),
     textToValue: text => {
-      const v = parseFloat(text)
-      if (Number.isNaN(v) || (nonNull(props.min) && props.min > v) || (nonNull(props.max) && props.max < v)) {
+      const value = parseFloat(text)
+      if (Number.isNaN(value)) {
         throw new Error()
       }
-      return v
+      if ((nonNull(props.min) && props.min > value) || (nonNull(props.max) && props.max < value)) {
+        props.allowInvalidRange && props.value !== value && props.onChange?.({ target: { value } } as any)
+        throw new Error()
+      }
+      return value
     },
     valueToText: valid => valid?.toFixed() ?? ''
   })
