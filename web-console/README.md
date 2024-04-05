@@ -71,6 +71,7 @@ If you change the API, execute the following steps to update the bindings:
 
 ```bash
 yarn generate-openapi
+yarn format
 ```
 
 Note sometimes strange caching errors may warrant deleting `node_modules` after
