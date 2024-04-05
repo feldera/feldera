@@ -4,9 +4,7 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 
 import javax.annotation.Nullable;
 
-/**
- * A range of characters inside the source code.
- */
+/** A range of characters inside the source code. */
 public class SourcePositionRange {
     public final SourcePosition start;
     public final SourcePosition end;

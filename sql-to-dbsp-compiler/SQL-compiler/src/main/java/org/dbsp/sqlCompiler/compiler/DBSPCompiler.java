@@ -228,14 +228,23 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             if (this.hasErrors())
                 return;
 
-            // Compile first the statements that define functions.
+            // Compile first the statements that define functions and types
             List<SqlFunction> functions = new ArrayList<>();
             for (SqlNode node: parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result: ")
                         .append(node.toString())
                         .newline();
-                if (node.getKind() == SqlKind.CREATE_FUNCTION) {
+                SqlKind kind = node.getKind();
+                if (kind == SqlKind.CREATE_TYPE) {
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, comment);
+                    if (fe == null)
+                        // error during compilation
+                        continue;
+                    this.midend.compile(fe);
+                    continue;
+                }
+                if (kind == SqlKind.CREATE_FUNCTION) {
                     SqlFunction function = this.frontend.compileFunction(node);
                     functions.add(function);
                 }
@@ -256,7 +265,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             // Compile all statements which do not define functions
             for (SqlNode node : parsed) {
-                if (node.getKind().equals(SqlKind.CREATE_FUNCTION))
+                SqlKind kind = node.getKind();
+                if (kind == SqlKind.CREATE_FUNCTION || kind == SqlKind.CREATE_TYPE)
                     continue;
                 FrontEndStatement fe = this.frontend.compile(node.toString(), node, comment);
                 if (fe == null)

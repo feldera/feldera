@@ -423,24 +423,24 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     public void testWith() throws IOException, InterruptedException, SQLException {
         String statement =
                 """
-                        create table VENDOR (
-                            id bigint not null primary key,
-                            name varchar,
-                            address varchar
-                        );
+                create table VENDOR (
+                    id bigint not null primary key,
+                    name varchar,
+                    address varchar
+                );
+                create table PART (
+                    id bigint not null primary key,
+                    name varchar
+                );
+                create table PRICE (
+                    part bigint not null,
+                    vendor bigint not null,
+                    price decimal
+                );
 
-                        create table PART (
-                            id bigint not null primary key,
-                            name varchar
-                        );
-
-                        create table PRICE (
-                            part bigint not null,
-                            vendor bigint not null,
-                            price decimal
-                        );
-
-                        create view LOW_PRICE AS with LOW_PRICE_CTE AS (  select part, MIN(price) as price from PRICE group by part) select * FROM LOW_PRICE_CTE""";
+                create view LOW_PRICE AS
+                WITH LOW_PRICE_CTE AS (  select part, MIN(price) as price from PRICE group by part)
+                SELECT * FROM LOW_PRICE_CTE""";
         File file = createInputScript(statement);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         if (messages.errorCount() > 0)

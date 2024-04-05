@@ -91,6 +91,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             this.stream.append(input.getOutputName())
                     .append(" -> ")
                     .append(node.getOutputName())
+                    .append(" [label=")
+                    .append(Utilities.doubleQuote(input.getOutputRowType().toString()))
+                    .append("]")
                     .append(";")
                     .newline();
         }
