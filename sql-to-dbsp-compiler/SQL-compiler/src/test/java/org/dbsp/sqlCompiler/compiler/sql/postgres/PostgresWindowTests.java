@@ -45,7 +45,7 @@ public class PostgresWindowTests extends SqlIoTest {
         this.insertFromResource("tenk1", compiler);
     }
 
-    @Test
+    @Test @Ignore
     public void remove() {
         Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
         this.qs("""

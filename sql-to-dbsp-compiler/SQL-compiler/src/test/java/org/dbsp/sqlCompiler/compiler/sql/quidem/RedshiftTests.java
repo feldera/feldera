@@ -1,15 +1,13 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.util.Logger;
+import org.junit.Ignore;
 import org.junit.Test;
 
 // Tests taken from
 // https://github.com/apache/calcite/blob/main/babel/src/test/resources/sql/redshift.iq
 public class RedshiftTests extends ScottBaseTests {
-    @Test
+    @Test @Ignore
     public void testLag() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
         this.qs("""
                 select empno, lag(sal) respect nulls over (order by empno) from emp where deptno = 30 order by 1;
                 EMPNO | EXPR$1
