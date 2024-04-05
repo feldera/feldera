@@ -19,8 +19,8 @@ export const PresetServiceElement = (props: {
         name={props.parentName + '.preset_service'}
         label={
           services.length
-            ? 'Optional: connect to a known service'
-            : 'No known services, enter full service configuration'
+            ? 'Optional: connect to a service'
+            : 'No existing services, add a service or enter full connector details'
         }
         options={services.map(service => service.name)}
         autocompleteProps={{
