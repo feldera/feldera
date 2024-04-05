@@ -68,7 +68,6 @@ export function intermediateValueInputProps<T>({
         backgroundColor: error ? '#FF000015' : undefined
       }
     },
-    error,
     onChange: (e: ChangeEvent<HTMLInputElement>) => setValueText(e.target.value),
     value:
       'valid' in value && value.valid === null ? '' : 'valid' in value ? valueToText(value.valid) : value.intermediate

@@ -109,6 +109,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
     <Dialog fullWidth open={props.show} scroll='body' maxWidth='md' onClose={handleClose} TransitionComponent={Fade}>
       <FormContainer
         resolver={valibotResolver(schema)}
+        mode='onChange'
         defaultValues={defaultValues}
         onSuccess={onSuccess}
         onError={handleErrors}
