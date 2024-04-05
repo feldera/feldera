@@ -29,53 +29,55 @@ public class TopKTests extends SqlIoTest {
 
     @Test
     public void testTopK() {
-        String paramQuery = "WITH cte AS\n" +
-                "(\n" +
-                "   SELECT *,\n" +
-                "         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated DESC) AS rn\n" +
-                "   FROM DocumentStatusLog\n" +
-                ")\n" +
-                "SELECT DocumentId, Status, DateCreated\n" +
-                "FROM cte\n" +
-                "WHERE rn <= 1;\n" +
-                " DocumentID | Status | DateCreated \n" +
-                "-----------------------------------\n" +
-                " 1          | S1| 2011-09-02  \n" +
-                " 2          | S3| 2011-08-01  \n" +
-                " 3          | S1| 2011-08-02  \n" +
-                "(3 rows)\n" +
-                "\n" +
-                "WITH cte AS\n" +
-                "(\n" +
-                "   SELECT *,\n" +
-                "         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn\n" +  // ? is a parameter
-                "   FROM DocumentStatusLog\n" +
-                ")\n" +
-                "SELECT DocumentId, Status, DateCreated\n" +
-                "FROM cte\n" +
-                "WHERE rn <= 1;\n" +
-                " DocumentID | Status | DateCreated \n" +
-                "-----------------------------------\n" +
-                " 1          | S1| 2011-07-29  \n" +
-                " 2          | S1| 2011-07-28  \n" +
-                " 3          | S1| 2011-08-02  \n" +
-                "(3 rows)\n" +
-                "\n" +
-                "WITH cte AS\n" +
-                "(\n" +
-                "   SELECT *,\n" +
-                "         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated DESC) AS rn\n" +  // ? is a parameter
-                "   FROM DocumentStatusLog\n" +
-                ")\n" +
-                "SELECT DocumentId, Status, DateCreated\n" +
-                "FROM cte\n" +
-                "WHERE rn <= 1;\n" +
-                " DocumentID | Status | DateCreated \n" +
-                "-----------------------------------\n" +
-                " 1          | S1| 2011-09-02  \n" +
-                " 3          | S1| 2011-08-02  \n" +
-                " 2          | S3| 2011-08-01  \n" +
-                "(3 rows)";
+        // below ? is a parameter
+        String paramQuery = """
+                WITH cte AS
+                (
+                   SELECT *,
+                         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated DESC) AS rn
+                   FROM DocumentStatusLog
+                )
+                SELECT DocumentId, Status, DateCreated
+                FROM cte
+                WHERE rn <= 1;
+                 DocumentID | Status | DateCreated
+                -----------------------------------
+                 1          | S1| 2011-09-02
+                 2          | S3| 2011-08-01
+                 3          | S1| 2011-08-02
+                (3 rows)
+
+                WITH cte AS
+                (
+                   SELECT *,
+                         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn
+                   FROM DocumentStatusLog
+                )
+                SELECT DocumentId, Status, DateCreated
+                FROM cte
+                WHERE rn <= 1;
+                 DocumentID | Status | DateCreated
+                -----------------------------------
+                 1          | S1| 2011-07-29
+                 2          | S1| 2011-07-28
+                 3          | S1| 2011-08-02
+                (3 rows)
+
+                WITH cte AS
+                (
+                   SELECT *,
+                         ?() OVER (PARTITION BY DocumentID ORDER BY DateCreated DESC) AS rn
+                   FROM DocumentStatusLog
+                )
+                SELECT DocumentId, Status, DateCreated
+                FROM cte
+                WHERE rn <= 1;
+                 DocumentID | Status | DateCreated
+                -----------------------------------
+                 1          | S1| 2011-09-02
+                 3          | S1| 2011-08-02
+                 2          | S3| 2011-08-01
+                (3 rows)""";
         for (String function : new String[]{"RANK", "DENSE_RANK", "ROW_NUMBER"}) {
             String q = paramQuery.replace("?", function);
             // Same result for all 3 functions

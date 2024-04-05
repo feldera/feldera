@@ -34,9 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
-/**
- * An expression of the form |param0, param1, ...| body.
- */
+/** An expression of the form |param0, param1, ...| body. */
 public class DBSPClosureExpression extends DBSPExpression {
     public final DBSPExpression body;
     public final DBSPParameter[] parameters;
@@ -50,7 +48,6 @@ public class DBSPClosureExpression extends DBSPExpression {
     }
 
     public DBSPClosureExpression(CalciteObject node, DBSPExpression body, DBSPParameter... parameters) {
-        // In Rust in general we can't write the type of the closure.
         super(node, new DBSPTypeFunction(body.getType(), Linq.map(parameters, DBSPParameter::getType, DBSPType.class)));
         this.body = body;
         this.parameters = parameters;

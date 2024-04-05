@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
@@ -63,6 +64,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
@@ -779,7 +781,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.emitCompareField(fieldComparator.fieldNo, fieldComparator.ascending);
     }
 
-    void generateCmpFunc(DBSPExpression function, String structName) {
+    void generateCmpFunc(DBSPComparatorExpression comparator, String structName) {
         //    impl CmpFunc<(String, i32, i32)> for AscDesc {
         //        fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
         //            let ord = left.1.cmp(&right.1);
@@ -791,7 +793,6 @@ public class ToRustVisitor extends CircuitVisitor {
         //            return Ordering::Equal;
         //        }
         //    }
-        DBSPComparatorExpression comparator = function.to(DBSPComparatorExpression.class);
         DBSPType type = comparator.tupleType();
         this.builder.append("impl CmpFunc<");
         type.accept(this.innerVisitor);
@@ -846,15 +847,13 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
-        // TODO: this should be a fresh identifier.
         String structName = "Cmp" + operator.getOutputName();
         this.builder.append("struct ")
                 .append(structName)
                 .append(";")
                 .newline();
-
         // Generate a CmpFunc impl for the new struct.
-        this.generateCmpFunc(operator.getFunction(), structName);
+        this.generateCmpFunc(operator.getFunction().to(DBSPComparatorExpression.class), structName);
 
         String streamOperation = "topk_custom_order";
         if (operator.outputProducer != null) {
@@ -896,6 +895,40 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(", ");
             operator.outputProducer.accept(this.innerVisitor);
         }
+        builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLagOperator operator) {
+        String structName = "Cmp" + operator.getOutputName();
+        this.builder.append("struct ")
+                .append(structName)
+                .append(";")
+                .newline();
+        // Generate a CmpFunc impl for the new struct.
+        this.generateCmpFunc(operator.comparator, structName);
+
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getOutputName())
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(operator.input().getOutputName())
+                .append(".")
+                .append(operator.operation)
+                .append("::<_, _, _, ")
+                .append(structName)
+                .append(", _>")
+                .append("(");
+        DBSPI64Literal offset = new DBSPI64Literal(operator.offset);
+        offset.accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.projection.accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.getFunction().accept(this.innerVisitor);
         builder.append(");");
         return VisitDecision.STOP;
     }

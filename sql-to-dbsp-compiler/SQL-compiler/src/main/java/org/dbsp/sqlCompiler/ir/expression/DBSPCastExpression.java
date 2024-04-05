@@ -40,6 +40,8 @@ public class DBSPCastExpression extends DBSPExpression {
     public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
         super(node, to);
         this.source = source;
+        // assert type.is(DBSPTypeBaseType.class);
+        // assert source.getType().is(DBSPTypeBaseType.class);
     }
 
     public DBSPCastExpression replaceSource(DBSPExpression source) {
