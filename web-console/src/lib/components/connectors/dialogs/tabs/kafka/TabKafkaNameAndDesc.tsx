@@ -5,7 +5,7 @@ import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
 import { TextFieldElement, useFormContext } from 'react-hook-form-mui'
 
-import { Grid } from '@mui/material'
+import { Button, Grid, Link, Typography } from '@mui/material'
 
 /**
  * Contains the name and description form elements for kafka input and output connectors.
@@ -63,6 +63,12 @@ export const TabKafkaNameAndDesc = (props: { direction: Direction; disabled?: bo
           onChange={onPresetChange}
           parentName={props.parentName}
         ></PresetServiceElement>
+        <Typography>
+          To re-use the configuration in this connector you can register a &nbsp;
+          <Button variant='outlined' size='small' href='/services/list#create/kafka' LinkComponent={Link}>
+            new Data Service
+          </Button>
+        </Typography>
       </GridItems>
     </Grid>
   )
