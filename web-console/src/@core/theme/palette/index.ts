@@ -3,9 +3,9 @@ import { ThemeColor } from 'src/@core/layouts/types'
 import { PaletteMode } from '@mui/material'
 
 const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
-  const whiteColor = '#FFF'
-  const lightColor = '50, 71, 92'
-  const darkColor = '219, 219, 235'
+  const whiteColor = '#FFFFFF'
+  const lightColor = '#32475c'
+  const darkColor = '#dbdbeb'
   const darkPaperBgColor = '#2B2C40'
 
   const mainColor = mode === 'light' ? lightColor : darkColor
@@ -34,7 +34,7 @@ const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
       tableHeaderBg: mode === 'light' ? '#F9FAFC' : '#3D3759'
     },
     common: {
-      black: '#000',
+      black: '#000000',
       white: whiteColor
     },
     primary: {
@@ -90,22 +90,22 @@ const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {
       A700: '#616161'
     },
     text: {
-      primary: `rgba(${mainColor}, 0.87)`,
-      secondary: `rgba(${mainColor}, 0.6)`,
-      disabled: `rgba(${mainColor}, 0.38)`
+      primary: mainColor + 'DF', // 0.87
+      secondary: mainColor + '99', // 0.6
+      disabled: mainColor + '61' // 0.38
     },
-    divider: `rgba(${mainColor}, 0.12)`,
+    divider: mainColor + '1F', // 0.12
     background: {
       paper: mode === 'light' ? whiteColor : darkPaperBgColor,
       default: mode === 'light' ? '#F5F5F9' : '#232333'
     },
     action: {
-      active: `rgba(${mainColor}, 0.54)`,
-      hover: `rgba(${mainColor}, 0.04)`,
-      selected: `rgba(${mainColor}, 0.08)`,
-      disabled: `rgba(${mainColor}, 0.26)`,
-      disabledBackground: `rgba(${mainColor}, 0.12)`,
-      focus: `rgba(${mainColor}, 0.12)`
+      active: mainColor + '8A', // 0.54
+      hover: mainColor + '0A', // 0.04
+      selected: mainColor + '14', // 0.08
+      disabled: mainColor + '43', // 0.26
+      disabledBackground: mainColor + '1F', // 0.12
+      focus: mainColor + '1F' // 0.12
     }
   }
 }
