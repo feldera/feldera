@@ -17,7 +17,7 @@ const Chip = (theme: Theme) => {
         },
         outlined: {
           '&.MuiChip-colorDefault': {
-            borderColor: `rgba(${theme.palette.customColors.main}, 0.22)`
+            borderColor: hexToRGBA(theme.palette.customColors.main, 0.22)
           }
         },
         deleteIcon: {
