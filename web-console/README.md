@@ -70,8 +70,9 @@ The bindings for OpenAPI (under src/lib/services/manager) are generated using
 If you change the API, execute the following steps to update the bindings:
 
 ```bash
+yarn build-openapi
 yarn generate-openapi
-yarn format
+patch -p2 < openapi-fixes.patch
 ```
 
 Note sometimes strange caching errors may warrant deleting `node_modules` after
