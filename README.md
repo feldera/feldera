@@ -3,10 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![CI workflow](https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/feldera/actions)
 [![nightly](https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/feldera/actions/workflows/containers.yml)
-[![slack](https://img.shields.io/badge/slack-feldera-blue.svg?logo=slack)](https://www.feldera.com/slack)
-[![sandbox](https://img.shields.io/badge/cloud-try_feldera-blue?logo=CodeSandbox)](https://www.feldera.com/sandbox)
-
-
+[![slack](https://img.shields.io/badge/slack-blue.svg?logo=slack)](https://www.feldera.com/community)
+[![discord](https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white)](https://discord.gg/5YBX9Uw5u7)
+[![sandbox](https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox)](https://www.feldera.com/sandbox)
 
 The [Feldera Continuous Analytics Platform](https://www.feldera.com), or Feldera Platform in short, is a
 fast computational engine and associated components for *continuous analytics* over data in motion. Feldera Platform
