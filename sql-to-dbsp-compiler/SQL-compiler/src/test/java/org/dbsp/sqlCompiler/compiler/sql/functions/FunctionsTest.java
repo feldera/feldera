@@ -1841,24 +1841,11 @@ public class FunctionsTest extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1475")
+    @Test
     public void testArraysOverlapDiffTypes() {
-        this.qs("""
-                -- Calcite says false, Spark says true
-                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0]);
-                 arrays_overlap
-                ----------------
-                    true
-                (1 row)
-                
-                -- Calcite says false, Spark errors
-                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0]);
-                 arrays_overlap
-                ----------------
-                    true
-                (1 row)
-                """
-        );
+        // fails for the Calcite optimized version as Calcite returns false
+        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])", "different types", false);
+        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])", "different types", false);
     }
 
     @Test @Ignore("similar to: https://github.com/feldera/feldera/issues/1465")

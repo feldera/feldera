@@ -1047,7 +1047,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     }
                     // if the nullability is not the problem, return an unimplemented error as types are different
                     else {
-                        throw new UnimplementedException(node);
+                        this.compiler.reportError(node.getPositionRange(), "Array elements are of different types",
+                                "Fist array is of type: " + arg0ElemType + " and second array is of type: " + arg1ElemType);
                     }
                 }
 
