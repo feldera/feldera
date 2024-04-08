@@ -1,6 +1,6 @@
-import { bigNumberInputProps } from '$lib/components/input/BigNumberInput'
+import { BigNumberInput } from '$lib/components/input/BigNumberInput'
 import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
-import { numberRangeInputProps } from '$lib/components/input/NumberInput'
+import { NumberInput } from '$lib/components/input/NumberInput'
 import {
   JSONXgressValue,
   numericRange,
@@ -57,7 +57,13 @@ export const SQLValueInput = ({
     return (
       <SqlValueTextInput
         {...extraProps}
-        {...{ columnType, type: 'string', ...props, valueToText: JSONbig.stringify, fromText: JSONbig.parse }}
+        {...{
+          columnType,
+          type: 'string',
+          ...props,
+          valueToText: JSONbig.stringify,
+          fromText: text => (text === null ? null : JSONbig.parse(text))
+        }}
       ></SqlValueTextInput>
     )
   }
@@ -92,39 +98,52 @@ export const SQLValueInput = ({
       ></SqlValueTextInput>
     )
   }
+  if (columnType.type === 'TINYINT' || columnType.type === 'SMALLINT' || columnType.type === 'INTEGER') {
+    return (
+      <NumberInput
+        {...{
+          ...props,
+          ...extraProps,
+          ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType)),
+          value: props.value as null | number,
+          placeholder: props.value === null ? 'null' : ''
+        }}
+      ></NumberInput>
+    )
+  }
+  if (columnType.type === 'REAL' || columnType.type === 'DOUBLE') {
+    return (
+      <NumberInput
+        {...{
+          ...props,
+          ...extraProps,
+          value: props.value as null | number,
+          placeholder: props.value === null ? 'null' : ''
+        }}
+      ></NumberInput>
+    )
+  }
+  if (columnType.type === 'BIGINT' || columnType.type === 'DECIMAL') {
+    return (
+      <BigNumberInput
+        {...{
+          ...props,
+          ...extraProps,
+          value: props.value as BigNumber,
+          ...onChangeEmptyNull(props),
+          defaultValue: props.defaultValue as BigNumber | undefined,
+          precision: columnType.precision,
+          scale: columnType.scale,
+          placeholder: props.value === null ? 'null' : ''
+        }}
+      ></BigNumberInput>
+    )
+  }
 
   return (
     <TextField
       {...extraProps}
       {...match(columnType.type)
-        .with('TINYINT', 'SMALLINT', 'INTEGER', () => ({
-          ...numberRangeInputProps({
-            ...props,
-            ...(({ min, max }) => ({ min: min.toNumber(), max: max.toNumber() }))(numericRange(columnType)),
-            value: props.value as null | number,
-            placeholder: props.value === null ? 'null' : ''
-          })
-        }))
-        .with('REAL', 'DOUBLE', () => ({
-          ...numberRangeInputProps({
-            ...props,
-            value: props.value as null | number,
-            placeholder: props.value === null ? 'null' : ''
-          })
-        }))
-        .with('BIGINT', 'DECIMAL', () => ({
-          ...bigNumberInputProps({
-            ...props,
-            value: props.value as BigNumber,
-            ...onChangeEmptyNull(props),
-            defaultValue: props.defaultValue as BigNumber | undefined,
-            precision: columnType.precision,
-            scale: columnType.scale
-          }),
-          placeholder: props.value === null ? 'null' : '',
-          ...props,
-          onChange: undefined
-        }))
         .with('BOOLEAN', () => ({
           type: 'checkbox',
           ...props,
@@ -194,14 +213,20 @@ function SqlValueTextInput(
   props: {
     value: SQLValueJS
     valueToText: (v: SQLValueJS) => string
-    fromText: (text: string) => JSONXgressValue
+    fromText: (text: string | null) => JSONXgressValue
     columnType: ColumnType
     onChange: (event: ChangeEvent<HTMLInputElement>) => void
   } & Omit<TextFieldProps, 'value' | 'onChange'>
 ) {
   const intermediateInputProps = useIntermediateInput({
     ...props,
-    textToValue: text => xgressJSONToSQLValue(props.columnType, props.fromText(text)),
+    textToValue: text => {
+      try {
+        return { valid: xgressJSONToSQLValue(props.columnType, props.fromText(text)) }
+      } catch {
+        return 'invalid'
+      }
+    },
     valueToText: valid => props.valueToText(sqlValueToXgressJSON(props.columnType, valid))
   })
   return (

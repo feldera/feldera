@@ -1,135 +1,94 @@
-import { handleNumericKeyDown } from '$lib/components/input/NumberInput'
+import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
 import { nonNull } from '$lib/functions/common/function'
-import { Arguments } from '$lib/types/common/function'
 import { BigNumber } from 'bignumber.js'
-import { ChangeEventHandler, ClipboardEventHandler, WheelEventHandler } from 'react'
+import { ChangeEventHandler } from 'react'
 import invariant from 'tiny-invariant'
 
-import { SxProps, TextField, TextFieldProps, Theme } from '@mui/material'
+import { TextField, TextFieldProps } from '@mui/material'
 
-const validValue = (value: BigNumber | undefined, props: { precision?: number | null; scale?: number | null }) => {
+const validValue = (
+  value: BigNumber | null | undefined,
+  props: {
+    precision?: number | null
+    scale?: number | null
+    min?: BigNumber
+    max?: BigNumber
+  }
+) => {
   if (!nonNull(value)) {
     return true
   }
   // Ensure value and defaultValue fit within precision and scale
-  return (
-    (!nonNull(props.scale) || value.decimalPlaces(props.scale).eq(value)) &&
-    (!nonNull(props.precision) || value.precision(true) <= props.precision)
+  return !(
+    (nonNull(props.min) && props.min.gt(value)) ||
+    (nonNull(props.max) && props.max.lt(value)) ||
+    (nonNull(props.scale) && !value.decimalPlaces(props.scale).eq(value)) ||
+    (nonNull(props.precision) && value.precision(true) > props.precision)
   )
 }
 
-const handleValueInput = (
-  props: { min?: BigNumber.Value; max?: BigNumber.Value; precision?: number | null; scale?: number | null },
-  value: string
-) => {
-  if (value === '') {
-    return undefined
+export const BigNumberInput = (
+  props: Omit<TextFieldProps, 'type' | 'value' | 'defaultValue' | 'onChange' | 'min' | 'max'> & {
+    value?: BigNumber | null
+    defaultValue?: BigNumber
+    precision?: number | null
+    scale?: number | null
+    onChange?: ChangeEventHandler<HTMLInputElement>
+    min?: BigNumber.Value
+    max?: BigNumber.Value
+    allowInvalidRange?: boolean
   }
-
-  const newValue = new BigNumber(value)
-
-  const isInvalidValue =
-    (props.min && newValue.lt(props.min)) || (props.max && newValue.gt(props.max)) || !validValue(newValue, props)
-  if (isInvalidValue) {
-    return 'ignore' as const
-  }
-
-  return newValue
-}
-
-export const bigNumberInputProps = (
-  props: Partial<{
-    value: BigNumber | null
-    defaultValue: BigNumber
-    precision: number | null
-    scale: number | null
-    onChange: ChangeEventHandler<HTMLInputElement>
-    min: BigNumber.Value
-    max: BigNumber.Value
-    sx: SxProps<Theme>
-  }>
 ) => {
   // In a sane world we could expect value to be BigNumber
-  const propsValue = props.value ? BigNumber(props.value) : undefined
+  const propsValue = props.value === null ? null : props.value ? BigNumber(props.value) : undefined
+
+  const min = nonNull(props.min) ? BigNumber(props.min) : undefined
+  const max = nonNull(props.max) ? BigNumber(props.max) : undefined
 
   invariant(
-    validValue(propsValue, props),
+    validValue(propsValue, { ...props, min, max }),
     `BigNumber input value ${propsValue} doesn't fit precision ${props.precision} scale ${props.scale}`
   )
   invariant(
-    validValue(props.defaultValue, props),
+    validValue(props.defaultValue, { ...props, min, max }),
     `BigNumber input default value ${props.defaultValue} doesn't fit ${{
       precision: props.precision,
       scale: props.scale
     }}`
   )
 
-  const handleChange: ChangeEventHandler<HTMLInputElement> = event => {
-    const value = handleValueInput(props, event.target.value)
-    if (value === 'ignore') {
-      return
-    }
-    return props.onChange?.({ ...event, target: { ...event.target, value: value as any } })
-  }
-  const handlePaste: ClipboardEventHandler<HTMLInputElement> = event => {
-    const value = handleValueInput(props, event.clipboardData.getData('text/plain'))
-    if (value === 'ignore') {
-      event.preventDefault()
-      return
-    }
-  }
-  const handleWheel: WheelEventHandler = event => {
-    const value = handleValueInput(props, (propsValue ?? new BigNumber(0)).plus(event.deltaY < 0 ? 1 : -1).toFixed())
-    return props.onChange?.({ ...event, target: { ...event.target, value: value } } as any)
-  }
-
-  return {
-    type: 'number',
-    inputProps: {
-      onWheel: handleWheel,
-      value: propsValue?.toFixed() ?? '',
-      defaultValue: props.defaultValue?.toFixed(),
-      onChange: handleChange,
-      onPaste: handlePaste
-    },
-    onKeyDown: handleNumericKeyDown,
-    sx: {
-      ...props.sx,
-      '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': {
-        display: 'none'
-      },
-      '& input[type=number]': {
-        MozAppearance: 'textfield'
+  const cfg = {
+    textToValue: (text: string | null) => {
+      if (text === null) {
+        return { valid: null }
       }
+      if (text === '') {
+        return 'invalid'
+      }
+      if (/^-?\d+\.$/.test(text)) {
+        return 'invalid'
+      }
+      const value = BigNumber(text)
+      if (value.isNaN()) {
+        throw new Error()
+      }
+      if (!validValue(value, { ...props, min, max })) {
+        if (props.allowInvalidRange) {
+          props.onChange?.({ target: { value } } as any)
+        }
+        return 'invalid'
+      }
+      return { valid: value }
+    },
+    valueToText: (valid: BigNumber | null) => {
+      return valid === null ? null : valid.toFixed()
     }
   }
-}
-
-export const BigNumberInput = ({
-  value,
-  defaultValue,
-  precision,
-  scale,
-  onChange,
-  min,
-  max,
-  sx,
-  ...props
-}: Arguments<typeof bigNumberInputProps>[0] &
-  Omit<TextFieldProps, 'type' | 'value' | 'defaultValue' | 'onChange' | 'min' | 'max'>) => {
-  return (
-    <TextField
-      {...props}
-      {...bigNumberInputProps({
-        value,
-        defaultValue,
-        precision,
-        scale,
-        onChange,
-        min,
-        max,
-        sx
-      })}
-    ></TextField>
-  )
+  const valueObj = 'value' in props ? ({ value: props.value } as { value?: BigNumber | null }) : {}
+  const intermediateInputProps = useIntermediateInput({
+    ...(props as Omit<TextFieldProps, 'value'>),
+    ...valueObj,
+    ...cfg
+  })
+  return <TextField {...intermediateInputProps} />
 }

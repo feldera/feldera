@@ -1,47 +1,69 @@
-import { ChangeEvent, Dispatch, useReducer } from 'react'
-import invariant from 'tiny-invariant'
+import { ChangeEvent, Dispatch, useEffect, useReducer, useState } from 'react'
 
 import { TextFieldProps } from '@mui/material'
 
-type IntermediateInputState<T> = { valid: T | null } | { intermediate: string }
+type IntermediateInputState<T> = { valid: T } | { intermediate: string | null }
 
 const getIntermediateState = <T>(
-  textToValue: (text: string) => T,
+  state: IntermediateInputState<T>,
+  textToValue: (text: string | null) => { valid: T } | 'invalid',
   action: string | null
 ): IntermediateInputState<T> => {
   try {
-    const value = action === null ? null : textToValue(action)
+    const value = textToValue(action)
+    if (value === 'invalid') {
+      return {
+        intermediate: action
+      }
+    }
     return {
-      valid: value
+      valid: value.valid
     }
   } catch {
-    invariant(action !== null)
-    return {
-      intermediate: action
-    }
+    return state
   }
 }
 
 /**
  * Generate properties to pass into TextField component as-is
+ * Forwards style and other props
  */
-export function useIntermediateInput<T>(
-  props: {
-    value?: T
-    onChange?: (event: ChangeEvent<HTMLInputElement>) => void
-    textToValue: (text: string) => T
-    valueToText: (v: T | null) => string
-  } & TextFieldProps
-) {
+export function useIntermediateInput<T>({
+  nullDisplayText = '',
+  ...props
+}: {
+  value?: T
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void
+  textToValue: (text: string | null) => { valid: T } | 'invalid'
+  valueToText: (valid: T) => string | null
+  nullDisplayText?: string
+} & TextFieldProps) {
   const [value, setValueText] = useReducer(
     intermediateInputReducer(props.textToValue, props.onChange),
-    getIntermediateState(props.textToValue, props.valueToText(props.value ?? null))
+    props.value === undefined ? { intermediate: '' } : { valid: props.value }
   )
+  {
+    // The value of the input can either be changed
+    // through processing the new editing state text (via setValueText)
+    // or through the change of the props.value upstream - outside of reducer state.
+    // The following useEffect resets the reducer state if the value upstream was changed,
+    // regardless of current editing state, produced by useReducer.
+    const propsValueText = 'value' in props && props.value !== undefined ? props.valueToText(props.value) : ''
+    const [oldText, setOldText] = useState(propsValueText)
+    useEffect(() => {
+      if (propsValueText === oldText) {
+        return
+      }
+      setValueText(propsValueText)
+      setOldText(propsValueText)
+    }, [propsValueText, oldText])
+  }
   return intermediateValueInputProps({
     ...props,
     valueToText: props.valueToText,
     value,
-    setValueText
+    setValueText,
+    nullDisplayText
   })
 }
 
@@ -57,7 +79,8 @@ export function intermediateValueInputProps<T>({
 }: {
   value: IntermediateInputState<T>
   setValueText: Dispatch<string | null>
-  valueToText: (v: T | null) => string
+  valueToText: (v: T) => string | null
+  nullDisplayText: string
 } & TextFieldProps) {
   const error = 'intermediate' in value
   return {
@@ -69,17 +92,16 @@ export function intermediateValueInputProps<T>({
       }
     },
     onChange: (e: ChangeEvent<HTMLInputElement>) => setValueText(e.target.value),
-    value:
-      'valid' in value && value.valid === null ? '' : 'valid' in value ? valueToText(value.valid) : value.intermediate
+    value: 'valid' in value ? valueToText(value.valid) ?? props.nullDisplayText : value.intermediate
   }
 }
 
 export function intermediateInputReducer<T>(
-  textToValue: (text: string) => T,
+  textToValue: (text: string | null) => { valid: T } | 'invalid',
   onChange?: (event: ChangeEvent<HTMLInputElement>) => void
 ) {
-  return (_state: IntermediateInputState<T>, action: string | null) => {
-    const result = getIntermediateState(textToValue, action)
+  return (state: IntermediateInputState<T>, action: string | null) => {
+    const result = getIntermediateState(state, textToValue, action)
     if ('valid' in result) {
       onChange?.({ target: { value: result.valid } } as any)
     }

@@ -2,7 +2,7 @@
 // generator may have custom generation and validation methods.
 
 import { BigNumberInput } from '$lib/components/input/BigNumberInput'
-import { numberRangeInputProps } from '$lib/components/input/NumberInput'
+import { NumberInput } from '$lib/components/input/NumberInput'
 import { clampBigNumber } from '$lib/functions/common/bigNumber'
 import {
   randomExponentialBigNumber,
@@ -177,7 +177,7 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
   invariant(type.type)
   return (
     match(type.type)
-      .with('TINYINT', 'SMALLINT', 'INTEGER', 'BIGINT', () => INTEGER_GENERATORS)
+      .with('TINYINT', 'SMALLINT', 'INTEGER', () => INTEGER_GENERATORS)
       .with('BIGINT', () => BIGINTEGER_GENERATORS)
       .with('REAL', 'DOUBLE', () => FLOAT_GENERATORS)
       // There aren't any good random generator libraries for arbitrary
@@ -251,9 +251,11 @@ const BOOLEAN_GENERATORS: IRngGenMethod[] = [
     form_fields: () => [
       {
         sm: 4,
-        component: TextField,
+        component: NumberInput,
         props: {
-          ...numberRangeInputProps({ min: 0, max: 1, step: 0.01 }),
+          min: 0,
+          max: 1,
+          step: 0.01,
           name: FieldNames.TRUE_PCT,
           label: 'True [%]'
         }

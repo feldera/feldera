@@ -274,10 +274,7 @@ const TabNameAndDesc = (props: { disabled?: boolean }) => {
 const fieldOptions = librdkafkaOptions
   .filter(o => o.scope === '*')
   .filter(o => !librdkafkaAuthOptions.includes(o.name as any))
-  .reduce(
-    (acc, o) => ((acc[o.name.replaceAll('.', '_')] = o), acc),
-    {} as Record<string, LibrdkafkaOptions>
-  )
+  .reduce((acc, o) => ((acc[o.name.replaceAll('.', '_')] = o), acc), {} as Record<string, LibrdkafkaOptions>)
 
 const requiredFields = ['bootstrap_servers']
 

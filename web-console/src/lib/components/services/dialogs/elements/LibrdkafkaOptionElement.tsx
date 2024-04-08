@@ -1,8 +1,8 @@
+import { NumberInput } from '$lib/components/input/NumberInput'
 import { LibrdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
 import { AutocompleteElement, SwitchElement, TextFieldElement } from 'react-hook-form-mui'
 import { match } from 'ts-pattern'
 
-import { NumberInput } from '@mui/base/Unstable_NumberInput/NumberInput'
 import { Box } from '@mui/system'
 
 export const LibrdkafkaOptionElement = (props: {

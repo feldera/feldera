@@ -44,7 +44,7 @@ export function getValueFormatter(columntype: ColumnType) {
     }
     invariant(value !== null)
     const formatted = sqlValueToXgressJSON(columntype, value)
-    return typeof formatted === 'string' ? formatted : JSONbig.stringify(formatted) // getNonNullValueFormatter(columntype)(value)
+    return typeof formatted === 'string' ? formatted : JSONbig.stringify(formatted)
   }
 }
 
@@ -310,10 +310,11 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
     )
     .exhaustive()
 
-export const sqlValueComparator = (sqlType: ColumnType) =>
-  match(sqlType.type)
+export const sqlValueComparator = (sqlType: ColumnType) => {
+  const comparator = match(sqlType.type)
     .returnType<(a: SQLValueJS, b: SQLValueJS) => number>()
     .with('BOOLEAN', () => (a, b) => {
+      invariant(typeof a === 'boolean' && typeof b === 'boolean')
       return b === a ? 0 : a ? 1 : -1
     })
     .with('TINYINT', 'SMALLINT', 'INTEGER', 'REAL', 'DOUBLE', () => (a, b) => {
@@ -345,3 +346,11 @@ export const sqlValueComparator = (sqlType: ColumnType) =>
     .with('STRUCT', () => () => 0)
     .with('NULL', () => () => 0)
     .exhaustive()
+
+  return (a: SQLValueJS, b: SQLValueJS) => {
+    if (sqlType.nullable && (a === null || b === null)) {
+      return a === null ? (b === null ? 0 : -1) : 1
+    }
+    return comparator(a, b)
+  }
+}
