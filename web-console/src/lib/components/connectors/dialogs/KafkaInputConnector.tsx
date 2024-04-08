@@ -29,13 +29,11 @@ import { valibotResolver } from '@hookform/resolvers/valibot'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import { FormControlLabel, Switch, Tooltip } from '@mui/material'
+import { DialogTitle, FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
-import DialogContent from '@mui/material/DialogContent'
 import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
-import Typography from '@mui/material/Typography'
 
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
@@ -43,7 +41,7 @@ const schema = va.object({
   transport: va.intersect([
     va.object(
       {
-        bootstrap_servers: va.nonOptional(
+        bootstrap_servers: va.optional(
           va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
             va.minLength(1, 'Specify at least one server')
           ])
@@ -161,7 +159,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
   const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
   const jsonSwitch = (
-    <Box sx={{ pl: 2, marginTop: { xs: '0', md: '-4rem' } }}>
+    <Box sx={{ pl: 4 }}>
       <Tooltip title={editorDirty !== 'clean' ? 'Fix errors before switching the view' : undefined}>
         <FormControlLabel
           control={<Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} disabled={editorDirty !== 'clean'} />}
@@ -186,55 +184,41 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
         onSuccess={onSubmit}
         onError={handleErrors}
       >
-        <DialogContent
-          sx={{
-            pt: { xs: 8, sm: 12.5 },
-            pr: { xs: 5, sm: 12 },
-            pb: { xs: 5, sm: 9.5 },
-            pl: { xs: 4, sm: 11 },
-            position: 'relative',
-            height: '80vh'
-          }}
+        <DialogTitle sx={{ textAlign: 'center' }}>
+          {props.connector === undefined ? 'New Kafka Datasource' : props.existingTitle?.(props.connector.name) ?? ''}
+        </DialogTitle>
+        <IconButton
+          onClick={handleClose}
+          sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
+          data-testid='button-close-modal'
         >
-          <IconButton
-            size='small'
-            onClick={handleClose}
-            sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
-            data-testid='button-close-modal'
-          >
-            <IconX />
-          </IconButton>
-          <Box sx={{ mb: 8, textAlign: 'center' }}>
-            <Typography variant='h5' sx={{ mb: 3 }}>
-              {props.connector === undefined
-                ? 'New Kafka Datasource'
-                : props.existingTitle?.(props.connector.name) ?? ''}
-            </Typography>
-            {props.connector === undefined && <Typography variant='body2'>Add a Kafka Input.</Typography>}
-          </Box>
+          <IconX />
+        </IconButton>
+        {jsonSwitch}
+        <Box sx={{ height: '70vh' }}>
           {rawJSON ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {jsonSwitch}
-              <GenericEditorForm
-                disabled={props.disabled}
-                direction={Direction.INPUT}
-                configFromText={text => parseKafkaInputSchemaConfig(JSON.parse(text))}
-                configToText={config => JSON.stringify(normalizeConfig(config), undefined, '\t')}
-                setEditorDirty={setEditorDirty}
-              />
-              <Box sx={{ display: 'flex', justifyContent: 'end' }}>{props.submitButton}</Box>
+            <Box sx={{ height: '100%' }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', p: 4, height: '100%' }}>
+                <GenericEditorForm
+                  disabled={props.disabled}
+                  direction={Direction.INPUT}
+                  configFromText={text => parseKafkaInputSchemaConfig(JSON.parse(text))}
+                  configToText={config => JSON.stringify(normalizeConfig(config), undefined, '\t')}
+                  setEditorDirty={setEditorDirty}
+                />
+                <Box sx={{ display: 'flex', justifyContent: 'end', pt: 4 }}>{props.submitButton}</Box>
+              </Box>
             </Box>
           ) : (
-            <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
-              <TabContext value={activeTab}>
+            <TabContext value={activeTab}>
+              <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, height: '100%' }}>
                 <Box>
-                  {jsonSwitch}
                   <TabList
                     orientation='vertical'
                     onChange={(e, newValue: (typeof tabs)[number]) => setActiveTab(newValue)}
                     sx={{
                       border: 0,
-                      minWidth: 200,
+                      m: 0,
                       '& .MuiTabs-indicator': { display: 'none' },
                       '& .MuiTabs-flexContainer': {
                         alignItems: 'flex-start',
@@ -299,38 +283,49 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                     />
                   </TabList>
                 </Box>
-                <TabPanel
-                  value='detailsTab'
-                  sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
-                >
-                  <TabKafkaNameAndDesc direction={Direction.INPUT} disabled={props.disabled} />
-                  {tabFooter}
-                </TabPanel>
-                <TabPanel
-                  value='sourceTab'
-                  sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
-                >
-                  <TabKafkaInputDetails disabled={props.disabled} parentName='transport' />
-                  {tabFooter}
-                </TabPanel>
-                <TabPanel
-                  value='authTab'
-                  sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
-                >
-                  <TabKafkaAuth disabled={props.disabled} parentName={'transport'} />
-                  {tabFooter}
-                </TabPanel>
-                <TabPanel
-                  value='formatTab'
-                  sx={{ border: 0, boxShadow: 0, width: '100%', backgroundColor: 'transparent' }}
-                >
-                  <TabGenericInputFormatDetails disabled={props.disabled} />
-                  {tabFooter}
-                </TabPanel>
-              </TabContext>
-            </Box>
+                <Box sx={{ width: '100%' }}>
+                  <TabPanel
+                    value='detailsTab'
+                    sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}
+                  >
+                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <TabKafkaNameAndDesc
+                        direction={Direction.INPUT}
+                        disabled={props.disabled}
+                        parentName='transport'
+                      />
+                      {tabFooter}
+                    </Box>
+                  </TabPanel>
+                  <TabPanel
+                    value='sourceTab'
+                    sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}
+                  >
+                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <TabKafkaInputDetails disabled={props.disabled} parentName='transport' />
+                      {tabFooter}
+                    </Box>
+                  </TabPanel>
+                  <TabPanel value='authTab' sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <TabKafkaAuth disabled={props.disabled} parentName={'transport'} />
+                      {tabFooter}
+                    </Box>
+                  </TabPanel>
+                  <TabPanel
+                    value='formatTab'
+                    sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}
+                  >
+                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <TabGenericInputFormatDetails disabled={props.disabled} />
+                      {tabFooter}
+                    </Box>
+                  </TabPanel>
+                </Box>
+              </Box>
+            </TabContext>
           )}
-        </DialogContent>
+        </Box>
       </FormContainer>
     </Dialog>
   )

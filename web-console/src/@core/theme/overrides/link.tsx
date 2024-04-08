@@ -3,7 +3,7 @@ import { forwardRef } from 'react'
 
 // https://mui.com/material-ui/guides/routing/
 // Using Next.js link to leverage its SPA-like behaviour
-const LinkBehaviour = forwardRef<any, LinkProps>((props, ref) => (
+const LinkBehaviour = forwardRef<HTMLAnchorElement, LinkProps>((props, ref) => (
   <NextLink ref={ref} {...props} href={props.href ?? ''} />
 ))
 

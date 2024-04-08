@@ -114,3 +114,19 @@ export const groupBy = <T, K extends keyof any>(list: T[], getKey: (item: T) => 
   }
   return groups
 }
+
+/**
+ * Return array containing only unique element from the original array in the same order
+ * Keep the first occurrence of the element in the array
+ */
+export const nubLast = <T>(array: T[]) => array.filter((value, index, arr) => arr.indexOf(value) === index)
+
+/**
+ * Return array containing only unique element from the original array in the same order
+ * Keep the first occurrence of the element in the array
+ */
+export const nubFirst = <T>(array: T[]) =>
+  array
+    .reverse()
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .reverse()
