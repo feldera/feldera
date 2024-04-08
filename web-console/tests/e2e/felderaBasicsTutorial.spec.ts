@@ -242,7 +242,7 @@ test.skip('Supply Chain Analytics Tutorial', async ({ page, request }) => {
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-edit').click()
     for (const name of ['parts-s3', 'vendors-s3', 'prices-s3']) {
       await page.getByTestId('button-builder-add-input').click()
-      await page.getByTestId('box-connector-HTTP_GET').getByTestId('button-select-connector').click()
+      await page.getByTestId('box-connector-HTTP_GET_IN').getByTestId('button-select-connector').click()
       await page.getByTestId('button-add-connector-' + name).click()
     }
     for (const [input, table] of [
