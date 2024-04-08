@@ -2,7 +2,6 @@ import { GridItems } from '$lib/components/common/GridItems'
 import { TabKafkaAuth } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaAuth'
 import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { NumberInput } from '$lib/components/input/NumberInput'
 import { LibrdkafkaOptionsElement } from '$lib/components/services/dialogs/elements/LibrdkafkaOptionsElement'
 import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
 import {
@@ -277,9 +276,8 @@ const fieldOptions = librdkafkaOptions
   .filter(o => !librdkafkaAuthOptions.includes(o.name as any))
   .reduce(
     (acc, o) => ((acc[o.name.replaceAll('.', '_')] = o), acc),
-    {} as Record<string, (typeof librdkafkaOptions)[number]>
+    {} as Record<string, LibrdkafkaOptions>
   )
-const fieldOptionsKeys = Object.keys(fieldOptions)
 
 const requiredFields = ['bootstrap_servers']
 

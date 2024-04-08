@@ -11,7 +11,7 @@ export const LibrdkafkaOptionsElement = (props: {
   disabled?: boolean
   parentName: string
 
-  fieldOptions: Record<string, Omit<LibrdkafkaOptions, 'name'>>
+  fieldOptions: Record<string, LibrdkafkaOptions>
   requiredFields: string[]
 }) => {
   const formValues = useWatch({ name: props.parentName })

@@ -43,7 +43,7 @@ const saslPlaintextSchema = va.union([saslPassSchema, saslOauthSchema, saslGener
 
 export const authParamsSchema = va.union([
   va.object({
-    security_protocol: va.optional(va.literal('PLAINTEXT'), 'PLAINTEXT')
+    security_protocol: va.literal('PLAINTEXT')
   }),
   va.merge([
     va.object({

@@ -1044,7 +1044,7 @@ const toKafkaOption = (optionName: string, v: LibrdkafkaOptionType, type: Return
  * Underscore-delimited fields are used with react-hook-form because its implementation
  * conflicts with dot-delimited fields
  */
-export const toLibrdkafkaConfig = ({ preset_service, ...formFields }: Partial<Record<string, LibrdkafkaOptionType>>) => {
+export const toLibrdkafkaConfig = (formFields: Partial<Record<string, LibrdkafkaOptionType>>) => {
   const config = {} as Record<string, string>
   Object.keys(formFields).forEach(fieldName => {
     const v = formFields[fieldName]
@@ -1107,7 +1107,7 @@ export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, str
   } as ReturnType<typeof fromLibrdkafkaConfig>
 }
 
-export type LibrdkafkaOptions = Omit<(typeof librdkafkaOptions)[number], 'name'>
+export type LibrdkafkaOptions = (typeof librdkafkaOptions)[number]
 
 export const librdkafkaDefaultValue = (option: Omit<LibrdkafkaOptions, 'scope' | 'importance'>) =>
   match(option.type)

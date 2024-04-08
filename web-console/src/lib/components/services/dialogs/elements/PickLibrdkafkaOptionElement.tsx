@@ -6,7 +6,7 @@ import { Autocomplete, TextField } from '@mui/material'
 
 export const PickLibrdkafkaOptionElement = (props: {
   parentName: string
-  fieldOptions: Record<string, Omit<LibrdkafkaOptions, 'name'>>
+  fieldOptions: Record<string, LibrdkafkaOptions>
   usedFields: string[]
 }) => {
   const ctx = useFormContext()
