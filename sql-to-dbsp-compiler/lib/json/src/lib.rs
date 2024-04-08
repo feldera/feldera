@@ -86,7 +86,7 @@ pub fn json_as<T: serde::de::DeserializeOwned>(value: Json) -> T {
 ///
 /// # Panics
 /// - Panics if serialization fails.
-pub fn to_string(value: Json) -> String {
+pub fn serialize(value: Json) -> String {
     serde_json::to_string(&value).expect("failed to serialize JSON to string")
 }
 
@@ -99,7 +99,7 @@ mod tests {
     use ijson::ijson;
     use rust_decimal::{prelude::FromPrimitive, Decimal};
 
-    use crate::{check_json, json_as, json_field, json_index, parse_json, to_string};
+    use crate::{check_json, json_as, json_field, json_index, parse_json, serialize};
 
     #[test]
     fn test_parse_json0() {
@@ -216,6 +216,16 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(
+        expected = r#"failed to deserialize JSON to the given type: Error("invalid type: integer `1`, expected a string", line: 0, column: 0)"#
+    )]
+    fn test_json_as_string_fail0() {
+        let json = ijson!(1);
+
+        json_as::<String>(json);
+    }
+
+    #[test]
     fn test_json_as_integer() {
         let expected = 42;
 
@@ -256,7 +266,7 @@ mod tests {
         let expected = r#"{"name":"Bob","age":30}"#;
 
         let json = parse_json(expected);
-        let got = to_string(json);
+        let got = serialize(json);
 
         assert_eq!(expected, got);
     }
