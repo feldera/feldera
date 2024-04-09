@@ -1,6 +1,7 @@
 // Array operations
 
 use crate::{some_function2, some_generic_function2};
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::Index;
 
@@ -303,7 +304,7 @@ pub fn array_distinct<T>(mut vector: Vec<T>) -> Vec<T>
 where
     T: Eq + Hash + Clone,
 {
-    let mut hset: std::collections::HashSet<T> = std::collections::HashSet::new();
+    let mut hset: HashSet<T> = HashSet::new();
     vector.retain(|v| hset.insert(v.clone()));
     vector
 }
@@ -320,3 +321,95 @@ pub fn sequence__(start: i32, end: i32) -> Vec<i32> {
 }
 
 some_function2!(sequence, i32, i32, Vec<i32>);
+
+// translated from the Calcite implementation to match the behavior
+pub fn arrays_overlapNvec_Nvec_<T>(first: Vec<Option<T>>, second: Vec<Option<T>>) -> Option<bool>
+where
+    T: Eq + Hash,
+{
+    if first.len() > second.len() {
+        return arrays_overlapNvec_Nvec_(second, first);
+    }
+
+    let (smaller, bigger) = (first, second);
+    let mut has_null = false;
+
+    if !smaller.is_empty() && !bigger.is_empty() {
+        let mut shset: HashSet<Option<T>> = HashSet::from_iter(smaller);
+        has_null = shset.remove(&None);
+
+        for element in bigger {
+            if element.is_none() {
+                has_null = true;
+            } else if shset.contains(&element) {
+                return Some(true);
+            }
+        }
+    }
+    if has_null {
+        None
+    } else {
+        Some(true)
+    }
+}
+
+pub fn arrays_overlapNvec_NvecN<T>(
+    first: Vec<Option<T>>,
+    second: Option<Vec<Option<T>>>,
+) -> Option<bool>
+where
+    T: Eq + Hash,
+{
+    arrays_overlapNvec_Nvec_(first, second?)
+}
+
+pub fn arrays_overlapNvecNNvecN<T>(
+    first: Option<Vec<Option<T>>>,
+    second: Option<Vec<Option<T>>>,
+) -> Option<bool>
+where
+    T: Eq + Hash,
+{
+    arrays_overlapNvec_Nvec_(first?, second?)
+}
+
+pub fn arrays_overlapNvecNNvec_<T>(
+    first: Option<Vec<Option<T>>>,
+    second: Vec<Option<T>>,
+) -> Option<bool>
+where
+    T: Eq + Hash,
+{
+    arrays_overlapNvec_Nvec_(first?, second)
+}
+
+pub fn arrays_overlap_vec__vec_<T>(first: Vec<T>, second: Vec<T>) -> bool
+where
+    T: Eq + Hash,
+{
+    let first: HashSet<T> = HashSet::from_iter(first);
+    let second: HashSet<T> = HashSet::from_iter(second);
+
+    first.intersection(&second).count() != 0
+}
+
+pub fn arrays_overlap_vecN_vecN<T>(first: Option<Vec<T>>, second: Option<Vec<T>>) -> Option<bool>
+where
+    T: Eq + Hash,
+{
+    Some(arrays_overlap_vec__vec_(first?, second?))
+}
+
+pub fn arrays_overlap_vec__vecN<T>(first: Vec<T>, second: Option<Vec<T>>) -> Option<bool>
+where
+    T: Eq + Hash,
+{
+    Some(arrays_overlap_vec__vec_(first, second?))
+}
+
+pub fn arrays_overlap_vecN_vec_<T>(first: Option<Vec<T>>, second: Vec<T>) -> Option<bool>
+where
+    T: Eq + Hash,
+{
+    Some(arrays_overlap_vec__vec_(first?, second))
+}
