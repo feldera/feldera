@@ -64,7 +64,8 @@ public class DBSPClosureExpression extends DBSPExpression {
 
     public DBSPApplyExpression call(DBSPExpression... arguments) {
         if (arguments.length != this.parameters.length)
-            throw new InternalCompilerError("Received " + arguments.length + " but need " + this.parameters.length, this);
+            throw new InternalCompilerError("Received " + arguments.length +
+                    " arguments, but need " + this.parameters.length, this);
         return new DBSPApplyExpression(this, arguments);
     }
 

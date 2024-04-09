@@ -46,6 +46,26 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
      <td>Returns the average (arithmetic mean) of numeric across all input values</td>
   </tr>
   <tr>
+     <td><code>ARG_MAX(value, compared)</code></td>
+     <td>Returns <code>value</code> for the maximum value of <code>compared</code> in the group</td>
+  </tr>
+  <tr>
+     <td><code>ARG_MIN(value, compared)</code></td>
+     <td>Returns <code>value</code> for the minimum value of <code>compared</code> in the group</td>
+  </tr>
+  <tr>
+     <td><code>BIT_AND( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the bitwise AND of all non-null input values, or null if none; integer and binary types are supported</td>
+  </tr>
+  <tr>
+     <td><code>BIT_OR( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the bitwise OR of all non-null input values, or null if none; integer and binary types are supported</td>
+  </tr>
+  <tr>
+     <td><code>BIT_XOR( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the bitwise XOR of all non-null input values, or null if none; integer and binary types are supported</td>
+  </tr>
+  <tr>
      <td><code>COUNT(*)</code></td>
      <td>Returns the number of input rows</td>
   </tr>
@@ -56,6 +76,14 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
   <tr>
      <td><code>EVERY(condition)</code></td>
      <td>Returns <code>TRUE</code> if all of the values of condition are <code>TRUE</code></td>
+  </tr>
+  <tr>
+     <td><code>LOGICAL_OR</code> or <code>BOOL_OR</code></td>
+     <td>Same as <code>SOME</code></td>
+  </tr>
+  <tr>
+     <td><code>LOGICAL_AND</code> or <code>BOOL_AND</code></td>
+     <td>Same as <code>EVERY</code></td>
   </tr>
   <tr>
      <td><code>MAX( [ ALL | DISTINCT ] value)</code></td>
@@ -74,36 +102,16 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
      <td>Returns the sum of numeric across all input values</td>
   </tr>
   <tr>
-     <td><code>LOGICAL_OR</code> or <code>BOOL_OR</code></td>
-     <td>Same as <code>SOME</code></td>
-  </tr>
-  <tr>
-     <td><code>LOGICAL_AND</code> or <code>BOOL_AND</code></td>
-     <td>Same as <code>EVERY</code></td>
-  </tr>
-  <tr>
-     <td><code>BIT_AND( [ ALL | DISTINCT ] value)</code></td>
-     <td>Returns the bitwise AND of all non-null input values, or null if none; integer and binary types are supported</td>
-  </tr>
-  <tr>
-     <td><code>BIT_OR( [ ALL | DISTINCT ] value)</code></td>
-     <td>Returns the bitwise OR of all non-null input values, or null if none; integer and binary types are supported</td>
-  </tr>
-  <tr>
-     <td><code>BIT_XOR( [ ALL | DISTINCT ] value)</code></td>
-     <td>Returns the bitwise XOR of all non-null input values, or null if none; integer and binary types are supported</td>
-  </tr>
-  <tr>
      <td><code>STDDEV( [ ALL | DISTINCT ] value)</code></td>
      <td>Synonym for <code>STDDEV_SAMP</code></td>
   </tr>
   <tr>
-     <td><code>STDDEV_SAMP( [ ALL | DISTINCT ] value)</code></td>
-     <td>Returns the sample standard deviation of numeric across all input values</td>
-  </tr>
-  <tr>
      <td><code>STDDEV_POP( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the population standard deviation of numeric across all input values</td>
+  </tr>
+  <tr>
+     <td><code>STDDEV_SAMP( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the sample standard deviation of numeric across all input values</td>
   </tr>
 </table>
 

@@ -990,11 +990,6 @@ public abstract class InnerRewriteVisitor
         return VisitDecision.STOP;
     }
 
-    @Override
-    public String toString() {
-        return "InnerRewriteVisitor";
-    }
-
     /**
      * Given a visitor for inner nodes returns a visitor
      * that optimizes an entire circuit.

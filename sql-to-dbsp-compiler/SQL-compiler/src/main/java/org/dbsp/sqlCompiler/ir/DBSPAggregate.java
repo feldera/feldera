@@ -388,9 +388,7 @@ public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode {
         return builder.decrease();
     }
 
-    /**
-     * Combines multiple DBSPAggregate.Implementation objects into one.
-     */
+    /** Combines multiple DBSPAggregate.Implementation objects into one. */
     public DBSPAggregate.Implementation combine(IErrorReporter reporter) {
         int parts = this.components.length;
         DBSPExpression[] zeros = new DBSPExpression[parts];

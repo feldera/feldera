@@ -30,6 +30,7 @@ import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.fun.SqlAbstractGroupFunction;
 import org.apache.calcite.sql.fun.SqlAvgAggFunction;
+import org.apache.calcite.sql.fun.SqlBasicAggFunction;
 import org.apache.calcite.sql.fun.SqlBitOpAggFunction;
 import org.apache.calcite.sql.fun.SqlCountAggFunction;
 import org.apache.calcite.sql.fun.SqlMinMaxAggFunction;
@@ -45,6 +46,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -53,6 +55,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.ICastable;
@@ -123,7 +126,8 @@ public class AggregateCompiler implements ICompilerComponent {
             int fieldNumber = call.getArgList().get(0);
             this.aggArgument = this.v.deref().field(fieldNumber);
         } else {
-            List<DBSPExpression> fields = Linq.map(call.getArgList(), a -> this.v.deref().field(a));
+            List<DBSPExpression> fields = Linq.map(call.getArgList(),
+                    a -> this.v.deref().field(a).applyCloneIfNeeded());
             this.aggArgument = new DBSPTupleExpression(fields, false);
         }
     }
@@ -247,6 +251,37 @@ public class AggregateCompiler implements ICompilerComponent {
         this.setFoldingFunction(new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator),
                 zero, semigroup, linear));
+    }
+
+    void processBasic(SqlBasicAggFunction function) {
+        SqlKind kind = function.getKind();
+        CalciteObject node = CalciteObject.create(function);
+        DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
+        assert tuple.fields.length == 2: "Expected 2 arguments for " + kind;
+        DBSPOpcode compare = switch (kind) {
+            case ARG_MAX -> DBSPOpcode.AGG_GT;
+            case ARG_MIN -> DBSPOpcode.AGG_LT;
+            default -> throw new UnimplementedException(node);
+        };
+
+        // Accumulator is a pair of fields.
+        DBSPExpression zero = new DBSPTupleExpression(
+                tuple.fields[0].getType().nullValue(), tuple.fields[1].getType().nullValue());
+        DBSPVariablePath accumulator = tuple.getType().var(this.genAccumulatorName());
+        DBSPClosureExpression linear = null;  // not linear
+        DBSPExpression ge = new DBSPBinaryExpression(
+                node, DBSPTypeBool.create(false), compare,
+                tuple.fields[1].applyCloneIfNeeded(),
+                accumulator.field(1).applyCloneIfNeeded());
+        DBSPExpression increment = new DBSPIfExpression(node, ge, this.aggArgument, accumulator.applyCloneIfNeeded());
+        DBSPType semigroup = new DBSPTypeUser(node, USER, "UnimplementedSemigroup", false, tuple.getType());
+        DBSPExpression postBody = accumulator.field(0).applyCloneIfNeeded();
+        this.setFoldingFunction(new DBSPAggregate.Implementation(
+                node, zero,
+                this.makeRowClosure(increment, accumulator),
+                postBody.closure(accumulator.asParameter()),
+                this.resultType.nullValue(),
+                semigroup, linear));
     }
 
     private DBSPExpression getAggregatedValue() {
@@ -551,6 +586,7 @@ public class AggregateCompiler implements ICompilerComponent {
     public DBSPAggregate.Implementation compile() {
         boolean success =
                 this.process(this.aggFunction, SqlCountAggFunction.class, this::processCount) ||
+                this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) ||
                 this.process(this.aggFunction, SqlMinMaxAggFunction.class, this::processMinMax) ||
                 this.process(this.aggFunction, SqlSumAggFunction.class, this::processSum) ||
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||
