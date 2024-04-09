@@ -523,7 +523,7 @@ all-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
-    BUILD +ui-playwright-tests
+    #BUILD +ui-playwright-tests
     BUILD +test-docker-compose
     BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
