@@ -61,7 +61,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
     public DBSPCircuit apply(DBSPCircuit circuit) {
         boolean details = this.getDebugLevel() >= 4;
         if (this.getDebugLevel() >= 3) {
-            String name = dumped++ + "before.png";
+            String name = String.format("%02d-", dumped++) + "before.png";
             Logger.INSTANCE.belowLevel(this, 3)
                     .append("Writing circuit to ")
                     .append(name)
@@ -75,7 +75,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
                     .newline();
             circuit = pass.apply(circuit);
             if (this.getDebugLevel() >= 3) {
-                String name = dumped++ + pass.toString().replace(" ", "_") + ".png";
+                String name = String.format("%02d-", dumped++) + pass.toString().replace(" ", "_") + ".png";
                 Logger.INSTANCE.belowLevel(this, 3)
                         .append("Writing circuit to ")
                         .append(name)

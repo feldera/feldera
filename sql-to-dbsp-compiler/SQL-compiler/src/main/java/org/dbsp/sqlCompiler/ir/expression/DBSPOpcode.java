@@ -45,13 +45,20 @@ public enum DBSPOpcode {
     SQL_INDEX("[]", false),
     RUST_INDEX("[]", false),
 
-    // Aggregate operations
+    // Aggregate operations.  These operations
+    // handle NULL values differently from standard
+    // arithmetic operations, following SQL semantics.
     AGG_AND("agg_and", true),
     AGG_OR("agg_or", true),
     AGG_XOR("agg_xor", true),
     AGG_MAX("agg_max", true),
     AGG_MIN("agg_min", true),
-    AGG_ADD("agg_plus", true);
+    AGG_ADD("agg_plus", true),
+    // > used in aggregation, for computing ARG_MAX.
+    // NULL compares in a special way.
+    AGG_GT("agg_gt", true),
+    AGG_LT("agg_lt", true)
+    ;
 
     private final String text;
     public final boolean isAggregate;
@@ -67,6 +74,8 @@ public enum DBSPOpcode {
     }
 
     public boolean isComparison() {
+        // Some things like AGG_GT are not listed as comparisons, since
+        // their return type follows different rules
         return this.equals(LT) || this.equals(GT) || this.equals(LTE)
                 || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ)
                 || this.equals(IS_DISTINCT) || this.equals(IS_NOT_DISTINCT);

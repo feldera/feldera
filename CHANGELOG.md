@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- [SQL] `ARG_MIN`, `ARG_MAX` aggregation functions
+  ([#1619](https://github.com/feldera/feldera/pull/1619))
+
 ## [0.13.0] - 2024-04-02
 
 ### Added

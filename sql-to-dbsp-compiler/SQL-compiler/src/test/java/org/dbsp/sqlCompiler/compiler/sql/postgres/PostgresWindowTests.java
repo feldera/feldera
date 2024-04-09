@@ -1,9 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
-import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -47,7 +45,6 @@ public class PostgresWindowTests extends SqlIoTest {
 
     @Test @Ignore
     public void remove() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
         this.qs("""
                 SELECT lag(ten) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1 WHERE unique2 < 10;
                  lag | ten | four

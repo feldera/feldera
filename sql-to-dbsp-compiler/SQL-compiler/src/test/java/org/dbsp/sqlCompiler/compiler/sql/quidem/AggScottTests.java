@@ -1132,7 +1132,6 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test @Ignore("TODO: Crashes the compiler")
     public void testNestedOrderby() {
-        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
         this.qs("""
                 -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])
                 select  sum(x) as sum_cnt,
