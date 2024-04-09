@@ -48,9 +48,9 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
     await expect(page).toHaveScreenshot('3-1-compiling-program-binary.png')
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor({ timeout: 270000 })
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Ready to run`).waitFor({ timeout: 270000 })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-start').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Running`).waitFor({ timeout: 10000 })
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Running`).waitFor({ timeout: 10000 })
   })
 
   await test.step('Post data to tables', async () => {
@@ -218,7 +218,7 @@ test('Accrual demo test', async ({ page, request }) => {
       ].map(id => page.getByTestId(id))
     })
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-shutdown').click()
-    await page.getByTestId(`box-pipeline-${pipelineName}-status-Ready to run`).waitFor()
+    await page.getByTestId(`box-status-pipeline-${pipelineName}-Ready to run`).waitFor()
   })
 
   await test.step('Cleanup: Delete pipeline', async () => {

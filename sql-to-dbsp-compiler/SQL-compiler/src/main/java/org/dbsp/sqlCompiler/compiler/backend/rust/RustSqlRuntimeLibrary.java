@@ -75,6 +75,8 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("agg_and", DBSPOpcode.AGG_AND);
         this.arithmeticFunctions.put("agg_or", DBSPOpcode.AGG_OR);
         this.arithmeticFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
+        this.arithmeticFunctions.put("agg_lt", DBSPOpcode.AGG_LT);
+        this.arithmeticFunctions.put("agg_gt", DBSPOpcode.AGG_GT);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
@@ -182,7 +184,8 @@ public class RustSqlRuntimeLibrary {
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false).setMayBeNull(anyNull);
         if (opcode == DBSPOpcode.IS_TRUE || opcode == DBSPOpcode.IS_NOT_TRUE ||
                 opcode == DBSPOpcode.IS_FALSE || opcode == DBSPOpcode.IS_NOT_FALSE ||
-                opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT)
+                opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT ||
+                opcode == DBSPOpcode.AGG_LT || opcode == DBSPOpcode.AGG_GT)
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
         if (opcode == DBSPOpcode.CONCAT)
             returnType = expectedReturnType;
@@ -190,11 +193,14 @@ public class RustSqlRuntimeLibrary {
         String suffixr = rtype == null ? "" : rtype.nullableSuffix();
         String tsuffixl;
         String tsuffixr;
-        if (opcode.equals(DBSPOpcode.IS_DISTINCT) || opcode.equals(DBSPOpcode.IS_NOT_DISTINCT)) {
+        if (opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT) {
             tsuffixl = "";
             tsuffixr = "";
             suffixl = "";
             suffixr = "";
+        } else if (opcode == DBSPOpcode.AGG_GT || opcode == DBSPOpcode.AGG_LT) {
+            tsuffixl = "";
+            tsuffixr = "";
         } else {
             tsuffixl = ltype.to(DBSPTypeBaseType.class).shortName();
             tsuffixr = (rtype == null) ? "" : rtype.to(DBSPTypeBaseType.class).shortName();

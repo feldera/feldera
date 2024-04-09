@@ -38,7 +38,7 @@ const ConnectorCreateGrid = () => {
       <Grid container spacing={6} className='match-height' sx={{ pl: 6, pt: 6 }}>
         <GridItems xs={12} sm={6} md={4}>
           <AddConnectorCard
-            icon={connectorTypeToLogo(ConnectorType.URL)}
+            icon={connectorTypeToLogo(ConnectorType.URL_IN)}
             title='Load Data from an HTTP URL'
             addInput={{ href: '#input/url' }}
             data-testid='box-connector-url'
@@ -62,6 +62,12 @@ const ConnectorCreateGrid = () => {
             addOutput={{ href: '#output/snowflake' }}
             data-testid='box-connector-snowflake'
           />
+          {/* <AddConnectorCard
+            icon={connectorTypeToLogo(ConnectorType.S3_IN)}
+            title='Connect to a S3 compatible bucket'
+            addInput={{ href: '#input/s3' }}
+            data-testid='box-connector-s3'
+          /> */}
           <AddConnectorCard
             icon={connectorTypeToLogo(ConnectorType.UNKNOWN)}
             title='Configure a generic connector'

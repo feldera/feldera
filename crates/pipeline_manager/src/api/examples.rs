@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 use pipeline_types::{
-    config::{ConnectorConfig, PipelineConfig, RuntimeConfig},
+    config::{PipelineConfig, RuntimeConfig},
     error::ErrorResponse,
 };
 
@@ -13,6 +13,7 @@ use crate::{
     },
     runner::RunnerError,
 };
+use pipeline_types::config::ConnectorConfig;
 use pipeline_types::service::{KafkaService, ServiceConfig, ServiceConfigVariant};
 use uuid::uuid;
 

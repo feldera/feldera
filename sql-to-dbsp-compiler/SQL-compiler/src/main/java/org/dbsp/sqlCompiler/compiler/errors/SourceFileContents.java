@@ -61,6 +61,13 @@ public class SourceFileContents {
             result.append(" ".repeat(startCol + 6));
             result.append("^".repeat(endCol - startCol));
             result.append(SourceFileContents.newline());
+            if (this.lines.size() > startLine + 1) {
+                // Print one more line to help disambiguate location
+                line = this.lines.get(startLine + 1);
+                result.append(lineNo(startLine + 1))
+                        .append(line)
+                        .append(SourceFileContents.newline());
+            }
         } else {
             if (endLine - startLine < 5) {
                 for (int i = startLine; i < endLine; i++) {

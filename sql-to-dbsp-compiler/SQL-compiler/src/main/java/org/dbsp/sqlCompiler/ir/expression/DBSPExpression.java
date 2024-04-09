@@ -92,9 +92,7 @@ public abstract class DBSPExpression
         return new DBSPFieldExpression(this, index);
     }
 
-    /**
-     * Convenient shortcut to wrap an expression into a Some() constructor.
-     */
+    /** Convenient shortcut to wrap an expression into a Some() constructor. */
     public DBSPExpression some() {
         return new DBSPSomeExpression(this.getNode(), this);
     }

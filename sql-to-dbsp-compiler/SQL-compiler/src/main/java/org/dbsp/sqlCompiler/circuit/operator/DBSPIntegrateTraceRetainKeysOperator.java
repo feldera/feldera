@@ -2,7 +2,8 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ValueProjection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -24,9 +25,9 @@ public class DBSPIntegrateTraceRetainKeysOperator extends DBSPOperator {
     }
 
     public static DBSPIntegrateTraceRetainKeysOperator create(
-            CalciteObject node, DBSPOperator data, ValueProjection dataProjection, DBSPOperator control) {
+            CalciteObject node, DBSPOperator data, IMaybeMonotoneType dataProjection, DBSPOperator control) {
         DBSPType controlType = control.getType();
-        DBSPType leftSliceType = dataProjection.getProjectionResultType();
+        DBSPType leftSliceType = Objects.requireNonNull(dataProjection.getProjectedType());
         assert leftSliceType.sameType(controlType):
                 "Projection type does not match control type " + leftSliceType + "/" + controlType;
 
@@ -37,13 +38,17 @@ public class DBSPIntegrateTraceRetainKeysOperator extends DBSPOperator {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
             DBSPVariablePath dataArg = new DBSPVariablePath("d", keyType);
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
+            DBSPExpression project = dataProjection
+                    .to(PartiallyMonotoneTuple.class)
+                    .getField(0)
+                    .projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(
-                    dataArg, controlArg.deref().field(0));
+                    project, controlArg.deref().field(0));
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
             DBSPVariablePath dataArg = new DBSPVariablePath("d", keyType);
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
-            DBSPExpression project = dataProjection.project(dataArg);
+            DBSPExpression project = dataProjection.projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(
                     project, controlArg.deref());
         }

@@ -8,7 +8,6 @@ import type { NewApiKeyResponse } from '../models/NewApiKeyResponse'
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class ApiKeysService {
   /**
    * List all API keys

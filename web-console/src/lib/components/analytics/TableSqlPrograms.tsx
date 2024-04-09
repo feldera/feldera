@@ -56,7 +56,7 @@ const getStatusChipProps = (status: ProgramStatus) =>
     })
     .with('CompilingRust', () => {
       return {
-        label: 'Compiling binary',
+        label: 'Compiling bin',
         color: 'primary' as const,
         'data-testid': 'box-status-compiling-binary',
         tooltip: undefined
@@ -169,7 +169,7 @@ export const TableSqlPrograms = () => {
         const { tooltip, ...statusChipProps } = getStatusChipProps(params.row.status)
         return (
           <Tooltip title={tooltip}>
-            <CustomChip rounded size='small' skin='light' {...statusChipProps} />
+            <CustomChip rounded size='small' skin='light' {...statusChipProps} sx={{ width: 120 }} />
           </Tooltip>
         )
       }

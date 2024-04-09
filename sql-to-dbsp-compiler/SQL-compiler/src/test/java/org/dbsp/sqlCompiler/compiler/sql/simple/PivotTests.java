@@ -14,9 +14,9 @@ public class PivotTests extends SqlIoTest {
     public void prepareInputs(DBSPCompiler compiler) {
         compiler.compileStatements("""
                 Create Table GG (
-                CourseName varchar,
-                CourseCategory varchar,
-                Price int
+                    CourseName varchar,
+                    CourseCategory varchar,
+                    Price int
                 );
 
                 Insert into GG  values('C', 'PROGRAMMING', 5000);
@@ -56,7 +56,10 @@ public class PivotTests extends SqlIoTest {
                 SELECT CourseName, "PG", "IV"
                 FROM GG
                 PIVOT (
-                  SUM(Price) FOR CourseCategory IN (         'PROGRAMMING' AS PG,          'INTERVIEWPREPARATION' AS IV)
+                   SUM(Price) FOR CourseCategory IN (
+                     'PROGRAMMING' AS PG,
+                     'INTERVIEWPREPARATION' AS IV
+                   )
                 ) AS PivotTable;
                 CourseName | PG | IV
                 -----------------
@@ -77,10 +80,10 @@ public class PivotTests extends SqlIoTest {
                 +------+-----------+---------+---------+---------+---------+
                 |  id  |  address  | john_a  | john_cc | mike_a  | mike_cc |
                 +------+-----------+---------+---------+---------+---------+
-                | 200  | Street 2| NULL    | NULL    | NULL    | NULL    |
-                | 100  | Street 1| 30      | 1       | NULL    | NULL    |
-                | 300  | Street 3| NULL    | NULL    | 80      | 3       |
-                | 400  | Street 4| NULL    | NULL    | NULL    | NULL    |
+                | 200  | Street 2|   NULL    | NULL    | NULL    | NULL    |
+                | 100  | Street 1|   30      | 1       | NULL    | NULL    |
+                | 300  | Street 3|   NULL    | NULL    | 80      | 3       |
+                | 400  | Street 4|   NULL    | NULL    | NULL    | NULL    |
                 +------+-----------+---------+---------+---------+---------+
                 """);
         this.q("""
@@ -92,10 +95,10 @@ public class PivotTests extends SqlIoTest {
                 +------+-----------+-------+-------+-------+-------+
                 |  id  |  address  | c1_a  | c1_cc | c2_a  | c2_cc |
                 +------+-----------+-------+-------+-------+-------+
-                | 200  | Street 2| NULL  | NULL  | NULL  | NULL  |
-                | 100  | Street 1| 30    | 1     | NULL  | NULL  |
-                | 300  | Street 3| NULL  | NULL  | NULL  | NULL  |
-                | 400  | Street 4| NULL  | NULL  | NULL  | NULL  |
+                | 200  | Street 2|   NULL  | NULL  | NULL  | NULL  |
+                | 100  | Street 1|   30    | 1     | NULL  | NULL  |
+                | 300  | Street 3|   NULL  | NULL  | NULL  | NULL  |
+                | 400  | Street 4|   NULL  | NULL  | NULL  | NULL  |
                 +------+-----------+-------+-------+-------+-------+""");
     }
 
@@ -120,6 +123,7 @@ public class PivotTests extends SqlIoTest {
                 ------------------------------
                 2020 |       |        |    4
                 2021 |       |     3  |    4
-                2023 |     1 |     2  |      \s""");
+                2023 |     1 |     2  |
+                """);
     }
 }

@@ -291,7 +291,7 @@ the connector configuration:
             "array": false
         }
     },
-    "max_buffered_records":1000000
+    "max_queued_records":1000000
 }
 ```
 

@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ValueProjection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -67,7 +67,8 @@ public class DBSPControlledFilterOperator extends DBSPOperator {
     static DBSPExpression generateTupleCompare(DBSPExpression left, DBSPExpression right) {
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
-        assert leftType.sameType(rightType): "Types differ: " + leftType + " vs " + rightType;
+        assert leftType.sameType(rightType):
+                "Types differ: " + leftType + " vs " + rightType;
         DBSPLetStatement leftVar = new DBSPLetStatement("left", left.borrow());
         DBSPLetStatement rightVar = new DBSPLetStatement("right", right.borrow());
         List<DBSPStatement> statements = Linq.list(leftVar, rightVar);
@@ -78,9 +79,9 @@ public class DBSPControlledFilterOperator extends DBSPOperator {
     }
 
     public static DBSPControlledFilterOperator create(
-            CalciteObject node, DBSPOperator data, ValueProjection dataProjection, DBSPOperator control) {
+            CalciteObject node, DBSPOperator data, IMaybeMonotoneType monotoneType, DBSPOperator control) {
         DBSPType controlType = control.getType();
-        DBSPType leftSliceType = dataProjection.getProjectionResultType();
+        DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
         assert leftSliceType.sameType(controlType):
                 "Projection type does not match control type " + leftSliceType + "/" + controlType;
 
@@ -94,7 +95,7 @@ public class DBSPControlledFilterOperator extends DBSPOperator {
         } else {
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
         }
-        DBSPExpression projection = dataProjection.project(dataArg);
+        DBSPExpression projection = monotoneType.projectExpression(dataArg);
 
         DBSPVariablePath controlArg = new DBSPVariablePath("c", controlType.ref());
         DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(projection, controlArg.deref());

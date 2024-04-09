@@ -12,7 +12,6 @@ import type { UpdateConnectorResponse } from '../models/UpdateConnectorResponse'
 import type { CancelablePromise } from '../core/CancelablePromise'
 import { OpenAPI } from '../core/OpenAPI'
 import { request as __request } from '../core/request'
-
 export class ConnectorsService {
   /**
    * Fetch connectors, optionally filtered by name or ID

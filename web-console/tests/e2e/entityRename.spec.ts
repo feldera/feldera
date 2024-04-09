@@ -8,6 +8,8 @@ import { deleteConnectors, deletePipeline, deleteProgram } from '../util'
 import demoAccrualSql from './demoAccrual.sql'
 import felderaBasicsTutorialSql from './felderaBasicsTutorial.sql'
 
+const codeEditorScrollbarFadeTimeout = 1000
+
 /**
  * The usage of API entity names as identifiers introduces more complex UI states when editing the names.
  * This test performs renames of program, connector and pipeline entities in various circumstances,
@@ -26,13 +28,15 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({ state: 'attached' })
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').fill(felderaBasicsTutorialSql)
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('1-2-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
 
     await page.getByTestId('input-program-name').fill('program1_1')
     await page.getByTestId('box-save-saved').waitFor()
-    await page.getByTestId('box-compile-status-compiling').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
+    await page.getByTestId('box-compile-status-success').waitFor()
     await expect(page).toHaveScreenshot('1-3-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -40,6 +44,7 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('input-program-name').fill('program1_2')
     await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-compile-status-success').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('1-4-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -64,6 +69,7 @@ test('Entity rename test', async ({ page, request }) => {
 
     await page.getByTestId('input-program-name').fill('program2_0')
     await page.getByTestId('box-save-saved').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('2-2-saved-program2.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -82,6 +88,7 @@ test('Entity rename test', async ({ page, request }) => {
 
     await page.getByTestId('input-program-name').fill('program2_1')
     await page.getByTestId('box-save-saved').waitFor()
+    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('2-5-saved-program2.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -110,22 +117,30 @@ test('Entity rename test', async ({ page, request }) => {
   await test.step('Rename program2 in the list', async () => {
     await page.getByTestId('button-breadcrumb-sql-programs').click()
     await page.getByTestId('box-column-header-name').click()
-    await expect(page).toHaveScreenshot('4-1-program-list.png')
+    await expect(page).toHaveScreenshot('4-1-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
 
     await page.getByTestId(`box-program-name-program2_1`).dblclick()
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').fill('program1_2')
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').press('Enter')
-    await expect(page).toHaveScreenshot('4-2-program-list.png')
+    await expect(page).toHaveScreenshot('4-2-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
 
     await page.getByTestId(`box-program-name-program2_1`).dblclick()
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').fill('program2_2')
     await page.getByTestId(`box-grid-row-program2_1`).locator('input').press('Enter')
-    await expect(page).toHaveScreenshot('4-3-program-list.png')
+    await expect(page).toHaveScreenshot('4-3-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
 
     await page.getByTestId(`box-program-description-program2_2`).locator('..').dblclick()
     await page.getByTestId(`box-grid-row-program2_2`).locator('input').fill('A description for program2')
     await page.getByTestId(`box-grid-row-program2_2`).locator('input').press('Enter')
-    await expect(page).toHaveScreenshot('4-4-program-list.png')
+    await expect(page).toHaveScreenshot('4-4-program-list.png', {
+      mask: [/box-status-/].map(id => page.getByTestId(id))
+    })
   })
 
   await test.step('Wait for all programs to compile', async () => {
@@ -193,9 +208,9 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('input-datasource-name').fill('kafka_in_1')
     await page.getByTestId('input-datasource-description').fill('Description for kafka_in_1')
     await page.getByTestId('button-tab-server').click()
-    await page.getByTestId('input-server-hostname').fill('redpanda:9092')
-    await page.getByTestId('input-group-id').fill('topic-1')
-    await page.getByTestId('input-wrapper-topics').locator('input').fill('topic-1')
+    await page.getByTestId('input-bootstrap_servers').fill('redpanda:9092')
+    await page.getByTestId('input-group_id').fill('topic-1')
+    await page.getByTestId('input-topics').fill('topic-1')
     await page.getByTestId('button-tab-format').click()
     await page.getByTestId('button-create').click()
     await expect(page).toHaveScreenshot('8-1-edit-pipeline2.png')
@@ -219,7 +234,7 @@ test('Entity rename test', async ({ page, request }) => {
       .click()
     await page.getByTestId('input-datasource-name').fill('preferred_vendor-redpanda')
     await page.getByTestId('button-next').click()
-    await page.getByTestId('input-server-hostname').fill('redpanda:9092')
+    await page.getByTestId('input-bootstrap_servers').fill('redpanda:9092')
     await page.getByTestId('input-topic').fill('preferred_vendor')
     await page.getByTestId('button-tab-auth').click()
     await page.getByTestId('button-next').click()
@@ -266,14 +281,14 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId(`box-grid-row-pipeline1`).locator('input').press('Enter')
     await expect(page).toHaveScreenshot('b-3-edit-pipeline-in-list.png')
     await page.getByTestId(`box-grid-row-pipeline3`).getByTestId('button-start').click()
-    await page.getByTestId(`box-pipeline-pipeline3-status-Running`).waitFor()
+    await page.getByTestId(`box-status-pipeline-pipeline3-Running`).waitFor()
     await expect(page).toHaveScreenshot('b-4-edit-pipeline-in-list.png')
     await page.getByTestId('box-pipeline-name-pipeline3').dblclick()
     await page.getByTestId(`box-grid-row-pipeline3`).locator('input').fill('pipeline4')
     await page.getByTestId(`box-grid-row-pipeline3`).locator('input').press('Enter')
     await expect(page).toHaveScreenshot('b-5-edit-pipeline-in-list.png')
     await page.getByTestId(`box-grid-row-pipeline4`).getByTestId('button-shutdown').click()
-    await page.getByTestId(`box-pipeline-pipeline4-status-Ready to run`).waitFor()
+    await page.getByTestId(`box-status-pipeline-pipeline4-Ready to run`).waitFor()
     await expect(page).toHaveScreenshot('b-6-edit-pipeline-in-list.png')
   })
 

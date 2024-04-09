@@ -15,7 +15,7 @@ import java.sql.Statement;
 
 /** Manages a DB server in a separate process */
 public class HSQDBManager {
-    Server server;
+    final Server server;
     @Nullable
     Connection dbConn = null;
 

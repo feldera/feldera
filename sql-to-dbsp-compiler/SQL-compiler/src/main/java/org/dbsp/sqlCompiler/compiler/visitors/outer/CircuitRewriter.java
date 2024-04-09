@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -45,6 +46,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -314,6 +316,27 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPLagOperator operator) {
+        DBSPType type = this.transform(operator.getType());
+        DBSPOperator input = this.mapped(operator.input());
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPComparatorExpression comparator = this.transform(operator.comparator)
+                .to(DBSPComparatorExpression.class);
+        DBSPExpression projection = this.transform(operator.projection);
+        DBSPOperator result = operator;
+        if (!type.sameType(operator.getType())
+                || input != operator.input()
+                || projection != operator.projection
+                || function != operator.getFunction()
+                || comparator != operator.comparator) {
+            result = new DBSPLagOperator(operator.getNode(), operator.offset,
+                    function, projection, comparator,
+                    type.to(DBSPTypeIndexedZSet.class), input);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
     public void postorder(DBSPMapOperator operator) {
         DBSPType type = this.transform(operator.getType());
         DBSPOperator input = this.mapped(operator.input());
@@ -344,6 +367,6 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public String toString() {
-        return super.toString() + ":" + this.transform;
+        return super.toString() + "-" + this.transform;
     }
 }

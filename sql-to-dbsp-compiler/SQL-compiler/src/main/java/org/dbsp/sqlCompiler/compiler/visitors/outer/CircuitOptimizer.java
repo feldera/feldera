@@ -28,11 +28,9 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ExpandOperators;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,44 +44,6 @@ public class CircuitOptimizer implements ICompilerComponent {
 
     public CircuitOptimizer(DBSPCompiler compiler) {
         this.compiler = compiler;
-    }
-
-    static class MonotoneAnalyzer implements CircuitTransform {
-        final IErrorReporter reporter;
-
-        public MonotoneAnalyzer(IErrorReporter reporter) {
-            this.reporter = reporter;
-        }
-
-        @SuppressWarnings("ConstantValue")
-        @Override
-        public DBSPCircuit apply(DBSPCircuit circuit) {
-            final boolean debug = false;
-
-            if (debug)
-                ToDotVisitor.toDot(this.reporter, "original.jpg", true, "jpg", circuit);
-            ExpandOperators expander = new ExpandOperators(this.reporter, 1);
-            Repeat repeat = new Repeat(this.reporter, expander);
-            DBSPCircuit expanded = repeat.apply(circuit);
-            if (debug)
-                ToDotVisitor.toDot(reporter, "expanded.jpg", false, "jpg", expanded);
-
-            MonotoneOperators monotone = new MonotoneOperators(this.reporter);
-            expanded = monotone.apply(expanded); // this does not really mutate the circuit
-
-            InsertLimiters limiters = new InsertLimiters(
-                    this.reporter, expanded, monotone.operatorMonotoneValue, expander.expansion);
-            // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
-            DBSPCircuit result = limiters.apply(circuit);
-            if (debug)
-                ToDotVisitor.toDot(reporter, "limited.jpg", true, "jpg", result);
-            return result;
-        }
-
-        @Override
-        public String toString() {
-            return "MonotoneAnalyzer";
-        }
     }
 
     CircuitTransform getOptimizer() {

@@ -20,10 +20,10 @@ use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use deadpool_postgres::Transaction;
 use openssl::sha::{self};
-use pipeline_types::config::TransportConfigVariant;
+use pipeline_types::config::{ConnectorConfig, TransportConfigVariant};
 use pipeline_types::service::{KafkaService, ServiceConfig};
 use pipeline_types::{
-    config::{ConnectorConfig, ResourceConfig, RuntimeConfig},
+    config::{ResourceConfig, RuntimeConfig},
     program_schema::Relation,
 };
 use pretty_assertions::assert_eq;
@@ -869,10 +869,9 @@ async fn versioning() {
         .await
         .unwrap();
     let config1 = test_connector_config();
-    let config2 = ConnectorConfig {
-        max_buffered_records: config1.clone().max_buffered_records + 5,
-        ..config1.clone()
-    };
+    let mut config2 = config1.clone();
+    config2.max_queued_records = config1.max_queued_records + 5;
+
     let connector_id1: ConnectorId = handle
         .db
         .new_connector(tenant_id, Uuid::now_v7(), "a", "b", &config1, None)
@@ -1028,10 +1027,8 @@ async fn versioning() {
     assert_ne!(r2, r3, "we got a new revision");
 
     // If we change the connector we can commit again:
-    let config3 = ConnectorConfig {
-        max_buffered_records: config2.max_buffered_records + 5,
-        ..config2
-    };
+    let mut config3 = config2.clone();
+    config3.max_queued_records += 5;
     handle
         .db
         .update_connector(

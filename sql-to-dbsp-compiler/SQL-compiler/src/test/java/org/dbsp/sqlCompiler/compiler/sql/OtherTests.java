@@ -423,24 +423,24 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     public void testWith() throws IOException, InterruptedException, SQLException {
         String statement =
                 """
-                        create table VENDOR (
-                            id bigint not null primary key,
-                            name varchar,
-                            address varchar
-                        );
+                create table VENDOR (
+                    id bigint not null primary key,
+                    name varchar,
+                    address varchar
+                );
+                create table PART (
+                    id bigint not null primary key,
+                    name varchar
+                );
+                create table PRICE (
+                    part bigint not null,
+                    vendor bigint not null,
+                    price decimal
+                );
 
-                        create table PART (
-                            id bigint not null primary key,
-                            name varchar
-                        );
-
-                        create table PRICE (
-                            part bigint not null,
-                            vendor bigint not null,
-                            price decimal
-                        );
-
-                        create view LOW_PRICE AS with LOW_PRICE_CTE AS (  select part, MIN(price) as price from PRICE group by part) select * FROM LOW_PRICE_CTE""";
+                create view LOW_PRICE AS
+                WITH LOW_PRICE_CTE AS (  select part, MIN(price) as price from PRICE group by part)
+                SELECT * FROM LOW_PRICE_CTE""";
         File file = createInputScript(statement);
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         if (messages.errorCount() > 0)
@@ -497,7 +497,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void testIOT() throws IOException, InterruptedException, SQLException {
+    public void testIOT() throws IOException {
         // Iot code from different repository checked out in a specific place
         final String iotSql = "../../../iot/iot.sql";
         File sql = new File(iotSql);
@@ -506,6 +506,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String script = Utilities.readFile(sql.toPath());
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = true;
+        compiler.options.ioOptions.emitHandles = false;
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testIOT", ccs);

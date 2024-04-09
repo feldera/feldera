@@ -12,11 +12,9 @@ use crate::prober::service::{ServiceProbeRequest, ServiceProbeResponse, ServiceP
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
+use pipeline_types::config::ConnectorConfig;
 use pipeline_types::service::ServiceConfig;
-use pipeline_types::{
-    config::{ConnectorConfig, RuntimeConfig},
-    program_schema::ProgramSchema,
-};
+use pipeline_types::{config::RuntimeConfig, program_schema::ProgramSchema};
 use uuid::Uuid;
 
 /// The storage trait contains the methods to interact with the pipeline manager

@@ -882,11 +882,13 @@ impl OutputBuffer {
     fn flush_needed(&self, config: &OutputBufferConfig) -> bool {
         if let Some(buffer) = &self.buffer {
             let buffer = buffer.as_ref();
-            if buffer.len() >= config.max_buffer_size_records {
+            if buffer.len() >= config.max_output_buffer_size_records {
                 return true;
             }
 
-            if self.buffer_since.elapsed().as_millis() > config.max_buffer_time_millis as u128 {
+            if self.buffer_since.elapsed().as_millis()
+                > config.max_output_buffer_time_millis as u128
+            {
                 return true;
             }
         }
@@ -1211,7 +1213,10 @@ impl ControllerInner {
         outputs.insert(endpoint_id, handles, endpoint_descr);
 
         let endpoint_name_string = endpoint_name.to_string();
-        let output_buffer_config = endpoint_config.output_buffer_config.clone();
+        let output_buffer_config = endpoint_config
+            .connector_config
+            .output_buffer_config
+            .clone();
 
         // Thread to run the output pipeline.
         spawn(move || {
@@ -1305,7 +1310,7 @@ impl ControllerInner {
                 let consolidated = Self::merge_batches(data);
 
                 // Buffer the new output if buffering is enabled.
-                if output_buffer_config.enable_buffer {
+                if output_buffer_config.enable_output_buffer {
                     output_buffer.insert(consolidated, step, processed_records);
                     controller.status.buffer_batch(
                         endpoint_id,
@@ -1336,7 +1341,7 @@ impl ControllerInner {
                 trace!("Queue is empty -- wait for the circuit thread to wake us up when more data is available");
                 if let Some(buffer_since) = output_buffer.buffer_since() {
                     // Buffering is enabled: wake us up when the buffer timeout has expired.
-                    let timeout = output_buffer_config.max_buffer_time_millis as i128
+                    let timeout = output_buffer_config.max_output_buffer_time_millis as i128
                         - buffer_since.elapsed().as_millis() as i128;
                     if timeout > 0 {
                         parker.park_timeout(Duration::from_millis(timeout as u64));

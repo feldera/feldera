@@ -473,7 +473,7 @@ impl PipelineRevision {
                         })?;
                     let input_endpoint_config = InputEndpointConfig {
                         stream: Cow::from(ac.relation_name.clone()),
-                        connector_config,
+                        connector_config: connector_config.clone(),
                     };
                     expanded_inputs.insert(Cow::from(ac.name.clone()), input_endpoint_config);
                 }
@@ -502,8 +502,7 @@ impl PipelineRevision {
                         // This field gets skipped during serialization/deserialization,
                         // so it doesn't matter what value we use here
                         query: Default::default(),
-                        connector_config,
-                        output_buffer_config: Default::default(),
+                        connector_config: connector_config.clone(),
                     };
                     expanded_outputs.insert(Cow::from(ac.name.clone()), output_endpoint_config);
                 }

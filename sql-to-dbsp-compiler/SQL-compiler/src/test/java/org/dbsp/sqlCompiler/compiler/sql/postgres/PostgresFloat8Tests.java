@@ -62,7 +62,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
                                 
                 SELECT '          -INFINiTY   '::float8;
-                  float8  
+                  float8
                 -----------
                  -Infinity
                 (1 row)
@@ -104,7 +104,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
                                 
                 SELECT * FROM FLOAT8_TBL;
-                          f1         
+                          f1
                 ----------------------
                                     0
                                1004.3
@@ -114,7 +114,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (5 rows)
                                 
                 SELECT f.* FROM FLOAT8_TBL f WHERE f.f1 <> '1004.3';
-                          f1         
+                          f1
                 ----------------------
                                     0
                                -34.84
@@ -123,13 +123,13 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (4 rows)
                                 
                 SELECT f.* FROM FLOAT8_TBL f WHERE f.f1 = '1004.3';
-                   f1  
+                   f1
                 --------
                  1004.3
                 (1 row)
                                 
                 SELECT f.* FROM FLOAT8_TBL f WHERE '1004.3' > f.f1;
-                          f1         
+                          f1
                 ----------------------
                                     0
                                -34.84
@@ -137,7 +137,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (3 rows)
                                 
                 SELECT f.* FROM FLOAT8_TBL f WHERE  f.f1 < '1004.3';
-                          f1         
+                          f1
                 ----------------------
                                     0
                                -34.84
@@ -145,7 +145,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (3 rows)
                                 
                 SELECT f.* FROM FLOAT8_TBL f WHERE '1004.3' >= f.f1;
-                          f1         
+                          f1
                 ----------------------
                                     0
                                1004.3
@@ -154,7 +154,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (4 rows)
                                 
                 SELECT f.* FROM FLOAT8_TBL f WHERE  f.f1 <= '1004.3';
-                          f1         
+                          f1
                 ----------------------
                                     0
                                1004.3
@@ -165,7 +165,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 SELECT f.f1, f.f1 * '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
-                          f1          |           x          
+                          f1          |           x
                 ----------------------+-----------------------
                                1004.3 |                -10043
                  1.2345678901234e+200 | -1.2345678901234e+201
@@ -175,7 +175,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 SELECT f.f1, f.f1 + '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
-                          f1          |          x          
+                          f1          |          x
                 ----------------------+----------------------
                                1004.3 |                994.3
                  1.2345678901234e+200 | 1.2345678901234e+200
@@ -185,7 +185,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 SELECT f.f1, f.f1 / '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
-                          f1          |           x          
+                          f1          |           x
                 ----------------------+-----------------------
                                1004.3 |   -100.42999999999999
                  1.2345678901234e+200 | -1.2345678901234e+199
@@ -195,7 +195,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 SELECT f.f1, f.f1 - '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
-                          f1          |          x          
+                          f1          |          x
                 ----------------------+----------------------
                                1004.3 |               1014.3
                  1.2345678901234e+200 | 1.2345678901234e+200
@@ -205,7 +205,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 -- absolute value
                 SELECT f.f1, abs(f.f1) AS abs_f1
                    FROM FLOAT8_TBL f;
-                          f1          |        abs_f1       
+                          f1          |        abs_f1
                 ----------------------+----------------------
                                     0 |                    0
                                1004.3 |               1004.3
@@ -240,7 +240,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 
                 -- ceil / ceiling
                 select ceil(f1) as ceil_f1 from float8_tbl f;
-                       ceil_f1       
+                       ceil_f1
                 ----------------------
                                     0
                                  1005
@@ -250,7 +250,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (5 rows)
                                 
                 select ceiling(f1) as ceiling_f1 from float8_tbl f;
-                      ceiling_f1     
+                      ceiling_f1
                 ----------------------
                                     0
                                  1005
@@ -261,7 +261,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                                 
                 -- floor
                 select floor(f1) as floor_f1 from float8_tbl f;
-                       floor_f1      
+                       floor_f1
                 ----------------------
                                     0
                                  1004
@@ -379,25 +379,25 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
                                 
                 SELECT power('1.1'::double, 'inf'::double);
-                  power  
+                  power
                 ----------
                  Infinity
                 (1 row)
                                 
                 SELECT power('-1.1'::double, 'inf'::double);
-                  power  
+                  power
                 ----------
                  Infinity
                 (1 row)
                                 
                 SELECT power('0.1'::double, '-inf'::double);
-                  power  
+                  power
                 ----------
                  Infinity
                 (1 row)
                                 
                 SELECT power('-0.1'::double, '-inf'::double);
-                  power  
+                  power
                 ----------
                  Infinity
                 (1 row)
@@ -421,13 +421,13 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
                                 
                 SELECT power('inf'::double, '2'::double);
-                  power  
+                  power
                 ----------
                  Infinity
                 (1 row)
                                 
                 SELECT power('inf'::double, 'inf'::double);
-                  power  
+                  power
                 ----------
                  Infinity
                 (1 row)
@@ -509,50 +509,50 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (5 rows)
         
                 SELECT sinh('1'::double);
-                      sinh      
+                      sinh
                 -----------------
                  1.175201193643801
                 (1 row)
                                 
                 SELECT cosh('1'::double);
-                       cosh      
+                       cosh
                 ------------------
                  1.543080634815244
                 (1 row)
                                 
                 SELECT tanh('1'::double);
-                       tanh       
+                       tanh
                 -------------------
                  0.761594155955765
                 (1 row)
                                 
                 SELECT asinh('1'::double);
-                       asinh      
+                       asinh
                 -------------------
                  0.881373587019543
                 (1 row)
                                 
                 SELECT acosh('2'::double);
-                      acosh      
+                      acosh
                 ------------------
                  1.316957896924817
                 (1 row)
                                 
                 SELECT atanh('0.5'::double);
-                       atanh      
+                       atanh
                 -------------------
                  0.549306144334055
                 (1 row)
                                 
                 -- test Inf/NaN cases for hyperbolic functions
                 SELECT sinh('infinity'::double);
-                   sinh  
+                   sinh
                 ----------
                  Infinity
                 (1 row)
                                 
                 SELECT sinh('-infinity'::double);
-                   sinh   
+                   sinh
                 -----------
                  -Infinity
                 (1 row)
@@ -564,13 +564,13 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
                                 
                 SELECT cosh('infinity'::double);
-                   cosh  
+                   cosh
                 ----------
                  Infinity
                 (1 row)
                                 
                 SELECT cosh('-infinity'::double);
-                   cosh  
+                   cosh
                 ----------
                  Infinity
                 (1 row)
@@ -600,13 +600,13 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 (1 row)
                                 
                 SELECT asinh('infinity'::double);
-                  asinh  
+                  asinh
                 ----------
                  Infinity
                 (1 row)
                                 
                 SELECT asinh('-infinity'::double);
-                   asinh  
+                   asinh
                 -----------
                  -Infinity
                 (1 row)

@@ -33,9 +33,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Represents a test case that will be executed.
- */
+/** Represents a test case that will be executed. */
 class TestCase {
     /** Name of the test case. */
     public final String name;
@@ -58,8 +56,7 @@ class TestCase {
      * Generates a Rust function which tests a DBSP circuit.
      *
      * @return The code for a function that runs the circuit with the specified
-     * input and tests the produced output.
-     */
+     * input and tests the produced output. */
     DBSPFunction createTesterCode(int testNumber,
                                   @SuppressWarnings("SameParameterValue")
                                   String codeDirectory) throws IOException {

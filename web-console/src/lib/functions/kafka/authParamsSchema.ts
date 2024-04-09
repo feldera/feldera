@@ -1,4 +1,4 @@
-import { fromKafkaConfig, librdkafkaAuthOptions } from '$lib/functions/kafka/librdkafkaOptions'
+import { fromLibrdkafkaConfig, librdkafkaAuthOptions } from '$lib/functions/kafka/librdkafkaOptions'
 import * as va from 'valibot'
 
 const sslSchema = va.object({
@@ -86,6 +86,6 @@ export const parseAuthParams = (config: Record<string, string>) => {
   }
   return {
     ...defaultLibrdkafkaAuthOptions,
-    ...va.parse(authParamsSchema, fromKafkaConfig(config))
+    ...va.parse(authParamsSchema, fromLibrdkafkaConfig(config))
   }
 }

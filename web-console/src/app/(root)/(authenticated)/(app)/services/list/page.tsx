@@ -12,12 +12,13 @@ import { useDataGridPresentationLocalStorage } from '$lib/compositions/persisten
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
-import { toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
+import { toLibrdkafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
 import { showOnHashPart } from '$lib/functions/urlHash'
 import { ServiceDescr } from '$lib/services/manager'
 import { mutationCreateService, mutationDeleteService, mutationUpdateService } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
-import { ServiceProps, ServiceType } from '$lib/types/xgressServices/ServiceDialog'
+import { ServiceType } from '$lib/types/xgressServices'
+import { ServiceProps } from '$lib/types/xgressServices/ServiceDialog'
 import { useEffect } from 'react'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
@@ -166,7 +167,7 @@ const toNewServiceRequest = (
   config: {
     [serviceType]: {
       bootstrap_servers: bootstrap_servers,
-      options: toKafkaConfig(options)
+      options: toLibrdkafkaConfig(options)
     }
   }
 })

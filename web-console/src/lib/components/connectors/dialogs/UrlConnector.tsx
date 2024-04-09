@@ -85,7 +85,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
 
   const normalizeConfig = (data: { transport: UrlSchema['transport']; format: UrlSchema['format'] }) => ({
     transport: {
-      name: connectorTransportName(ConnectorType.URL),
+      name: connectorTransportName(ConnectorType.URL_IN),
       config: {
         path: data.transport.url
       }

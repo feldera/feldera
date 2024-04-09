@@ -5,7 +5,8 @@ export enum ConnectorType {
   KAFKA_OUT = 'KafkaOut',
   DEBEZIUM_IN = 'DebeziumIn',
   SNOWFLAKE_OUT = 'SnowflakeOut',
-  URL = 'HTTP_GET',
+  S3_IN = 'S3In',
+  URL_IN = 'HTTP_GET_IN',
   UNKNOWN = 'Unknown'
 }
 

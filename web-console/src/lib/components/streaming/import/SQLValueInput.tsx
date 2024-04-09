@@ -6,14 +6,14 @@ import {
   sqlValueToXgressJSON,
   xgressJSONToSQLValue
 } from '$lib/functions/ddl'
-import { ColumnType, SqlType } from '$lib/services/manager'
+import { ColumnType } from '$lib/services/manager'
 import BigNumber from 'bignumber.js'
 import Dayjs, { isDayjs } from 'dayjs'
 import { ChangeEvent, Dispatch, useReducer } from 'react'
 import { nonNull } from 'src/lib/functions/common/function'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
-import { match } from 'ts-pattern'
+import { match, P } from 'ts-pattern'
 import IconX from '~icons/bx/x'
 
 import { IconButton, TextField, TextFieldProps, useTheme } from '@mui/material'
@@ -47,15 +47,15 @@ export const SQLValueInput = ({
       return props.onChange({ ...event, target: { ...event.target, value: number } })
     }
   })
-
-  if (columnType.type === SqlType.ARRAY) {
+  invariant(columnType.type)
+  if (columnType.type === 'ARRAY') {
     return (
       <IntermediateValueInput
         {...{ columnType, type: 'string', ...props, toText: JSONbig.stringify, fromText: JSONbig.parse }}
       ></IntermediateValueInput>
     )
   }
-  if (columnType.type === SqlType.TIME) {
+  if (columnType.type === 'TIME') {
     return (
       <IntermediateValueInput
         {...{
@@ -69,10 +69,17 @@ export const SQLValueInput = ({
       ></IntermediateValueInput>
     )
   }
-  if (columnType.type === SqlType.DATE) {
+  if (columnType.type === 'DATE') {
     return (
       <IntermediateValueInput
         {...{ columnType, type: 'date', ...props, toText: v => v as string, fromText: t => t }}
+      ></IntermediateValueInput>
+    )
+  }
+  if (columnType.type === 'STRUCT') {
+    return (
+      <IntermediateValueInput
+        {...{ columnType, type: 'string', ...props, toText: v => v as string, fromText: t => t }}
       ></IntermediateValueInput>
     )
   }
@@ -91,7 +98,7 @@ export const SQLValueInput = ({
         ) : undefined
       }}
       {...match(columnType.type)
-        .with(SqlType.TINYINT, SqlType.SMALLINT, SqlType.INTEGER, () => ({
+        .with('TINYINT', 'SMALLINT', 'INTEGER', () => ({
           type: 'number',
           ...props,
           inputProps: {
@@ -102,7 +109,7 @@ export const SQLValueInput = ({
           },
           ...onChangeNumber(onChangeEmptyNull(props))
         }))
-        .with(SqlType.REAL, SqlType.DOUBLE, () => ({
+        .with('REAL', 'DOUBLE', () => ({
           type: 'number',
           ...props,
           inputProps: {
@@ -112,7 +119,7 @@ export const SQLValueInput = ({
           },
           ...onChangeNumber(onChangeEmptyNull(props))
         }))
-        .with(SqlType.BIGINT, SqlType.DECIMAL, () => ({
+        .with('BIGINT', 'DECIMAL', () => ({
           ...bigNumberInputProps({
             ...props,
             value: props.value as BigNumber,
@@ -125,7 +132,7 @@ export const SQLValueInput = ({
           ...props,
           onChange: undefined
         }))
-        .with(SqlType.BOOLEAN, () => ({
+        .with('BOOLEAN', () => ({
           type: 'checkbox',
           ...props,
           inputProps: {
@@ -135,7 +142,7 @@ export const SQLValueInput = ({
           onChange: (e: ChangeEvent) =>
             props.onChange({ ...e, target: { ...e.target, value: (e.target as any).checked } } as any)
         }))
-        .with(SqlType.CHAR, () => ({
+        .with('CHAR', () => ({
           type: 'string',
           inputProps: {
             maxLength: 1
@@ -144,7 +151,7 @@ export const SQLValueInput = ({
           value: props.value === null ? '' : props.value,
           placeholder: props.value === null ? 'null' : ''
         }))
-        .with(SqlType.VARCHAR, () => ({
+        .with('VARCHAR', () => ({
           type: 'string',
           inputProps: {
             maxLength: columnType.precision ?? 0 > 0 ? columnType.precision : undefined
@@ -153,7 +160,7 @@ export const SQLValueInput = ({
           value: props.value === null ? '' : props.value,
           placeholder: props.value === null ? 'null' : ''
         }))
-        .with(SqlType.TIMESTAMP, () => ({
+        .with('TIMESTAMP', () => ({
           type: 'datetime-local',
           ...props,
           value: (() => {
@@ -163,19 +170,19 @@ export const SQLValueInput = ({
           onChange: (e: ChangeEvent) =>
             props.onChange({ ...e, target: { ...e.target, value: Dayjs((e.target as any).value) } } as any)
         }))
-        .with(SqlType.INTERVAL, () => ({
+        .with({ Interval: P._ }, () => ({
           type: 'string',
           ...props
         }))
-        .with(SqlType.BINARY, () => ({
+        .with('BINARY', () => ({
           type: 'string',
           ...props
         }))
-        .with(SqlType.VARBINARY, () => ({
+        .with('VARBINARY', () => ({
           type: 'string',
           ...props
         }))
-        .with(SqlType.NULL, () => ({
+        .with('NULL', () => ({
           type: 'string',
           ...props,
           value: '',

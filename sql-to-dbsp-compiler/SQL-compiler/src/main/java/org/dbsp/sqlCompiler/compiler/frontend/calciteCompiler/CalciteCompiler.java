@@ -37,6 +37,7 @@ import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
+import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -392,8 +393,13 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     RelNode optimize(RelNode rel) {
+        int level = 2;
+        if (rel instanceof LogicalValues)
+            // Less verbose for LogicalValues
+            level = 4;
+
         // Without the following some optimization rules do nothing.
-        Logger.INSTANCE.belowLevel(this, 2)
+        Logger.INSTANCE.belowLevel(this, level)
                 .append("Before optimizer")
                 .increase()
                 .append(getPlan(rel))
@@ -404,7 +410,7 @@ public class CalciteCompiler implements IWritesLogs {
                 cluster, null);
         // This converts correlated sub-queries into standard joins.
         rel = RelDecorrelator.decorrelateQuery(rel, relBuilder);
-        Logger.INSTANCE.belowLevel(this, 2)
+        Logger.INSTANCE.belowLevel(this, level)
                 .append("After decorrelator")
                 .increase()
                 .append(getPlan(rel))
@@ -413,7 +419,7 @@ public class CalciteCompiler implements IWritesLogs {
 
         CalciteOptimizer optimizer = new CalciteOptimizer(this.options.languageOptions.optimizationLevel);
         rel = optimizer.apply(rel);
-        Logger.INSTANCE.belowLevel(this, 2)
+        Logger.INSTANCE.belowLevel(this, level)
                 .append("After optimizer ")
                 .increase()
                 .append(getPlan(rel))
@@ -661,7 +667,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlNode node,
             @Nullable String comment) {
         CalciteObject object = CalciteObject.create(node);
-        Logger.INSTANCE.belowLevel(this, 2)
+        Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
                 .append(sqlStatement)
                 .newline();

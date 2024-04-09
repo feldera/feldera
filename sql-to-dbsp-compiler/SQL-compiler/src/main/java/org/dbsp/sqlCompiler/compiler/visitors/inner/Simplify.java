@@ -396,7 +396,7 @@ public class Simplify extends InnerRewriteVisitor {
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.MUL)) {
-            if (left.is(DBSPLiteral.class)) {
+            if (left.is(DBSPLiteral.class) && leftType.is(IsNumericType.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
                 IsNumericType iLeftType = leftType.to(IsNumericType.class);
                 if (iLeftType.isOne(leftLit)) {
@@ -408,7 +408,7 @@ public class Simplify extends InnerRewriteVisitor {
                 } else if (leftLit.isNull) {
                     result = left;
                 }
-            } else if (right.is(DBSPLiteral.class)) {
+            } else if (right.is(DBSPLiteral.class) && rightType.is(IsNumericType.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                 IsNumericType iRightType = rightType.to(IsNumericType.class);
                 if (iRightType.isOne(rightLit)) {

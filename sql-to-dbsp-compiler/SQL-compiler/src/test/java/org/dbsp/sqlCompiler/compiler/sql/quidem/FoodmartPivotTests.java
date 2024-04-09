@@ -42,10 +42,10 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+----------+----------+----------+
                 | JOB       | 10_COUNT | 50_COUNT | 20_COUNT |
                 +-----------+----------+----------+----------+
-                | ANALYST|        0 |        0 |        2 |
-                | CLERK|        1 |        0 |        2 |
-                | PRESIDENT|        1 |        0 |        0 |
-                | SALESMAN|        0 |        0 |        0 |
+                | ANALYST|           0 |        0 |        2 |
+                | CLERK|             1 |        0 |        2 |
+                | PRESIDENT|         1 |        0 |        0 |
+                | SALESMAN|          0 |        0 |        0 |
                 +-----------+----------+----------+----------+
                 (4 rows)
 

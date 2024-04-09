@@ -60,14 +60,14 @@ import java.math.BigDecimal;
  * from the declared views.
  */
 public class EndToEndTests extends BaseSQLTests {
-    static final String E2E_TABLE = "CREATE TABLE T (\n" +
-            "COL1 INT NOT NULL" +
-            ", COL2 DOUBLE NOT NULL" +
-            ", COL3 BOOLEAN NOT NULL" +
-            ", COL4 VARCHAR NOT NULL" +
-            ", COL5 INT" +
-            ", COL6 DOUBLE" +
-            ")";
+    static final String E2E_TABLE = """
+            CREATE TABLE T (
+            COL1 INT NOT NULL
+            , COL2 DOUBLE PRECISION NOT NULL
+            , COL3 BOOLEAN NOT NULL
+            , COL4 VARCHAR NOT NULL
+            , COL5 INT
+            , COL6 DOUBLE PRECISION)""";
 
     public DBSPCompiler compileQuery(String query) {
         DBSPCompiler compiler = this.testCompiler();
@@ -102,11 +102,11 @@ public class EndToEndTests extends BaseSQLTests {
     /**
      * Returns the table T containing:
      * -------------------------------------------
-     * | 10 | 12.0 | true  | Hi | NULL    | NULL |
-     * | 10 |  1.0 | false | Hi | Some[1] |  0.0 |
+     * | 10 | 12e0 | true  | Hi | NULL    | NULL |
+     * | 10 |  1e0 | false | Hi | Some[1] |  0e0 |
      * -------------------------------------------
-     * INSERT INTO T VALUES (10, 12, true, 'Hi', NULL, NULL);
-     * INSERT INTO T VALUES (10, 1.0, false, 'Hi', 1, 0.0);
+     INSERT INTO T VALUES (10, 12e0, true, 'Hi', NULL, NULL);
+     INSERT INTO T VALUES (10, 1e0, false, 'Hi', 1, 0e0);
      */
     static Change createInput() {
         return new Change(new DBSPZSetLiteral(e0, e1));
@@ -220,16 +220,29 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void overTest() {
-        DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(2));
         String query = "SELECT T.COL1, COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPI64Literal(2));
         this.testQuery(query, new DBSPZSetLiteral(t, t));
     }
 
     @Test
     public void overSumTest() {
-        DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(13.0));
         String query = "SELECT T.COL1, SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(13.0));
         this.testQuery(query, new DBSPZSetLiteral(t, t));
+    }
+
+    @Test @Ignore
+    public void lagTest() {
+        String query = "SELECT T.COL1, LAG(T.COL1) OVER (ORDER BY T.COL1) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10),
+                        DBSPLiteral.none(new DBSPTypeInteger(
+                                CalciteObject.EMPTY, 32, true, true))),
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(10),
+                        new DBSPI32Literal(10, true))));
     }
 
     @Test

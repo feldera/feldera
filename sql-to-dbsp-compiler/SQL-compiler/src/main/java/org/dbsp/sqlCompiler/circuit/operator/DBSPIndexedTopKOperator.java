@@ -14,14 +14,11 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Apply a topK operation to each of the groups in an indexed collection.
+/** Apply a topK operation to each of the groups in an indexed collection.
  * This always sorts the elements of each group.
- * To sort the entire collection just group by ().
- */
+ * To sort the entire collection just group by (). */
 public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
-    /**
-     * These values correspond to the SQL keywords
+    /** These values correspond to the SQL keywords
      * ROW, RANK, and DENSE RANK.  See e.g.:
      * https://learn.microsoft.com/en-us/sql/t-sql/functions/ranking-functions-transact-sql
      */
@@ -55,23 +52,23 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      * For a non-incremental version it should be sandwiched between a D-I.
      * @param node            CalciteObject which produced this operator.
      * @param numbering       How items in each group are numbered.
-     * @param function        A ComparatorExpression used to sort items in each group.
+     * @param comparator      A ComparatorExpression used to sort items in each group.
      * @param limit           Max number of records output in each group.
      * @param outputProducer  Optional function with signature (rank, tuple) which produces the output.
      * @param source          Input operator.
      */
     public DBSPIndexedTopKOperator(CalciteObject node, TopKNumbering numbering,
-                                   DBSPExpression function, DBSPExpression limit,
+                                   DBSPExpression comparator, DBSPExpression limit,
                                    @Nullable DBSPClosureExpression outputProducer, DBSPOperator source) {
-        super(node, "topK", function,
+        super(node, "topK", comparator,
                 outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset, source);
         this.limit = limit;
         this.numbering = numbering;
         this.outputProducer = outputProducer;
         if (!this.outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Expected the input to be an IndexedZSet type", source.outputType);
-        if (!function.is(DBSPComparatorExpression.class))
-            throw new InternalCompilerError("Expected a comparator expression", function);
+        if (!comparator.is(DBSPComparatorExpression.class))
+            throw new InternalCompilerError("Expected a comparator expression", comparator);
     }
 
     @Override

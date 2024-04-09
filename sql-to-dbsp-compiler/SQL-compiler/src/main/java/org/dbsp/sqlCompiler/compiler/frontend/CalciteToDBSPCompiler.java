@@ -56,6 +56,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlDataTypeSpec;
+import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
@@ -77,6 +78,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
@@ -834,10 +836,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTupleExpression lr = DBSPTupleExpression.flatten(l.deref(), r.deref());
         List<DBSPExpression> leftKeyFields = Linq.map(
                 decomposition.comparisons,
-                c -> l.deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
+                c -> l.deepCopy().deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
         List<DBSPExpression> rightKeyFields = Linq.map(
                 decomposition.comparisons,
-                c -> r.deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
+                c -> r.deepCopy().deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
         DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
         DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
 
@@ -856,8 +858,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPVariablePath k = leftKey.getType().ref().var("k");
 
-        DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(
-                leftKey, DBSPTupleExpression.flatten(l.deref()))
+        DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.deref());
+        DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, tuple)
                 .closure(l.asParameter());
         DBSPIndexOperator leftIndex = new DBSPIndexOperator(
                 node, toLeftKey,
@@ -1099,43 +1101,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
         Utilities.putNew(this.nodeOperator, intersect, previous);
     }
 
-    DBSPExpression compileWindowBound(RexWindowBound bound, DBSPType boundType, ExpressionCompiler eComp) {
-        IsNumericType numType = boundType.to(IsNumericType.class);
-        DBSPExpression numericBound;
-        if (bound.isUnbounded())
-            numericBound = numType.getMaxValue();
-        else if (bound.isCurrentRow())
-            numericBound = numType.getZero();
-        else {
-            DBSPExpression value = eComp.compile(Objects.requireNonNull(bound.getOffset()));
-            numericBound = value.cast(boundType);
-        }
-        String beforeAfter = bound.isPreceding() ? "Before" : "After";
-        return new DBSPConstructorExpression(
-                new DBSPPath("RelOffset", beforeAfter).toExpression(),
-                DBSPTypeAny.getDefault(), numericBound);
-    }
-
-    /**
-     * If this is not null, the parent LogicalFilter should use this implementation
-     * instead of generating code.
-     */
+    /** If this is not null, the parent LogicalFilter should use this implementation
+     * instead of generating code. */
     @Nullable DBSPOperator filterImplementation = null;
 
-    public void generateNestedTopK(LogicalWindow window, Window.Group group, int limit, SqlKind kind) {
-        DBSPIndexedTopKOperator.TopKNumbering numbering = switch (kind) {
-            case RANK -> RANK;
-            case DENSE_RANK -> DENSE_RANK;
-            case ROW_NUMBER -> ROW_NUMBER;
-            default -> throw new UnimplementedException("Ranking function " + kind + " not yet implemented",
-                    CalciteObject.create(window));
-        };
-
-        // This code duplicates code from the SortNode.
+    /** Index the data according to the keys specified by a window operator */
+    DBSPOperator indexWindow(LogicalWindow window, Window.Group group) {
         CalciteObject node = CalciteObject.create(window);
+        // This code duplicates code from the SortNode.
         RelNode input = window.getInput();
         DBSPOperator opInput = this.getOperator(input);
-
         DBSPType inputRowType = this.convertType(input.getRowType(), false);
         DBSPVariablePath t = inputRowType.ref().var("t");
         DBSPExpression[] fields = new DBSPExpression[group.keys.cardinality()];
@@ -1152,19 +1127,39 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.makeIndexedZSet(groupKeys.getType(), inputRowType),
                 opInput.isMultiset, opInput);
         this.circuit.addOperator(index);
+        return index;
+    }
 
-        // Generate comparison function for sorting the vector
-        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
+    DBSPComparatorExpression generateComparator(Window.Group group, DBSPComparatorExpression comparator) {
         for (RelFieldCollation collation : group.orderKeys.getFieldCollations()) {
             int field = collation.getFieldIndex();
             RelFieldCollation.Direction direction = collation.getDirection();
             boolean ascending = switch (direction) {
                 case ASCENDING -> true;
                 case DESCENDING -> false;
-                default -> throw new UnimplementedException(node);
+                default -> throw new UnimplementedException(comparator.getNode());
             };
-            comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
+            comparator = new DBSPFieldComparatorExpression(comparator.getNode(), comparator, field, ascending);
         }
+        return comparator;
+    }
+
+    void generateNestedTopK(LogicalWindow window, Window.Group group, int limit, SqlKind kind) {
+        CalciteObject node = CalciteObject.create(window);
+        DBSPIndexedTopKOperator.TopKNumbering numbering = switch (kind) {
+            case RANK -> RANK;
+            case DENSE_RANK -> DENSE_RANK;
+            case ROW_NUMBER -> ROW_NUMBER;
+            default -> throw new UnimplementedException("Ranking function " + kind + " not yet implemented", node);
+        };
+
+        DBSPOperator index = this.indexWindow(window, group);
+
+        // Generate comparison function for sorting the vector
+        RelNode input = window.getInput();
+        DBSPType inputRowType = this.convertType(input.getRowType(), false);
+        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
+        comparator = this.generateComparator(group, comparator);
 
         // The rank must be added at the end of the input tuple (that's how Calcite expects it).
         DBSPVariablePath left = new DBSPVariablePath("left", new DBSPTypeInteger(
@@ -1191,6 +1186,31 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new InternalCompilerError("Unexpected filter implementation ", node);
         this.filterImplementation = deindex;
         this.assignOperator(window, deindex);
+    }
+
+    DBSPOperator generateLeadLag(
+            LogicalWindow window, Window.Group group,
+            AggregateCall aggCall, DBSPType inputRowType, DBSPOperator input) {
+        CalciteObject node = CalciteObject.create(window);
+        SqlAggFunction aggFunction = aggCall.getAggregation();
+        int offset = aggFunction.kind == SqlKind.LAG ? -1 : +1;
+
+        List<Integer> operands = aggCall.getArgList();
+
+        DBSPVariablePath var = new DBSPVariablePath("t", inputRowType.ref());
+        DBSPExpression body = var.deref().field(operands.get(0));
+        DBSPExpression projection = body.closure(var.asParameter());
+
+        DBSPVariablePath origRow = new DBSPVariablePath("origRow", inputRowType.ref());
+        DBSPVariablePath delayedRow = new DBSPVariablePath("delayedRow", body.getType().ref());
+        DBSPExpression functionBody = new DBSPTupleExpression(delayedRow.deref());
+        DBSPExpression function = functionBody.closure(origRow.asParameter(), delayedRow.asParameter());
+
+        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
+        comparator = this.generateComparator(group, comparator);
+        return new DBSPLagOperator(
+                node, offset, function, projection, comparator,
+                this.makeIndexedZSet(input.getOutputIndexedZSetType().keyType, functionBody.getType()), input);
     }
 
     /**
@@ -1255,66 +1275,108 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    public void visitWindow(LogicalWindow window) {
-        CalciteObject node = CalciteObject.create(window);
+    /** Helper class for window processing.
+     * Calcite can sometimes use the same group for window computations
+     * that we cannot perform in one operator, so we
+     * divide some group/window combinations into multiple
+     * combinations.
+     */
+    abstract class GroupAndAggregates {
+        final ExpressionCompiler eComp;
+        final CalciteObject node;
+        final Window window;
+        final Window.Group group;
+        final List<AggregateCall> aggregateCalls;
+        final int windowFieldIndex;
+        final DBSPTypeTuple windowResultType;
+        final DBSPTypeTuple inputRowType;
+        final DBSPVariablePath inputRowRefVar;
 
-        DBSPTypeTuple windowResultType = this.convertType(window.getRowType(), false).to(DBSPTypeTuple.class);
-        RelNode inputNode = window.getInput();
-        DBSPOperator input = this.getInputAs(window.getInput(0), true);
-        DBSPTypeTuple inputRowType = this.convertType(inputNode.getRowType(), false).to(DBSPTypeTuple.class);
-        DBSPVariablePath inputRowRefVar = inputRowType.ref().var("t");
-        ExpressionCompiler eComp = new ExpressionCompiler(inputRowRefVar, window.constants, this.compiler);
-        int windowFieldIndex = inputRowType.size();
-        DBSPVariablePath previousRowRefVar = inputRowRefVar;
-
-        DBSPTypeTuple currentTupleType = inputRowType;
-        DBSPOperator lastOperator = input;
-
-        // Special handling for the following pattern:
-        // LogicalFilter(condition=[<=(RANK_COLUMN, LIMIT)])
-        // LogicalWindow(window#0=[window(partition ... order by ... aggs [RANK()])])
-        // This is compiled into a TopK over each group.
-        // There is no way this can be expressed otherwise in SQL or using RelNode.
-        // This works for RANK, DENSE_RANK, and ROW_NUMBER.
-        if (window.groups.size() == 1) {
-            Window.Group group = window.groups.get(0);
-            if (group.aggCalls.size() == 1) {
-                Window.RexWinAggCall agg = group.aggCalls.get(0);
-                SqlOperator operator = agg.getOperator();
-                if (operator instanceof SqlRankFunction) {
-                    SqlRankFunction rank = (SqlRankFunction) operator;
-                    // Aggregate functions seem always to be at the end.
-                    // The window always seems to collect all fields.
-                    int rankIndex = inputRowType.size();
-                    RelNode parent = this.getParent();
-                    if (parent instanceof LogicalFilter) {
-                        LogicalFilter filter = (LogicalFilter) parent;
-                        RexNode condition = filter.getCondition();
-                        if (condition instanceof RexCall) {
-                            int limit = this.isLimit((RexCall) condition, rankIndex);
-                            if (limit >= 0) {
-                                this.generateNestedTopK(window, group, limit, rank.kind);
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
+        GroupAndAggregates(Window window, Window.Group group,
+                           List<AggregateCall> aggregateCalls, int windowFieldIndex) {
+            assert !aggregateCalls.isEmpty();
+            this.node = CalciteObject.create(window);
+            this.window = window;
+            this.group = group;
+            this.aggregateCalls = new ArrayList<>(aggregateCalls);
+            this.windowFieldIndex = windowFieldIndex;
+            this.windowResultType = CalciteToDBSPCompiler.this.convertType(
+                    window.getRowType(), false).to(DBSPTypeTuple.class);
+            this.inputRowType = CalciteToDBSPCompiler.this.convertType(
+                    window.getInput().getRowType(), false).to(DBSPTypeTuple.class);
+            this.inputRowRefVar = inputRowType.ref().var("t");
+            this.eComp = new ExpressionCompiler(inputRowRefVar, window.constants, CalciteToDBSPCompiler.this.compiler);
         }
 
-        for (Window.Group group: window.groups) // noinspection GrazieInspection
-        {
-            if (lastOperator != input)
-                this.circuit.addOperator(lastOperator);
+        abstract DBSPOperator implement(DBSPOperator input, DBSPOperator lastOperator);
+    }
+
+    /** A class representing a LEAD or LAG function */
+    class LeadLagAggregates extends GroupAndAggregates {
+        LeadLagAggregates(Window window, Window.Group group,
+                          AggregateCall aggregateCall, int windowFieldIndex) {
+            super(window, group, Linq.list(aggregateCall), windowFieldIndex);
+        }
+
+        @Override
+        DBSPOperator implement(DBSPOperator input, DBSPOperator lastOperator) {
+            throw new UnimplementedException(this.node);
+        }
+    }
+
+    class StandardAggregates extends GroupAndAggregates {
+        StandardAggregates(Window window, Window.Group group,
+                           List<AggregateCall> aggregateCalls, int windowFieldIndex) {
+            super(window, group, aggregateCalls, windowFieldIndex);
+        }
+
+        DBSPExpression compileWindowBound(RexWindowBound bound, DBSPType boundType, ExpressionCompiler eComp) {
+            IsNumericType numType = boundType.to(IsNumericType.class);
+            DBSPExpression numericBound;
+            if (bound.isUnbounded())
+                numericBound = numType.getMaxValue();
+            else if (bound.isCurrentRow())
+                numericBound = numType.getZero();
+            else {
+                DBSPExpression value = eComp.compile(Objects.requireNonNull(bound.getOffset()));
+                numericBound = value.cast(boundType);
+            }
+            String beforeAfter = bound.isPreceding() ? "Before" : "After";
+            return new DBSPConstructorExpression(
+                    new DBSPPath("RelOffset", beforeAfter).toExpression(),
+                    DBSPTypeAny.getDefault(), numericBound);
+        }
+
+        @Override
+        DBSPOperator implement(DBSPOperator input, DBSPOperator lastOperator) {
             List<RelFieldCollation> orderKeys = group.orderKeys.getFieldCollations();
-            // Sanity checks
+            List<Integer> partitionKeys = group.keys.toList();
+            List<DBSPExpression> expressions = Linq.map(partitionKeys,
+                    f -> inputRowRefVar.deepCopy().deref().field(f).applyCloneIfNeeded());
+            DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
+
             if (orderKeys.size() > 1)
                 throw new UnimplementedException("ORDER BY not yet supported with multiple columns", node);
             RelFieldCollation collation = orderKeys.get(0);
-            if (collation.getDirection() != RelFieldCollation.Direction.ASCENDING)
-                throw new UnimplementedException("OVER only supports ascending sorting", node);
             int orderColumnIndex = collation.getFieldIndex();
             DBSPExpression orderField = inputRowRefVar.deref().field(orderColumnIndex);
+
+            // Map each row to an expression of the form: |t| (partition, (order, (*t).clone()))
+            DBSPExpression orderAndRow = new DBSPTupleExpression(
+                    orderField, inputRowRefVar.deepCopy().deref().applyClone());
+            DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, orderAndRow);
+            DBSPClosureExpression mapClo = mapExpr.closure(inputRowRefVar.asParameter());
+            DBSPOperator mapIndex = new DBSPMapIndexOperator(node, mapClo,
+                    CalciteToDBSPCompiler.this.makeIndexedZSet(partition.getType(), orderAndRow.getType()), input);
+            CalciteToDBSPCompiler.this.circuit.addOperator(mapIndex);
+
+            // This operator is always incremental, so create the non-incremental version
+            // of it by adding a D and an I around it.
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, mapIndex);
+            CalciteToDBSPCompiler.this.circuit.addOperator(diff);
+
+            if (collation.getDirection() != RelFieldCollation.Direction.ASCENDING)
+                throw new UnimplementedException("OVER only supports ascending sorting", node);
             DBSPType sortType = inputRowType.tupFields[orderColumnIndex];
             if (!sortType.is(DBSPTypeInteger.class) &&
                     !sortType.is(DBSPTypeTimestamp.class) &&
@@ -1322,7 +1384,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 throw new UnimplementedException("OVER currently requires an integer type for ordering "
                         + "and cannot handle " + sortType, node);
             if (sortType.mayBeNull) {
-                RelDataTypeField relDataTypeField = inputNode.getRowType().getFieldList().get(orderColumnIndex);
+                RelDataTypeField relDataTypeField = window.getInput().getRowType().getFieldList().get(orderColumnIndex);
                 throw new UnimplementedException("OVER currently does not support sorting on nullable column " +
                         Utilities.singleQuote(relDataTypeField.getName()) + ":", node);
             }
@@ -1334,42 +1396,28 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     new DBSPPath("RelRange", "new").toExpression(),
                     DBSPTypeAny.getDefault(), lb, ub);
 
-            // Map each row to an expression of the form: |t| (partition, (order, (*t).clone()))
-            List<Integer> partitionKeys = group.keys.toList();
-            List<DBSPExpression> expressions = Linq.map(partitionKeys,
-                    inputRowRefVar.deepCopy().deref()::field);
-            DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
-            DBSPExpression orderAndRow = new DBSPTupleExpression(
-                    orderField, inputRowRefVar.deepCopy().deref().applyClone());
-            DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, orderAndRow);
-            DBSPClosureExpression mapClo = mapExpr.closure(inputRowRefVar.asParameter());
-            DBSPOperator mapIndex = new DBSPMapIndexOperator(node, mapClo,
-                    this.makeIndexedZSet(partition.getType(), orderAndRow.getType()), input);
-            this.circuit.addOperator(mapIndex);
-
-            List<AggregateCall> aggregateCalls = group.getAggregateCalls(window);
-            List<DBSPType> types = Linq.map(aggregateCalls, c -> this.convertType(c.type, false));
+            List<DBSPType> types = Linq.map(aggregateCalls, c -> CalciteToDBSPCompiler.this.convertType(c.type, false));
             DBSPTypeTuple tuple = new DBSPTypeTuple(types);
-            DBSPAggregate fd = this.createAggregate(window, aggregateCalls, tuple, inputRowType, 0, ImmutableBitSet.of());
+            DBSPAggregate fd = CalciteToDBSPCompiler.this.createAggregate(
+                    window, aggregateCalls, tuple, inputRowType, 0, ImmutableBitSet.of());
 
             // Compute aggregates for the window
             DBSPTypeTuple aggResultType = fd.defaultZeroType().to(DBSPTypeTuple.class);
-            // This operator is always incremental, so create the non-incremental version
-            // of it by adding a D and an I around it.
-            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, mapIndex);
-            this.circuit.addOperator(diff);
-            DBSPWindowAggregateOperator windowAgg = new DBSPWindowAggregateOperator(
+            DBSPOperator windowAgg = new DBSPWindowAggregateOperator(
                     node, null, fd,
                     windowExpr,
-                    this.makeIndexedZSet(
+                    CalciteToDBSPCompiler.this.makeIndexedZSet(
                             new DBSPTypeTuple(partition.getType(), sortType),
                             aggResultType), diff);
-            this.circuit.addOperator(windowAgg);
+            CalciteToDBSPCompiler.this.circuit.addOperator(windowAgg);
+
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, windowAgg);
-            this.circuit.addOperator(integral);
+            CalciteToDBSPCompiler.this.circuit.addOperator(integral);
 
             // Join the previous result with the aggregate
             // First index the aggregate.
+            DBSPTypeTuple currentTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);
+            DBSPVariablePath previousRowRefVar = currentTupleType.ref().var("t");
             DBSPExpression partAndOrder = new DBSPTupleExpression(
                     partition.applyCloneIfNeeded(),
                     orderField.applyCloneIfNeeded());
@@ -1377,9 +1425,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     partAndOrder, previousRowRefVar.deepCopy().deref().applyClone());
             DBSPExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
             DBSPOperator indexInput = new DBSPIndexOperator(node, partAndOrderClo,
-                    this.makeIndexedZSet(partAndOrder.getType(), previousRowRefVar.getType().deref()),
+                    CalciteToDBSPCompiler.this.makeIndexedZSet(partAndOrder.getType(), previousRowRefVar.getType().deref()),
                     lastOperator.isMultiset, lastOperator);
-            this.circuit.addOperator(indexInput);
+            CalciteToDBSPCompiler.this.circuit.addOperator(indexInput);
 
             DBSPVariablePath key = partAndOrder.getType().ref().var("k");
             DBSPVariablePath left = currentTupleType.ref().var("l");
@@ -1393,16 +1441,95 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // for these aggregates.  So we have to cast the results to whatever
                 // Calcite says they will be.
                 allFields[i + currentTupleType.size()] = right.deref().field(i).applyCloneIfNeeded().cast(
-                        windowResultType.getFieldType(windowFieldIndex));
-                windowFieldIndex++;
+                        windowResultType.getFieldType(this.windowFieldIndex + i));
             }
             DBSPTupleExpression addExtraFieldBody = new DBSPTupleExpression(allFields);
             DBSPClosureExpression addExtraField =
                     addExtraFieldBody.closure(key.asParameter(), left.asParameter(), right.asParameter());
-            lastOperator = new DBSPStreamJoinOperator(node, this.makeZSet(addExtraFieldBody.getType()),
+            return new DBSPStreamJoinOperator(node, CalciteToDBSPCompiler.this.makeZSet(addExtraFieldBody.getType()),
                     addExtraField, indexInput.isMultiset || windowAgg.isMultiset, indexInput, integral);
-            currentTupleType = addExtraFieldBody.getType().to(DBSPTypeTuple.class);
-            previousRowRefVar = currentTupleType.ref().var("t");
+        }
+    }
+
+    /** Decompose a window into a list of GroupAndAggregates that can be each implemented
+     * by a separate DBSP operator. */
+    List<GroupAndAggregates> splitWindow(LogicalWindow window, int windowFieldIndex) {
+        List<GroupAndAggregates> result = new ArrayList<>();
+        for (Window.Group group: window.groups) {
+            List<AggregateCall> calls = group.getAggregateCalls(window);
+            List<AggregateCall> nonLeadLag = new ArrayList<>();
+            // Must keep call in the same order as in the original list
+            for (AggregateCall call: calls) {
+                SqlKind kind = call.getAggregation().getKind();
+                if (kind == SqlKind.LAG || kind == SqlKind.LEAD) {
+                    if (!nonLeadLag.isEmpty()) {
+                        // Add everything accumulated so far
+                        result.add(new StandardAggregates(window, group, nonLeadLag, windowFieldIndex));
+                        windowFieldIndex += nonLeadLag.size();
+                        nonLeadLag.clear();
+                    }
+                    result.add(new LeadLagAggregates(window, group, call, windowFieldIndex));
+                    windowFieldIndex += 1;
+                } else {
+                    nonLeadLag.add(call);
+                }
+            }
+            if (!nonLeadLag.isEmpty()) {
+                result.add(new StandardAggregates(window, group, nonLeadLag, windowFieldIndex));
+                windowFieldIndex += nonLeadLag.size();
+                nonLeadLag.clear();
+            }
+        }
+        return result;
+    }
+
+    public void visitWindow(LogicalWindow window) {
+        DBSPOperator input = this.getInputAs(window.getInput(0), true);
+        DBSPTypeTuple inputRowType = this.convertType(
+                window.getInput().getRowType(), false).to(DBSPTypeTuple.class);
+        int windowFieldIndex = inputRowType.size();
+
+        // Special handling for the following pattern:
+        // LogicalFilter(condition=[<=(RANK_COLUMN, LIMIT)])
+        // LogicalWindow(window#0=[window(partition ... order by ... aggs [RANK()])])
+        // This is compiled into a TopK over each group.
+        // There is no way this can be expressed otherwise in SQL or using RelNode.
+        // This works for RANK, DENSE_RANK, and ROW_NUMBER.
+        if (window.groups.size() == 1 && !this.ancestors.isEmpty()) {
+            Window.Group group = window.groups.get(0);
+            if (group.aggCalls.size() == 1) {
+                Window.RexWinAggCall agg = group.aggCalls.get(0);
+                RelNode parent = this.getParent();
+                SqlOperator operator = agg.getOperator();
+                // Aggregate functions seem always to be at the end.
+                // The window always seems to collect all fields.
+                int aggregationArgumentIndex = inputRowType.size();
+                if (operator instanceof SqlRankFunction) {
+                    SqlRankFunction rank = (SqlRankFunction) operator;
+                    if (parent instanceof LogicalFilter) {
+                        LogicalFilter filter = (LogicalFilter) parent;
+                        RexNode condition = filter.getCondition();
+                        if (condition instanceof RexCall) {
+                            int limit = this.isLimit((RexCall) condition, aggregationArgumentIndex);
+                            if (limit >= 0) {
+                                this.generateNestedTopK(window, group, limit, rank.kind);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // We have to process multiple Groups, and each group has multiple aggregates.
+        // The final result is accumulated using join operators, which just keep adding columns to
+        // the "lastOperator".  The "lastOperator" is initially the input node itself.
+        DBSPOperator lastOperator = input;
+        List<GroupAndAggregates> toProcess = this.splitWindow(window, windowFieldIndex);
+        for (GroupAndAggregates ga: toProcess) {
+            if (lastOperator != input)
+                this.circuit.addOperator(lastOperator);
+            lastOperator = ga.implement(input, lastOperator);
         }
         this.assignOperator(window, lastOperator);
     }
