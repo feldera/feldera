@@ -5,6 +5,7 @@ members = [
   "crates/nexmark",
   "crates/pipeline-types",
   "crates/pipeline_manager",
+  "sql-to-dbsp-compiler/lib/json",
   "sql-to-dbsp-compiler/lib/readers",
   "sql-to-dbsp-compiler/lib/sqllib",
 ]
