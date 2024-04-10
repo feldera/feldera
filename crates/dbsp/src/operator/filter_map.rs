@@ -1,10 +1,9 @@
-use crate::typed_batch::DynFileZSet;
 use crate::{
     dynamic::{DataTrait, Erase, WeightTrait},
     trace::BatchReaderFactories,
     typed_batch::{
-        Batch, BatchReader, DynFallbackIndexedZSet, DynOrdIndexedWSet, DynOrdWSet, OrdIndexedWSet,
-        OrdWSet, TypedBatch,
+        Batch, BatchReader, DynFallbackIndexedZSet, DynFallbackZSet, DynOrdIndexedWSet, DynOrdWSet,
+        OrdIndexedWSet, OrdWSet, TypedBatch,
     },
     Circuit, DBData, DBWeight, Stream,
 };
@@ -294,7 +293,7 @@ where
     }
 }
 
-impl<K, DynK, R, DynR> FilterMap for TypedBatch<K, (), R, DynFileZSet<DynK, DynR>>
+impl<K, DynK, R, DynR> FilterMap for TypedBatch<K, (), R, DynFallbackZSet<DynK, DynR>>
 where
     K: DBData + Erase<DynK>,
     DynK: DataTrait + ?Sized,

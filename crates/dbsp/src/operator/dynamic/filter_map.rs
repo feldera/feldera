@@ -1,7 +1,7 @@
 //! Filter and transform data record-by-record.
 
 use crate::trace::ord::fallback::indexed_zset::FallbackIndexedZSet;
-use crate::trace::ord::file::zset_batch::FileZSet;
+use crate::trace::ord::fallback::zset::FallbackZSet;
 use crate::{
     circuit::{
         operator_traits::{Operator, UnaryOperator},
@@ -115,7 +115,7 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     }
 }
 
-// This impl for VecZSet is identical to the one for FileZSet below.  There
+// This impl for VecZSet is identical to the one for FallbackZSet below.  There
 // doesn't seem to be a good way to avoid the code duplication short of a macro.
 impl<K, R> DynFilterMap for OrdWSet<K, R>
 where
@@ -233,7 +233,7 @@ where
     }
 }
 
-impl<K, R> DynFilterMap for FileZSet<K, R>
+impl<K, R> DynFilterMap for FallbackZSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,

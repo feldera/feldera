@@ -12,8 +12,8 @@ use crate::{
     trace::{
         cursor::CursorPair,
         ord::{
-            FallbackIndexedZSet, FallbackIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories,
-            FileValBatch, FileValBatchFactories, FileZSet, FileZSetFactories, OrdKeyBatch,
+            FallbackIndexedZSet, FallbackIndexedZSetFactories, FallbackZSet, FallbackZSetFactories,
+            FileKeyBatch, FileKeyBatchFactories, FileValBatch, FileValBatchFactories, OrdKeyBatch,
             OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories,
         },
         test::test_batch::{
@@ -437,9 +437,9 @@ proptest! {
 
     #[test]
     fn test_file_zset_spine(batches in kr_batches(50, 2, 50, 10), seed in 0..u64::max_value()) {
-        let factories = <FileZSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
+        let factories = <FallbackZSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
 
-        test_zset_spine::<FileZSet<DynI32, DynZWeight>>(&factories, batches, seed)
+        test_zset_spine::<FallbackZSet<DynI32, DynZWeight>>(&factories, batches, seed)
     }
 
     #[test]

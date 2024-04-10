@@ -11,8 +11,9 @@ pub use crate::{
     },
     trace::{
         Batch as DynBatch, BatchReader as DynBatchReader,
-        FallbackIndexedZSet as DynFallbackIndexedZSet, FileIndexedZSet as DynFileIndexedZSet,
-        FileKeyBatch as DynFileKeyBatch, FileValBatch as DynFileValBatch, FileZSet as DynFileZSet,
+        FallbackIndexedZSet as DynFallbackIndexedZSet, FallbackZSet as DynFallbackZSet,
+        FileIndexedZSet as DynFileIndexedZSet, FileKeyBatch as DynFileKeyBatch,
+        FileValBatch as DynFileValBatch, FileZSet as DynFileZSet,
         OrdIndexedWSet as DynOrdIndexedWSet, OrdKeyBatch as DynOrdKeyBatch,
         OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spillable as DynSpillable,
         Spine as DynSpine, Stored as DynStored, Trace as DynTrace,
@@ -497,6 +498,13 @@ pub type FileIndexedZSet<K, V> =
 pub type FileKeyBatch<K, T, R, DynR> = TypedBatch<K, (), R, DynFileKeyBatch<DynData, T, DynR>>;
 pub type FileValBatch<K, V, T, R, DynR> =
     TypedBatch<K, V, R, DynFileValBatch<DynData, DynData, T, DynR>>;
+
+pub type FallbackWSet<K, R, DynR> = TypedBatch<K, (), R, DynFallbackZSet<DynData, DynR>>;
+pub type FallbackZSet<K> = TypedBatch<K, (), ZWeight, DynFallbackZSet<DynData, DynZWeight>>;
+pub type FallbackIndexedWSet<K, V, R, DynR> =
+    TypedBatch<K, V, R, DynFallbackIndexedZSet<DynData, DynData, DynR>>;
+pub type FallbackIndexedZSet<K, V> =
+    TypedBatch<K, V, ZWeight, DynFallbackIndexedZSet<DynData, DynData, DynZWeight>>;
 
 pub type Spine<B> = TypedBatch<
     <B as BatchReader>::Key,

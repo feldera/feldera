@@ -148,7 +148,6 @@ where
     /// ```
     /// use dbsp::{
     ///     operator::Generator,
-    ///     time::NestedTimestamp32,
     ///     OrdZSet,
     ///     Circuit, RootCircuit, Stream, zset, zset_set,
     ///     utils::Tup2,
@@ -207,7 +206,7 @@ where
     ///               .plus(&init_labels);
     ///         Ok(result)
     ///     })
-    ///     .unwrap();
+    ///     .unwrap().unspill();
     ///
     ///     labels.inspect(move |ls| {
     ///         assert_eq!(*ls, expected_outputs.next().unwrap());
