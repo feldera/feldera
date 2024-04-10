@@ -35,9 +35,7 @@ import javax.annotation.Nullable;
  */
 public abstract class FrontEndStatement implements ICastable {
     public final SqlNode node;
-    /**
-     * Original statement compiled.
-     */
+    /** Original statement compiled. */
     public final String statement;
     @Nullable
     public final String comment;

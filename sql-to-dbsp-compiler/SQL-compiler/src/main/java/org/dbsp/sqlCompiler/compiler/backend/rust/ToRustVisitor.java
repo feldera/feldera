@@ -38,7 +38,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPTypeDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -67,6 +67,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
@@ -348,17 +349,20 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPTypeDeclaration decl) {
+    public VisitDecision preorder(DBSPDeclaration decl) {
         decl.item.accept(this.innerVisitor);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
-        /*
-        for (DBSPTypeDeclaration item: circuit.circuit.userDefinedTypes)
-            item.accept(this);
-         */
+        for (DBSPDeclaration item: circuit.circuit.declarations) {
+            if (item.item.is(DBSPFunctionItem.class)) {
+                item.accept(this);
+                this.builder.newline().newline();
+            }
+        }
+
         this.builder.append("pub fn ")
                 .append(circuit.name);
         circuit.circuit.accept(this);

@@ -29,10 +29,7 @@ import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
-import org.apache.calcite.sql.SqlIdentifier;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.util.Utilities;
 
@@ -40,6 +37,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /** Maintains the catalog: a mapping from names to objects. */
+// I am not sure this class is needed.
 public class Catalog extends AbstractSchema {
     public final String schemaName;
     private final Map<String, Table> tableMap;
@@ -55,14 +53,8 @@ public class Catalog extends AbstractSchema {
         this.functionMap = ArrayListMultimap.create();
     }
 
-    public static String identifierToString(SqlIdentifier identifier) {
-        if (!identifier.isSimple())
-            throw new UnsupportedException("Not a simple identifier", CalciteObject.create(identifier));
-        return identifier.getSimple();
-    }
-
-    public boolean addTable(String name, Table table, IErrorReporter reporter, FrontEndStatement statement) {
-        if (this.tableMap.containsKey(name)) {
+    boolean addDefinition(String name, IErrorReporter reporter, FrontEndStatement statement) {
+        if (this.definition.containsKey(name)) {
             reporter.reportError(statement.getPosition(), "Duplicate declaration",
                     Utilities.singleQuote(name) + " already defined");
             FrontEndStatement previous = this.definition.get(name);
@@ -70,9 +62,13 @@ public class Catalog extends AbstractSchema {
                     "Location of previous definition");
             return false;
         }
-        this.tableMap.put(name, table);
         this.definition.put(name, statement);
         return true;
+    }
+
+    public boolean addTable(String name, Table table, IErrorReporter reporter, FrontEndStatement statement) {
+        this.tableMap.put(name, table);
+        return this.addDefinition(name, reporter, statement);
     }
 
     @Override
@@ -92,5 +88,10 @@ public class Catalog extends AbstractSchema {
 
     public void dropTable(String tableName) {
         this.tableMap.remove(tableName);
+    }
+
+    public boolean addType(String name, IErrorReporter reporter, FrontEndStatement statement) {
+        // Does not insert in the typeMap.
+        return this.addDefinition(name, reporter, statement);
     }
 }

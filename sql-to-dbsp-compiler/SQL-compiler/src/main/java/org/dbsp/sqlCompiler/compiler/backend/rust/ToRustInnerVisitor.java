@@ -740,14 +740,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (!function.returnType.is(DBSPTypeVoid.class)) {
             builder.append("-> ");
             function.returnType.accept(this);
+            builder.append(" ");
         }
         if (function.body.is(DBSPBlockExpression.class)) {
             function.body.accept(this);
         } else {
-            this.builder.append("\n{").increase();
+            this.builder.append("{").increase();
             function.body.accept(this);
             this.builder.decrease()
-                    .append("\n}");
+                    .newline()
+                    .append("}");
         }
         return VisitDecision.STOP;
     }
@@ -781,6 +783,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
             arg.accept(this);
         }
         this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPQuestionExpression expression) {
+        this.builder.append("(");
+        expression.source.accept(this);
+        this.builder.append("?)");
         return VisitDecision.STOP;
     }
 

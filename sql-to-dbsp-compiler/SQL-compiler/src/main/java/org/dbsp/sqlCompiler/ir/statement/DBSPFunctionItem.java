@@ -7,9 +7,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
 
-/**
- * A function declaration.
- */
+/** A function declaration. */
 @NonCoreIR
 public class DBSPFunctionItem extends DBSPItem {
     public final DBSPFunction function;

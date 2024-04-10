@@ -30,7 +30,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.Catalog;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -130,7 +129,7 @@ public class TypeCompiler implements ICompilerComponent {
                 String name = saneName;
                 if (isNamedStruct) {
                     RelStruct rs = (RelStruct) dt;
-                    name = Catalog.identifierToString(rs.typeName);
+                    name = rs.typeName.getSimple();
                     // Struct must be already declared
                     return this.compiler.getStructByName(name);
                 }
