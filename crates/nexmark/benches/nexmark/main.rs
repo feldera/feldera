@@ -130,6 +130,7 @@ fn spawn_source_producer(
 }
 
 fn coordinate_input_and_steps(
+    progress: bool,
     expected_num_events: u64,
     dbsp_step_tx: mpsc::SyncSender<()>,
     source_step_tx: mpsc::SyncSender<()>,
@@ -139,8 +140,11 @@ fn coordinate_input_and_steps(
 ) -> Result<InputStats> {
     // The producer should have already loaded up the first batch ready for
     // consumption before we start the loop.
-    // let progress_bar = ProgressBar::new(expected_num_events);
-    let progress_bar = ProgressBar::new(expected_num_events);
+    let progress_bar = if progress {
+        ProgressBar::new(expected_num_events)
+    } else {
+        ProgressBar::hidden()
+    };
     progress_bar.set_style(
         ProgressStyle::with_template(
             "{human_pos} / {human_len} [{wide_bar}] {percent:.2} % {per_sec:.2} {eta}",
@@ -259,6 +263,7 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
     let start = Instant::now();
 
     let input_stats = coordinate_input_and_steps(
+        config.progress,
         expected_num_events,
         dbsp_step_tx,
         source_step_tx,
