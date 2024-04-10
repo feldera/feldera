@@ -40,7 +40,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPTypeDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
@@ -351,14 +351,14 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPTypeDeclaration decl) {
+    public void postorder(DBSPDeclaration decl) {
         DBSPItem rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
-        this.getResult().userDefinedTypes.add(new DBSPTypeDeclaration(rewritten));
+        this.getResult().declarations.add(new DBSPDeclaration(rewritten));
     }
 
     @Override
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
-        for (DBSPTypeDeclaration node : circuit.userDefinedTypes)
+        for (DBSPDeclaration node : circuit.declarations)
             node.accept(this);
         for (DBSPOperator node : circuit.getAllOperators())
             node.accept(this);

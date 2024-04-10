@@ -27,7 +27,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPTypeDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
@@ -54,7 +54,7 @@ import java.util.Set;
  * A complete circuit can be obtained by calling the "seal" method.
  */
 public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
-    public final List<DBSPTypeDeclaration> userDefinedTypes = new ArrayList<>();
+    public final List<DBSPDeclaration> declarations = new ArrayList<>();
     public final LinkedHashMap<String, DBSPSourceBaseOperator> inputOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPSinkOperator> outputOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPNoopOperator> namedNoops = new LinkedHashMap<>();
@@ -87,8 +87,8 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         return this.outputOperators.values().iterator().next().getType();
     }
 
-    public void addDeclaration(DBSPTypeDeclaration decl) {
-        this.userDefinedTypes.add(decl);
+    public void addDeclaration(DBSPDeclaration decl) {
+        this.declarations.add(decl);
     }
 
     public void addOperator(DBSPOperator operator) {
@@ -127,7 +127,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);
         if (!decision.stop()) {
-            for (DBSPTypeDeclaration decl: this.userDefinedTypes)
+            for (DBSPDeclaration decl: this.declarations)
                 decl.accept(visitor);
             for (DBSPOperator op : this.allOperators)
                 op.accept(visitor);

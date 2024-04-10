@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.*;
@@ -27,17 +28,15 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         super(reporter, false);
     }
 
-    /**
-     * Rewrite a flatmap operation into a Rust method call.
-     * @param flatmap  Flatmap operation to rewrite.
-     */
+    /** Rewrite a flatmap operation into a Rust method call.
+     * @param flatmap  Flatmap operation to rewrite. */
     public static DBSPExpression rewriteFlatmap(DBSPFlatmap flatmap) {
         //   move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
-        //     let xA: Vec<i32> = x.0.clone();
-        //     let xB: x.1.clone();
+        //     let x0: Vec<i32> = x.0.clone();
+        //     let x1: x.1.clone();
         //     x.0.clone().into_iter().map({
         //        move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
-        //            Tuple3::new(xA.clone(), xB.clone(), e)
+        //            Tuple3::new(x0.clone(), x1.clone(), e)
         //        }
         //     })
         DBSPVariablePath rowVar = new DBSPVariablePath("x", flatmap.inputElementType.ref());
@@ -45,7 +44,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         if (flatmap.indexType != null)
             eType = new DBSPTypeRawTuple(new DBSPTypeUSize(CalciteObject.EMPTY, false), eType);
         DBSPVariablePath elem = new DBSPVariablePath("e", eType);
-        List<DBSPStatement> clones = new ArrayList<>();
+        List<DBSPStatement> statements = new ArrayList<>();
         List<DBSPExpression> resultColumns = new ArrayList<>();
         for (int i = 0; i < flatmap.outputFieldIndexes.size(); i++) {
             int index = flatmap.outputFieldIndexes.get(i);
@@ -65,29 +64,52 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                         elem.field(0),
                         new DBSPUSizeLiteral(1)).cast(flatmap.indexType));
             } else {
-                // let xA: Vec<i32> = x.0.clone();
-                // let xB: x.1.clone();
+                // let x0: Vec<i32> = x.0.clone();
+                // let x1: x.1.clone();
                 DBSPExpression field = rowVar.deref().field(index).applyCloneIfNeeded();
                 DBSPVariablePath fieldClone = new DBSPVariablePath("x" + index, field.getType());
                 DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
-                clones.add(stat);
+                statements.add(stat);
                 resultColumns.add(fieldClone.applyClone());
             }
         }
+        // let array = if (*x).0.is_none() {
+        //    vec!()
+        // } else {
+        //    (*x).0.clone().unwrap()
+        // };
+        // or
+        // let array = (*x).0.clone();
+        DBSPType arrayType = rowVar.deref().field(flatmap.collectionFieldIndex).getType();
+
+        DBSPExpression arrayExpression;
+        if (arrayType.mayBeNull) {
+            DBSPExpression condition = rowVar.deref().field(flatmap.collectionFieldIndex).is_null();
+            DBSPExpression empty = new DBSPVecLiteral(flatmap.getNode(), arrayType.setMayBeNull(false), Linq.list());
+            DBSPExpression contents = rowVar.deref().field(flatmap.collectionFieldIndex).applyClone().unwrap();
+            arrayExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
+        } else {
+            arrayExpression = rowVar.deref().field(flatmap.collectionFieldIndex).applyClone();
+        }
+        DBSPLetStatement statement = new DBSPLetStatement("array", arrayExpression);
+        statements.add(statement);
+
         // move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
-        //   Tuple3::new(xA.clone(), xB.clone(), e)
+        //   Tuple3::new(x0.clone(), x1.clone(), e)
         // }
         DBSPClosureExpression toTuple = new DBSPTupleExpression(resultColumns, false)
                 .closure(elem.asParameter());
-        DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter", DBSPTypeAny.getDefault(),
-                rowVar.deref().field(flatmap.collectionFieldIndex).applyCloneIfNeeded());
+        DBSPExpression iter = new DBSPApplyMethodExpression(flatmap.getNode(), "into_iter",
+                DBSPTypeAny.getDefault(),
+                statement.getVarReference().applyClone());
         if (flatmap.indexType != null) {
-            iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate", DBSPTypeAny.getDefault(), iter);
+            iter = new DBSPApplyMethodExpression(flatmap.getNode(), "enumerate",
+                    DBSPTypeAny.getDefault(), iter);
         }
         DBSPExpression function = new DBSPApplyMethodExpression(flatmap.getNode(),
                 "map", DBSPTypeAny.getDefault(),
                 iter, toTuple);
-        DBSPExpression block = new DBSPBlockExpression(clones, function);
+        DBSPExpression block = new DBSPBlockExpression(statements, function);
         return block.closure(rowVar.asParameter());
     }
 

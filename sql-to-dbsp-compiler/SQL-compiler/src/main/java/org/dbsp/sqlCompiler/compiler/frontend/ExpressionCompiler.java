@@ -46,7 +46,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
@@ -1318,8 +1318,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             return new DBSPTupleExpression(node, ops);
         }
 
-        CustomFunctions.ExternalFunction ef = this.compiler.getCustomFunctions()
-                .getImplementation(function);
+        ExternalFunction ef = this.compiler.getCustomFunctions()
+                .getSignature(function);
         if (ef == null)
             throw new CompilationError("Function " + Utilities.singleQuote(function) + " is unknown", node);
         List<DBSPType> operandTypes = Linq.map(ef.parameterList,
@@ -1330,7 +1330,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         arguments[0] = this.toPosition(pos).borrow();
         for (int i = 0; i < converted.size(); i++)
             arguments[i+1] = converted.get(i);
-        return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).unwrap();
+        return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).rustUnwrap();
     }
 
     DBSPExpression compile(RexNode expression) {

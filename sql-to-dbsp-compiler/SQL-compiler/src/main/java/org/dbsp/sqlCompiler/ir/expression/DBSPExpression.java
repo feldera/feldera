@@ -69,7 +69,7 @@ public abstract class DBSPExpression
     }
 
     /** Unwrap a Rust 'Result' type */
-    public DBSPExpression unwrap() {
+    public DBSPExpression rustUnwrap() {
         DBSPType resultType;
         if (this.type.is(DBSPTypeAny.class)) {
             resultType = this.type;
@@ -78,6 +78,12 @@ public abstract class DBSPExpression
             resultType = type.getTypeArg(0);
         }
         return new DBSPApplyMethodExpression(this.getNode(), "unwrap", resultType, this);
+    }
+
+    /** Unwrap an expression with a nullable type */
+    public DBSPExpression unwrap() {
+        assert this.type.mayBeNull;
+        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", this.type.setMayBeNull(false), this);
     }
 
     public DBSPExpressionStatement toStatement() {
@@ -91,6 +97,8 @@ public abstract class DBSPExpression
     public DBSPFieldExpression field(int index) {
         return new DBSPFieldExpression(this, index);
     }
+
+    public DBSPExpression question() { return new DBSPQuestionExpression(this); }
 
     /** Convenient shortcut to wrap an expression into a Some() constructor. */
     public DBSPExpression some() {

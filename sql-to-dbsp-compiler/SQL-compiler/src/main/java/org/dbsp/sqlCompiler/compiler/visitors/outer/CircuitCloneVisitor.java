@@ -115,7 +115,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     @Override
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
         super.preorder(circuit);
-        for (DBSPTypeDeclaration node : circuit.userDefinedTypes)
+        for (DBSPDeclaration node : circuit.declarations)
             node.accept(this);
         for (DBSPOperator node : circuit.getAllOperators())
             node.accept(this);
@@ -153,7 +153,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public void postorder(DBSPTypeDeclaration declaration) {
+    public void postorder(DBSPDeclaration declaration) {
         this.getResult().addDeclaration(declaration);
     }
 

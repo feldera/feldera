@@ -148,6 +148,7 @@ public class RustFileWriter {
                     use core::cmp::Ordering;
                     use rust_decimal::Decimal;
                     use dbsp::declare_tuples;
+                    use json::*;
                     use sqllib::{
                         *,
                         array::*,

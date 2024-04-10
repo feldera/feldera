@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
@@ -245,8 +246,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
-                    SqlFunction function = this.frontend.compileFunction(node);
-                    functions.add(function);
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, comment);
+                    if (fe == null)
+                        continue;
+                    functions.add(fe.to(CreateFunctionStatement.class).function);
+                    this.midend.compile(fe);
                 }
             }
 
@@ -263,7 +267,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 }
             }
 
-            // Compile all statements which do not define functions
+            // Compile all statements which do not define functions or types
             for (SqlNode node : parsed) {
                 SqlKind kind = node.getKind();
                 if (kind == SqlKind.CREATE_FUNCTION || kind == SqlKind.CREATE_TYPE)

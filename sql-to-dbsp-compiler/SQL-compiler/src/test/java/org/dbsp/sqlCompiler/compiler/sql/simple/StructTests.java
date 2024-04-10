@@ -121,6 +121,40 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void unnestStructTest() {
+        String ddl = """
+            CREATE TYPE address_typ AS (
+               street          VARCHAR ARRAY);
+            CREATE TABLE PERS(p0 address_typ);""";
+        String field = "CREATE VIEW field AS SELECT pers.p0.street AS street FROM PERS";
+        String v = "CREATE VIEW V AS SELECT st FROM field, UNNEST(street) AS st";
+        // The following is the desired form, but there seems to be a Calcite bug preventing it.
+        // String v = "CREATE VIEW V AS SELECT st FROM PERS, UNNEST(PERS.p0.street) AS st";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(ddl);
+        compiler.generateOutputForNextView(false);
+        compiler.compileStatements(field);
+        compiler.generateOutputForNextView(true);
+        compiler.compileStatements(v);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        DBSPExpression pers = new DBSPTupleExpression(
+                new DBSPVecLiteral(true,
+                        new DBSPStringLiteral("Broadway"),
+                        new DBSPStringLiteral("5th Avenue"),
+                        new DBSPStringLiteral("1st Street")));
+        DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(pers));
+        DBSPZSetLiteral output = new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("Broadway")),
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("5th Avenue")),
+                new DBSPTupleExpression(
+                        new DBSPStringLiteral("1st Street")));
+        ccs.addPair(new Change(input), new Change(output));
+        this.addRustTestCase("unnestStructTest", ccs);
+    }
+
+    @Test
     public void structArrayStructTest() {
         String ddl = """
             CREATE TYPE address_typ AS (

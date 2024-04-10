@@ -23,6 +23,6 @@
 
 package org.dbsp.sqlCompiler.ir;
 
-public interface IDBSPDeclaration extends IDBSPInnerNode {
+public interface IDBSPDeclaration extends IDBSPNode {
     String getName();
 }

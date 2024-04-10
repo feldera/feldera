@@ -36,11 +36,9 @@ import org.dbsp.util.Linq;
 
 import java.util.List;
 
-/**
- * A (Rust) function.
- */
+/** A (Rust) function. */
 @NonCoreIR
-public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration {
+public class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration, IDBSPInnerNode {
     public final String name;
     public final List<DBSPParameter> parameters;
     public final DBSPType returnType;

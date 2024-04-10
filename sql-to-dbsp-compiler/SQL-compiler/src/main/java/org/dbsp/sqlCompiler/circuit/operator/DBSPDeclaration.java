@@ -7,11 +7,11 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.util.IIndentStream;
 
-/** Wraps a type declaration into an OuterNode */
-public class DBSPTypeDeclaration extends DBSPNode implements IDBSPOuterNode {
+/** Wraps a declaration (an item) into an OuterNode */
+public class DBSPDeclaration extends DBSPNode implements IDBSPOuterNode {
     public final DBSPItem item;
 
-    public DBSPTypeDeclaration(DBSPItem item) {
+    public DBSPDeclaration(DBSPItem item) {
         super(item.getNode());
         this.item = item;
     }
