@@ -1214,7 +1214,7 @@ mod test {
         operator::{DelayedFeedback, Generator},
         typed_batch::{OrdIndexedZSet, OrdZSet, Spine},
         utils::Tup2,
-        zset, Circuit, FileZSet, RootCircuit, Runtime, Stream, Timestamp,
+        zset, Circuit, FallbackZSet, RootCircuit, Runtime, Stream, Timestamp,
     };
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
@@ -1539,7 +1539,7 @@ mod test {
                     .integrate_trace()
                     .inner()
                     .export()
-                    .typed::<Spine<FileZSet<Label>>>())
+                    .typed::<Spine<FallbackZSet<Label>>>())
             })
             .unwrap();
 
@@ -1679,10 +1679,10 @@ mod test {
                 },
                     // FIXME: make sure the `export` API works on typed streams correctly,
                     // so that the `inner`/`typed` calls below are not needed.
-                result.spill().integrate_trace().inner().export().typed::<Spine<FileZSet<Label>>>()))
+                result.spill().integrate_trace().inner().export().typed::<Spine<FallbackZSet<Label>>>()))
             }).unwrap();
 
-            result.consolidate().inspect(move |res: &FileZSet<Label>| {
+            result.consolidate().inspect(move |res: &FallbackZSet<Label>| {
                 assert_eq!(*res, outputs.next().unwrap());
             });
             Ok(())

@@ -47,7 +47,9 @@ pub mod spine_fueled;
 #[cfg(test)]
 pub mod test;
 
-pub use ord::{FallbackIndexedZSet, FallbackIndexedZSetFactories};
+pub use ord::{
+    FallbackIndexedZSet, FallbackIndexedZSetFactories, FallbackZSet, FallbackZSetFactories,
+};
 pub use ord::{
     FileIndexedZSet, FileIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
     FileValBatchFactories, FileZSet, FileZSetFactories,
@@ -384,7 +386,7 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Spilled = FileZSet<K, R>;
+    type Spilled = FallbackZSet<K, R>;
 }
 
 pub trait Stored: BatchReader<Time = ()> {
@@ -407,7 +409,7 @@ where
     type Unspilled = OrdIndexedWSet<K, V, R>;
 }
 
-impl<K, R> Stored for FileZSet<K, R>
+impl<K, R> Stored for FallbackZSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,

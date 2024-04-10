@@ -3,7 +3,10 @@ pub mod file;
 pub mod merge_batcher;
 pub mod vec;
 
-pub use fallback::indexed_zset::{FallbackIndexedZSet, FallbackIndexedZSetFactories};
+pub use fallback::{
+    indexed_zset::{FallbackIndexedZSet, FallbackIndexedZSetFactories},
+    zset::{FallbackZSet, FallbackZSetFactories},
+};
 pub use file::{
     FileIndexedZSet, FileIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
     FileValBatchFactories, FileZSet, FileZSetFactories,

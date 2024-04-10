@@ -180,8 +180,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        operator::Generator, typed_batch::FileZSet, typed_batch::OrdZSet, utils::Tup2, zset,
-        Circuit, RootCircuit, Stream,
+        operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset, Circuit, FallbackZSet,
+        RootCircuit, Stream,
     };
     use std::vec;
 
@@ -285,7 +285,7 @@ mod test {
             let edges = circuit
                     .add_source(Generator::new(move || edges.next().unwrap()));
 
-            let (paths, reverse_paths):  (Stream<_, FileZSet<Tup2<u64, u64>>>, Stream<_, FileZSet<Tup2<u64, u64>>>) =
+            let (paths, reverse_paths):  (Stream<_, FallbackZSet<Tup2<u64, u64>>>, Stream<_, FallbackZSet<Tup2<u64, u64>>>) =
                 circuit.recursive(|child, (paths, reverse_paths): (Edges<_>, Edges<_>)| {
                 let edges = edges.delta0(child);
 

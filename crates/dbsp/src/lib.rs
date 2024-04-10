@@ -104,8 +104,9 @@ pub use operator::{
 };
 pub use trace::{DBData, DBWeight};
 pub use typed_batch::{
-    Batch, BatchReader, FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch, FileWSet,
-    FileZSet, IndexedZSet, OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace, TypedBox, ZSet,
+    Batch, BatchReader, FallbackZSet, FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch,
+    FileWSet, FileZSet, IndexedZSet, OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace,
+    TypedBox, ZSet,
 };
 
 #[cfg(doc)]

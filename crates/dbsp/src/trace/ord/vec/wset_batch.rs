@@ -466,7 +466,7 @@ where
 #[derive(Debug, SizeOf)]
 pub struct VecWSetCursor<'s, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     valid: bool,
-    cursor: LeafCursor<'s, K, R>,
+    pub(crate) cursor: LeafCursor<'s, K, R>,
 }
 
 impl<'s, K, R> Clone for VecWSetCursor<'s, K, R>

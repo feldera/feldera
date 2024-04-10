@@ -200,16 +200,8 @@ where
     Other: BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
 {
     fn eq(&self, other: &Other) -> bool {
-        let mut c1 = self.cursor();
-        let mut c2 = other.cursor();
-        while c1.key_valid() && c2.key_valid() {
-            if c1.key() != c2.key() || c1.weight() != c2.weight() {
-                return false;
-            }
-            c1.step_key();
-            c2.step_key();
-        }
-        !c1.key_valid() && !c2.key_valid()
+        use crate::trace::eq_batch;
+        eq_batch(self, other)
     }
 }
 
@@ -600,7 +592,7 @@ where
     zset: &'s FileZSet<K, R>,
     cursor: RawCursor<'s, K, R>,
     key: Box<K>,
-    diff: Box<R>,
+    pub(crate) diff: Box<R>,
     valid: bool,
 }
 
