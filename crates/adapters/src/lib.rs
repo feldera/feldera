@@ -158,7 +158,7 @@ pub mod static_compile;
 pub mod transport;
 pub(crate) mod util;
 
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(test)]
 pub mod test;
 
 pub use integrated::{create_integrated_output_endpoint, IntegratedOutputEndpoint};
