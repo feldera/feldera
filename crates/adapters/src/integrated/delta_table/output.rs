@@ -10,13 +10,13 @@ use crate::{
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use arrow::array::RecordBatch;
 use arrow::datatypes::Schema as ArrowSchema;
-use deltalake_core::kernel::{Action, DataType, StructField};
-use deltalake_core::operations::create::CreateBuilder;
-use deltalake_core::operations::transaction::commit;
-use deltalake_core::operations::writer::{DeltaWriter, WriterConfig};
-use deltalake_core::protocol::{DeltaOperation, SaveMode};
-use deltalake_core::DeltaTable;
-use log::trace;
+use deltalake::kernel::{Action, DataType, StructField};
+use deltalake::operations::create::CreateBuilder;
+use deltalake::operations::transaction::commit;
+use deltalake::operations::writer::{DeltaWriter, WriterConfig};
+use deltalake::protocol::{DeltaOperation, SaveMode};
+use deltalake::DeltaTable;
+use log::{debug, trace};
 use pipeline_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrowBuilder;
@@ -58,8 +58,14 @@ impl DeltaTableWriter {
         schema: &Relation,
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
+        // Register url handlers, so URL's like `s3://...` are recognized.
+        // I hope it is harmless to do this every time a DeltaTablWriter is created.
+        deltalake::aws::register_handlers(None);
+        deltalake::azure::register_handlers(None);
+        deltalake::gcp::register_handlers(None);
+
         // Create serde arrow schema.
-        let serde_arrow_schema = relation_to_parquet_schema(schema)?;
+        let serde_arrow_schema = relation_to_parquet_schema(schema, true)?;
 
         // Create arrow schema
         let arrow_schema = Arc::new(ArrowSchema::new(
@@ -216,6 +222,12 @@ struct WriterTask {
 
 impl WriterTask {
     async fn create(inner: Arc<DeltaTableWriterInner>) -> AnyResult<Self> {
+        trace!(
+            "delta_table {}: opening or creating delta table '{}'",
+            &inner.endpoint_name,
+            &inner.config.uri
+        );
+
         let delta_table = CreateBuilder::new()
             .with_location(inner.config.uri.clone())
             // I expected `SaveMode::Append` to be the correct setting, but
@@ -230,6 +242,14 @@ impl WriterTask {
                     &inner.config.uri
                 )
             })?;
+
+        debug!(
+            "delta_table {}: opened delta table '{}' (current table version {})",
+            &inner.endpoint_name,
+            &inner.config.uri,
+            delta_table.version()
+        );
+
         Ok(Self {
             inner,
             delta_table,
@@ -238,6 +258,11 @@ impl WriterTask {
         })
     }
     async fn batch_start(&mut self) {
+        trace!(
+            "delta_table {}: starting a new output batch",
+            &self.inner.endpoint_name,
+        );
+
         self.num_rows = 0;
 
         // TODO: make target_file_size configurable.
@@ -390,6 +415,7 @@ impl Encoder for DeltaTableWriter {
 
             if w < 0 {
                 // TODO: we don't support deletes in the parquet format yet.
+                cursor.step_key();
                 continue;
             }
 
@@ -460,13 +486,28 @@ mod test {
     use proptest::collection::vec;
     use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
     use proptest::proptest;
+    use std::collections::HashMap;
     use std::ffi::OsStr;
     use std::io::Write;
     use std::mem::forget;
     use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
     use tempfile::{NamedTempFile, TempDir};
 
-    fn delta_table_output_test(data: Vec<TestStruct2>) {
+    /// Test function that works for both local FS and remote object stores.
+    ///
+    /// * `verify` - verify the final contents of the delta table is equivalent to
+    ///   `data`.  Currently only works for tables in the local FS.
+    ///
+    /// TODO: implement verification using the delta table API rather than
+    /// by reading parquet files directly.  I guess the best way to do this is
+    /// to build an input connector.
+    fn delta_table_output_test(
+        data: Vec<TestStruct2>,
+        table_uri: &str,
+        object_store_config: &HashMap<String, String>,
+        verify: bool,
+    ) {
         let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
             .is_test(true)
             .try_init();
@@ -493,7 +534,10 @@ mod test {
             input_file.write_all(b"\n").unwrap();
         }
 
-        let table_dir = TempDir::new().unwrap();
+        let mut storage_options = String::new();
+        for (key, val) in object_store_config.iter() {
+            storage_options += &format!("                {key}: \"{val}\"\n");
+        }
 
         // Create controller.
         let config_str = format!(
@@ -517,20 +561,20 @@ outputs:
         transport:
             name: "delta_table_output"
             config:
-                uri: "{}"
+                uri: "{table_uri}"
+{}
         enable_output_buffer: true
         max_output_buffer_size_records: {buffer_size}
         max_output_buffer_time_millis: {buffer_timeout_ms}
 "#,
             input_file.path().display(),
-            table_dir.path().display()
+            storage_options,
         );
 
         println!(
-            "delta_table_output_test: {} records, input file: {}, output directory: {}",
+            "delta_table_output_test: {} records, input file: {}, table uri: {table_uri}",
             data.len(),
             input_file.path().display(),
-            table_dir.path().display()
         );
         let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
@@ -545,22 +589,23 @@ outputs:
 
         wait(|| controller.status().pipeline_complete(), 20_000);
 
-        let parquet_files =
-            list_files_recursive(table_dir.path(), OsStr::from_bytes(b"parquet")).unwrap();
+        if verify {
+            let parquet_files =
+                list_files_recursive(&Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
 
-        // Uncomment to inspect output parquet files produced by the test.
-        forget(table_dir);
-        forget(input_file);
+            // // Uncomment to inspect the input JSON file.
+            // forget(input_file);
 
-        let mut output_records = Vec::with_capacity(data.len());
-        for parquet_file in parquet_files {
-            let mut records: Vec<TestStruct2> = load_parquet_file(&parquet_file);
-            output_records.append(&mut records);
+            let mut output_records = Vec::with_capacity(data.len());
+            for parquet_file in parquet_files {
+                let mut records: Vec<TestStruct2> = load_parquet_file(&parquet_file);
+                output_records.append(&mut records);
+            }
+
+            output_records.sort();
+
+            assert_eq!(output_records, data);
         }
-
-        output_records.sort();
-
-        assert_eq!(output_records, data);
 
         controller.stop().unwrap();
         println!("delta_table_output_test: success");
@@ -583,9 +628,37 @@ outputs:
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(2))]
         #[test]
-        fn delta_table_output_proptest(data in data(100_000))
+        fn delta_table_output_file_proptest(data in data(100_000))
         {
-            delta_table_output_test(data)
+            let table_dir = TempDir::new().unwrap();
+            delta_table_output_test(data, &table_dir.path().display().to_string(), &HashMap::new(), true);
+            // // Uncomment to inspect output parquet files produced by the test.
+            // forget(table_dir);
         }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1))]
+
+        #[cfg(feature = "delta-s3-test")]
+        #[test]
+        fn delta_table_output_s3_proptest(data in data(100_000))
+        {
+            let uuid = uuid::Uuid::new_v4();
+            let object_store_config = [
+                ("aws_access_key_id".to_string(), std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID").unwrap()),
+                ("aws_secret_access_key".to_string(), std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY").unwrap()),
+                // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
+                ("aws_region".to_string(), "us-east-2".to_string()),
+                ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string()),
+            ]
+                .into_iter()
+                .collect::<HashMap<_,_>>();
+
+            // TODO: enable verification when it's supported for S3.
+            delta_table_output_test(data.clone(), &format!("s3://feldera-delta-table-test/{uuid}/"), &object_store_config, false);
+            delta_table_output_test(data, &format!("s3://feldera-delta-table-test/{uuid}/"), &object_store_config, false);
+        }
+
     }
 }

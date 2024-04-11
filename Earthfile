@@ -189,6 +189,8 @@ test-nexmark:
 test-adapters:
     FROM +build-adapters
     DO rust+SET_CACHE_MOUNTS_ENV
+    ARG DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID
+    ARG DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
