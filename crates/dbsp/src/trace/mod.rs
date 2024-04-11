@@ -48,11 +48,11 @@ pub mod spine_fueled;
 pub mod test;
 
 pub use ord::{
-    FallbackIndexedZSet, FallbackIndexedZSetFactories, FallbackZSet, FallbackZSetFactories,
+    FallbackIndexedWSet, FallbackIndexedWSetFactories, FallbackWSet, FallbackWSetFactories,
 };
 pub use ord::{
-    FileIndexedZSet, FileIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
-    FileValBatchFactories, FileZSet, FileZSetFactories,
+    FileIndexedWSet, FileIndexedWSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
+    FileValBatchFactories, FileWSet, FileWSetFactories,
 };
 pub use ord::{
     OrdIndexedWSet, OrdIndexedWSetFactories, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch,
@@ -378,7 +378,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Spilled = FallbackIndexedZSet<K, V, R>;
+    type Spilled = FallbackIndexedWSet<K, V, R>;
 }
 
 impl<K, R> Spillable for OrdWSet<K, R>
@@ -386,7 +386,7 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Spilled = FallbackZSet<K, R>;
+    type Spilled = FallbackWSet<K, R>;
 }
 
 pub trait Stored: BatchReader<Time = ()> {
@@ -400,7 +400,7 @@ pub trait Stored: BatchReader<Time = ()> {
     }
 }
 
-impl<K, V, R> Stored for FallbackIndexedZSet<K, V, R>
+impl<K, V, R> Stored for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -409,7 +409,7 @@ where
     type Unspilled = OrdIndexedWSet<K, V, R>;
 }
 
-impl<K, R> Stored for FallbackZSet<K, R>
+impl<K, R> Stored for FallbackWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,

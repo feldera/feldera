@@ -31,7 +31,7 @@ use std::{
 };
 use std::{cmp::Ordering, path::PathBuf};
 
-pub struct FileZSetFactories<K, R>
+pub struct FileWSetFactories<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -45,7 +45,7 @@ where
     weighted_items_factory: &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>>,
 }
 
-impl<K, R> Clone for FileZSetFactories<K, R>
+impl<K, R> Clone for FileWSetFactories<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<K, R> BatchReaderFactories<K, DynUnit, (), R> for FileZSetFactories<K, R>
+impl<K, R> BatchReaderFactories<K, DynUnit, (), R> for FileWSetFactories<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -102,7 +102,7 @@ where
     }
 }
 
-impl<K, R> BatchFactories<K, DynUnit, (), R> for FileZSetFactories<K, R>
+impl<K, R> BatchFactories<K, DynUnit, (), R> for FileWSetFactories<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -126,25 +126,25 @@ where
 
 /// A batch of weighted tuples without values or times.
 ///
-/// Each tuple in `FileZSet<K, R>` has key type `K`, value type `()`, weight
+/// Each tuple in `FileWSet<K, R>` has key type `K`, value type `()`, weight
 /// type `R`, and time type `()`.
-pub struct FileZSet<K, R>
+pub struct FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    factories: FileZSetFactories<K, R>,
+    factories: FileWSetFactories<K, R>,
     file: Reader<Backend, (&'static K, &'static R, ())>,
     lower_bound: usize,
 }
 
-impl<K, R> Debug for FileZSet<K, R>
+impl<K, R> Debug for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "FileZSet {{ lower_bound: {}, data: ", self.lower_bound)?;
+        write!(f, "FileWSet {{ lower_bound: {}, data: ", self.lower_bound)?;
         let mut cursor = self.cursor();
         let mut n_keys = 0;
         while cursor.key_valid() {
@@ -161,7 +161,7 @@ where
     }
 }
 
-impl<K, R> Clone for FileZSet<K, R>
+impl<K, R> Clone for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -175,7 +175,7 @@ where
     }
 }
 
-impl<K, R> FileZSet<K, R>
+impl<K, R> FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -193,7 +193,7 @@ where
 
 // This is `#[cfg(test)]` only because it would be surprisingly expensive in
 // production.
-impl<Other, K, R> PartialEq<Other> for FileZSet<K, R>
+impl<Other, K, R> PartialEq<Other> for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -205,14 +205,14 @@ where
     }
 }
 
-impl<K, R> Eq for FileZSet<K, R>
+impl<K, R> Eq for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
 }
 
-impl<K, R> NumEntries for FileZSet<K, R>
+impl<K, R> NumEntries for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -228,7 +228,7 @@ where
     }
 }
 
-impl<K, R> NegByRef for FileZSet<K, R>
+impl<K, R> NegByRef for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTraitTyped + ?Sized,
@@ -256,7 +256,7 @@ where
     }
 }
 
-impl<K, R> Neg for FileZSet<K, R>
+impl<K, R> Neg for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTraitTyped + ?Sized,
@@ -270,7 +270,7 @@ where
 }
 
 // TODO: by-value merge
-impl<K, R> Add<Self> for FileZSet<K, R>
+impl<K, R> Add<Self> for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -288,7 +288,7 @@ where
     }
 }
 
-impl<K, R> AddAssign<Self> for FileZSet<K, R>
+impl<K, R> AddAssign<Self> for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -300,7 +300,7 @@ where
     }
 }
 
-impl<K, R> AddAssignByRef for FileZSet<K, R>
+impl<K, R> AddAssignByRef for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -312,7 +312,7 @@ where
     }
 }
 
-impl<K, R> AddByRef for FileZSet<K, R>
+impl<K, R> AddByRef for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -322,18 +322,18 @@ where
     }
 }
 
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Deserialize<FileZSet<K, R>, Deserializer>
+impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Deserialize<FileWSet<K, R>, Deserializer>
     for ()
 {
     fn deserialize(
         &self,
         _deserializer: &mut Deserializer,
-    ) -> Result<FileZSet<K, R>, <Deserializer as rkyv::Fallible>::Error> {
+    ) -> Result<FileWSet<K, R>, <Deserializer as rkyv::Fallible>::Error> {
         todo!()
     }
 }
 
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Archive for FileZSet<K, R> {
+impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Archive for FileWSet<K, R> {
     type Archived = ();
     type Resolver = ();
 
@@ -341,7 +341,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Archive for FileZSet<K, R> 
         todo!()
     }
 }
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Serialize<Serializer> for FileZSet<K, R> {
+impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Serialize<Serializer> for FileWSet<K, R> {
     fn serialize(
         &self,
         _serializer: &mut Serializer,
@@ -350,17 +350,17 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Serialize<Serializer> for F
     }
 }
 
-impl<K, R> BatchReader for FileZSet<K, R>
+impl<K, R> BatchReader for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Factories = FileZSetFactories<K, R>;
+    type Factories = FileWSetFactories<K, R>;
     type Key = K;
     type Val = DynUnit;
     type Time = ();
     type R = R;
-    type Cursor<'s> = FileZSetCursor<'s, K, R>;
+    type Cursor<'s> = FileWSetCursor<'s, K, R>;
 
     fn factories(&self) -> Self::Factories {
         self.factories.clone()
@@ -368,7 +368,7 @@ where
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
-        FileZSetCursor::new(self)
+        FileWSetCursor::new(self)
     }
 
     #[inline]
@@ -427,17 +427,17 @@ where
     }
 }
 
-impl<K, R> Batch for FileZSet<K, R>
+impl<K, R> Batch for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     type Batcher = MergeBatcher<Self>;
-    type Builder = FileZSetBuilder<K, R>;
-    type Merger = FileZSetMerger<K, R>;
+    type Builder = FileWSetBuilder<K, R>;
+    type Merger = FileWSetMerger<K, R>;
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        FileZSetMerger::new_merger(self, other)
+        FileWSetMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -456,12 +456,12 @@ where
 }
 
 /// State for an in-progress merge.
-pub struct FileZSetMerger<K, R>
+pub struct FileWSetMerger<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    factories: FileZSetFactories<K, R>,
+    factories: FileWSetFactories<K, R>,
 
     // Position in first batch.
     lower1: usize,
@@ -472,13 +472,13 @@ where
     writer: Writer1<Backend, K, R>,
 }
 
-impl<K, R> Merger<K, DynUnit, (), R, FileZSet<K, R>> for FileZSetMerger<K, R>
+impl<K, R> Merger<K, DynUnit, (), R, FileWSet<K, R>> for FileWSetMerger<K, R>
 where
     Self: SizeOf,
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn new_merger(batch1: &FileZSet<K, R>, batch2: &FileZSet<K, R>) -> Self {
+    fn new_merger(batch1: &FileWSet<K, R>, batch2: &FileWSet<K, R>) -> Self {
         Self {
             factories: batch1.factories.clone(),
             lower1: batch1.lower_bound,
@@ -492,8 +492,8 @@ where
         }
     }
 
-    fn done(self) -> FileZSet<K, R> {
-        FileZSet {
+    fn done(self) -> FileWSet<K, R> {
+        FileWSet {
             factories: self.factories.clone(),
             file: self.writer.into_reader().unwrap(),
             lower_bound: 0,
@@ -502,8 +502,8 @@ where
 
     fn work(
         &mut self,
-        source1: &FileZSet<K, R>,
-        source2: &FileZSet<K, R>,
+        source1: &FileWSet<K, R>,
+        source2: &FileWSet<K, R>,
         key_filter: &Option<Filter<K>>,
         value_filter: &Option<Filter<DynUnit>>,
         fuel: &mut isize,
@@ -512,8 +512,8 @@ where
             return;
         }
 
-        let mut cursor1 = FileZSetCursor::new_from(source1, self.lower1);
-        let mut cursor2 = FileZSetCursor::new_from(source2, self.lower2);
+        let mut cursor1 = FileWSetCursor::new_from(source1, self.lower1);
+        let mut cursor2 = FileWSetCursor::new_from(source2, self.lower2);
         let mut sum = self.factories.weight_factory.default_box();
         while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
             match cursor1.key.as_ref().cmp(cursor2.key.as_ref()) {
@@ -584,26 +584,26 @@ type RawCursor<'s, K, R> = FileCursor<'s, Backend, K, R, (), (&'static K, &'stat
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
-pub struct FileZSetCursor<'s, K, R>
+pub struct FileWSetCursor<'s, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    zset: &'s FileZSet<K, R>,
+    wset: &'s FileWSet<K, R>,
     cursor: RawCursor<'s, K, R>,
     key: Box<K>,
     pub(crate) diff: Box<R>,
     valid: bool,
 }
 
-impl<'s, K, R> Clone for FileZSetCursor<'s, K, R>
+impl<'s, K, R> Clone for FileWSetCursor<'s, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn clone(&self) -> Self {
         Self {
-            zset: self.zset,
+            wset: self.wset,
             cursor: self.cursor.clone(),
             key: clone_box(&self.key),
             diff: clone_box(&self.diff),
@@ -612,24 +612,24 @@ where
     }
 }
 
-impl<'s, K, R> FileZSetCursor<'s, K, R>
+impl<'s, K, R> FileWSetCursor<'s, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn new_from(zset: &'s FileZSet<K, R>, lower_bound: usize) -> Self {
-        let cursor = zset
+    fn new_from(wset: &'s FileWSet<K, R>, lower_bound: usize) -> Self {
+        let cursor = wset
             .file
             .rows()
             .subset(lower_bound as u64..)
             .first()
             .unwrap();
-        let mut key = zset.factories.key_factory.default_box();
-        let mut diff = zset.factories.weight_factory.default_box();
+        let mut key = wset.factories.key_factory.default_box();
+        let mut diff = wset.factories.weight_factory.default_box();
         let valid = unsafe { cursor.item((&mut key, &mut diff)) }.is_some();
 
         Self {
-            zset,
+            wset,
             cursor,
             key,
             diff,
@@ -637,8 +637,8 @@ where
         }
     }
 
-    fn new(zset: &'s FileZSet<K, R>) -> Self {
-        Self::new_from(zset, zset.lower_bound)
+    fn new(wset: &'s FileWSet<K, R>) -> Self {
+        Self::new_from(wset, wset.lower_bound)
     }
 
     fn move_key<F>(&mut self, op: F)
@@ -650,7 +650,7 @@ where
     }
 }
 
-impl<'s, K, R> Cursor<K, DynUnit, (), R> for FileZSetCursor<'s, K, R>
+impl<'s, K, R> Cursor<K, DynUnit, (), R> for FileWSetCursor<'s, K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -752,7 +752,7 @@ where
     }
 
     fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.zset.factories.weight_factory
+        self.wset.factories.weight_factory
     }
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R)) {
@@ -763,23 +763,23 @@ where
 }
 
 /// A builder for creating layers from unsorted update tuples.
-pub struct FileZSetBuilder<K, R>
+pub struct FileWSetBuilder<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    factories: FileZSetFactories<K, R>,
+    factories: FileWSetFactories<K, R>,
     writer: Writer1<Backend, K, R>,
 }
 
-impl<K, R> Builder<FileZSet<K, R>> for FileZSetBuilder<K, R>
+impl<K, R> Builder<FileWSet<K, R>> for FileWSetBuilder<K, R>
 where
     Self: SizeOf,
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_builder(factories: &<FileZSet<K, R> as BatchReader>::Factories, _time: ()) -> Self {
+    fn new_builder(factories: &<FileWSet<K, R> as BatchReader>::Factories, _time: ()) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer1::new(
@@ -793,7 +793,7 @@ where
 
     #[inline]
     fn with_capacity(
-        factories: &<FileZSet<K, R> as BatchReader>::Factories,
+        factories: &<FileWSet<K, R> as BatchReader>::Factories,
         time: (),
         _capacity: usize,
     ) -> Self {
@@ -812,8 +812,8 @@ where
     }
 
     #[inline(never)]
-    fn done(self) -> FileZSet<K, R> {
-        FileZSet {
+    fn done(self) -> FileWSet<K, R> {
+        FileWSet {
             factories: self.factories,
             file: self.writer.into_reader().unwrap(),
             lower_bound: 0,
@@ -829,7 +829,7 @@ where
     }
 }
 
-impl<K, R> SizeOf for FileZSetBuilder<K, R>
+impl<K, R> SizeOf for FileWSetBuilder<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -839,7 +839,7 @@ where
     }
 }
 
-impl<K, R> SizeOf for FileZSetMerger<K, R>
+impl<K, R> SizeOf for FileWSetMerger<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
@@ -849,7 +849,7 @@ where
     }
 }
 
-impl<K, R> SizeOf for FileZSet<K, R>
+impl<K, R> SizeOf for FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,

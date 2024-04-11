@@ -10,7 +10,7 @@
 //!   `key` and `val` are ordered and whose timestamp type is `()`.
 //!   Semantically, such collections store `(key, val, weight)` tuples without
 //!   timing information, and implement the indexed ZSet abstraction of DBSP.
-//! * `OrdZSet`:  Collections whose data have the form `key` where `key` is
+//! * `OrdWSet`:  Collections whose data have the form `key` where `key` is
 //!   ordered and whose timestamp type is `()`.  Semantically, such collections
 //!   store `(key, weight)` tuples without timing information, and implement the
 //!   ZSet abstraction of DBSP.
@@ -19,7 +19,7 @@
 //! representation and should consume fewer resources (computation and memory)
 //! when it applies.
 //!
-//! Likewise, `OrdIndexedWSet` and `OrdZSet` are less general than `OrdVal` and
+//! Likewise, `OrdIndexedWSet` and `OrdWSet` are less general than `OrdVal` and
 //! `OrdKey` respectively, but are more light-weight.
 
 pub mod indexed_wset_batch;

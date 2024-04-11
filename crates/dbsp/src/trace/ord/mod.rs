@@ -4,12 +4,12 @@ pub mod merge_batcher;
 pub mod vec;
 
 pub use fallback::{
-    indexed_zset::{FallbackIndexedZSet, FallbackIndexedZSetFactories},
-    zset::{FallbackZSet, FallbackZSetFactories},
+    indexed_wset::{FallbackIndexedWSet, FallbackIndexedWSetFactories},
+    wset::{FallbackWSet, FallbackWSetFactories},
 };
 pub use file::{
-    FileIndexedZSet, FileIndexedZSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
-    FileValBatchFactories, FileZSet, FileZSetFactories,
+    FileIndexedWSet, FileIndexedWSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
+    FileValBatchFactories, FileWSet, FileWSetFactories,
 };
 pub use vec::{
     VecIndexedWSet as OrdIndexedWSet, VecIndexedWSetFactories as OrdIndexedWSetFactories,
