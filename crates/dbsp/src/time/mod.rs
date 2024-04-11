@@ -66,7 +66,7 @@ use crate::{
     algebra::{Lattice, PartialOrder},
     dynamic::{DataTrait, WeightTrait},
     trace::{
-        Batch, FallbackIndexedZSet, FallbackZSet, FileKeyBatch, FileValBatch, OrdIndexedWSet,
+        Batch, FallbackIndexedWSet, FallbackWSet, FileKeyBatch, FileValBatch, OrdIndexedWSet,
         OrdKeyBatch, OrdValBatch, OrdWSet,
     },
     DBData, Scope,
@@ -264,8 +264,8 @@ impl Timestamp for () {
     type MemKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = OrdWSet<K, R>;
 
     type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackIndexedZSet<K, V, R>;
-    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackZSet<K, R>;
+        FallbackIndexedWSet<K, V, R>;
+    type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackWSet<K, R>;
 
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}

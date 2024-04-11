@@ -1,18 +1,23 @@
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     dynamic::{
-        DataTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait,
-        WeightTraitTyped,
+        DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait, WeightTraitTyped,
     },
     time::AntichainRef,
     trace::{
+        layers::OrdOffset,
         ord::{
-            file::zset_batch::{FileZSetBuilder, FileZSetCursor, FileZSetMerger},
+            file::indexed_wset_batch::{
+                FileIndexedWSetBuilder, FileIndexedWSetCursor, FileIndexedWSetMerger,
+            },
             merge_batcher::MergeBatcher,
-            vec::wset_batch::{VecWSetBuilder, VecWSetCursor, VecWSetMerger},
+            vec::indexed_wset_batch::{
+                OrdIndexedWSetMerger, VecIndexedWSetBuilder, VecIndexedWSetCursor,
+            },
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, FileZSet,
-        FileZSetFactories, Filter, Merger, OrdWSet, OrdWSetFactories, WeightedItem,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, FileIndexedWSet,
+        FileIndexedWSetFactories, Filter, Merger, OrdIndexedWSet, OrdIndexedWSetFactories,
+        WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -27,18 +32,20 @@ use std::{
 };
 use std::{ops::Neg, path::PathBuf};
 
-pub struct FallbackZSetFactories<K, R>
+pub struct FallbackIndexedWSetFactories<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    file: FileZSetFactories<K, R>,
-    vec: OrdWSetFactories<K, R>,
+    file: FileIndexedWSetFactories<K, V, R>,
+    vec: OrdIndexedWSetFactories<K, V, R>,
 }
 
-impl<K, R> Clone for FallbackZSetFactories<K, R>
+impl<K, V, R> Clone for FallbackIndexedWSetFactories<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn clone(&self) -> Self {
@@ -49,20 +56,21 @@ where
     }
 }
 
-impl<K, R> BatchReaderFactories<K, DynUnit, (), R> for FallbackZSetFactories<K, R>
+impl<K, V, R> BatchReaderFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn new<KType, VType, RType>() -> Self
     where
         KType: DBData + Erase<K>,
-        VType: DBData + Erase<DynUnit>,
+        VType: DBData + Erase<V>,
         RType: DBWeight + Erase<R>,
     {
         Self {
-            file: FileZSetFactories::new::<KType, VType, RType>(),
-            vec: OrdWSetFactories::new::<KType, VType, RType>(),
+            file: FileIndexedWSetFactories::new::<KType, VType, RType>(),
+            vec: OrdIndexedWSetFactories::new::<KType, VType, RType>(),
         }
     }
 
@@ -74,7 +82,7 @@ where
         self.file.keys_factory()
     }
 
-    fn val_factory(&self) -> &'static dyn Factory<DynUnit> {
+    fn val_factory(&self) -> &'static dyn Factory<V> {
         self.file.val_factory()
     }
 
@@ -83,57 +91,59 @@ where
     }
 }
 
-impl<K, R> BatchFactories<K, DynUnit, (), R> for FallbackZSetFactories<K, R>
+impl<K, V, R> BatchFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, DynUnit>> {
+    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>> {
         self.file.item_factory()
     }
 
-    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, DynUnit, R>> {
+    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
         self.file.weighted_item_factory()
     }
 
-    fn weighted_items_factory(
-        &self,
-    ) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, DynUnit>, R>> {
+    fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
         self.file.weighted_items_factory()
     }
 }
 
-pub struct FallbackZSet<K, R>
+pub struct FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    factories: FallbackZSetFactories<K, R>,
-    inner: Inner<K, R>,
+    factories: FallbackIndexedWSetFactories<K, V, R>,
+    inner: Inner<K, V, R>,
 }
 
 #[allow(clippy::large_enum_variant)]
-enum Inner<K, R>
+enum Inner<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    Vec(OrdWSet<K, R>),
-    File(FileZSet<K, R>),
+    Vec(OrdIndexedWSet<K, V, R>),
+    File(FileIndexedWSet<K, V, R>),
 }
 
-impl<K, R> Inner<K, R>
+impl<K, V, R> Inner<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn as_file(&self) -> Option<&FileZSet<K, R>> {
+    fn as_file(&self) -> Option<&FileIndexedWSet<K, V, R>> {
         match self {
             Inner::Vec(_vec) => None,
             Inner::File(file) => Some(file),
         }
     }
-    fn as_vec(&self) -> Option<&OrdWSet<K, R>> {
+    fn as_vec(&self) -> Option<&OrdIndexedWSet<K, V, R>> {
         match self {
             Inner::Vec(vec) => Some(vec),
             Inner::File(_file) => None,
@@ -141,9 +151,10 @@ where
     }
 }
 
-impl<K, R> Debug for FallbackZSet<K, R>
+impl<K, V, R> Debug for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -154,9 +165,10 @@ where
     }
 }
 
-impl<K, R> Clone for FallbackZSet<K, R>
+impl<K, V, R> Clone for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn clone(&self) -> Self {
@@ -173,11 +185,12 @@ where
 // This is `#[cfg(test)]` only because it would be surprisingly expensive in
 // production.
 #[cfg(test)]
-impl<Other, K, R> PartialEq<Other> for FallbackZSet<K, R>
+impl<Other, K, V, R> PartialEq<Other> for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
-    Other: BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
+    Other: BatchReader<Key = K, Val = V, R = R, Time = ()>,
 {
     fn eq(&self, other: &Other) -> bool {
         use crate::trace::eq_batch;
@@ -186,16 +199,18 @@ where
 }
 
 #[cfg(test)]
-impl<K, R> Eq for FallbackZSet<K, R>
+impl<K, V, R> Eq for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
 }
 
-impl<K, R> NumEntries for FallbackZSet<K, R>
+impl<K, V, R> NumEntries for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
@@ -215,9 +230,10 @@ where
     }
 }
 
-impl<K, R> NegByRef for FallbackZSet<K, R>
+impl<K, V, R> NegByRef for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTraitTyped + ?Sized,
     R::Type: DBWeight + ZRingValue + NegByRef + Erase<R>,
 {
@@ -233,9 +249,10 @@ where
     }
 }
 
-impl<K, R> Neg for FallbackZSet<K, R>
+impl<K, V, R> Neg for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTraitTyped + ?Sized,
     R::Type: DBWeight + ZRingValue + NegByRef + Erase<R>,
 {
@@ -247,9 +264,10 @@ where
     }
 }
 
-impl<K, R> Add<Self> for FallbackZSet<K, R>
+impl<K, V, R> Add<Self> for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     type Output = Self;
@@ -266,9 +284,10 @@ where
     }
 }
 
-impl<K, R> AddAssign<Self> for FallbackZSet<K, R>
+impl<K, V, R> AddAssign<Self> for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     #[inline]
@@ -279,9 +298,10 @@ where
     }
 }
 
-impl<K, R> AddAssignByRef for FallbackZSet<K, R>
+impl<K, V, R> AddAssignByRef for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     #[inline]
@@ -292,9 +312,10 @@ where
     }
 }
 
-impl<K, R> AddByRef for FallbackZSet<K, R>
+impl<K, V, R> AddByRef for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     #[inline]
@@ -303,17 +324,20 @@ where
     }
 }
 
-impl<K, R> BatchReader for FallbackZSet<K, R>
+impl<K, V, R> BatchReader for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Factories = FallbackZSetFactories<K, R>;
+    type Factories = FallbackIndexedWSetFactories<K, V, R>;
     type Key = K;
-    type Val = DynUnit;
+    type Val = V;
     type Time = ();
     type R = R;
-    type Cursor<'s> = FallbackZSetCursor<'s, K, R>;
+    type Cursor<'s> = FallbackIndexedWSetCursor<'s, K, V, R>
+    where
+        V: 's;
 
     fn factories(&self) -> Self::Factories {
         self.factories.clone()
@@ -321,7 +345,7 @@ where
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
-        FallbackZSetCursor::new(self)
+        FallbackIndexedWSetCursor::new(self)
     }
 
     #[inline]
@@ -368,17 +392,18 @@ where
     }
 }
 
-impl<K, R> Batch for FallbackZSet<K, R>
+impl<K, V, R> Batch for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     type Batcher = MergeBatcher<Self>;
-    type Builder = FallbackZSetBuilder<K, R>;
-    type Merger = FallbackZSetMerger<K, R>;
+    type Builder = FallbackIndexedWSetBuilder<K, V, R>;
+    type Merger = FallbackIndexedWSetMerger<K, V, R>;
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        FallbackZSetMerger::new_merger(self, other)
+        FallbackIndexedWSetMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -386,7 +411,7 @@ where
     fn dyn_empty(factories: &Self::Factories, time: Self::Time) -> Self {
         Self {
             factories: factories.clone(),
-            inner: Inner::Vec(OrdWSet::dyn_empty(&factories.vec, time)),
+            inner: Inner::Vec(OrdIndexedWSet::dyn_empty(&factories.vec, time)),
         }
     }
     fn persistent_id(&self) -> Option<PathBuf> {
@@ -398,47 +423,54 @@ where
 }
 
 /// State for an in-progress merge.
-pub struct FallbackZSetMerger<K, R>
+pub struct FallbackIndexedWSetMerger<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    factories: FallbackZSetFactories<K, R>,
-    inner: MergerInner<K, R>,
+    factories: FallbackIndexedWSetFactories<K, V, R>,
+    inner: MergerInner<K, V, R>,
 }
 
-enum MergerInner<K, R>
+enum MergerInner<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    AllFile(FileZSetMerger<K, R>),
-    AllVec(VecWSetMerger<K, R>),
-    ToVec(GenericMerger<K, R, OrdWSet<K, R>>),
-    ToFile(GenericMerger<K, R, FileZSet<K, R>>),
+    AllFile(FileIndexedWSetMerger<K, V, R>),
+    AllVec(OrdIndexedWSetMerger<K, V, R>),
+    ToVec(GenericMerger<K, V, R, OrdIndexedWSet<K, V, R>>),
+    ToFile(GenericMerger<K, V, R, FileIndexedWSet<K, V, R>>),
 }
 
-impl<K, R> Merger<K, DynUnit, (), R, FallbackZSet<K, R>> for FallbackZSetMerger<K, R>
+impl<K, V, R> Merger<K, V, (), R, FallbackIndexedWSet<K, V, R>>
+    for FallbackIndexedWSetMerger<K, V, R>
 where
     Self: SizeOf,
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_merger(batch1: &FallbackZSet<K, R>, batch2: &FallbackZSet<K, R>) -> Self {
+    fn new_merger(
+        batch1: &FallbackIndexedWSet<K, V, R>,
+        batch2: &FallbackIndexedWSet<K, V, R>,
+    ) -> Self {
         Self {
             factories: batch1.factories.clone(),
             inner: if batch1.len() + batch2.len() <= Runtime::max_memory_rows() {
                 match (&batch1.inner, &batch2.inner) {
                     (Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                        MergerInner::AllVec(VecWSetMerger::new_merger(vec1, vec2))
+                        MergerInner::AllVec(OrdIndexedWSetMerger::new_merger(vec1, vec2))
                     }
                     _ => MergerInner::ToVec(GenericMerger::new(&batch1.factories.vec)),
                 }
             } else {
                 match (&batch1.inner, &batch2.inner) {
                     (Inner::File(file1), Inner::File(file2)) => {
-                        MergerInner::AllFile(FileZSetMerger::new_merger(file1, file2))
+                        MergerInner::AllFile(FileIndexedWSetMerger::new_merger(file1, file2))
                     }
                     _ => MergerInner::ToFile(GenericMerger::new(&batch1.factories.file)),
                 }
@@ -447,8 +479,8 @@ where
     }
 
     #[inline]
-    fn done(self) -> FallbackZSet<K, R> {
-        FallbackZSet {
+    fn done(self) -> FallbackIndexedWSet<K, V, R> {
+        FallbackIndexedWSet {
             factories: self.factories,
             inner: match self.inner {
                 MergerInner::AllFile(merger) => Inner::File(merger.done()),
@@ -461,10 +493,10 @@ where
 
     fn work(
         &mut self,
-        source1: &FallbackZSet<K, R>,
-        source2: &FallbackZSet<K, R>,
+        source1: &FallbackIndexedWSet<K, V, R>,
+        source2: &FallbackIndexedWSet<K, V, R>,
         key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<DynUnit>>,
+        value_filter: &Option<Filter<V>>,
         fuel: &mut isize,
     ) {
         match &mut self.inner {
@@ -510,9 +542,10 @@ where
     }
 }
 
-impl<K, R> SizeOf for FallbackZSetMerger<K, R>
+impl<K, V, R> SizeOf for FallbackIndexedWSetMerger<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
@@ -525,34 +558,38 @@ where
     }
 }
 
-trait ClonableCursor<'s, K, R>: Cursor<K, DynUnit, (), R> + Debug
+trait ClonableCursor<'s, K, V, R>: Cursor<K, V, (), R> + Debug
 where
     K: ?Sized,
+    V: ?Sized,
     R: ?Sized,
 {
-    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, R> + 's>;
+    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, V, R> + 's>;
 }
 
-impl<'s, K, R, C> ClonableCursor<'s, K, R> for C
+impl<'s, K, V, R, C> ClonableCursor<'s, K, V, R> for C
 where
     K: ?Sized,
+    V: ?Sized,
     R: ?Sized,
-    C: Cursor<K, DynUnit, (), R> + Debug + Clone + 's,
+    C: Cursor<K, V, (), R> + Debug + Clone + 's,
 {
-    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, R> + 's> {
+    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, V, R> + 's> {
         Box::new(self.clone())
     }
 }
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
-pub struct FallbackZSetCursor<'s, K, R>(Box<dyn ClonableCursor<'s, K, R> + 's>)
+pub struct FallbackIndexedWSetCursor<'s, K, V, R>(Box<dyn ClonableCursor<'s, K, V, R> + 's>)
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized;
 
-impl<'s, K, R> Clone for FallbackZSetCursor<'s, K, R>
+impl<'s, K, V, R> Clone for FallbackIndexedWSetCursor<'s, K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn clone(&self) -> Self {
@@ -560,22 +597,24 @@ where
     }
 }
 
-impl<'s, K, R> FallbackZSetCursor<'s, K, R>
+impl<'s, K, V, R> FallbackIndexedWSetCursor<'s, K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn new(zset: &'s FallbackZSet<K, R>) -> Self {
-        Self(match &zset.inner {
+    fn new(wset: &'s FallbackIndexedWSet<K, V, R>) -> Self {
+        Self(match &wset.inner {
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
         })
     }
 }
 
-impl<'s, K, R> Cursor<K, DynUnit, (), R> for FallbackZSetCursor<'s, K, R>
+impl<'s, K, V, R> Cursor<K, V, (), R> for FallbackIndexedWSetCursor<'s, K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn weight_factory(&self) -> &'static dyn Factory<R> {
@@ -586,7 +625,7 @@ where
         self.0.key()
     }
 
-    fn val(&self) -> &DynUnit {
+    fn val(&self) -> &V {
         self.0.val()
     }
 
@@ -598,7 +637,7 @@ where
         self.0.map_times_through(upper, logic)
     }
 
-    fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R)) {
+    fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         self.0.map_values(logic)
     }
 
@@ -642,11 +681,11 @@ where
         self.0.step_val()
     }
 
-    fn seek_val(&mut self, val: &DynUnit) {
+    fn seek_val(&mut self, val: &V) {
         self.0.seek_val(val)
     }
 
-    fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
+    fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.0.seek_val_with(predicate)
     }
 
@@ -666,11 +705,11 @@ where
         self.0.step_val_reverse()
     }
 
-    fn seek_val_reverse(&mut self, val: &DynUnit) {
+    fn seek_val_reverse(&mut self, val: &V) {
         self.0.seek_val_reverse(val)
     }
 
-    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
+    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
         self.0.seek_val_with_reverse(predicate)
     }
 
@@ -680,48 +719,55 @@ where
 }
 
 /// A builder for batches from ordered update tuples.
-pub struct FallbackZSetBuilder<K, R>
+pub struct FallbackIndexedWSetBuilder<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    factories: FallbackZSetFactories<K, R>,
-    inner: BuilderInner<K, R>,
+    factories: FallbackIndexedWSetFactories<K, V, R>,
+    inner: BuilderInner<K, V, R>,
 }
 
 #[allow(clippy::large_enum_variant)]
-enum BuilderInner<K, R>
+enum BuilderInner<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    File(FileZSetBuilder<K, R>),
-    Vec(VecWSetBuilder<K, R>),
+    File(FileIndexedWSetBuilder<K, V, R>),
+    Vec(VecIndexedWSetBuilder<K, V, R, usize>),
 }
 
-impl<K, R> Builder<FallbackZSet<K, R>> for FallbackZSetBuilder<K, R>
+impl<K, V, R> Builder<FallbackIndexedWSet<K, V, R>> for FallbackIndexedWSetBuilder<K, V, R>
 where
     Self: SizeOf,
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_builder(factories: &FallbackZSetFactories<K, R>, time: ()) -> Self {
+    fn new_builder(factories: &FallbackIndexedWSetFactories<K, V, R>, time: ()) -> Self {
         Self::with_capacity(factories, time, 0)
     }
 
     #[inline]
-    fn with_capacity(factories: &FallbackZSetFactories<K, R>, time: (), capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        time: (),
+        capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             inner: if capacity <= Runtime::max_memory_rows() {
-                BuilderInner::Vec(VecWSetBuilder::with_capacity(
+                BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
                     &factories.vec,
                     time,
                     capacity,
                 ))
             } else {
-                BuilderInner::File(FileZSetBuilder::with_capacity(
+                BuilderInner::File(FileIndexedWSetBuilder::with_capacity(
                     &factories.file,
                     time,
                     capacity,
@@ -734,7 +780,7 @@ where
     fn reserve(&mut self, _additional: usize) {}
 
     #[inline]
-    fn push(&mut self, item: &mut DynPair<DynPair<K, DynUnit>, R>) {
+    fn push(&mut self, item: &mut DynPair<DynPair<K, V>, R>) {
         match &mut self.inner {
             BuilderInner::File(file) => file.push(item),
             BuilderInner::Vec(vec) => vec.push(item),
@@ -742,7 +788,7 @@ where
     }
 
     #[inline]
-    fn push_refs(&mut self, key: &K, val: &DynUnit, weight: &R) {
+    fn push_refs(&mut self, key: &K, val: &V, weight: &R) {
         match &mut self.inner {
             BuilderInner::File(file) => file.push_refs(key, val, weight),
             BuilderInner::Vec(vec) => vec.push_refs(key, val, weight),
@@ -750,7 +796,7 @@ where
     }
 
     #[inline]
-    fn push_vals(&mut self, key: &mut K, val: &mut DynUnit, weight: &mut R) {
+    fn push_vals(&mut self, key: &mut K, val: &mut V, weight: &mut R) {
         match &mut self.inner {
             BuilderInner::File(file) => file.push_vals(key, val, weight),
             BuilderInner::Vec(vec) => vec.push_vals(key, val, weight),
@@ -758,8 +804,8 @@ where
     }
 
     #[inline(never)]
-    fn done(self) -> FallbackZSet<K, R> {
-        FallbackZSet {
+    fn done(self) -> FallbackIndexedWSet<K, V, R> {
+        FallbackIndexedWSet {
             factories: self.factories,
             inner: match self.inner {
                 BuilderInner::File(file) => Inner::File(file.done()),
@@ -769,9 +815,10 @@ where
     }
 }
 
-impl<K, R> SizeOf for FallbackZSetBuilder<K, R>
+impl<K, V, R> SizeOf for FallbackIndexedWSetBuilder<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
@@ -782,9 +829,10 @@ where
     }
 }
 
-impl<K, R> SizeOf for FallbackZSet<K, R>
+impl<K, V, R> SizeOf for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
@@ -795,9 +843,10 @@ where
     }
 }
 
-impl<K, R> Archive for FallbackZSet<K, R>
+impl<K, V, R> Archive for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     type Archived = ();
@@ -808,9 +857,10 @@ where
     }
 }
 
-impl<K, R, S> Serialize<S> for FallbackZSet<K, R>
+impl<K, V, R, S> Serialize<S> for FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
     S: Serializer + ?Sized,
 {
@@ -819,13 +869,15 @@ where
     }
 }
 
-impl<K, R, D> Deserialize<FallbackZSet<K, R>, D> for Archived<FallbackZSet<K, R>>
+impl<K, V, R, D> Deserialize<FallbackIndexedWSet<K, V, R>, D>
+    for Archived<FallbackIndexedWSet<K, V, R>>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
     D: Fallible,
 {
-    fn deserialize(&self, _deserializer: &mut D) -> Result<FallbackZSet<K, R>, D::Error> {
+    fn deserialize(&self, _deserializer: &mut D) -> Result<FallbackIndexedWSet<K, V, R>, D::Error> {
         unimplemented!();
     }
 }
@@ -859,9 +911,10 @@ where
         cursor
     }
 
-    fn from_cursor<C, R>(cursor: &C) -> Position<K>
+    fn from_cursor<C, V, R>(cursor: &C) -> Position<K>
     where
-        C: Cursor<K, DynUnit, (), R>,
+        C: Cursor<K, V, (), R>,
+        V: ?Sized,
         R: ?Sized,
     {
         if cursor.key_valid() {
@@ -872,38 +925,43 @@ where
     }
 }
 
-struct GenericMerger<K, R, O>
+struct GenericMerger<K, V, R, O>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
+    O: Batch + BatchReader<Key = K, Val = V, R = R, Time = ()>,
 {
     builder: O::Builder,
     pos1: Position<K>,
     pos2: Position<K>,
 }
 
-trait CursorWeightRef<K, T, R>: Cursor<K, DynUnit, T, R>
+trait CursorWeightRef<K, V, T, R>: Cursor<K, V, T, R>
 where
     K: ?Sized,
+    V: ?Sized,
     R: ?Sized,
 {
     fn weight_ref(&self) -> &R;
 }
 
-impl<'s, K, R> CursorWeightRef<K, (), R> for VecWSetCursor<'s, K, R>
+impl<'s, K, V, R, O> CursorWeightRef<K, V, (), R> for VecIndexedWSetCursor<'s, K, V, R, O>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
+    O: OrdOffset,
 {
     fn weight_ref(&self) -> &R {
-        self.cursor.current_diff()
+        self.cursor.child.current_diff()
     }
 }
 
-impl<'s, K, R> CursorWeightRef<K, (), R> for FileZSetCursor<'s, K, R>
+impl<'s, K, V, R> CursorWeightRef<K, V, (), R> for FileIndexedWSetCursor<'s, K, V, R>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
     fn weight_ref(&self) -> &R {
@@ -911,11 +969,12 @@ where
     }
 }
 
-impl<K, R, O> GenericMerger<K, R, O>
+impl<K, V, R, O> GenericMerger<K, V, R, O>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
+    O: Batch + BatchReader<Key = K, Val = V, R = R, Time = ()>,
 {
     fn new(factories: &O::Factories) -> Self {
         Self {
@@ -930,41 +989,49 @@ where
         source1: &'s A,
         source2: &'s B,
         key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<DynUnit>>,
+        value_filter: &Option<Filter<V>>,
         fuel: &mut isize,
     ) where
-        A: BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
-        B: BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
-        A::Cursor<'s>: CursorWeightRef<K, (), R>,
-        B::Cursor<'s>: CursorWeightRef<K, (), R>,
+        A: BatchReader<Key = K, Val = V, R = R, Time = ()>,
+        B: BatchReader<Key = K, Val = V, R = R, Time = ()>,
+        A::Cursor<'s>: CursorWeightRef<K, V, (), R>,
+        B::Cursor<'s>: CursorWeightRef<K, V, (), R>,
     {
-        if !filter(value_filter, &()) {
-            return;
-        }
-
         let mut cursor1 = self.pos1.cursor(source1);
         let mut cursor2 = self.pos2.cursor(source2);
+        let mut diff = source1.factories().weight_factory().default_box();
         while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
             match cursor1.key().cmp(cursor2.key()) {
                 Ordering::Less => {
-                    self.copy_value_if(&mut cursor1, key_filter, fuel);
+                    self.copy_values_if(&mut cursor1, key_filter, value_filter, fuel);
                 }
                 Ordering::Equal => {
-                    self.copy_value_if(&mut cursor1, key_filter, fuel);
+                    if filter(key_filter, cursor1.key()) {
+                        self.merge_values(
+                            &mut cursor1,
+                            &mut cursor2,
+                            value_filter,
+                            diff.as_mut(),
+                            fuel,
+                        );
+                    } else {
+                        *fuel -= 1;
+                    }
+                    cursor1.step_key();
                     cursor2.step_key();
-                    *fuel -= 1;
                 }
+
                 Ordering::Greater => {
-                    self.copy_value_if(&mut cursor2, key_filter, fuel);
+                    self.copy_values_if(&mut cursor2, key_filter, value_filter, fuel);
                 }
             }
         }
 
         while cursor1.key_valid() && *fuel > 0 {
-            self.copy_value_if(&mut cursor1, key_filter, fuel);
+            self.copy_values_if(&mut cursor1, key_filter, value_filter, fuel);
         }
         while cursor2.key_valid() && *fuel > 0 {
-            self.copy_value_if(&mut cursor2, key_filter, fuel);
+            self.copy_values_if(&mut cursor2, key_filter, value_filter, fuel);
         }
         self.pos1 = Position::from_cursor(&cursor1);
         self.pos2 = Position::from_cursor(&cursor2);
@@ -974,16 +1041,86 @@ where
         self.builder.done()
     }
 
-    fn copy_value_if<C>(&mut self, cursor: &mut C, key_filter: &Option<Filter<K>>, fuel: &mut isize)
-    where
-        C: CursorWeightRef<K, (), R>,
+    fn copy_values_if<C>(
+        &mut self,
+        cursor: &mut C,
+        key_filter: &Option<Filter<K>>,
+        value_filter: &Option<Filter<V>>,
+        fuel: &mut isize,
+    ) where
+        C: CursorWeightRef<K, V, (), R>,
     {
         if filter(key_filter, cursor.key()) {
-            self.builder
-                .push_refs(cursor.key(), &(), cursor.weight_ref());
+            while cursor.val_valid() {
+                if filter(value_filter, cursor.val()) {
+                    self.builder
+                        .push_refs(cursor.key(), cursor.val(), cursor.weight_ref());
+                }
+                cursor.step_val();
+                *fuel -= 1;
+            }
+        } else {
+            *fuel -= 1;
         }
-        *fuel -= 1;
         cursor.step_key();
+    }
+
+    fn copy_value<C>(&mut self, cursor: &mut C, value_filter: &Option<Filter<V>>)
+    where
+        C: CursorWeightRef<K, V, (), R>,
+    {
+        if filter(value_filter, cursor.val()) {
+            self.builder
+                .push_refs(cursor.key(), cursor.val(), cursor.weight_ref());
+        }
+        cursor.step_val();
+    }
+
+    fn merge_values<C1, C2>(
+        &mut self,
+        cursor1: &mut C1,
+        cursor2: &mut C2,
+        value_filter: &Option<Filter<V>>,
+        sum: &mut R,
+        fuel: &mut isize,
+    ) where
+        C1: CursorWeightRef<K, V, (), R>,
+        C2: CursorWeightRef<K, V, (), R>,
+    {
+        while cursor1.val_valid() && cursor2.val_valid() {
+            let value1 = cursor1.val();
+            let value2 = cursor2.val();
+            let cmp = value1.cmp(value2);
+            match cmp {
+                Ordering::Less => {
+                    self.copy_value(cursor1, value_filter);
+                }
+                Ordering::Equal => {
+                    if filter(value_filter, value1) {
+                        cursor1.weight_ref().add(cursor2.weight_ref(), sum);
+                        if !sum.is_zero() {
+                            self.builder.push_refs(cursor1.key(), cursor1.val(), sum);
+                        }
+                    }
+                    cursor1.step_val();
+                    cursor2.step_val();
+                }
+
+                Ordering::Greater => {
+                    self.copy_value(cursor2, value_filter);
+                }
+            }
+            *fuel -= 1;
+        }
+
+        while cursor1.val_valid() {
+            self.copy_value(cursor1, value_filter);
+            *fuel -= 1;
+        }
+        while cursor2.val_valid() {
+            self.copy_value(cursor2, value_filter);
+            *fuel -= 1;
+        }
     }
 }
 
@@ -994,11 +1131,12 @@ where
     f.as_ref().map_or(true, |f| f(t))
 }
 
-impl<K, R, O> SizeOf for GenericMerger<K, R, O>
+impl<K, V, R, O> SizeOf for GenericMerger<K, V, R, O>
 where
     K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
+    O: Batch + BatchReader<Key = K, Val = V, R = R, Time = ()>,
 {
     fn size_of_children(&self, context: &mut size_of::Context) {
         self.builder.size_of_children(context)

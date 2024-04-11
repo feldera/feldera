@@ -7,7 +7,7 @@ use crate::{
     },
     dynamic::{DataTrait, DynUnit, Erase, Factory, WeightTrait},
     trace::{
-        ord::fallback::indexed_zset::FallbackIndexedZSetFactories, BatchReader,
+        ord::fallback::indexed_wset::FallbackIndexedWSetFactories, BatchReader,
         BatchReaderFactories, OrdIndexedWSetFactories, Spillable,
     },
     DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
@@ -48,7 +48,7 @@ where
     R: WeightTrait + ?Sized,
 {
     input_factories: OrdIndexedWSetFactories<K, V, R>,
-    stored_factories: FallbackIndexedZSetFactories<K, V2, R>,
+    stored_factories: FallbackIndexedWSetFactories<K, V2, R>,
     inner_factories: OrdIndexedWSetFactories<K, V2, R>,
 }
 
@@ -81,7 +81,7 @@ where
     OV: DataTrait + ?Sized,
 {
     inner_factories: OrdIndexedZSetFactories<K, V2>,
-    stored_factories: FallbackIndexedZSetFactories<K, V2, DynZWeight>,
+    stored_factories: FallbackIndexedWSetFactories<K, V2, DynZWeight>,
     output_factories: OrdIndexedZSetFactories<K, OV>,
 }
 
