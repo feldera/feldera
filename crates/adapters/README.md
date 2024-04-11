@@ -60,7 +60,7 @@ DBSP pipeline as a service.  The service can be controlled using a web
 browser.  To run the demo you can execute the following command:
 
 ```
-$ cargo run --example server --features="with-kafka test-utils server"
+$ cargo run --example server --features="with-kafka server"
 ```
 
 Then open a web browser and open the following URL: `http://localhost:8080`
