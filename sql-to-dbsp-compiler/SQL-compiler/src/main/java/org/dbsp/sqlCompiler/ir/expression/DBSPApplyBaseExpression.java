@@ -27,7 +27,8 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
                 throw new InternalCompilerError("Null arg", this);
             }
             assert parameterTypes == null || parameterTypes[index].sameType(arg.getType()) :
-                    "Argument " + arg + " does not match parameter type " + parameterTypes[index];
+                    "Argument " + arg + " type " +
+                    arg.getType() + " does not match parameter type " + parameterTypes[index];
             index++;
         }
     }

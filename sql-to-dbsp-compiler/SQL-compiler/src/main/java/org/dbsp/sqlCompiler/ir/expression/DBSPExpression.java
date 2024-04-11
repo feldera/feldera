@@ -52,6 +52,8 @@ public abstract class DBSPExpression
      */
     public DBSPExpression applyClone() {
         assert !this.type.is(DBSPTypeRef.class): "Cloning a reference " + this;
+        if (this.is(DBSPCloneExpression.class))
+            return this;
         return new DBSPCloneExpression(this.getNode(), this);
     }
 

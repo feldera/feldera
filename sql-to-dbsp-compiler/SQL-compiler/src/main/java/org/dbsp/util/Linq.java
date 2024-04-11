@@ -148,7 +148,18 @@ public class Linq {
         return Linq.all(Linq.zipSameLength(left, right, (l, r) -> l == r, Boolean.class));
     }
 
-    public static <T> boolean same(Collection<T> left, Collection<T> right) {
+    public static List<Integer> range(int start, int exclusiveEnd) {
+        ArrayList<Integer> result = new ArrayList<>();
+        for (int i = start; i < exclusiveEnd; i++)
+            result.add(i);
+        return result;
+    }
+
+    public static <T> boolean same(@Nullable Collection<T> left, @Nullable Collection<T> right) {
+        if (left == null)
+            return right == null;
+        if (right == null)
+            return false;
         if (left.size() != right.size())
             return false;
         return Linq.all(Linq.zipSameLength(left, right, (l, r) -> l == r));

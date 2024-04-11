@@ -39,16 +39,6 @@ public class DBSPFlatMapOperator extends DBSPUnaryOperator {
                                DBSPTypeZSet outputType, DBSPOperator input) {
         super(node, "flat_map", expression, outputType, true, input);
         this.checkArgumentFunctionType(expression, 0, input);
-        /*
-        This is not strictly true, because of the strange semantics of Unnest in Calcite.
-        if (expression.is(DBSPFlatmap.class)) {
-            DBSPFlatmap fm = expression.to(DBSPFlatmap.class);
-            DBSPTypeTupleBase tuple = outputType.elementType.to(DBSPTypeTupleBase.class);
-            assert tuple.size() == fm.outputFieldIndexes.size() :
-                    "Need to produce " + tuple.size() + " fields, but flatmap provide only " +
-                            fm.outputFieldIndexes.size();
-        }
-         */
     }
 
     @Override

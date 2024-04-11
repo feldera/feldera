@@ -30,9 +30,7 @@ import java.util.function.Function;
  * - Swap projection with operations such as Distinct, Integral, Differential, Sum, etc.
  */
 public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
-    /**
-     * If this function returns 'true' the operator can be optimized.
-     */
+    /** If this function returns 'true' the operator can be optimized. */
     protected final Function<DBSPOperator, Boolean> canOptimize;
 
     public OptimizeProjectionVisitor(IErrorReporter reporter, Function<DBSPOperator, Boolean> canOptimize) {
