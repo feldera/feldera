@@ -384,10 +384,7 @@ where
     fn recede_to(&mut self, _frontier: &()) {}
 
     fn dyn_empty(factories: &Self::Factories, time: Self::Time) -> Self {
-        Self {
-            factories: factories.clone(),
-            inner: Inner::Vec(OrdWSet::dyn_empty(&factories.vec, time)),
-        }
+        Self::Builder::new_builder(factories, time).done()
     }
     fn persistent_id(&self) -> Option<PathBuf> {
         match &self.inner {
