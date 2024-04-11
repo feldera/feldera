@@ -2,6 +2,8 @@
 
 //! Functions related to `JSON` support in DBSP
 
+use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+
 /// The actual Json type.
 pub type Json = ijson::IValue;
 
@@ -78,8 +80,12 @@ pub fn try_json_index(value: Json, mut idx: usize) -> Option<Json> {
 ///
 /// # Panics
 /// - Panics if deserializing to the given type `T` fails.
-pub fn json_as<T: serde::de::DeserializeOwned>(value: Json) -> T {
-    ijson::from_value(&value).expect("failed to deserialize JSON to the given type")
+pub fn json_as<T>(value: Json) -> T
+where
+    for<'de> T: DeserializeWithContext<'de, SqlSerdeConfig>,
+{
+    T::deserialize_with_context(&value, &SqlSerdeConfig::default())
+        .expect("failed to deserialize JSON to the given type")
 }
 
 /// Serialize this JSON `value` as a string.

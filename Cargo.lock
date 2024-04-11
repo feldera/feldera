@@ -4669,6 +4669,7 @@ name = "json"
 version = "0.1.0"
 dependencies = [
  "ijson",
+ "pipeline_types",
  "rust_decimal",
  "serde",
  "serde_json",
