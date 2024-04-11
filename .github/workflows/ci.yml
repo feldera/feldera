@@ -86,7 +86,7 @@ jobs:
           snowflake_passphrase: ${{ secrets.snowflake_ci_user_private_key_passphrase }}
           snowflake_password: ${{ secrets.snowflake_ci_user_password }}
 
-      # Ship secrets for the S3 CI account to Earthly.
+      # Ship secrets for the S3 CI account for the S3 input transport test to Earthly.
       - name: S3 .env
         run: |
           echo CI_S3_AWS_ACCESS_KEY="${s3_access_key}" >> deploy/.env && \
@@ -94,6 +94,16 @@ jobs:
         env:
           s3_access_key: ${{ secrets.ci_s3_aws_access_key }}
           s3_secret: ${{ secrets.ci_s3_aws_secret }}
+
+      # Ship secrets for the AWS CI account for the delta table output transport test to Earthly.
+      - name: Delta output S3 secrets
+        run: |
+          echo DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID="${delta_table_test_aws_access_key_id}" >> .arg && \
+          echo DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY="${delta_table_test_aws_secret_access_key}" >> .arg
+        env:
+          delta_table_test_aws_access_key_id: ${{ secrets.delta_table_test_aws_access_key_id }}
+          delta_table_test_aws_secret_access_key: ${{ secrets.delta_table_test_aws_secret_access_key }}
+
 
       - name: Print ulimit
         run: ulimit -a

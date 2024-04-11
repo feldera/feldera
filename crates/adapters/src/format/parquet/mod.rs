@@ -226,20 +226,22 @@ impl OutputFormat for ParquetOutputFormat {
 
 pub fn relation_to_parquet_schema(
     relation: &Relation,
+    delta_lake: bool,
 ) -> Result<SerdeArrowSchema, ControllerError> {
-    fn field_to_arrow_field(f: &Field) -> ArrowField {
+    fn field_to_arrow_field(f: &Field, delta_lake: bool) -> ArrowField {
         ArrowField::new(
             &f.name,
-            columntype_to_datatype(&f.columntype),
-            f.columntype.nullable,
+            columntype_to_datatype(&f.columntype, delta_lake),
+            // FIXME: Databricks refuses to understand the `nullable: false` constraint.s
+            delta_lake || f.columntype.nullable,
         )
     }
 
-    fn struct_to_arrow_fields(fields: &[Field]) -> Fields {
+    fn struct_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Fields {
         Fields::from(
             fields
                 .iter()
-                .map(field_to_arrow_field)
+                .map(|f| field_to_arrow_field(f, delta_lake))
                 .collect::<Vec<ArrowField>>(),
         )
     }
@@ -247,7 +249,7 @@ pub fn relation_to_parquet_schema(
     // The type conversion is chosen in accordance with our internal
     // data types (see sqllib). This may need to be adjusted in the future
     // or made configurable.
-    fn columntype_to_datatype(c: &ColumnType) -> DataType {
+    fn columntype_to_datatype(c: &ColumnType, delta_lake: bool) -> DataType {
         match c.typ {
             SqlType::Boolean => DataType::Boolean,
             SqlType::TinyInt => DataType::Int8,
@@ -264,7 +266,12 @@ pub fn relation_to_parquet_schema(
             SqlType::Time => DataType::Time64(TimeUnit::Nanosecond),
             // DeltaLake only supports microsecond-based timestamp encoding, so we just
             // hardwire that for now.  We can make it configurable in the future.
-            SqlType::Timestamp => DataType::Timestamp(TimeUnit::Microsecond, None),
+            // FIXME: Also, the timezone should be `None`, but that gets compiled into `timezone_ntz`
+            // in the JSON schema, which Databricks doesn't fully support yet.
+            SqlType::Timestamp => DataType::Timestamp(
+                TimeUnit::Microsecond,
+                if delta_lake { Some("UTC".into()) } else { None },
+            ),
             SqlType::Date => DataType::Date32,
             SqlType::Null => DataType::Null,
             SqlType::Binary => DataType::LargeBinary,
@@ -277,24 +284,23 @@ pub fn relation_to_parquet_schema(
                 // SqlType::Array implies c.component.is_some()
                 let array_component = c.component.as_ref().unwrap();
                 DataType::LargeList(Arc::new(ArrowField::new_list_field(
-                    columntype_to_datatype(array_component),
-                    c.nullable,
+                    columntype_to_datatype(array_component, delta_lake),
+                    // FIXME: Databricks refuses to understand the `nullable: false` constraint.
+                    /*c.nullable*/
+                    true,
                 )))
             }
-            SqlType::Struct => DataType::Struct(struct_to_arrow_fields(c.fields.as_ref().unwrap())),
+            SqlType::Struct => DataType::Struct(struct_to_arrow_fields(
+                c.fields.as_ref().unwrap(),
+                delta_lake,
+            )),
         }
     }
 
     let fields = relation
         .fields
         .iter()
-        .map(|f| {
-            ArrowField::new(
-                &f.name,
-                columntype_to_datatype(&f.columntype),
-                f.columntype.nullable,
-            )
-        })
+        .map(|f| field_to_arrow_field(f, delta_lake))
         .collect::<Vec<ArrowField>>();
 
     SerdeArrowSchema::from_arrow_fields(&fields).map_err(|e| ControllerError::SchemaParseError {
@@ -322,7 +328,7 @@ impl ParquetEncoder {
         Ok(Self {
             output_consumer,
             config,
-            parquet_schema: relation_to_parquet_schema(&_relation)?,
+            parquet_schema: relation_to_parquet_schema(&_relation, false)?,
             _relation,
             buffer: Vec::new(),
             max_buffer_size,

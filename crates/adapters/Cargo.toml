@@ -14,6 +14,9 @@ publish = false
 default = ["with-kafka"]
 with-kafka = ["rdkafka"]
 test-utils = ["size-of", "proptest", "proptest-derive"]
+# Run delta table tests against an S3 bucket.  Requires S3 authentication key
+# to be provided via an environment variable.
+delta-s3-test = []
 
 [dependencies]
 pipeline_types = { path = "../pipeline-types/" }
@@ -72,7 +75,7 @@ arrow = { version = "50.0.0", features = ["chrono-tz"] }
 serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arrow-50"], rev = "91fc76a" }
 bytes = "1.5.0"
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.
-deltalake-core = { version = "0.17.1", features = ["datafusion"] }
+deltalake = { version = "0.17.1", features = ["datafusion", "s3", "gcs", "azure"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 psutil = "3.2.2"
