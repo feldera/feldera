@@ -541,4 +541,17 @@ public class ArrayTests extends BaseSQLTests {
         this.testQuery(ddl, "SELECT ARRAY_MIN(val) FROM ARR_TBL",
                 new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
     }
+
+    @Test
+    public void testSafeOrdinal() {
+        String sql = """
+                SELECT a[SAFE_OFFSET(2)], a[SAFE_OFFSET(3)] FROM
+                (SELECT ARRAY[1, 2] a)""";
+        this.testQuery("", sql,
+                new InputOutputChangeStream().addPair(new Change(),
+                        new Change(new DBSPZSetLiteral(
+                                new DBSPTupleExpression(
+                                        new DBSPI32Literal(2, true),
+                                        new DBSPI32Literal())))));
+    }
 }

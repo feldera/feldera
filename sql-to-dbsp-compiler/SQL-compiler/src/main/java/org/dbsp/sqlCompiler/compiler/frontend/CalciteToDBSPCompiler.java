@@ -142,6 +142,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
@@ -1858,6 +1859,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             CreateFunctionStatement stat = statement.to(CreateFunctionStatement.class);
             DBSPFunction function = stat.function.getImplementation(this.compiler.getTypeCompiler(), this.compiler);
             if (function != null) {
+                DBSPType returnType = stat.function.getFunctionReturnType(this.compiler.getTypeCompiler());
+                this.circuit.addDeclaration(new DBSPDeclaration(
+                        new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class))));
                 this.circuit.addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
             }
             return null;

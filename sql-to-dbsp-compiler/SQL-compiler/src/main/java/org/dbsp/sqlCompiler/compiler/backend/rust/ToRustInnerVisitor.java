@@ -1107,7 +1107,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStructItem item) {
-        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default, serde::Serialize)]")
+        this.builder.append("#[derive(Clone, Debug, Eq, PartialEq, Default, serde::Serialize, serde::Deserialize)]")
                 .newline();
         builder.append("struct ")
                     .append(Objects.requireNonNull(item.type.sanitizedName))

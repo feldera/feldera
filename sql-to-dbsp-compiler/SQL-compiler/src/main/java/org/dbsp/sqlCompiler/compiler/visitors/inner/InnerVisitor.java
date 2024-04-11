@@ -208,6 +208,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         return this.preorder(node.to(DBSPItem.class));
     }
 
+    public VisitDecision preorder(DBSPStructWithHelperItem node) {
+        return this.preorder(node.to(DBSPItem.class));
+    }
+
     // Various
     
     public VisitDecision preorder(DBSPPathSegment node) {
@@ -673,6 +677,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPStructItem node) {
+        this.postorder(node.to(DBSPItem.class));
+    }
+
+    public void postorder(DBSPStructWithHelperItem node) {
         this.postorder(node.to(DBSPItem.class));
     }
 

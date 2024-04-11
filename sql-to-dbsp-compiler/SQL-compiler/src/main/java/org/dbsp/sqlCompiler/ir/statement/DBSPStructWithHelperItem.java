@@ -9,12 +9,12 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 
-/** An item that declares a struct. */
+/** An item that declares a struct and a bunch of helper functions for serialization. */
 @NonCoreIR
-public class DBSPStructItem extends DBSPItem implements IHasType {
+public class DBSPStructWithHelperItem extends DBSPItem implements IHasType {
     public final DBSPTypeStruct type;
 
-    public DBSPStructItem(DBSPTypeStruct type) {
+    public DBSPStructWithHelperItem(DBSPTypeStruct type) {
         this.type = type;
     }
 
@@ -35,7 +35,7 @@ public class DBSPStructItem extends DBSPItem implements IHasType {
 
     @Override
     public boolean sameFields(IDBSPNode other) {
-        DBSPStructItem o = other.as(DBSPStructItem.class);
+        DBSPStructWithHelperItem o = other.as(DBSPStructWithHelperItem.class);
         if (o == null)
             return false;
         return this.type.sameType(o.type);
@@ -48,6 +48,6 @@ public class DBSPStructItem extends DBSPItem implements IHasType {
 
     @Override
     public DBSPStatement deepCopy() {
-        return new DBSPStructItem(this.type);
+        return new DBSPStructWithHelperItem(this.type);
     }
 }
