@@ -60,9 +60,15 @@ public abstract class CreateRelationStatement extends FrontEndStatement implemen
 
     @Override
     public String toString() {
+        StringBuilder builder = new StringBuilder();
+        for (RelColumnMetadata col: this.columns) {
+            builder.append(col.toString());
+            builder.append(",");
+        }
+
         return "CreateRelationStatement{" +
                 "tableName='" + this.relationName + '\'' +
-                ", columns=" + this.columns +
+                ", columns=" + builder +
                 '}';
     }
 

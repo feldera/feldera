@@ -27,6 +27,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexCorrelVariable;
 import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
@@ -158,11 +159,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             throw new InternalCompilerError("Expected a reference type for row", inputRow.getNode());
     }
 
-    /**
-     * Convert an expression that refers to a field in the input row.
+    /** Convert an expression that refers to a field in the input row.
      * @param inputRef   index in the input row.
-     * @return           the corresponding DBSP expression.
-     */
+     * @return           the corresponding DBSP expression. */
     @Override
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
         CalciteObject node = CalciteObject.create(inputRef);
@@ -178,6 +177,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         if (index - type.size() < this.constants.size())
             return this.visitLiteral(this.constants.get(index - type.size()));
         throw new InternalCompilerError("Index in row out of bounds ", node);
+    }
+
+    @Override
+    public DBSPExpression visitCorrelVariable(RexCorrelVariable correlVariable) {
+        CalciteObject node = CalciteObject.create(correlVariable);
+        if (this.inputRow == null)
+            throw new InternalCompilerError("Correlation variable referenced without a row context", node);
+        return this.inputRow.deref().deepCopy();
     }
 
     @Override

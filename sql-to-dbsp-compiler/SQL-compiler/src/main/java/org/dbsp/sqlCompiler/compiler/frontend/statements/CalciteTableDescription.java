@@ -31,4 +31,9 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
             builder.add(meta.field);
         return builder.build();
     }
+
+    @Override
+    public String toString() {
+        return this.schema.toString();
+    }
 }
