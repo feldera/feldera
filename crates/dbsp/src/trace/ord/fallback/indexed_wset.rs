@@ -460,7 +460,7 @@ where
     ) -> Self {
         Self {
             factories: batch1.factories.clone(),
-            inner: if batch1.len() + batch2.len() <= Runtime::max_memory_rows() {
+            inner: if batch1.len() + batch2.len() < Runtime::min_storage_rows() {
                 match (&batch1.inner, &batch2.inner) {
                     (Inner::Vec(vec1), Inner::Vec(vec2)) => {
                         MergerInner::AllVec(OrdIndexedWSetMerger::new_merger(vec1, vec2))
@@ -760,7 +760,7 @@ where
     ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: if capacity <= Runtime::max_memory_rows() {
+            inner: if capacity < Runtime::min_storage_rows() {
                 BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
                     &factories.vec,
                     time,

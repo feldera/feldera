@@ -31,10 +31,9 @@ const fn default_workers() -> u16 {
     1
 }
 
-/// Default maximum on the number of rows that a trace can hold before it is
-/// spilled to disk.  This default value means that traces will always be kept
-/// in memory.
-const fn default_max_memory_rows() -> usize {
+/// Default minimum on the number of rows in a trace to spill it to disk.  This
+/// default value means that traces will always be kept in memory.
+const fn default_min_storage_rows() -> usize {
     usize::MAX
 }
 
@@ -64,9 +63,9 @@ pub struct PipelineConfig {
     /// before spilling it to storage. If this is 0, then all traces will be
     /// stored on disk; if it is `usize::MAX`, then all traces will be kept in
     /// memory; and intermediate values specify a threshold.
-    #[serde(default = "default_max_memory_rows")]
-    #[schema(default = "default_max_memory_rows")]
-    pub max_memory_rows: usize,
+    #[serde(default = "default_min_storage_rows")]
+    #[schema(default = "default_min_storage_rows")]
+    pub min_storage_rows: usize,
 
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,

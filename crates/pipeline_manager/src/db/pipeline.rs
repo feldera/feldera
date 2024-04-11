@@ -513,7 +513,7 @@ impl PipelineRevision {
             name: Some(format!("pipeline-{pipeline_id}")),
             global: pipeline.config.clone(),
             storage_location: None,
-            max_memory_rows: usize::MAX,
+            min_storage_rows: usize::MAX,
             inputs: expanded_inputs,
             outputs: expanded_outputs,
         };

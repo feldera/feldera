@@ -179,7 +179,7 @@ impl WorkerPanicInfo {
 struct RuntimeInner {
     layout: Layout,
     storage: StorageLocation,
-    max_memory_rows: usize,
+    min_storage_rows: usize,
     store: LocalStore,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
@@ -239,7 +239,7 @@ impl Debug for RuntimeInner {
 }
 
 impl RuntimeInner {
-    fn new(layout: Layout, storage: Option<String>, max_memory_rows: usize) -> Self {
+    fn new(layout: Layout, storage: Option<String>, min_storage_rows: usize) -> Self {
         let local_workers = layout.local_workers().len();
         let mut panic_info = Vec::with_capacity(local_workers);
         for _ in 0..local_workers {
@@ -255,7 +255,7 @@ impl RuntimeInner {
         Self {
             layout,
             storage,
-            max_memory_rows,
+            min_storage_rows,
             store: TypedDashMap::new(),
             panic_info,
         }
@@ -362,7 +362,7 @@ impl Runtime {
         let runtime = Self(Arc::new(RuntimeInner::new(
             layout,
             storage,
-            cconf.max_memory_rows(),
+            cconf.min_storage_rows(),
         )));
 
         // Install custom panic hook.
@@ -461,14 +461,14 @@ impl Runtime {
         WORKER_INDEX.get()
     }
 
-    /// Returns the maximum number of rows of a trace that should be kept in
-    /// memory. For threads that run without a runtime, this method returns
+    /// Returns the minimum number of rows of a trace to spill it to
+    /// storage. For threads that run without a runtime, this method returns
     /// `usize::MAX`.
-    pub fn max_memory_rows() -> usize {
+    pub fn min_storage_rows() -> usize {
         RUNTIME.with(|rt| {
             rt.borrow()
                 .as_ref()
-                .map_or(usize::MAX, |runtime| runtime.0.max_memory_rows)
+                .map_or(usize::MAX, |runtime| runtime.0.min_storage_rows)
         })
     }
 
@@ -707,7 +707,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: Some(path.to_str().unwrap().to_string()),
-            max_memory_rows: usize::MAX,
+            min_storage_rows: usize::MAX,
         };
 
         let hruntime = Runtime::run(cconf, move || {
@@ -726,7 +726,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: None,
-            max_memory_rows: usize::MAX,
+            min_storage_rows: usize::MAX,
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {
@@ -747,7 +747,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: None,
-            max_memory_rows: usize::MAX,
+            min_storage_rows: usize::MAX,
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {
