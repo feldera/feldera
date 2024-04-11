@@ -49,7 +49,6 @@ import org.apache.calcite.rel.logical.LogicalWindow;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
@@ -309,20 +308,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return new DBSPAggregate(obj, rowVar, implementations, false);
     }
 
-    /**
-     * Given a struct type find the index of the specified field.
-     * Throws if no such field exists.
-     */
-    static int getFieldIndex(String field, RelDataType type) {
-        int index = 0;
-        for (RelDataTypeField rowField: type.getFieldList()) {
-            if (rowField.getName().equalsIgnoreCase(field))
-                return index;
-            index++;
-        }
-        throw new InternalCompilerError("Type " + type + " has no field named " + field, CalciteObject.create(type));
-    }
-
     public void visitCorrelate(LogicalCorrelate correlate) {
         // We decorrelate queries using Calcite's optimizer.
         // So we assume that the only correlated queries we receive
@@ -365,12 +350,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (project.getProjects().size() != 1)
             throw new UnimplementedException(node);
         RexNode projection = project.getProjects().get(0);
-        if (!(projection instanceof RexFieldAccess))
-            throw new UnimplementedException(node);
-        RexFieldAccess field = (RexFieldAccess) projection;
-        RelDataType leftRowType = correlate.getLeft().getRowType();
-        // The index of the field that is the array
-        int arrayFieldIndex = getFieldIndex(field.getField().getName(), leftRowType);
+        DBSPVariablePath dataVar = new DBSPVariablePath("data", leftElementType.ref());
+        ExpressionCompiler compiler = new ExpressionCompiler(dataVar, this.compiler);
+        DBSPClosureExpression arrayExpression = compiler.compile(projection).closure(dataVar.asParameter());
+
         List<Integer> allFields = IntStream.range(0, leftElementType.size())
                 .boxed()
                 .collect(Collectors.toList());
@@ -381,7 +364,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             indexType = type.getFieldType(type.size() - 1);
             allFields.add(DBSPFlatmap.COLLECTION_INDEX);
         }
-        DBSPFlatmap flatmap = new DBSPFlatmap(node, leftElementType, arrayFieldIndex,
+        DBSPFlatmap flatmap = new DBSPFlatmap(node, leftElementType, arrayExpression,
                 allFields, indexType);
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(uncollectNode,
                 flatmap, TypeCompiler.makeZSet(type), left);
@@ -405,7 +388,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             indexType = pair.getFieldType(1);
             indexes.add(DBSPFlatmap.COLLECTION_INDEX);
         }
-        DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, 0,
+        DBSPVariablePath data = new DBSPVariablePath("data", inputRowType.ref());
+        DBSPClosureExpression getField0 = data.deref().field(0).closure(data.asParameter());
+        DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, getField0,
                 indexes, indexType);
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node, function,
                 TypeCompiler.makeZSet(type), opInput);

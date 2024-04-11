@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
@@ -126,15 +128,9 @@ public class StructTests extends SqlIoTest {
             CREATE TYPE address_typ AS (
                street          VARCHAR ARRAY);
             CREATE TABLE PERS(p0 address_typ);""";
-        String field = "CREATE VIEW field AS SELECT pers.p0.street AS street FROM PERS";
-        String v = "CREATE VIEW V AS SELECT st FROM field, UNNEST(street) AS st";
-        // The following is the desired form, but there seems to be a Calcite bug preventing it.
-        // String v = "CREATE VIEW V AS SELECT st FROM PERS, UNNEST(PERS.p0.street) AS st";
+        String v = "CREATE VIEW V AS SELECT st FROM PERS, UNNEST(PERS.p0.street) AS st";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
-        compiler.generateOutputForNextView(false);
-        compiler.compileStatements(field);
-        compiler.generateOutputForNextView(true);
         compiler.compileStatements(v);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPExpression pers = new DBSPTupleExpression(
@@ -152,6 +148,41 @@ public class StructTests extends SqlIoTest {
                         new DBSPStringLiteral("1st Street")));
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase("unnestStructTest", ccs);
+    }
+
+    @Test
+    public void unnestStructVecStructTest() {
+        String ddl = """
+            CREATE TYPE simple AS (s INT, t BOOLEAN);
+            CREATE TYPE vec AS (fields SIMPLE ARRAY);
+            CREATE TABLE T(col vec);
+            CREATE VIEW V AS SELECT A.* FROM (T CROSS JOIN UNNEST(T.col.fields) A)""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(ddl);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
+        DBSPExpression t0 = new DBSPTupleExpression(
+                new DBSPVecLiteral(true,
+                        new DBSPTupleExpression(new DBSPI32Literal(0, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(1, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(2, true), t)));
+        DBSPExpression t1 = new DBSPTupleExpression(
+                new DBSPVecLiteral(true,
+                        new DBSPTupleExpression(new DBSPI32Literal(3, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(4, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(5, true), t)));
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(t0),
+                new DBSPTupleExpression(t1));
+        DBSPZSetLiteral output = new DBSPZSetLiteral(
+                new DBSPTupleExpression(new DBSPI32Literal(0, true), t),
+                new DBSPTupleExpression(new DBSPI32Literal(1, true), t),
+                new DBSPTupleExpression(new DBSPI32Literal(2, true), t),
+                new DBSPTupleExpression(new DBSPI32Literal(3, true), t),
+                new DBSPTupleExpression(new DBSPI32Literal(4, true), t),
+                new DBSPTupleExpression(new DBSPI32Literal(5, true), t));
+        ccs.addPair(new Change(input), new Change(output));
+        this.addRustTestCase("unnestStructVecStructTest", ccs);
     }
 
     @Test

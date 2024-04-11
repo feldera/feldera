@@ -548,9 +548,11 @@ public abstract class InnerRewriteVisitor
         DBSPType indexType = null;
         if (expression.indexType != null)
             indexType = this.transform(expression.indexType);
+        DBSPClosureExpression collectionExpression = this.transform(expression.collectionExpression)
+                .to(DBSPClosureExpression.class);
         this.pop(expression);
         DBSPExpression result = new DBSPFlatmap(expression.getNode(), inputElementType,
-                    expression.collectionFieldIndex, expression.outputFieldIndexes,
+                    collectionExpression, expression.outputFieldIndexes,
                     indexType);
         this.map(expression, result);
         return VisitDecision.STOP;

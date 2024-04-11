@@ -34,7 +34,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //   move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
         //     let x0: Vec<i32> = x.0.clone();
         //     let x1: x.1.clone();
-        //     x.0.clone().into_iter().map({
+        //     let array = (*x).0.clone();
+        //     array.clone().into_iter().map({
         //        move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
         //            Tuple3::new(x0.clone(), x1.clone(), e)
         //        }
@@ -53,8 +54,17 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     // e.1, as produced by the iterator
                     resultColumns.add(elem.field(1));
                 } else {
-                    // e
-                    resultColumns.add(elem);
+                    // Calcite's UNNEST has a strange semantics:
+                    // If e is a tuple type, unpack its fields here
+                    if (elem.getType().is(DBSPTypeTupleBase.class)) {
+                        DBSPTypeTupleBase tuple = elem.getType().to(DBSPTypeTupleBase.class);
+                        for (int ei = 0; ei < tuple.size(); ei++) {
+                            resultColumns.add(elem.field(ei).applyCloneIfNeeded());
+                        }
+                    } else {
+                        // e
+                        resultColumns.add(elem);
+                    }
                 }
             } else if (index == DBSPFlatmap.COLLECTION_INDEX) {
                 // The INDEX field produced WITH ORDINALITY
@@ -80,18 +90,21 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         // };
         // or
         // let array = (*x).0.clone();
-        DBSPType arrayType = rowVar.deref().field(flatmap.collectionFieldIndex).getType();
+        DBSPExpression extractArray = flatmap.collectionExpression.call(rowVar);
+        DBSPLetStatement statement = new DBSPLetStatement("array", extractArray.borrow());
+        statements.add(statement);
+        DBSPType arrayType = extractArray.getType();
 
         DBSPExpression arrayExpression;
         if (arrayType.mayBeNull) {
-            DBSPExpression condition = rowVar.deref().field(flatmap.collectionFieldIndex).is_null();
+            DBSPExpression condition = statement.getVarReference().is_null();
             DBSPExpression empty = new DBSPVecLiteral(flatmap.getNode(), arrayType.setMayBeNull(false), Linq.list());
-            DBSPExpression contents = rowVar.deref().field(flatmap.collectionFieldIndex).applyClone().unwrap();
+            DBSPExpression contents = statement.getVarReference().deref().applyClone().unwrap();
             arrayExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);
         } else {
-            arrayExpression = rowVar.deref().field(flatmap.collectionFieldIndex).applyClone();
+            arrayExpression = statement.getVarReference().deref().applyClone();
         }
-        DBSPLetStatement statement = new DBSPLetStatement("array", arrayExpression);
+        statement = new DBSPLetStatement("array_clone", arrayExpression);
         statements.add(statement);
 
         // move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
