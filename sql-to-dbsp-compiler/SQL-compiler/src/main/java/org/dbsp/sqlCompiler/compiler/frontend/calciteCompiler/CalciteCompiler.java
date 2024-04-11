@@ -296,7 +296,8 @@ public class CalciteCompiler implements IWritesLogs {
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
         planner.setExecutor(RexUtil.EXECUTOR);
         this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
-        this.converterConfig = SqlToRelConverter.config();
+        this.converterConfig = SqlToRelConverter.config()
+                .withExpand(true);
         this.validator = null;
         this.validateTypes = null;
         this.converter = null;

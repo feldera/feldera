@@ -186,6 +186,41 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void selectiveUnnestStructVecStructTest() {
+        String ddl = """
+            CREATE TYPE simple AS (s INT, t BOOLEAN);
+            CREATE TYPE vec AS (fields SIMPLE ARRAY);
+            CREATE TABLE T(col vec);
+            CREATE VIEW V AS SELECT A.s + 1 FROM (T CROSS JOIN UNNEST(T.col.fields) A)""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(ddl);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
+        DBSPExpression t0 = new DBSPTupleExpression(
+                new DBSPVecLiteral(true,
+                        new DBSPTupleExpression(new DBSPI32Literal(0, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(1, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(2, true), t)));
+        DBSPExpression t1 = new DBSPTupleExpression(
+                new DBSPVecLiteral(true,
+                        new DBSPTupleExpression(new DBSPI32Literal(3, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(4, true), t),
+                        new DBSPTupleExpression(new DBSPI32Literal(5, true), t)));
+        DBSPZSetLiteral input = new DBSPZSetLiteral(
+                new DBSPTupleExpression(t0),
+                new DBSPTupleExpression(t1));
+        DBSPZSetLiteral output = new DBSPZSetLiteral(
+                new DBSPTupleExpression(new DBSPI32Literal(1, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(2, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(3, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(4, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(5, true)),
+                new DBSPTupleExpression(new DBSPI32Literal(6, true)));
+        ccs.addPair(new Change(input), new Change(output));
+        this.addRustTestCase("selectiveUnnestStructVecStructTest", ccs);
+    }
+
+    @Test
     public void structArrayStructTest() {
         String ddl = """
             CREATE TYPE address_typ AS (

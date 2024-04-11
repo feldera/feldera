@@ -41,49 +41,58 @@ import java.util.List;
 public class DBSPFlatmap extends DBSPExpression {
     /** Type of the input row. */
     public final DBSPTypeTuple inputElementType;
-    /** A closure which, applied to the input row, produces the
+    /** A closure which, applied to 'data', produces the
      * collection that is being flatmapped. */
     public final DBSPClosureExpression collectionExpression;
-    /** Fields in the output that come from the input row.
-     * The values are encoded as follows:
-     * - COLLECTION_INDEX indicates the fact that the field
-     * does not come from the input tuple, but it is the INDEX within the
-     * collection (used only WITH ORDINALITY).
-     * - ITERATED_ELEMENT indicates that the field is the element in the collection (e)
-     * - A value >= 0 indicates an index in the 'data' field. */
-    public final List<Integer> outputFieldIndexes;
+    /** True whether the iterated element itself has to be
+     * emitted as part of the output.  If it is emitted, it
+     * comes right after all field values and before the collectionIndex. */
+    public final boolean emitIteratedElement;
+    /** Fields of 'data' emitted in the output.
+     * We represent them explicitly, so we can optimize them
+     * when combining with a subsequent projection. */
+    public final List<Integer> leftCollectionIndexes;
+    /** A list of closure expressions that are applied to the 'e'
+     * variable to produce some of the output fields. */
+    @Nullable
+    public final List<DBSPClosureExpression> rightProjections;
     /** The type of the index field, if the operator is invoked WITH ORDINALITY.
      * In this case every element of the collection is output together with its index.
-     * If the index is not needed, this field is null. */
+     * If the index is not needed, this field is null.  This field is emitted in the
+     * output last. */
     @Nullable
-    public final DBSPType indexType;
+    public final DBSPType collectionIndexType;
     /** The type of the elements in the collection field. */
     public final DBSPType collectionElementType;
 
-    public static final int ITERATED_ELEMENT = -1;
-    public static final int COLLECTION_INDEX = -2;
-
     public DBSPFlatmap(CalciteObject node, DBSPTypeTuple inputElementType,
-                       DBSPClosureExpression collectionExpression, List<Integer> outputFieldIndexes,
-                       @Nullable DBSPType indexType) {
+                       DBSPClosureExpression collectionExpression,
+                       List<Integer> leftCollectionIndexes,
+                       @Nullable
+                       List<DBSPClosureExpression> rightProjections,
+                       boolean emitIteratedElement,
+                       @Nullable DBSPType collectionIndexType) {
         super(node, DBSPTypeAny.getDefault());
         this.inputElementType = inputElementType;
+        this.rightProjections = rightProjections;
+        this.emitIteratedElement = emitIteratedElement;
         this.collectionExpression = collectionExpression;
-        this.outputFieldIndexes = outputFieldIndexes;
+        this.leftCollectionIndexes = leftCollectionIndexes;
         DBSPType iterable = this.collectionExpression.getResultType();
         this.collectionElementType = iterable.to(ICollectionType.class).getElementType();
         assert collectionExpression.parameters.length == 1;
         assert collectionExpression.parameters[0].type.sameType(this.inputElementType.ref())
                 : "Collection expression expects " + collectionExpression.parameters[0].type
                 + " but input element type is " + this.inputElementType.ref();
-        this.indexType = indexType;
+        this.collectionIndexType = collectionIndexType;
     }
 
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPFlatmap(this.getNode(),
                 this.inputElementType, this.collectionExpression,
-                this.outputFieldIndexes, this.indexType);
+                this.leftCollectionIndexes, this.rightProjections,
+                this.emitIteratedElement, this.collectionIndexType);
     }
 
     @Override
@@ -92,8 +101,8 @@ public class DBSPFlatmap extends DBSPExpression {
         if (decision.stop()) return;
         visitor.push(this);
         this.inputElementType.accept(visitor);
-        if (this.indexType != null)
-            this.indexType.accept(visitor);
+        if (this.collectionIndexType != null)
+            this.collectionIndexType.accept(visitor);
         this.collectionElementType.accept(visitor);
         this.type.accept(visitor);
         visitor.pop(this);
@@ -101,13 +110,17 @@ public class DBSPFlatmap extends DBSPExpression {
     }
 
     public DBSPFlatmap project(Projection.Description description) {
+        // TODO: verify this.
         List<Integer> outputFields = new ArrayList<>();
         for (int i = 0; i < description.fields.size(); i++) {
             int index = description.fields.get(i);
-            outputFields.add(this.outputFieldIndexes.get(index));
+            outputFields.add(this.leftCollectionIndexes.get(index));
         }
         return new DBSPFlatmap(this.getNode(), this.inputElementType,
-                this.collectionExpression, outputFields, this.indexType);
+                this.collectionExpression, outputFields,
+                this.rightProjections,
+                this.emitIteratedElement,
+                this.collectionIndexType);
     }
 
     @Override
@@ -123,8 +136,9 @@ public class DBSPFlatmap extends DBSPExpression {
             return false;
         return this.inputElementType == o.inputElementType &&
                 this.collectionExpression == o.collectionExpression &&
-                Linq.same(this.outputFieldIndexes, o.outputFieldIndexes) &&
-                this.indexType == o.indexType &&
+                Linq.same(this.leftCollectionIndexes, o.leftCollectionIndexes) &&
+                Linq.same(this.rightProjections, o.rightProjections) &&
+                this.collectionIndexType == o.collectionIndexType &&
                 this.collectionElementType == o.collectionElementType &&
                 this.hasSameType(o);
     }
@@ -139,11 +153,13 @@ public class DBSPFlatmap extends DBSPExpression {
                 "data", this.collectionExpression.parameters[0].getType());
         DBSPExpression array = this.collectionExpression.call(var);
         builder.append(array);
-        if (this.indexType != null)
+        if (this.collectionIndexType != null)
             builder.append(".enumerate()");
-        int outputCount = this.outputFieldIndexes.size();
+        int outputCount = this.leftCollectionIndexes.size() +
+                (this.emitIteratedElement ? 1 : 0) +
+                (this.collectionIndexType != null ? 1 : 0);
         DBSPTypeTupleBase tuple = this.collectionElementType.as(DBSPTypeTupleBase.class);
-        if (this.indexType == null && tuple != null) {
+        if (this.collectionIndexType == null && tuple != null) {
             // See the semantics of UNNEST in calcite: unpack structs in the vector.
             outputCount += tuple.size() - 1;
         }
@@ -152,16 +168,25 @@ public class DBSPFlatmap extends DBSPExpression {
                 .append(outputCount)
                 .append("::new(");
         boolean first = true;
-        for (int index: this.outputFieldIndexes) {
+        for (int index: this.leftCollectionIndexes) {
             if (!first)
                 builder.append(", ");
             first = false;
             if (index >= 0) {
                 builder.append("data.")
                         .append(index);
-            } else if (index == ITERATED_ELEMENT) {
-                if (this.indexType != null) {
-                    builder.append("e.1");
+            }
+        }
+
+        if (this.emitIteratedElement) {
+            if (this.collectionIndexType != null) {
+                builder.append("e.1");
+            } else {
+                if (this.rightProjections != null) {
+                    DBSPVariablePath e = new DBSPVariablePath("e", this.collectionElementType.ref());
+                    for (DBSPClosureExpression clo: this.rightProjections) {
+                        builder.append(clo.call(e));
+                    }
                 } else if (tuple != null) {
                     // unpack the fields of e.
                     for (int i = 0; i < tuple.size(); i++) {
@@ -172,10 +197,11 @@ public class DBSPFlatmap extends DBSPExpression {
                 } else {
                     builder.append("e");
                 }
-            } else if (index == COLLECTION_INDEX) {
-                builder.append("(e.0 + 1)");
             }
         }
+
+        if (this.collectionIndexType != null)
+            builder.append("(e.0 + 1)");
         return builder.append(")} )}");
     }
 }

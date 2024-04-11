@@ -31,6 +31,7 @@ import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.JoinRelType;
+import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Uncollect;
 import org.apache.calcite.rel.core.Window;
@@ -172,8 +173,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import static org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator.TopKNumbering.*;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
@@ -339,6 +338,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple leftElementType = left.getOutputZSetElementType().to(DBSPTypeTuple.class);
 
         RelNode correlateRight = correlate.getRight();
+        Project rightProject = null;
+        if (correlateRight instanceof Project) {
+            rightProject = (Project) correlateRight;
+            correlateRight = rightProject.getInput(0);
+        }
         if (!(correlateRight instanceof Uncollect))
             throw new UnimplementedException(node);
         Uncollect uncollect = (Uncollect) correlateRight;
@@ -351,21 +355,28 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new UnimplementedException(node);
         RexNode projection = project.getProjects().get(0);
         DBSPVariablePath dataVar = new DBSPVariablePath("data", leftElementType.ref());
-        ExpressionCompiler compiler = new ExpressionCompiler(dataVar, this.compiler);
-        DBSPClosureExpression arrayExpression = compiler.compile(projection).closure(dataVar.asParameter());
+        ExpressionCompiler eComp = new ExpressionCompiler(dataVar, this.compiler);
+        DBSPClosureExpression arrayExpression = eComp.compile(projection).closure(dataVar.asParameter());
+        DBSPType arrayElementType = arrayExpression.getResultType().to(DBSPTypeVec.class).getElementType();
 
-        List<Integer> allFields = IntStream.range(0, leftElementType.size())
-                .boxed()
-                .collect(Collectors.toList());
-        allFields.add(DBSPFlatmap.ITERATED_ELEMENT);
+        List<DBSPClosureExpression> rightProjections = null;
+        if (rightProject != null) {
+            DBSPVariablePath eVar = new DBSPVariablePath("e", arrayElementType.ref());
+            final ExpressionCompiler eComp0 = new ExpressionCompiler(eVar, this.compiler);
+            rightProjections =
+                    Linq.map(rightProject.getProjects(),
+                            e -> eComp0.compile(e).closure(eVar.asParameter()));
+        }
+        boolean emitIteratedElement = true;
         DBSPType indexType = null;
         if (uncollect.withOrdinality) {
             // Index field is always last
             indexType = type.getFieldType(type.size() - 1);
-            allFields.add(DBSPFlatmap.COLLECTION_INDEX);
         }
         DBSPFlatmap flatmap = new DBSPFlatmap(node, leftElementType, arrayExpression,
-                allFields, indexType);
+                Linq.range(0, leftElementType.size()),
+                rightProjections,
+                emitIteratedElement, indexType);
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(uncollectNode,
                 flatmap, TypeCompiler.makeZSet(type), left);
         this.assignOperator(correlate, flatMap);
@@ -381,17 +392,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // We expect this to be a single-element tuple whose type is a vector.
         DBSPOperator opInput = this.getInputAs(input, true);
         DBSPType indexType = null;
-        List<Integer> indexes = new ArrayList<>();
-        indexes.add(DBSPFlatmap.ITERATED_ELEMENT);
+        boolean emitIteratedElement = true;
         if (uncollect.withOrdinality) {
             DBSPTypeTuple pair = type.to(DBSPTypeTuple.class);
             indexType = pair.getFieldType(1);
-            indexes.add(DBSPFlatmap.COLLECTION_INDEX);
         }
         DBSPVariablePath data = new DBSPVariablePath("data", inputRowType.ref());
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data.asParameter());
         DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, getField0,
-                indexes, indexType);
+                Linq.list(), null, emitIteratedElement, indexType);
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node, function,
                 TypeCompiler.makeZSet(type), opInput);
         this.assignOperator(uncollect, flatMap);
