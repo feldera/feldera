@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [SQL] `ARG_MIN`, `ARG_MAX` aggregation functions
   ([#1619](https://github.com/feldera/feldera/pull/1619))
 - SQL: Support for `ARRAYS_OVERLAP` function ([#1570](https://github.com/feldera/feldera/pull/1570))
+- Connectors: Initial Delta Table output connector support
+  ([#1639](https://github.com/feldera/feldera/pull/1639))
 
 ## [0.13.0] - 2024-04-02
 
