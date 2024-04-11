@@ -48,7 +48,7 @@ export type PipelineConfig = {
    * stored on disk; if it is `usize::MAX`, then all traces will be kept in
    * memory; and intermediate values specify a threshold.
    */
-  max_memory_rows?: number
+  min_storage_rows?: number
   /**
    * Pipeline name
    */

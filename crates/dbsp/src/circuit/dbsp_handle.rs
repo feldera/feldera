@@ -216,11 +216,11 @@ pub struct CircuitConfig {
     /// bigger than more or for fault tolerance.
     pub storage: Option<String>,
 
-    /// Maximum number of rows of any given persistent trace to keep in memory
-    /// before spilling it to storage. If this is 0, then all traces will be
-    /// stored on disk; if it is `usize::MAX`, then all traces will be kept in
-    /// memory; and intermediate values specify a threshold.
-    pub max_memory_rows: usize,
+    /// Minimum number of rows in a persistent trace to spill it to storage. If
+    /// this is 0, then all traces will be stored on disk; if it is
+    /// `usize::MAX`, then all traces will be kept in memory; and intermediate
+    /// values specify a threshold.
+    pub min_storage_rows: usize,
 }
 
 impl CircuitConfig {
@@ -228,7 +228,7 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             storage: None,
-            max_memory_rows: usize::MAX,
+            min_storage_rows: usize::MAX,
         }
     }
 }
@@ -242,8 +242,8 @@ impl IntoCircuitConfig for CircuitConfig {
         self.storage.clone()
     }
 
-    fn max_memory_rows(&self) -> usize {
-        self.max_memory_rows
+    fn min_storage_rows(&self) -> usize {
+        self.min_storage_rows
     }
 }
 
@@ -256,7 +256,7 @@ pub trait IntoCircuitConfig {
         None
     }
 
-    fn max_memory_rows(&self) -> usize {
+    fn min_storage_rows(&self) -> usize {
         usize::MAX
     }
 }
