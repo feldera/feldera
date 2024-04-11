@@ -39,6 +39,7 @@ public class DBSPI32Literal extends DBSPIntLiteral {
     @Nullable
     public final Integer value;
 
+    /** Create an I32 literal with a NULL value */
     public DBSPI32Literal() {
         this(null, true);
     }
