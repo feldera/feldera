@@ -149,17 +149,26 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
     public Void visitCall(RexCall call) {
         switch (call.op.kind) {
             case AND:
-                call.operands.get(0).accept(this);
-                if (this.completed()) {
-                    // If we don't understand the left side we're done
-                    // and the leftOver is this call.
-                    this.result.setLeftOver(call);
-                    return null;
+                List<RexNode> operands = call.getOperands();
+                for (int i = 0; i < operands.size(); i++) {
+                    call.operands.get(i).accept(this);
+                    if (this.completed()) {
+                        if (i == operands.size() - 1) {
+                            // Just one left
+                            this.result.setLeftOver(operands.get(i));
+                            return null;
+                        }
+                        List<RexNode> remaining = new ArrayList<>();
+                        for (int j = i; j < operands.size(); j++)
+                            remaining.add(call.operands.get(j));
+                        call = call.clone(call.type, remaining);
+                        this.result.setLeftOver(call);
+                        return null;
+                    }
                 }
-                // Recurse on the right side.
-                call.operands.get(1).accept(this);
                 return null;
             case EQUALS:
+                assert call.operands.size() == 2: "Expected 2 operands for equality checking";
                 RexNode left = call.operands.get(0);
                 RexNode right = call.operands.get(1);
                 @Nullable
