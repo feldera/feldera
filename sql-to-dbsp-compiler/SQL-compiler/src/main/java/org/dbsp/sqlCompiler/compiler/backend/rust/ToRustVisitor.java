@@ -123,7 +123,7 @@ public class ToRustVisitor extends CircuitVisitor {
         super(reporter);
         this.options = options;
         this.builder = builder;
-        this.innerVisitor = new ToRustInnerVisitor(reporter, builder, false);
+        this.innerVisitor = new ToRustInnerVisitor(reporter, builder, options, false);
         this.useHandles = this.options.ioOptions.emitHandles;
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
@@ -242,16 +242,7 @@ public class ToRustVisitor extends CircuitVisitor {
             InputColumnMetadata meta = null;
             if (metadata == null) {
                 // output
-                switch (this.options.languageOptions.unquotedCasing) {
-                    case "upper":
-                        name = name.toUpperCase(Locale.ENGLISH);
-                        break;
-                    case "lower":
-                        name = name.toLowerCase(Locale.ENGLISH);
-                        break;
-                    default:
-                        break;
-                }
+                name = this.options.canonicalName(name);
                 quoted = false;
             } else {
                 meta = metadata.getColumnMetadata(field.name);
@@ -378,7 +369,8 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
         StringBuilder b = new StringBuilder();
         IndentStream signature = new IndentStream(b);
-        ToRustInnerVisitor inner = new ToRustInnerVisitor(this.errorReporter, signature, false);
+        ToRustInnerVisitor inner = new ToRustInnerVisitor(
+                this.errorReporter, signature, this.options, false);
 
         if (!this.useHandles) {
             signature.append("Catalog");

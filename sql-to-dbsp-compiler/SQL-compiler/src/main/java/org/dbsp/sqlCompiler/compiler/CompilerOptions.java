@@ -33,6 +33,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -128,6 +129,14 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                     .append(System.lineSeparator());
             return result.toString();
         }
+    }
+
+    public String canonicalName(String name) {
+        return switch (this.languageOptions.unquotedCasing) {
+            case "upper" -> name.toUpperCase(Locale.ENGLISH);
+            case "lower" -> name.toLowerCase(Locale.ENGLISH);
+            default -> name;
+        };
     }
 
     @Override
@@ -233,4 +242,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
     }
 
     public CompilerOptions() {}
+
+    public static CompilerOptions getDefault() {
+        return new CompilerOptions();
+    }
 }

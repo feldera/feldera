@@ -380,7 +380,7 @@ public class RustFileWriter {
             String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
-                str = ToRustInnerVisitor.toRustString(compiler, inner, false);
+                str = ToRustInnerVisitor.toRustString(compiler, inner, compiler.options, false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 str = ToRustVisitor.toRustString(compiler, outer, compiler.options);

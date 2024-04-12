@@ -38,9 +38,7 @@ import java.util.Objects;
 
 public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     public final DBSPTypeCode code;
-    /**
-     * True if this type may include null values.
-     */
+    /** True if this type may include null values. */
     public final boolean mayBeNull;
 
     protected DBSPType(CalciteObject node, DBSPTypeCode code, boolean mayBeNull) {

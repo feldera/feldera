@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
@@ -141,7 +142,8 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         if (node.is(DBSPFlatMapOperator.class)) {
             expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
         }
-        String result = ToRustInnerVisitor.toRustString(this.errorReporter, expression, true);
+        String result = ToRustInnerVisitor.toRustString(
+                this.errorReporter, expression, CompilerOptions.getDefault(), true);
         result = result.replace("\n", "\\l");
         return Utilities.escapeDoubleQuotes(result);
     }
