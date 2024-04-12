@@ -24,27 +24,98 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.apache.calcite.util.TimeString;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.*;
-import org.dbsp.sqlCompiler.ir.expression.*;
-import org.dbsp.sqlCompiler.ir.expression.literal.*;
+import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPQuestionExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPGeoPointLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPathSegment;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
-import org.dbsp.sqlCompiler.ir.pattern.*;
+import org.dbsp.sqlCompiler.ir.pattern.DBSPIdentifierPattern;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPConstItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
-import org.dbsp.sqlCompiler.ir.type.*;
-import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IndentStream;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.util.Utilities;
 
 import java.util.Map;
@@ -59,11 +130,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
      * If set use a more compact display, which is not necessarily compilable.
      */
     protected final boolean compact;
+    protected final CompilerOptions options;
 
-    public ToRustInnerVisitor(IErrorReporter reporter, IndentStream builder, boolean compact) {
+    public ToRustInnerVisitor(IErrorReporter reporter, IndentStream builder,
+                              CompilerOptions options, boolean compact) {
         super(reporter);
         this.builder = builder;
         this.compact = compact;
+        this.options = options;
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -892,6 +966,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
         expression.expression.accept(this);
+        DBSPType baseType = expression.expression.getType();
+        if (baseType.mayBeNull) {
+            // TODO: this should be done differently
+            if (!baseType.hasCopy())
+                this.builder.append(".clone()");
+            this.builder.append(".unwrap()");
+        }
         this.builder.append(".")
                 .append(expression.fieldNo);
         return VisitDecision.STOP;
@@ -1115,7 +1196,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 .increase();
         for (DBSPTypeStruct.Field field: item.type.fields.values()) {
             builder.append("#[serde(rename = \"")
-                    .append(Utilities.escape(field.name))
+                    .append(Utilities.escape(
+                            this.options.canonicalName(field.name)))
                     .append("\")]\n");
             field.accept(this);
             this.builder.append(",")
@@ -1190,10 +1272,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
         throw new InternalCompilerError("Should have been eliminated", implementation.getNode());
     }
 
-    public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node, boolean compact) {
+    public static String toRustString(IErrorReporter reporter, IDBSPInnerNode node,
+                                      CompilerOptions options, boolean compact) {
         StringBuilder builder = new StringBuilder();
         IndentStream stream = new IndentStream(builder);
-        ToRustInnerVisitor visitor = new ToRustInnerVisitor(reporter, stream, compact);
+        ToRustInnerVisitor visitor = new ToRustInnerVisitor(reporter, stream, options, compact);
         node.accept(visitor);
         return builder.toString();
     }

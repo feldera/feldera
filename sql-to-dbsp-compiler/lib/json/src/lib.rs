@@ -22,6 +22,12 @@ pub fn parse_json(value: impl AsRef<str>) -> Json {
     })
 }
 
+/// Parses the given string to [`Json`].
+pub fn try_parse_json(value: impl AsRef<str>) -> Option<Json> {
+    let str = value.as_ref();
+    serde_json::from_str(str).ok()
+}
+
 /// Returns `true` if the given string is a valid [`Json`].
 pub fn check_json(value: impl AsRef<str>) -> bool {
     serde_json::from_str::<Json>(value.as_ref()).is_ok()
@@ -86,6 +92,14 @@ where
 {
     T::deserialize_with_context(&value, &SqlSerdeConfig::default())
         .expect("failed to deserialize JSON to the given type")
+}
+
+/// Deserialize this JSON `value` as the given type: `T`.
+pub fn try_json_as<T>(value: Json) -> Option<T>
+where
+    for<'de> T: DeserializeWithContext<'de, SqlSerdeConfig>,
+{
+    T::deserialize_with_context(&value, &SqlSerdeConfig::default()).ok()
 }
 
 /// Serialize this JSON `value` as a string.

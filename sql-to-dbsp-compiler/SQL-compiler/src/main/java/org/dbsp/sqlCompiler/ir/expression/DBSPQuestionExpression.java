@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.util.IIndentStream;
 
 /** Describes an expression of the form e? */
@@ -14,7 +15,8 @@ public class DBSPQuestionExpression extends DBSPExpression {
     protected DBSPQuestionExpression(DBSPExpression source) {
         super(source.getNode(), source.getType().setMayBeNull(false));
         this.source = source;
-        assert source.getType().mayBeNull;
+        assert source.getType().is(DBSPTypeAny.class) ||
+                source.getType().mayBeNull;
     }
 
     @Override

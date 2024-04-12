@@ -1337,7 +1337,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         arguments[0] = this.toPosition(pos).borrow();
         for (int i = 0; i < converted.size(); i++)
             arguments[i+1] = converted.get(i);
-        return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).rustUnwrap();
+        // The convention is that all such functions return Result.
+        // This is not true for functions that we implement internally.
+        // Currently, we need to unwrap.
+        boolean unwrap = !ef.generated;
+        if (unwrap)
+            return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).rustUnwrap();
+        else
+            return new DBSPApplyExpression(function, type, arguments);
     }
 
     DBSPExpression compile(RexNode expression) {

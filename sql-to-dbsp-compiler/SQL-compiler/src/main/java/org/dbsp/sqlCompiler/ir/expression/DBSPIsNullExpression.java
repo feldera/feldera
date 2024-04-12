@@ -67,7 +67,7 @@ public class DBSPIsNullExpression extends DBSPExpression {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.expression)
-                .append(".is_null()");
+                .append(".is_none()");
     }
 
     @Override

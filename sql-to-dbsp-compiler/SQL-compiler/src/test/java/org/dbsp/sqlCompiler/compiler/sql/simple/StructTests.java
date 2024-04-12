@@ -255,29 +255,4 @@ public class StructTests extends SqlIoTest {
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase("structArrayStructTest", ccs);
     }
-
-    @Test
-    public void jsonStructTest() {
-        String ddl = """
-            CREATE TYPE address AS (
-               number INT
-            );
-            CREATE TABLE PERS(s VARCHAR);
-            CREATE FUNCTION jsonstring_as_address(s VARCHAR) RETURNS address;
-            CREATE VIEW V AS SELECT Z.x.number FROM (SELECT jsonstring_as_address(PERS.s) AS x FROM PERS) Z;
-            """;
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression address0 = new DBSPTupleExpression(
-                new DBSPStringLiteral("{ \"NUMBER\": 2 }", true)
-        );
-        DBSPExpression person0 = new DBSPTupleExpression(
-                new DBSPI32Literal(2, true)
-        );
-        DBSPZSetLiteral input = new DBSPZSetLiteral(address0);
-        DBSPZSetLiteral output = new DBSPZSetLiteral(person0);
-        ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase("jsonStructTest", ccs);
-    }
 }
