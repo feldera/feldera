@@ -1230,8 +1230,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
                     if (elemType.is(DBSPTypeNull.class)) {
                         // cast to type of arg1
                         arg0 = ensureArrayElementsOfType(arg0, arg1.type.setMayBeNull(true));
-                    } else {
-                        arg1 = arg1.cast(elemType.setMayBeNull(arg1.type.mayBeNull));
+                    }
+                    // if apart from the null case, the types are different
+                    else if (!elemType.sameType(arg1.type.setMayBeNull(elemType.mayBeNull))) {
+                        this.compiler.reportError(node.getPositionRange(), "array elements and argument of different types",
+                                "Fist argument is an array of type: " + elemType +
+                                        " and second argument is of type: " + arg1.type
+                        );
                     }
                 }
 
