@@ -489,7 +489,6 @@ mod test {
     use std::collections::HashMap;
     use std::ffi::OsStr;
     use std::io::Write;
-    use std::mem::forget;
     use std::os::unix::ffi::OsStrExt;
     use std::path::Path;
     use tempfile::{NamedTempFile, TempDir};
@@ -594,7 +593,7 @@ outputs:
                 list_files_recursive(&Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
 
             // // Uncomment to inspect the input JSON file.
-            // forget(input_file);
+            // std::mem::forget(input_file);
 
             let mut output_records = Vec::with_capacity(data.len());
             for parquet_file in parquet_files {
@@ -633,7 +632,7 @@ outputs:
             let table_dir = TempDir::new().unwrap();
             delta_table_output_test(data, &table_dir.path().display().to_string(), &HashMap::new(), true);
             // // Uncomment to inspect output parquet files produced by the test.
-            // forget(table_dir);
+            // std::mem::forget(table_dir);
         }
     }
 

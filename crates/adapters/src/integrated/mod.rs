@@ -4,8 +4,10 @@ use pipeline_types::config::{OutputEndpointConfig, TransportConfig, TransportCon
 use pipeline_types::program_schema::Relation;
 use std::sync::Weak;
 
+#[cfg(feature = "with-deltalake")]
 mod delta_table;
 
+#[cfg(feature = "with-deltalake")]
 pub use delta_table::DeltaTableWriter;
 
 /// An integrated output connector implements both transport endpoint
@@ -39,6 +41,7 @@ pub fn create_integrated_output_endpoint(
     controller: Weak<ControllerInner>,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
     match &config.connector_config.transport {
+        #[cfg(feature = "with-deltalake")]
         TransportConfig::DeltaTableOutput(config) => Ok(Box::new(DeltaTableWriter::new(
             endpoint_id,
             endpoint_name,
