@@ -1429,7 +1429,6 @@ mod test {
         #![proptest_config(ProptestConfig::with_cases(5))]
 
         #[test]
-        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_rolling_aggregate_quasi_monotone(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
             // 10_000 is an empirically established bound: without GC this test needs >10KB.
             let (mut circuit, input) = partition_rolling_aggregate_circuit(10000, Some(30_000));
@@ -1445,7 +1444,6 @@ mod test {
 
     proptest! {
         #[test]
-        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 10, 10)) {
             let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 
@@ -1458,7 +1456,6 @@ mod test {
         }
 
         #[test]
-        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_partitioned_over_range_dense(trace in input_trace(5, 500, 25, 10)) {
             let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
 

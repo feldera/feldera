@@ -1141,7 +1141,6 @@ mod test {
 
     proptest! {
         #[test]
-        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_aggregate_test_st(inputs in test_input()) {
             let iterations = inputs.len();
             let circuit = RootCircuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
@@ -1152,7 +1151,6 @@ mod test {
         }
 
         #[test]
-        #[cfg_attr(feature = "persistence", ignore = "takes a long time?")]
         fn proptest_aggregate_test_mt(inputs in test_input(), log_workers in (1..=4)) {
             let workers = 1usize << log_workers;
             let iterations = inputs.len();

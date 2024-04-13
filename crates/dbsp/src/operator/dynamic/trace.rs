@@ -23,6 +23,7 @@ use std::{
     ops::Deref,
     rc::Rc,
 };
+use uuid::Uuid;
 
 circuit_cache_key!(TraceId<C, D: BatchReader>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(GlobalNodeId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
@@ -863,8 +864,9 @@ where
         self.dirty[scope as usize] = false;
 
         if scope == 0 && self.trace.is_none() {
-            // TODO: use T::with_effort with configurable effort?
-            self.trace = Some(T::new(&self.factories, &self.persistent_id));
+            let rt = Runtime::runtime();
+            let cid = rt.map_or_else(Uuid::nil, |rt| rt.start_checkpoint());
+            self.trace = Some(T::from_commit_id(&self.factories, cid, &self.persistent_id));
         }
     }
 
@@ -903,7 +905,7 @@ where
         !self.dirty[scope as usize]
     }
 
-    fn commit(&self, cid: u64) -> Result<(), Error> {
+    fn commit(&self, cid: Uuid) -> Result<(), Error> {
         self.trace
             .as_ref()
             .map(|trace| trace.commit(cid))

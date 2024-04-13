@@ -127,7 +127,8 @@ fn main() {
         //fs::write("path.dot", graph.to_dot()).unwrap();
 
         circuit.step().unwrap();
-    });
+    })
+    .expect("runtime initialization should succeed");
 
     hruntime.join().unwrap();
 }

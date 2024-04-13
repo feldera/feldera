@@ -3,6 +3,7 @@ use crate::{
     dynamic::{
         DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait, WeightTraitTyped,
     },
+    storage::file::reader::Error as ReaderError,
     time::AntichainRef,
     trace::{
         layers::OrdOffset,
@@ -25,6 +26,7 @@ use dyn_clone::clone_box;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
+use std::path::Path;
 use std::{
     cmp::Ordering,
     fmt::{self, Debug},
@@ -416,6 +418,13 @@ where
             Inner::Vec(vec) => vec.persistent_id(),
             Inner::File(file) => file.persistent_id(),
         }
+    }
+
+    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+        Ok(FallbackIndexedWSet {
+            factories: factories.clone(),
+            inner: Inner::File(FileIndexedWSet::from_path(&factories.file, path)?),
+        })
     }
 }
 

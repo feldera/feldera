@@ -91,19 +91,69 @@ use crate::{
     trace::{
         cursor::CursorList, Batch, BatchReader, BatchReaderFactories, Cursor, Filter, Merger, Trace,
     },
-    NumEntries,
+    Error, NumEntries, Runtime,
 };
 
-use crate::dynamic::ClonableTrait;
+use crate::dynamic::{ClonableTrait, DeserializableDyn};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
+use std::fs::File;
+use std::io::Write as IoWrite;
+use std::path::{Path, PathBuf};
 use std::{
     fmt::{self, Debug, Display, Formatter, Write},
+    fs,
     mem::replace,
     ops::DerefMut,
 };
 use textwrap::indent;
+use uuid::Uuid;
+
+/// A spine that is serialized to a file.
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+struct CommittedSpine<B: Batch> {
+    batches: Vec<String>,
+    merged: Vec<(String, String)>,
+    lower: Vec<B::Time>,
+    upper: Vec<B::Time>,
+    effort: u64,
+    dirty: bool,
+    lower_key_bound: Option<Vec<u8>>,
+}
+
+impl<B: Batch> From<&Spine<B>> for CommittedSpine<B> {
+    fn from(value: &Spine<B>) -> Self {
+        let mut batches = vec![];
+        value.map_batches(|b| {
+            batches.push(
+                b.persistent_id()
+                    .expect("Persistent spine needs an identifier")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        });
+
+        // Transform the lower key bound into a serialized form and store it as a byte vector.
+        // This is necessary because the key type is not sized.
+        use crate::dynamic::rkyv::SerializeDyn;
+        let lower_key_bound_ser = value.lower_key_bound.as_ref().map(|b| {
+            let mut s: crate::trace::Serializer = crate::trace::Serializer::default();
+            b.serialize(&mut s).unwrap();
+            s.into_serializer().into_inner().to_vec()
+        });
+
+        CommittedSpine {
+            batches,
+            merged: Vec::new(),
+            lower: value.lower.clone().into(),
+            upper: value.upper.clone().into(),
+            effort: value.effort as u64,
+            dirty: value.dirty,
+            lower_key_bound: lower_key_bound_ser,
+        }
+    }
+}
 
 /// General-purpose [trace][crate::trace::Trace] implementation based on
 /// collection and merging immutable batches of updates.
@@ -128,6 +178,7 @@ where
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
     value_filter: Option<Filter<B::Val>>,
+    persistent_id: String,
 }
 
 impl<B> Display for Spine<B>
@@ -446,6 +497,32 @@ where
                 _ => Ok(acc),
             })
     }
+
+    /// Return the absolute path of the file for this Spine checkpoint.
+    ///
+    /// # Arguments
+    /// - `cid`: The checkpoint id.
+    /// - `persistent_id`: The persistent id that identifies the spine within
+    ///   the circuit for a given checkpoint.
+    fn checkpoint_path<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
+        let rt = Runtime::runtime().unwrap();
+        let mut path = rt.storage_path();
+        path.push(cid.to_string());
+        path.push(format!("pspine-{}.dat", persistent_id.as_ref()));
+        path
+    }
+
+    /// Return the absolute path of the file for this Spine's batchlist.
+    ///
+    /// # Arguments
+    /// - `sid`: The step id of the checkpoint.
+    fn batchlist_path(&self, cid: Uuid) -> PathBuf {
+        let rt = Runtime::runtime().unwrap();
+        let mut path = rt.storage_path();
+        path.push(cid.to_string());
+        path.push(format!("pspine-batches-{}.dat", self.persistent_id));
+        path
+    }
 }
 
 pub struct SpineCursor<'s, B: Batch + 's> {
@@ -591,8 +668,45 @@ where
 {
     type Batch = B;
 
-    fn new<S: AsRef<str>>(factories: &B::Factories, _persistent_id: S) -> Self {
-        Self::with_effort(factories, 1)
+    fn new<S: AsRef<str>>(factories: &B::Factories, persistent_id: S) -> Self {
+        Self::with_effort(factories, 1, String::from(persistent_id.as_ref()))
+    }
+
+    fn from_commit_id<S: AsRef<str>>(
+        factories: &B::Factories,
+        cid: Uuid,
+        persistent_id: S,
+    ) -> Self {
+        let mut spine = Self::with_effort(factories, 1, String::from(persistent_id.as_ref()));
+
+        if cid != Uuid::nil() {
+            let pspine_path = Self::checkpoint_path(cid, persistent_id);
+            let content =
+                fs::read(pspine_path).expect("Spine meta-data for checkpoint must exist.");
+            let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
+
+            let committed: CommittedSpine<B> = archived.deserialize(&mut rkyv::Infallible).unwrap();
+            spine.lower = Antichain::from(committed.lower);
+            spine.upper = Antichain::from(committed.upper);
+            spine.effort = committed.effort as usize;
+            spine.dirty = committed.dirty;
+            if let Some(bytes) = committed.lower_key_bound {
+                let mut default_box = factories.key_factory().default_box();
+                unsafe { default_box.deserialize_from_bytes(&bytes, 0) };
+                spine.lower_key_bound = Some(default_box);
+            }
+            spine.key_filter = None;
+            spine.value_filter = None;
+            for batch in committed.batches {
+                let batch = B::from_path(factories, Path::new(batch.as_str()))
+                    .expect("Batch file for checkpoint must exist.");
+                spine.insert(batch);
+            }
+        } else {
+            // No checkpoint id provided, so we are starting from scratch.
+        }
+
+        spine
     }
 
     fn recede_to(&mut self, frontier: &B::Time) {
@@ -705,6 +819,25 @@ where
     fn value_filter(&self) -> &Option<Filter<Self::Val>> {
         &self.value_filter
     }
+
+    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+        let committed: CommittedSpine<B> = self.into();
+        let as_bytes =
+            crate::storage::file::to_bytes(&committed).expect("Failed to serialize spine.");
+        fs::write(Self::checkpoint_path(cid, &self.persistent_id), as_bytes)?;
+
+        // Write the batches as a separate file, this allows to parse this again e.g.,
+        // in `Runtime` without the need to know the exact Spine type.
+        let batchlist_path = self.batchlist_path(cid);
+        let batches = committed.batches;
+        let as_bytes =
+            crate::storage::file::to_bytes(&batches).expect("Failed to serialize batch-list.");
+        let mut f = File::create(batchlist_path)?;
+        f.write_all(as_bytes.as_slice())?;
+        f.sync_all()?;
+
+        Ok(())
+    }
 }
 
 impl<B> Spine<B>
@@ -758,7 +891,7 @@ where
     /// applying a multiple of the batch's length in effort to each merge.
     /// The `effort` parameter is that multiplier. This value should be at
     /// least one for the merging to happen; a value of zero is not helpful.
-    pub fn with_effort(factories: &B::Factories, mut effort: usize) -> Self {
+    pub fn with_effort(factories: &B::Factories, mut effort: usize, persistent_id: String) -> Self {
         // Zero effort is .. not smart.
         if effort == 0 {
             effort = 1;
@@ -774,6 +907,7 @@ where
             lower_key_bound: None,
             key_filter: None,
             value_filter: None,
+            persistent_id,
         }
     }
 

@@ -38,12 +38,15 @@ use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use dyn_clone::DynClone;
 use rand::Rng;
 use size_of::SizeOf;
+use std::path::Path;
 use std::{fmt::Debug, hash::Hash, path::PathBuf};
 
 pub mod cursor;
 pub mod layers;
 pub mod ord;
 pub mod spine_fueled;
+pub use spine_fueled::Spine;
+
 #[cfg(test)]
 pub mod test;
 
@@ -60,16 +63,17 @@ pub use ord::{
 };
 
 use rkyv::{archived_root, Deserialize, Infallible};
+use uuid::Uuid;
 
 use crate::{
     algebra::MonoidValue,
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
+    storage::file::reader::Error as ReaderError,
     time::AntichainRef,
     Error, NumEntries, Timestamp,
 };
 pub use cursor::Cursor;
 pub use layers::Trie;
-pub use spine_fueled::Spine;
 
 /// Trait for data stored in batches.
 ///
@@ -183,6 +187,18 @@ pub trait Trace: BatchReader {
     /// Allocates a new empty trace.
     fn new<S: AsRef<str>>(factories: &Self::Factories, persistent_id: S) -> Self;
 
+    /// Allocates a new trace and initialize it with batches found for the given
+    /// checkpoint.
+    ///
+    /// # Arguments
+    /// - `cid` - the commit id of the checkpoint to be loaded.
+    /// - `persistent_id` - the persistent id of the trace.
+    fn from_commit_id<S: AsRef<str>>(
+        factories: &Self::Factories,
+        cid: Uuid,
+        persistent_id: S,
+    ) -> Self;
+
     /// Pushes all timestamps in the trace back to `frontier` or less, by
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This
     /// has no effect on timestamps that are already less than or equal to
@@ -252,7 +268,7 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit(&self, _cid: u64) -> Result<(), Error> {
+    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -494,6 +510,10 @@ where
 
     fn persistent_id(&self) -> Option<PathBuf> {
         None
+    }
+
+    fn from_path(_factories: &Self::Factories, _path: &Path) -> Result<Self, ReaderError> {
+        Err(ReaderError::Unsupported)
     }
 }
 

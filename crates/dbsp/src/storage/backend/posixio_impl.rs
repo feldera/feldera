@@ -4,6 +4,7 @@ use metrics::{counter, histogram};
 use std::{
     cell::RefCell,
     collections::HashMap,
+    fs,
     fs::{File, OpenOptions},
     io::{Error as IoError, Seek},
     path::{Path, PathBuf},
@@ -11,16 +12,21 @@ use std::{
     sync::Arc,
     time::Instant,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use tempfile::TempDir;
 
 use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf, init};
 
 use super::{
+    append_to_path,
     metrics::{
         describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
         READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
     AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
+    MUTABLE_EXTENSION,
 };
 
 /// Helper function that opens files as direct IO files on linux.
@@ -32,6 +38,7 @@ fn open_as_direct<P: AsRef<Path>>(p: P, options: &mut OpenOptions) -> Result<Fil
     }
     options.open(p)
 }
+
 /// Meta-data we keep per file we created.
 struct FileMetaData {
     file: File,
@@ -61,6 +68,7 @@ impl FileMetaData {
 
     #[cfg(not(target_os = "linux"))]
     fn flush(&mut self) -> Result<(), IoError> {
+        use std::os::unix::fs::FileExt;
         if !self.buffers.is_empty() {
             let mut offset = self.offset;
             for buf in self.buffers.drain(..) {
@@ -154,7 +162,7 @@ impl PosixBackend {
 
 impl Storage for PosixBackend {
     fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
-        let path = self.base.join(name);
+        let path = append_to_path(self.base.join(name), MUTABLE_EXTENSION);
         let file_counter = self.next_file_id.increment();
         let file = open_as_direct(
             &path,
@@ -176,6 +184,28 @@ impl Storage for PosixBackend {
         Ok(FileHandle(file_counter))
     }
 
+    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+        let path = self.base.join(name);
+        let attr = std::fs::metadata(&path)?;
+
+        let file = open_as_direct(&path, OpenOptions::new().read(true))?;
+        let mut files = self.files.borrow_mut();
+
+        let file_counter = self.next_file_id.increment();
+        files.insert(
+            file_counter,
+            FileMetaData {
+                file,
+                path,
+                buffers: Vec::new(),
+                offset: 0,
+                len: attr.size(),
+            },
+        );
+
+        Ok(ImmutableFileHandle(file_counter))
+    }
+
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
             .map(|_| counter!(FILES_DELETED).increment(1))
@@ -184,6 +214,10 @@ impl Storage for PosixBackend {
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
             .map(|_| counter!(FILES_DELETED).increment(1))
+    }
+
+    fn base(&self) -> &Path {
+        &self.base
     }
 
     fn write_block(
@@ -208,11 +242,17 @@ impl Storage for PosixBackend {
 
     fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let mut files = self.files.borrow_mut();
-
         let mut fm = files.remove(&fd.0).unwrap();
-        let path = fm.path.clone();
         fm.flush()?;
         fm.file.sync_all()?;
+
+        // Remove the .mut extension from the file.
+        let finalized_path = fm.path.with_extension("");
+        let mut ppath = fm.path.clone();
+        ppath.pop();
+        fs::rename(&fm.path, &finalized_path)?;
+        fm.path = finalized_path;
+        let path = fm.path.clone();
         files.insert(fd.0, fm);
 
         Ok((ImmutableFileHandle(fd.0), path))

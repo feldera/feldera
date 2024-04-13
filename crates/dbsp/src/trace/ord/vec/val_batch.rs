@@ -19,6 +19,7 @@ use crate::{
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
+use std::path::PathBuf;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::DerefMut,
@@ -398,6 +399,10 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = OrdValBuilder<K, V, T, R, O>;
     type Merger = OrdValMerger<K, V, T, R, O>;
+
+    fn persistent_id(&self) -> Option<PathBuf> {
+        unimplemented!()
+    }
 
     /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
     where

@@ -1,5 +1,5 @@
 use dyn_clone::clone_box;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{
     cmp::Ordering,
     fmt,
@@ -14,7 +14,7 @@ use crate::{
         Factory, LeanVec, WeightTrait, WithFactory,
     },
     storage::file::{
-        reader::{ColumnSpec, Cursor as FileCursor, Reader},
+        reader::{ColumnSpec, Cursor as FileCursor, Error as ReaderError, Reader},
         writer::{Parameters, Writer2},
         Factories as FileFactories,
     },
@@ -383,6 +383,19 @@ where
 
     fn persistent_id(&self) -> Option<PathBuf> {
         Some(self.file.path())
+    }
+
+    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+        let any_factory0 = factories.factories0.any_factories();
+        let any_factory1 = factories.factories1.any_factories();
+        let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
+        Ok(Self {
+            factories: factories.clone(),
+            lower_bound: 0,
+            file,
+            lower: Antichain::new(),
+            upper: Antichain::new(),
+        })
     }
 }
 

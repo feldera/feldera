@@ -763,7 +763,7 @@ where
 ///     for _ in 1..ROUNDS {
 ///         circuit.step();
 ///     }
-/// });
+/// }).expect("failed to start runtime");
 ///
 /// hruntime.join().unwrap();
 /// # }
@@ -1089,7 +1089,8 @@ mod tests {
 
                 assert_eq!(input_data, output_data);
             }
-        });
+        })
+        .expect("failed to start runtime");
 
         hruntime.join().unwrap();
     }
@@ -1157,7 +1158,8 @@ mod tests {
                 for _ in 1..ROUNDS {
                     circuit.step().unwrap();
                 }
-            });
+            })
+            .expect("failed to start runtime");
 
             hruntime.join().unwrap();
         }

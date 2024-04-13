@@ -9,6 +9,7 @@ use crate::circuit::{
 };
 use crate::Error;
 use std::borrow::Cow;
+use uuid::Uuid;
 
 /// Minimal requirements for values exchanged by operators.
 pub trait Data: Clone + 'static {}
@@ -199,7 +200,7 @@ pub trait Operator: 'static {
     /// Instructors operator to checkpoint its state to persistent storage.
     ///
     /// In most cases (except for traces) this method is a no-op.
-    fn commit(&self, _cid: u64) -> Result<(), Error> {
+    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
         Ok(())
     }
 }

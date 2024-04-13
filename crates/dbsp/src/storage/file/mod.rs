@@ -146,7 +146,7 @@ where
     /// are unknown.
     ///
     /// See documentation of [`AnyFactories`].
-    fn any_factories(&self) -> AnyFactories {
+    pub(crate) fn any_factories(&self) -> AnyFactories {
         AnyFactories {
             key_factory: Arc::new(self.key_factory),
             item_factory: Arc::new(self.item_factory),

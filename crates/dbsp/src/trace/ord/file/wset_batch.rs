@@ -25,11 +25,11 @@ use rand::{seq::index::sample, Rng};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::min,
+    cmp::{min, Ordering},
     fmt::{self, Debug},
     ops::{Add, AddAssign, Neg},
+    path::{Path, PathBuf},
 };
-use std::{cmp::Ordering, path::PathBuf};
 
 pub struct FileWSetFactories<K, R>
 where
@@ -452,6 +452,17 @@ where
 
     fn persistent_id(&self) -> Option<PathBuf> {
         Some(self.file.path())
+    }
+
+    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+        let any_factory0 = factories.file_factories.any_factories();
+        let file = Reader::open(&[&any_factory0], &Runtime::storage(), path)?;
+
+        Ok(Self {
+            factories: factories.clone(),
+            file,
+            lower_bound: 0,
+        })
     }
 }
 

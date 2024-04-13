@@ -8,13 +8,13 @@ use std::{
     marker::PhantomData,
     mem::size_of,
     ops::{Bound, Range, RangeBounds},
-    path::PathBuf,
+    path::{Path as IoPath, PathBuf},
     rc::Rc,
 };
 
 use crate::dynamic::{DataTrait, DeserializeDyn, Factory};
 use binrw::{
-    io::{self, Error as IoError},
+    io::{self},
     BinRead, Error as BinError,
 };
 use thiserror::Error as ThisError;
@@ -41,10 +41,6 @@ pub enum Error {
     #[error("Error accessing storage: {0}")]
     Storage(#[from] StorageError),
 
-    /// Errors reading the layer file.
-    #[error("Error accessing storage: {0}")]
-    Io(#[from] IoError),
-
     /// File has unexpected number of columns.
     #[error("File has {actual} column(s) but should have {expected}.")]
     WrongNumberOfColumns {
@@ -53,6 +49,10 @@ pub enum Error {
         /// Expected number of columns in file.
         expected: usize,
     },
+
+    /// The invocation is not supported.
+    #[error("The requested operation is not supported.")]
+    Unsupported,
 }
 
 impl From<BinError> for Error {
@@ -1013,8 +1013,7 @@ impl Column {
     }
 }
 
-/// Encapsulates storage and a file handle, and deletes the file handle when
-/// dropped.
+/// Encapsulates storage and a file handle.
 pub(crate) struct ImmutableFileRef<S>
 where
     S: Storage,
@@ -1022,6 +1021,15 @@ where
     path: PathBuf,
     cache: Rc<BufferCache<S, FileCacheEntry>>,
     file_handle: Option<ImmutableFileHandle>,
+}
+
+impl<S> Drop for ImmutableFileRef<S>
+where
+    S: Storage,
+{
+    fn drop(&mut self) {
+        let _ = self.cache.evict(self.file_handle.take().unwrap());
+    }
 }
 
 impl<S> ImmutableFileRef<S>
@@ -1039,14 +1047,13 @@ where
             file_handle: Some(file_handle),
         }
     }
-}
 
-impl<S> Drop for ImmutableFileRef<S>
-where
-    S: Storage,
-{
-    fn drop(&mut self) {
-        let _ = self.cache.delete(self.file_handle.take().unwrap());
+    pub(crate) fn open(
+        cache: &Rc<BufferCache<S, FileCacheEntry>>,
+        path: &IoPath,
+    ) -> Result<Self, Error> {
+        let file_handle = cache.open(path)?;
+        Ok(Self::new(cache, file_handle, path.to_path_buf()))
     }
 }
 
@@ -1055,6 +1062,7 @@ where
     S: Storage,
 {
     file: Rc<ImmutableFileRef<S>>,
+    /// Location of the file on disk.
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1182,6 +1190,16 @@ where
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })))
+    }
+
+    /// Instantiates a reader given an existing path.
+    pub fn open(
+        factories: &[&AnyFactories],
+        cache: &Rc<BufferCache<S, FileCacheEntry>>,
+        path: &IoPath,
+    ) -> Result<Self, Error> {
+        let file = ImmutableFileRef::open(cache, path)?;
+        Self::new(factories, Rc::new(file))
     }
 
     /// The number of columns in the layer file.
@@ -2132,7 +2150,6 @@ where
     ) -> Result<(), Error>
     where
         S: Storage,
-
         T: ColumnSpec,
     {
         if !row_group.rows.is_empty() {
