@@ -161,6 +161,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.IdShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -377,7 +378,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFlatmap flatmap = new DBSPFlatmap(node, leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
                 rightProjections,
-                emitIteratedElement, indexType);
+                emitIteratedElement, indexType, new IdShuffle());
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(uncollectNode,
                 flatmap, TypeCompiler.makeZSet(type), left);
         this.assignOperator(correlate, flatMap);
@@ -401,7 +402,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath data = new DBSPVariablePath("data", inputRowType.ref());
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data.asParameter());
         DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, getField0,
-                Linq.list(), null, emitIteratedElement, indexType);
+                Linq.list(), null, emitIteratedElement, indexType, new IdShuffle());
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node, function,
                 TypeCompiler.makeZSet(type), opInput);
         this.assignOperator(uncollect, flatMap);

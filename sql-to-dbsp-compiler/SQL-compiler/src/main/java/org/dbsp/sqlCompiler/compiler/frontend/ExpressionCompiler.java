@@ -1347,7 +1347,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
         // Currently, we need to unwrap.
         boolean unwrap = !ef.generated;
         if (unwrap)
-            return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).rustUnwrap();
+            return new DBSPApplyExpression(function, new DBSPTypeResult(type), arguments).resultUnwrap();
         else
             return new DBSPApplyExpression(function, type, arguments);
     }

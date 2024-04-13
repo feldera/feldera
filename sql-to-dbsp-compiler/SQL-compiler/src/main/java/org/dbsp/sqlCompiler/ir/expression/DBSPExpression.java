@@ -47,9 +47,7 @@ public abstract class DBSPExpression
         this.type = type;
     }
 
-    /**
-     * Generates an expression that calls clone() on this.
-     */
+    /** Generates an expression that calls clone() on this. */
     public DBSPExpression applyClone() {
         assert !this.type.is(DBSPTypeRef.class): "Cloning a reference " + this;
         if (this.is(DBSPCloneExpression.class))
@@ -71,7 +69,7 @@ public abstract class DBSPExpression
     }
 
     /** Unwrap a Rust 'Result' type */
-    public DBSPExpression rustUnwrap() {
+    public DBSPExpression resultUnwrap() {
         DBSPType resultType;
         if (this.type.is(DBSPTypeAny.class)) {
             resultType = this.type;
@@ -85,7 +83,7 @@ public abstract class DBSPExpression
     /** Unwrap an expression with a nullable type */
     public DBSPExpression unwrap() {
         assert this.type.mayBeNull;
-        return new DBSPApplyMethodExpression(this.getNode(), "unwrap", this.type.setMayBeNull(false), this);
+        return new DBSPUnwrapExpression(this);
     }
 
     public DBSPExpressionStatement toStatement() {
@@ -145,9 +143,7 @@ public abstract class DBSPExpression
         return this.type.sameType(other.type);
     }
 
-    /**
-     * Make a deep copy of this expression.
-     */
+    /** Make a deep copy of this expression. */
     public abstract DBSPExpression deepCopy();
 
     public static @Nullable DBSPExpression nullableDeepCopy(@Nullable DBSPExpression expression) {

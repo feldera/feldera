@@ -26,8 +26,11 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Linq;
+import org.dbsp.util.Shuffle;
 
 import java.util.Arrays;
+import java.util.List;
 
 public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     public final DBSPExpression[] fields;
@@ -52,5 +55,13 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
 
     public boolean isRaw() {
         return this.is(DBSPRawTupleExpression.class);
+    }
+
+    /** Create a tuple of the same type from the specified fields */
+    public abstract DBSPBaseTupleExpression fromFields(List<DBSPExpression> fields);
+
+    public DBSPBaseTupleExpression shuffle(Shuffle data) {
+        List<DBSPExpression> fields = data.shuffle(Linq.list(this.fields));
+        return this.fromFields(fields);
     }
 }

@@ -130,39 +130,29 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return this.to(DBSPTypeRef.class).type;
     }
 
-    /**
-     * The null value with this type.
-     */
+    /** The null value with this type. */
     public DBSPExpression nullValue() {
         return DBSPLiteral.none(this);
     }
 
-    /**
-     * True if this type has a Rust 'copy' method.
-     */
+    /** True if this type has a Rust 'copy' method. */
     public boolean hasCopy() {
         return true;
     }
 
-    /**
-     * Returns "N" if the type may be nullable, "" otherwise.
-     * Used in the code generation.
-     */
+    /** Returns "N" if the type may be nullable, "" otherwise.
+     * Used in the code generation. */
     public String nullableSuffix() {
         return this.mayBeNull ? "N" : "";
     }
 
-    /**
-     * The name of the type as used in the runtime library.
-     * Only defined for base types.
-     */
+    /** The name of the type as used in the runtime library.
+     * Only defined for base types. */
     public String baseTypeWithSuffix() {
         return this.to(DBSPTypeBaseType.class).shortName() + this.nullableSuffix();
     }
 
-    /**
-     * Returns a lambda which casts the current type to the specified type.
-     */
+    /** Returns a lambda which casts the current type to the specified type. */
     public DBSPExpression caster(DBSPType to) {
         throw new UnimplementedException("Casting from " + this + " to " + to, to);
     }

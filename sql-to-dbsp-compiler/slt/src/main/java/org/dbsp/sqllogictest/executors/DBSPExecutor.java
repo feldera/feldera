@@ -435,7 +435,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 "CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2)); // workers
         DBSPLetStatement cas = new DBSPLetStatement("circ",
                 new DBSPApplyExpression(
-                        circuit.getNode(), circuit.name, DBSPTypeAny.getDefault(), arg).rustUnwrap(), true);
+                        circuit.getNode(), circuit.name, DBSPTypeAny.getDefault(), arg).resultUnwrap(), true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
         list.add(streams);
@@ -460,7 +460,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPLetStatement step =
                 new DBSPLetStatement("_",
                         new DBSPApplyMethodExpression("step", DBSPTypeAny.getDefault(),
-                        cas.getVarReference().field(0)).rustUnwrap());
+                        cas.getVarReference().field(0)).resultUnwrap());
         list.add(step);
         DBSPLetStatement outputStatement =
                 new DBSPLetStatement("out",
