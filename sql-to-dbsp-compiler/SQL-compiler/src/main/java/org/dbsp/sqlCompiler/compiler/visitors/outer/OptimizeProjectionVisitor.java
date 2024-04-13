@@ -59,7 +59,6 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 this.map(operator, result);
                 return;
             } else if (source.is(DBSPMapOperator.class)) {
-                // Projection of a "simple" function.
                 Projection sourceProjection = new Projection(this.errorReporter);
                 sourceProjection.traverse(source.getFunction());
                 DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
@@ -81,8 +80,12 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 return;
             } else if (source.is(DBSPFlatMapOperator.class)) {
                 DBSPFlatmap function = source.getFunction().as(DBSPFlatmap.class);
-                if (function != null) {
-                    function = function.project(projection.getDescription());
+                if (function != null && projection.isShuffle()) {
+                    function = new DBSPFlatmap(
+                            function.getNode(), function.inputElementType,
+                            function.collectionExpression, function.leftCollectionIndexes,
+                            function.rightProjections, function.emitIteratedElement,
+                            function.collectionIndexType, projection.getShuffle());
                     DBSPOperator result = source.withFunction(function, operator.outputType);
                     this.map(operator, result);
                     return;

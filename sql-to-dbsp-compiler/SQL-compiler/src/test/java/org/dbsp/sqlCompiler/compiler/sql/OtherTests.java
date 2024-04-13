@@ -31,6 +31,7 @@ import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -43,6 +44,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -494,6 +497,45 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+    }
+
+    @Test
+    public void testProjectionSimplify() {
+        // Test for https://github.com/feldera/feldera/issues/1628
+        String sql = EndToEndTests.E2E_TABLE + "; " +
+                "CREATE VIEW V AS SELECT T1.COL3 FROM T AS T1 JOIN T AS T2 ON T1.COL2 = T2.COL6";
+        DBSPCompiler compiler = this.testCompiler();
+        // Without optimizations there is a map operator.
+        compiler.options.languageOptions.optimizationLevel = 1;
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        CircuitVisitor findMap = new CircuitVisitor(compiler) {
+            int mapCount = 0;
+
+            @Override
+            public VisitDecision preorder(DBSPMapOperator node) {
+                this.mapCount++;
+                return super.preorder(node);
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.mapCount > 0);
+            }
+        };
+        findMap.apply(circuit);
+
+        compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        circuit = getCircuit(compiler);
+        CircuitVisitor noMap = new CircuitVisitor(compiler) {
+            @Override
+            public VisitDecision preorder(DBSPMapOperator node) {
+                Assert.fail("Circuit should contain no map operators");
+                return super.preorder(node);
+            }
+        };
+        noMap.apply(circuit);
     }
 
     @Test

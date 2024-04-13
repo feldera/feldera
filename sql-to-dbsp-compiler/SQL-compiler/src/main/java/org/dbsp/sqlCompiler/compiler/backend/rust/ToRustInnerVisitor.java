@@ -63,6 +63,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -956,6 +957,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return VisitDecision.STOP;
     }
 
+    @Override
+    public VisitDecision preorder(DBSPUnwrapExpression expression) {
+        this.builder.append("(");
+        expression.expression.accept(this);
+        this.builder.append(".unwrap()");
+        this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
     public VisitDecision preorder(DBSPEnumValue expression) {
         this.builder.append(expression.enumName)
                 .append("::")
@@ -969,7 +979,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPType baseType = expression.expression.getType();
         if (baseType.mayBeNull) {
             // TODO: this should be done differently
-            if (!baseType.hasCopy())
+            if (!baseType.hasCopy() &&
+                    !expression.expression.is(DBSPCloneExpression.class))
                 this.builder.append(".clone()");
             this.builder.append(".unwrap()");
         }

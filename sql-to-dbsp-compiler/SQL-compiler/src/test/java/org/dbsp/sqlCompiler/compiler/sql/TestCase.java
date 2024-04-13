@@ -67,7 +67,7 @@ class TestCase {
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
         circuitArguments[0] = new DBSPApplyExpression("CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2));
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
-                new DBSPApplyExpression(this.ccs.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).rustUnwrap(),
+                new DBSPApplyExpression(this.ccs.circuit.name, DBSPTypeAny.getDefault(), circuitArguments).resultUnwrap(),
                 true);
         list.add(cas);
         DBSPLetStatement streams = new DBSPLetStatement("streams", cas.getVarReference().field(1));
@@ -103,7 +103,7 @@ class TestCase {
             }
             DBSPLetStatement step =
                     new DBSPLetStatement("_", new DBSPApplyMethodExpression(
-                    "step", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).rustUnwrap());
+                    "step", DBSPTypeAny.getDefault(), cas.getVarReference().field(0)).resultUnwrap());
             list.add(step);
 
             for (int i = 0; i < changes.outputs.getSetCount(); i++) {

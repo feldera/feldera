@@ -4,7 +4,6 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
@@ -14,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Shuffle;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -64,6 +64,8 @@ public class DBSPFlatmap extends DBSPExpression {
     public final DBSPType collectionIndexType;
     /** The type of the elements in the collection field. */
     public final DBSPType collectionElementType;
+    /** Shuffle to apply to elements in the produced tuple */
+    public final Shuffle shuffle;
 
     public DBSPFlatmap(CalciteObject node, DBSPTypeTuple inputElementType,
                        DBSPClosureExpression collectionExpression,
@@ -71,7 +73,8 @@ public class DBSPFlatmap extends DBSPExpression {
                        @Nullable
                        List<DBSPClosureExpression> rightProjections,
                        boolean emitIteratedElement,
-                       @Nullable DBSPType collectionIndexType) {
+                       @Nullable DBSPType collectionIndexType,
+                       Shuffle shuffle) {
         super(node, DBSPTypeAny.getDefault());
         this.inputElementType = inputElementType;
         this.rightProjections = rightProjections;
@@ -85,6 +88,7 @@ public class DBSPFlatmap extends DBSPExpression {
                 : "Collection expression expects " + collectionExpression.parameters[0].type
                 + " but input element type is " + this.inputElementType.ref();
         this.collectionIndexType = collectionIndexType;
+        this.shuffle = shuffle;
     }
 
     @Override
@@ -92,7 +96,7 @@ public class DBSPFlatmap extends DBSPExpression {
         return new DBSPFlatmap(this.getNode(),
                 this.inputElementType, this.collectionExpression,
                 this.leftCollectionIndexes, this.rightProjections,
-                this.emitIteratedElement, this.collectionIndexType);
+                this.emitIteratedElement, this.collectionIndexType, this.shuffle);
     }
 
     @Override
@@ -107,20 +111,6 @@ public class DBSPFlatmap extends DBSPExpression {
         this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
-    }
-
-    public DBSPFlatmap project(Projection.Description description) {
-        // TODO: verify this.
-        List<Integer> outputFields = new ArrayList<>();
-        for (int i = 0; i < description.fields.size(); i++) {
-            int index = description.fields.get(i);
-            outputFields.add(this.leftCollectionIndexes.get(index));
-        }
-        return new DBSPFlatmap(this.getNode(), this.inputElementType,
-                this.collectionExpression, outputFields,
-                this.rightProjections,
-                this.emitIteratedElement,
-                this.collectionIndexType);
     }
 
     @Override
@@ -140,6 +130,7 @@ public class DBSPFlatmap extends DBSPExpression {
                 Linq.same(this.rightProjections, o.rightProjections) &&
                 this.collectionIndexType == o.collectionIndexType &&
                 this.collectionElementType == o.collectionElementType &&
+                this.shuffle == o.shuffle &&
                 this.hasSameType(o);
     }
 
@@ -168,40 +159,39 @@ public class DBSPFlatmap extends DBSPExpression {
                 .append(outputCount)
                 .append("::new(");
         boolean first = true;
+
+        List<String> expressions = new ArrayList<>();
         for (int index: this.leftCollectionIndexes) {
             if (!first)
                 builder.append(", ");
             first = false;
-            if (index >= 0) {
-                builder.append("data.")
-                        .append(index);
-            }
+            expressions.add("data." + index);
         }
 
         if (this.emitIteratedElement) {
             if (this.collectionIndexType != null) {
-                builder.append("e.1");
+                expressions.add("e.1");
             } else {
                 if (this.rightProjections != null) {
                     DBSPVariablePath e = new DBSPVariablePath("e", this.collectionElementType.ref());
                     for (DBSPClosureExpression clo: this.rightProjections) {
-                        builder.append(clo.call(e));
+                        expressions.add(clo.call(e).toString());
                     }
                 } else if (tuple != null) {
                     // unpack the fields of e.
                     for (int i = 0; i < tuple.size(); i++) {
-                        builder.append("e.")
-                                .append(i)
-                                .append(",");
+                        expressions.add("e." + i);
                     }
                 } else {
-                    builder.append("e");
+                    expressions.add("e");
                 }
             }
         }
 
         if (this.collectionIndexType != null)
-            builder.append("(e.0 + 1)");
+            expressions.add("(e.0 + 1)");
+        expressions = this.shuffle.shuffle(expressions);
+        builder.join(", ", expressions);
         return builder.append(")} )}");
     }
 }

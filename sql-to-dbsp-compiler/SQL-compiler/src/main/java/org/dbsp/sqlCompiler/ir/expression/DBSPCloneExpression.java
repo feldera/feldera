@@ -29,9 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IIndentStream;
 
-/**
- * Represents an expression of the form e.clone().
- */
+/** Represents an expression of the form e.clone(). */
 public class DBSPCloneExpression extends DBSPExpression {
     public final DBSPExpression expression;
 

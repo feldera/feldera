@@ -105,6 +105,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     elem.field(0),
                     new DBSPUSizeLiteral(1)).cast(flatmap.collectionIndexType));
         }
+        resultColumns = flatmap.shuffle.shuffle(resultColumns);
 
         // let array = if (*x).0.is_none() {
         //    vec!()

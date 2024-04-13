@@ -60,7 +60,7 @@ import java.math.BigDecimal;
  * from the declared views.
  */
 public class EndToEndTests extends BaseSQLTests {
-    static final String E2E_TABLE = """
+    public static final String E2E_TABLE = """
             CREATE TABLE T (
             COL1 INT NOT NULL
             , COL2 DOUBLE PRECISION NOT NULL

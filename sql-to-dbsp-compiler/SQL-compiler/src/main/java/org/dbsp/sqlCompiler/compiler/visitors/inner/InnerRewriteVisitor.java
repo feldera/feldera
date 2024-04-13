@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -591,7 +592,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression result = new DBSPFlatmap(expression.getNode(), inputElementType,
                     collectionExpression, expression.leftCollectionIndexes,
                     rightProjections,
-                    expression.emitIteratedElement, indexType);
+                    expression.emitIteratedElement, indexType, expression.shuffle);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -762,6 +763,16 @@ public abstract class InnerRewriteVisitor
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
         DBSPExpression result = new DBSPDerefExpression(source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnwrapExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = new DBSPUnwrapExpression(source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

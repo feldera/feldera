@@ -167,4 +167,9 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
         return new DBSPTupleExpression(this.getNode(), this.getType().mayBeNull,
                 Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
     }
+
+    @Override
+    public DBSPBaseTupleExpression fromFields(List<DBSPExpression> fields) {
+        return new DBSPTupleExpression(this.getNode(), fields);
+    }
 }

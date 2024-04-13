@@ -28,9 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IIndentStream;
 
-/**
- * An expression of the form *expression.
- */
+/** An expression of the form '*expression' */
 public class DBSPDerefExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
