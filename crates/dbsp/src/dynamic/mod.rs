@@ -127,7 +127,7 @@ mod lean_vec;
 mod option;
 pub mod pair;
 mod pairs;
-mod rkyv;
+pub(crate) mod rkyv;
 mod set;
 mod vec;
 mod weight;

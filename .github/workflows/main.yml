@@ -10,10 +10,6 @@ env:
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
-  # It's really `--all-features`, but not adding `persistence`, we expect the
-  # persistence feature to go away again in the future (but if we add it
-  # unconditionally it changes the code that's run significantly)
-  ALMOST_ALL_FEATURES: --features "with-serde with-csv pg-embed"
 
 jobs:
   pre_job:
@@ -125,4 +121,4 @@ jobs:
           RUSTRDOCFLAGS: "-D warnings --cfg docsrs"
         with:
           command: doc
-          args: --workspace ${{ env.ALMOST_ALL_FEATURES }}
+          args: --workspace --all-features

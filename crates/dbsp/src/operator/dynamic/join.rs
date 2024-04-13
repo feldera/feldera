@@ -1366,7 +1366,8 @@ mod test {
     fn do_join_test_mt(workers: usize) {
         let hruntime = Runtime::run(workers, || {
             join_test();
-        });
+        })
+        .expect("failed to run test");
 
         hruntime.join().unwrap();
     }

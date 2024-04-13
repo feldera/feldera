@@ -5,8 +5,10 @@ use std::{
     cell::RefCell,
     cmp::max,
     collections::HashMap,
+    fs,
     future::Future,
     io,
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
@@ -23,16 +25,16 @@ use monoio::{
 };
 use tempfile::TempDir;
 
-use crate::storage::{buffer_cache::FBuf, init};
-
 use super::{
+    append_to_path,
     metrics::{
         describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
         READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
     AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
-    NEXT_FILE_HANDLE,
+    MUTABLE_EXTENSION, NEXT_FILE_HANDLE,
 };
+use crate::storage::{buffer_cache::FBuf, init};
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -126,11 +128,8 @@ impl MonoioBackend {
         DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 
-    async fn create_named_inner<P: AsRef<Path>>(
-        &self,
-        name: P,
-    ) -> Result<FileHandle, StorageError> {
-        let path = self.base.join(name);
+    async fn create_named_inner(&self, name: &Path) -> Result<FileHandle, StorageError> {
+        let path = append_to_path(self.base.join(name), MUTABLE_EXTENSION);
         let file = open_as_direct(
             &path,
             OpenOptions::new().create_new(true).write(true).read(true),
@@ -150,6 +149,27 @@ impl MonoioBackend {
         counter!(FILES_CREATED).increment(1);
 
         Ok(FileHandle(file_counter))
+    }
+
+    /// Opens a file for reading.
+    async fn open_inner(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+        let path = self.base.join(name);
+        let attr = fs::metadata(&path)?;
+
+        let file = open_as_direct(&path, OpenOptions::new().read(true)).await?;
+        let mut files = self.files.write().await;
+
+        let file_counter = self.next_file_id.increment();
+        files.insert(
+            file_counter,
+            FileMetaData {
+                file,
+                path,
+                size: RefCell::new(attr.size()),
+            },
+        );
+
+        Ok(ImmutableFileHandle(file_counter))
     }
 
     async fn write_block_inner(
@@ -179,8 +199,22 @@ impl MonoioBackend {
     ) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
         let mut files = self.files.write().await;
 
-        let fm = files.remove(&fd.0).unwrap();
+        let mut fm = files.remove(&fd.0).unwrap();
+        assert_eq!(
+            fm.path.extension().and_then(|s| s.to_str()),
+            Some(&MUTABLE_EXTENSION[1..]),
+            "Mutable file does not have the right extension"
+        );
         fm.file.sync_all().await?;
+
+        // Remove the MUTABLE_EXTENSION from the file name.
+        // This should ideally also happen through monoio/uring but it
+        // doesn't seem to support this at the moment, I'll have to submit a PR.
+        // See also POSIX impl about assumption of fd validity after rename.
+        let new_name = fm.path.with_extension("");
+        fs::rename(&fm.path, &new_name)?;
+        fm.path = new_name;
+
         let path = fm.path.clone();
         files.insert(fd.0, fm);
 
@@ -251,12 +285,20 @@ impl Storage for MonoioBackend {
         self.block_on(self.create_named_inner(name))
     }
 
+    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+        self.block_on(self.open_inner(name))
+    }
+
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.block_on(self.delete_inner(fd.0))
     }
 
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.block_on(self.delete_inner(fd.0))
+    }
+
+    fn base(&self) -> &Path {
+        self.base.as_path()
     }
 
     fn write_block(

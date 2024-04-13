@@ -281,6 +281,9 @@ where
     fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
         self.backend.create_named(name)
     }
+    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+        self.backend.open(name)
+    }
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.inner.borrow_mut().delete_file((&fd).into());
         self.backend.delete(fd)
@@ -288,6 +291,15 @@ where
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.inner.borrow_mut().delete_file((&fd).into());
         self.backend.delete_mut(fd)
+    }
+
+    fn evict(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
+        self.inner.borrow_mut().delete_file((&fd).into());
+        Ok(())
+    }
+
+    fn base(&self) -> &Path {
+        self.backend.base()
     }
 
     fn write_block(

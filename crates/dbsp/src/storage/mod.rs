@@ -5,6 +5,7 @@
 //! buffering, and an upper layer, [mod@file], that implements data access.
 pub mod backend;
 pub mod buffer_cache;
+pub mod dirlock;
 pub mod file;
 #[cfg(test)]
 mod test;

@@ -1224,7 +1224,6 @@ where
         let storage = self.storage().clone();
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
-
         let (file_handle, path) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],

@@ -107,7 +107,6 @@ impl<const ALLOW_OVERWRITE: bool> Clone for InMemoryBackend<ALLOW_OVERWRITE> {
         }
     }
 }
-
 fn insert_slice_at_offset(
     vec: &Vec<Option<u8>>,
     offset: usize,
@@ -145,6 +144,10 @@ impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
         Ok(FileHandle(file_counter))
     }
 
+    fn open(&self, _name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+        unimplemented!()
+    }
+
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.immutable_files.borrow_mut().remove(&fd.0);
         Ok(())
@@ -153,6 +156,10 @@ impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.files.borrow_mut().remove(&fd.0);
         Ok(())
+    }
+
+    fn base(&self) -> &Path {
+        Path::new("")
     }
 
     fn write_block(

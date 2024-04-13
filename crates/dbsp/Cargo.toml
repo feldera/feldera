@@ -23,7 +23,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["with-serde"]
 with-serde = []
 with-csv = ["csv"]
-persistence2 = []
 
 [dependencies]
 num = "0.4.0"
@@ -47,7 +46,7 @@ rand = "0.8.5"
 # Revert after https://github.com/paupino/rust-decimal/pull/637 is merged:
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 # Go back to rkyv repo once https://github.com/rkyv/rkyv/pull/462 is merged:
-rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
+rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits", "validation", "uuid"] }
 # Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
 size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
 tarpc = { version = "0.33.0", features = ["full"] }
@@ -76,15 +75,17 @@ rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
 pipeline_types = { path = "../pipeline-types" }
-io-uring = "0.6.3"
+sysinfo = "0.30.5"
+libc = "0.2.153"
+static_assertions = "1.1.0"
 
 [dependencies.time]
 version = "0.3.20"
 features = ["formatting", "macros", "serde", "serde-human-readable"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2.150"
 nix = { version = "0.27.1", features = ["uio"] }
+io-uring = "0.6.3"
 
 [dev-dependencies]
 rand = "0.8.5"

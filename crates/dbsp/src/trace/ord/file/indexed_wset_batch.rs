@@ -24,11 +24,11 @@ use dyn_clone::clone_box;
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::{cmp::min, ops::Neg};
-use std::{cmp::Ordering, path::PathBuf};
 use std::{
+    cmp::{min, Ordering},
     fmt::{self, Debug},
-    ops::{Add, AddAssign},
+    ops::{Add, AddAssign, Neg},
+    path::{Path, PathBuf},
 };
 
 pub struct FileIndexedWSetFactories<K, V, R>
@@ -304,7 +304,6 @@ where
 {
     type Output = Self;
     #[inline]
-
     fn add(self, rhs: Self) -> Self::Output {
         if self.is_empty() {
             rhs
@@ -459,8 +458,20 @@ where
             lower_bound: 0,
         }
     }
+
     fn persistent_id(&self) -> Option<PathBuf> {
         Some(self.file.path())
+    }
+
+    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+        let any_factory0 = factories.factories0.any_factories();
+        let any_factory1 = factories.factories1.any_factories();
+        let file = Reader::open(&[&any_factory0, &any_factory1], &Runtime::storage(), path)?;
+        Ok(Self {
+            factories: factories.clone(),
+            lower_bound: 0,
+            file,
+        })
     }
 }
 
@@ -603,11 +614,11 @@ where
         }
     }
 
-    #[inline]
     fn done(self) -> FileIndexedWSet<K, V, R> {
+        let file = self.writer.into_reader().unwrap();
         FileIndexedWSet {
             factories: self.factories.clone(),
-            file: self.writer.into_reader().unwrap(),
+            file,
             lower_bound: 0,
         }
     }

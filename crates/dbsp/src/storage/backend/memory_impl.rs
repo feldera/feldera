@@ -99,12 +99,27 @@ impl Storage for MemoryBackend {
         Ok(FileHandle(file_counter))
     }
 
+    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+        let files = self.files.read().unwrap();
+        let file_id = files
+            .iter()
+            .find(|(_, fm)| fm.name == name)
+            .map(|(id, _)| *id)
+            .ok_or(StorageError::StdIo(IoError::from(ErrorKind::NotFound)))?;
+
+        Ok(ImmutableFileHandle(file_id))
+    }
+
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
     }
 
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
         self.delete_inner(fd.0)
+    }
+
+    fn base(&self) -> &Path {
+        todo!()
     }
 
     fn write_block(

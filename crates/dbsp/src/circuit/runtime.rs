@@ -1,10 +1,13 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
+use crate::circuit::checkpointer::Checkpointer;
+use crate::error::Error as DBSPError;
 use crate::{
     storage::{
-        backend::{new_default_backend, tempdir_for_thread, Backend},
+        backend::{new_default_backend, tempdir_for_thread, Backend, StorageError},
         buffer_cache::BufferCache,
+        dirlock::LockedDirectory,
         file::cache::FileCacheEntry,
     },
     DetailedError,
@@ -30,6 +33,7 @@ use std::{
     thread::{Builder, JoinHandle, LocalKey, Result as ThreadResult},
 };
 use typedmap::{TypedDashMap, TypedMapKey};
+use uuid::Uuid;
 
 use super::dbsp_handle::{IntoCircuitConfig, Layout};
 
@@ -41,6 +45,8 @@ pub enum Error {
         // reported panics.
         panic_info: Vec<(usize, WorkerPanicInfo)>,
     },
+    /// The storage directory supplied does not match the runtime circuit.
+    IncompatibleStorage,
     Terminated,
 }
 
@@ -49,6 +55,7 @@ impl DetailedError for Error {
         match self {
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
             Self::Terminated => Cow::from("Terminated"),
+            Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
         }
     }
 }
@@ -66,6 +73,9 @@ impl Display for Error {
                 Ok(())
             }
             Self::Terminated => f.write_str("circuit terminated by the user"),
+            Self::IncompatibleStorage => {
+                f.write_str("Supplied storage directory does not fit the runtime circuit")
+            }
         }
     }
 }
@@ -180,6 +190,7 @@ struct RuntimeInner {
     layout: Layout,
     storage: StorageLocation,
     min_storage_rows: usize,
+    start_checkpoint: Uuid,
     store: LocalStore,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
@@ -205,17 +216,17 @@ impl Drop for RuntimeInner {
 }
 
 /// The location where the runtime stores its data.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum StorageLocation {
     Temporary(PathBuf),
-    Permanent(PathBuf),
+    Permanent(LockedDirectory),
 }
 
 impl AsRef<Path> for StorageLocation {
     fn as_ref(&self) -> &Path {
         match self {
             Self::Temporary(path) => path.as_ref(),
-            Self::Permanent(path) => path.as_ref(),
+            Self::Permanent(path) => path.base(),
         }
     }
 }
@@ -224,7 +235,7 @@ impl From<StorageLocation> for PathBuf {
     fn from(location: StorageLocation) -> PathBuf {
         match location {
             StorageLocation::Temporary(path) => path,
-            StorageLocation::Permanent(path) => path,
+            StorageLocation::Permanent(path) => path.base().into(),
         }
     }
 }
@@ -239,26 +250,56 @@ impl Debug for RuntimeInner {
 }
 
 impl RuntimeInner {
-    fn new(layout: Layout, storage: Option<String>, min_storage_rows: usize) -> Self {
+    fn new(
+        layout: Layout,
+        storage: Option<String>,
+        start_checkpoint: Uuid,
+        min_storage_rows: usize,
+    ) -> Result<Self, DBSPError> {
         let local_workers = layout.local_workers().len();
         let mut panic_info = Vec::with_capacity(local_workers);
         for _ in 0..local_workers {
             panic_info.push(RwLock::new(None));
         }
-        let storage = storage.map_or_else(
+        let storage: Result<StorageLocation, DBSPError> = storage.map_or_else(
             // Note that we use into_path() here which avoids deleting the temporary directory
             // we still clean it up when the runtime is dropped -- but keep it around on panic.
-            || StorageLocation::Temporary(tempfile::tempdir().unwrap().into_path()),
-            |s| StorageLocation::Permanent(PathBuf::from(s)),
+            || {
+                if start_checkpoint != Uuid::nil() {
+                    return Err(DBSPError::Storage(StorageError::CheckpointNotFound(
+                        start_checkpoint,
+                    )));
+                }
+                Ok(StorageLocation::Temporary(
+                    tempfile::tempdir().unwrap().into_path(),
+                ))
+            },
+            |s| {
+                let locked_path = LockedDirectory::new(s)?;
+                Ok(StorageLocation::Permanent(locked_path))
+            },
         );
+        let storage = storage?;
 
-        Self {
+        // Check if the selected checkpoint to resume from exists.
+        let checkpoint_dir = storage.as_ref().join(start_checkpoint.to_string());
+        if start_checkpoint != Uuid::nil() && !checkpoint_dir.exists() && !checkpoint_dir.is_dir() {
+            return Err(DBSPError::Storage(StorageError::CheckpointNotFound(
+                start_checkpoint,
+            )));
+        }
+        // Clean up any stale checkpoints / files.
+        let checkpointer = Checkpointer::new(storage.as_ref().to_path_buf());
+        checkpointer.gc_startup()?;
+
+        Ok(Self {
             layout,
             storage,
             min_storage_rows,
+            start_checkpoint,
             store: TypedDashMap::new(),
             panic_info,
-        }
+        })
     }
 }
 
@@ -344,13 +385,14 @@ impl Runtime {
     ///     for _ in 0..100 {
     ///         root.step().unwrap();
     ///     }
-    /// });
+    /// })
+    /// .unwrap();
     ///
     /// // Wait for all worker threads to terminate.
     /// hruntime.join().unwrap();
     /// # }
     /// ```
-    pub fn run<F>(cconf: impl IntoCircuitConfig, circuit: F) -> RuntimeHandle
+    pub fn run<F>(cconf: impl IntoCircuitConfig, circuit: F) -> Result<RuntimeHandle, DBSPError>
     where
         F: FnOnce() + Clone + Send + 'static,
     {
@@ -359,11 +401,13 @@ impl Runtime {
 
         let workers = layout.local_workers();
         let nworkers = workers.len();
+        let checkpoint = cconf.start_checkpoint();
         let runtime = Self(Arc::new(RuntimeInner::new(
             layout,
             storage,
+            checkpoint,
             cconf.min_storage_rows(),
-        )));
+        )?));
 
         // Install custom panic hook.
 
@@ -410,7 +454,7 @@ impl Runtime {
             WorkerHandle::new(handle, unparker, kill_signal)
         }));
 
-        RuntimeHandle::new(runtime, workers)
+        Ok(RuntimeHandle::new(runtime, workers))
     }
 
     /// Returns a reference to the multithreaded runtime that
@@ -430,7 +474,7 @@ impl Runtime {
     fn new_backend() -> Rc<Backend> {
         let rt = Runtime::runtime();
         let dir = if let Some(rt) = rt {
-            rt.inner().storage.clone().as_ref().to_path_buf()
+            rt.inner().storage.as_ref().to_path_buf()
         } else {
             tempdir_for_thread()
         };
@@ -503,7 +547,7 @@ impl Runtime {
 
     /// Returns the path to the storage directory for this runtime.
     pub fn storage_path(&self) -> PathBuf {
-        self.inner().storage.clone().into()
+        self.inner().storage.as_ref().into()
     }
 
     /// A per-worker sequential counter.
@@ -555,6 +599,10 @@ impl Runtime {
         let _ = self.inner().panic_info[worker_index]
             .write()
             .map(|mut guard| *guard = Some(panic_info));
+    }
+
+    pub(crate) fn start_checkpoint(&self) -> Uuid {
+        self.inner().start_checkpoint
     }
 }
 
@@ -685,6 +733,7 @@ mod tests {
         thread::sleep,
         time::Duration,
     };
+    use uuid::Uuid;
 
     #[test]
     #[cfg_attr(miri, ignore)]
@@ -708,15 +757,18 @@ mod tests {
             layout: Layout::new_solo(4),
             storage: Some(path.to_str().unwrap().to_string()),
             min_storage_rows: usize::MAX,
+            init_checkpoint: Uuid::nil(),
         };
 
         let hruntime = Runtime::run(cconf, move || {
             let runtime = Runtime::runtime().unwrap();
             assert_eq!(runtime.storage_path(), path_clone);
-        });
+        })
+        .expect("failed to start runtime");
         hruntime.join().unwrap();
         assert!(path.exists(), "persistent storage is not cleaned up");
     }
+
     #[test]
     #[cfg_attr(miri, ignore)]
     fn storage_temp_cleanup() {
@@ -727,12 +779,14 @@ mod tests {
             layout: Layout::new_solo(4),
             storage: None,
             min_storage_rows: usize::MAX,
+            init_checkpoint: Uuid::nil(),
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {
             let runtime = Runtime::runtime().unwrap();
             *storage_path_clone.lock().unwrap() = Some(runtime.storage_path());
-        });
+        })
+        .expect("failed to start runtime");
 
         hruntime.join().unwrap();
         let storage_path = storage_path.lock().unwrap().take().unwrap();
@@ -748,13 +802,15 @@ mod tests {
             layout: Layout::new_solo(4),
             storage: None,
             min_storage_rows: usize::MAX,
+            init_checkpoint: Uuid::nil(),
         };
         let storage_path_clone = storage_path.clone();
         let hruntime = Runtime::run(cconf, move || {
             let runtime = Runtime::runtime().unwrap();
             *storage_path_clone.lock().unwrap() = Some(runtime.storage_path());
             panic!("oh no");
-        });
+        })
+        .expect("failed to start runtime");
         sleep(Duration::from_millis(100));
         hruntime.kill().expect_err("kill shouldn't have worked");
 
@@ -790,7 +846,8 @@ mod tests {
             }
 
             assert_eq!(&*data.borrow(), &(0..100).collect::<Vec<usize>>());
-        });
+        })
+        .expect("failed to start runtime");
 
         hruntime.join().unwrap();
     }
@@ -837,7 +894,8 @@ mod tests {
                     return;
                 }
             }
-        });
+        })
+        .expect("failed to start runtime");
 
         sleep(Duration::from_millis(100));
         hruntime.kill().unwrap();

@@ -29,7 +29,7 @@ pub struct Profiler {
 }
 
 /// Runtime profile of an individual DBSP worker thread.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct WorkerProfile {
     metadata: HashMap<GlobalNodeId, OperatorMeta>,
 }

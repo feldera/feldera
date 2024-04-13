@@ -14,7 +14,7 @@ use crate::{
         Merger, Trace,
     },
     utils::VecExt,
-    DBData, DBWeight, NumEntries, Timestamp,
+    DBData, DBWeight, Error, NumEntries, Timestamp,
 };
 use dyn_clone::clone_box;
 use rand::{seq::IteratorRandom, thread_rng, Rng, SeedableRng};
@@ -27,6 +27,7 @@ use std::{
     fmt::{self, Debug},
     marker::PhantomData,
 };
+use uuid::Uuid;
 
 pub struct TestBatchFactories<K, V, T, R>
 where
@@ -1253,6 +1254,14 @@ where
         }
     }
 
+    fn from_commit_id<S: AsRef<str>>(
+        _factories: &Self::Factories,
+        _cid: Uuid,
+        _persistent_id: S,
+    ) -> Self {
+        todo!()
+    }
+
     fn recede_to(&mut self, frontier: &Self::Time) {
         Batch::recede_to(self, frontier);
     }
@@ -1303,6 +1312,10 @@ where
 
     fn value_filter(&self) -> &Option<Filter<Self::Val>> {
         &self.value_filter
+    }
+
+    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
+        todo!()
     }
 }
 
