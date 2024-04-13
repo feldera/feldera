@@ -518,6 +518,10 @@ inherits = "release"
             );
         let p = &config.dbsp_override_path;
         project_toml_code = project_toml_code
+            .replace(
+                "dbsp_adapters = { path = \"../../crates/adapters\", default-features = false }",
+                "dbsp_adapters = { path = \"../../crates/adapters\" }",
+            )
             .replace("../../crates", &format!("{p}/crates"))
             .replace("../lib", &format!("{}", config.sql_lib_path().display()));
         debug!("TOML:\n{project_toml_code}");
