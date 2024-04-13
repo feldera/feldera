@@ -71,21 +71,6 @@ public class FunctionsTest extends SqlIoTest {
                 \s""");
     }
 
-    @Test
-    public void testArrayAppend() {
-        this.q("""
-                SELECT array_append(ARRAY [1, 2], null::int);
-                 array_append
-                --------------
-                 {1, 2, NULL}"""
-        );
-        this.q("""
-                SELECT array_append(ARRAY [1, 2], 3);
-                 array_append
-                --------------
-                 {1, 2, 3}"""
-        );
-    }
 
     @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6210")
     public void testBinaryCast() {
@@ -1756,110 +1741,6 @@ public class FunctionsTest extends SqlIoTest {
                 """
         );
     }
-
-    @Test
-    public void testArraysOverlap() {
-        this.qs("""
-                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2, 4]);
-                 arrays_overlap
-                ----------------
-                    true
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], cast(null as integer array));
-                 arrays_overlap
-                ----------------
-                    NULL
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3, null], cast(null as integer array));
-                 arrays_overlap
-                ----------------
-                    NULL
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(cast(null as integer array), ARRAY [1, 2, 3]);
-                 arrays_overlap
-                ----------------
-                    NULL
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(cast(null as integer array), ARRAY [1, 2, 3, null]);
-                 arrays_overlap
-                ----------------
-                    NULL
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(ARRAY [null, 1], ARRAY [2, 1]);
-                 arrays_overlap
-                ----------------
-                 true
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(ARRAY [1, 2], ARRAY [1, null]);
-                 arrays_overlap
-                ----------------
-                 true
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(ARRAY [null, 1], ARRAY [2, 1, null]);
-                 arrays_overlap
-                ----------------
-                 true
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(ARRAY [null, 1], ARRAY [2, 3, null]);
-                 arrays_overlap
-                ----------------
-                 NULL
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(cast(null as integer array), cast(null as integer array));
-                 arrays_overlap
-                ----------------
-                 NULL
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(array[1, 2], array[3]);
-                 arrays_overlap
-                ----------------
-                 false
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(array[3], array[2]);
-                 arrays_overlap
-                ----------------
-                 false
-                (1 row)
-                
-                SELECT ARRAYS_OVERLAP(array [3], array [1, null]);
-                 arrays_overlap
-                ----------------
-                 NULL
-                (1 row)
-                """
-        );
-    }
-
-    @Test
-    public void testArraysOverlapDiffTypes() {
-        // fails for the Calcite optimized version as Calcite returns false
-        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])", "different types", false);
-        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])", "different types", false);
-    }
-
-    @Test @Ignore("similar to: https://github.com/feldera/feldera/issues/1465")
-    public void testArraysOverlapNull() {
-        this.qs("""
-                SELECT ARRAYS_OVERLAP(null, null);
-                 arrays_overlap
-                ----------------
-                 NULL
-                (1 row)
-                """
-        );
-    }
-
 
     @Test
     public void testRlike() {

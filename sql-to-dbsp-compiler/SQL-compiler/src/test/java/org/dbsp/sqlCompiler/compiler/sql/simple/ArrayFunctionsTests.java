@@ -186,28 +186,25 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1475")
+    @Test
     public void testArrayPositionDiffTypes() {
-        this.qs("""
-                SELECT array_position(ARRAY [1, 2, 3, 4], 1e0);
-                 array_position
-                ----------------
-                 1
-                (1 row)
-                
-                SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0);
-                 array_position
-                ----------------
-                 1
-                (1 row)
-                
-                SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0);
-                 array_position
-                ----------------
-                 0
-                (1 row)
-                """
-        );
+        this.shouldFail("SELECT array_position(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
+        this.shouldFail("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
+        this.shouldFail("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+    }
+
+    @Test
+    public void testArrayContainsDiffTypes() {
+        this.shouldFail("SELECT array_contains(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
+        this.shouldFail("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
+        this.shouldFail("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+    }
+
+    @Test
+    public void testArrayRemoveDiffTypes() {
+        this.shouldFail("SELECT array_remove(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
+        this.shouldFail("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
+        this.shouldFail("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
     }
 
     @Test
@@ -688,6 +685,109 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 
                 SELECT array_distinct(CAST(NULL AS INTEGER ARRAY));
                  array_distinct
+                ----------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testArraysOverlap() {
+        this.qs("""
+                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2, 4]);
+                 arrays_overlap
+                ----------------
+                    true
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], cast(null as integer array));
+                 arrays_overlap
+                ----------------
+                    NULL
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3, null], cast(null as integer array));
+                 arrays_overlap
+                ----------------
+                    NULL
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(cast(null as integer array), ARRAY [1, 2, 3]);
+                 arrays_overlap
+                ----------------
+                    NULL
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(cast(null as integer array), ARRAY [1, 2, 3, null]);
+                 arrays_overlap
+                ----------------
+                    NULL
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(ARRAY [null, 1], ARRAY [2, 1]);
+                 arrays_overlap
+                ----------------
+                 true
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(ARRAY [1, 2], ARRAY [1, null]);
+                 arrays_overlap
+                ----------------
+                 true
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(ARRAY [null, 1], ARRAY [2, 1, null]);
+                 arrays_overlap
+                ----------------
+                 true
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(ARRAY [null, 1], ARRAY [2, 3, null]);
+                 arrays_overlap
+                ----------------
+                 NULL
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(cast(null as integer array), cast(null as integer array));
+                 arrays_overlap
+                ----------------
+                 NULL
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(array[1, 2], array[3]);
+                 arrays_overlap
+                ----------------
+                 false
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(array[3], array[2]);
+                 arrays_overlap
+                ----------------
+                 false
+                (1 row)
+                
+                SELECT ARRAYS_OVERLAP(array [3], array [1, null]);
+                 arrays_overlap
+                ----------------
+                 NULL
+                (1 row)
+                """
+        );
+    }
+
+    @Test
+    public void testArraysOverlapDiffTypes() {
+        // fails for the Calcite optimized version as Calcite returns false
+        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])", "different types", false);
+        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])", "different types", false);
+    }
+
+    @Test @Ignore("similar to: https://github.com/feldera/feldera/issues/1465")
+    public void testArraysOverlapNull() {
+        this.qs("""
+                SELECT ARRAYS_OVERLAP(null, null);
+                 arrays_overlap
                 ----------------
                  NULL
                 (1 row)
