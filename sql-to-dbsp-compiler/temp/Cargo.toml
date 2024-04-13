@@ -10,7 +10,7 @@ publish = false
 paste = { version = "1.0.12" }
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
 dbsp = { path = "../../crates/dbsp", features = ["with-serde"] }
-dbsp_adapters = { path = "../../crates/adapters", default-features=false }
+dbsp_adapters = { path = "../../crates/adapters", default-features = false }
 pipeline_types = { path = "../../crates/pipeline-types" }
 sqllib = { path = "../lib/sqllib" }
 json = { path = "../lib/json" }
