@@ -15,6 +15,7 @@ use crate::{
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use once_cell::sync::Lazy;
+use pyo3::prelude::*;
 use serde::Serialize;
 use std::{
     backtrace::Backtrace,

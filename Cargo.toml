@@ -2,6 +2,7 @@
 members = [
   "crates/adapters",
   "crates/dbsp",
+  "crates/pydbsp",
   "crates/nexmark",
   "crates/pipeline-types",
   "crates/pipeline_manager",

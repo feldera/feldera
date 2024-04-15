@@ -1,0 +1,17 @@
+[package]
+name = "pydbsp"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "pydbsp"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.21.1"
+dbsp = { path = "../../crates/dbsp", features = ["with-serde"] }
+dbsp_adapters = { path = "../../crates/adapters", default-features=false }
+pipeline_types = { path = "../../crates/pipeline-types" }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db" }
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
