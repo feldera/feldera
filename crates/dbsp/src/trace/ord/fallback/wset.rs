@@ -6,6 +6,7 @@ use crate::{
     },
     time::AntichainRef,
     trace::{
+        cursor::DelegatingCursor,
         ord::{
             file::wset_batch::{FileWSetBuilder, FileWSetCursor, FileWSetMerger},
             filter,
@@ -314,7 +315,7 @@ where
     type Val = DynUnit;
     type Time = ();
     type R = R;
-    type Cursor<'s> = FallbackWSetCursor<'s, K, R>;
+    type Cursor<'s> = DelegatingCursor<'s, K, DynUnit, (), R>;
 
     fn factories(&self) -> Self::Factories {
         self.factories.clone()
@@ -322,7 +323,10 @@ where
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
-        FallbackWSetCursor::new(self)
+        DelegatingCursor(match &self.inner {
+            Inner::Vec(vec) => Box::new(vec.cursor()),
+            Inner::File(file) => Box::new(file.cursor()),
+        })
     }
 
     #[inline]
@@ -520,160 +524,6 @@ where
             MergerInner::ToFile(merger) => merger.size_of_children(context),
             MergerInner::ToVec(merger) => merger.size_of_children(context),
         }
-    }
-}
-
-trait ClonableCursor<'s, K, R>: Cursor<K, DynUnit, (), R> + Debug
-where
-    K: ?Sized,
-    R: ?Sized,
-{
-    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, R> + 's>;
-}
-
-impl<'s, K, R, C> ClonableCursor<'s, K, R> for C
-where
-    K: ?Sized,
-    R: ?Sized,
-    C: Cursor<K, DynUnit, (), R> + Debug + Clone + 's,
-{
-    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, R> + 's> {
-        Box::new(self.clone())
-    }
-}
-/// A cursor for navigating a single layer.
-#[derive(Debug, SizeOf)]
-pub struct FallbackWSetCursor<'s, K, R>(Box<dyn ClonableCursor<'s, K, R> + 's>)
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized;
-
-impl<'s, K, R> Clone for FallbackWSetCursor<'s, K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn clone(&self) -> Self {
-        Self(self.0.clone_boxed())
-    }
-}
-
-impl<'s, K, R> FallbackWSetCursor<'s, K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn new(zset: &'s FallbackWSet<K, R>) -> Self {
-        Self(match &zset.inner {
-            Inner::Vec(vec) => Box::new(vec.cursor()),
-            Inner::File(file) => Box::new(file.cursor()),
-        })
-    }
-}
-
-impl<'s, K, R> Cursor<K, DynUnit, (), R> for FallbackWSetCursor<'s, K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn weight_factory(&self) -> &'static dyn Factory<R> {
-        self.0.weight_factory()
-    }
-
-    fn key(&self) -> &K {
-        self.0.key()
-    }
-
-    fn val(&self) -> &DynUnit {
-        self.0.val()
-    }
-
-    fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
-        self.0.map_times(logic)
-    }
-
-    fn map_times_through(&mut self, upper: &(), logic: &mut dyn FnMut(&(), &R)) {
-        self.0.map_times_through(upper, logic)
-    }
-
-    fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R)) {
-        self.0.map_values(logic)
-    }
-
-    fn weight(&mut self) -> &R {
-        self.0.weight()
-    }
-
-    fn key_valid(&self) -> bool {
-        self.0.key_valid()
-    }
-
-    fn val_valid(&self) -> bool {
-        self.0.val_valid()
-    }
-
-    fn step_key(&mut self) {
-        self.0.step_key()
-    }
-
-    fn step_key_reverse(&mut self) {
-        self.0.step_key_reverse()
-    }
-
-    fn seek_key(&mut self, key: &K) {
-        self.0.seek_key(key)
-    }
-
-    fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.0.seek_key_with(predicate)
-    }
-
-    fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.0.seek_key_with_reverse(predicate)
-    }
-
-    fn seek_key_reverse(&mut self, key: &K) {
-        self.0.seek_key_reverse(key)
-    }
-
-    fn step_val(&mut self) {
-        self.0.step_val()
-    }
-
-    fn seek_val(&mut self, val: &DynUnit) {
-        self.0.seek_val(val)
-    }
-
-    fn seek_val_with(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
-        self.0.seek_val_with(predicate)
-    }
-
-    fn rewind_keys(&mut self) {
-        self.0.rewind_keys()
-    }
-
-    fn fast_forward_keys(&mut self) {
-        self.0.fast_forward_keys()
-    }
-
-    fn rewind_vals(&mut self) {
-        self.0.rewind_vals()
-    }
-
-    fn step_val_reverse(&mut self) {
-        self.0.step_val_reverse()
-    }
-
-    fn seek_val_reverse(&mut self, val: &DynUnit) {
-        self.0.seek_val_reverse(val)
-    }
-
-    fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&DynUnit) -> bool) {
-        self.0.seek_val_with_reverse(predicate)
-    }
-
-    fn fast_forward_vals(&mut self) {
-        self.0.fast_forward_vals()
     }
 }
 
