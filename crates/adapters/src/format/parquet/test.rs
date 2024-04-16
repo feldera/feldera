@@ -47,7 +47,7 @@ pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
 fn rel_to_schema() {
     use super::relation_to_parquet_schema;
     relation_to_parquet_schema(
-        &Relation::new("TestStruct2", false, TestStruct2::schema()),
+        &Relation::new("TestStruct2", false, TestStruct2::schema(), Vec::new()),
         false,
     )
     .expect("Can convert");
@@ -118,7 +118,7 @@ fn parquet_output() {
     let mut encoder = ParquetEncoder::new(
         Box::new(consumer),
         config,
-        Relation::new("TestStruct2", false, TestStruct2::schema()),
+        Relation::new("TestStruct2", false, TestStruct2::schema(), Vec::new()),
     )
     .expect("Can't create encoder");
     let zset = OrdZSet::from_keys(

@@ -4590,6 +4590,12 @@
           },
           "name": {
             "type": "string"
+          },
+          "primary_key": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

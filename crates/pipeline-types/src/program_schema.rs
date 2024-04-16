@@ -50,14 +50,23 @@ pub struct Relation {
     pub case_sensitive: bool,
     #[cfg_attr(feature = "testing", proptest(value = "Vec::new()"))]
     pub fields: Vec<Field>,
+    #[serde(default)]
+    #[cfg_attr(feature = "testing", proptest(value = "Vec::new()"))]
+    pub primary_key: Vec<String>,
 }
 
 impl Relation {
-    pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>) -> Self {
+    pub fn new(
+        name: &str,
+        case_sensitive: bool,
+        fields: Vec<Field>,
+        primary_key: Vec<String>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             case_sensitive,
             fields,
+            primary_key,
         }
     }
 
@@ -68,6 +77,69 @@ impl Relation {
             self.name.clone()
         } else {
             self.name.to_lowercase()
+        }
+    }
+
+    /// Record type of the relation.
+    pub fn record_type(&self) -> ColumnType {
+        ColumnType {
+            typ: SqlType::Struct,
+            nullable: false,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: Some(self.fields.clone()),
+        }
+    }
+
+    /// Type of the primary key if any.
+    pub fn key_type(&self) -> Option<ColumnType> {
+        if self.primary_key.is_empty() {
+            None
+        } else {
+            Some(ColumnType {
+                typ: SqlType::Struct,
+                nullable: false,
+                precision: None,
+                scale: None,
+                component: None,
+                fields: Some(
+                    self.fields
+                        .iter()
+                        .filter(|field| self.primary_key.contains(&field.name))
+                        .map(ToOwned::to_owned)
+                        .collect(),
+                ),
+            })
+        }
+    }
+
+    /// Type of an update record, if the relation has a primary key.
+    pub fn update_type(&self) -> Option<ColumnType> {
+        if self.primary_key.is_empty() {
+            None
+        } else {
+            Some(ColumnType {
+                typ: SqlType::Struct,
+                nullable: false,
+                precision: None,
+                scale: None,
+                component: None,
+                fields: Some(
+                    self.fields
+                        .iter()
+                        .map(|field| {
+                            if self.primary_key.contains(&field.name) {
+                                field.clone()
+                            } else {
+                                let mut field = field.clone();
+                                field.columntype.nullable = true;
+                                field
+                            }
+                        })
+                        .collect(),
+                ),
+            })
         }
     }
 }
