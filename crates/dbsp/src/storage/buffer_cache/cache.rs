@@ -13,6 +13,7 @@ use std::{
 use crc32c::crc32c;
 use metrics::counter;
 
+use crate::storage::file::reader::{CorruptionError, Error};
 use crate::{
     storage::backend::{
         metrics::{BUFFER_CACHE_HIT, BUFFER_CACHE_MISS},
@@ -20,8 +21,6 @@ use crate::{
     },
     storage::buffer_cache::FBuf,
 };
-
-use crate::storage::file::reader::{CorruptionError, Error};
 
 /// A key for the block cache.
 ///
