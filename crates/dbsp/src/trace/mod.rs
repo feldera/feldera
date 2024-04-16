@@ -52,15 +52,12 @@ pub use spine_fueled::Spine;
 pub mod test;
 
 pub use ord::{
-    FallbackIndexedWSet, FallbackIndexedWSetFactories, FallbackWSet, FallbackWSetFactories,
-};
-pub use ord::{
+    FallbackIndexedWSet, FallbackIndexedWSetFactories, FallbackKeyBatch, FallbackKeyBatchFactories,
+    FallbackValBatch, FallbackValBatchFactories, FallbackWSet, FallbackWSetFactories,
     FileIndexedWSet, FileIndexedWSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
-    FileValBatchFactories, FileWSet, FileWSetFactories,
-};
-pub use ord::{
-    OrdIndexedWSet, OrdIndexedWSetFactories, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch,
-    OrdValBatchFactories, OrdWSet, OrdWSetFactories,
+    FileValBatchFactories, FileWSet, FileWSetFactories, OrdIndexedWSet, OrdIndexedWSetFactories,
+    OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories, OrdWSet,
+    OrdWSetFactories,
 };
 
 use rkyv::{archived_root, Deserialize, Infallible};
