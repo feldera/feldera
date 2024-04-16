@@ -5,6 +5,8 @@ pub mod vec;
 
 pub use fallback::{
     indexed_wset::{FallbackIndexedWSet, FallbackIndexedWSetFactories},
+    key_batch::{FallbackKeyBatch, FallbackKeyBatchFactories},
+    val_batch::{FallbackValBatch, FallbackValBatchFactories},
     wset::{FallbackWSet, FallbackWSetFactories},
 };
 pub use file::{

@@ -3,5 +3,7 @@
 #![allow(clippy::large_enum_variant)]
 
 pub mod indexed_wset;
+pub mod key_batch;
 mod utils;
+pub mod val_batch;
 pub mod wset;
