@@ -12,8 +12,25 @@ mod test;
 
 use fdlimit::{raise_fd_limit, Outcome::LimitRaised};
 use log::{info, warn};
+use std::path::PathBuf;
 
+use crate::Runtime;
 use std::sync::Once;
+use uuid::Uuid;
+
+/// Return the absolute path for a checkpoint.
+///
+/// # Panics
+/// - If the `Runtime` is unavailable.
+///
+/// # Arguments
+/// - `cid`: The checkpoint id.
+pub(crate) fn checkpoint_path(cid: Uuid) -> PathBuf {
+    let rt = Runtime::runtime().unwrap();
+    let mut path = rt.storage_path();
+    path.push(cid.to_string());
+    path
+}
 
 /// Raise the fd limit to run the storage library to avoid surprises.  This
 /// is a no-op on Windows, so it does not need to be behind an architectural
