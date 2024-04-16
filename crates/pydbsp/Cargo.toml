@@ -13,5 +13,7 @@ pyo3 = "0.21.1"
 dbsp = { path = "../../crates/dbsp", features = ["with-serde"] }
 dbsp_adapters = { path = "../../crates/adapters", default-features=false }
 pipeline_types = { path = "../../crates/pipeline-types" }
-size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db" }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
+rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
