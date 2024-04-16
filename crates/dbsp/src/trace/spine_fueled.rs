@@ -95,6 +95,7 @@ use crate::{
 };
 
 use crate::dynamic::{ClonableTrait, DeserializableDyn};
+use crate::storage::checkpoint_path;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -504,10 +505,8 @@ where
     /// - `cid`: The checkpoint id.
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
-    fn checkpoint_path<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
-        let rt = Runtime::runtime().unwrap();
-        let mut path = rt.storage_path();
-        path.push(cid.to_string());
+    fn checkpoint_file<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
+        let mut path = checkpoint_path(cid);
         path.push(format!("pspine-{}.dat", persistent_id.as_ref()));
         path
     }
@@ -516,10 +515,8 @@ where
     ///
     /// # Arguments
     /// - `sid`: The step id of the checkpoint.
-    fn batchlist_path(&self, cid: Uuid) -> PathBuf {
-        let rt = Runtime::runtime().unwrap();
-        let mut path = rt.storage_path();
-        path.push(cid.to_string());
+    fn batchlist_file(&self, cid: Uuid) -> PathBuf {
+        let mut path = checkpoint_path(cid);
         path.push(format!("pspine-batches-{}.dat", self.persistent_id));
         path
     }
@@ -680,7 +677,7 @@ where
         let mut spine = Self::with_effort(factories, 1, String::from(persistent_id.as_ref()));
 
         if cid != Uuid::nil() {
-            let pspine_path = Self::checkpoint_path(cid, persistent_id);
+            let pspine_path = Self::checkpoint_file(cid, persistent_id);
             let content =
                 fs::read(pspine_path).expect("Spine meta-data for checkpoint must exist.");
             let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
@@ -824,11 +821,11 @@ where
         let committed: CommittedSpine<B> = self.into();
         let as_bytes =
             crate::storage::file::to_bytes(&committed).expect("Failed to serialize spine.");
-        fs::write(Self::checkpoint_path(cid, &self.persistent_id), as_bytes)?;
+        fs::write(Self::checkpoint_file(cid, &self.persistent_id), as_bytes)?;
 
         // Write the batches as a separate file, this allows to parse this again e.g.,
         // in `Runtime` without the need to know the exact Spine type.
-        let batchlist_path = self.batchlist_path(cid);
+        let batchlist_path = self.batchlist_file(cid);
         let batches = committed.batches;
         let as_bytes =
             crate::storage::file::to_bytes(&batches).expect("Failed to serialize batch-list.");
