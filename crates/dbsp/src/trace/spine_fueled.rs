@@ -821,10 +821,12 @@ where
         let committed: CommittedSpine<B> = self.into();
         let as_bytes =
             crate::storage::file::to_bytes(&committed).expect("Failed to serialize spine.");
-        fs::write(Self::checkpoint_file(cid, &self.persistent_id), as_bytes)?;
+        let mut f = File::create(Self::checkpoint_file(cid, &self.persistent_id))?;
+        f.write_all(as_bytes.as_slice())?;
+        f.sync_all()?;
 
-        // Write the batches as a separate file, this allows to parse this again e.g.,
-        // in `Runtime` without the need to know the exact Spine type.
+        // Write the batches as a separate file, this allows to parse it
+        // in `Checkpointer` without the need to know the exact Spine type.
         let batchlist_path = self.batchlist_file(cid);
         let batches = committed.batches;
         let as_bytes =

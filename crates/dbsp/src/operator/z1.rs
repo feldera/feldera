@@ -1,5 +1,6 @@
 //! z^-1 operator delays its input by one timestamp.
 
+use crate::storage::checkpoint_path;
 use crate::{
     algebra::HasZero,
     circuit::{
@@ -11,10 +12,12 @@ use crate::{
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
     },
-    circuit_cache_key, NumEntries,
+    circuit_cache_key, DBData, Error, NumEntries,
 };
 use size_of::{Context, SizeOf};
-use std::{borrow::Cow, mem::replace};
+use std::path::PathBuf;
+use std::{borrow::Cow, fs, mem::replace};
+use uuid::Uuid;
 
 circuit_cache_key!(DelayedId<C, D>(GlobalNodeId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -212,6 +215,18 @@ where
             values: zero,
         }
     }
+
+    /// Return the absolute path of the file for this operator.
+    ///
+    /// # Arguments
+    /// - `cid`: The checkpoint id.
+    /// - `persistent_id`: The persistent id that identifies the spine within
+    ///   the circuit for a given checkpoint.
+    fn checkpoint_file<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
+        let mut path = checkpoint_path(cid);
+        path.push(format!("z1-{}.dat", persistent_id.as_ref()));
+        path
+    }
 }
 
 impl<T> Operator for Z1<T>
@@ -245,6 +260,10 @@ where
         } else {
             true
         }
+    }
+
+    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+        Ok(())
     }
 }
 
