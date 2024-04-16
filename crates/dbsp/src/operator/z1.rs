@@ -12,11 +12,11 @@ use crate::{
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
     },
-    circuit_cache_key, DBData, Error, NumEntries,
+    circuit_cache_key, Error, NumEntries,
 };
 use size_of::{Context, SizeOf};
 use std::path::PathBuf;
-use std::{borrow::Cow, fs, mem::replace};
+use std::{borrow::Cow, mem::replace};
 use uuid::Uuid;
 
 circuit_cache_key!(DelayedId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -262,7 +262,14 @@ where
         }
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
+        //let committed = self.into();
+        //let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
+        //write_commit_metadata(
+        //    Self::checkpoint_file(cid, &self.persistent_id),
+        //    as_bytes.as_slice(),
+        //)?;
+
         Ok(())
     }
 }

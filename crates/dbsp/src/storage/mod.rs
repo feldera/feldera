@@ -12,9 +12,11 @@ mod test;
 
 use fdlimit::{raise_fd_limit, Outcome::LimitRaised};
 use log::{info, warn};
-use std::path::PathBuf;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
-use crate::Runtime;
+use crate::{Error, Runtime};
 use std::sync::Once;
 use uuid::Uuid;
 
@@ -30,6 +32,21 @@ pub(crate) fn checkpoint_path(cid: Uuid) -> PathBuf {
     let mut path = rt.storage_path();
     path.push(cid.to_string());
     path
+}
+
+/// A helper function to write the commit metadata to a file.
+///
+/// The method ensures that the file does not exist before writing the metadata,
+/// and that the content is flushed to disk.
+///
+/// # Arguments
+/// - `path`: The path to write the metadata to.
+/// - `content`: The content to write.
+pub(crate) fn write_commit_metadata<P: AsRef<Path>>(path: P, content: &[u8]) -> Result<(), Error> {
+    let mut f = OpenOptions::new().create_new(true).write(true).open(path)?;
+    f.write_all(content)?;
+    f.sync_all()?;
+    Ok(())
 }
 
 /// Raise the fd limit to run the storage library to avoid surprises.  This
