@@ -68,6 +68,19 @@ impl Default for TimestampFormat {
     }
 }
 
+// Representation of the SQL `TIMESTAMP` type.
+#[derive(Clone, Debug)]
+pub enum DecimalFormat {
+    String,
+    U128,
+}
+
+impl Default for DecimalFormat {
+    fn default() -> Self {
+        Self::String
+    }
+}
+
 /// Deserializer configuration for parsing SQL records.
 #[derive(Clone, Default, Debug)]
 pub struct SqlSerdeConfig {
@@ -77,6 +90,8 @@ pub struct SqlSerdeConfig {
     pub date_format: DateFormat,
     /// `TIMESTAMP` format.
     pub timestamp_format: TimestampFormat,
+    /// `DECIMAL` format.
+    pub decimal_format: DecimalFormat,
 }
 
 impl SqlSerdeConfig {
@@ -96,6 +111,11 @@ impl SqlSerdeConfig {
         self.timestamp_format = timestamp_format;
         self
     }
+
+    pub fn with_decimal_format(mut self, decimal_format: DecimalFormat) -> Self {
+        self.decimal_format = decimal_format;
+        self
+    }
 }
 
 impl From<JsonFlavor> for SqlSerdeConfig {
@@ -106,16 +126,19 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 time_format: TimeFormat::Millis,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
+                decimal_format: DecimalFormat::String,
             },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
+                decimal_format: DecimalFormat::String,
             },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
                 date_format: DateFormat::String("%Y-%m-%d"),
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
+                decimal_format: DecimalFormat::String,
             },
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
@@ -126,6 +149,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 // https://docs.rs/parquet/50.0.0/src/parquet/record/api.rs.html#858
                 // the right way is probably to use serde_arrow for deserialization and serialization
                 timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S %:z"), // 2023-11-04 15:33:47 +00:00
+                decimal_format: DecimalFormat::String,
             },
         }
     }

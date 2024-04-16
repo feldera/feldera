@@ -95,6 +95,19 @@ impl TestStruct {
             },
         ]
     }
+
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestStruct",
+            "fields": [
+                { "name": "id", "type": "long" },
+                { "name": "b", "type": "boolean" },
+                { "name": "i", "type": ["null", "long"] },
+                { "name": "s", "type": "string" }
+            ]
+        }"#
+    }
 }
 
 deserialize_without_context!(TestStruct);
@@ -202,9 +215,9 @@ pub fn generate_test_batches_with_weights(
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
-struct EmbeddedStruct {
+pub struct EmbeddedStruct {
     #[serde(rename = "a")]
-    field: bool,
+    pub field: bool,
 }
 
 serialize_table_record!(EmbeddedStruct[1]{
@@ -249,7 +262,7 @@ pub struct TestStruct2 {
     // #[serde(rename = "t")]
     // pub field_4: Time,
     #[serde(rename = "es")]
-    field_5: EmbeddedStruct,
+    pub field_5: EmbeddedStruct,
 }
 
 impl Arbitrary for TestStruct2 {
@@ -324,6 +337,31 @@ impl TestStruct2 {
                 false,
             ),
         ]))
+    }
+
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestStruct2",
+            "fields": [
+                { "name": "id", "type": "long" },
+                { "name": "name", "type": ["string", "null"] },
+                { "name": "b", "type": "boolean" },
+                { "name": "ts", "type": "long", "logicalType": "timestamp-micros" },
+                { "name": "dt", "type": "int", "logicalType": "date" },
+                {
+                    "name": "es",
+                    "type":
+                        {
+                            "type": "record",
+                            "name": "EmbeddedStruct",
+                            "fields": [
+                                { "name": "a", "type": "boolean" }
+                            ]
+                        }
+                }
+            ]
+        }"#
     }
 
     pub fn schema() -> Vec<Field> {

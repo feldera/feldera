@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
+use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use dbsp::{utils::Tup2, InputHandle};
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::program_schema::canonical_identifier;
@@ -27,6 +28,7 @@ pub enum RecordFormat {
     Json(JsonFlavor),
     Csv,
     Parquet(SerdeArrowSchema),
+    Avro,
 }
 
 // Helper type only used to serialize neighborhoods as a map vs tuple.
@@ -265,6 +267,9 @@ pub trait SerCursor {
     /// Serialize current key into arrow format. Panics if invalid.
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()>;
 
+    /// Convert current key to an Avro value.
+    fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue>;
+
     /// Serialize the `(key, weight)` tuple.
     ///
     /// FIXME: This only exists to support the CSV serializer, which outputs
@@ -273,6 +278,9 @@ pub trait SerCursor {
 
     /// Serialize current value. Panics if invalid.
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
+
+    /// Convert current value to Avro.
+    fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue>;
 
     /// Returns the weight associated with the current key/value pair.
     fn weight(&mut self) -> i64;
@@ -367,6 +375,10 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
         self.cursor.serialize_key(dst)
     }
 
+    fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
+        self.cursor.key_to_avro(schema)
+    }
+
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_key_weight(dst)
     }
@@ -377,6 +389,10 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
 
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_val(dst)
+    }
+
+    fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
+        self.cursor.val_to_avro(schema)
     }
 
     fn weight(&mut self) -> i64 {

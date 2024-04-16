@@ -138,7 +138,7 @@ where
                 self.clone(),
                 SqlSerdeConfig::from(flavor),
             ))),
-            RecordFormat::Parquet(_) => {
+            RecordFormat::Parquet(_) | RecordFormat::Avro => {
                 todo!()
             }
         }
