@@ -91,16 +91,15 @@ use crate::{
     trace::{
         cursor::CursorList, Batch, BatchReader, BatchReaderFactories, Cursor, Filter, Merger, Trace,
     },
-    Error, NumEntries, Runtime,
+    Error, NumEntries,
 };
 
 use crate::dynamic::{ClonableTrait, DeserializableDyn};
-use crate::storage::checkpoint_path;
+use crate::storage::file::to_bytes;
+use crate::storage::{checkpoint_path, write_commit_metadata};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::fs::File;
-use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 use std::{
     fmt::{self, Debug, Display, Formatter, Write},
@@ -819,21 +818,17 @@ where
 
     fn commit(&self, cid: Uuid) -> Result<(), Error> {
         let committed: CommittedSpine<B> = self.into();
-        let as_bytes =
-            crate::storage::file::to_bytes(&committed).expect("Failed to serialize spine.");
-        let mut f = File::create(Self::checkpoint_file(cid, &self.persistent_id))?;
-        f.write_all(as_bytes.as_slice())?;
-        f.sync_all()?;
+        let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
+        write_commit_metadata(
+            Self::checkpoint_file(cid, &self.persistent_id),
+            as_bytes.as_slice(),
+        )?;
 
         // Write the batches as a separate file, this allows to parse it
         // in `Checkpointer` without the need to know the exact Spine type.
-        let batchlist_path = self.batchlist_file(cid);
         let batches = committed.batches;
-        let as_bytes =
-            crate::storage::file::to_bytes(&batches).expect("Failed to serialize batch-list.");
-        let mut f = File::create(batchlist_path)?;
-        f.write_all(as_bytes.as_slice())?;
-        f.sync_all()?;
+        let as_bytes = to_bytes(&batches).expect("Serializing batches to Vec<String> should work.");
+        write_commit_metadata(self.batchlist_file(cid), as_bytes.as_slice())?;
 
         Ok(())
     }
