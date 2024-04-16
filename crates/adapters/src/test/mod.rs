@@ -32,8 +32,8 @@ mod mock_output_consumer;
 use crate::catalog::InputCollectionHandle;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
-    generate_test_batch, generate_test_batches, generate_test_batches_with_weights, TestStruct,
-    TestStruct2,
+    generate_test_batch, generate_test_batches, generate_test_batches_with_weights, EmbeddedStruct,
+    TestStruct, TestStruct2,
 };
 use dbsp::circuit::CircuitConfig;
 pub use mock_dezset::{MockDeZSet, MockUpdate};

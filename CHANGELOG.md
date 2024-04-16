@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Initial support for Avro as anoutput format
+  ([#1673](https://github.com/feldera/feldera/pull/1673))
+
 ## [0.14.0] - 2024-04-17
 
 ### Added

@@ -109,6 +109,16 @@ pub enum ConfigError {
     OutputFormatNotSpecified {
         endpoint_name: String,
     },
+
+    InvalidEncoderConfig {
+        endpoint_name: String,
+        error: String,
+    },
+
+    InvalidParserConfig {
+        endpoint_name: String,
+        error: String,
+    },
 }
 
 impl StdError for ConfigError {}
@@ -133,6 +143,8 @@ impl DetailedError for ConfigError {
             Self::OutputFormatNotSupported { .. } => Cow::from("OutputFormatNotSupported"),
             Self::InputFormatNotSpecified { .. } => Cow::from("InputFormatNotSpecified"),
             Self::OutputFormatNotSpecified { .. } => Cow::from("OutputFormatNotSpecified"),
+            Self::InvalidEncoderConfig { .. } => Cow::from("InvalidEncoderConfig"),
+            Self::InvalidParserConfig { .. } => Cow::from("InvalidParserConfig"),
         }
     }
 }
@@ -242,6 +254,24 @@ impl Display for ConfigError {
                 write!(
                     f,
                     "Data format is not specified for output endpoint '{endpoint_name}' (set the 'format' field inside connector configuration)"
+                )
+            }
+            Self::InvalidEncoderConfig {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "invalid format configuration for output endpoint '{endpoint_name}': {error}"
+                )
+            }
+            Self::InvalidParserConfig {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "invalid format configuration for input endpoint '{endpoint_name}': {error}"
                 )
             }
         }
@@ -369,6 +399,20 @@ impl ConfigError {
     pub fn output_format_not_specified(endpoint_name: &str) -> Self {
         Self::OutputFormatNotSpecified {
             endpoint_name: endpoint_name.to_owned(),
+        }
+    }
+
+    pub fn invalid_encoder_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::InvalidEncoderConfig {
+            endpoint_name: endpoint_name.to_string(),
+            error: error.to_string(),
+        }
+    }
+
+    pub fn invalid_parser_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::InvalidParserConfig {
+            endpoint_name: endpoint_name.to_string(),
+            error: error.to_string(),
         }
     }
 }
@@ -784,6 +828,18 @@ impl ControllerError {
     pub fn output_format_not_specified(endpoint_name: &str) -> Self {
         Self::Config {
             config_error: ConfigError::output_format_not_specified(endpoint_name),
+        }
+    }
+
+    pub fn invalid_encoder_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::invalid_encoder_configuration(endpoint_name, error),
+        }
+    }
+
+    pub fn invalid_parser_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::invalid_parser_configuration(endpoint_name, error),
         }
     }
 

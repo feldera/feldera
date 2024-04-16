@@ -128,7 +128,9 @@ fn parquet_output() {
     );
 
     let zset = &SerBatchImpl::<_, TestStruct2, ()>::new(zset) as &dyn SerBatchReader;
+    encoder.consumer().batch_start(0);
     encoder.encode(zset).unwrap();
+    encoder.consumer().batch_end();
 
     // Verify output buffer...
     // Construct the expected file manually:
@@ -156,9 +158,9 @@ fn parquet_output() {
         .write(&batch)
         .expect("Writing to parquet should succeed");
     writer.close().expect("Closing the writer should succeed");
-    debug_parquet_buffer(buffer.lock().unwrap().clone());
+    debug_parquet_buffer(buffer.lock().unwrap().concat());
 
-    let buffer_copy = buffer.lock().unwrap().clone();
+    let buffer_copy = buffer.lock().unwrap().concat();
 
     assert_eq!(expected_buffer, buffer_copy);
 }

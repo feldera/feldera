@@ -1,3 +1,12 @@
+# Start the demo locally (without docker):
+#
+# python3 ./run.py  --api-url http://localhost:8080 --kafka-url-for-connector=localhost:19092 --registry-url-for-connector=http://localhost:18081
+#
+# (the last two arguments shouldn't be needed in docker compose)
+#
+# Tail the topic with Avro output using kcat:
+# kcat -b localhost:19092 -t secops_vulnerability_stats_avro -r localhost:18081 -s value=avro
+
 import os
 import time
 import requests
@@ -16,13 +25,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
     parser.add_argument("--prepare-args", required=False, help="number of SecOps pipelines to simulate")
+    parser.add_argument("--kafka-url-for-connector", required=False, default="redpanda:9092",
+                        help="Kafka URL from pipeline")
+    parser.add_argument("--registry-url-for-connector", required=False, default="redpanda:8081",
+                        help="Schema registry URL from pipeline")
+
     args = parser.parse_args()
-    prepare_feldera(args.api_url)
+    prepare_feldera(args.api_url, args.kafka_url_for_connector, args.registry_url_for_connector)
     prepare_redpanda_start_simulator("-1" if args.prepare_args is None else args.prepare_args)
 
 
-def prepare_feldera(api_url):
-    pipeline_to_redpanda_server = "redpanda:9092"
+def prepare_feldera(api_url, pipeline_to_redpanda_server, pipeline_to_schema_registry):
 
     # Create program
     program_name = "demo-sec-ops-program"
@@ -97,6 +110,44 @@ def prepare_feldera(api_url):
             "relation_name": stream
         })
 
+    schema = """{
+            "type": "record",
+            "name": "k8scluster_vulnerability_stats",
+            "fields": [
+                { "name": "k8scluster_id", "type": "long" },
+                { "name": "k8scluster_name", "type": "string" },
+                { "name": "total_vulnerabilities", "type": "long" },
+                { "name": "most_severe_vulnerability", "type": ["null","int"] }
+            ]
+        }"""
+
+    requests.put(f"{api_url}/v0/connectors/secops_vulnerability_stats_avro", json={
+        "description": "",
+        "config": {
+            "format": {
+                "name": "avro",
+                "config": {
+                    "schema": schema,
+                    "registry_urls": [pipeline_to_schema_registry],
+                }
+            },
+            "transport": {
+                "name": "kafka_output",
+                "config": {
+                    "bootstrap.servers": pipeline_to_redpanda_server,
+                    "topic": "secops_vulnerability_stats_avro"
+                }
+            }
+        }
+    })
+    connectors.append({
+        "connector_name": "secops_vulnerability_stats_avro",
+        "is_input": False,
+        "name": "secops_vulnerability_stats_avro",
+        "relation_name": "k8scluster_vulnerability_stats"
+    })
+
+
     # Create pipeline
     pipeline_name = "demo-sec-ops-pipeline"
     requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
@@ -111,6 +162,7 @@ def prepare_redpanda_start_simulator(num_pipelines):
     # Create output topic before running the simulator, which will never return.
     print("(Re-)creating topic secops_vulnerability_stats...")
     rpk["topic", "delete", "secops_vulnerability_stats"]()
+    rpk["topic", "delete", "secops_vulnerability_stats_avro"]()
     rpk[
         "topic",
         "create",

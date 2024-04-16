@@ -509,8 +509,10 @@ mod test {
                 Arc::new(<SerBatchImpl<_, TestStruct, ()>>::new(zset)) as Arc<dyn SerBatch>
             })
             .collect::<Vec<_>>();
-        for zset in zsets {
+        for (step, zset) in zsets.iter().enumerate() {
+            encoder.consumer().batch_start(step as u64);
             encoder.encode(zset.as_batch_reader()).unwrap();
+            encoder.consumer().batch_end();
         }
 
         let seq_number = Rc::new(RefCell::new(0));
@@ -570,10 +572,10 @@ mod test {
 
         trace!(
             "output: {}",
-            std::str::from_utf8(&consumer_data.lock().unwrap()).unwrap()
+            std::str::from_utf8(&consumer_data.lock().unwrap().concat()).unwrap()
         );
 
-        let consumer_data = consumer_data.lock().unwrap();
+        let consumer_data = consumer_data.lock().unwrap().concat();
         let deserializer = serde_json::Deserializer::from_slice(&consumer_data);
 
         let actual_output = if array {

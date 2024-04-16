@@ -16,10 +16,12 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
 };
 
+pub(crate) mod avro;
 pub(crate) mod csv;
 mod json;
 pub mod parquet;
 
+use crate::format::avro::output::AvroOutputFormat;
 pub use parquet::relation_to_parquet_schema;
 
 pub use self::csv::{byte_record_deserializer, string_record_deserializer};
@@ -337,6 +339,7 @@ static OUTPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn OutputFormat>>> = Laz
             "parquet",
             Box::new(ParquetOutputFormat) as Box<dyn OutputFormat>,
         ),
+        ("avro", Box::new(AvroOutputFormat) as Box<dyn OutputFormat>),
     ])
 });
 

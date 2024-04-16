@@ -76,6 +76,9 @@ serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arro
 bytes = "1.5.0"
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.
 deltalake = { version = "0.17.1", features = ["datafusion", "s3", "gcs", "azure"], optional = true }
+apache-avro = { version = "0.16.0", features = ["snappy"] }
+schema_registry_converter = { version = "4.0.0", features = ["avro", "blocking"] }
+rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 psutil = "3.2.2"
@@ -100,3 +103,4 @@ rust_decimal_macros = "1.32"
 mockall = "0.12.1"
 pretty_assertions = "1.4.0"
 sqllib = { path = "../../sql-to-dbsp-compiler/lib/sqllib" }
+num-bigint = "0.4.4"
