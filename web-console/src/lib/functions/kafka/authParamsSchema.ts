@@ -76,8 +76,7 @@ export type KafkaAuthSchema = va.Input<typeof authParamsSchema>
 export const defaultLibrdkafkaAuthOptions = {
   security_protocol: 'PLAINTEXT',
   enable_ssl_certificate_verification: true,
-  sasl_mechanism: 'PLAIN',
-  sasl_oauthbearer_method: 'default'
+  sasl_mechanism: 'PLAIN'
 } as KafkaAuthSchema
 
 export const parseAuthParams = (config: Record<string, string>) => {
