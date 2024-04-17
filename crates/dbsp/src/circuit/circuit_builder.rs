@@ -4580,7 +4580,8 @@ mod tests {
                 n += 1;
                 result
             }));
-            let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
+            let (z1_output, z1_feedback) =
+                circuit.add_feedback(Z1::new(circuit.global_node_id().persistent_id(), 0));
             let plus = source
                 .apply2(&z1_output, |n1: &usize, n2: &usize| *n1 + *n2)
                 .inspect(move |n| actual_output_clone.borrow_mut().push(*n));
@@ -4644,7 +4645,10 @@ mod tests {
                         counter -= 1;
                         res
                     });
-                    let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
+                    let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(
+                        child.global_node_id().persistent_id(),
+                        1,
+                    ));
                     let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
                     z1_feedback.connect(&mul);
                     Ok((countdown.condition(|n| *n <= 1), z1_output.export))
