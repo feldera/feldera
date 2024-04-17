@@ -91,7 +91,7 @@ use crate::{
     trace::{
         cursor::CursorList, Batch, BatchReader, BatchReaderFactories, Cursor, Filter, Merger, Trace,
     },
-    Error, NumEntries,
+    Error, NumEntries, Runtime,
 };
 
 use crate::dynamic::{ClonableTrait, DeserializableDyn};
@@ -665,17 +665,9 @@ where
     type Batch = B;
 
     fn new<S: AsRef<str>>(factories: &B::Factories, persistent_id: S) -> Self {
-        Self::with_effort(factories, 1, String::from(persistent_id.as_ref()))
-    }
-
-    fn from_commit_id<S: AsRef<str>>(
-        factories: &B::Factories,
-        cid: Uuid,
-        persistent_id: S,
-    ) -> Self {
         let mut spine = Self::with_effort(factories, 1, String::from(persistent_id.as_ref()));
 
-        if cid != Uuid::nil() {
+        if let Some(cid) = Runtime::restore_from_commit() {
             let pspine_path = Self::checkpoint_file(cid, persistent_id);
             let content =
                 fs::read(pspine_path).expect("Spine meta-data for checkpoint must exist.");
@@ -701,7 +693,6 @@ where
         } else {
             // No checkpoint id provided, so we are starting from scratch.
         }
-
         spine
     }
 

@@ -864,9 +864,7 @@ where
         self.dirty[scope as usize] = false;
 
         if scope == 0 && self.trace.is_none() {
-            let rt = Runtime::runtime();
-            let cid = rt.map_or_else(Uuid::nil, |rt| rt.start_checkpoint());
-            self.trace = Some(T::from_commit_id(&self.factories, cid, &self.persistent_id));
+            self.trace = Some(T::new(&self.factories, &self.persistent_id));
         }
     }
 
