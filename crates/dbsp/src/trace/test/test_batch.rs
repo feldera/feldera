@@ -1254,14 +1254,6 @@ where
         }
     }
 
-    fn from_commit_id<S: AsRef<str>>(
-        _factories: &Self::Factories,
-        _cid: Uuid,
-        _persistent_id: S,
-    ) -> Self {
-        todo!()
-    }
-
     fn recede_to(&mut self, frontier: &Self::Time) {
         Batch::recede_to(self, frontier);
     }

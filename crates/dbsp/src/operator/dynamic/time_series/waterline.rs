@@ -159,7 +159,7 @@ mod tests {
     };
     use std::cmp::max;
 
-    fn test_warerline_monotonic(workers: usize) {
+    fn test_waterline_monotonic(workers: usize) {
         let mut expected_waterlines = vec![115, 115, 125, 145].into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
@@ -195,16 +195,16 @@ mod tests {
     }
 
     #[test]
-    fn test_warerline_monotonic1() {
-        test_warerline_monotonic(1);
+    fn test_waterline_monotonic1() {
+        test_waterline_monotonic(1);
     }
 
     #[test]
-    fn test_warerline_monotonic4() {
-        test_warerline_monotonic(4);
+    fn test_waterline_monotonic4() {
+        test_waterline_monotonic(4);
     }
 
-    fn test_warerline(workers: usize) {
+    fn test_waterline(workers: usize) {
         let mut expected_waterlines = vec![(-10, 1), (100, 3), (100, 7), (250, 7)].into_iter();
 
         let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
@@ -261,12 +261,12 @@ mod tests {
     }
 
     #[test]
-    fn test_warerline1() {
-        test_warerline(1);
+    fn test_waterline1() {
+        test_waterline(1);
     }
 
     #[test]
-    fn test_warerline4() {
-        test_warerline(4);
+    fn test_waterline4() {
+        test_waterline(4);
     }
 }
