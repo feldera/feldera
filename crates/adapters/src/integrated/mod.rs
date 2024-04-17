@@ -1,3 +1,7 @@
+// Feature gating causes warnings
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+
 use crate::controller::{ControllerInner, EndpointId};
 use crate::{ControllerError, Encoder, OutputEndpoint};
 use pipeline_types::config::{OutputEndpointConfig, TransportConfig, TransportConfigVariant};

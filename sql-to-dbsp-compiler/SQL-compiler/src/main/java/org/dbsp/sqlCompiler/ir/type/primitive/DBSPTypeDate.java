@@ -24,21 +24,19 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.apache.calcite.util.DateString;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.DATE;
 
-public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsDateType {
+public class DBSPTypeDate extends DBSPTypeBaseType implements IsDateType {
     public DBSPTypeDate(CalciteObject node, boolean mayBeNull) {
         super(node, DATE, mayBeNull);
     }
@@ -65,24 +63,13 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsNumericType, IsD
     }
 
     @Override
-    public DBSPLiteral getZero() {
-        // This matches the actual value represented in the runtime as "0".
-        return new DBSPDateLiteral(CalciteObject.EMPTY, this, 0);
-    }
-
-    @Override
-    public DBSPLiteral getOne() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
     public DBSPLiteral getMaxValue() {
         return new DBSPDateLiteral(this.getNode(), this, new DateString("9999-12-12"));
     }
 
     @Override
     public DBSPLiteral getMinValue() {
-        return new DBSPDateLiteral(this.getNode(), this, new DateString("0000-01-01"));
+        return new DBSPDateLiteral(this.getNode(), this, new DateString("0001-01-01"));
     }
 
     @Override

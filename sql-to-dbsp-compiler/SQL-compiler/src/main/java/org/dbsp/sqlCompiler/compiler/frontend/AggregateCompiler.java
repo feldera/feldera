@@ -41,6 +41,7 @@ import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -259,8 +260,8 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
         assert tuple.fields.length == 2: "Expected 2 arguments for " + kind;
         DBSPOpcode compare = switch (kind) {
-            case ARG_MAX -> DBSPOpcode.AGG_GT;
-            case ARG_MIN -> DBSPOpcode.AGG_LT;
+            case ARG_MAX -> DBSPOpcode.AGG_GTE;
+            case ARG_MIN -> DBSPOpcode.AGG_LTE;
             default -> throw new UnimplementedException(node);
         };
 

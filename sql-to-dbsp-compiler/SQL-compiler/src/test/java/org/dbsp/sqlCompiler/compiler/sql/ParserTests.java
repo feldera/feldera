@@ -125,6 +125,16 @@ public class ParserTests {
     }
 
     @Test
+    public void latenessStatementTest() throws SqlParseException {
+        // Tests the LATENESS statement
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = "LATENESS V.COL1 INTERVAL '1:00' HOUR TO MINUTES";
+        SqlNode node = calcite.parse(ddl);
+        //System.out.println(node);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
     public void testNumber() throws SqlParseException {
         // Tests that 'NUMBER' can be used as a type
         CalciteCompiler calcite = this.getCompiler();

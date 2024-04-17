@@ -28,6 +28,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -44,21 +45,16 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * Information used to translate INSERT or DELETE SQL statements
- */
+/** Information used to translate INSERT or DELETE SQL statements */
 class ModifyTableTranslation implements ICompilerComponent {
-    /**
-     * Result of the VALUES expression.
-     */
+    /** Result of the VALUES expression. */
     @Nullable
     private DBSPZSetLiteral valuesTranslation;
     /**
      * Maps each column index to the actual destination column index.
      * This handles SQL statements such as
      * INSERT INTO t1(e,c,b,d,a) VALUES(103,102,100,101,104);
-     * which specify explicitly the order of columns.
-     */
+     * which specify explicitly the order of columns. */
     @Nullable
     private HashMap<Integer, Integer> columnPermutation;
     @Nullable

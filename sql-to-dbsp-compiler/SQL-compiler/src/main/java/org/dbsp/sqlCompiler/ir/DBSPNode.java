@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 

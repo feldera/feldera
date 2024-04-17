@@ -5,7 +5,9 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -153,6 +155,25 @@ public class StreamingTests extends StreamingTest {
                  2000    | 2     | 1
                  1000    | 1     | 1""");
         this.addRustTestCase("ivm blog post", ccs);
+    }
+
+    @Test
+    public void nullableLatenessTest() {
+        // LATENESS used on a nullable column
+        String ddl = """
+                CREATE TABLE series (
+                        distance DOUBLE,
+                        pickup TIMESTAMP LATENESS INTERVAL '1:00' HOURS TO MINUTES
+                )""";
+        String query =
+                "SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)";
+        DBSPCompiler compiler = testCompiler();
+        query = "CREATE VIEW V AS (" + query + ")";
+        compiler.compileStatement(ddl);
+        compiler.compileStatement(query);
+        Assert.assertFalse(compiler.hasErrors());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("nullableLatenessTest", ccs);
     }
 
     @Test 

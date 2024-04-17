@@ -1,13 +1,17 @@
 package org.dbsp.sqlCompiler.compiler;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IHasType;
+import org.dbsp.util.IHasName;
 
 import javax.annotation.Nullable;
 
 /** Metadata describing an input table column. */
-public class InputColumnMetadata {
+public class InputColumnMetadata
+        implements IHasLateness, IHasName, IHasSourcePositionRange, IHasType {
     public final CalciteObject node;
     /** Column name. */
     public final String name;
@@ -32,13 +36,26 @@ public class InputColumnMetadata {
         this.defaultValue = defaultValue;
     }
 
+    @Override
     public String getName() {
         return this.name;
     }
 
+    @Override
     public DBSPType getType() {
         return this.type;
     }
 
     public CalciteObject getNode() { return this.node; }
+
+    @Nullable
+    @Override
+    public DBSPExpression getLateness() {
+        return this.lateness;
+    }
+
+    @Override
+    public SourcePositionRange getPositionRange() {
+        return this.getNode().getPositionRange();
+    }
 }

@@ -10,10 +10,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
+import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
@@ -27,7 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -38,10 +39,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** As a result of the Monotonicity analysis, this pass inserts ControlledFilter
- * operators to throw away tuples that are not "useful", and some apply
- * operators that compute the bounds that drive the controlled filters.
- * It also inserts waterline operators near sources with lateness information. */
+/** As a result of the Monotonicity analysis, this pass inserts 4 types of new operators:
+ * - ControlledFilter operators to throw away tuples that are not "useful"
+ * - apply operators that compute the bounds that drive the controlled filters
+ * - waterline operators near sources with lateness information
+ * - DBSPIntegrateTraceRetainKeysOperator to prune data from integral operators
+ **/
 public class InsertLimiters extends CircuitCloneVisitor {
     /** For each operator in the expansion of the operators of this circuit
      * the list of its monotone output columns */
@@ -55,9 +58,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * the expanded circuit. */
     public final Map<DBSPOperator, DBSPOperator> bound;
 
-    // Used only for debugging; should normally be 'true'.
-    static final boolean useControlledFilters = true;
-
     public InsertLimiters(IErrorReporter reporter,
                           DBSPCircuit expandedCircuit,
                           Map<DBSPOperator, MonotoneExpression> expansionMonotoneValues,
@@ -67,6 +67,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.expansionMonotoneValues = expansionMonotoneValues;
         this.expandedInto = expandedInto;
         this.bound = new HashMap<>();
+    }
+
+    void markBound(DBSPOperator operator, DBSPOperator bound) {
+        Logger.INSTANCE.belowLevel(this, 2)
+                .append("Bound for ")
+                .append(operator.getIdString())
+                .append(" computed by ")
+                .append(bound.getIdString())
+                .newline();
+        Utilities.putNew(this.bound, operator, bound);
     }
 
     /**
@@ -87,12 +97,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPOperator boundSource = Utilities.getExists(this.bound, source);
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
         DBSPOperator bound = new DBSPApplyOperator(operatorFromExpansion.getNode(), function,
-                function.getFunctionType().resultType, boundSource);
-        Logger.INSTANCE.belowLevel(this, 2)
-                .append("Bound for " + operatorFromExpansion + " is " + bound)
-                .newline();
+                function.getFunctionType().resultType, boundSource,
+                "(" + operatorFromExpansion.getDerivedFrom() + ")");
         this.getResult().addOperator(bound);  // insert directly into circuit
-        Utilities.putNew(this.bound, operatorFromExpansion, bound);
+        this.markBound(operatorFromExpansion, bound);
         return bound;
     }
 
@@ -126,7 +134,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         MonotoneExpression expression = this.expansionMonotoneValues.get(ae.integrator);
         DBSPOperator filteredAggregator;
-        if (useControlledFilters) {
+        if (false) {
             DBSPControlledFilterOperator filter =
                     DBSPControlledFilterOperator.create(
                             aggregator.getNode(), source, Monotonicity.getBodyType(expression), limiter);
@@ -147,10 +155,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         MonotoneExpression monotoneValue2 = this.expansionMonotoneValues.get(ae.aggregator);
         IMaybeMonotoneType projection2 = Monotonicity.getBodyType(monotoneValue2);
         // A second controlled filter for the output of the aggregator
-        if (useControlledFilters) {
+        if (false) {
             DBSPOperator filter2 = DBSPControlledFilterOperator.create(
                     aggregator.getNode(), filteredAggregator, projection2, limiter2);
-            Utilities.putNew(this.bound, aggregator, filter2);
+            this.markBound(aggregator, filter2);
             this.map(aggregator, filter2);
         } else {
             // The before and after filters are actually identical for now.
@@ -214,58 +222,64 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(join, result, true);
     }
 
-    @Override
-    public void postorder(DBSPSourceMultisetOperator operator) {
+    void processLateness(DBSPOperator operator) {
         MonotoneExpression expression = this.expansionMonotoneValues.get(operator);
         if (expression == null) {
-            super.postorder(operator);
+            this.replace(operator);
             return;
         }
         List<DBSPExpression> minimums = new ArrayList<>();
         List<DBSPExpression> zeros = new ArrayList<>();
         int index = 0;
         DBSPVariablePath t = new DBSPVariablePath("t", operator.getOutputZSetType().elementType.ref());
-        for (InputColumnMetadata column: operator.metadata.getColumns()) {
-            if (column.lateness != null) {
+        for (IHasLateness column: operator.to(IHasColumnsMetadata.class).getLateness()) {
+            DBSPExpression lateness = column.getLateness();
+            if (lateness != null) {
                 DBSPExpression field = t.deref().field(index);
                 DBSPType type = field.getType();
                 field = new DBSPBinaryExpression(operator.getNode(), field.getType(),
-                        DBSPOpcode.SUB, field, column.lateness);
+                        DBSPOpcode.SUB, field, lateness);
                 minimums.add(field);
-                if (!type.is(IsNumericType.class)) {
-                    throw new CompilationError("Column " + column.name + " has a type " + type +
-                            " which does not support lateness", column.getNode());
-                }
-                DBSPExpression zero = type.to(IsNumericType.class).getZero();
+                DBSPExpression zero = type.to(IsBoundedType.class).getMinValue();
                 zeros.add(zero);
             }
             index++;
         }
-        if (zeros.isEmpty()) {
-            this.replace(operator);
-            return;
-        }
+        if (!zeros.isEmpty()) {
+            // The waterline operator will compute the *minimum legal value* of all the
+            // inputs that have a lateness attached.  The output signature contains only
+            // the columns that have lateness.
+            this.addOperator(operator);
+            DBSPTupleExpression zero = new DBSPTupleExpression(zeros, false);
+            DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
+            DBSPType outputType = min.getType();
+            DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
+                    operator.getNode(), zero.closure(), min.closure(t.asParameter()), outputType, operator);
+            this.addOperator(waterline);
+            this.markBound(operator, waterline);
 
-        // The waterline operator will compute the *minimum legal value* of all the
-        // inputs that have a lateness attached.  The output signature contains only
-        // the columns that have lateness.
-        this.addOperator(operator);
-        DBSPTupleExpression zero = new DBSPTupleExpression(zeros, false);
-        DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
-        DBSPType outputType = min.getType();
-        DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
-                operator.getNode(), zero.closure(), min.closure(t.asParameter()), outputType, operator);
-        this.addOperator(waterline);
-        Utilities.putNew(this.bound, operator, waterline);
-
-        if (useControlledFilters) {
             DBSPControlledFilterOperator filter = DBSPControlledFilterOperator.create(
                     operator.getNode(), operator, Monotonicity.getBodyType(expression), waterline);
             this.map(operator, filter);
         } else {
-            // Do not insert a DBSPIntegrateTraceRetainKeysOperator operator.
-            // There is no integrator here that we need to prune.
-            this.map(operator, operator, false);
+            this.replace(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPSourceMultisetOperator operator) {
+        this.processLateness(operator);
+    }
+
+    @Override
+    public void postorder(DBSPViewOperator operator) {
+        if (operator.hasLateness()) {
+            // Treat like a source operator
+            this.processLateness(operator);
+        } else {
+            // Treat like an identity function
+            this.addBounds(operator, 0);
+            super.postorder(operator);
         }
     }
 }

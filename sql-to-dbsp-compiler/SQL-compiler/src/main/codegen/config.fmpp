@@ -17,6 +17,7 @@ data: {
       "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove"
+      "org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLateness"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
@@ -887,6 +888,7 @@ data: {
     # Return type of method implementation should be 'SqlNode'.
     statementParserMethods: [
         "RemoveStatement()"
+        "LatenessStatement()"
     ]
 
     # List of methods for parsing custom literals.

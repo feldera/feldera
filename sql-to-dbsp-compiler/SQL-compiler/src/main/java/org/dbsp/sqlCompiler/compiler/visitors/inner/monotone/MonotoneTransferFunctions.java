@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 
@@ -276,6 +277,19 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 resultType = left.copyMonotonicity(expression.type);
                 reduced = expression.replaceSources(
                         left.getReducedExpression(), right.getReducedExpression());
+            }
+        }
+        if (left.mayBeMonotone() && expression.operation == DBSPOpcode.DIV) {
+            // Dividing a monotone expression by a positive constant produces a monotone result
+            if (expression.right.is(DBSPLiteral.class)) {
+                if (expression.right.is(IsNumericLiteral.class)) {
+                    if (expression.right.to(IsNumericLiteral.class).gt0()) {
+                        assert right.getReducedExpression() == expression.right;
+                        resultType = left.copyMonotonicity(expression.type);
+                        reduced = expression.replaceSources(
+                                left.getReducedExpression(), right.getReducedExpression());
+                    }
+                }
             }
         }
         MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);

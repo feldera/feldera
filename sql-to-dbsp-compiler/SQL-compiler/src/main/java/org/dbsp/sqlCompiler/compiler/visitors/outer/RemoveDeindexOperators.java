@@ -3,11 +3,9 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
-/**
- * Convert Deindex operators into simple Map operators.
- */
-public class RemoveDeindexOperator extends CircuitCloneVisitor {
-    public RemoveDeindexOperator(IErrorReporter reporter) {
+/** Convert Deindex operators into simple Map operators. */
+public class RemoveDeindexOperators extends CircuitCloneVisitor {
+    public RemoveDeindexOperators(IErrorReporter reporter) {
         super(reporter, false);
     }
 

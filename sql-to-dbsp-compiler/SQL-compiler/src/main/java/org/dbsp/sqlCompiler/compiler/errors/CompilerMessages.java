@@ -7,20 +7,21 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
 
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 
 public class CompilerMessages {
-    public class Error {
+    public class Error implements IHasSourcePositionRange {
         public final SourcePositionRange range;
         public final boolean warning;
         public final String errorType;
         public final String message;
 
-        protected Error(SourcePositionRange range, boolean warning, String errorType, String message) {
-            this.range = range;
+        protected Error(IHasSourcePositionRange range, boolean warning, String errorType, String message) {
+            this.range = range.getPositionRange();
             this.warning = warning;
             this.errorType = errorType;
             this.message = message;
@@ -90,6 +91,11 @@ public class CompilerMessages {
             this.format(CompilerMessages.this.compiler.sources, builder);
             return builder.toString();
         }
+
+        @Override
+        public SourcePositionRange getPositionRange() {
+            return this.range;
+        }
     }
 
     public final DBSPCompiler compiler;
@@ -116,7 +122,7 @@ public class CompilerMessages {
         }
     }
 
-    public void reportProblem(SourcePositionRange range, boolean warning,
+    public void reportProblem(IHasSourcePositionRange range, boolean warning,
                               String errorType, String message) {
         Error msg = new Error(range, warning, errorType, message);
         this.reportError(msg);

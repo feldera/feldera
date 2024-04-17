@@ -24,18 +24,19 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPI32Literal extends DBSPIntLiteral {
+public class DBSPI32Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
     public final Integer value;
 
@@ -57,6 +58,12 @@ public class DBSPI32Literal extends DBSPIntLiteral {
         this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
+    }
+
+    @Override
+    public boolean gt0() {
+        assert this.value != null;
+        return this.value > 0;
     }
 
     @Override

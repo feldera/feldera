@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
@@ -51,6 +51,16 @@ public class DBSPTypeMonthsInterval
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public DBSPLiteral getMinValue() {
+        return new DBSPIntervalMonthsLiteral(Integer.MIN_VALUE, this.mayBeNull);
+    }
+
+    @Override
+    public DBSPLiteral getMaxValue() {
+        return new DBSPIntervalMonthsLiteral(Integer.MAX_VALUE, this.mayBeNull);
     }
 
     @Override

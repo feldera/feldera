@@ -8,8 +8,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.externalize.RelJson;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.util.JsonBuilder;
+import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -19,9 +20,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import java.util.List;
 
 /** An interface implemented by objects which have a name and a schema */
-public interface IHasSchema {
-    /** The Calcite objects from which this object has been created. */
-    CalciteObject getNode();
+public interface IHasSchema extends IHasCalciteObject {
     /** The name of this object */
     String getName();
     /** True if the name is quoted */

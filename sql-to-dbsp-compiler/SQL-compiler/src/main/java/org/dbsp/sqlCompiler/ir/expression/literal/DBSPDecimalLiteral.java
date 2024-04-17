@@ -24,11 +24,12 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.IIndentStream;
 
@@ -36,7 +37,7 @@ import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.Objects;
 
-public class DBSPDecimalLiteral extends DBSPLiteral {
+public class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLiteral {
     @Nullable
     public final BigDecimal value;
 
@@ -92,5 +93,11 @@ public class DBSPDecimalLiteral extends DBSPLiteral {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPDecimalLiteral(this.getNode(), this.type, this.value);
+    }
+
+    @Override
+    public boolean gt0() {
+        assert this.value != null;
+        return this.value.compareTo(BigDecimal.ZERO) > 0;
     }
 }

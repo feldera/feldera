@@ -1,8 +1,9 @@
-package org.dbsp.sqlCompiler.compiler.frontend;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteObject;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 public class CalciteRelDataType extends CalciteObject {
     final RelDataType relType;

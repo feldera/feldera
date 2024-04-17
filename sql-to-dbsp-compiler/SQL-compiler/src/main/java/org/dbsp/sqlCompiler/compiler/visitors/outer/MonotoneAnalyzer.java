@@ -17,10 +17,11 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        final boolean debug = this.getDebugLevel() > 2;
+        final boolean debug = this.getDebugLevel() >= 2;
+        final boolean details = this.getDebugLevel() >= 3;
 
         if (debug)
-            ToDotVisitor.toDot(this.reporter, "original.jpg", true, "jpg", circuit);
+            ToDotVisitor.toDot(this.reporter, "original.jpg", details, "jpg", circuit);
         ExpandOperators expander = new ExpandOperators(this.reporter, 1);
         Repeat repeat = new Repeat(this.reporter, expander);
         DBSPCircuit expanded = repeat.apply(circuit);
@@ -36,7 +37,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         DBSPCircuit result = limiters.apply(circuit);
 
         if (debug)
-            ToDotVisitor.toDot(reporter, "limited.jpg", true, "jpg", result);
+            ToDotVisitor.toDot(reporter, "limited.jpg", details, "jpg", result);
         return result;
     }
 

@@ -23,34 +23,24 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPSinkOperator extends DBSPOperator {
-    public final String viewName;
-    public final String query;
-    public final DBSPTypeStruct originalRowType;
-
-    public DBSPSinkOperator(CalciteObject node,
-                            String viewName, String query, DBSPTypeStruct originalRowType,
+public class DBSPSinkOperator extends DBSPViewBaseOperator {
+    public DBSPSinkOperator(CalciteObject node, String viewName, String query,
+                            DBSPTypeStruct originalRowType,
+                            List<ViewColumnMetadata> metadata,
                             @Nullable String comment, DBSPOperator input) {
-        super(node, "inspect", null, input.outputType, input.isMultiset, comment);
-        this.addInput(input);
-        this.query = query;
-        this.viewName = viewName;
-        this.originalRowType = originalRowType;
-    }
-
-    public DBSPOperator input() {
-        return this.inputs.get(0);
+        super(node, "inspect", null, viewName, query,
+                originalRowType, metadata, comment, input);
     }
 
     @Override
@@ -72,19 +62,7 @@ public class DBSPSinkOperator extends DBSPOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,
-                    this.comment, newInputs.get(0));
+                    this.metadata, this.comment, newInputs.get(0));
         return this;
-    }
-
-    @Override
-    public IIndentStream toString(IIndentStream builder) {
-        return this.writeComments(builder, this.query)
-                .append("let ")
-                .append(this.getOutputName())
-                .append(": ")
-                .append(this.outputStreamType)
-                .append(" = ")
-                .append(this.input().getOutputName())
-                .append(";");
     }
 }

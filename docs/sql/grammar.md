@@ -19,12 +19,16 @@ statement
   |   createViewStatement
   |   createFunctionStatement
   |   createTypeStatement
+  |   latenessStatement
 
 generalType
   :   type [NOT NULL]
 
 createFunctionStatement
   :   CREATE FUNCTION name '(' [ columnDecl [, columnDecl ]* ] ')' RETURNS generalType
+
+latenessStatement
+  :   LATENESS view '.' column expression
 
 createTableStatement
   :   CREATE TABLE name
@@ -280,3 +284,67 @@ windowRange
 
 Where `agg` is a window aggregate function as described in the [section
 on aggregation](aggregates.md#window-aggregate-functions).
+
+### LATENESS expressions
+
+`LATENESS` is a property of the data in a column of a table or a view
+that is relevant for the case of stream processing.  `LATENESS` is
+described by an expression that evaluates to a constant value.  The
+expression must have a type that can be subtracted from the column
+type.  For example, a column of type `TIMESTAMP` may have a lateness
+specified as an `INTERVAL` type.
+
+To specify `LATENESS` for a table column, the column declaration can
+be annotated in the `CREATE TABLE` statement.  For example:
+
+```sql
+CREATE TABLE order_pickup (
+   when TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
+   location VARCHAR
+);
+```
+
+To specify `LATENESS` for a view, our custom SQL statement `LATENESS`
+must be used.  The statement specifies a view, a column of the view,
+and an expression for the latness value.  currently must appear
+*before* the view declaration.  For example:
+
+```sql
+LATENESS V.COL1 INTERVAL '1' HOUR;
+CREATE VIEW V AS SELECT T.COL1, T.COL2 FROM T;
+```
+
+The `LATENESS` property of a column allows values that are too much
+"out of order" to be ignored.  A value is "out of order" the table or
+view has previously contains a row with a larger value for the
+respective column.
+
+For example, consider the table above, and a sequence of insertions,
+each as a separate transaction:
+
+```sql
+INSERT INTO T VALUES('2020-01-01 00:00:00', 'home');
+INSERT INTO T VALUES('2020-01-01 01:00:00', 'office');
+-- next row is late, but not too late
+INSERT INTO T VALUES('2020-01-01 00:10:00', 'shop');
+INSERT INTO T VALUES('2020-01-01 02:00:00', 'home');
+-- next row is too late, and it will be ignored
+INSERT INTO T VALUES('2020-01-01 00:20:00', 'friend');
+```
+
+The third insertion is out of order, since its timestamp value is
+smaller than the previous insertion.  But it is still not too late,
+since it is only 50 minutes late, whereas the column lateness is 1
+hour.  The fifth row is too late, though, since it is 100 minutes late
+with respect to the fourth row.
+
+Lateness is used to instruct the data processing system to ignore some
+records.  This ensures that some computed results that reflect past
+data may not be updated due to very late coming data.  This also
+enables the runtime system to avoid maintaining very old state, which
+may never impact future results.
+
+A table or view can have any number of columns annotated with
+lateness.  A row is considered "too late" if any of the columns is too
+late.
+

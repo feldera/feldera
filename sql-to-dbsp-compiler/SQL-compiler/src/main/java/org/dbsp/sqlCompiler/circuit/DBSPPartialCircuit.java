@@ -23,14 +23,14 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -55,9 +55,9 @@ import java.util.Set;
  */
 public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
     public final List<DBSPDeclaration> declarations = new ArrayList<>();
-    public final LinkedHashMap<String, DBSPSourceBaseOperator> inputOperators = new LinkedHashMap<>();
-    public final LinkedHashMap<String, DBSPSinkOperator> outputOperators = new LinkedHashMap<>();
-    public final LinkedHashMap<String, DBSPNoopOperator> namedNoops = new LinkedHashMap<>();
+    public final LinkedHashMap<String, DBSPSourceBaseOperator> sourceOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<String, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<String, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
     public final List<DBSPOperator> allOperators = new ArrayList<>();
     /** Maps indexed z-set table names to the corresponding deindex operator */
     public final IErrorReporter errorReporter;
@@ -75,16 +75,16 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
      * The order of the tables corresponds to the inputs of the generated circuit.
      */
     public Set<String> getInputTables() {
-        return this.inputOperators.keySet();
+        return this.sourceOperators.keySet();
     }
 
     public int getOutputCount() {
-        return this.outputOperators.size();
+        return this.sinkOperators.size();
     }
 
     public DBSPType getSingleOutputType() {
-        assert this.outputOperators.size() == 1: "Expected a single output, got " + this.outputOperators.size();
-        return this.outputOperators.values().iterator().next().getType();
+        assert this.sinkOperators.size() == 1: "Expected a single output, got " + this.sinkOperators.size();
+        return this.sinkOperators.values().iterator().next().getType();
     }
 
     public void addDeclaration(DBSPDeclaration decl) {
@@ -100,13 +100,13 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         this.operators.add(operator);
         DBSPSourceBaseOperator source = operator.as(DBSPSourceBaseOperator.class);
         if (source != null)
-            Utilities.putNew(this.inputOperators, source.tableName, source);
+            Utilities.putNew(this.sourceOperators, source.tableName, source);
+        DBSPViewOperator view = operator.as(DBSPViewOperator.class);
+        if (view != null)
+            Utilities.putNew(this.viewOperators, view.viewName, view);
         DBSPSinkOperator sink = operator.as(DBSPSinkOperator.class);
         if (sink != null)
-            Utilities.putNew(this.outputOperators, sink.viewName, sink);
-        DBSPNoopOperator noop = operator.as(DBSPNoopOperator.class);
-        if (noop != null && noop.viewName != null)
-            Utilities.putNew(this.namedNoops, noop.viewName, noop);
+            Utilities.putNew(this.sinkOperators, sink.viewName, sink);
         this.allOperators.add(operator);
     }
 
@@ -114,12 +114,17 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
 
     @Nullable
     public DBSPSourceBaseOperator getInput(String tableName) {
-        return this.inputOperators.get(tableName);
+        return this.sourceOperators.get(tableName);
     }
 
     @Nullable
-    public DBSPSinkOperator getOutput(String viewName) {
-        return this.outputOperators.get(viewName);
+    public DBSPViewOperator getView(String viewName) {
+        return this.viewOperators.get(viewName);
+    }
+
+    @Nullable
+    public DBSPSinkOperator getSink(String viewName) {
+        return this.sinkOperators.get(viewName);
     }
 
     @Override
@@ -165,10 +170,5 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.intercalateI(System.lineSeparator(), this.allOperators);
-    }
-
-    @Nullable
-    public DBSPOperator getNoop(String viewName) {
-        return this.namedNoops.get(viewName);
     }
 }

@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -16,8 +16,8 @@ import java.util.Objects;
  * The inputs and outputs do not have to be Z-sets or indexed Z-sets. */
 public class DBSPApplyOperator extends DBSPUnaryOperator {
     public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
-                             DBSPType outputType, DBSPOperator input) {
-        super(node, "apply", function, outputType, false, input);
+                             DBSPType outputType, DBSPOperator input, @Nullable String comment) {
+        super(node, "apply", function, outputType, false, input, comment);
         assert function.parameters.length == 1: "Expected 1 parameter for function " + function;
         DBSPType paramType = function.parameters[0].getType().deref();
         assert input.outputType.sameType(paramType):
@@ -28,7 +28,7 @@ public class DBSPApplyOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApplyOperator(
                 this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                outputType, this.input());
+                outputType, this.input(), this.comment);
     }
 
     @Override
@@ -37,7 +37,7 @@ public class DBSPApplyOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(
                     this.getNode(), this.getFunction().to(DBSPClosureExpression.class),
-                    this.getType(), newInputs.get(0));
+                    this.getType(), newInputs.get(0), this.comment);
         }
         return this;
     }
