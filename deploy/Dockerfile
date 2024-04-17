@@ -197,11 +197,11 @@ RUN apt update && apt install pkg-config \
   # Install snowsql
   && curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
   && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
-  && pip3 install snowflake-connector-python \
+  && pip3 install --break-system-packages snowflake-connector-python \
   # TODO: only required for running the fraud detection demo. Remove when we clean that up.
-  && pip3 install gdown \
-  && pip3 install "psycopg[binary]" \
-  && pip3 install kafka-python \
+  && pip3 install --break-system-packages gdown \
+  && pip3 install --break-system-packages "psycopg[binary]" \
+  && pip3 install --break-system-packages kafka-python \
   # cleanup packages we don't need anymore
   && apt remove python3-pip unzip pkg-config -y && apt autoremove -y
 CMD bash
