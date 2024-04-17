@@ -187,18 +187,6 @@ pub trait Trace: BatchReader {
     /// Allocates a new empty trace.
     fn new<S: AsRef<str>>(factories: &Self::Factories, persistent_id: S) -> Self;
 
-    /// Allocates a new trace and initialize it with batches found for the given
-    /// checkpoint.
-    ///
-    /// # Arguments
-    /// - `cid` - the commit id of the checkpoint to be loaded.
-    /// - `persistent_id` - the persistent id of the trace.
-    fn from_commit_id<S: AsRef<str>>(
-        factories: &Self::Factories,
-        cid: Uuid,
-        persistent_id: S,
-    ) -> Self;
-
     /// Pushes all timestamps in the trace back to `frontier` or less, by
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This
     /// has no effect on timestamps that are already less than or equal to

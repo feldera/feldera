@@ -498,6 +498,19 @@ impl Runtime {
         CACHE.with(|rc| rc.clone())
     }
 
+    /// This function returns the commit id of the checkpoint that the circuit should restore from.
+    ///
+    /// If no runtime is set or no starting checkpoint is configured, this function returns `None`.
+    pub fn restore_from_commit() -> Option<Uuid> {
+        Runtime::runtime().and_then(|rt| {
+            if rt.inner().start_checkpoint != Uuid::nil() {
+                Some(rt.inner().start_checkpoint)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Returns 0-based index of the current worker thread within its runtime.
     /// For threads that run without a runtime, this method returns `0`.  In a
     /// multihost runtime, this is a global index across all hosts.
@@ -599,10 +612,6 @@ impl Runtime {
         let _ = self.inner().panic_info[worker_index]
             .write()
             .map(|mut guard| *guard = Some(panic_info));
-    }
-
-    pub(crate) fn start_checkpoint(&self) -> Uuid {
-        self.inner().start_checkpoint
     }
 }
 
