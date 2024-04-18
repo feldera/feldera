@@ -6,6 +6,7 @@ use crate::{
     },
     time::AntichainRef,
     trace::{
+        cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         layers::{
             Builder as _, Cursor as _, Leaf, LeafBuilder, LeafCursor, LeafFactories, MergeBuilder,
             Trie, TupleBuilder,
@@ -604,6 +605,20 @@ impl<'s, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), 
 
     fn fast_forward_vals(&mut self) {
         self.valid = true;
+    }
+}
+
+impl<'s, K, R> HasTimeDiffCursor<K, DynUnit, (), R> for VecWSetCursor<'s, K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    type TimeDiffCursor<'a> = SingletonTimeDiffCursor<'a, R>
+    where
+        Self: 'a;
+
+    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
+        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.cursor.current_diff()))
     }
 }
 

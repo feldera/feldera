@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::storage::backend::Backend;
+use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -967,6 +968,55 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.move_val(|val_cursor| val_cursor.move_last().unwrap());
+    }
+}
+
+pub struct FileValTimeDiffCursor<T, R>
+where
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    timediffs: Box<DynWeightedPairs<DynDataTyped<T>, R>>,
+    index: usize,
+}
+
+impl<T, R> TimeDiffCursor<'_, T, R> for FileValTimeDiffCursor<T, R>
+where
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn current(&mut self, _tmp: &mut R) -> Option<(&T, &R)> {
+        if self.index < self.timediffs.len() {
+            let (time, diff) = self.timediffs[self.index].split();
+            Some((&time, &diff))
+        } else {
+            None
+        }
+    }
+
+    fn step(&mut self) {
+        self.index += 1;
+    }
+}
+
+impl<'s, K, V, T, R> HasTimeDiffCursor<K, V, T, R> for FileValCursor<'s, K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    type TimeDiffCursor<'a> = FileValTimeDiffCursor<T, R>
+    where
+        Self: 'a;
+
+    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
+        let mut timediffs = self.timediff_factory.default_box();
+        self.times(timediffs.as_mut());
+        FileValTimeDiffCursor {
+            timediffs,
+            index: 0,
+        }
     }
 }
 
