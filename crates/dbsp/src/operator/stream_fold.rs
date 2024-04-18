@@ -23,7 +23,9 @@ where
         F: Fn(A, &T) -> A + 'static,
         A: Eq + Clone + SizeOf + NumEntries + 'static,
     {
-        let (prev_accumulator, feedback) = self.circuit().add_feedback(Z1::new(init));
+        let (prev_accumulator, feedback) = self
+            .circuit()
+            .add_feedback(Z1::new(self.origin_node_id().persistent_id(), init));
         let new_accumulator = prev_accumulator.apply2_owned(self, fold_func);
 
         feedback
