@@ -189,34 +189,34 @@ pub fn agg_xor_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
 
 some_aggregate!(agg_xor_bytes, agg_xor, bytes, ByteArray);
 
-pub fn agg_lt__<T>(left: T, right: T) -> bool
+pub fn agg_lte__<T>(left: T, right: T) -> bool
 where
     T: Ord,
 {
-    left < right
+    left <= right
 }
 
-pub fn agg_lt__N<T>(left: T, right: Option<T>) -> bool
+pub fn agg_lte__N<T>(left: T, right: Option<T>) -> bool
 where
     T: Ord,
 {
     match right {
         None => true,
-        Some(right) => left < right,
+        Some(right) => left <= right,
     }
 }
 
-pub fn agg_lt_N_<T>(left: Option<T>, right: T) -> bool
+pub fn agg_lte_N_<T>(left: Option<T>, right: T) -> bool
 where
     T: Ord,
 {
     match left {
         None => false,
-        Some(left) => left < right,
+        Some(left) => left <= right,
     }
 }
 
-pub fn agg_lt_N_N<T>(left: Option<T>, right: Option<T>) -> bool
+pub fn agg_lte_N_N<T>(left: Option<T>, right: Option<T>) -> bool
 where
     T: Ord,
 {
@@ -224,38 +224,38 @@ where
         (None, None) => true,
         (None, _) => false,
         (_, None) => true,
-        (Some(left), Some(right)) => left < right,
+        (Some(left), Some(right)) => left <= right,
     }
 }
 
-pub fn agg_gt__<T>(left: T, right: T) -> bool
+pub fn agg_gte__<T>(left: T, right: T) -> bool
 where
     T: Ord,
 {
-    left > right
+    left >= right
 }
 
-pub fn agg_gt__N<T>(left: T, right: Option<T>) -> bool
+pub fn agg_gte__N<T>(left: T, right: Option<T>) -> bool
 where
     T: Ord,
 {
     match right {
         None => true,
-        Some(right) => left > right,
+        Some(right) => left >= right,
     }
 }
 
-pub fn agg_gt_N_<T>(left: Option<T>, right: T) -> bool
+pub fn agg_gte_N_<T>(left: Option<T>, right: T) -> bool
 where
     T: Ord,
 {
     match left {
         None => false,
-        Some(left) => left > right,
+        Some(left) => left >= right,
     }
 }
 
-pub fn agg_gt_N_N<T>(left: Option<T>, right: Option<T>) -> bool
+pub fn agg_gte_N_N<T>(left: Option<T>, right: Option<T>) -> bool
 where
     T: Ord,
 {
@@ -263,6 +263,6 @@ where
         (None, None) => true,
         (None, _) => false,
         (_, None) => true,
-        (Some(left), Some(right)) => left > right,
+        (Some(left), Some(right)) => left >= right,
     }
 }

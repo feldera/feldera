@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -46,8 +46,9 @@ public class DBSPControlledFilterOperator extends DBSPOperator {
         DBSPType rightType = right.getType();
         assert leftType.sameType(rightType): "Types differ: " + leftType + " vs " + rightType;
         if (leftType.is(DBSPTypeBaseType.class)) {
+            // Notice the comparison using AGG_GTE, which never returns NULL
             DBSPExpression comparison = new DBSPBinaryExpression(CalciteObject.EMPTY,
-                    new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.GTE, left, right);
+                    new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AGG_GTE, left, right);
             return new DBSPBinaryExpression(CalciteObject.EMPTY,
                     new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AND, compare, comparison);
         } else if (leftType.is(DBSPTypeRef.class)) {

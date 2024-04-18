@@ -37,6 +37,8 @@ import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
+import org.apache.calcite.rel.hint.HintPredicates;
+import org.apache.calcite.rel.hint.HintStrategyTable;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -94,13 +96,15 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLateness;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLatenessStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -784,24 +788,35 @@ public class CalciteCompiler implements IWritesLogs {
             case DELETE: {
                 // We expect this to be a REMOVE statement
                 SqlToRelConverter converter = this.getConverter();
-                SqlRemove insert = (SqlRemove) node;
-                SqlNode table = insert.getTargetTable();
-                if (!(table instanceof SqlIdentifier))
-                    throw new UnimplementedException(CalciteObject.create(table));
-                SqlIdentifier id = (SqlIdentifier) table;
-                TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource(), comment);
-                RelRoot values = converter.convertQuery(stat.data, true, true);
-                values = values.withRel(this.optimize(values.rel));
-                stat.setTranslation(values.rel);
-                return stat;
+                if (node instanceof SqlRemove) {
+                    SqlRemove insert = (SqlRemove) node;
+                    SqlNode table = insert.getTargetTable();
+                    if (!(table instanceof SqlIdentifier))
+                        throw new UnimplementedException(CalciteObject.create(table));
+                    SqlIdentifier id = (SqlIdentifier) table;
+                    TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource(), comment);
+                    RelRoot values = converter.convertQuery(stat.data, true, true);
+                    values = values.withRel(this.optimize(values.rel));
+                    stat.setTranslation(values.rel);
+                    return stat;
+                }
+                break;
             }
             case SELECT: {
                 throw new UnsupportedException(
                         "Raw 'SELECT' statements are not supported; did you forget to CREATE VIEW?",
                         CalciteObject.create(node));
             }
-            default:
-                throw new UnimplementedException(CalciteObject.create(node));
+            case OTHER: {
+                if (node instanceof SqlLateness) {
+                    SqlLateness lateness = (SqlLateness) node;
+                    RexNode expr = this.getConverter().convertExpression(lateness.getLateness());
+                    return new SqlLatenessStatement(lateness, sqlStatement,
+                            lateness.getView(), lateness.getColumn(), expr);
+                }
+                break;
+            }
         }
+        throw new UnimplementedException(CalciteObject.create(node));
     }
 }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs;

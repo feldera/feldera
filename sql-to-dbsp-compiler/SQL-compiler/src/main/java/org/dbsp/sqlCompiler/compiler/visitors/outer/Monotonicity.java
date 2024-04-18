@@ -15,8 +15,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosureType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
@@ -32,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -67,6 +70,8 @@ public class Monotonicity extends CircuitVisitor {
             return;
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(operator.operation)
+                .append(" ")
+                .append(operator.getIdString())
                 .append(" => ")
                 .append(value.toString())
                 .newline();
@@ -110,6 +115,89 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType projection = new PartiallyMonotoneTuple(fields, false);
         MonotoneExpression result = this.identity(node, projection, false);
         this.set(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPViewOperator node) {
+        // If the view has LATENESS declarations, we use these.
+        // Otherwise, we treat it as an identity function.
+        // We could do better: merge the input with the declared lateness.
+        // This is still TODO.
+        DBSPTypeTuple tuple = node.getOutputZSetElementType().as(DBSPTypeTuple.class);
+        if (tuple == null) {
+            // This must be an ORDER BY node
+            return;
+        }
+
+        if (node.hasLateness()) {
+            // Trust the annotations, and forget what we know about the input.
+            // This code parallels DBSPSourceMultisetOperator
+            List<IMaybeMonotoneType> fields = new ArrayList<>();
+            for (ViewColumnMetadata metadata: node.metadata) {
+                IMaybeMonotoneType columnType = new NonMonotoneType(metadata.getType());
+                if (metadata.lateness != null)
+                    columnType = new MonotoneType(metadata.getType());
+                fields.add(columnType);
+            }
+            IMaybeMonotoneType projection = new PartiallyMonotoneTuple(fields, false);
+            MonotoneExpression result = this.identity(node, projection, false);
+            this.set(node, result);
+        } else {
+            // Treat this like an identity function.
+            this.identity(node);
+        }
+
+        /*
+        This is an attempt to blend the two monotonicities, but the other passes
+        are confused by this result.  The main problem is that there is an output
+        which is monotone which is extracted out of "thin air", since the corresponding
+        tuple input field is not monotone.
+
+        DBSPVariablePath var = new DBSPVariablePath("t", tuple);
+        PartiallyMonotoneTuple monotoneInput = null;
+        if (inputFunction != null)
+            monotoneInput = getBodyType(inputFunction).to(PartiallyMonotoneTuple.class);
+
+        MonotoneExpression result;
+        List<IMaybeMonotoneType> fieldTypes = new ArrayList<>();
+        List<DBSPExpression> allFields = new ArrayList<>();
+        List<DBSPExpression> monotoneFields = new ArrayList<>();
+
+        int index = 0;
+        for (DBSPTypeStruct.Field field: struct.fields.values()) {
+            // Iterate over struct so we can get field names.
+            DBSPType type = tuple.getFieldType(index);
+            boolean isMonotone = monotoneInput != null && monotoneInput.getField(index).mayBeMonotone();
+            DBSPExpression lateness = null;
+            for (ViewColumnMetadata meta: node.metadata) {
+                if (meta.columnName.equalsIgnoreCase(field.name)) {
+                    lateness = meta.getLateness();
+                }
+            }
+            if (lateness != null)
+                isMonotone = true;
+            IMaybeMonotoneType fieldType;
+            DBSPExpression expression = null;
+            if (isMonotone) {
+                fieldType = new MonotoneType(type);
+                expression = var.field(index);
+                monotoneFields.add(expression);
+            } else {
+                fieldType = new NonMonotoneType(type);
+            }
+            allFields.add(var.field(index));
+            fieldTypes.add(fieldType);
+            index++;
+        }
+
+        DBSPParameter param = var.asParameter();
+        result = new MonotoneExpression(
+                new DBSPTupleExpression(allFields, false).closure(param),
+                new MonotoneClosureType(new PartiallyMonotoneTuple(fieldTypes, false), param, param),
+                new DBSPTupleExpression(monotoneFields, false).closure(param));
+        if (result.mayBeMonotone())
+            this.set(node, result);
+         */
     }
 
     @Override

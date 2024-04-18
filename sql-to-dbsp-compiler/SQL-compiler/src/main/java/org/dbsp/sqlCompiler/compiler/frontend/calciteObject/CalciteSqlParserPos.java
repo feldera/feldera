@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteObject;
 
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;

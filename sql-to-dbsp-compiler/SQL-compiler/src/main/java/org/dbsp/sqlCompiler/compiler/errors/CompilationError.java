@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 public class CompilationError extends BaseCompilerException {
     public CompilationError(String message) {

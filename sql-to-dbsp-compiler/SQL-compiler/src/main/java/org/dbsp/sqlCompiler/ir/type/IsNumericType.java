@@ -26,10 +26,8 @@ package org.dbsp.sqlCompiler.ir.type;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 
 /** Interface implemented by numeric types. */
-public interface IsNumericType extends IHasZero {
+public interface IsNumericType extends IHasZero, IsBoundedType {
     DBSPLiteral getOne();
-    DBSPLiteral getMaxValue();
-    DBSPLiteral getMinValue();
     default boolean isOne(DBSPLiteral literal) {
         return this.getOne().sameValue(literal);
     }

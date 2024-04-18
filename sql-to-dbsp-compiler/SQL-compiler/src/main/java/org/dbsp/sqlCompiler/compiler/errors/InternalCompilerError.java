@@ -25,7 +25,7 @@
 
 package org.dbsp.sqlCompiler.compiler.errors;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 
 import javax.annotation.Nullable;

@@ -380,19 +380,24 @@ public class Simplify extends InnerRewriteVisitor {
         } else if (expression.operation.equals(DBSPOpcode.ADD)) {
             if (left.is(DBSPLiteral.class)) {
                 DBSPLiteral leftLit = left.to(DBSPLiteral.class);
-                IHasZero iLeftType = leftType.to(IHasZero.class);
-                if (iLeftType.isZero(leftLit)) {
-                    result = right;
-                } else if (leftLit.isNull) {
-                    result = left;
+                IHasZero iLeftType = leftType.as(IHasZero.class);
+                if (iLeftType != null) {
+                    if (iLeftType.isZero(leftLit)) {
+                        result = right;
+                    } else if (leftLit.isNull) {
+                        // null + anything is null
+                        result = left;
+                    }
                 }
             } else if (right.is(DBSPLiteral.class)) {
                 DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IHasZero iRightType = rightType.to(IHasZero.class);
-                if (iRightType.isZero(rightLit)) {
-                    result = left;
-                } else if (rightLit.isNull) {
-                    result = right;
+                IHasZero iRightType = rightType.as(IHasZero.class);
+                if (iRightType != null) {
+                    if (iRightType.isZero(rightLit)) {
+                        result = left;
+                    } else if (rightLit.isNull) {
+                        result = right;
+                    }
                 }
             }
         } else if (expression.operation.equals(DBSPOpcode.MUL)) {

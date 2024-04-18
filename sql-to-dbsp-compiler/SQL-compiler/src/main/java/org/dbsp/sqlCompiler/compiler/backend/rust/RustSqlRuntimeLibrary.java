@@ -24,7 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
@@ -75,8 +75,8 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("agg_and", DBSPOpcode.AGG_AND);
         this.arithmeticFunctions.put("agg_or", DBSPOpcode.AGG_OR);
         this.arithmeticFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
-        this.arithmeticFunctions.put("agg_lt", DBSPOpcode.AGG_LT);
-        this.arithmeticFunctions.put("agg_gt", DBSPOpcode.AGG_GT);
+        this.arithmeticFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
+        this.arithmeticFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
@@ -91,6 +91,7 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
         this.dateFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.dateFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
+        this.dateFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
 
         this.stringFunctions.put("concat", DBSPOpcode.CONCAT);
         this.stringFunctions.put("eq", DBSPOpcode.EQ);
@@ -185,7 +186,7 @@ public class RustSqlRuntimeLibrary {
         if (opcode == DBSPOpcode.IS_TRUE || opcode == DBSPOpcode.IS_NOT_TRUE ||
                 opcode == DBSPOpcode.IS_FALSE || opcode == DBSPOpcode.IS_NOT_FALSE ||
                 opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT ||
-                opcode == DBSPOpcode.AGG_LT || opcode == DBSPOpcode.AGG_GT)
+                opcode == DBSPOpcode.AGG_LTE || opcode == DBSPOpcode.AGG_GTE)
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
         if (opcode == DBSPOpcode.CONCAT)
             returnType = expectedReturnType;
@@ -198,7 +199,7 @@ public class RustSqlRuntimeLibrary {
             tsuffixr = "";
             suffixl = "";
             suffixr = "";
-        } else if (opcode == DBSPOpcode.AGG_GT || opcode == DBSPOpcode.AGG_LT) {
+        } else if (opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE) {
             tsuffixl = "";
             tsuffixr = "";
         } else {

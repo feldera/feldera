@@ -24,12 +24,13 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -104,6 +105,22 @@ public class DBSPClosureExpression extends DBSPExpression {
                 return false;
         }
         return true;
+    }
+
+    /** A closure representing the identity function with the specified parameter. */
+    public static DBSPClosureExpression id(DBSPParameter param) {
+        return param.asVariable().closure(param);
+    }
+
+    /** A closure representing the identity function with the specified type. */
+    public static DBSPClosureExpression id(DBSPType type) {
+        DBSPParameter param = new DBSPParameter("t", type);
+        return DBSPClosureExpression.id(param);
+    }
+
+    /** A closure representing the identity function with the ANY type. */
+    public static DBSPClosureExpression id() {
+        return DBSPClosureExpression.id(DBSPTypeAny.getDefault());
     }
 
     @Override

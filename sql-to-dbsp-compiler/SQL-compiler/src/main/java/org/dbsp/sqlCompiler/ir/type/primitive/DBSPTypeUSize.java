@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -35,9 +35,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
-/**
- * Represents the usize Rust type.
- */
+/** Represents the usize Rust type. */
 public class DBSPTypeUSize extends DBSPTypeBaseType
         implements IsNumericType {
     @SuppressWarnings("SameParameterValue")
@@ -66,7 +64,7 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
 
     @Override
     public DBSPLiteral getZero() {
-        return new DBSPUSizeLiteral(0);
+        return new DBSPUSizeLiteral(0L, this.mayBeNull);
     }
 
     @Override

@@ -24,21 +24,19 @@
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
 import org.apache.calcite.util.TimeString;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIME;
 
-public class DBSPTypeTime extends DBSPTypeBaseType implements IsNumericType, IsDateType {
+public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType {
     public DBSPTypeTime(CalciteObject node, boolean mayBeNull) {
         super(node, TIME, mayBeNull);
     }
@@ -65,26 +63,6 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsNumericType, IsD
     }
 
     @Override
-    public DBSPLiteral getZero() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getOne() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getMaxValue() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getMinValue() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
     public int hashCode() {
         return Objects.hash(this.mayBeNull, 13);
     }
@@ -94,5 +72,16 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsNumericType, IsD
         if (!super.sameNullability(other))
             return false;
         return other.is(DBSPTypeTime.class);
+    }
+
+    @Override
+    public DBSPLiteral getMinValue() {
+        return new DBSPTimeLiteral(this.getNode(), this, new TimeString(0, 0, 0));
+    }
+
+    @Override
+    public DBSPLiteral getMaxValue() {
+        return new DBSPTimeLiteral(this.getNode(), this, new TimeString(23, 59, 59)
+                .withNanos(999999999));
     }
 }

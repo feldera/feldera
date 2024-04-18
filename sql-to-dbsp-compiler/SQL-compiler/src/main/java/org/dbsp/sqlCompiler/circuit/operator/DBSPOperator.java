@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -93,6 +93,12 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         return "stream" + this.getId();
     }
 
+    public String getDerivedFrom() {
+        if (this.derivedFrom >= 0)
+            return Long.toString(this.derivedFrom);
+        return Long.toString(this.id);
+    }
+
     public String getIdString() {
         String result = Long.toString(this.id);
         if (this.derivedFrom >= 0)
@@ -151,14 +157,16 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         return this.getOutputZSetType().elementType;
     }
 
-    /**
-     * If the output is a ZSet it returns the element type.
+    /** If the output is a ZSet it returns the element type.
      * If the output is an IndexedZSet it returns the tuple (keyType, elementType).
-     */
+     * If the output is something else, it returns its type.
+     * (The last can happen for apply nodes, after insertion of limiters). */
     public DBSPType getOutputRowType() {
         if (this.outputType.is(DBSPTypeZSet.class))
             return this.getOutputZSetElementType();
-        return this.getOutputIndexedZSetType().getKVType();
+        if (this.outputType.is(DBSPTypeIndexedZSet.class))
+            return this.getOutputIndexedZSetType().getKVType();
+        return this.outputType;
     }
 
     /**
@@ -166,10 +174,9 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
      * to the specified function.
      * @param function Function with multiple arguments
      * @param source   Source operator producing the arg input to function.
-     * @param arg      Argument number of the function supplied from source operator.
-     */
-    protected void checkArgumentFunctionType(DBSPExpression function,
-                                             @SuppressWarnings("SameParameterValue") int arg, DBSPOperator source) {
+     * @param arg      Argument number of the function supplied from source operator. */
+    protected void checkArgumentFunctionType(
+            DBSPExpression function, @SuppressWarnings("SameParameterValue") int arg, DBSPOperator source) {
         if (function.getType().is(DBSPTypeAny.class))
             return;
         DBSPType sourceElementType;
@@ -239,7 +246,8 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
                 .getSimpleName()
                 .replace("DBSP", "")
                 .replace("Operator", "")
-                + " " + this.getIdString();
+                + " " + this.getIdString()
+                + (this.comment != null ? this.comment : "");
     }
 
     public SourcePositionRange getSourcePosition() {

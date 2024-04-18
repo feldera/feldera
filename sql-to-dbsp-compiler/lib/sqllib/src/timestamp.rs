@@ -1,5 +1,6 @@
 //! Support for SQL Timestamp and Date data types.
 
+use crate::casts::*;
 use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use core::fmt::Formatter;
@@ -199,6 +200,20 @@ polymorphic_return_function2!(
     Timestamp
 );
 
+pub fn plus_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
+    plus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left), right)
+}
+
+polymorphic_return_function2!(
+    plus,
+    Date,
+    Date,
+    ShortInterval,
+    ShortInterval,
+    Timestamp,
+    Timestamp
+);
+
 pub fn minus_Timestamp_Timestamp_ShortInterval(left: Timestamp, right: Timestamp) -> ShortInterval {
     ShortInterval::from(left.milliseconds() - right.milliseconds())
 }
@@ -221,6 +236,20 @@ polymorphic_return_function2!(
     minus,
     Timestamp,
     Timestamp,
+    ShortInterval,
+    ShortInterval,
+    Timestamp,
+    Timestamp
+);
+
+pub fn minus_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
+    minus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left), right)
+}
+
+polymorphic_return_function2!(
+    minus,
+    Date,
+    Date,
     ShortInterval,
     ShortInterval,
     Timestamp,
@@ -252,6 +281,34 @@ polymorphic_return_function2!(
     Timestamp,
     Timestamp,
     Timestamp,
+    LongInterval,
+    LongInterval
+);
+
+pub fn minus_Date_Timestamp_LongInterval(left: Date, right: Timestamp) -> LongInterval {
+    minus_Timestamp_Timestamp_LongInterval(cast_to_Timestamp_Date(left), right)
+}
+
+polymorphic_return_function2!(
+    minus,
+    Date,
+    Date,
+    Timestamp,
+    Timestamp,
+    LongInterval,
+    LongInterval
+);
+
+pub fn minus_Timestamp_Date_LongInterval(left: Timestamp, right: Date) -> LongInterval {
+    minus_Timestamp_Timestamp_LongInterval(left, cast_to_Timestamp_Date(right))
+}
+
+polymorphic_return_function2!(
+    minus,
+    Timestamp,
+    Timestamp,
+    Date,
+    Date,
     LongInterval,
     LongInterval
 );

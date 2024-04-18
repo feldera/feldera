@@ -31,17 +31,19 @@ import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -143,7 +145,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream68: stream<WSet<Tup1<b>>> = stream61;
+                    let stream126: stream<WSet<Tup1<b>>> = stream61;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -549,9 +551,38 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = true;
         compiler.options.ioOptions.emitHandles = false;
+        // compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testIOT", ccs);
+    }
+
+    @Test
+    public void testViewLateness() {
+        String query = """
+                LATENESS V.COL1 INTERVAL '1' HOUR;
+                CREATE VIEW V AS SELECT T.COL1, T.COL2 FROM T;
+                CREATE VIEW V1 AS SELECT * FROM V;
+                """;
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatement(ddl);
+        compiler.compileStatements(query);
+        DBSPCircuit circuit = getCircuit(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            boolean found = false;
+
+            @Override
+            public VisitDecision preorder(DBSPControlledFilterOperator filter) {
+                found = true;
+                return VisitDecision.CONTINUE;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.found);
+            }
+        };
+        visitor.apply(circuit);
     }
 
     @Test
@@ -607,7 +638,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         compiler.compileStatements(query);
         compiler.optimize();
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
-        DBSPOperator sink = circuit.circuit.getOutput("V");
+        DBSPOperator sink = circuit.circuit.getSink("V");
         Assert.assertNotNull(sink);
         Assert.assertEquals(1, sink.inputs.size());
         DBSPOperator op = sink.inputs.get(0);
@@ -927,7 +958,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         Change change = ccs.toChange("""
                 INSERT INTO T VALUES(1, 'x');
-                REMOVE FROM T VALUES(2, 'Y');""").simplify();
+                REMOVE FROM T VALUES(2, 'Y');
+                REMOVE FROM T VALUES(3, 'Z');""").simplify();
         DBSPZSetLiteral expected = DBSPZSetLiteral.emptyWithElementType(
                 new DBSPTypeTuple(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
@@ -938,6 +970,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         expected.add(new DBSPTupleExpression(
                 new DBSPI32Literal(2, true),
                 new DBSPStringLiteral("Y", true)), -1);
+        expected.add(new DBSPTupleExpression(
+                new DBSPI32Literal(3, true),
+                new DBSPStringLiteral("Z", true)), -1);
         boolean same = change.getSet(0).sameValue(expected);
         Assert.assertTrue(same);
     }

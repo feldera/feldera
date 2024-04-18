@@ -1,18 +1,24 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
+import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPSourceMultisetOperator extends DBSPSourceTableOperator {
+public class DBSPSourceMultisetOperator
+        extends DBSPSourceTableOperator
+        implements IHasColumnsMetadata
+{
     /**
      * Create a DBSP operator that is a source to the dataflow graph.
      * The table has *no* primary key, so the data can form a multiset.
@@ -28,6 +34,8 @@ public class DBSPSourceMultisetOperator extends DBSPSourceTableOperator {
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
             InputTableMetadata metadata, String name) {
         super(node, sourceName, outputType, originalRowType, true, comment, metadata, name);
+        assert metadata.getColumnCount() == originalRowType.fields.size();
+        assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
     }
 
     @Override
@@ -53,5 +61,20 @@ public class DBSPSourceMultisetOperator extends DBSPSourceTableOperator {
                     this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
                     this.comment, this.metadata, this.tableName);
         return this;
+    }
+
+    @Override
+    public Iterable<? extends IHasLateness> getLateness() {
+        return this.metadata.getColumns();
+    }
+
+    @Override
+    public String toString() {
+        return this.getClass()
+                .getSimpleName()
+                .replace("DBSP", "")
+                .replace("Operator", "")
+                + " " + this.tableName
+                + " " + this.getIdString();
     }
 }

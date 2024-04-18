@@ -25,7 +25,7 @@
 
 package org.dbsp.sqlCompiler.compiler.errors;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 /**
  * Exception thrown when an unsupported construct is compiled.

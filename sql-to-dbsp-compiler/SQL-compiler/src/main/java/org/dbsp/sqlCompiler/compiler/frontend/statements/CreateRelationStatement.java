@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 import javax.annotation.Nullable;
 import java.util.List;

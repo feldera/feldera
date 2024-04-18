@@ -56,8 +56,8 @@ public enum DBSPOpcode {
     AGG_ADD("agg_plus", true),
     // > used in aggregation, for computing ARG_MAX.
     // NULL compares in a special way.
-    AGG_GT("agg_gt", true),
-    AGG_LT("agg_lt", true)
+    AGG_GTE("agg_gte", true),
+    AGG_LTE("agg_lte", true)
     ;
 
     private final String text;
@@ -74,7 +74,7 @@ public enum DBSPOpcode {
     }
 
     public boolean isComparison() {
-        // Some things like AGG_GT are not listed as comparisons, since
+        // Some things like AGG_GTE are not listed as comparisons, since
         // their return type follows different rules
         return this.equals(LT) || this.equals(GT) || this.equals(LTE)
                 || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ)

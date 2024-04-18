@@ -23,29 +23,37 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
 
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
-        implements IsNumericType, IsDateType {
+        implements IsDateType {
     public DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, TIMESTAMP, mayBeNull);
     }
 
     @Override
     public DBSPLiteral defaultValue() {
-        return this.getZero();
+        return new DBSPTimestampLiteral(this.getNode(), this, 0L);
+    }
+
+    @Override
+    public DBSPLiteral getMaxValue() {
+        return new DBSPTimestampLiteral("9999-12-12 23:59:59.99999999", this.mayBeNull);
+    }
+
+    @Override
+    public DBSPLiteral getMinValue() {
+        return new DBSPTimestampLiteral("0001-01-01 00:00:00", this.mayBeNull);
     }
 
     @Override
@@ -62,26 +70,6 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeTimestamp(this.getNode(), mayBeNull);
-    }
-
-    @Override
-    public DBSPLiteral getZero() {
-        return new DBSPTimestampLiteral(0);
-    }
-
-    @Override
-    public DBSPLiteral getOne() {
-        throw new UnsupportedException(this.getNode());
-    }
-
-    @Override
-    public DBSPLiteral getMaxValue() {
-        return new DBSPTimestampLiteral(Long.MAX_VALUE);
-    }
-
-    @Override
-    public DBSPLiteral getMinValue() {
-        throw new UnsupportedException(this.getNode());
     }
 
     @Override

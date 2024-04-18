@@ -1548,6 +1548,7 @@ pub fn must_equal<K>(left: &WSet<K>, right: &WSet<K>) -> bool
 where
     K: DBData + Clone,
 {
+    // println!("L={:?}\nR={:?}\n", left, right);
     let diff = left.add_by_ref(&right.neg_by_ref());
     if diff.is_zero() {
         return true;

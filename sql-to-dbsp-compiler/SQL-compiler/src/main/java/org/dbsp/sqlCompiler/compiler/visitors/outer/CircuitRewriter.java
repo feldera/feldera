@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
@@ -40,7 +41,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
@@ -151,7 +152,22 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !outputType.sameType(operator.outputType)
                 || input != operator.input()) {
             result = new DBSPSinkOperator(operator.getNode(), operator.viewName, operator.query,
-                    originalRowType, operator.comment, input);
+                    originalRowType, operator.metadata, operator.comment, input);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPViewOperator operator) {
+        DBSPOperator input = this.mapped(operator.input());
+        DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPOperator result = operator;
+        if (!originalRowType.sameType(operator.originalRowType)
+                || !outputType.sameType(operator.outputType)
+                || input != operator.input()) {
+            result = new DBSPViewOperator(operator.getNode(), operator.viewName, operator.query,
+                    originalRowType, operator.metadata, operator.comment, input);
         }
         this.map(operator, result);
     }

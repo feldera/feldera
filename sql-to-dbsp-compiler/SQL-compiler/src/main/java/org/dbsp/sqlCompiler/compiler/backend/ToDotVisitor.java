@@ -91,11 +91,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         for (DBSPOperator input: node.inputs) {
             this.stream.append(input.getOutputName())
                     .append(" -> ")
-                    .append(node.getOutputName())
-                    .append(" [label=")
-                    .append(Utilities.doubleQuote(input.getOutputRowType().toString()))
-                    .append("]")
-                    .append(";")
+                    .append(node.getOutputName());
+            if (this.details) {
+                this.stream.append(" [label=")
+                        .append(Utilities.doubleQuote(input.getOutputRowType().toString()))
+                        .append("]");
+            }
+            this.stream.append(";")
                     .newline();
         }
     }
@@ -116,13 +118,15 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public VisitDecision preorder(DBSPSinkOperator node) {
+    public VisitDecision preorder(DBSPViewBaseOperator node) {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(" ")
                 .append(node.viewName)
-                .append("\" ]")
+                .append("\"")
+                .append(" style=filled fillcolor=lightgrey")
+                .append("]")
                 .newline();
         this.addInputs(node);
         return VisitDecision.STOP;
@@ -166,7 +170,8 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" label=\"")
                 .append(node.getIdString())
                 .append(" ")
-                .append(node.operation);
+                .append(node.operation)
+                .append(node.comment != null ? node.comment : "");
         if (this.details) {
             this.stream
                     .append("(")

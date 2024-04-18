@@ -120,7 +120,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void endVisit() {
-        for (DBSPSourceBaseOperator source: this.getCircuit().circuit.inputOperators.values()) {
+        for (DBSPSourceBaseOperator source: this.getCircuit().circuit.sourceOperators.values()) {
             if (!this.reachable.contains(source) && this.warn && !this.keepAllSources)
                 this.errorReporter.reportWarning(source.getSourcePosition(),
                         "Unused", "Table " + Utilities.singleQuote(source.tableName) +

@@ -75,7 +75,7 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
 {
     SqlIdentifier foreignKeyTable = null;
     SqlIdentifier foreignKeyColumn = null;
-    SqlNode latenes = null;
+    SqlNode lateness = null;
     SqlNode e;
     Span s;
 }
@@ -88,14 +88,30 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
                return column.setForeignKey(foreignKeyTable, foreignKeyColumn);
             }
         |
-            <LATENESS> latenes = Expression(ExprContext.ACCEPT_NON_QUERY) {
-               return column.setLatenes(latenes);
+            <LATENESS> lateness = Expression(ExprContext.ACCEPT_NON_QUERY) {
+               return column.setLatenes(lateness);
             }
         |
             <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) {
                 return column.setDefault(e);
             }
         )
+}
+
+SqlNode LatenessStatement() :
+{
+    final SqlIdentifier view;
+    final SqlIdentifier column;
+    final SqlNode lateness;
+    Span s;
+}
+{
+    <LATENESS> { s = span(); } view = SimpleIdentifier()
+    <DOT> column = SimpleIdentifier()
+    lateness = Expression(ExprContext.ACCEPT_NON_QUERY)
+    {
+         return new SqlLateness(s.end(this), view, column, lateness);
+    }
 }
 
 SqlNodeList NonEmptyAttributeDefList() :

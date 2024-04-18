@@ -23,19 +23,21 @@
 
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPU64Literal extends DBSPIntLiteral {
+public class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
     public final Long value;
 
@@ -49,11 +51,19 @@ public class DBSPU64Literal extends DBSPIntLiteral {
 
     public DBSPU64Literal(CalciteObject node, DBSPType type, @Nullable Long value) {
         super(node, type, value == null);
+        if (value != null && value < 0)
+            throw new CompilationError("Negative value for u64 literal " + value);
         this.value = value;
     }
 
     public DBSPU64Literal(long value) {
         this(value, false);
+    }
+
+    @Override
+    public boolean gt0() {
+        assert this.value != null;
+        return this.value > 0;
     }
 
     public DBSPU64Literal(CalciteObject node, @Nullable Long value, boolean nullable) {

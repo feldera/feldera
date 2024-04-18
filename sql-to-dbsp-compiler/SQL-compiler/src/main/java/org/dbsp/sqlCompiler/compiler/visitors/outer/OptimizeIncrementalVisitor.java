@@ -87,6 +87,9 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPNoopOperator operator) { this.linear(operator); }
 
     @Override
+    public void postorder(DBSPViewOperator operator) { this.linear(operator); }
+
+    @Override
     public void postorder(DBSPWindowAggregateOperator operator) { this.linear(operator); }
 
     @Override

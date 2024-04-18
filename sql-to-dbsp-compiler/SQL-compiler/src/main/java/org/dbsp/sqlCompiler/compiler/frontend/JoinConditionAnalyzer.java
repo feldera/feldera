@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.frontend;
 
 import org.apache.calcite.rex.*;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;

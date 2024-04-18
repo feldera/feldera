@@ -1,18 +1,19 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPI8Literal extends DBSPIntLiteral {
+public class DBSPI8Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
     public final Byte value;
 
@@ -75,5 +76,11 @@ public class DBSPI8Literal extends DBSPIntLiteral {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @Override
+    public boolean gt0() {
+        assert this.value != null;
+        return this.value > 0;
     }
 }

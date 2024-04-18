@@ -78,8 +78,8 @@ public class CircuitOptimizer implements ICompilerComponent {
             passes.add(new InstrumentDump(reporter, t -> false));
         }
         passes.add(new MonotoneAnalyzer(reporter));
-        // debugging aid
-        passes.add(new RemoveDeindexOperator(reporter));
+        passes.add(new RemoveDeindexOperators(reporter));
+        passes.add(new RemoveViewOperators(reporter));
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         passes.add(new Simplify(reporter).circuitRewriter());

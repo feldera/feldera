@@ -242,8 +242,16 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
 
+    public VisitDecision preorder(DBSPViewBaseOperator node) {
+        return this.preorder(node.to(DBSPUnaryOperator.class));
+    }
+
     public VisitDecision preorder(DBSPSinkOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder(node.to(DBSPViewBaseOperator.class));
+    }
+
+    public VisitDecision preorder(DBSPViewOperator node) {
+        return this.preorder(node.to(DBSPViewBaseOperator.class));
     }
 
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
@@ -432,8 +440,16 @@ public abstract class CircuitVisitor
         this.postorder(node.to(DBSPUnaryOperator.class));
     }
 
+    public void postorder(DBSPViewBaseOperator node) {
+        this.postorder(node.to(DBSPUnaryOperator.class));
+    }
+
     public void postorder(DBSPSinkOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
+        this.postorder(node.to(DBSPViewBaseOperator.class));
+    }
+
+    public void postorder(DBSPViewOperator node) {
+        this.postorder(node.to(DBSPViewBaseOperator.class));
     }
 
     public void postorder(DBSPSourceBaseOperator node) {

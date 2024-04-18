@@ -25,17 +25,18 @@
 
 package org.dbsp.sqlCompiler.compiler.errors;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 
 import javax.annotation.Nullable;
 
-/**
- * Exception thrown when the compiler encounters a code
+/** Exception thrown when the compiler encounters a code
  * construct that is not yet fully implemented.  This is a legal construct,
- * and the compiler should eventually support it.
- */
-public class UnimplementedException extends BaseCompilerException {
+ * and the compiler should eventually support it. */
+public class UnimplementedException
+        extends BaseCompilerException
+        implements IHasSourcePositionRange {
     @Nullable
     public final IDBSPNode dbspNode;
 

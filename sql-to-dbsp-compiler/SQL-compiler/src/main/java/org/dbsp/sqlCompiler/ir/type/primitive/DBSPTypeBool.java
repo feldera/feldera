@@ -23,17 +23,18 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 
 import java.util.Objects;
 
-public class DBSPTypeBool extends DBSPTypeBaseType {
+public class DBSPTypeBool extends DBSPTypeBaseType implements IsBoundedType {
     public DBSPTypeBool(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.BOOL, mayBeNull); }
 
     public static DBSPTypeBool create(boolean mayBeNull) {
@@ -55,6 +56,16 @@ public class DBSPTypeBool extends DBSPTypeBaseType {
     @Override
     public DBSPLiteral defaultValue() {
         return this.mayBeNull ? new DBSPBoolLiteral(false, true) : new DBSPBoolLiteral(false);
+    }
+
+    @Override
+    public DBSPLiteral getMinValue() {
+        return new DBSPBoolLiteral(false, this.mayBeNull);
+    }
+
+    @Override
+    public DBSPLiteral getMaxValue() {
+        return new DBSPBoolLiteral(true, this.mayBeNull);
     }
 
     public boolean sameType(DBSPType type) {

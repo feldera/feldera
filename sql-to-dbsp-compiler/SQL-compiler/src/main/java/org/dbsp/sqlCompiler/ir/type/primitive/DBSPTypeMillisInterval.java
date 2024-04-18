@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.primitive;
 
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
@@ -52,6 +52,16 @@ public class DBSPTypeMillisInterval
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public DBSPLiteral getMinValue() {
+        return new DBSPIntervalMillisLiteral(Long.MIN_VALUE, this.mayBeNull);
+    }
+
+    @Override
+    public DBSPLiteral getMaxValue() {
+        return new DBSPIntervalMillisLiteral(Long.MAX_VALUE, this.mayBeNull);
     }
 
     @Override

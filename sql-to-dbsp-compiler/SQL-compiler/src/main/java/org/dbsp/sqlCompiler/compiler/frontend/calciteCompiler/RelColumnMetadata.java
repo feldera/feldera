@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexNode;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 import javax.annotation.Nullable;
 

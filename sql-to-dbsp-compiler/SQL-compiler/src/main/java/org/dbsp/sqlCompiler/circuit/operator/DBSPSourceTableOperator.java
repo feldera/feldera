@@ -2,19 +2,15 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
-import org.dbsp.sqlCompiler.compiler.frontend.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 
 import javax.annotation.Nullable;
 
-/**
- * Base class for source operators which represent tables.
- */
+/** Base class for source operators which represent tables. */
 public abstract class DBSPSourceTableOperator extends DBSPSourceBaseOperator {
-    /**
-     * Original output row type, as a struct (not a tuple), i.e., with named columns.
-     */
+    /** Original output row type, as a struct (not a tuple), i.e., with named columns. */
     public final DBSPTypeStruct originalRowType;
     public final CalciteObject sourceName;
     // Note: the metadata is not transformed after being set.
