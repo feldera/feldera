@@ -21,6 +21,7 @@ release = false
 dbsp = { path = "../dbsp" }
 anyhow = "1.0.57"
 csv = "1.2.2"
+env_logger = "0.10.0"
 # Revert after https://github.com/paupino/rust-decimal/pull/637 is merged:
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf", features = ["rkyv", "rkyv-64"] }
 regex = { version = "1.6.0" }
