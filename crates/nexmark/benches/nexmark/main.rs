@@ -5,6 +5,7 @@
 use anyhow::{anyhow, Result};
 use ascii_table::AsciiTable;
 use clap::Parser;
+use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
 use dbsp::{
     mimalloc::{AllocStats, MiMalloc},
@@ -221,8 +222,12 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
 
     let num_cores = config.cpu_cores;
     let expected_num_events = config.max_events;
+    let circuit_config = CircuitConfig {
+        min_storage_rows: if config.storage { 0 } else { usize::MAX },
+        ..CircuitConfig::with_workers(num_cores)
+    };
     let (dbsp, input_handle) =
-        Runtime::init_circuit(num_cores, move |circuit: &mut RootCircuit| {
+        Runtime::init_circuit(circuit_config, move |circuit: &mut RootCircuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
 
             query.query(circuit, stream);

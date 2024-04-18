@@ -115,6 +115,10 @@ pub struct Config {
     /// Disable progress bar.
     #[clap(long = "no-progress", default_value_t = true, action = clap::ArgAction::SetFalse)]
     pub progress: bool,
+
+    /// Enable storage.
+    #[clap(long)]
+    pub storage: bool,
 }
 
 /// Implementation of config methods based on the Java implementation at
@@ -151,6 +155,7 @@ impl Default for Config {
             input_batch_size: 40_000,
             output_csv: None,
             progress: true,
+            storage: false,
         }
     }
 }
