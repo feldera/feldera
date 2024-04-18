@@ -14,8 +14,9 @@ use crate::{
     },
     time::AntichainRef,
     trace::{
-        ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
-        Builder, Cursor, Deserializer, Filter, Merger, Serializer, WeightedItem,
+        ord::{filter, merge_batcher::MergeBatcher},
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
+        Filter, Merger, Serializer, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -582,13 +583,6 @@ where
         self.lower1 = cursor1.cursor.absolute_position() as usize;
         self.lower2 = cursor2.cursor.absolute_position() as usize;
     }
-}
-
-fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
-where
-    T: ?Sized,
-{
-    f.as_ref().map_or(true, |f| f(t))
 }
 
 type RawCursor<'s, K, R> = FileCursor<'s, Backend, K, R, (), (&'static K, &'static R, ())>;

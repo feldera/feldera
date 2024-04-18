@@ -8,6 +8,7 @@ use crate::{
     trace::{
         ord::{
             file::wset_batch::{FileWSetBuilder, FileWSetCursor, FileWSetMerger},
+            filter,
             merge_batcher::MergeBatcher,
             vec::wset_batch::{VecWSetBuilder, VecWSetCursor, VecWSetMerger},
         },
@@ -982,13 +983,6 @@ where
         *fuel -= 1;
         cursor.step_key();
     }
-}
-
-fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
-where
-    T: ?Sized,
-{
-    f.as_ref().map_or(true, |f| f(t))
 }
 
 impl<K, R, O> SizeOf for GenericMerger<K, R, O>
