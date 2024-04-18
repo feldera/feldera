@@ -130,7 +130,6 @@ public class ParserTests {
         CalciteCompiler calcite = this.getCompiler();
         String ddl = "LATENESS V.COL1 INTERVAL '1:00' HOUR TO MINUTES";
         SqlNode node = calcite.parse(ddl);
-        //System.out.println(node);
         Assert.assertNotNull(node);
     }
 
