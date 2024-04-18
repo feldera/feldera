@@ -5,9 +5,10 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
+        cursor::{HasTimeDiffCursor, TimeDiffCursor},
         layers::{
             Builder as _, Cursor as _, Layer, LayerBuilder, LayerCursor, LayerFactories, Leaf,
-            LeafBuilder, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
+            LeafBuilder, LeafCursor, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
         Filter, Merger, Serializer, WeightedItem,
@@ -680,6 +681,42 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.valid = true;
+    }
+}
+
+pub struct OrdKeyTimeDiffCursor<'a, T, R>(LeafCursor<'a, DynDataTyped<T>, R>)
+where
+    T: Timestamp,
+    R: WeightTrait + ?Sized;
+
+impl<'a, T, R> TimeDiffCursor<'a, T, R> for OrdKeyTimeDiffCursor<'a, T, R>
+where
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn current(&mut self, _tmp: &mut R) -> Option<(&T, &R)> {
+        if self.0.valid() {
+            Some((self.0.current_key(), self.0.current_diff()))
+        } else {
+            None
+        }
+    }
+    fn step(&mut self) {
+        self.0.step()
+    }
+}
+
+impl<'s, K, T, R, O> HasTimeDiffCursor<K, DynUnit, T, R> for OrdKeyCursor<'s, K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    type TimeDiffCursor<'a> = OrdKeyTimeDiffCursor<'a, T, R> where Self: 'a;
+
+    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
+        OrdKeyTimeDiffCursor(self.cursor.values())
     }
 }
 

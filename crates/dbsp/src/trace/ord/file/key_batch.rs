@@ -13,6 +13,7 @@ use crate::{
     },
     time::{Antichain, AntichainRef},
     trace::{
+        cursor::{HasTimeDiffCursor, TimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Merger,
         WeightedItem,
@@ -555,12 +556,25 @@ where
     }
 }
 
-type RawCursor<'s, K, T, R> = FileCursor<
+type RawKeyCursor<'s, K, T, R> = FileCursor<
     's,
     Backend,
     K,
     DynUnit,
     (&'static DynDataTyped<T>, &'static R, ()),
+    (
+        &'static K,
+        &'static DynUnit,
+        (&'static DynDataTyped<T>, &'static R, ()),
+    ),
+>;
+
+type RawTimeDiffCursor<'s, K, T, R> = FileCursor<
+    's,
+    Backend,
+    DynDataTyped<T>,
+    R,
+    (),
     (
         &'static K,
         &'static DynUnit,
@@ -577,12 +591,12 @@ where
     R: WeightTrait + ?Sized,
 {
     batch: &'s FileKeyBatch<K, T, R>,
-    cursor: RawCursor<'s, K, T, R>,
+    pub(crate) cursor: RawKeyCursor<'s, K, T, R>,
     key: Box<K>,
     val_valid: bool,
 
-    time: Box<DynDataTyped<T>>,
-    diff: Box<R>,
+    pub(crate) time: Box<DynDataTyped<T>>,
+    pub(crate) diff: Box<R>,
 }
 
 impl<'s, K, T, R> Clone for FileKeyCursor<'s, K, T, R>
@@ -638,7 +652,7 @@ where
 
     fn move_key<F>(&mut self, op: F)
     where
-        F: Fn(&mut RawCursor<'s, K, T, R>) -> Result<(), ReaderError>,
+        F: Fn(&mut RawKeyCursor<'s, K, T, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.cursor).unwrap();
         let key_valid = unsafe { self.cursor.key(&mut self.key) }.is_some();
@@ -771,6 +785,53 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.val_valid = true;
+    }
+}
+
+pub struct FileKeyTimeDiffCursor<'a, K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    cursor: RawTimeDiffCursor<'a, K, T, R>,
+    time: T,
+}
+
+impl<'a, K, T, R> TimeDiffCursor<'a, T, R> for FileKeyTimeDiffCursor<'a, K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn current<'b>(&'b mut self, tmp: &'b mut R) -> Option<(&T, &R)> {
+        if unsafe { self.cursor.item((&mut self.time, tmp)) }.is_some() {
+            Some((&self.time, tmp))
+        } else {
+            None
+        }
+    }
+
+    fn step(&mut self) {
+        self.cursor.move_next().unwrap();
+    }
+}
+
+impl<'s, K, T, R> HasTimeDiffCursor<K, DynUnit, T, R> for FileKeyCursor<'s, K, T, R>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    type TimeDiffCursor<'a> = FileKeyTimeDiffCursor<'a, K, T, R>
+    where
+        Self: 'a;
+
+    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
+        FileKeyTimeDiffCursor {
+            cursor: self.cursor.next_column().unwrap().first().unwrap(),
+            time: T::default(),
+        }
     }
 }
 

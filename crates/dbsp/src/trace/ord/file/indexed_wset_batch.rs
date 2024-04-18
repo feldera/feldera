@@ -14,6 +14,7 @@ use crate::{
     },
     time::AntichainRef,
     trace::{
+        cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Merger,
         WeightedItem,
@@ -895,6 +896,21 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.move_val(|val_cursor| val_cursor.move_last());
+    }
+}
+
+impl<'s, K, V, R> HasTimeDiffCursor<K, V, (), R> for FileIndexedWSetCursor<'s, K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    type TimeDiffCursor<'a> = SingletonTimeDiffCursor<'a, R>
+    where
+        Self: 'a;
+
+    fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
+        SingletonTimeDiffCursor::new(self.val_valid().then(|| self.diff.as_ref()))
     }
 }
 
