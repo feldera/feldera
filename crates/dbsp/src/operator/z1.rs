@@ -12,7 +12,7 @@ use crate::{
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
     },
-    circuit_cache_key, Error, NumEntries,
+    circuit_cache_key, Error, NumEntries, Runtime,
 };
 use size_of::{Context, SizeOf};
 use std::path::PathBuf;
@@ -44,8 +44,8 @@ where
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
     pub fn new(circuit: &C) -> Self {
-        let (ExportStream { local, export }, feedback) =
-            circuit.add_feedback_with_export(Z1::new(D::zero()));
+        let (ExportStream { local, export }, feedback) = circuit
+            .add_feedback_with_export(Z1::new(circuit.global_node_id().persistent_id(), D::zero()));
 
         Self {
             feedback,
@@ -63,8 +63,8 @@ where
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
     pub fn with_default(circuit: &C, default: D) -> Self {
-        let (ExportStream { local, export }, feedback) =
-            circuit.add_feedback_with_export(Z1::new(default));
+        let (ExportStream { local, export }, feedback) = circuit
+            .add_feedback_with_export(Z1::new(circuit.global_node_id().persistent_id(), default));
 
         Self {
             feedback,
@@ -145,7 +145,10 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), || {
-                self.circuit().add_unary_operator(Z1::new(D::zero()), self)
+                self.circuit().add_unary_operator(
+                    Z1::new(self.origin_node_id().persistent_id(), D::zero()),
+                    self,
+                )
             })
             .clone()
     }
@@ -156,8 +159,10 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), move || {
-                self.circuit()
-                    .add_unary_operator(Z1::new(zero.clone()), self)
+                self.circuit().add_unary_operator(
+                    Z1::new(self.origin_node_id().persistent_id(), zero.clone()),
+                    self,
+                )
             })
             .clone()
     }
@@ -202,17 +207,30 @@ pub struct Z1<T> {
     zero: T,
     empty_output: bool,
     values: T,
+    persistent_id: String,
 }
 
 impl<T> Z1<T>
 where
     T: Clone,
 {
-    pub fn new(zero: T) -> Self {
-        Self {
-            zero: zero.clone(),
-            empty_output: false,
-            values: zero,
+    pub fn new(persistent_id: String, zero: T) -> Self {
+        if let Some(_cid) = Runtime::restore_from_commit() {
+            /*let z1_path = Self::checkpoint_file(cid, &persistent_id);
+            let content = fs::read(z1_path).expect("Z1 meta-data for checkpoint must exist.");
+            let archived = unsafe { rkyv::archived_root::<Z1<T>>(&content) };
+            let mut z1: Z1<T> = archived.deserialize(&mut rkyv::Infallible).unwrap();
+            z1.zero = zero.clone();
+            z1.empty_output = false;
+            z1*/
+            unreachable!("Z1 operator restore is not implemented.");
+        } else {
+            Self {
+                persistent_id,
+                zero: zero.clone(),
+                empty_output: false,
+                values: zero,
+            }
         }
     }
 
@@ -537,7 +555,7 @@ mod test {
 
     #[test]
     fn z1_test() {
-        let mut z1 = Z1::new(0);
+        let mut z1 = Z1::new(String::new(), 0);
 
         let expected_result = vec![0, 1, 2, 0, 4, 5];
 
