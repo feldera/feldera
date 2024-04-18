@@ -14,8 +14,9 @@ use crate::{
     },
     time::AntichainRef,
     trace::{
-        ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
-        Builder, Cursor, Filter, Merger, WeightedItem,
+        ord::{filter, merge_batcher::MergeBatcher},
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Merger,
+        WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -668,13 +669,6 @@ where
         self.lower1 = cursor1.key_cursor.absolute_position() as usize;
         self.lower2 = cursor2.key_cursor.absolute_position() as usize;
     }
-}
-
-fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
-where
-    T: ?Sized,
-{
-    f.as_ref().map_or(true, |f| f(t))
 }
 
 impl<K, V, R> SizeOf for FileIndexedWSetMerger<K, V, R>

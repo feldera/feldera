@@ -11,6 +11,7 @@ use crate::{
             file::indexed_wset_batch::{
                 FileIndexedWSetBuilder, FileIndexedWSetCursor, FileIndexedWSetMerger,
             },
+            filter,
             merge_batcher::MergeBatcher,
             vec::indexed_wset_batch::{
                 OrdIndexedWSetMerger, VecIndexedWSetBuilder, VecIndexedWSetCursor,
@@ -1128,13 +1129,6 @@ where
             *fuel -= 1;
         }
     }
-}
-
-fn filter<T>(f: &Option<Filter<T>>, t: &T) -> bool
-where
-    T: ?Sized,
-{
-    f.as_ref().map_or(true, |f| f(t))
 }
 
 impl<K, V, R, O> SizeOf for GenericMerger<K, V, R, O>
