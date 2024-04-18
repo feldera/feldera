@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [SQL] `LATENESS` column attribute for tables and views
+  ([#1656](https://github.com/feldera/feldera/pull/1656))
+
+### Added
+
 - [SQL] `ARG_MIN`, `ARG_MAX` aggregation functions
   ([#1619](https://github.com/feldera/feldera/pull/1619))
 - SQL: Support for `ARRAYS_OVERLAP` function ([#1570](https://github.com/feldera/feldera/pull/1570))
