@@ -8,26 +8,25 @@ use crate::{
     trace::{
         cursor::DelegatingCursor,
         ord::{
-            file::wset_batch::{FileWSetBuilder, FileWSetCursor, FileWSetMerger},
-            filter,
+            file::wset_batch::{FileWSetBuilder, FileWSetMerger},
             merge_batcher::MergeBatcher,
-            vec::wset_batch::{VecWSetBuilder, VecWSetCursor, VecWSetMerger},
+            vec::wset_batch::{VecWSetBuilder, VecWSetMerger},
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, FileWSet,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileWSet,
         FileWSetFactories, Filter, Merger, OrdWSet, OrdWSetFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
-use dyn_clone::clone_box;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::{
-    cmp::Ordering,
     fmt::{self, Debug},
     ops::{Add, AddAssign},
 };
 use std::{ops::Neg, path::PathBuf};
+
+use super::utils::GenericMerger;
 
 pub struct FallbackWSetFactories<K, R>
 where
@@ -416,8 +415,8 @@ where
 {
     AllFile(FileWSetMerger<K, R>),
     AllVec(VecWSetMerger<K, R>),
-    ToVec(GenericMerger<K, R, OrdWSet<K, R>>),
-    ToFile(GenericMerger<K, R, FileWSet<K, R>>),
+    ToVec(GenericMerger<K, DynUnit, (), R, OrdWSet<K, R>>),
+    ToFile(GenericMerger<K, DynUnit, (), R, FileWSet<K, R>>),
 }
 
 impl<K, R> Merger<K, DynUnit, (), R, FallbackWSet<K, R>> for FallbackWSetMerger<K, R>
@@ -435,14 +434,22 @@ where
                     (Inner::Vec(vec1), Inner::Vec(vec2)) => {
                         MergerInner::AllVec(VecWSetMerger::new_merger(vec1, vec2))
                     }
-                    _ => MergerInner::ToVec(GenericMerger::new(&batch1.factories.vec)),
+                    _ => MergerInner::ToVec(GenericMerger::new(
+                        &batch1.factories.vec,
+                        batch1,
+                        batch2,
+                    )),
                 }
             } else {
                 match (&batch1.inner, &batch2.inner) {
                     (Inner::File(file1), Inner::File(file2)) => {
                         MergerInner::AllFile(FileWSetMerger::new_merger(file1, file2))
                     }
-                    _ => MergerInner::ToFile(GenericMerger::new(&batch1.factories.file)),
+                    _ => MergerInner::ToFile(GenericMerger::new(
+                        &batch1.factories.file,
+                        batch1,
+                        batch2,
+                    )),
                 }
             },
         }
@@ -675,173 +682,5 @@ where
 {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FallbackWSet<K, R>, D::Error> {
         unimplemented!();
-    }
-}
-
-enum Position<K>
-where
-    K: DataTrait + ?Sized,
-{
-    Start,
-    At(Box<K>),
-    End,
-}
-
-impl<K> Position<K>
-where
-    K: DataTrait + ?Sized,
-{
-    fn cursor<'s, B>(&self, source: &'s B) -> B::Cursor<'s>
-    where
-        B: BatchReader<Key = K>,
-    {
-        let mut cursor = source.cursor();
-        match self {
-            Position::Start => (),
-            Position::At(key) => cursor.seek_key(key.as_ref()),
-            Position::End => {
-                cursor.fast_forward_keys();
-                cursor.step_key()
-            }
-        }
-        cursor
-    }
-
-    fn from_cursor<C, R>(cursor: &C) -> Position<K>
-    where
-        C: Cursor<K, DynUnit, (), R>,
-        R: ?Sized,
-    {
-        if cursor.key_valid() {
-            Self::At(clone_box(cursor.key()))
-        } else {
-            Self::End
-        }
-    }
-}
-
-struct GenericMerger<K, R, O>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
-{
-    builder: O::Builder,
-    pos1: Position<K>,
-    pos2: Position<K>,
-}
-
-trait CursorWeightRef<K, T, R>: Cursor<K, DynUnit, T, R>
-where
-    K: ?Sized,
-    R: ?Sized,
-{
-    fn weight_ref(&self) -> &R;
-}
-
-impl<'s, K, R> CursorWeightRef<K, (), R> for VecWSetCursor<'s, K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn weight_ref(&self) -> &R {
-        self.cursor.current_diff()
-    }
-}
-
-impl<'s, K, R> CursorWeightRef<K, (), R> for FileWSetCursor<'s, K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn weight_ref(&self) -> &R {
-        self.diff.as_ref()
-    }
-}
-
-impl<K, R, O> GenericMerger<K, R, O>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
-{
-    fn new(factories: &O::Factories) -> Self {
-        Self {
-            builder: O::Builder::new_builder(factories, ()),
-            pos1: Position::Start,
-            pos2: Position::Start,
-        }
-    }
-
-    fn work<'s, A, B>(
-        &mut self,
-        source1: &'s A,
-        source2: &'s B,
-        key_filter: &Option<Filter<K>>,
-        value_filter: &Option<Filter<DynUnit>>,
-        fuel: &mut isize,
-    ) where
-        A: BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
-        B: BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
-        A::Cursor<'s>: CursorWeightRef<K, (), R>,
-        B::Cursor<'s>: CursorWeightRef<K, (), R>,
-    {
-        if !filter(value_filter, &()) {
-            return;
-        }
-
-        let mut cursor1 = self.pos1.cursor(source1);
-        let mut cursor2 = self.pos2.cursor(source2);
-        while cursor1.key_valid() && cursor2.key_valid() && *fuel > 0 {
-            match cursor1.key().cmp(cursor2.key()) {
-                Ordering::Less => {
-                    self.copy_value_if(&mut cursor1, key_filter, fuel);
-                }
-                Ordering::Equal => {
-                    self.copy_value_if(&mut cursor1, key_filter, fuel);
-                    cursor2.step_key();
-                    *fuel -= 1;
-                }
-                Ordering::Greater => {
-                    self.copy_value_if(&mut cursor2, key_filter, fuel);
-                }
-            }
-        }
-
-        while cursor1.key_valid() && *fuel > 0 {
-            self.copy_value_if(&mut cursor1, key_filter, fuel);
-        }
-        while cursor2.key_valid() && *fuel > 0 {
-            self.copy_value_if(&mut cursor2, key_filter, fuel);
-        }
-        self.pos1 = Position::from_cursor(&cursor1);
-        self.pos2 = Position::from_cursor(&cursor2);
-    }
-
-    fn done(self) -> O {
-        self.builder.done()
-    }
-
-    fn copy_value_if<C>(&mut self, cursor: &mut C, key_filter: &Option<Filter<K>>, fuel: &mut isize)
-    where
-        C: CursorWeightRef<K, (), R>,
-    {
-        if filter(key_filter, cursor.key()) {
-            self.builder
-                .push_refs(cursor.key(), &(), cursor.weight_ref());
-        }
-        *fuel -= 1;
-        cursor.step_key();
-    }
-}
-
-impl<K, R, O> SizeOf for GenericMerger<K, R, O>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = DynUnit, R = R, Time = ()>,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        self.builder.size_of_children(context)
     }
 }
