@@ -30,7 +30,7 @@
 //! Traces keep track of the lower and upper bounds among their tuples' times.
 //! If the trace contains incomparable times, then it will have multiple lower
 //! and upper bounds, one for each category of incomparable time, in an
-//! [`Antichain`](crate::time::Antichain).
+//! [`Antichain`].
 
 use crate::dynamic::ClonableTrait;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};

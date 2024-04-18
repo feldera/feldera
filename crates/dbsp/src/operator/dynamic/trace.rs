@@ -238,7 +238,7 @@ pub type FileKeySpine<B, C> = Spine<
     >,
 >;
 
-/// An on-stroage [`Spine`] of `C`'s default batch type, with key, value, and
+/// An on-storage [`Spine`] of `C`'s default batch type, with key, value, and
 /// weight types taken from `B`.
 pub type FileValSpine<B, C> = Spine<
     <<C as WithClock>::Time as Timestamp>::FileValBatch<
