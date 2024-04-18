@@ -11,7 +11,7 @@ use crate::{
             LeafBuilder, LeafCursor, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, WeightedItem,
+        Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -737,6 +737,37 @@ where
     factories: VecKeyBatchFactories<K, T, R>,
 }
 
+impl<K, T, R, O> TimedBuilder<VecKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+    O: OrdOffset,
+{
+    /// Pushes a tuple including `time` into the builder.
+    ///
+    /// A caller that uses this must finalize the batch with
+    /// [`Self::done_with_bounds`], supplying correct upper and lower bounds, to
+    /// ensure that the final batch's invariants are correct.
+    #[inline]
+    fn push_time(&mut self, key: &K, _val: &DynUnit, time: &T, weight: &R) {
+        self.builder.push_refs((key, (time, weight)));
+    }
+
+    /// Finalizes a batch with lower bound `lower` and upper bound `upper`.
+    /// This is only necessary if `push_time()` was used; otherwise, use
+    /// [`Self::done`] instead.
+    #[inline(never)]
+    fn done_with_bounds(self, lower: Antichain<T>, upper: Antichain<T>) -> VecKeyBatch<K, T, R, O> {
+        VecKeyBatch {
+            layer: self.builder.done(),
+            lower,
+            upper,
+            factories: self.factories,
+        }
+    }
+}
+
 impl<K, T, R, O> Builder<VecKeyBatch<K, T, R, O>> for OrdKeyBuilder<K, T, R, O>
 where
     K: DataTrait + ?Sized,
@@ -792,19 +823,14 @@ where
 
     #[inline(never)]
     fn done(self) -> VecKeyBatch<K, T, R, O> {
+        let lower = Antichain::from_elem(self.time.clone());
         let time_next = self.time.advance(0);
         let upper = if time_next <= self.time {
             Antichain::new()
         } else {
             Antichain::from_elem(time_next)
         };
-
-        VecKeyBatch {
-            layer: self.builder.done(),
-            lower: Antichain::from_elem(self.time),
-            upper,
-            factories: self.factories,
-        }
+        Self::done_with_bounds(self, lower, upper)
     }
 }
 

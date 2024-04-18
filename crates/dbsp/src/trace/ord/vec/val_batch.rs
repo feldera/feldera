@@ -12,7 +12,7 @@ use crate::{
             LeafBuilder, LeafCursor, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer,
+        Filter, Merger, Serializer, TimedBuilder,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -874,6 +874,32 @@ where
     // #[size_of(skip)]
     // weighted_item_factory: &'static WeightedVTable<Pair<K, V>, R>,
     // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
+}
+
+impl<K, V, T, R, O> TimedBuilder<VecValBatch<K, V, T, R, O>> for OrdValBuilder<K, V, T, R, O>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+    O: OrdOffset,
+{
+    fn push_time(&mut self, key: &K, val: &V, time: &T, weight: &R) {
+        self.builder.push_refs((key, (val, (time, weight))));
+    }
+
+    fn done_with_bounds(
+        self,
+        lower: Antichain<T>,
+        upper: Antichain<T>,
+    ) -> VecValBatch<K, V, T, R, O> {
+        VecValBatch {
+            layer: self.builder.done(),
+            lower,
+            upper,
+            factories: self.factories,
+        }
+    }
 }
 
 impl<K, V, T, R, O> Builder<VecValBatch<K, V, T, R, O>> for OrdValBuilder<K, V, T, R, O>

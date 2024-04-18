@@ -4,7 +4,7 @@ use crate::{
         DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait,
         WeightTraitTyped, WithFactory,
     },
-    time::AntichainRef,
+    time::{Antichain, AntichainRef},
     trace::{
         cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         layers::{
@@ -12,7 +12,7 @@ use crate::{
             LeafBuilder, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, WeightedItem,
+        Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -884,6 +884,25 @@ where
             layer: self.builder.done(),
             factories: self.factories,
         }
+    }
+}
+
+impl<K, V, R> TimedBuilder<VecIndexedWSet<K, V, R>> for VecIndexedWSetBuilder<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn push_time(&mut self, key: &K, val: &V, _time: &(), weight: &R) {
+        self.push_refs(key, val, weight);
+    }
+
+    fn done_with_bounds(
+        self,
+        _lower: Antichain<()>,
+        _upper: Antichain<()>,
+    ) -> VecIndexedWSet<K, V, R> {
+        self.done()
     }
 }
 
