@@ -12,12 +12,12 @@ use crate::{
             Factories as FileFactories,
         },
     },
-    time::AntichainRef,
+    time::{Antichain, AntichainRef},
     trace::{
         cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, WeightedItem,
+        Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -846,6 +846,20 @@ where
 
     fn push_vals(&mut self, key: &mut K, _val: &mut DynUnit, weight: &mut R) {
         self.push_refs(key, &(), weight)
+    }
+}
+
+impl<K, R> TimedBuilder<FileWSet<K, R>> for FileWSetBuilder<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn push_time(&mut self, key: &K, val: &DynUnit, _time: &(), weight: &R) {
+        self.push_refs(key, val, weight);
+    }
+
+    fn done_with_bounds(self, _lower: Antichain<()>, _upper: Antichain<()>) -> FileWSet<K, R> {
+        self.done()
     }
 }
 

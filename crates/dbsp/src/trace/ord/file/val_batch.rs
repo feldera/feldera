@@ -9,6 +9,7 @@ use std::{
 
 use crate::storage::backend::Backend;
 use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
+use crate::trace::TimedBuilder;
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -1034,6 +1035,45 @@ where
     cur_key: Box<DynOpt<K>>,
 }
 
+impl<K, V, T, R> TimedBuilder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    fn push_time(&mut self, key: &K, val: &V, time: &T, weight: &R) {
+        if let Some(cur_key) = self.cur_key.get() {
+            if key != cur_key {
+                self.writer.write0((cur_key, ().erase())).unwrap();
+                self.cur_key.from_ref(key);
+            }
+        } else {
+            self.cur_key.from_ref(key);
+        }
+        let mut timediffs = self.factories.timediff_factory.default_box();
+        timediffs.push_refs((time.erase(), weight));
+        self.writer.write1((val, timediffs.as_ref())).unwrap();
+    }
+
+    fn done_with_bounds(
+        mut self,
+        lower: Antichain<T>,
+        upper: Antichain<T>,
+    ) -> FileValBatch<K, V, T, R> {
+        if let Some(cur_key) = self.cur_key.get() {
+            self.writer.write0((cur_key, ().erase())).unwrap();
+        }
+        FileValBatch {
+            factories: self.factories,
+            file: self.writer.into_reader().unwrap(),
+            lower_bound: 0,
+            lower,
+            upper,
+        }
+    }
+}
+
 impl<K, V, T, R> Builder<FileValBatch<K, V, T, R>> for FileValBuilder<K, V, T, R>
 where
     Self: SizeOf,
@@ -1071,17 +1111,8 @@ where
     }
 
     fn push_refs(&mut self, key: &K, val: &V, diff: &R) {
-        if let Some(cur_key) = self.cur_key.get() {
-            if key != cur_key {
-                self.writer.write0((cur_key, ().erase())).unwrap();
-                self.cur_key.from_ref(key);
-            }
-        } else {
-            self.cur_key.from_ref(key);
-        }
-        let mut timediffs = self.factories.timediff_factory.default_box();
-        timediffs.push_refs((self.time.erase(), diff));
-        self.writer.write1((val, timediffs.as_ref())).unwrap();
+        let time = self.time.clone();
+        self.push_time(key, val, &time, diff);
     }
 
     fn push_vals(&mut self, key: &mut K, val: &mut V, diff: &mut R) {

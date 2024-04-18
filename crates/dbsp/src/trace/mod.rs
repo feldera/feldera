@@ -34,6 +34,7 @@
 
 use crate::dynamic::ClonableTrait;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
+use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use dyn_clone::DynClone;
 use rand::Rng;
@@ -586,6 +587,42 @@ where
 
     /// Completes building and returns the batch.
     fn done(self) -> Output;
+}
+
+/// Functionality for building timed batches from ordered update sequences.
+///
+/// The [`Builder`] trait builds a batch in which every tuple has the same time.
+/// This trait builds a batch in which each tuple's time can be individually
+/// specified.
+pub trait TimedBuilder<Output>: Builder<Output>
+where
+    Output: Batch,
+{
+    /// Allocates an empty builder with some capacity.
+    fn timed_with_capacity(factories: &Output::Factories, cap: usize) -> Self
+    where
+        Self: Sized,
+    {
+        <Self as Builder<Output>>::with_capacity(factories, Output::Time::default(), cap)
+    }
+
+    /// Adds an element to the batch.
+    fn push_time(
+        &mut self,
+        key: &Output::Key,
+        val: &Output::Val,
+        time: &Output::Time,
+        weight: &Output::R,
+    );
+
+    /// Completes building and returns the batch with lower bound `lower` and
+    /// upper bound `upper`.  The bounds must be correct to avoid violating
+    /// invariants in the output type.
+    fn done_with_bounds(
+        self,
+        lower: Antichain<Output::Time>,
+        upper: Antichain<Output::Time>,
+    ) -> Output;
 }
 
 /// Represents a merge in progress.
