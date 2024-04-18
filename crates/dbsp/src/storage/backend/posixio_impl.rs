@@ -15,7 +15,6 @@ use std::{
 
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
-use tempfile::TempDir;
 
 use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf, init};
 
@@ -25,8 +24,8 @@ use super::{
         describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
         READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
-    MUTABLE_EXTENSION,
+    tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage,
+    StorageError, MUTABLE_EXTENSION,
 };
 
 /// Helper function that opens files as direct IO files on linux.
@@ -145,16 +144,19 @@ impl PosixBackend {
         self.base.as_path()
     }
 
+    fn new_default() -> Rc<Self> {
+        Rc::new(PosixBackend::new(
+            tempdir_for_thread(),
+            NEXT_FILE_HANDLE
+                .get_or_init(|| Arc::new(Default::default()))
+                .clone(),
+        ))
+    }
+
     /// Returns a thread-local default backend.
     pub fn default_for_thread() -> Rc<Self> {
         thread_local! {
-            pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
-            pub static DEFAULT_BACKEND: Rc<PosixBackend> = {
-                let path = TEMPDIR.with(|dir| dir.path().to_path_buf());
-                 Rc::new(PosixBackend::new(path, NEXT_FILE_HANDLE.get_or_init(|| {
-                    Arc::new(Default::default())
-                }).clone()))
-            };
+            pub static DEFAULT_BACKEND: Rc<PosixBackend> = PosixBackend::new_default();
         }
         DEFAULT_BACKEND.with(|rc| rc.clone())
     }

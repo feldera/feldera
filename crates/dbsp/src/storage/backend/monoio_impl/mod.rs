@@ -23,7 +23,6 @@ use monoio::{
     fs::{File, OpenOptions},
     FusionDriver, FusionRuntime, LegacyDriver, RuntimeBuilder,
 };
-use tempfile::TempDir;
 
 use super::{
     append_to_path,
@@ -31,8 +30,8 @@ use super::{
         describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
         READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
-    MUTABLE_EXTENSION, NEXT_FILE_HANDLE,
+    tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage,
+    StorageError, MUTABLE_EXTENSION, NEXT_FILE_HANDLE,
 };
 use crate::storage::{buffer_cache::FBuf, init};
 
@@ -115,15 +114,19 @@ impl MonoioBackend {
         self.base.as_path()
     }
 
+    fn new_default() -> Rc<Self> {
+        Rc::new(MonoioBackend::new(
+            tempdir_for_thread(),
+            NEXT_FILE_HANDLE
+                .get_or_init(|| Arc::new(Default::default()))
+                .clone(),
+        ))
+    }
+
     /// Returns a thread-local default backend.
     pub fn default_for_thread() -> Rc<Self> {
         thread_local! {
-            pub static TEMPDIR: TempDir = tempfile::tempdir().unwrap();
-            pub static DEFAULT_BACKEND: Rc<MonoioBackend> = {
-                 Rc::new(MonoioBackend::new(TEMPDIR.with(|dir| dir.path().to_path_buf()), NEXT_FILE_HANDLE.get_or_init(|| {
-                    Arc::new(Default::default())
-                }).clone()))
-            };
+            pub static DEFAULT_BACKEND: Rc<MonoioBackend> = MonoioBackend::new_default();
         }
         DEFAULT_BACKEND.with(|rc| rc.clone())
     }
