@@ -16,6 +16,7 @@ use dbsp_nexmark::{
     queries::{Query, ALL_QUERIES},
     NexmarkSource,
 };
+use env_logger::Env;
 use indicatif::{ProgressBar, ProgressStyle};
 use num_format::{Locale, ToFormattedString};
 use serde::Serialize;
@@ -312,6 +313,7 @@ fn run_queries(nexmark_config: &NexmarkConfig) -> Vec<NexmarkResult> {
 // in nexmark (binary that uses procfs to get cpu usage ever 100ms?)
 
 fn main() -> Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let nexmark_config = NexmarkConfig::parse();
     let cpu_cores = nexmark_config.cpu_cores;
 
