@@ -14,7 +14,7 @@ use std::{
     rc::Rc,
     sync::{
         atomic::{AtomicI64, Ordering},
-        Arc, OnceLock,
+        Arc, Once, OnceLock,
     },
 };
 
@@ -391,6 +391,20 @@ pub fn tempdir_for_thread() -> PathBuf {
 
 /// Create and returns a backend of the default kind.
 pub fn new_default_backend(tempdir: PathBuf) -> Backend {
+    #[cfg(target_os = "linux")]
+    {
+        use nix::sys::statfs::{statfs, TMPFS_MAGIC};
+        if let Ok(s) = statfs(&tempdir) {
+            if s.filesystem_type() == TMPFS_MAGIC {
+                static ONCE: Once = Once::new();
+                ONCE.call_once(|| {
+                    warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage",
+                          tempdir.to_string_lossy())
+                });
+            }
+        }
+    }
+
     #[cfg(feature = "io_uring")]
     match io_uring_impl::IoUringBackend::with_base(&tempdir) {
         Ok(backend) => Box::new(backend),

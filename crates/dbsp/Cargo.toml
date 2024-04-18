@@ -84,7 +84,7 @@ version = "0.3.20"
 features = ["formatting", "macros", "serde", "serde-human-readable"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "0.27.1", features = ["uio"] }
+nix = { version = "0.27.1", features = ["uio", "fs"] }
 io-uring = "0.6.3"
 
 [dev-dependencies]
