@@ -7,6 +7,7 @@ use crate::{
     trace::{Spillable, Spine},
 };
 
+use crate::circuit::checkpointer::Checkpoint;
 use impl_trait_for_tuples::impl_for_tuples;
 use size_of::SizeOf;
 use std::result::Result;
@@ -54,7 +55,7 @@ impl<C, B> RecursiveStreams<C> for Stream<C, B>
 where
     C: Circuit,
     C::Parent: Circuit,
-    B: IndexedZSet + Spillable + Send,
+    B: Checkpoint + IndexedZSet + Spillable + Send,
     Spine<B>: SizeOf,
 {
     type Feedback = DelayedFeedback<C, B>;

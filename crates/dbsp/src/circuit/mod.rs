@@ -22,7 +22,7 @@ pub(crate) mod runtime;
 #[macro_use]
 pub mod metadata;
 pub mod cache;
-mod checkpointer;
+pub(crate) mod checkpointer;
 pub mod circuit_builder;
 mod fingerprinter;
 pub mod operator_traits;

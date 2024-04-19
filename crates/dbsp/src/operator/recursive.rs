@@ -9,6 +9,7 @@ use crate::{
     ChildCircuit, Circuit, DBData, SchedulerError, Stream, ZWeight,
 };
 use impl_trait_for_tuples::impl_for_tuples;
+use crate::circuit::checkpointer::Checkpoint;
 
 pub trait RecursiveStreams<C>: Clone {
     type Inner: DynRecursiveStreams<C> + Clone;
@@ -38,7 +39,7 @@ impl<K, V, B, C> RecursiveStreams<C> for Stream<C, TypedBatch<K, V, ZWeight, B>>
 where
     C: Circuit,
     C::Parent: Circuit,
-    B: DynIndexedZSet + Spillable + Send,
+    B: Checkpoint + DynIndexedZSet + Spillable + Send,
     K: DBData + Erase<B::Key>,
     V: DBData + Erase<B::Val>,
 {
