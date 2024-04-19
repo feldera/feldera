@@ -30,6 +30,7 @@ num = { version = "0.4.1" }
 hashing = { path = "../lib/hashing" }
 readers = { path = "../lib/readers" }
 sqlx = { version = "0.6", features = ["runtime-async-std-native-tls", "sqlite", "any"] }
+uuid = { version = "1.6.1" }
 
 [lib]
 path = "src/lib.rs"
