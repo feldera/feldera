@@ -118,7 +118,7 @@
 
 mod clonable;
 mod comparable;
-mod data;
+pub(crate) mod data;
 mod declare_trait_object;
 mod downcast;
 mod erase;

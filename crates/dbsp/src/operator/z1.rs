@@ -1,8 +1,8 @@
 //! z^-1 operator delays its input by one timestamp.
 
-use crate::storage::checkpoint_path;
 use crate::{
     algebra::HasZero,
+    circuit::checkpointer::Checkpoint,
     circuit::{
         metadata::{
             MetaItem, OperatorMeta, ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
@@ -12,11 +12,12 @@ use crate::{
         Circuit, ExportId, ExportStream, FeedbackConnector, GlobalNodeId, OwnershipPreference,
         Scope, Stream,
     },
-    circuit_cache_key, Error, NumEntries, Runtime,
+    circuit_cache_key,
+    storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
+    Error, NumEntries, Runtime,
 };
 use size_of::{Context, SizeOf};
-use std::path::PathBuf;
-use std::{borrow::Cow, mem::replace};
+use std::{borrow::Cow, fs, mem::replace, path::PathBuf};
 use uuid::Uuid;
 
 circuit_cache_key!(DelayedId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -39,7 +40,7 @@ where
 impl<C, D> DelayedFeedback<C, D>
 where
     C: Circuit,
-    D: Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
+    D: Checkpoint + Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -58,7 +59,7 @@ where
 impl<C, D> DelayedFeedback<C, D>
 where
     C: Circuit,
-    D: Eq + SizeOf + NumEntries + Clone + 'static,
+    D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -107,7 +108,7 @@ pub struct DelayedNestedFeedback<C, D> {
 impl<C, D> DelayedNestedFeedback<C, D>
 where
     C: Circuit,
-    D: Eq + SizeOf + NumEntries + Clone + 'static,
+    D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
@@ -141,7 +142,7 @@ where
     /// Applies [`Z1`] operator to `self`.
     pub fn delay(&self) -> Stream<C, D>
     where
-        D: Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
+        D: Checkpoint + Eq + SizeOf + NumEntries + Clone + HasZero + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), || {
@@ -155,7 +156,7 @@ where
 
     pub fn delay_with_zero(&self, zero: D) -> Stream<C, D>
     where
-        D: Eq + SizeOf + NumEntries + Clone + 'static,
+        D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), move || {
@@ -210,25 +211,45 @@ pub struct Z1<T> {
     persistent_id: String,
 }
 
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+pub struct CommittedZ1 {
+    zero: Vec<u8>,
+    values: Vec<u8>,
+}
+
+impl<T> From<&Z1<T>> for CommittedZ1
+where
+    T: Checkpoint + Clone,
+{
+    fn from(z1: &Z1<T>) -> CommittedZ1 {
+        CommittedZ1 {
+            zero: z1.zero.checkpoint(),
+            values: z1.values.checkpoint(),
+        }
+    }
+}
+
 impl<T> Z1<T>
 where
-    T: Clone,
+    T: Checkpoint + Clone,
 {
     pub fn new(persistent_id: String, zero: T) -> Self {
-        if let Some(_cid) = Runtime::restore_from_commit() {
-            /*let z1_path = Self::checkpoint_file(cid, &persistent_id);
+        if let Some(cid) = Runtime::restore_from_commit() {
+            let z1_path = Self::checkpoint_file(cid, &persistent_id);
             let content = fs::read(z1_path).expect("Z1 meta-data for checkpoint must exist.");
-            let archived = unsafe { rkyv::archived_root::<Z1<T>>(&content) };
-            let mut z1: Z1<T> = archived.deserialize(&mut rkyv::Infallible).unwrap();
-            z1.zero = zero.clone();
-            z1.empty_output = false;
-            z1*/
-            unreachable!("Z1 operator restore is not implemented.");
+            let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };
+
+            Self {
+                persistent_id,
+                empty_output: false,
+                zero: *T::restore(committed.zero.as_slice()),
+                values: *T::restore(committed.values.as_slice()),
+            }
         } else {
             Self {
                 persistent_id,
-                zero: zero.clone(),
                 empty_output: false,
+                zero: zero.clone(),
                 values: zero,
             }
         }
@@ -249,7 +270,7 @@ where
 
 impl<T> Operator for Z1<T>
 where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1")
@@ -280,13 +301,13 @@ where
         }
     }
 
-    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
-        //let committed = self.into();
-        //let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
-        //write_commit_metadata(
-        //    Self::checkpoint_file(cid, &self.persistent_id),
-        //    as_bytes.as_slice(),
-        //)?;
+    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+        let committed: CommittedZ1 = self.into();
+        let as_bytes = to_bytes(&committed).expect("Serializing CommittedZ1 should work.");
+        write_commit_metadata(
+            Self::checkpoint_file(cid, &self.persistent_id),
+            as_bytes.as_slice(),
+        )?;
 
         Ok(())
     }
@@ -294,7 +315,7 @@ where
 
 impl<T> UnaryOperator<T, T> for Z1<T>
 where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn eval(&mut self, i: &T) -> T {
         replace(&mut self.values, i.clone())
@@ -311,7 +332,7 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         self.empty_output = self.values.num_entries_shallow() == 0;
@@ -325,7 +346,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
-    T: Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn eval_strict(&mut self, i: &T) {
         self.values = i.clone();

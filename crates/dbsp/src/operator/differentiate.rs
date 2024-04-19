@@ -2,6 +2,7 @@
 
 use std::ops::{Add, Neg};
 
+use crate::circuit::checkpointer::Checkpoint;
 use crate::{
     algebra::{AddAssignByRef, AddByRef, GroupValue, NegByRef},
     circuit::{Circuit, GlobalNodeId, Stream},
@@ -17,7 +18,7 @@ circuit_cache_key!(NestedDifferentiateId<C, D>(GlobalNodeId => Stream<C, D>));
 impl<C, D> Stream<C, D>
 where
     C: Circuit + 'static,
-    D: SizeOf + NumEntries + GroupValue,
+    D: Checkpoint + SizeOf + NumEntries + GroupValue,
 {
     /// Stream differentiation.
     ///
@@ -54,7 +55,8 @@ where
 impl<C, D> Stream<C, D>
 where
     C: Circuit + 'static,
-    D: SizeOf
+    D: Checkpoint
+        + SizeOf
         + NumEntries
         + Neg<Output = D>
         + Add<Output = D>

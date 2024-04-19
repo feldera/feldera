@@ -1,6 +1,7 @@
 use dyn_clone::clone_box;
 use size_of::SizeOf;
 
+use crate::circuit::checkpointer::Checkpoint;
 use crate::{
     dynamic::DataTrait,
     operator::communication::new_exchange_operators,
@@ -36,7 +37,7 @@ where
         waterline_func: Box<dyn Fn(&B::Key, &mut TS)>,
     ) -> Stream<RootCircuit, Box<TS>>
     where
-        TS: DataTrait + ?Sized,
+        TS: Checkpoint + DataTrait + ?Sized,
         Box<TS>: Clone + SizeOf + NumEntries + Rkyv,
     {
         let local_waterline = self.stream_fold(init(), move |old_waterline, batch| {
@@ -96,7 +97,7 @@ where
         least_upper_bound: LeastUpperBoundFunc<TS>,
     ) -> Stream<RootCircuit, Box<TS>>
     where
-        TS: DataTrait + ?Sized,
+        TS: Checkpoint + DataTrait + ?Sized,
         Box<TS>: Clone + SizeOf + NumEntries + Rkyv,
     {
         let least_upper_bound_clone = least_upper_bound.fork();

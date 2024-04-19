@@ -1,3 +1,4 @@
+use crate::circuit::checkpointer::Checkpoint;
 use crate::{
     dynamic::{DataTrait, DowncastTrait, Erase},
     trace::Rkyv,
@@ -43,7 +44,7 @@ where
         waterline_func: WF,
     ) -> Stream<RootCircuit, TypedBox<TS, DynTS>>
     where
-        DynTS: DataTrait + ?Sized,
+        DynTS: Checkpoint + DataTrait + ?Sized,
         Box<DynTS>: Clone + SizeOf + NumEntries + Rkyv,
         TS: DBData + Erase<DynTS>,
         IF: Fn() -> TS + 'static,
@@ -98,7 +99,7 @@ where
         least_upper_bound: LB,
     ) -> Stream<RootCircuit, TypedBox<TS, DynTS>>
     where
-        DynTS: DataTrait + ?Sized,
+        DynTS: Checkpoint + DataTrait + ?Sized,
         Box<DynTS>: Clone + SizeOf + NumEntries + Rkyv,
         TS: DBData + Erase<DynTS>,
         IF: Fn() -> TS + 'static,
