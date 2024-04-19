@@ -14,7 +14,7 @@ use size_of::SizeOf;
 use std::{
     borrow::Cow,
     fmt::{self, Debug},
-    ops::Add,
+    ops::{Add, Sub},
 };
 
 use crate::{
@@ -811,7 +811,7 @@ pub struct Time {
     nanoseconds: u64,
 }
 
-const BILLION: u64 = 1000000000;
+const BILLION: u64 = 1_000_000_000;
 
 impl Time {
     pub const fn new(nanoseconds: u64) -> Self {
@@ -835,6 +835,50 @@ impl Time {
             (self.nanoseconds % BILLION) as u32,
         )
         .unwrap()
+    }
+
+    pub const MAX: Time = Time {
+        nanoseconds: 86_399_000_000_000, /*23:59:59*/
+    };
+}
+
+impl Add<ShortInterval> for Time {
+    type Output = Self;
+
+    fn add(self, rhs: ShortInterval) -> Self::Output {
+        // 24:00:00 or 00:00:00
+        let nanos_in_day = (Time::MAX.nanoseconds() + BILLION) as i64;
+
+        let mut time = self.nanoseconds() as i64;
+        let int = rhs.nanoseconds() % nanos_in_day;
+
+        if time == 0 {
+            time = nanos_in_day;
+        }
+
+        let rem = (time + int) % nanos_in_day;
+
+        Time::new(rem.unsigned_abs())
+    }
+}
+
+impl Sub<ShortInterval> for Time {
+    type Output = Self;
+
+    fn sub(self, rhs: ShortInterval) -> Self::Output {
+        // 24:00:00 or 00:00:00
+        let nanos_in_day = (Time::MAX.nanoseconds() + BILLION) as i64;
+
+        let mut time = self.nanoseconds() as i64;
+        let int = rhs.nanoseconds() % nanos_in_day;
+
+        if time == 0 {
+            time = nanos_in_day;
+        }
+
+        let rem = (time - int) % nanos_in_day;
+
+        Time::new(rem.unsigned_abs())
     }
 }
 
