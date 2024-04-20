@@ -74,7 +74,8 @@ pub trait DowncastTrait: AsAny {
         debug_assert_eq!(
             (self as &Self).as_any().type_id(),
             TypeId::of::<T>(),
-            "downcast_mut from incorrect type to {}",
+            "downcast_mut from incorrect type {} to {}",
+            std::any::type_name::<Self>(),
             std::any::type_name::<T>()
         );
         &mut *(self as *mut _ as *mut T)

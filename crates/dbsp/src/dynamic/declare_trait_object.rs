@@ -48,7 +48,7 @@ macro_rules! declare_trait_object_with_archived {
                 &self,
                 _deserializer: &mut $crate::trace::Deserializer,
             ) -> Result<Box<$type_alias<$($generic),*>>, <$crate::trace::Deserializer as rkyv::Fallible>::Error> {
-                todo!()
+                todo!("deserialize {}", std::any::type_name::<Self>())
             }
         }
 

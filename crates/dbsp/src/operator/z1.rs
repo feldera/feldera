@@ -213,7 +213,6 @@ pub struct Z1<T> {
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 pub struct CommittedZ1 {
-    zero: Vec<u8>,
     values: Vec<u8>,
 }
 
@@ -223,7 +222,6 @@ where
 {
     fn from(z1: &Z1<T>) -> CommittedZ1 {
         CommittedZ1 {
-            zero: z1.zero.checkpoint(),
             values: z1.values.checkpoint(),
         }
     }
@@ -239,11 +237,13 @@ where
             let content = fs::read(z1_path).expect("Z1 meta-data for checkpoint must exist.");
             let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };
 
+            let mut values = zero.clone();
+            values.restore(committed.values.as_slice());
             Self {
                 persistent_id,
                 empty_output: false,
-                zero: *T::restore(committed.zero.as_slice()),
-                values: *T::restore(committed.values.as_slice()),
+                zero,
+                values,
             }
         } else {
             Self {

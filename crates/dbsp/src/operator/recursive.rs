@@ -1,3 +1,4 @@
+use crate::circuit::checkpointer::Checkpoint;
 use crate::{
     circuit::WithClock,
     dynamic::Erase,
@@ -9,7 +10,6 @@ use crate::{
     ChildCircuit, Circuit, DBData, SchedulerError, Stream, ZWeight,
 };
 use impl_trait_for_tuples::impl_for_tuples;
-use crate::circuit::checkpointer::Checkpoint;
 
 pub trait RecursiveStreams<C>: Clone {
     type Inner: DynRecursiveStreams<C> + Clone;
