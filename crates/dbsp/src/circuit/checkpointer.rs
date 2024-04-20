@@ -1,15 +1,16 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
-use crate::dynamic::{DataTrait, WeightTrait};
+use crate::dynamic::{self, data::DataTyped, DataTrait, WeightTrait};
 use crate::trace::ord::vec::{VecIndexedWSet, VecWSet};
 use crate::typed_batch::TypedBatch;
-use crate::{dynamic, DBData, DBWeight, Error};
+use crate::{DBData, DBWeight, Error};
 
 use std::collections::{HashSet, VecDeque};
 use std::fs::{self, create_dir_all, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::trace::Serializer;
 use rkyv::{Archive, Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -316,7 +317,7 @@ impl Checkpointer {
 /// is already stored in files).
 pub trait Checkpoint {
     fn checkpoint(&self) -> Vec<u8>;
-    fn restore(data: &[u8]) -> Box<Self>;
+    fn restore(&mut self, data: &[u8]);
 }
 
 impl Checkpoint for isize {
@@ -324,7 +325,7 @@ impl Checkpoint for isize {
         todo!()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
+    fn restore(&mut self, _data: &[u8]) {
         todo!()
     }
 }
@@ -334,7 +335,7 @@ impl Checkpoint for usize {
         todo!()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
+    fn restore(&mut self, _data: &[u8]) {
         todo!()
     }
 }
@@ -344,7 +345,7 @@ impl Checkpoint for i32 {
         todo!()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
+    fn restore(&mut self, _data: &[u8]) {
         todo!()
     }
 }
@@ -354,30 +355,33 @@ where
     N: Checkpoint + ?Sized,
 {
     fn checkpoint(&self) -> Vec<u8> {
-        todo!()
+        self.as_ref().checkpoint()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
-        todo!()
+    fn restore(&mut self, data: &[u8]) {
+        self.as_mut().restore(data);
     }
 }
 
 impl Checkpoint for dyn dynamic::data::Data + 'static {
     fn checkpoint(&self) -> Vec<u8> {
-        todo!()
+        let mut s = Serializer::default();
+        let _r = self.serialize(&mut s).unwrap();
+        let fbuf = s.into_serializer().into_inner();
+        fbuf.into_vec()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
-        todo!()
+    fn restore(&mut self, data: &[u8]) {
+        unsafe { self.deserialize_from_bytes(data, 0) };
     }
 }
 
-impl Checkpoint for dyn dynamic::data::DataTyped<Type = u64> + 'static {
+impl Checkpoint for dyn DataTyped<Type = u64> + 'static {
     fn checkpoint(&self) -> Vec<u8> {
         todo!()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
+    fn restore(&mut self, _data: &[u8]) {
         todo!()
     }
 }
@@ -392,7 +396,7 @@ where
         todo!()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
+    fn restore(&mut self, _data: &[u8]) {
         todo!()
     }
 }
@@ -406,7 +410,7 @@ where
         todo!()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
+    fn restore(&mut self, _data: &[u8]) {
         todo!()
     }
 }
@@ -421,7 +425,7 @@ where
         todo!()
     }
 
-    fn restore(_data: &[u8]) -> Box<Self> {
+    fn restore(&mut self, _data: &[u8]) {
         todo!()
     }
 }

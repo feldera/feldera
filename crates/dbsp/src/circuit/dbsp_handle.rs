@@ -798,11 +798,11 @@ impl Drop for DBSPHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::fs::{create_dir_all, File};
     use std::io;
     use std::path::Path;
     use std::time::Duration;
+    use std::{fs, vec};
 
     use crate::circuit::checkpointer::Checkpointer;
     use crate::circuit::{CircuitConfig, Layout};
@@ -814,7 +814,7 @@ mod tests {
     use crate::utils::Tup2;
     use crate::{
         Circuit, DBSPHandle, Error as DBSPError, IndexedZSetHandle, InputHandle, OrdZSet,
-        OutputHandle, Runtime, RuntimeError, ZWeight,
+        OutputHandle, Runtime, RuntimeError, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
     use tempfile::{tempdir, TempDir};
@@ -1368,5 +1368,53 @@ mod tests {
         let (dbsp_different, (_input_handle, _, _sample_size_handle)) =
             mkcircuit_different(&cconf).unwrap();
         drop(dbsp_different);
+    }
+
+    /// This test exercises the checkpoint/restore path of the Z1 operator.
+    #[test]
+    fn test_z1_checkpointing() {
+        let (_temp, mut cconf) = mkconfig();
+
+        //let expected_waterlines = vec![115, 115, 125, 145];
+        let expected_waterlines = vec![115, 115, 125, 145];
+        fn mkcircuit(
+            cconf: &CircuitConfig,
+            mut expected_waterline: vec::IntoIter<i32>,
+        ) -> (DBSPHandle, ZSetHandle<i32>) {
+            Runtime::init_circuit(cconf, move |circuit| {
+                let (stream, handle) = circuit.add_input_zset();
+                stream
+                    .waterline_monotonic(|| 0, |ts| ts + 5)
+                    .inner_data()
+                    .inspect(move |waterline: &Box<DynData>| {
+                        if Runtime::worker_index() == 0 {
+                            assert_eq!(
+                                waterline.downcast_checked::<i32>(),
+                                &expected_waterline.next().unwrap()
+                            );
+                        }
+                    });
+                Ok(handle)
+            })
+            .unwrap()
+        }
+
+        let batches = vec![
+            vec![Tup2(100, 1), Tup2(110, 1), Tup2(50, 1)],
+            vec![Tup2(90, 1), Tup2(90, 1), Tup2(50, 1)],
+            vec![Tup2(110, 1), Tup2(120, 1), Tup2(100, 1)],
+            vec![Tup2(130, 1), Tup2(140, 1), Tup2(0, 1)],
+        ];
+
+        for (idx, mut batch) in batches.into_iter().enumerate() {
+            let expected_waterlines = expected_waterlines.clone();
+            let expected_waterlines: Vec<i32> = expected_waterlines[idx..].into();
+            let (mut dbsp, input_handle) = mkcircuit(&cconf, expected_waterlines.into_iter());
+            input_handle.append(&mut batch);
+            dbsp.step().unwrap();
+            let cpm = dbsp.commit().unwrap();
+            cconf.init_checkpoint = cpm.uuid;
+            dbsp.kill().unwrap();
+        }
     }
 }
