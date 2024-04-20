@@ -13,3 +13,4 @@ serde = { version = "1.0.197", features = ["derive"] }
 
 [dev-dependencies]
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
+dbsp = { path = "../../../crates/dbsp/" }

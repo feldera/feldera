@@ -114,9 +114,8 @@ pub fn serialize(value: Json) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use ijson::ijson;
+    use pipeline_types::deserialize_without_context;
     use rust_decimal::{prelude::FromPrimitive, Decimal};
 
     use crate::{check_json, json_as, json_field, json_index, parse_json, serialize};
@@ -169,6 +168,8 @@ mod tests {
         age: u32,
     }
 
+    deserialize_without_context!(TestData);
+
     #[test]
     fn test_json_as_struct() {
         let json_value = ijson!({
@@ -218,15 +219,6 @@ mod tests {
     }
 
     #[test]
-    fn test_json_as_hashmap() {
-        let json = ijson!({
-            "name": "Bob",
-        });
-
-        let _ = json_as::<HashMap<String, String>>(json);
-    }
-
-    #[test]
     fn test_json_as_string() {
         let expected = "Hello, world!".to_string();
 
@@ -256,11 +248,13 @@ mod tests {
 
     #[test]
     fn test_json_as_float() {
+        use dbsp::algebra::F64;
+
         let expected: f64 = 1.11;
 
         let json = ijson!(expected);
 
-        assert_eq!(expected, json_as::<f64>(json));
+        assert_eq!(expected, json_as::<F64>(json));
     }
 
     #[test]
