@@ -364,6 +364,7 @@ impl Runtime {
         let (status_senders, status_receivers): (Vec<_>, Vec<_>) =
             (0..nworkers).map(|_| bounded(1)).unzip();
 
+        let start_checkpoint = cconf.start_checkpoint();
         let runtime = Self::run(cconf, move || {
             let worker_index = Runtime::worker_index() - worker_ofs;
 
@@ -433,6 +434,15 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::Restore(cid)) => {
+                        circuit.restore(cid).expect("restore failed");
+                        if status_sender
+                            .send(Ok(Response::CheckpointRestored))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
                     Ok(Command::Fingerprint) => {
                         let fip = circuit.fingerprint().expect("fingerprint failed");
                         if status_sender.send(Ok(Response::Fingerprint(fip))).is_err() {
@@ -486,9 +496,11 @@ impl Runtime {
             return Err(error);
         }
 
-        let dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
-
+        let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
         let result = init_status[0].take();
+        if start_checkpoint != Uuid::nil() {
+            dbsp.send_restore(start_checkpoint)?;
+        }
 
         // `constructor` should return identical results in all workers.  Use
         // worker 0 output.
@@ -503,6 +515,7 @@ enum Command {
     DumpProfile,
     RetrieveProfile,
     Commit(Uuid),
+    Restore(Uuid),
     Fingerprint,
 }
 
@@ -512,6 +525,7 @@ enum Response {
     ProfileDump(String),
     Profile(WorkerProfile),
     CheckpointCreated,
+    CheckpointRestored,
     Fingerprint(u64),
 }
 
@@ -691,6 +705,12 @@ impl DBSPHandle {
     pub(super) fn send_commit(&mut self, uuid: Uuid) -> Result<u64, DBSPError> {
         self.broadcast_command(Command::Commit(uuid), |_, _| {})?;
         Ok(self.step_id)
+    }
+
+    /// Used to reset operator state to the point of the given Commit.
+    fn send_restore(&mut self, uuid: Uuid) -> Result<(), DBSPError> {
+        self.broadcast_command(Command::Restore(uuid), |_, _| {})?;
+        Ok(())
     }
 
     fn commit_as(

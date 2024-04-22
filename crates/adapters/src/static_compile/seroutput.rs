@@ -338,8 +338,8 @@ where
         ))))
     }
 
-    fn into_trace(self: Arc<Self>, persistent_id: &str) -> Box<dyn SerTrace> {
-        let mut spine = TypedBatch::new(DynSpine::<B::Inner>::new(&B::factories(), persistent_id));
+    fn into_trace(self: Arc<Self>) -> Box<dyn SerTrace> {
+        let mut spine = TypedBatch::new(DynSpine::<B::Inner>::new(&B::factories()));
         spine.insert(Arc::unwrap_or_clone(self).batch.into_inner());
         Box::new(SerBatchImpl::<Spine<B>, KD, VD>::new(spine))
     }

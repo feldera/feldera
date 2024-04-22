@@ -835,6 +835,7 @@ impl OutputEndpoints {
 
 /// Buffer used by the output endpoint thread to accumulate outputs.
 struct OutputBuffer {
+    #[allow(unused)]
     endpoint_name: String,
 
     buffer: Option<Box<dyn SerTrace>>,
@@ -873,7 +874,7 @@ impl OutputBuffer {
         if let Some(buffer) = &mut self.buffer {
             buffer.insert(batch);
         } else {
-            self.buffer = Some(batch.into_trace(&format!("output-buffer-{}", &self.endpoint_name)));
+            self.buffer = Some(batch.into_trace());
             self.buffer_since = Instant::now();
         }
         self.buffered_step = step;

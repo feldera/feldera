@@ -352,7 +352,7 @@ fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
     let (mut dbsp, (input_handle, lead_handle)) =
         Runtime::init_circuit(4, lead_test_circuit).unwrap();
 
-    let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), "");
+    let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
 
     for batch in trace.into_iter() {
         let records = batch
@@ -658,7 +658,7 @@ proptest! {
     fn test_topk(trace in input_trace(5, 1_000, 200, 20)) {
         let (mut dbsp, (input_handle, topk_asc_handle, topk_desc_handle)) = Runtime::init_circuit(4, topk_test_circuit).unwrap();
 
-        let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), "");
+        let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
 
         for batch in trace.into_iter() {
             let records = batch.iter().map(|(k, v, r)| ((*k, *v, ()), *r)).collect::<Vec<_>>();
@@ -686,7 +686,7 @@ proptest! {
     fn test_lag(trace in input_trace(5, 100, 200, 20)) {
         let (mut dbsp, (input_handle, lag_handle)) = Runtime::init_circuit(4, lag_test_circuit).unwrap();
 
-        let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), "");
+        let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
 
         for batch in trace.into_iter() {
             let records = batch.iter().map(|(k, v, r)| ((*k, *v, ()), *r)).collect::<Vec<_>>();

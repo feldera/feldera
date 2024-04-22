@@ -11,7 +11,7 @@ use crate::{
     circuit_cache_key,
     dynamic::DataTrait,
     trace::{copy_batch, Batch, BatchReader, Filter, Spillable, Spine, Stored, Trace},
-    Error, Runtime, Timestamp,
+    Error, Timestamp,
 };
 use dyn_clone::clone_box;
 use size_of::SizeOf;
@@ -335,18 +335,11 @@ where
                 let circuit = self.circuit();
 
                 circuit.region("trace", || {
-                    let persistent_id = format!(
-                        "{}-{:?}",
-                        Runtime::worker_index(),
-                        self.origin_node_id().clone()
-                    );
-
                     let (local, z1feedback) = circuit.add_feedback(Z1Trace::new(
                         output_factories,
                         false,
                         circuit.root_scope(),
                         bounds.clone(),
-                        persistent_id,
                     ));
                     let trace = circuit.add_binary_operator_with_preference(
                         <TraceAppend<FileValSpine<B, C>, B, C>>::new(
@@ -506,7 +499,6 @@ where
                             true,
                             circuit.root_scope(),
                             bounds,
-                            self.origin_node_id().persistent_id(),
                         ));
 
                     let trace = circuit.add_binary_operator_with_preference(
@@ -627,14 +619,9 @@ pub trait TraceFeedback: Circuit {
     where
         T: Trace<Time = ()> + Clone,
     {
-        let (ExportStream { local, export }, feedback) =
-            self.add_feedback_with_export(Z1Trace::new(
-                factories,
-                true,
-                self.root_scope(),
-                bounds.clone(),
-                self.global_node_id().persistent_id(),
-            ));
+        let (ExportStream { local, export }, feedback) = self.add_feedback_with_export(
+            Z1Trace::new(factories, true, self.root_scope(), bounds.clone()),
+        );
 
         TraceFeedbackConnector {
             feedback,
@@ -824,19 +811,17 @@ pub struct Z1Trace<T: Trace> {
     reset_on_clock_start: bool,
     bounds: TraceBounds<T::Key, T::Val>,
     effective_key_bound: Option<Box<T::Key>>,
-    persistent_id: String,
 }
 
 impl<T> Z1Trace<T>
 where
     T: Trace,
 {
-    pub fn new<S: AsRef<str>>(
+    pub fn new(
         factories: &T::Factories,
         reset_on_clock_start: bool,
         root_scope: Scope,
         bounds: TraceBounds<T::Key, T::Val>,
-        persistent_id: S,
     ) -> Self {
         Self {
             time: <T::Time as Timestamp>::clock_start(),
@@ -847,7 +832,6 @@ where
             reset_on_clock_start,
             bounds,
             effective_key_bound: None,
-            persistent_id: persistent_id.as_ref().to_string(),
         }
     }
 }
@@ -864,7 +848,7 @@ where
         self.dirty[scope as usize] = false;
 
         if scope == 0 && self.trace.is_none() {
-            self.trace = Some(T::new(&self.factories, &self.persistent_id));
+            self.trace = Some(T::new(&self.factories));
         }
     }
 
@@ -903,10 +887,17 @@ where
         !self.dirty[scope as usize]
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit<P: AsRef<str>>(&self, cid: Uuid, pid: P) -> Result<(), Error> {
         self.trace
             .as_ref()
-            .map(|trace| trace.commit(cid))
+            .map(|trace| trace.commit(cid, pid))
+            .unwrap_or(Ok(()))
+    }
+
+    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, pid: P) -> Result<(), Error> {
+        self.trace
+            .as_mut()
+            .map(|trace| trace.restore(cid, pid))
             .unwrap_or(Ok(()))
     }
 }

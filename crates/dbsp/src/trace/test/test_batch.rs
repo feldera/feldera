@@ -14,7 +14,7 @@ use crate::{
         Merger, Trace,
     },
     utils::VecExt,
-    DBData, DBWeight, Error, NumEntries, Timestamp,
+    DBData, DBWeight, NumEntries, Timestamp,
 };
 use dyn_clone::clone_box;
 use rand::{seq::IteratorRandom, thread_rng, Rng, SeedableRng};
@@ -27,7 +27,6 @@ use std::{
     fmt::{self, Debug},
     marker::PhantomData,
 };
-use uuid::Uuid;
 
 pub struct TestBatchFactories<K, V, T, R>
 where
@@ -701,7 +700,7 @@ where
     fn new_batcher(factories: &TestBatchFactories<K, V, T, R>, time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(factories, ""),
+            result: TestBatch::new(factories),
         }
     }
 
@@ -758,7 +757,7 @@ where
     fn new_builder(factories: &TestBatchFactories<K, V, T, R>, time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(factories, ""),
+            result: TestBatch::new(factories),
         }
     }
 
@@ -1245,7 +1244,7 @@ where
 {
     type Batch = Self;
 
-    fn new<S: AsRef<str>>(_factories: &Self::Factories, _persistent_id: S) -> Self {
+    fn new(_factories: &Self::Factories) -> Self {
         Self {
             data: BTreeMap::new(),
             lower_key_bound: None,
@@ -1304,10 +1303,6 @@ where
 
     fn value_filter(&self) -> &Option<Filter<Self::Val>> {
         &self.value_filter
-    }
-
-    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
-        todo!()
     }
 }
 

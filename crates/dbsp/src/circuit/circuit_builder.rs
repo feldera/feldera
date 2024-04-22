@@ -813,9 +813,15 @@ pub trait Node {
 
     fn map_nodes_recursive(&self, _f: &mut dyn FnMut(&dyn Node)) {}
 
+    fn map_nodes_recursive_mut(&self, _f: &mut dyn FnMut(&mut dyn Node)) {}
+
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage.
     fn commit(&self, cid: Uuid) -> Result<(), DBSPError>;
+
+    /// Instructs the node to restore the state of its inner operator to
+    /// the given checkpoint.
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
@@ -2189,6 +2195,14 @@ where
         }
     }
 
+    /// Recursively apply `f` to all nodes in `self` and its children mutably.
+    pub(crate) fn map_nodes_recursive_mut(&mut self, f: &mut dyn FnMut(&mut dyn Node)) {
+        for node in self.inner_mut().nodes.iter_mut() {
+            f(node.as_mut());
+            node.map_nodes_recursive_mut(f);
+        }
+    }
+
     fn clear(&mut self) {
         self.inner_mut().clear();
     }
@@ -3212,7 +3226,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -3292,7 +3310,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -3378,7 +3400,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -3457,7 +3483,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -3556,7 +3586,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -3675,7 +3709,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), Error> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -3798,7 +3836,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), Error> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -3939,7 +3981,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), Error> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -4065,7 +4111,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), Error> {
-        self.operator.commit(cid)
+        self.operator.commit(cid, self.global_id().persistent_id())
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
 
@@ -4173,7 +4223,11 @@ where
     }
 
     fn commit(&self, cid: Uuid) -> Result<(), Error> {
-        unsafe { (*self.operator.get()).commit(cid) }
+        unsafe { (*self.operator.get()).commit(cid, self.global_id().persistent_id()) }
+    }
+
+    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+        unsafe { (*self.operator.get()).restore(cid, self.global_id().persistent_id()) }
     }
 }
 
@@ -4259,6 +4313,11 @@ where
         // to store the updated state inside the operator. We only want to
         // invoke commit on one of them, doesn't matter which (so we
         // do it in FeedbackOutputNode)
+        Ok(())
+    }
+
+    fn restore(&mut self, _cid: Uuid) -> Result<(), DBSPError> {
+        // See comment in `commit`.
         Ok(())
     }
 }
@@ -4408,6 +4467,10 @@ where
     fn commit(&self, _cid: Uuid) -> Result<(), Error> {
         Ok(())
     }
+
+    fn restore(&mut self, _cid: Uuid) -> Result<(), DBSPError> {
+        Ok(())
+    }
 }
 
 /// Top-level circuit with executor.
@@ -4459,6 +4522,14 @@ impl CircuitHandle {
         self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             node.commit(cid).expect("committed");
         });
+        Ok(())
+    }
+
+    pub fn restore(&mut self, cid: Uuid) -> Result<(), SchedulerError> {
+        self.circuit
+            .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
+                node.restore(cid).expect("restored");
+            });
         Ok(())
     }
 
@@ -4580,8 +4651,7 @@ mod tests {
                 n += 1;
                 result
             }));
-            let (z1_output, z1_feedback) =
-                circuit.add_feedback(Z1::new(circuit.global_node_id().persistent_id(), 0));
+            let (z1_output, z1_feedback) = circuit.add_feedback(Z1::new(0));
             let plus = source
                 .apply2(&z1_output, |n1: &usize, n2: &usize| *n1 + *n2)
                 .inspect(move |n| actual_output_clone.borrow_mut().push(*n));
@@ -4645,10 +4715,7 @@ mod tests {
                         counter -= 1;
                         res
                     });
-                    let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(
-                        child.global_node_id().persistent_id(),
-                        1,
-                    ));
+                    let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
                     let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
                     z1_feedback.connect(&mul);
                     Ok((countdown.condition(|n| *n <= 1), z1_output.export))

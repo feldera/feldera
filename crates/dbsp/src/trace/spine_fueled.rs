@@ -91,7 +91,7 @@ use crate::{
     trace::{
         cursor::CursorList, Batch, BatchReader, BatchReaderFactories, Cursor, Filter, Merger, Trace,
     },
-    Error, NumEntries, Runtime,
+    Error, NumEntries,
 };
 
 use crate::dynamic::{ClonableTrait, DeserializableDyn};
@@ -178,7 +178,6 @@ where
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
     value_filter: Option<Filter<B::Val>>,
-    persistent_id: String,
 }
 
 impl<B> Display for Spine<B>
@@ -514,9 +513,9 @@ where
     ///
     /// # Arguments
     /// - `sid`: The step id of the checkpoint.
-    fn batchlist_file(&self, cid: Uuid) -> PathBuf {
+    fn batchlist_file<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> PathBuf {
         let mut path = checkpoint_path(cid);
-        path.push(format!("pspine-batches-{}.dat", self.persistent_id));
+        path.push(format!("pspine-batches-{}.dat", persistent_id.as_ref()));
         path
     }
 }
@@ -664,36 +663,8 @@ where
 {
     type Batch = B;
 
-    fn new<S: AsRef<str>>(factories: &B::Factories, persistent_id: S) -> Self {
-        let mut spine = Self::with_effort(factories, 1, String::from(persistent_id.as_ref()));
-
-        if let Some(cid) = Runtime::restore_from_commit() {
-            let pspine_path = Self::checkpoint_file(cid, persistent_id);
-            let content =
-                fs::read(pspine_path).expect("Spine meta-data for checkpoint must exist.");
-            let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
-
-            let committed: CommittedSpine<B> = archived.deserialize(&mut rkyv::Infallible).unwrap();
-            spine.lower = Antichain::from(committed.lower);
-            spine.upper = Antichain::from(committed.upper);
-            spine.effort = committed.effort as usize;
-            spine.dirty = committed.dirty;
-            if let Some(bytes) = committed.lower_key_bound {
-                let mut default_box = factories.key_factory().default_box();
-                unsafe { default_box.deserialize_from_bytes(&bytes, 0) };
-                spine.lower_key_bound = Some(default_box);
-            }
-            spine.key_filter = None;
-            spine.value_filter = None;
-            for batch in committed.batches {
-                let batch = B::from_path(factories, Path::new(batch.as_str()))
-                    .expect("Batch file for checkpoint must exist.");
-                spine.insert(batch);
-            }
-        } else {
-            // No checkpoint id provided, so we are starting from scratch.
-        }
-        spine
+    fn new(factories: &B::Factories) -> Self {
+        Self::with_effort(factories, 1)
     }
 
     fn recede_to(&mut self, frontier: &B::Time) {
@@ -807,11 +778,11 @@ where
         &self.value_filter
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
         let committed: CommittedSpine<B> = self.into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
-            Self::checkpoint_file(cid, &self.persistent_id),
+            Self::checkpoint_file(cid, &persistent_id),
             as_bytes.as_slice(),
         )?;
 
@@ -819,7 +790,36 @@ where
         // in `Checkpointer` without the need to know the exact Spine type.
         let batches = committed.batches;
         let as_bytes = to_bytes(&batches).expect("Serializing batches to Vec<String> should work.");
-        write_commit_metadata(self.batchlist_file(cid), as_bytes.as_slice())?;
+        write_commit_metadata(
+            self.batchlist_file(cid, &persistent_id),
+            as_bytes.as_slice(),
+        )?;
+
+        Ok(())
+    }
+
+    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+        let pspine_path = Self::checkpoint_file(cid, persistent_id);
+        let content = fs::read(pspine_path)?;
+        let archived = unsafe { rkyv::archived_root::<CommittedSpine<B>>(&content) };
+
+        let committed: CommittedSpine<B> = archived.deserialize(&mut rkyv::Infallible).unwrap();
+        self.lower = Antichain::from(committed.lower);
+        self.upper = Antichain::from(committed.upper);
+        self.effort = committed.effort as usize;
+        self.dirty = committed.dirty;
+        if let Some(bytes) = committed.lower_key_bound {
+            let mut default_box = self.factories.key_factory().default_box();
+            unsafe { default_box.deserialize_from_bytes(&bytes, 0) };
+            self.lower_key_bound = Some(default_box);
+        }
+        self.key_filter = None;
+        self.value_filter = None;
+        for batch in committed.batches {
+            let batch = B::from_path(&self.factories.clone(), Path::new(batch.as_str()))
+                .expect("Batch file for checkpoint must exist.");
+            self.insert(batch);
+        }
 
         Ok(())
     }
@@ -876,7 +876,7 @@ where
     /// applying a multiple of the batch's length in effort to each merge.
     /// The `effort` parameter is that multiplier. This value should be at
     /// least one for the merging to happen; a value of zero is not helpful.
-    pub fn with_effort(factories: &B::Factories, mut effort: usize, persistent_id: String) -> Self {
+    pub fn with_effort(factories: &B::Factories, mut effort: usize) -> Self {
         // Zero effort is .. not smart.
         if effort == 0 {
             effort = 1;
@@ -892,7 +892,6 @@ where
             lower_key_bound: None,
             key_filter: None,
             value_filter: None,
-            persistent_id,
         }
     }
 
