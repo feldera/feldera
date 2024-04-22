@@ -190,7 +190,6 @@ struct RuntimeInner {
     layout: Layout,
     storage: StorageLocation,
     min_storage_rows: usize,
-    start_checkpoint: Uuid,
     store: LocalStore,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
@@ -296,7 +295,6 @@ impl RuntimeInner {
             layout,
             storage,
             min_storage_rows,
-            start_checkpoint,
             store: TypedDashMap::new(),
             panic_info,
         })
@@ -496,19 +494,6 @@ impl Runtime {
                 Rc::new(BufferCache::new(Runtime::backend()));
         }
         CACHE.with(|rc| rc.clone())
-    }
-
-    /// This function returns the commit id of the checkpoint that the circuit should restore from.
-    ///
-    /// If no runtime is set or no starting checkpoint is configured, this function returns `None`.
-    pub fn restore_from_commit() -> Option<Uuid> {
-        Runtime::runtime().and_then(|rt| {
-            if rt.inner().start_checkpoint != Uuid::nil() {
-                Some(rt.inner().start_checkpoint)
-            } else {
-                None
-            }
-        })
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.

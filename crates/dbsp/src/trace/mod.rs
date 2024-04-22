@@ -185,7 +185,7 @@ pub trait Trace: BatchReader {
     >;
 
     /// Allocates a new empty trace.
-    fn new<S: AsRef<str>>(factories: &Self::Factories, persistent_id: S) -> Self;
+    fn new(factories: &Self::Factories) -> Self;
 
     /// Pushes all timestamps in the trace back to `frontier` or less, by
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  This
@@ -256,7 +256,10 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
+    fn commit<P: AsRef<str>>(&self, _cid: Uuid, _pid: P) -> Result<(), Error> {
+        Ok(())
+    }
+    fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
         Ok(())
     }
 }

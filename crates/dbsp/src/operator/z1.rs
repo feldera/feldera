@@ -14,7 +14,7 @@ use crate::{
     },
     circuit_cache_key,
     storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
-    Error, NumEntries, Runtime,
+    Error, NumEntries,
 };
 use size_of::{Context, SizeOf};
 use std::{borrow::Cow, fs, mem::replace, path::PathBuf};
@@ -45,8 +45,8 @@ where
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
     pub fn new(circuit: &C) -> Self {
-        let (ExportStream { local, export }, feedback) = circuit
-            .add_feedback_with_export(Z1::new(circuit.global_node_id().persistent_id(), D::zero()));
+        let (ExportStream { local, export }, feedback) =
+            circuit.add_feedback_with_export(Z1::new(D::zero()));
 
         Self {
             feedback,
@@ -64,8 +64,8 @@ where
     /// Create a feedback loop with `Z1` operator.  Use [`Self::connect`] to
     /// close the loop.
     pub fn with_default(circuit: &C, default: D) -> Self {
-        let (ExportStream { local, export }, feedback) = circuit
-            .add_feedback_with_export(Z1::new(circuit.global_node_id().persistent_id(), default));
+        let (ExportStream { local, export }, feedback) =
+            circuit.add_feedback_with_export(Z1::new(default));
 
         Self {
             feedback,
@@ -146,10 +146,7 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), || {
-                self.circuit().add_unary_operator(
-                    Z1::new(self.origin_node_id().persistent_id(), D::zero()),
-                    self,
-                )
+                self.circuit().add_unary_operator(Z1::new(D::zero()), self)
             })
             .clone()
     }
@@ -160,10 +157,8 @@ where
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), move || {
-                self.circuit().add_unary_operator(
-                    Z1::new(self.origin_node_id().persistent_id(), zero.clone()),
-                    self,
-                )
+                self.circuit()
+                    .add_unary_operator(Z1::new(zero.clone()), self)
             })
             .clone()
     }
@@ -208,7 +203,6 @@ pub struct Z1<T> {
     zero: T,
     empty_output: bool,
     values: T,
-    persistent_id: String,
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
@@ -216,14 +210,16 @@ pub struct CommittedZ1 {
     values: Vec<u8>,
 }
 
-impl<T> From<&Z1<T>> for CommittedZ1
+impl<T> TryFrom<&Z1<T>> for CommittedZ1
 where
     T: Checkpoint + Clone,
 {
-    fn from(z1: &Z1<T>) -> CommittedZ1 {
-        CommittedZ1 {
-            values: z1.values.checkpoint(),
-        }
+    type Error = Error;
+
+    fn try_from(z1: &Z1<T>) -> Result<CommittedZ1, Error> {
+        Ok(CommittedZ1 {
+            values: z1.values.checkpoint()?,
+        })
     }
 }
 
@@ -231,27 +227,11 @@ impl<T> Z1<T>
 where
     T: Checkpoint + Clone,
 {
-    pub fn new(persistent_id: String, zero: T) -> Self {
-        if let Some(cid) = Runtime::restore_from_commit() {
-            let z1_path = Self::checkpoint_file(cid, &persistent_id);
-            let content = fs::read(z1_path).expect("Z1 meta-data for checkpoint must exist.");
-            let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };
-
-            let mut values = zero.clone();
-            values.restore(committed.values.as_slice());
-            Self {
-                persistent_id,
-                empty_output: false,
-                zero,
-                values,
-            }
-        } else {
-            Self {
-                persistent_id,
-                empty_output: false,
-                zero: zero.clone(),
-                values: zero,
-            }
+    pub fn new(zero: T) -> Self {
+        Self {
+            empty_output: false,
+            zero: zero.clone(),
+            values: zero,
         }
     }
 
@@ -301,14 +281,26 @@ where
         }
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
-        let committed: CommittedZ1 = self.into();
+    fn commit<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+        let committed: CommittedZ1 = self.try_into()?;
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedZ1 should work.");
         write_commit_metadata(
-            Self::checkpoint_file(cid, &self.persistent_id),
+            Self::checkpoint_file(cid, persistent_id.as_ref()),
             as_bytes.as_slice(),
         )?;
 
+        Ok(())
+    }
+
+    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+        let z1_path = Self::checkpoint_file(cid, &persistent_id);
+        let content = fs::read(z1_path)?;
+        let committed = unsafe { rkyv::archived_root::<CommittedZ1>(&content) };
+
+        let mut values = self.zero.clone();
+        values.restore(committed.values.as_slice())?;
+        self.empty_output = false;
+        self.values = values;
         Ok(())
     }
 }
@@ -576,7 +568,7 @@ mod test {
 
     #[test]
     fn z1_test() {
-        let mut z1 = Z1::new(String::new(), 0);
+        let mut z1 = Z1::new(0);
 
         let expected_result = vec![0, 1, 2, 0, 4, 5];
 

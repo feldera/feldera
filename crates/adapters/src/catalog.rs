@@ -230,7 +230,7 @@ pub trait SerBatch: SerBatchReader + Send + Sync {
     fn merge(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch>;
 
     /// Convert batch into a trace with identical contents.
-    fn into_trace(self: Arc<Self>, persistent_id: &str) -> Box<dyn SerTrace>;
+    fn into_trace(self: Arc<Self>) -> Box<dyn SerTrace>;
 
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
 }

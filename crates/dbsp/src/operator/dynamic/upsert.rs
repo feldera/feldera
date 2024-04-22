@@ -130,7 +130,6 @@ where
                 false,
                 circuit.root_scope(),
                 bounds.clone(),
-                self.origin_node_id().persistent_id(),
             ));
             local.mark_sharded_if(self);
 
@@ -222,7 +221,6 @@ where
                 false,
                 circuit.root_scope(),
                 bounds.clone(),
-                self.origin_node_id().persistent_id(),
             ));
             local.mark_sharded_if(self);
 

@@ -10,6 +10,7 @@ use std::fs::{self, create_dir_all, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use crate::operator::NeighborhoodDescrBox;
 use crate::trace::Serializer;
 use rkyv::{Archive, Deserialize, Serialize};
 use uuid::Uuid;
@@ -312,40 +313,39 @@ impl Checkpointer {
 
 /// Trait for types that can be check-pointed and restored.
 ///
-/// This is to be used for small state within circuit operators
-/// (e.g., everything that's not stored within a batch which
-/// is already stored in files).
+/// This is to be used for any additional state within circuit operators
+/// that's not stored within a batch (which are already stored in files).
 pub trait Checkpoint {
-    fn checkpoint(&self) -> Vec<u8>;
-    fn restore(&mut self, data: &[u8]);
+    fn checkpoint(&self) -> Result<Vec<u8>, Error>;
+    fn restore(&mut self, data: &[u8]) -> Result<(), Error>;
 }
 
 impl Checkpoint for isize {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
 
-    fn restore(&mut self, _data: &[u8]) {
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
 }
 
 impl Checkpoint for usize {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
 
-    fn restore(&mut self, _data: &[u8]) {
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
 }
 
 impl Checkpoint for i32 {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
 
-    fn restore(&mut self, _data: &[u8]) {
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
 }
@@ -354,34 +354,62 @@ impl<N> Checkpoint for Box<N>
 where
     N: Checkpoint + ?Sized,
 {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         self.as_ref().checkpoint()
     }
 
-    fn restore(&mut self, data: &[u8]) {
-        self.as_mut().restore(data);
+    fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.as_mut().restore(data)
+    }
+}
+
+impl<T> Checkpoint for Option<T>
+where
+    T: Checkpoint,
+{
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
+        todo!()
+    }
+
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
+        todo!()
+    }
+}
+
+impl<K, V> Checkpoint for NeighborhoodDescrBox<K, V>
+where
+    K: DBData,
+    V: DBData,
+{
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
+        todo!()
+    }
+
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
+        todo!()
     }
 }
 
 impl Checkpoint for dyn dynamic::data::Data + 'static {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         let mut s = Serializer::default();
         let _r = self.serialize(&mut s).unwrap();
         let fbuf = s.into_serializer().into_inner();
-        fbuf.into_vec()
+        Ok(fbuf.into_vec())
     }
 
-    fn restore(&mut self, data: &[u8]) {
+    fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
         unsafe { self.deserialize_from_bytes(data, 0) };
+        Ok(())
     }
 }
 
 impl Checkpoint for dyn DataTyped<Type = u64> + 'static {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
 
-    fn restore(&mut self, _data: &[u8]) {
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
 }
@@ -392,11 +420,11 @@ where
     V: DBData,
     R: DBWeight,
 {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
 
-    fn restore(&mut self, _data: &[u8]) {
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
 }
@@ -406,11 +434,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
 
-    fn restore(&mut self, _data: &[u8]) {
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
 }
@@ -421,11 +449,11 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn checkpoint(&self) -> Vec<u8> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
         todo!()
     }
 
-    fn restore(&mut self, _data: &[u8]) {
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
     }
 }

@@ -656,7 +656,7 @@ mod test {
 
                 TestBatch::from_data(output.as_slice())
             } else {
-                TestBatch::new(&TestBatchFactories::new(), "")
+                TestBatch::new(&TestBatchFactories::new())
             }
         }
     }
@@ -918,7 +918,7 @@ mod test {
             let (mut dbsp, (descr_handle, input_handle, output_handle)) =
                 Runtime::init_circuit(4, test_circuit).unwrap();
 
-            let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), "");
+            let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
 
             for (batch, (start_key, start_val), before, after) in trace.into_iter() {
 
