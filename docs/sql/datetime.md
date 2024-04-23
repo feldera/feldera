@@ -236,18 +236,27 @@ The following arithmetic operations are supported:
 | `DATE` + `TIME`             | `TIMESTAMP`        | Create a timestamp from parts                                    |
 | `INTERVAL` + `INTERVAL`     | `INTERVAL`         | Add two intervals; both must have the same type                  |
 | `TIMESTAMP` + `INTERVAL`    | `TIMESTAMP`        | Add an interval to a timestamp                                   |
-| `TIME` + `INTERVAL` (short) | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
+| `TIME` + `INTERVAL`         | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
 | `-` `INTERVAL`              | `INTERVAL`         | Negate an interval                                               |
 | `DATE` - `DATE`             | `INTERVAL`         | Compute the interval between two dates                           |
 | `DATE` - `INTEGER`          | `DATE`             | Subtract a number of days from a date                            |
 | `DATE` - `INTERVAL`         | `DATE`             | Subtract an interval from a date                                 |
 | `TIME` - `TIME`             | `INTERVAL` (short) | Compute the difference between two times                         |
-| `TIME` - `INTERVAL` (short) | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
+| `TIME` - `INTERVAL`         | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
 | `TIMESTAMP` - `INTERVAL`    | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
 | `INTERVAL` - `INTERVAL`     | `INTERVAL`         | Subtract two intervals                                           |
 | `INTERVAL` * `DOUBLE`       | `INTERVAL`         | Multiply an interval by a scalar                                 |
 | `INTERVAL` / `DOUBLE`       | `INTERVAL`         | Divide an interval by a scalar                                   |
 | `TIMESTAMP` - `TIMESTAMP`   | `INTERVAL` (long)  | Subtract two timestamps, convert result into days                |
+
+Arithmetic involving a `TIME` value always produces a (positive)
+`TIME` value, between `00:00:00` (inclusive) and `24:00:00`
+(exclusive).  One can think of the computation as being performed in
+nanoseconds, and then performing a modulo operation with the number of
+nanoseconds in a day.  For this reason, adding or subtracting a long
+interval from a `TIME` value is supported, but always leaves the
+`TIME` value unchanged (since long intervals always consist of a whole
+number of days).
 
 ## Timezones
 
