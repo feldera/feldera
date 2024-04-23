@@ -4,33 +4,33 @@
 
 The following are legal time units:
 
-| Time unit       | Meaning                                                                                |
-|-----------------|----------------------------------------------------------------------------------------|
-| `MILLENNIUM`    | A thousand years                                                                       |
-| `CENTURY`       | A hundred years; a number between 1 and 10                                             |
-| `DECADE`        | Ten years; a number between 1 and 10                                                   |
-| `YEAR`          | One year; can be positive or negative                                                  |
-| `QUARTER`       | 1/4 of a year; a number between 1 and 4                                                 |
-| `MONTH`         | One month; a number between 1 and 12                                                    |
-| `WEEK`          | Seven days. The definition of "week" is quite involved: The year's first week is the week containing the first Thursday of the year or either the week containing the 4th of January or either the week that begins between 29th of Dec. and 4th of Jan. The week number is thus a value between 0 and 53. |
-| `DOY`           | Day of year, a number between 1 and 366                                                 |
-| `DOW`           | Day of week, with Sunday being 1 and Saturday being 7                                   |
-| `ISODOW`        | ISO day of the week, with Monday 1 and Sunday 7                                         |
-| `DAY`           | A day within a month, a number between 1 and 31                                         |
-| `HOUR`          | An hour within a day, a number between 0 and 23                                         |
-| `MINUTE`        | A minute within an hour, a number between 0 and 59                                      |
-| `SECOND`        | A second within a minute, a number between 0 and 59                                     |
-| `MILLISECOND`   | A millisecond within a *minute*, including the number of seconds multiplied by 1000, a number between 0 and 59,999                                                                                      |
-| `MICROSECOND`   | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                    |
-| `EPOCH`         | Number of seconds from Unix epoch, i.e., 1970/01/01.                                    |
-| `SQL_TSI_YEAR`  | Same as `YEAR` |
-| `SQL_TSI_QUARTER`  | Same as `QUARTER` |
-| `SQL_TSI_MONTH`  | Same as `MONTH` |
-| `SQL_TSI_WEEK`  | Same as `WEEK` |
-| `SQL_TSI_HOUR`  | Same as `HOUR` |
-| `SQL_TSI_DAY`   | Same as `DAY` |
-| `SQL_TSI_MINUTE`   | Same as `MINUTE` |
-| `SQL_TSI_SECOND`   | Same as `SECOND` |
+| Time unit         | Meaning                                                                                                                                                                                                                                                                                                    |
+|-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `MILLENNIUM`      | A thousand years                                                                                                                                                                                                                                                                                           |
+| `CENTURY`         | A hundred years; a number between 1 and 10                                                                                                                                                                                                                                                                 |
+| `DECADE`          | Ten years; a number between 1 and 10                                                                                                                                                                                                                                                                       |
+| `YEAR`            | One year; can be positive or negative                                                                                                                                                                                                                                                                      |
+| `QUARTER`         | 1/4 of a year; a number between 1 and 4                                                                                                                                                                                                                                                                    |
+| `MONTH`           | One month; a number between 1 and 12                                                                                                                                                                                                                                                                       |
+| `WEEK`            | Seven days. The definition of "week" is quite involved: The year's first week is the week containing the first Thursday of the year or either the week containing the 4th of January or either the week that begins between 29th of Dec. and 4th of Jan. The week number is thus a value between 0 and 53. |
+| `DOY`             | Day of year, a number between 1 and 366                                                                                                                                                                                                                                                                    |
+| `DOW`             | Day of week, with Sunday being 1 and Saturday being 7                                                                                                                                                                                                                                                      |
+| `ISODOW`          | ISO day of the week, with Monday 1 and Sunday 7                                                                                                                                                                                                                                                            |
+| `DAY`             | A day within a month, a number between 1 and 31                                                                                                                                                                                                                                                            |
+| `HOUR`            | An hour within a day, a number between 0 and 23                                                                                                                                                                                                                                                            |
+| `MINUTE`          | A minute within an hour, a number between 0 and 59                                                                                                                                                                                                                                                         |
+| `SECOND`          | A second within a minute, a number between 0 and 59                                                                                                                                                                                                                                                        |
+| `MILLISECOND`     | A millisecond within a *minute*, including the number of seconds multiplied by 1000, a number between 0 and 59,999                                                                                                                                                                                         |
+| `MICROSECOND`     | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                                                                                                                |
+| `EPOCH`           | Number of seconds from Unix epoch, i.e., 1970/01/01.                                                                                                                                                                                                                                                       |
+| `SQL_TSI_YEAR`    | Same as `YEAR`                                                                                                                                                                                                                                                                                             |
+| `SQL_TSI_QUARTER` | Same as `QUARTER`                                                                                                                                                                                                                                                                                          |
+| `SQL_TSI_MONTH`   | Same as `MONTH`                                                                                                                                                                                                                                                                                            |
+| `SQL_TSI_WEEK`    | Same as `WEEK`                                                                                                                                                                                                                                                                                             |
+| `SQL_TSI_HOUR`    | Same as `HOUR`                                                                                                                                                                                                                                                                                             |
+| `SQL_TSI_DAY`     | Same as `DAY`                                                                                                                                                                                                                                                                                              |
+| `SQL_TSI_MINUTE`  | Same as `MINUTE`                                                                                                                                                                                                                                                                                           |
+| `SQL_TSI_SECOND`  | Same as `SECOND`                                                                                                                                                                                                                                                                                           |
 
 ## Dates
 
@@ -101,11 +101,11 @@ precision are maintained.
 
 ### Time literals
 
-`TIME` literals have the form `TIME '`HH:MM:SS.FFF`'`, where the
+`TIME` literals have the form `TIME 'HH:MM:SS.FFF'`, where the
 fractional part is optional, and can have between 0 and 3 digits.  An
 example is: '23:59:59.132'.  The hours must be between 0 and 23, the
 minutes between 0 and 59, and the seconds between 0 and 59.  Exactly
-two digits must be used for hours, minuts, and seconds.  Spaces are
+two digits must be used for hours, minutes, and seconds.  Spaces are
 not allowed between quotes.
 
 ### Time operations
@@ -201,21 +201,21 @@ INTERVAL 'string' timeUnit [ TO timeUnit]
 `week`, `month`, `quarter`, `year`, or plurals of these units.  Only
 the following combinations are supported:
 
-|Type|Example literal|
-|----|---------------|
-|`INTERVAL YEAR`             | `INTERVAL '20' YEAR`                          |
-|`INTERVAL YEAR TO MONTH`    | `INTERVAL '20-07' YEAR TO MONTH`              |
-|`INTERVAL MONTH`            | `INTERVAL '10' MONTH`                         |
-|`INTERVAL DAY`              | `INTERVAL '10' DAY`                           |
-|`INTERVAL DAY TO HOUR`      | `INTERVAL '10 10' DAY TO HOUR`                |
-|`INTERVAL DAY TO MINUTE`    | `INTERVAL '10 10:30' DAY TO MINUTE`           |
-|`INTERVAL DAY TO SECOND`    | `INTERVAL '10 10:30:40.999' DAY TO SECOND`    |
-|`INTERVAL HOUR`             | `INTERVAL '12' HOUR`                          |
-|`INTERVAL HOUR TO MINUTE`   | `INTERVAL '12:10' HOUR TO MINUTE`             |
-|`INTERVAL HOUR TO SECOND`   | `INTERVAL '12:10:59' HOUR TO SECOND`          |
-|`INTERVAL MINUTE`           | `INTERVAL '10' MINUTE`                        |
-|`INTERVAL MINUTE TO SECOND` | `INTERVAL '80:01.001' MINUTE TO SECOND`       |
-|`INTERVAL SECOND`           | `INTERVAL '80.001' SECOND`                    |
+| Type                        | Example literal                            |
+|-----------------------------|--------------------------------------------|
+| `INTERVAL YEAR`             | `INTERVAL '20' YEAR`                       |
+| `INTERVAL YEAR TO MONTH`    | `INTERVAL '20-07' YEAR TO MONTH`           |
+| `INTERVAL MONTH`            | `INTERVAL '10' MONTH`                      |
+| `INTERVAL DAY`              | `INTERVAL '10' DAY`                        |
+| `INTERVAL DAY TO HOUR`      | `INTERVAL '10 10' DAY TO HOUR`             |
+| `INTERVAL DAY TO MINUTE`    | `INTERVAL '10 10:30' DAY TO MINUTE`        |
+| `INTERVAL DAY TO SECOND`    | `INTERVAL '10 10:30:40.999' DAY TO SECOND` |
+| `INTERVAL HOUR`             | `INTERVAL '12' HOUR`                       |
+| `INTERVAL HOUR TO MINUTE`   | `INTERVAL '12:10' HOUR TO MINUTE`          |
+| `INTERVAL HOUR TO SECOND`   | `INTERVAL '12:10:59' HOUR TO SECOND`       |
+| `INTERVAL MINUTE`           | `INTERVAL '10' MINUTE`                     |
+| `INTERVAL MINUTE TO SECOND` | `INTERVAL '80:01.001' MINUTE TO SECOND`    |
+| `INTERVAL SECOND`           | `INTERVAL '80.001' SECOND`                 |
 
 A leading negative sign applies to all fields; for example the
 negative sign in the interval literal `INTERVAL '-1 2:03:04' DAYS TO
@@ -229,25 +229,25 @@ an increased precision for the corresponding type, e.g.:
 
 The following arithmetic operations are supported:
 
-| Operation                       | Result Type | Explanation                                               |
-|---------------------------------|--------------------|----------------------------------------------------|
-| `DATE` + `INTEGER`              | `DATE`             | Add a number of days to a date                     |
-| `DATE` + `INTERVAL`             | `TIMESTAMP`        | Add an interval to a date                          |
-| `DATE` + `TIME`                 | `TIMESTAMP`        | Create a timestamp from parts                      |
-| `INTERVAL` + `INTERVAL`         | `INTERVAL`         | Add two intervals; both must have the same type    |
-| `TIMESTAMP` + `INTERVAL`        | `TIMESTAMP`        | Add an interval to a timestamp                     |
-| `TIME` + `INTERVAL` (short)     | `TIME`             | Add an interval to a time                          |
-| `-` `INTERVAL`                  | `INTERVAL`         | Negate an interval                                 |
-| `DATE` - `DATE`                 | `INTERVAL`         | Compute the interval between two dates             |
-| `DATE` - `INTEGER`              | `DATE`             | Subtract a number of days from a date              |
-| `DATE` - `INTERVAL`             | `DATE`             | Subtract an interval from a date                   |
-| `TIME` - `TIME`                 | `INTERVAL` (short) | Compute the difference between two times           |
-| `TIME` - `INTERVAL` (short)     | `TIME`             | Subtract an interval from a time                   |
-| `TIMESTAMP` - `INTERVAL`        | `TIMESTAMP`        | Subtract an interval from a timestamp              |
-| `INTERVAL` - `INTERVAL`         | `INTERVAL`         | Subtract two intervals                             |
-| `INTERVAL` * `DOUBLE`           | `INTERVAL`         | Multiply an interval by a scalar                   |
-| `INTERVAL` / `DOUBLE`           | `INTERVAL`         | Divide an interval by a scalar                     |
-| `TIMESTAMP` - `TIMESTAMP`       | `INTERVAL` (long)  | Subtract two timestamps, convert result into days  |
+| Operation                   | Result Type        | Explanation                                                      |
+|-----------------------------|--------------------|------------------------------------------------------------------|
+| `DATE` + `INTEGER`          | `DATE`             | Add a number of days to a date                                   |
+| `DATE` + `INTERVAL`         | `TIMESTAMP`        | Add an interval to a date                                        |
+| `DATE` + `TIME`             | `TIMESTAMP`        | Create a timestamp from parts                                    |
+| `INTERVAL` + `INTERVAL`     | `INTERVAL`         | Add two intervals; both must have the same type                  |
+| `TIMESTAMP` + `INTERVAL`    | `TIMESTAMP`        | Add an interval to a timestamp                                   |
+| `TIME` + `INTERVAL` (short) | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
+| `-` `INTERVAL`              | `INTERVAL`         | Negate an interval                                               |
+| `DATE` - `DATE`             | `INTERVAL`         | Compute the interval between two dates                           |
+| `DATE` - `INTEGER`          | `DATE`             | Subtract a number of days from a date                            |
+| `DATE` - `INTERVAL`         | `DATE`             | Subtract an interval from a date                                 |
+| `TIME` - `TIME`             | `INTERVAL` (short) | Compute the difference between two times                         |
+| `TIME` - `INTERVAL` (short) | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
+| `TIMESTAMP` - `INTERVAL`    | `TIMESTAMP`        | Subtract an interval from a timestamp                            |
+| `INTERVAL` - `INTERVAL`     | `INTERVAL`         | Subtract two intervals                                           |
+| `INTERVAL` * `DOUBLE`       | `INTERVAL`         | Multiply an interval by a scalar                                 |
+| `INTERVAL` / `DOUBLE`       | `INTERVAL`         | Divide an interval by a scalar                                   |
+| `TIMESTAMP` - `TIMESTAMP`   | `INTERVAL` (long)  | Subtract two timestamps, convert result into days                |
 
 ## Timezones
 
@@ -264,8 +264,8 @@ the following are *not* supported: `LOCALTIME`, `LOCALTIMESTAMP`,
 
 We support the following functions for formatting date-like values:
 
-| Operation     | Arguments           | Example                   |
-|---------------|-------- ------------|---------------------------|
+| Operation     | Arguments           | Example                              |
+|---------------|---------------------|--------------------------------------|
 | `FORMAT_DATE` | string_format, date | `FORMAT_DATE("%Y=%m", d)` => 2020-10 |
 
 These functions are similar to the BigQuery functions:
@@ -274,45 +274,45 @@ These functions are similar to the BigQuery functions:
 The format string recognizes the following format specifiers:
 (the Types column encodes the following types: D=Date, TS=TIMESTAMP, T=TIME
 
-| Element | Types    | Description | Example |
-|---------|----------|-------------|---------|
-| %A      | D,TS     | The full weekday name (English)        | Wednesday  |
-| %a      | D,TS     | The abbreviated weekday name (English) | Wed        |
-| %B      | D,TS     | The full month name (English)          | January    |
-| %b      | D,TS     | The abbreviated month name (English)   | Jan        |
-| %C      | D,TS     | The century (a year divided by 100 and truncated to an integer) as a decimal number (00-99) | 20 |
-| %c      | TS       | The date and time representation (English) | Wed Jan 20 21:47:00 2021 |
-| %D      | D, TS    | The date in the format %m/%d/%y        | 01/20/21   |
-| %d      | D, TS    | The day of the month as a decimal number (01-31) | 20 |
-| %e      | D, TS    | The day of the month as a decimal number (1-31); single digits are preceded by a space |        20 |
-| %F      | D, TS    | The date in the format %Y-%m-%d        | 2021-01-20 |
-| %G      | D, TS    | The ISO 8601 year with century as a decimal number. Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %G and %Y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge | 2021 |
-| %g      | D, TS    | The ISO 8601 year without century as a decimal number (00-99). Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %g and %y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge | 21 |
-| %H      | TS, T    | The hour (24-hour clock) as a decimal number (00-23) | 21 |
-| %h      | D, TS    | Same as %b   |   Jan      |
-| %I      | TS, T    | The hour (12-hour clock) as a decimal number (01-12) | 09 |
-| %j      | D, TS    | The day of the year as a decimal number (001-366) | 020 |
-| %k      | TS, T    | The hour (24-hour clock) as a decimal number (0-23); single digits are preceded by a space. | 21 |
-| %l      | TS, T    | The hour (12-hour clock) as a decimal number (1-12); single digits are preceded by a space. |  9 |
-| %M      | TS, T    | The minute as a decimal number (00-59) | 47 |
-| %m      | D, TS    | The month as a decimal number (01-12)  | 01 |
-| %P      | TS, T    | When formatting, this is either am or pm. This cannot be used with parsing. Instead, use %p. | pm |
-| %p      | TS, T    | When formatting, this is either AM or PM. When parsing, this can be used with am, pm, AM, or PM. | PM |
-| %R      | TS, T    | The time in the format %H:%M | 21:47 |
-| %S      | TS, T    | The second as a decimal number (00-60) | 00 |
-| %s      | TS, T    | The number of seconds since 1970-01-01 00:00:00. | 1611179220 |
-| %T      | TS, T    | The time in the format %H:%M:%S | 21:47:00 |
-| %U      | D, TS    | The week number of the year (Sunday as the first day of the week) as a decimal number (00-53) | 03 |
-| %u      | D, TS    | The weekday (Monday as the first day of the week) as a decimal number (1-7) | 3 |
-| %V      | D, TS    | The ISO 8601 week number of the year (Monday as the first day of the week) as a decimal number (01-53). If the week containing January 1 has four or more days in the new year, then it is week 1; otherwise it is week 53 of the previous year, and the next week is week 1 | 03 |
-| %W      | D, TS    | The week number of the year (Monday as the first day of the week) as a decimal number (00-53) | 03 |
-| %w      | D, TS    | The weekday (Sunday as the first day of the week) as a decimal number (0-6) | 3 |
-| %X      | TS, T    | The time representation in HH:MM:SS format | 21:47:00 |
-| %x      | D, TS    | The date representation in MM/DD/YY format | 01/20/21 |
-| %Y      | D, TS    | The year with century as a decimal number  |     2021 |
-| %y      | D, TS    | The year without century as a decimal number (00-99), with an optional leading zero. | 21 |
-| %Z      | TS       | The time zone name | UTC-5 |
-| %z      | TS       | The offset from the Prime Meridian in the format +HHMM or -HHMM as appropriate, with positive values representing locations east of Greenwich | -0500 |
-| %n      |          | A newline character. | |
-| %t      |          | A tab character | |
-| %%      |          | A single % character | % |
+| Element | Types | Description                                                                                                                                                                                                                                                                                     | Example                  |
+|---------|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------|
+| %A      | D,TS  | The full weekday name (English)                                                                                                                                                                                                                                                                 | Wednesday                |
+| %a      | D,TS  | The abbreviated weekday name (English)                                                                                                                                                                                                                                                          | Wed                      |
+| %B      | D,TS  | The full month name (English)                                                                                                                                                                                                                                                                   | January                  |
+| %b      | D,TS  | The abbreviated month name (English)                                                                                                                                                                                                                                                            | Jan                      |
+| %C      | D,TS  | The century (a year divided by 100 and truncated to an integer) as a decimal number (00-99)                                                                                                                                                                                                     | 20                       |
+| %c      | TS    | The date and time representation (English)                                                                                                                                                                                                                                                      | Wed Jan 20 21:47:00 2021 |
+| %D      | D, TS | The date in the format %m/%d/%y                                                                                                                                                                                                                                                                 | 01/20/21                 |
+| %d      | D, TS | The day of the month as a decimal number (01-31)                                                                                                                                                                                                                                                | 20                       |
+| %e      | D, TS | The day of the month as a decimal number (1-31); single digits are preceded by a space                                                                                                                                                                                                          | 20                       |
+| %F      | D, TS | The date in the format %Y-%m-%d                                                                                                                                                                                                                                                                 | 2021-01-20               |
+| %G      | D, TS | The ISO 8601 year with century as a decimal number. Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %G and %Y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge            | 2021                     |
+| %g      | D, TS | The ISO 8601 year without century as a decimal number (00-99). Each ISO year begins on the Monday before the first Thursday of the Gregorian calendar year. Note that %g and %y may produce different results near Gregorian year boundaries, where the Gregorian year and ISO year can diverge | 21                       |
+| %H      | TS, T | The hour (24-hour clock) as a decimal number (00-23)                                                                                                                                                                                                                                            | 21                       |
+| %h      | D, TS | Same as %b                                                                                                                                                                                                                                                                                      | Jan                      |
+| %I      | TS, T | The hour (12-hour clock) as a decimal number (01-12)                                                                                                                                                                                                                                            | 09                       |
+| %j      | D, TS | The day of the year as a decimal number (001-366)                                                                                                                                                                                                                                               | 020                      |
+| %k      | TS, T | The hour (24-hour clock) as a decimal number (0-23); single digits are preceded by a space.                                                                                                                                                                                                     | 21                       |
+| %l      | TS, T | The hour (12-hour clock) as a decimal number (1-12); single digits are preceded by a space.                                                                                                                                                                                                     | 9                        |
+| %M      | TS, T | The minute as a decimal number (00-59)                                                                                                                                                                                                                                                          | 47                       |
+| %m      | D, TS | The month as a decimal number (01-12)                                                                                                                                                                                                                                                           | 01                       |
+| %P      | TS, T | When formatting, this is either am or pm. This cannot be used with parsing. Instead, use %p.                                                                                                                                                                                                    | pm                       |
+| %p      | TS, T | When formatting, this is either AM or PM. When parsing, this can be used with am, pm, AM, or PM.                                                                                                                                                                                                | PM                       |
+| %R      | TS, T | The time in the format %H:%M                                                                                                                                                                                                                                                                    | 21:47                    |
+| %S      | TS, T | The second as a decimal number (00-60)                                                                                                                                                                                                                                                          | 00                       |
+| %s      | TS, T | The number of seconds since 1970-01-01 00:00:00.                                                                                                                                                                                                                                                | 1611179220               |
+| %T      | TS, T | The time in the format %H:%M:%S                                                                                                                                                                                                                                                                 | 21:47:00                 |
+| %U      | D, TS | The week number of the year (Sunday as the first day of the week) as a decimal number (00-53)                                                                                                                                                                                                   | 03                       |
+| %u      | D, TS | The weekday (Monday as the first day of the week) as a decimal number (1-7)                                                                                                                                                                                                                     | 3                        |
+| %V      | D, TS | The ISO 8601 week number of the year (Monday as the first day of the week) as a decimal number (01-53). If the week containing January 1 has four or more days in the new year, then it is week 1; otherwise it is week 53 of the previous year, and the next week is week 1                    | 03                       |
+| %W      | D, TS | The week number of the year (Monday as the first day of the week) as a decimal number (00-53)                                                                                                                                                                                                   | 03                       |
+| %w      | D, TS | The weekday (Sunday as the first day of the week) as a decimal number (0-6)                                                                                                                                                                                                                     | 3                        |
+| %X      | TS, T | The time representation in HH:MM:SS format                                                                                                                                                                                                                                                      | 21:47:00                 |
+| %x      | D, TS | The date representation in MM/DD/YY format                                                                                                                                                                                                                                                      | 01/20/21                 |
+| %Y      | D, TS | The year with century as a decimal number                                                                                                                                                                                                                                                       | 2021                     |
+| %y      | D, TS | The year without century as a decimal number (00-99), with an optional leading zero.                                                                                                                                                                                                            | 21                       |
+| %Z      | TS    | The time zone name                                                                                                                                                                                                                                                                              | UTC-5                    |
+| %z      | TS    | The offset from the Prime Meridian in the format +HHMM or -HHMM as appropriate, with positive values representing locations east of Greenwich                                                                                                                                                   | -0500                    |
+| %n      |       | A newline character.                                                                                                                                                                                                                                                                            |                          |
+| %t      |       | A tab character                                                                                                                                                                                                                                                                                 |                          |
+| %%      |       | A single % character                                                                                                                                                                                                                                                                            | %                        |

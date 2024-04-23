@@ -837,8 +837,9 @@ impl Time {
         .unwrap()
     }
 
-    pub const MAX: Time = Time {
-        nanoseconds: 86_399_000_000_000, /*23:59:59*/
+    /// Time that represents the duration of a day
+    pub const ONE_DAY: Time = Time {
+        nanoseconds: 86_400_000_000_000, // Total nanoseconds in a day
     };
 }
 
@@ -846,15 +847,10 @@ impl Add<ShortInterval> for Time {
     type Output = Self;
 
     fn add(self, rhs: ShortInterval) -> Self::Output {
-        // 24:00:00 or 00:00:00
-        let nanos_in_day = (Time::MAX.nanoseconds() + BILLION) as i64;
+        let nanos_in_day = Time::ONE_DAY.nanoseconds() as i64;
 
-        let mut time = self.nanoseconds() as i64;
+        let time = self.nanoseconds() as i64 + nanos_in_day;
         let int = rhs.nanoseconds() % nanos_in_day;
-
-        if time == 0 {
-            time = nanos_in_day;
-        }
 
         let rem = (time + int) % nanos_in_day;
 
@@ -866,19 +862,7 @@ impl Sub<ShortInterval> for Time {
     type Output = Self;
 
     fn sub(self, rhs: ShortInterval) -> Self::Output {
-        // 24:00:00 or 00:00:00
-        let nanos_in_day = (Time::MAX.nanoseconds() + BILLION) as i64;
-
-        let mut time = self.nanoseconds() as i64;
-        let int = rhs.nanoseconds() % nanos_in_day;
-
-        if time == 0 {
-            time = nanos_in_day;
-        }
-
-        let rem = (time - int) % nanos_in_day;
-
-        Time::new(rem.unsigned_abs())
+        self + (ShortInterval::new(-rhs.milliseconds()))
     }
 }
 

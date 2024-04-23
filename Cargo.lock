@@ -4647,7 +4647,7 @@ dependencies = [
 [[package]]
 name = "ijson"
 version = "0.1.4"
-source = "git+https://github.com/abhizer/ijson#539097223774b7520991fc968f1c637f7db782b3"
+source = "git+https://github.com/abhizer/ijson.git#539097223774b7520991fc968f1c637f7db782b3"
 dependencies = [
  "dashmap",
  "lazy_static",
