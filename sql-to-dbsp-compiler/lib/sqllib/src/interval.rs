@@ -45,6 +45,10 @@ impl ShortInterval {
     pub fn milliseconds(&self) -> i64 {
         self.milliseconds
     }
+
+    pub fn nanoseconds(&self) -> i64 {
+        self.milliseconds * 1_000_000_i64
+    }
 }
 
 impl<T> Mul<T> for ShortInterval

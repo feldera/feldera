@@ -14,7 +14,7 @@ use size_of::SizeOf;
 use std::{
     borrow::Cow,
     fmt::{self, Debug},
-    ops::Add,
+    ops::{Add, Sub},
 };
 
 use crate::{
@@ -811,7 +811,7 @@ pub struct Time {
     nanoseconds: u64,
 }
 
-const BILLION: u64 = 1000000000;
+const BILLION: u64 = 1_000_000_000;
 
 impl Time {
     pub const fn new(nanoseconds: u64) -> Self {
@@ -835,6 +835,34 @@ impl Time {
             (self.nanoseconds % BILLION) as u32,
         )
         .unwrap()
+    }
+
+    /// Time that represents the duration of a day
+    pub const ONE_DAY: Time = Time {
+        nanoseconds: 86_400_000_000_000, // Total nanoseconds in a day
+    };
+}
+
+impl Add<ShortInterval> for Time {
+    type Output = Self;
+
+    fn add(self, rhs: ShortInterval) -> Self::Output {
+        let nanos_in_day = Time::ONE_DAY.nanoseconds() as i64;
+
+        let time = self.nanoseconds() as i64 + nanos_in_day;
+        let int = rhs.nanoseconds() % nanos_in_day;
+
+        let rem = (time + int) % nanos_in_day;
+
+        Time::new(rem.unsigned_abs())
+    }
+}
+
+impl Sub<ShortInterval> for Time {
+    type Output = Self;
+
+    fn sub(self, rhs: ShortInterval) -> Self::Output {
+        self + (ShortInterval::new(-rhs.milliseconds()))
     }
 }
 
