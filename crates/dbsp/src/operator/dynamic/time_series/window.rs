@@ -6,11 +6,18 @@ use crate::{
         operator_traits::{Operator, TernaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
-    dynamic::ClonableTrait,
+    dynamic::{rkyv::DeserializableDyn, rkyv::SerializeDyn, ClonableTrait},
     operator::dynamic::trace::TraceBound,
-    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Cursor, Spillable, Spine},
+    storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
+    trace::{
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, Spillable,
+        Spine,
+    },
+    Error,
 };
-use std::{borrow::Cow, cmp::max, marker::PhantomData};
+use rkyv::Deserialize;
+use std::{borrow::Cow, cmp::max, fs, marker::PhantomData, path::PathBuf};
+use uuid::Uuid;
 
 impl<C, B> Stream<C, B>
 where
@@ -43,6 +50,31 @@ where
     }
 }
 
+/// A window that is serialized to a file.
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+struct CommittedWindow {
+    window: Option<(Vec<u8>, Vec<u8>)>,
+}
+
+impl<B: IndexedZSet + Spillable> From<&Window<B>> for CommittedWindow {
+    fn from(value: &Window<B>) -> Self {
+        // Transform the window bounds into a serialized form and store it as a byte vector.
+        // This is necessary because the key type is not sized.
+        let window = value.window.as_ref().map(|(a, b)| {
+            let mut sa = Serializer::default();
+            let mut sb = Serializer::default();
+            a.serialize(&mut sa).unwrap();
+            b.serialize(&mut sb).unwrap();
+            (
+                sa.into_serializer().into_inner().to_vec(),
+                sb.into_serializer().into_inner().to_vec(),
+            )
+        });
+
+        CommittedWindow { window }
+    }
+}
+
 struct Window<B>
 where
     B: IndexedZSet + Spillable,
@@ -70,6 +102,18 @@ where
             _phantom: PhantomData,
         }
     }
+
+    /// Return the absolute path of the file for a checkpointed Window.
+    ///
+    /// # Arguments
+    /// - `cid`: The checkpoint id.
+    /// - `persistent_id`: The persistent id that identifies the spine within
+    ///   the circuit for a given checkpoint.
+    fn checkpoint_file<P: AsRef<str>>(cid: Uuid, persistent_id: P) -> PathBuf {
+        let mut path = checkpoint_path(cid);
+        path.push(format!("window-{}.dat", persistent_id.as_ref()));
+        path
+    }
 }
 
 impl<B> Operator for Window<B>
@@ -88,6 +132,35 @@ where
         // Windows can currently only be used in top-level circuits.
         // Do we have meaningful examples of using windows inside nested scopes?
         panic!("'Window' operator used in fixedpoint iteration")
+    }
+
+    fn commit<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+        let committed: CommittedWindow = self.into();
+        let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
+        write_commit_metadata(
+            Self::checkpoint_file(cid, &persistent_id),
+            as_bytes.as_slice(),
+        )?;
+        Ok(())
+    }
+
+    fn restore<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+        let window_path = Self::checkpoint_file(cid, persistent_id);
+        let content = fs::read(window_path)?;
+        let archived = unsafe { rkyv::archived_root::<CommittedWindow>(&content) };
+        let committed: CommittedWindow = archived.deserialize(&mut rkyv::Infallible).unwrap();
+
+        self.window = committed.window.map(|(a, b)| {
+            // Serialize the window bounds back into the key.
+            let mut boxed_a = self.factories.key_factory().default_box();
+            let mut boxed_b = self.factories.key_factory().default_box();
+            unsafe { boxed_a.deserialize_from_bytes(&a, 0) };
+            unsafe { boxed_b.deserialize_from_bytes(&b, 0) };
+
+            (boxed_a, boxed_b)
+        });
+
+        Ok(())
     }
 }
 
