@@ -73,7 +73,7 @@ of minimum integer value by -1) produce run time errors.
   </tr>
   <tr>
     <td><code>SEQUENCE(start, end)</code></td>
-    <td>returns an array of integers from start to end (inclusive). If end < start, an empty array is returned. If any of the arguments are NULL, NULL is returned.</td>
+    <td>returns an array of integers from start to end (inclusive). If end &lt; start, an empty array is returned. If any of the arguments are NULL, NULL is returned.</td>
   </tr>
 </table>
 
