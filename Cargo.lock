@@ -6606,7 +6606,9 @@ dependencies = [
  "dbsp_adapters",
  "pipeline_types",
  "pyo3",
+ "rkyv",
  "rust_decimal",
+ "serde",
  "size-of",
 ]
 

@@ -3,22 +3,22 @@ from sqlglot.optimizer import optimize
 from sqlglot.planner import Plan
 import sqlglot
 
+
 def to_ast(sql):
     node = parse_one(sql)
     optimized = optimize(node, leave_tables_isolated=True)
     print(optimized.sql(pretty=True))
     return optimized
 
+
 def to_plan(sql):
     return Plan(to_ast(sql))
 
 
 if __name__ == "__main__":
-    #op2 = to_plan("CREATE VIEW output_users AS SELECT * FROM users;")
-    #op3 = to_plan("SELECT * FROM output_users;")
-    #print(execute("CREATE TABLE users (name varchar)"))
-
-
+    # op2 = to_plan("CREATE VIEW output_users AS SELECT * FROM users;")
+    # op3 = to_plan("SELECT * FROM output_users;")
+    # print(execute("CREATE TABLE users (name varchar)"))
 
     tables = {
         "sushi": [
@@ -51,6 +51,7 @@ GROUP BY o.user_id
     sql = """SELECT * FROM orders"""
 
     from sqlglot import executor as pythonexecutor
+
     r = pythonexecutor.execute(
         sql,
         tables=tables
@@ -58,12 +59,9 @@ GROUP BY o.user_id
     print(r)
 
     import executor as dbspexecutor
+
     r = dbspexecutor.execute(
         sql,
         tables=tables
     )
     print(r)
-
-
-    #import pydbsp
-    #r = pydbsp.Runtime(3)

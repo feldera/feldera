@@ -11,12 +11,15 @@ from sqlglot.executor.env import ENV
 from sqlglot.executor.table import RowReader, Table
 from sqlglot.helper import csv_reader, ensure_list, subclasses
 
+import pydbsp
+
 
 class DbspExecutor:
     def __init__(self, env=None, tables=None):
         self.generator = Python().generator(identify=True, comments=False)
         self.env = {**ENV, **(env or {})}
         self.tables = tables or {}
+        self.runtime = pydbsp.Runtime(1)
 
     def execute(self, plan):
         finished = set()
@@ -88,17 +91,25 @@ class DbspExecutor:
 
     def scan(self, step, context):
         source = step.source
+        print("scan")
+        print("step", step)
+        print("context", context)
+        print("source", source)
 
         if source and isinstance(source, exp.Expression):
+            print("isinstance(source, exp.Expression)")
             source = source.name or source.alias
 
         if source is None:
+            print("source is None")
             context, table_iter = self.static()
         elif source in context:
+            print("source in context")
             if not step.projections and not step.condition:
                 return self.context({step.name: context.tables[source]})
             table_iter = context.table_iter(source)
         elif isinstance(step.source, exp.Table) and isinstance(step.source.this, exp.ReadCSV):
+            print("isinstance(step.source, exp.Table) and isinstance(step.source.this, exp.ReadCSV)")
             table_iter = self.scan_csv(step)
             context = next(table_iter)
         else:
@@ -110,6 +121,7 @@ class DbspExecutor:
         sink = self.table(step.projections if step.projections else context.columns)
         condition = self.generate(step.condition)
         projections = self.generate_tuple(step.projections)
+        print("project and filter", step, sink, condition, projections)
 
         for reader in table_iter:
             if len(sink) >= step.limit:
@@ -131,6 +143,7 @@ class DbspExecutor:
     def scan_table(self, step):
         table = self.tables.find(step.source)
         context = self.context({step.source.alias_or_name: table})
+        print("scan table", context, iter(table))
         return context, iter(table)
 
     def scan_csv(self, step):
@@ -324,11 +337,11 @@ class DbspExecutor:
         sort_ctx.sort(self.generate_tuple(step.key))
 
         if not math.isinf(step.limit):
-            sort_ctx.table.rows = sort_ctx.table.rows[0 : step.limit]
+            sort_ctx.table.rows = sort_ctx.table.rows[0: step.limit]
 
         output = Table(
             projection_columns,
-            rows=[r[len(context.columns) : len(all_columns)] for r in sort_ctx.table.rows],
+            rows=[r[len(context.columns): len(all_columns)] for r in sort_ctx.table.rows],
         )
         return self.context({step.name: output})
 
@@ -348,7 +361,7 @@ class DbspExecutor:
             sink.rows = left.rows + right.rows
 
         if not math.isinf(step.limit):
-            sink.rows = sink.rows[0 : step.limit]
+            sink.rows = sink.rows[0: step.limit]
 
         return self.context({step.name: sink})
 
