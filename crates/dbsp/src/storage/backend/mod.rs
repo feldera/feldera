@@ -396,7 +396,7 @@ pub fn new_default_backend(tempdir: PathBuf) -> Backend {
         use nix::sys::statfs::{statfs, TMPFS_MAGIC};
         if let Ok(s) = statfs(&tempdir) {
             if s.filesystem_type() == TMPFS_MAGIC {
-                static ONCE: Once = Once::new();
+                static ONCE: std::sync::Once = std::sync::Once::new();
                 ONCE.call_once(|| {
                     warn!("initializing storage on in-memory tmpfs filesystem at {}; consider configuring physical storage",
                           tempdir.to_string_lossy())
@@ -409,7 +409,7 @@ pub fn new_default_backend(tempdir: PathBuf) -> Backend {
     match io_uring_impl::IoUringBackend::with_base(&tempdir) {
         Ok(backend) => Box::new(backend),
         Err(error) => {
-            static ONCE: Once = Once::new();
+            static ONCE: std::sync::Once = std::sync::Once::new();
             ONCE.call_once(|| {
                 warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
             });
