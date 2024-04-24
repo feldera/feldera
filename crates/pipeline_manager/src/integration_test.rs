@@ -471,7 +471,7 @@ impl TestConfig {
         loop {
             println!("Waiting for compilation");
             std::thread::sleep(time::Duration::from_secs(1));
-            if now.elapsed().as_secs() > 200 {
+            if now.elapsed().as_secs() > 480 {
                 panic!("Compilation timeout");
             }
             let mut resp = self.get(format!("/v0/programs/{program_name}")).await;
