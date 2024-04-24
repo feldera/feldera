@@ -52,13 +52,13 @@ language (e.g., in Python using the `requests` module).
    using Docker as described above. If the Feldera instance requires authentication,
    you must generate an API key in the Web Console at the _Settings_ tab.
    You can add it to a `curl` call in the following way (replace `<API-KEY>`
-   with generated key):
+   with the generated string starting with `apikey:...`):
    ```
-   curl -s -H "Authorization: Bearer apikey:<API-KEY>" -X GET http://localhost:8080/v0/programs | jq
+   curl -s -H "Authorization: Bearer <API-KEY>" -X GET http://localhost:8080/v0/programs | jq
    ```
 
    > For the remainder of this tutorial, you will need to add
-   > `-H "Authorization: Bearer apikey:<API-KEY>"` to each of the calls.
+   > `-H "Authorization: Bearer <API-KEY>"` to each of the calls.
 
 5. **Check it's working:** You can verify it's working by running:
    ```
