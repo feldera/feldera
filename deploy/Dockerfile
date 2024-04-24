@@ -122,46 +122,6 @@ RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/wo
 ENV BANNER_ADDR localhost
 ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080"]
 
-# Standalone api-server
-FROM gcr.io/distroless/cc-debian12 AS api-server
-COPY --from=builder /app/target/release/api-server api-server
-ENV BANNER_ADDR localhost
-ENTRYPOINT ["./api-server", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir"]
-
-# Standalone compiler-server
-FROM base as compiler-server
-ENV PATH="$PATH:/root/.cargo/bin"
-COPY --from=builder /app/target/release/compiler-server compiler-server
-# SQL compiler uber jar
-RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
-COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
-# The crates needed for the SQL compiler
-COPY crates/dbsp database-stream-processor/crates/dbsp
-COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
-COPY crates/adapters database-stream-processor/crates/adapters
-# Storage crate got folded into the dbsp crate for now. Revert if this changes.
-# COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
-COPY README.md database-stream-processor/README.md
-RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
-# Copy over the rust code and sql-to-dbsp script
-COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
-COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
-COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
-# Run the precompile phase to speed up Rust compilations during deployment
-# TODO: disabling this to keep compiler image sizes small
-# RUN ./compiler-server --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
-ENTRYPOINT ["./compiler-server", "--compiler-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor"]
-
-# Standalone local-runner
-FROM gcr.io/distroless/cc-debian12 AS local-runner
-COPY --from=builder /app/target/release/local-runner local-runner
-ENTRYPOINT ["./local-runner", "--runner-working-directory=/working-dir"]
-
-# DB Migrations
-FROM gcr.io/distroless/cc-debian12 AS migrations
-COPY --from=builder /app/target/release/migrations migrations
-ENTRYPOINT ["./migrations"]
-
 ##### The stages below are used to build the demo container
 
 # Prepare SecOps simulator recipe
