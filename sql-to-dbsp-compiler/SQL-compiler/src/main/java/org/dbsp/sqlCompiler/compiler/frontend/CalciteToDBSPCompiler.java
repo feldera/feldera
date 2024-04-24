@@ -424,15 +424,27 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     /** Given a list of fields and a tuple t, generate a tuple expression that extracts
      * all these fields from t.
-     * @param fields Fields of the variable that appear in the key
+     * @param keyFields Fields of the variable that appear in the key
+     * @param groupSet  All fields that correspond to the 'slice' type fields
      * @param t      Variable whose fields are used to create the key
-     * @param slice  Type expected for produced result */
-    DBSPTupleExpression generateKeyExpression(ImmutableBitSet fields, DBSPVariablePath t, DBSPTypeTuple slice) {
-        DBSPExpression[] keys = new DBSPExpression[fields.cardinality()];
-        int next = 0;
-        for (int index : fields) {
-            keys[next] = t.deepCopy().deref().field(index).applyCloneIfNeeded().cast(slice.getFieldType(index));
-            next++;
+     * @param slice  Type expected for the entire groupByKeys */
+    DBSPTupleExpression generateKeyExpression(
+            ImmutableBitSet keyFields, ImmutableBitSet groupSet,
+            DBSPVariablePath t, DBSPTypeTuple slice) {
+        assert groupSet.cardinality() == slice.size();
+        DBSPExpression[] keys = new DBSPExpression[keyFields.cardinality()];
+        int keyFieldIndex = 0;
+        int groupSetIndex = 0;
+        for (int index : groupSet) {
+            if (keyFields.get(index)) {
+                keys[keyFieldIndex] = t.deepCopy()
+                        .deref()
+                        .field(index)
+                        .applyCloneIfNeeded()
+                        .cast(slice.getFieldType(groupSetIndex));
+                keyFieldIndex++;
+            }
+            groupSetIndex++;
         }
         return new DBSPTupleExpression(keys);
     }
@@ -448,8 +460,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);
         DBSPType inputRowType = this.convertType(input.getRowType(), false);
         DBSPVariablePath t = inputRowType.ref().var("t");
+        DBSPTypeTuple keySlice = tuple.slice(0, aggregate.getGroupSet().cardinality());
         DBSPTupleExpression globalKeys = this.generateKeyExpression(
-                aggregate.getGroupSet(), t, tuple);
+                aggregate.getGroupSet(), aggregate.getGroupSet(), t, keySlice);
         DBSPType[] aggTypes = Utilities.arraySlice(tuple.tupFields, aggregate.getGroupCount());
         DBSPTypeTuple aggType = new DBSPTypeTuple(aggTypes);
         DBSPAggregate fold = this.createAggregate(aggregate, aggregateCalls, tuple, inputRowType, aggregate.getGroupCount(), localKeys);
@@ -458,7 +471,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple typeFromAggregate = fold.defaultZeroType();
         DBSPTypeIndexedZSet aggregateResultType = this.makeIndexedZSet(globalKeys.getType(), typeFromAggregate);
 
-        DBSPTupleExpression localKeyExpression = this.generateKeyExpression(localKeys, t, tuple);
+        DBSPTupleExpression localKeyExpression = this.generateKeyExpression(
+                localKeys, aggregate.getGroupSet(), t, keySlice);
         DBSPClosureExpression makeKeys =
                 new DBSPRawTupleExpression(
                         localKeyExpression,
@@ -496,6 +510,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath reindexVar = new DBSPVariablePath("t", aggregateType.getKVRefType());
             DBSPExpression[] reindexFields = new DBSPExpression[aggregate.getGroupCount()];
             int localIndex = 0;
+            int i = 0;
             for (int globalIndex: aggregate.getGroupSet()) {
                 if (localKeys.get(globalIndex)) {
                     reindexFields[globalIndex] = reindexVar
@@ -505,9 +520,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             .applyCloneIfNeeded();
                     localIndex++;
                 } else {
-                    assert globalIndex < reindexFields.length;
-                    reindexFields[globalIndex] = DBSPLiteral.none(globalKeys.fields[globalIndex].getType());
+                    assert i < reindexFields.length;
+                    reindexFields[i] = DBSPLiteral.none(globalKeys.fields[i].getType());
                 }
+                i++;
             }
             DBSPExpression remap = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(reindexFields),
