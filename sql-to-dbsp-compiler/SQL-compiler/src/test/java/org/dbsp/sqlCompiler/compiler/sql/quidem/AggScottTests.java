@@ -767,8 +767,6 @@ public class AggScottTests extends ScottBaseTests {
     @Test
     public void testAggregates2() {
         this.qs("""
-                -- [CALCITE-1293] Bad code generated when argument to COUNT(DISTINCT) is a
-                -- GROUP BY column
                 select count(distinct deptno) as cd, count(*) as c
                 from emp
                 group by deptno;
@@ -1130,8 +1128,9 @@ public class AggScottTests extends ScottBaseTests {
                 (6 rows)""");
     }
 
-    @Test @Ignore("TODO: Crashes the compiler")
+    @Test @Ignore("https://github.com/feldera/feldera/issues/1539")
     public void testNestedOrderby() {
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
         this.qs("""
                 -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])
                 select  sum(x) as sum_cnt,

@@ -340,12 +340,29 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
     }
 
     /** Creates a call to the INDICATOR function,
-     * which returns 0 for None and 1 for Some. */
+     * which returns 0 for None and 1 for Some.
+     * For tuples it returns the multiplication of the indicator for all fields */
     public static DBSPExpression makeIndicator(
             CalciteObject node, DBSPType resultType, DBSPExpression argument) {
         assert !resultType.mayBeNull;
         assert resultType.is(IsNumericType.class);
-        return new DBSPUnaryExpression(node, resultType, DBSPOpcode.INDICATOR, argument.borrow());
+        DBSPType argType = argument.getType();
+        if (argType.is(DBSPTypeTuple.class)) {
+            DBSPTypeTupleBase tuple = argument.getType().to(DBSPTypeTuple.class);
+            DBSPExpression result = resultType.to(IsNumericType.class).getOne();
+            for (int i = 0; i < tuple.size(); i++) {
+                DBSPExpression next = makeIndicator(node, resultType, argument.field(i));
+                result = new DBSPBinaryExpression(node, resultType, DBSPOpcode.MUL, result, next);
+            }
+            return result;
+        } else  {
+            // scalar types, but not only.  Nullable structs fall here too.
+            if (!argType.mayBeNull) {
+                return resultType.to(IsNumericType.class).getOne();
+            } else {
+                return new DBSPUnaryExpression(node, resultType, DBSPOpcode.INDICATOR, argument.borrow());
+            }
+        }
     }
 
     public static DBSPExpression makeBinaryExpression(

@@ -224,10 +224,7 @@ public class AggregateCompiler implements ICompilerComponent {
             argument = one;
         } else {
             DBSPExpression agg = this.getAggregatedValue();
-            if (agg.getType().mayBeNull)
-                argument = ExpressionCompiler.makeIndicator(node, resultType, agg);
-            else
-                argument = one;
+            argument = ExpressionCompiler.makeIndicator(node, resultType, agg);
         }
 
         @Nullable

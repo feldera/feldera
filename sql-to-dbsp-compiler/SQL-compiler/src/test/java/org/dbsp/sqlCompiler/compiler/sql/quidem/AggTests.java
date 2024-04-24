@@ -5,7 +5,7 @@ import org.junit.Test;
 
 // https://github.com/apache/calcite/blob/main/core/src/test/resources/sql/agg.iq
 public class AggTests extends PostBaseTests {
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1481")
+    @Test
     public void testCompositeCount() {
         this.qs("""
                 -- composite count
@@ -40,8 +40,8 @@ public class AggTests extends PostBaseTests {
                 | M  | C |
                 +----+---+
                 |  0 | F|
-                | 10 |   |
-                |  0 | M |
+                | 10 |NULL|
+                |  0 | M|
                 +----+---+
                 (3 rows)
                                 
