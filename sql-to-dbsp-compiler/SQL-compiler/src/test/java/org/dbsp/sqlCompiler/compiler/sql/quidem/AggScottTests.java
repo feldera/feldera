@@ -1,7 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.util.Logger;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -745,7 +743,7 @@ public class AggScottTests extends ScottBaseTests {
                 (1 row)""");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1481")
+    @Test
     public void testCompositeCount() {
         this.qs("""
                 -- Composite COUNT and FILTER
@@ -767,8 +765,6 @@ public class AggScottTests extends ScottBaseTests {
     @Test
     public void testAggregates2() {
         this.qs("""
-                -- [CALCITE-1293] Bad code generated when argument to COUNT(DISTINCT) is a
-                -- GROUP BY column
                 select count(distinct deptno) as cd, count(*) as c
                 from emp
                 group by deptno;
@@ -879,11 +875,8 @@ public class AggScottTests extends ScottBaseTests {
     @Test @Ignore("https://github.com/feldera/feldera/issues/1507")
     public void testAvg() {
         this.qs("""
-                -- [CALCITE-280] BigDecimal underflow
-                -- Previously threw "java.lang.ArithmeticException: Non-terminating decimal
-                -- expansion; no exact representable decimal result"
-                select avg(comm) as a, count(comm) as c from --
-                   emp where empno < 7844;
+                select avg(comm) as a, count(comm) as c from
+                emp where empno < 7844;
                 +-------------------+---+
                 | A                 | C |
                 +-------------------+---+
@@ -1130,7 +1123,7 @@ public class AggScottTests extends ScottBaseTests {
                 (6 rows)""");
     }
 
-    @Test @Ignore("TODO: Crashes the compiler")
+    @Test
     public void testNestedOrderby() {
         this.qs("""
                 -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])

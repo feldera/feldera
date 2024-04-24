@@ -71,7 +71,7 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
   </tr>
   <tr>
      <td><code>COUNT( [ ALL | DISTINCT ] value [, value ]*)</code></td>
-     <td>Returns the number of input rows for which value is not null (wholly not null if value is composite)</td>
+     <td>Returns the number of input rows for which value is not null.  If the argument contains multiple expressions, it counts only expressions where *all* fields are non-null.</td>
   </tr>
   <tr>
      <td><code>EVERY(condition)</code></td>

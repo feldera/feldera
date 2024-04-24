@@ -7,10 +7,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 import javax.annotation.Nullable;
 
-/**
- * Stores metadata for a column produced by an operator at the level
- * of Calcite Rel objects.
- */
+/** Stores metadata for a column produced by an operator at the level
+ * of Calcite Rel objects. */
 public class RelColumnMetadata {
     public final CalciteObject node;
     /** Column name and type. */
