@@ -8,7 +8,7 @@ The REST API is still evolving and might see backwards incompatible changes.
 
 The Feldera platform features a comprehensive REST API for managing
 [programs](https://www.feldera.com/docs/#programs),
-[connectors](https://www.feldera.com/docs/#connectors), 
+[connectors](https://www.feldera.com/docs/#connectors),
 and [pipelines](https://www.feldera.com/docs/#pipelines).
 Feldera's Web Console UI interacts with the backend service exclusively
 via this public API; hence all functionality available in the Web Console
@@ -35,7 +35,7 @@ language (e.g., in Python using the `requests` module).
    > The usage of `jq` is optional; to not use, remove the `| jq` at the end of some
    > of the `curl` calls .
 
-3. **Feldera instance:** This tutorial requires you to have a running Feldera instance 
+3. **Feldera instance:** This tutorial requires you to have a running Feldera instance
    to interact with. If you do not have one already, you can start one locally using
    [**docker**](https://docs.docker.com/engine/install/):
    ```
@@ -51,19 +51,20 @@ language (e.g., in Python using the `requests` module).
 4. **(Optional) API key:** Skip this step if you are using a local test setup
    using Docker as described above. If the Feldera instance requires authentication,
    you must generate an API key in the Web Console at the _Settings_ tab.
-   You can add it to a `curl` call in the following way:
+   You can add it to a `curl` call in the following way (replace `<API-KEY>`
+   with generated key):
    ```
-   curl -s -H "Authorization: <API-KEY>" -X GET http://localhost:8080/v0/programs | jq
+   curl -s -H "Authorization: Bearer apikey:<API-KEY>" -X GET http://localhost:8080/v0/programs | jq
    ```
 
    > For the remainder of this tutorial, you will need to add
-   > `-H "Authorization: <API-KEY>"` to each of the calls.
+   > `-H "Authorization: Bearer apikey:<API-KEY>"` to each of the calls.
 
 5. **Check it's working:** You can verify it's working by running:
    ```
    curl -s -X GET http://localhost:8080/v0/programs | jq
    ```
-   
+
    ... this will output a JSON array of program objects, which when there are
    none (yet!) is empty:
 
