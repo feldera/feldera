@@ -1734,9 +1734,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         DBSPOperator o;
-        DBSPType originalRowType = this.convertType(view.getRoot().validatedRowType, true);
-        DBSPTypeStruct struct = originalRowType.to(DBSPTypeStruct.class).rename(view.relationName);
-        List<ViewColumnMetadata> metadata = new ArrayList<>();
+        DBSPTypeStruct struct = view.getRowTypeAsStruct(this.getCompiler().typeCompiler)
+                .rename(view.relationName);
+        List<ViewColumnMetadata> additionalMetadata = new ArrayList<>();
         // Synthesize the metadata for the view's columns.
         Map<String, ViewColumnMetadata> map = this.viewMetadata.get(view.relationName);
         for (DBSPTypeStruct.Field field: struct.fields.values()) {
@@ -1749,7 +1749,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             } else {
                 cm = cm.withType(field.getType());
             }
-            metadata.add(cm);
+            additionalMetadata.add(cm);
         }
         // Validate in the other direction: every declared metadata field must be used
         if (map != null) {
@@ -1768,18 +1768,18 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(
                     view.getCalciteObject(), view.relationName, view.statement,
-                    struct, metadata, view.comment, op);
+                    struct, additionalMetadata, view.comment, op);
             this.circuit.addOperator(vo);
             o = new DBSPSinkOperator(
                     view.getCalciteObject(), view.relationName,
-                    view.statement, struct, metadata, view.comment, vo);
+                    view.statement, struct, additionalMetadata, view.comment, vo);
         } else {
             // We may already have a node for this output
             DBSPOperator previous = this.circuit.getView(view.relationName);
             if (previous != null)
                 return previous;
             o = new DBSPViewOperator(view.getCalciteObject(), view.relationName, view.statement,
-                    struct, metadata, view.comment, op);
+                    struct, additionalMetadata, view.comment, op);
         }
         this.circuit.addOperator(o);
         return o;
