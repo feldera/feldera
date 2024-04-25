@@ -231,15 +231,11 @@ The following arithmetic operations are supported:
 
 | Operation                   | Result Type        | Explanation                                                      |
 |-----------------------------|--------------------|------------------------------------------------------------------|
-| `DATE` + `INTEGER`          | `DATE`             | Add a number of days to a date                                   |
 | `DATE` + `INTERVAL`         | `TIMESTAMP`        | Add an interval to a date                                        |
-| `DATE` + `TIME`             | `TIMESTAMP`        | Create a timestamp from parts                                    |
 | `INTERVAL` + `INTERVAL`     | `INTERVAL`         | Add two intervals; both must have the same type                  |
 | `TIMESTAMP` + `INTERVAL`    | `TIMESTAMP`        | Add an interval to a timestamp                                   |
 | `TIME` + `INTERVAL`         | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
 | `-` `INTERVAL`              | `INTERVAL`         | Negate an interval                                               |
-| `DATE` - `DATE`             | `INTERVAL`         | Compute the interval between two dates                           |
-| `DATE` - `INTEGER`          | `DATE`             | Subtract a number of days from a date                            |
 | `DATE` - `INTERVAL`         | `DATE`             | Subtract an interval from a date                                 |
 | `TIME` - `TIME`             | `INTERVAL` (short) | Compute the difference between two times                         |
 | `TIME` - `INTERVAL`         | `TIME`             | Subtract an interval from a time. Performs wrapping subtraction. |
