@@ -151,14 +151,14 @@ where
             .clone()
     }
 
-    pub fn delay_with_zero(&self, zero: D) -> Stream<C, D>
+    pub fn delay_with_initial_value(&self, initial: D) -> Stream<C, D>
     where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
     {
         self.circuit()
             .cache_get_or_insert_with(DelayedId::new(self.origin_node_id().clone()), move || {
                 self.circuit()
-                    .add_unary_operator(Z1::new(zero.clone()), self)
+                    .add_unary_operator(Z1::new(initial.clone()), self)
             })
             .clone()
     }

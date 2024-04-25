@@ -30,7 +30,7 @@ where
     /// You shouldn't ordinarily need this operator, at least not for streams of
     /// Z-sets, because most DBSP operators are fully incremental.
     pub fn differentiate(&self) -> Stream<C, D> {
-        self.differentiate_with_zero(D::zero())
+        self.differentiate_with_initial_value(D::zero())
     }
 
     /// Nested stream differentiation.
@@ -67,13 +67,15 @@ where
         + Eq
         + 'static,
 {
-    pub fn differentiate_with_zero(&self, zero: D) -> Stream<C, D> {
+    pub fn differentiate_with_initial_value(&self, initial: D) -> Stream<C, D> {
         self.circuit()
             .cache_get_or_insert_with(DifferentiateId::new(self.origin_node_id().clone()), || {
                 let differentiated = self.circuit().add_binary_operator(
                     Minus::new(),
                     &self.try_sharded_version(),
-                    &self.try_sharded_version().delay_with_zero(zero.clone()),
+                    &self
+                        .try_sharded_version()
+                        .delay_with_initial_value(initial.clone()),
                 );
                 differentiated.mark_sharded_if(self);
 

@@ -279,7 +279,7 @@ where
                         .dyn_integrate_trace(&factories.input_factories),
                     neighborhood_descr,
                 )
-                .differentiate_with_zero(Batch::dyn_empty(&factories.local_factories, ()));
+                .differentiate_with_initial_value(Batch::dyn_empty(&factories.local_factories, ()));
 
             // Gather all results in worker 0.  Worker 0 then computes
             // the final neighborhood.
@@ -295,7 +295,7 @@ where
                 neighborhood_descr,
             );
 
-            output.differentiate_with_zero(DynNeighborhood::dyn_empty(
+            output.differentiate_with_initial_value(DynNeighborhood::dyn_empty(
                 &factories.output_factories,
                 (),
             ))
