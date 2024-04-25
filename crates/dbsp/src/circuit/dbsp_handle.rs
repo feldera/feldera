@@ -833,8 +833,9 @@ mod tests {
     use crate::trace::BatchReaderFactories;
     use crate::utils::Tup2;
     use crate::{
-        Circuit, DBSPHandle, Error as DBSPError, IndexedZSetHandle, InputHandle, OrdZSet,
-        OutputHandle, Runtime, RuntimeError, ZSetHandle, ZWeight,
+        indexed_zset, zset, Circuit, DBSPHandle, Error as DBSPError, IndexedZSetHandle,
+        InputHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, RuntimeError, Stream,
+        TypedBox, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
     use tempfile::{tempdir, TempDir};
@@ -1435,6 +1436,75 @@ mod tests {
             let cpm = dbsp.commit().unwrap();
             cconf.init_checkpoint = cpm.uuid;
             dbsp.kill().unwrap();
+        }
+    }
+
+    /// This test exercises the checkpoint/restore path of the Window operator.
+    #[test]
+    fn window_checkpointing() {
+        type Time = u64;
+
+        let (_temp, mut cconf) = mkconfig();
+        for step_idx in 0..6 {
+            let (mut circuit, ()) = Runtime::init_circuit(&cconf, move |circuit| {
+                let input = vec![
+                    zset! {
+                    // old value before the first window, should never appear in the output.
+                    Tup2(800, "800".to_string()) => 1i64,
+                    Tup2(900, "900".to_string()) => 1,
+                    Tup2(950, "950".to_string()) => 1,
+                    Tup2(999, "999".to_string()) => 1,
+                    // will appear in the next window
+                    Tup2(1000, "1000".to_string()) => 1
+                },
+                    zset! {
+                    // old value before the first window
+                    Tup2(700, "700".to_string()) => 1,
+                    // too late, the window already moved forward
+                    Tup2(900, "900".to_string()) => 1,
+                    Tup2(901, "901".to_string()) => 1,
+                    Tup2(999, "999".to_string()) => 1,
+                    Tup2(1000, "1000".to_string()) => 1,
+                    Tup2(1001, "1001".to_string()) => 1, // will appear in the next window
+                    Tup2(1002, "1002".to_string()) => 1, // will appear two windows later
+                    Tup2(1003, "1003".to_string()) => 1, // will appear three windows later
+                },
+                    zset! { Tup2(1004, "1004".to_string()) => 1 }, // no new values in this window
+                    zset! {},
+                    zset! {},
+                    zset! {},
+                ];
+
+                let output = vec![
+                    indexed_zset! { 900 => {"900".to_string() => 1} , 950 => {"950".to_string() => 1} , 999 => {"999".to_string() => 1} },
+                    indexed_zset! { 900 => {"900".to_string() => -1} , 901 => {"901".to_string() => 1} , 999 => {"999".to_string() => 1} , 1000 => {"1000".to_string() => 2} },
+                    indexed_zset! { 901 => {"901".to_string() => -1} , 1001 => {"1001".to_string() => 1} },
+                    indexed_zset! { 1002 => {"1002".to_string() => 1} },
+                    indexed_zset! { 1003 => {"1003".to_string() => 1} },
+                    indexed_zset! { 1004 => {"1004".to_string() => 1} },
+                ];
+
+                let bounds: Stream<_, (TypedBox<Time, DynData>, TypedBox<Time, DynData>)> = circuit.add_source(Generator::new(move || {
+                    let clock = 1000 + step_idx as Time;
+                    let res = (TypedBox::new(clock - 100), TypedBox::new(clock));
+                    res
+                }));
+
+                let index1: Stream<_, OrdIndexedZSet<Time, String>> = circuit
+                    .add_source(Generator::new(move || input[step_idx].clone()))
+                    .map_index(|Tup2(k, v)| (*k, v.clone()));
+                index1
+                    .window(&bounds)
+                    .inspect(move |batch| assert_eq!(batch, &output[step_idx]));
+                Ok(())
+            })
+                .unwrap();
+
+            circuit.step().unwrap();
+
+            let cpm = circuit.commit().unwrap();
+            cconf.init_checkpoint = cpm.uuid;
+            circuit.kill().unwrap();
         }
     }
 }
