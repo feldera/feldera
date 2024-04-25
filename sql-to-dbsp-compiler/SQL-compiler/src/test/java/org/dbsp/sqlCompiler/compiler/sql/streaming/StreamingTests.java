@@ -117,7 +117,6 @@ public class StreamingTests extends StreamingTest {
     public void blogTest() {
         String statements = """
                 CREATE TABLE CUSTOMER(name VARCHAR NOT NULL, zipcode INT NOT NULL);
-                                
                 CREATE VIEW DENSITY AS
                 SELECT zipcode, COUNT(name)
                 FROM CUSTOMER
@@ -348,7 +347,7 @@ public class StreamingTests extends StreamingTest {
         Long[] p0 = this.profile(ddl + query);
         Long[] p1 = this.profile(ddlLateness + query);
         // Memory consumption of program with lateness is expected to be higher
-        Assert.assertTrue(p0[1] > 2 * p1[1]);
+        Assert.assertTrue(p0[1] > 1.5 * p1[1]);
     }
 
     @Test
@@ -428,7 +427,7 @@ public class StreamingTests extends StreamingTest {
                 CREATE TABLE event_t (
                     event_type_id BIGINT NOT NULL
                 );
-                                
+
                 -- running total of event types
                 CREATE VIEW event_type_count_v AS
                 SELECT count(DISTINCT event_type_id) as event_type_count

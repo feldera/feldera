@@ -27,6 +27,8 @@ import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -34,10 +36,8 @@ import org.junit.Test;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Test SQL queries from the Nexmark suite.
- * https://github.com/nexmark/nexmark/tree/master/nexmark-flink/src/main/resources/queries
- */
+/** Test SQL queries from the Nexmark suite.
+ * https://github.com/nexmark/nexmark/tree/master/nexmark-flink/src/main/resources/queries */
 @SuppressWarnings("JavadocLinkAsPlainText")
 public class NexmarkTest extends StreamingTest {
     static final String[] tables = {
@@ -49,7 +49,7 @@ CREATE TABLE person (
     creditCard VARCHAR,
     city VARCHAR,
     state VARCHAR,
-    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
 )""",
             """
@@ -59,7 +59,7 @@ CREATE TABLE auction (
     description  VARCHAR,
     initialBid  BIGINT,
     reserve  BIGINT,
-    date_time  TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time  TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     expires  TIMESTAMP(3),
     seller  BIGINT,
     category  BIGINT,
@@ -72,7 +72,7 @@ CREATE TABLE bid (
     price  BIGINT,
     channel  VARCHAR,
     url  VARCHAR,
-    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
 )"""
     };
@@ -578,62 +578,62 @@ SELECT
     public void q0Test() {
         this.createTest(0,
                 """
-                INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
-                INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-                INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:01', '2020-01-02 00:00:00', 99, 1, '');
+                INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01', '');
+                INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');""",
                 """
                 auction | bidder | price | date_time           | extra | weight
                 ----------------------------------------------------------------
-                 1      | 1      | 80    | 2020-01-01 10:00:00 | | 1
-                 1      | 1      | 100   | 2020-01-01 20:00:00 | | 1""",
+                 1      | 1      | 80    | 2020-01-01 00:00:01 | | 1
+                 1      | 1      | 100   | 2020-01-01 00:00:02 | | 1""",
                 """
-INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
-INSERT INTO Bid VALUES(2, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:01', 99, 1, '');
+INSERT INTO Bid VALUES(2, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01', '');
+INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');""",
                 """
                 auction | bidder | price | date_time           | extra | weight
                 ----------------------------------------------------------------
-                 2      | 1      | 80    | 2020-01-01 10:00:00 | | 1
-                 2      | 1      | 100   | 2020-01-01 20:00:00 | | 1""");
+                 2      | 1      | 80    | 2020-01-01 00:00:01 | | 1
+                 2      | 1      | 100   | 2020-01-01 00:00:02 | | 1""");
     }
 
     @Test
     public void q1Test() {
         this.createTest(1,
 """
-INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
-INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:01', '2020-01-01 00:10:00', 99, 1, '');
+INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01', '');
+INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');""",
                 """
                 auction | bidder | price | date_time           | extra | weight
                 ----------------------------------------------------------------
-                 1      | 1      | 72.64  | 2020-01-01 10:00:00 | | 1
-                 1      | 1      | 90.8   | 2020-01-01 20:00:00 | | 1""",
+                 1      | 1      | 72.64  | 2020-01-01 00:00:01 | | 1
+                 1      | 1      | 90.8   | 2020-01-01 00:00:02 | | 1""",
                 """
-INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 99, 1, '');
-INSERT INTO Bid VALUES(2, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 00:00:01', '2020-01-01 00:10:00', 99, 1, '');
+INSERT INTO Bid VALUES(2, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01', '');
+INSERT INTO Bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');""",
                 """
                 auction | bidder | price | date_time           | extra | weight
                 ----------------------------------------------------------------
-                 2      | 1      | 72.64  | 2020-01-01 10:00:00 | | 1
-                 2      | 1      | 90.8   | 2020-01-01 20:00:00 | | 1""");
+                 2      | 1      | 72.64  | 2020-01-01 00:00:01 | | 1
+                 2      | 1      | 90.8   | 2020-01-01 00:00:02 | | 1""");
     }
 
     @Test
     public void q2Test() {
         this.createTest(2,
                 """
-                INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-                INSERT INTO Bid VALUES(123, 1, 111, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');
-                INSERT INTO Bid VALUES(124, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01', '');
+                INSERT INTO Bid VALUES(123, 1, 111, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');
+                INSERT INTO Bid VALUES(124, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');""",
                 """
                 auction | price | weight
                 -------------------------------
                  123    | 111   | 1""",
                 """
-INSERT INTO Bid VALUES(271, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 10:00:00', '');
-INSERT INTO Bid VALUES(492, 1, 222, 'my-channel', 'https://example.com', '2020-01-01 20:00:00', '');""",
+                INSERT INTO Bid VALUES(271, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01', '');
+                INSERT INTO Bid VALUES(492, 1, 222, 'my-channel', 'https://example.com', '2020-01-01 00:00:02', '');""",
                 """
                 auction | price | weight
                 -----------------------------
@@ -732,9 +732,58 @@ INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020
 
     @Test
     public void testQ8() {
-        this.createTest(8, "", """
+        // Persons 2 and 3 were both added during the 10-20 interval and created auctions in
+        // that same interval. Person 1 was added in the previous interval (0-10) though their
+        // auction is in the correct interval. Person 4 was added in the interval, but their auction is
+        // in the next.
+        this.createTest(8, """
+INSERT INTO person VALUES(1, 'James Potter', '', '', '', '', '2020-01-01 00:00:09', '');
+INSERT INTO person VALUES(2, 'Lili Potter', '', '', '', '', '2020-01-01 00:00:12', '');
+INSERT INTO person VALUES(3, 'Harry Potter', '', '', '', '', '2020-01-01 00:00:15', '');
+INSERT INTO person VALUES(4, 'Aldus D', '', '', '', '', '2020-01-01 00:00:18', '');
+INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:11', '2020-01-01 00:00:02', 1, 1, '');
+INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:15', '2020-01-01 00:00:02', 2, 1, '');
+INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:18', '2020-01-01 00:00:02', 3, 1, '');
+INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:21', '2020-01-01 00:00:02', 4, 1, '');
+INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:32', '2020-01-01 00:00:02', 99, 1, '');
+                """, """
                  id | name | starttime | weight
-                --------------------------------""");
+                --------------------------------
+                  2 | Lili Potter| 2020-01-01 00:00:10 | 1
+                  3 | Harry Potter| 2020-01-01 00:00:10 | 1""");
+
+        /*
+        This part of the test requires WATERMARKS.
+        this.createTest(8,
+                """
+INSERT INTO person VALUES(1, 'James Potter', '', '', '', '', '2020-01-01 00:00:10', '');
+INSERT INTO person VALUES(2, 'Lili Potter', '', '', '', '', '2020-01-01 00:00:12', '');
+INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:14', '2020-01-01 00:00:02', 1, 1, '');
+INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:00:15', '2020-01-01 00:00:02', 2, 1, '');
+""",
+                """
+                 id | name | starttime | weight
+                ---------------------------""",
+                """
+INSERT INTO person VALUES(3, 'Harry Potter', '', '', '', '', '2020-01-01 00:00:22', '');
+INSERT INTO auction VALUES(3, 'item-name', 'description', 5, 10, '2020-01-01 00:00:25', '2020-01-01 00:00:02', 1, 1, '');
+INSERT INTO auction VALUES(99, 'item-name', 'description', 5, 10, '2020-01-01 00:00:32', '2020-01-01 00:00:02', 2, 1, '');
+""",
+                """
+                 id | name | starttime | weight
+                ---------------------------
+                 1 | James Potter| 2020-01-01 00:00:10 | 1
+                 2 | Lili Potter|  2020-01-01 00:00:10 | 1""",
+                """
+INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 00:00:42', '2020-01-01 00:00:02', 1, 1, '');                        
+""",
+                """
+                 id | name | starttime | weight
+                --------------------------------
+                 1 | James Potter| 2020-01-01 00:00:10 | 1
+                 2 | Lili Potter| 2020-01-01 00:00:10 | 1
+                 3 | Harry Potter| 2020-01-01 00:00:20 | 1""");
+         */
     }
 
     @Test

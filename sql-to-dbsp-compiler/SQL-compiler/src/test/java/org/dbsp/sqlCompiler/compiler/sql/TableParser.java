@@ -96,7 +96,7 @@ public class TableParser {
             }
             return new DBSPTimestampLiteral(out, mayBeNull);
         }
-        throw new RuntimeException("Could not parse " + timestamp);
+        throw new RuntimeException("Could not parse " + timestamp + " as timestamp");
     }
 
     /** Convert a date from the MM-DD-YYYY format (which is used in the Postgres output)
@@ -423,7 +423,7 @@ public class TableParser {
             result.add(row);
         }
         if (inHeader)
-            throw new RuntimeException("Could not find end of header for table");
+            throw new RuntimeException("Could not find end of header for table " + table);
         return new Change(result);
     }
 }

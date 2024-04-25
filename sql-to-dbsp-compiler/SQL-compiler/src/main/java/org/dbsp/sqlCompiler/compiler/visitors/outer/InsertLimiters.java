@@ -4,6 +4,8 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -106,6 +108,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapOperator operator) {
+        this.addBounds(operator, 0);
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPFilterOperator operator) {
         this.addBounds(operator, 0);
         super.postorder(operator);
     }
@@ -258,8 +266,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.addOperator(waterline);
             this.markBound(operator, waterline);
 
+            // Waterline fed through a delay
+            DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), zero, waterline);
+            this.addOperator(delay);
+
             DBSPControlledFilterOperator filter = DBSPControlledFilterOperator.create(
-                    operator.getNode(), operator, Monotonicity.getBodyType(expression), waterline);
+                    operator.getNode(), operator, Monotonicity.getBodyType(expression), delay);
             this.map(operator, filter);
         } else {
             this.replace(operator);
