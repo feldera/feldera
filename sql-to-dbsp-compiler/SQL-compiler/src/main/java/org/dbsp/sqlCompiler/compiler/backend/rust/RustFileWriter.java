@@ -106,7 +106,7 @@ public class RustFileWriter {
                              UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
                              AddAssignByRef,
                         },
-                        circuit::{Circuit, CircuitConfig, Stream},
+                        circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, Stream},
                         operator::{
                             Generator,
                             FilterMap,
@@ -124,7 +124,7 @@ public class RustFileWriter {
                         DBWeight,
                         DBData,
                         DBSPHandle,
-                        Error as DBSPError,
+                        Error,
                         Runtime,
                         NumEntries,
                         MapHandle, ZSetHandle, OutputHandle,
