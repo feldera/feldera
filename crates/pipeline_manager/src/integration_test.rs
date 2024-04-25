@@ -485,6 +485,8 @@ impl TestConfig {
                 if status == json!("Success") {
                     break;
                 } else {
+                    // This makes long multiline error messages readable.
+                    let status = status.to_string().replace("\\n", "\n");
                     panic!("Compilation failed with status {}", status);
                 }
             }
