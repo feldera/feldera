@@ -270,7 +270,8 @@ format:
         wait(
             || zset.state().flushed.len() == test_data.len(),
             DEFAULT_TIMEOUT_MS,
-        );
+        )
+        .unwrap();
         for (i, upd) in zset.state().flushed.iter().enumerate() {
             assert_eq!(upd.unwrap_insert(), &test_data[i]);
         }
@@ -329,7 +330,8 @@ format:
             wait(
                 || zset.state().flushed.len() == test_data.len(),
                 DEFAULT_TIMEOUT_MS,
-            );
+            )
+            .unwrap();
             for (i, upd) in zset.state().flushed.iter().enumerate() {
                 assert_eq!(upd.unwrap_insert(), &test_data[i]);
             }

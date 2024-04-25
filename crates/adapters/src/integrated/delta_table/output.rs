@@ -586,7 +586,7 @@ outputs:
 
         controller.start();
 
-        wait(|| controller.status().pipeline_complete(), 20_000);
+        wait(|| controller.status().pipeline_complete(), 20_000).unwrap();
 
         if verify {
             let parquet_files =

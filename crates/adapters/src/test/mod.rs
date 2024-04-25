@@ -61,8 +61,8 @@ impl Log for TestLogger {
 
 /// Wait for `predicate` to become `true`.
 ///
-/// Returns the number of milliseconds elapsed or `None` on timeout.
-pub fn wait<P>(mut predicate: P, timeout_ms: u128) -> Option<u128>
+/// Returns the number of milliseconds elapsed or `Err(())` on timeout.
+pub fn wait<P>(mut predicate: P, timeout_ms: u128) -> Result<u128, ()>
 where
     P: FnMut() -> bool,
 {
@@ -70,12 +70,12 @@ where
 
     while !predicate() {
         if start.elapsed().as_millis() >= timeout_ms {
-            return None;
+            return Err(());
         }
         sleep(Duration::from_millis(10));
     }
 
-    Some(start.elapsed().as_millis())
+    Ok(start.elapsed().as_millis())
 }
 
 /// Build an input pipeline that allows testing a parser
