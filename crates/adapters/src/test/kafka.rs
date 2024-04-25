@@ -333,7 +333,8 @@ impl BufferConsumer {
                 n == num_records
             },
             DEFAULT_TIMEOUT_MS,
-        );
+        )
+        .unwrap();
         //println!("{num_records} records received: {:?}",
         // received_data.lock().unwrap().iter().map(|r| r.id).collect::<Vec<_>>());
 

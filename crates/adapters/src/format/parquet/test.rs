@@ -96,7 +96,8 @@ format:
     wait(
         || zset.state().flushed.len() == test_data.len(),
         DEFAULT_TIMEOUT_MS,
-    );
+    )
+    .unwrap();
 
     // Make sure the input data matches original test structs
     for (i, upd) in zset.state().flushed.iter().enumerate() {

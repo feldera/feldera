@@ -32,7 +32,8 @@ fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Ve
     wait(
         || zset.state().flushed.len() == num_records,
         DEFAULT_TIMEOUT_MS,
-    );
+    )
+    .unwrap();
 
     for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
         assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
@@ -46,7 +47,8 @@ fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[
     wait(
         || zset.state().flushed.len() == num_records,
         DEFAULT_TIMEOUT_MS,
-    );
+    )
+    .unwrap();
 
     let mut data_sorted = data
         .iter()
