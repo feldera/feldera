@@ -405,7 +405,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder
                 .append("(cconf: CircuitConfig) -> Result<(DBSPHandle, ")
                 .append(signature.toString())
-                .append("), DBSPError> {")
+                .append("), Error> {")
                 .increase()
                 .newline()
                 .append("let (circuit, streams) = Runtime::init_circuit(cconf, |circuit| {")

@@ -84,6 +84,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         this.derivedFrom = -1;
         if (!operation.startsWith("waterline") &&
                 !operation.startsWith("apply") &&
+                !operation.startsWith("delay") &&
                 !outputType.is(DBSPTypeZSet.class) &&
                 !outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Operator output type is unexpected " + outputType);

@@ -185,7 +185,8 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPOperator result = operator;
         if (operator.inputsDiffer(sources) || output != operator.output) {
             result = new DBSPDelayOperator(
-                    operator.getNode(), sources.get(0), output.to(DBSPDelayOutputOperator.class));
+                    operator.getNode(), operator.function,
+                    sources.get(0), output.to(DBSPDelayOutputOperator.class));
         }
         this.map(operator, result);
     }

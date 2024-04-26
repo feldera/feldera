@@ -1126,7 +1126,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] fields = new DBSPExpression[group.keys.cardinality()];
         int ix = 0;
         for (int field : group.keys.toList()) {
-            fields[ix++] = t.deref().field(field);
+            fields[ix++] = t.deepCopy().deref().field(field);
         }
         DBSPExpression groupKeys =
                 new DBSPRawTupleExpression(
