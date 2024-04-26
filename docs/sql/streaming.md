@@ -3,7 +3,7 @@
 In order to implement features that are supported by streaming
 engines, we offer a few extensions to standard SQL.
 
-### LATENESS expressions
+### `LATENESS` expressions
 
 `LATENESS` is a property of the data in a column of a table or a view
 that is relevant for the case of stream processing.  `LATENESS` is
@@ -76,3 +76,36 @@ A table or view can have any number of columns annotated with
 lateness.  An inserted row is considered "too late" if any of its
 annotated columns is too late.
 
+### `WATERMARK` expressions
+
+*This feature is not yet fully implemented.  This documentation is
+ only orientative.*
+
+`WATERMARK` is an annotation on the data in a column of a table that
+is relevant for the case of stream processing.  `WATERMARK` is
+described by an expression that evaluates to a constant value.  The
+expression must have a type that can be subtracted from the column
+type.  For example, a column of type `TIMESTAMP` may have a watermark
+specified as an `INTERVAL` type.
+
+To specify `WATERMARK` for a table column, the column declaration can
+be annotated in the `CREATE TABLE` statement.  For example:
+
+```sql
+CREATE TABLE order_pickup (
+   when TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES,
+   location VARCHAR
+);
+```
+
+The effect of the `WATERMARK` is to delay the processing of the input
+rows until they are less likely to arrive out of order with respect to
+other rows.  More precisely, the system maintains the largest value
+encountered so far in any input row for the columns that have a
+watermark.  Given a `WATERMARK` annotation with value W, an input row
+with a value X for a watermarked column will be "held up" until an
+input row with a value X + W has been received.  The program will
+behave as if the row with value X has only just been received.
+
+If a table has multiple columns annotated with `WATERMARK` values, a
+row is released only when *all* the delays have been exceeded.

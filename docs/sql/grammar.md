@@ -55,6 +55,7 @@ columnConstraint
   :   PRIMARY KEY
   |   FOREIGN KEY REFERENCES identifier '(' identifier ')'
   |   LATENESS expression
+  |   WATERMARK expression
   |   DEFAULT expression
 
 parensColumnList
@@ -288,3 +289,7 @@ on aggregation](aggregates.md#window-aggregate-functions).
 ### LATENESS
 
 See [Streaming SQL Extensions](streaming.md#lateness-expressions)
+
+### WATERMARKS
+
+See [Streaming SQL Extensions](streaming.md#watermark-expressions)

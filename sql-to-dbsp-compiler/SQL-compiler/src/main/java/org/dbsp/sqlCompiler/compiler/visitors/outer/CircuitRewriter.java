@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
@@ -253,6 +254,15 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                     outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
                     sources.get(0), sources.get(1));
         }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPWindowOperator operator) {
+        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPOperator result = operator;
+        if (Linq.different(sources, operator.inputs))
+            result = new DBSPWindowOperator(operator.getNode(), sources.get(0), sources.get(1));
         this.map(operator, result);
     }
 

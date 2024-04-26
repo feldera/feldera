@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -104,6 +105,24 @@ public class ParserTests {
         Assert.assertTrue(node instanceof SqlCreateTable);
         SqlCreateTable create = (SqlCreateTable) node;
         Assert.assertNotNull(create.columnList);
+        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnList.get(0);
+        Assert.assertNotNull(decl.lateness);
+    }
+
+    @Test
+    public void watermarkTest() throws SqlParseException {
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = """
+                CREATE TABLE st(
+                   ts       TIMESTAMP WATERMARK INTERVAL '5:00' HOURS TO MINUTES,
+                   name     VARCHAR)""";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateTable);
+        SqlCreateTable create = (SqlCreateTable) node;
+        Assert.assertNotNull(create.columnList);
+        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnList.get(0);
+        Assert.assertNotNull(decl.watermark);
     }
 
     @Test

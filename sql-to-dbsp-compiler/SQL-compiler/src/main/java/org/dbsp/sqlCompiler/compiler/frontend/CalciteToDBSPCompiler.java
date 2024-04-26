@@ -1702,11 +1702,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 lateness = null;
             }
         }
+        DBSPExpression watermark = null;
+        if (metadata.watermark != null) {
+            watermark = expressionCompiler.compile(metadata.watermark);
+            if (!watermark.getType().is(IHasZero.class)) {
+                this.compiler.reportError(watermark.getSourcePosition(), "Illegal expression",
+                        "Illegal expression for watermark value");
+                watermark = null;
+            }
+        }
         DBSPExpression defaultValue = null;
         if (metadata.defaultValue != null)
             defaultValue = expressionCompiler.compile(metadata.defaultValue).cast(type);
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
-                metadata.isPrimaryKey, lateness, defaultValue);
+                metadata.isPrimaryKey, lateness, watermark, defaultValue);
     }
 
     DBSPNode compileCreateView(CreateViewStatement view) {

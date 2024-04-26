@@ -31,13 +31,14 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     // These can be mutated
     public boolean primaryKey;
     public @Nullable SqlNode lateness;
+    public @Nullable SqlNode watermark;
     public @Nullable SqlNode defaultValue;
 
     public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType,
             @Nullable SqlNode expression, ColumnStrategy strategy,
             @Nullable SqlIdentifier foreignKeyTable, @Nullable SqlIdentifier foreignKeyColumn,
-            boolean primaryKey, @Nullable SqlNode lateness) {
+            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode watermark) {
         super(pos);
         this.name = name;
         this.dataType = dataType;
@@ -52,6 +53,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
             this.foreignKeyColumns.add(foreignKeyColumn);
         this.primaryKey = primaryKey;
         this.lateness = lateness;
+        this.watermark = watermark;
     }
 
     public SqlExtendedColumnDeclaration setPrimaryKey(SqlParserPos pos) {
@@ -81,9 +83,18 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     public SqlExtendedColumnDeclaration setLatenes(SqlNode lateness) {
         if (this.lateness != null) {
             throw new CompilationError("Column " + this.name +
-                    " already declared a foreign key", CalciteObject.create(lateness));
+                    " already has lateness", CalciteObject.create(lateness));
         }
         this.lateness = lateness;
+        return this;
+    }
+
+    public SqlExtendedColumnDeclaration setWatermark(SqlNode watermark) {
+        if (this.watermark != null) {
+            throw new CompilationError("Column " + this.name +
+                    " already has a watermark", CalciteObject.create(watermark));
+        }
+        this.watermark = watermark;
         return this;
     }
 
