@@ -1,16 +1,5 @@
 name: feldera
 services:
-  db:
-    image: postgres
-    restart: always
-    environment:
-      POSTGRES_PASSWORD: postgres
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   pipeline-manager:
     tty: true
     image: ghcr.io/feldera/pipeline-manager:${FELDERA_VERSION:-0.14.0}
@@ -20,9 +9,6 @@ services:
       # manager command below (e.g., --allowed-origins "http://localhost:xyz").
       # Otherwise, browsers will complain about CORS errors
       - "8080:8080"
-    depends_on:
-      db:
-        condition: service_healthy
     stop_grace_period: 0s
     environment:
       - RUST_BACKTRACE=1
@@ -39,8 +25,6 @@ services:
       #
       #- seccomp:seccomp.json
       - seccomp:unconfined
-    command:
-      - --db-connection-string=postgresql://postgres:postgres@db:5432
     healthcheck:
       # TODO: add `/status` endpoint.
       test:
