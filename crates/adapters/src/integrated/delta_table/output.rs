@@ -16,7 +16,7 @@ use deltalake::operations::transaction::commit;
 use deltalake::operations::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
-use log::{debug, trace};
+use log::{debug, error, trace};
 use pipeline_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrowBuilder;
@@ -37,6 +37,7 @@ pub struct DeltaTableWriter {
     inner: Arc<DeltaTableWriterInner>,
     command_sender: Sender<Command>,
     response_receiver: Receiver<Result<(), (AnyError, bool)>>,
+    skipped_deletes: usize,
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
@@ -130,6 +131,7 @@ impl DeltaTableWriter {
             inner,
             command_sender,
             response_receiver,
+            skipped_deletes: 0,
         };
 
         Ok(writer)
@@ -415,6 +417,16 @@ impl Encoder for DeltaTableWriter {
 
             if w < 0 {
                 // TODO: we don't support deletes in the parquet format yet.
+                // Log the first delete, and then each 10,000's delete.
+                if self.skipped_deletes % 10_000 == 0 {
+                    error!(
+                        "delta table {}: received a 'delete' record, but deletes are not currently supported; record will be dropped (total number of dropped deletes: {})",
+                        self.inner.endpoint_name,
+                        self.skipped_deletes + 1,
+                    );
+                }
+                self.skipped_deletes += 1;
+
                 cursor.step_key();
                 continue;
             }
