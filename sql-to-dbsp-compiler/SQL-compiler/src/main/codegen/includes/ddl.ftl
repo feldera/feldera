@@ -45,7 +45,7 @@ void ExtendedTableElement(List<SqlNode> list) :
         {
             strategy = nullable ? ColumnStrategy.NULLABLE : ColumnStrategy.NOT_NULLABLE;
             column = new SqlExtendedColumnDeclaration(s.add(id).end(this), id,
-                            type.withNullable(nullable), null, strategy, null, null, false, null);
+                            type.withNullable(nullable), null, strategy, null, null, false, null, null);
         }
         ( column = ColumnAttribute(column) )*
         {
@@ -76,6 +76,7 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
     SqlIdentifier foreignKeyTable = null;
     SqlIdentifier foreignKeyColumn = null;
     SqlNode lateness = null;
+    SqlNode watermark = null;
     SqlNode e;
     Span s;
 }
@@ -90,6 +91,10 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
         |
             <LATENESS> lateness = Expression(ExprContext.ACCEPT_NON_QUERY) {
                return column.setLatenes(lateness);
+            }
+        |
+            <WATERMARK> watermark = Expression(ExprContext.ACCEPT_NON_QUERY) {
+               return column.setWatermark(watermark);
             }
         |
             <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) {

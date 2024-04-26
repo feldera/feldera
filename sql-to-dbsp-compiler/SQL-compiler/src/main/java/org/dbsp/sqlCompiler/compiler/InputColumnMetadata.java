@@ -22,17 +22,22 @@ public class InputColumnMetadata
     /** Lateness, if declared.  Should be a constant expression. */
     @Nullable
     public final DBSPExpression lateness;
+    /** Watermark, if declared.  Should be a constant expression. */
+    @Nullable
+    public final DBSPExpression watermark;
     /** Default value, if declared.  Should be a constant expression */
     @Nullable
     public final DBSPExpression defaultValue;
 
     public InputColumnMetadata(CalciteObject node, String name, DBSPType type, boolean isPrimaryKey,
-                               @Nullable DBSPExpression lateness, @Nullable DBSPExpression defaultValue) {
+                               @Nullable DBSPExpression lateness, @Nullable DBSPExpression watermark,
+                               @Nullable DBSPExpression defaultValue) {
         this.node = node;
         this.name = name;
         this.type = type;
         this.isPrimaryKey = isPrimaryKey;
         this.lateness = lateness;
+        this.watermark = watermark;
         this.defaultValue = defaultValue;
     }
 

@@ -48,7 +48,7 @@ public class AvroSchemaWrapper implements IHasSchema {
     public List<RelColumnMetadata> getColumns() {
         RelDataType rowType = this.convertRecord(this.schema);
         return Linq.map(rowType.getFieldList(), f -> new RelColumnMetadata(
-                CalciteObject.EMPTY, f, false, false, null, null));
+                CalciteObject.EMPTY, f, false, false, null, null, null));
     }
 
     private RelDataType convertRecord(Schema recordSchema) {

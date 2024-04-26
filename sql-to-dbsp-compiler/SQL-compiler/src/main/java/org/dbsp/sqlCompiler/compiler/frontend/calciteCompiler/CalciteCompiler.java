@@ -37,8 +37,6 @@ import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
-import org.apache.calcite.rel.hint.HintPredicates;
-import org.apache.calcite.rel.hint.HintStrategyTable;
 import org.apache.calcite.rel.logical.LogicalValues;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -511,6 +509,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlDataTypeSpec typeSpec;
             boolean isPrimaryKey = false;
             RexNode lateness = null;
+            RexNode watermark = null;
             RexNode defaultValue = null;
             if (col instanceof SqlColumnDeclaration) {
                 SqlColumnDeclaration cd = (SqlColumnDeclaration) col;
@@ -535,6 +534,8 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlToRelConverter converter = this.getConverter();
                 if (cd.lateness != null)
                     lateness = converter.convertExpression(cd.lateness);
+                if (cd.watermark != null)
+                    watermark = converter.convertExpression(cd.watermark);
                 if (cd.defaultValue != null) {
                     // workaround for https://issues.apache.org/jira/browse/CALCITE-6129
                     if (cd.defaultValue instanceof SqlLiteral) {
@@ -570,7 +571,7 @@ public class CalciteCompiler implements IWritesLogs {
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
-                    lateness, defaultValue);
+                    lateness, watermark, defaultValue);
             result.add(meta);
         }
 
@@ -636,7 +637,7 @@ public class CalciteCompiler implements IWritesLogs {
                 colByName.put(specifiedName, field);
             }
             RelColumnMetadata meta = new RelColumnMetadata(node,
-                    field, false, nameIsQuoted, null, null);
+                    field, false, nameIsQuoted, null, null, null);
             columns.add(meta);
             index++;
         }

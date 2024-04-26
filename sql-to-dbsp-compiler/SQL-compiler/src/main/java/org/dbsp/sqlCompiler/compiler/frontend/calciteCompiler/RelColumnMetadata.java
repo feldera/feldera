@@ -18,6 +18,9 @@ public class RelColumnMetadata {
     /** Lateness, if declared. */
     @Nullable
     public final RexNode lateness;
+    /** Lateness, if declared. */
+    @Nullable
+    public final RexNode watermark;
     /** Default value, if declared */
     @Nullable
     public final RexNode defaultValue;
@@ -27,22 +30,24 @@ public class RelColumnMetadata {
     @Override
     public String toString() {
         return "RelColumnMetadata{" +
-                "field=" + field +
-                ", isPrimaryKey=" + isPrimaryKey +
-                ", lateness=" + lateness +
-                ", defaultValue=" + defaultValue +
-                ", nameIsQuoted=" + nameIsQuoted +
+                "field=" + this.field +
+                ", isPrimaryKey=" + this.isPrimaryKey +
+                ", lateness=" + this.lateness +
+                ", watermark=" + this.watermark +
+                ", defaultValue=" + this.defaultValue +
+                ", nameIsQuoted=" + this.nameIsQuoted +
                 '}';
     }
 
     public RelColumnMetadata(
             CalciteObject node, RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
-            @Nullable RexNode lateness, @Nullable RexNode defaultValue) {
+            @Nullable RexNode lateness, @Nullable RexNode watermark, @Nullable RexNode defaultValue) {
         this.node = node;
         this.isPrimaryKey = isPrimaryKey;
         this.nameIsQuoted = nameIsQuoted;
         this.field = field;
         this.lateness = lateness;
+        this.watermark = watermark;
         this.defaultValue = defaultValue;
     }
 

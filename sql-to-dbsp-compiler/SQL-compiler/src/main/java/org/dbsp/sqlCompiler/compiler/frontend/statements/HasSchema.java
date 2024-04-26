@@ -23,11 +23,8 @@ public class HasSchema implements IHasSchema {
         for (RelDataTypeField field: rowType.getFieldList()) {
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(field.getType()),
-                    field,
-                    false,
-            true,
-                    null,
-                    null);
+                    field, false, true,
+                    null, null, null);
             this.columns.add(meta);
         }
     }

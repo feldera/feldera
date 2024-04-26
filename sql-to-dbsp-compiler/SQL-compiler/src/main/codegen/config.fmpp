@@ -26,6 +26,7 @@ data: {
       "DISCARD"
       "IF"
       "LATENESS"
+      "WATERMARK"
       "PLANS"
       "REMOVE"
       "SEED"
