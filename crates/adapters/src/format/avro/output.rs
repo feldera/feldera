@@ -5,7 +5,7 @@ use actix_web::HttpRequest;
 use anyhow::{anyhow, bail, Result as AnyResult};
 use apache_avro::{to_avro_datum, Schema as AvroSchema};
 use erased_serde::Serialize as ErasedSerialize;
-use log::debug;
+use log::{debug, error};
 use pipeline_types::format::avro::AvroEncoderConfig;
 use pipeline_types::program_schema::Relation;
 use schema_registry_converter::avro_common::get_supplied_schema;
@@ -79,11 +79,14 @@ impl OutputFormat for AvroOutputFormat {
 }
 
 struct AvroEncoder {
+    endpoint_name: String,
     /// Consumer to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
     schema: AvroSchema,
     /// Buffer to store serialized avro records, reused across `encode` invocations.
     buffer: Vec<u8>,
+    /// Count of skipped deletes, used to rate-limit error messages.
+    skipped_deletes: usize,
 }
 
 impl AvroEncoder {
@@ -219,9 +222,11 @@ impl AvroEncoder {
         buffer[1..].clone_from_slice(&schema_id.to_be_bytes());
 
         Ok(Self {
+            endpoint_name: endpoint_name.to_string(),
             output_consumer,
             schema,
             buffer,
+            skipped_deletes: 0,
         })
     }
 }
@@ -244,6 +249,16 @@ impl Encoder for AvroEncoder {
             if w < 0 {
                 // TODO: we currently only support the "plain" Avro flavor that does not
                 // support deletes.  Other formats, e.g., Debezium will allow deletes.
+
+                // Log the first delete, and then each 10,000's delete.
+                if self.skipped_deletes % 10_000 == 0 {
+                    error!(
+                        "avro encoder {}: received a 'delete' record, but the encoder does not currently support deletes; record will be dropped (total number of dropped deletes: {})",
+                        self.endpoint_name,
+                        self.skipped_deletes + 1,
+                    );
+                }
+                self.skipped_deletes += 1;
                 cursor.step_key();
                 continue;
             }
