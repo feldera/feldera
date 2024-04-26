@@ -11,9 +11,10 @@ categories = ["database", "api-bindings", "network-programming"]
 publish = false
 
 [features]
-default = ["with-kafka", "with-deltalake"]
+default = ["with-kafka", "with-deltalake", "with-avro"]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake"]
+with-avro = ["apache-avro", "schema_registry_converter"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
 # to be provided via an environment variable.
 delta-s3-test = []
@@ -76,8 +77,8 @@ serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arro
 bytes = "1.5.0"
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.
 deltalake = { version = "0.17.1", features = ["datafusion", "s3", "gcs", "azure"], optional = true }
-apache-avro = { version = "0.16.0", features = ["snappy"] }
-schema_registry_converter = { version = "4.0.0", features = ["avro", "blocking"] }
+apache-avro = { version = "0.16.0", optional = true }
+schema_registry_converter = { version = "4.0.0", features = ["avro", "blocking"], optional = true }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]

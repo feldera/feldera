@@ -192,7 +192,11 @@ where
                     config,
                 )))
             }
-            RecordFormat::Parquet(_) | RecordFormat::Avro => {
+            RecordFormat::Parquet(_) => {
+                todo!()
+            }
+            #[cfg(feature = "with-avro")]
+            RecordFormat::Avro => {
                 todo!()
             }
         }
@@ -298,7 +302,11 @@ where
                     _,
                 >::new(self.handle.clone(), config)))
             }
-            RecordFormat::Parquet(_) | RecordFormat::Avro => {
+            RecordFormat::Parquet(_) => {
+                todo!()
+            }
+            #[cfg(feature = "with-avro")]
+            RecordFormat::Avro => {
                 todo!()
             }
         }
@@ -427,7 +435,11 @@ where
                     ),
                 ))
             }
-            RecordFormat::Parquet(_) | RecordFormat::Avro => {
+            RecordFormat::Parquet(_) => {
+                todo!()
+            }
+            #[cfg(feature = "with-avro")]
+            RecordFormat::Avro => {
                 todo!()
             }
         }
@@ -589,7 +601,11 @@ where
                 self.update_key_func.clone(),
                 SqlSerdeConfig::from(flavor),
             ))),
-            RecordFormat::Parquet(_) | RecordFormat::Avro => {
+            RecordFormat::Parquet(_) => {
+                todo!()
+            }
+            #[cfg(feature = "with-avro")]
+            RecordFormat::Avro => {
                 todo!()
             }
         }

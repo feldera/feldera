@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
+#[cfg(feature = "with-avro")]
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use dbsp::{utils::Tup2, InputHandle};
 use pipeline_types::format::json::JsonFlavor;
@@ -28,6 +29,7 @@ pub enum RecordFormat {
     Json(JsonFlavor),
     Csv,
     Parquet(SerdeArrowSchema),
+    #[cfg(feature = "with-avro")]
     Avro,
 }
 
@@ -267,6 +269,7 @@ pub trait SerCursor {
     /// Serialize current key into arrow format. Panics if invalid.
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()>;
 
+    #[cfg(feature = "with-avro")]
     /// Convert current key to an Avro value.
     fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue>;
 
@@ -279,6 +282,7 @@ pub trait SerCursor {
     /// Serialize current value. Panics if invalid.
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
+    #[cfg(feature = "with-avro")]
     /// Convert current value to Avro.
     fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue>;
 
@@ -375,6 +379,7 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
         self.cursor.serialize_key(dst)
     }
 
+    #[cfg(feature = "with-avro")]
     fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
         self.cursor.key_to_avro(schema)
     }
@@ -391,6 +396,7 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
         self.cursor.serialize_val(dst)
     }
 
+    #[cfg(feature = "with-avro")]
     fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
         self.cursor.val_to_avro(schema)
     }

@@ -1,4 +1,5 @@
 use crate::catalog::{SerBatchReader, SerTrace};
+#[cfg(feature = "with-avro")]
 use crate::format::avro::serializer::{
     avro_serde_config, AvroSchemaSerializer, AvroSerializerError,
 };
@@ -7,7 +8,9 @@ use crate::{
     ControllerError,
 };
 use anyhow::Result as AnyResult;
+#[cfg(feature = "with-avro")]
 use apache_avro::types::Value as AvroValue;
+#[cfg(feature = "with-avro")]
 use apache_avro::Schema as AvroSchema;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::dynamic::DowncastTrait;
@@ -81,6 +84,7 @@ trait BytesSerializer<C>: Send {
         unimplemented!()
     }
 
+    #[cfg(feature = "with-avro")]
     fn serialize_avro<T>(
         &mut self,
         _val: &T,
@@ -157,10 +161,12 @@ where
     }
 }
 
+#[cfg(feature = "with-avro")]
 pub struct AvroSerializer {
     config: SqlSerdeConfig,
 }
 
+#[cfg(feature = "with-avro")]
 impl AvroSerializer {
     fn create() -> Self {
         Self {
@@ -169,6 +175,7 @@ impl AvroSerializer {
     }
 }
 
+#[cfg(feature = "with-avro")]
 impl BytesSerializer<SqlSerdeConfig> for AvroSerializer {
     fn serialize<T>(&mut self, _val: &T, _buf: &mut Vec<u8>) -> AnyResult<()>
     where
@@ -366,6 +373,7 @@ where
                         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch),
                 ),
             )),
+            #[cfg(feature = "with-avro")]
             RecordFormat::Avro => {
                 Box::new(
                     <SerCursorImpl<'a, AvroSerializer, B, KD, VD, SqlSerdeConfig>>::new(
@@ -551,6 +559,7 @@ where
             .serialize_arrow(self.key.as_ref().unwrap(), dst)
     }
 
+    #[cfg(feature = "with-avro")]
     fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
         Ok(self
             .serializer
@@ -567,6 +576,7 @@ where
         self.serializer.serialize(self.val.as_ref().unwrap(), dst)
     }
 
+    #[cfg(feature = "with-avro")]
     fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
         Ok(self
             .serializer

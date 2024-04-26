@@ -525,7 +525,6 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ceb7c683b2f8f40970b70e39ff8be514c95b96fcb9c4af87e1ed2cb2e10801a0"
 dependencies = [
- "crc32fast",
  "digest 0.10.7",
  "lazy_static",
  "libflate",
@@ -536,7 +535,6 @@ dependencies = [
  "regex-lite",
  "serde",
  "serde_json",
- "snap",
  "strum 0.25.0",
  "strum_macros 0.25.3",
  "thiserror",
