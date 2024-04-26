@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [SQL] `LATENESS` column attribute for tables and views
   ([#1656](https://github.com/feldera/feldera/pull/1656))
+- [Docker] make the pipeline-manager container self-contained
+  ([#1683](https://github.com/feldera/feldera/pull/1683))
 
 ### Added
 
