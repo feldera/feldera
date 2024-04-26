@@ -19,6 +19,7 @@ use pipeline_types::config::PipelineConfig;
 use pipeline_types::error::ErrorResponse;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::{fs, sync::Mutex, time::Duration};
@@ -27,7 +28,7 @@ use tokio::{sync::Notify, time::timeout};
 /// Trait to be implemented by any pipeline runner. The PipelineAutomaton
 /// invokes these methods per pipeline.
 #[async_trait]
-pub trait PipelineExecutor {
+pub trait PipelineExecutor: Sync + Send {
     /// Starts a new pipeline (e.g., brings up a process that runs the pipeline
     /// binary)
     async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError>;
@@ -42,6 +43,23 @@ pub trait PipelineExecutor {
     /// Initiates pipeline shutdown (e.g., send a SIGTERM successfully to the
     /// process)
     async fn shutdown(&mut self) -> Result<(), ManagerError>;
+
+    /// Convert a PipelineRevision into a PipelineExecutionDesc.
+    async fn to_execution_desc(
+        &self,
+        pr: PipelineRevision,
+        binary_ref: String,
+    ) -> Result<PipelineExecutionDesc, ManagerError> {
+        Ok(PipelineExecutionDesc {
+            pipeline_id: pr.pipeline.pipeline_id,
+            pipeline_name: pr.pipeline.name,
+            program_id: pr.program.program_id,
+            version: pr.program.version,
+            config: pr.config,
+            storage_path: None,
+            binary_ref,
+        })
+    }
 }
 
 /// Pipeline automaton monitors the runtime state of a single pipeline
@@ -67,18 +85,8 @@ pub struct PipelineExecutionDesc {
     pub program_id: ProgramId,
     pub version: Version,
     pub config: PipelineConfig,
+    pub storage_path: Option<PathBuf>,
     pub binary_ref: String,
-}
-
-fn to_execution_desc(pr: PipelineRevision, binary_ref: String) -> PipelineExecutionDesc {
-    PipelineExecutionDesc {
-        pipeline_id: pr.pipeline.pipeline_id,
-        pipeline_name: pr.pipeline.name,
-        program_id: pr.program.program_id,
-        version: pr.program.version,
-        config: pr.config,
-        binary_ref,
-    }
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
@@ -184,7 +192,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .into());
                 }
                 drop(db);
-                let execution_desc = to_execution_desc(revision, executable_ref.unwrap());
+                let execution_desc = self
+                    .pipeline_handle
+                    .to_execution_desc(revision, executable_ref.unwrap())
+                    .await?;
 
                 poll_timeout = Self::PROVISIONING_POLL_PERIOD;
                 // This requires start() to be idempotent. If the process crashes after start

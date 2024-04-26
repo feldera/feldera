@@ -31,12 +31,6 @@ const fn default_workers() -> u16 {
     1
 }
 
-/// Default minimum on the number of rows in a trace to spill it to disk.  This
-/// default value means that traces will always be kept in memory.
-const fn default_min_storage_rows() -> usize {
-    usize::MAX
-}
-
 /// Pipeline configuration specified by the user when creating
 /// a new pipeline instance.
 ///
@@ -49,23 +43,18 @@ pub struct PipelineConfig {
     #[schema(inline)]
     pub global: RuntimeConfig,
 
-    /// Pipeline name
+    /// Pipeline name.
     pub name: Option<String>,
 
-    /// Storage location.
+    /// The location where the pipeline state is stored.
     ///
-    /// An identifier for location where the pipeline's state is stored.
-    /// If not set, the pipeline's state is not persisted across
-    /// restarts.
+    /// It should point to a path on the file-system of the machine/container where the
+    /// pipeline can find its persistent state.
+    ///
+    /// This field must be set by the pipeline runner implementation on startup
+    /// if `global.storage` is `true`.
+    /// If `global.storage` is `false`, this field is ignored by the pipeline.
     pub storage_location: Option<String>,
-
-    /// Maximum number of rows of any given persistent trace to keep in memory
-    /// before spilling it to storage. If this is 0, then all traces will be
-    /// stored on disk; if it is `usize::MAX`, then all traces will be kept in
-    /// memory; and intermediate values specify a threshold.
-    #[serde(default = "default_min_storage_rows")]
-    #[schema(default = "default_min_storage_rows")]
-    pub min_storage_rows: usize,
 
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
@@ -82,6 +71,18 @@ pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     #[serde(default = "default_workers")]
     pub workers: u16,
+
+    /// Should persistent storage be enabled for this pipeline?
+    ///
+    /// - If `true`, the pipeline state is stored in the specified location,
+    ///   is persisted across restarts, and can be checkpointed and recovered.
+    ///
+    /// - If `false`, the pipeline's state is kept in in-memory data-structures.
+    ///   This is useful if the pipeline is ephemeral and does not need to be recovered
+    ///   after a restart. The pipeline will most likely run faster since it does not
+    ///   need to read from, or write to disk
+    #[serde(default)]
+    pub storage: bool,
 
     /// Enable CPU profiler.
     #[serde(default)]

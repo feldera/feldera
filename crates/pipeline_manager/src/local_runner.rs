@@ -1,3 +1,4 @@
+use crate::db::PipelineRevision;
 /// A local runner that watches for pipeline objects in the API
 /// and instantiates them locally as processes.
 use crate::db_notifier::{DbNotification, Operation};
@@ -12,6 +13,7 @@ use crate::{
 use async_trait::async_trait;
 use log::trace;
 use std::{collections::BTreeMap, process::Stdio, sync::Arc};
+use tokio::net::unix::pipe::pipe;
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
 use tokio::{
@@ -50,7 +52,41 @@ impl ProcessRunner {
 
 #[async_trait]
 impl PipelineExecutor for ProcessRunner {
-    async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
+    /// Convert a PipelineRevision into a PipelineExecutionDesc.
+    async fn to_execution_desc(
+        &self,
+        pr: PipelineRevision,
+        binary_ref: String,
+    ) -> Result<PipelineExecutionDesc, ManagerError> {
+        let pipeline_dir = self.config.pipeline_dir(pr.pipeline.pipeline_id);
+        let pipeline_data_dir = pipeline_dir.join("data");
+        let storage_path = if pr.config.global.storage {
+            create_dir_all(&pipeline_data_dir).await.map_err(|e| {
+                ManagerError::io_error(
+                    format!(
+                        "creating pipeline data directory '{}'",
+                        pipeline_data_dir.display()
+                    ),
+                    e,
+                )
+            })?;
+            Some(pipeline_data_dir.into())
+        } else {
+            None
+        };
+
+        Ok(PipelineExecutionDesc {
+            pipeline_id: pr.pipeline.pipeline_id,
+            pipeline_name: pr.pipeline.name,
+            program_id: pr.program.program_id,
+            version: pr.program.version,
+            config: pr.config,
+            storage_path,
+            binary_ref,
+        })
+    }
+
+    async fn start(&mut self, mut ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
         let pipeline_id = ped.pipeline_id;
         let program_id = ped.program_id;
         let version = ped.version;
@@ -60,7 +96,6 @@ impl PipelineExecutor for ProcessRunner {
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
         let pipeline_dir = self.config.pipeline_dir(pipeline_id);
-
         let _ = remove_dir_all(&pipeline_dir).await;
         create_dir_all(&pipeline_dir).await.map_err(|e| {
             ManagerError::io_error(
@@ -68,6 +103,7 @@ impl PipelineExecutor for ProcessRunner {
                 e,
             )
         })?;
+
         let config_file_path = self.config.config_file_path(pipeline_id);
         let expanded_config = serde_yaml::to_string(&ped.config).unwrap();
         fs::write(&config_file_path, &expanded_config)
