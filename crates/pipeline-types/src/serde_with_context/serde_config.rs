@@ -68,7 +68,7 @@ impl Default for TimestampFormat {
     }
 }
 
-// Representation of the SQL `TIMESTAMP` type.
+// Representation of the SQL `DECIMAL` type.
 #[derive(Clone, Debug)]
 pub enum DecimalFormat {
     String,

@@ -79,9 +79,10 @@ impl OutputFormat for AvroOutputFormat {
 }
 
 struct AvroEncoder {
-    /// Input handle to push serialized data to.
+    /// Consumer to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
     schema: AvroSchema,
+    /// Buffer to store serialized avro records, reused across `encode` invocations.
     buffer: Vec<u8>,
 }
 
@@ -260,6 +261,7 @@ impl Encoder for AvroEncoder {
                 let mut avro_buffer = to_avro_datum(&self.schema, avro_value)
                     .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
 
+                // 5 is the length of the Avro message header (magic byte + 4-byte schema id).
                 self.buffer.truncate(5);
                 self.buffer.append(&mut avro_buffer);
                 self.output_consumer.push_buffer(&self.buffer, 1);

@@ -16,11 +16,13 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
 };
 
+#[cfg(feature = "with-avro")]
 pub(crate) mod avro;
 pub(crate) mod csv;
 mod json;
 pub mod parquet;
 
+#[cfg(feature = "with-avro")]
 use crate::format::avro::output::AvroOutputFormat;
 pub use parquet::relation_to_parquet_schema;
 
@@ -339,6 +341,7 @@ static OUTPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn OutputFormat>>> = Laz
             "parquet",
             Box::new(ParquetOutputFormat) as Box<dyn OutputFormat>,
         ),
+        #[cfg(feature = "with-avro")]
         ("avro", Box::new(AvroOutputFormat) as Box<dyn OutputFormat>),
     ])
 });
