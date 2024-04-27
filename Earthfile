@@ -158,7 +158,7 @@ build-manager:
     # For some reason if this ENV before the FROM line it gets invalidated
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
-    DO rust+CARGO --args="build --package pipeline-manager" --output="debug/pipeline-manager"
+    DO rust+CARGO --args="build --package pipeline-manager --features pg-embed" --output="debug/pipeline-manager"
 
     IF [ -f ./target/debug/pipeline-manager ]
         SAVE ARTIFACT --keep-ts ./target/debug/pipeline-manager pipeline-manager
@@ -274,8 +274,10 @@ test-rust:
 # TODO: the following two container tasks duplicate work that we otherwise do in the Dockerfile,
 # but by mostly repeating ourselves, we can reuse earlier Earthly stages to speed up the CI.
 build-pipeline-manager-container:
-    FROM +install-rust
-    WORKDIR /
+    FROM +install-deps
+    RUN useradd -ms /bin/bash feldera
+    USER feldera
+    WORKDIR /home/feldera
 
     # First, copy over the artifacts built from previous stages
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
@@ -289,16 +291,22 @@ build-pipeline-manager-container:
     COPY README.md database-stream-processor/README.md
 
     # Then copy over the required SQL compiler files
-    COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp /database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
-    COPY sql-to-dbsp-compiler/lib /database-stream-processor/sql-to-dbsp-compiler/lib
-    COPY sql-to-dbsp-compiler/temp /database-stream-processor/sql-to-dbsp-compiler/temp
-    RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --compilation-profile=unoptimized --dbsp-override-path=/database-stream-processor --precompile
-    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor", "--compilation-profile=unoptimized"]
+    COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+    COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
+    COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
+    ENV RUSTUP_HOME=$HOME/.rustup
+    ENV CARGO_HOME=$HOME/.cargo
+
+    # Install cargo and rust for this non-root user
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+    ENV PATH="$PATH:/home/feldera/.cargo/bin"
+    RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --precompile
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized"]
 
 # Same as the above, but with a permissive CORS setting, else playwright doesn't work
 pipeline-manager-container-cors-all:
     FROM +build-pipeline-manager-container
-    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor", "--dev-mode", "--compilation-profile=unoptimized"]
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--dev-mode", "--compilation-profile=unoptimized"]
 
 # TODO: mirrors the Dockerfile. See note above.
 build-demo-container:
@@ -330,8 +338,7 @@ test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
@@ -344,8 +351,7 @@ test-docker-compose-stable:
     COPY deploy/docker-compose.yml .
     ENV FELDERA_VERSION=0.14.0
     RUN apk --no-cache add curl
-    WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --pull ghcr.io/feldera/pipeline-manager:0.14.0 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --pull ghcr.io/feldera/demo-container:0.14.0
@@ -364,8 +370,7 @@ test-debezium-mysql:
     COPY deploy/docker-compose.yml .
     COPY deploy/docker-compose-debezium.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --pull debezium/example-mysql:2.5 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
@@ -378,8 +383,7 @@ test-debezium-jdbc-sink:
     COPY deploy/docker-compose.yml .
     COPY deploy/docker-compose-jdbc.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --pull debezium/example-postgres:2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
@@ -393,8 +397,7 @@ test-snowflake:
     COPY deploy/.env .
     RUN cat .env
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
@@ -407,8 +410,7 @@ test-s3:
     COPY deploy/.env .
     RUN cat .env
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
@@ -421,8 +423,7 @@ test-service-related:
     COPY deploy/.env .
     RUN cat .env
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container
         RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile demo-service-related up --force-recreate --exit-code-from demo-service-related
@@ -445,10 +446,8 @@ integration-tests:
     COPY deploy/docker-compose.yml .
     COPY deploy/.env .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull postgres \
-                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+    WITH DOCKER --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --compose docker-compose.yml \
-                --service db \
                 --service pipeline-manager \
                 --load itest:latest=+integration-test-container
         RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
@@ -489,10 +488,8 @@ ui-playwright-tests:
     ENV FELDERA_VERSION=latest
 
     TRY
-        WITH DOCKER --pull postgres \
-                    --load ghcr.io/feldera/pipeline-manager:latest=+pipeline-manager-container-cors-all \
+        WITH DOCKER --load ghcr.io/feldera/pipeline-manager:latest=+pipeline-manager-container-cors-all \
                     --compose ../docker-compose.yml \
-                    --service db \
                     --service pipeline-manager
             # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
             RUN if yarn playwright test; then exit_code=0; else exit_code=$?; fi \
