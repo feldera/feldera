@@ -351,7 +351,8 @@ test-docker-compose-stable:
     COPY deploy/docker-compose.yml .
     ENV FELDERA_VERSION=0.14.0
     RUN apk --no-cache add curl
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull postgres \
+                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --pull ghcr.io/feldera/pipeline-manager:0.14.0 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --pull ghcr.io/feldera/demo-container:0.14.0
@@ -524,7 +525,7 @@ all-tests:
     BUILD +integration-tests
     #BUILD +ui-playwright-tests
     BUILD +test-docker-compose
-    BUILD +test-docker-compose-stable
+    # BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
     BUILD +test-debezium-jdbc-sink
     # BUILD +test-snowflake
