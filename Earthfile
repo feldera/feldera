@@ -450,7 +450,7 @@ integration-tests:
                 --compose docker-compose.yml \
                 --service pipeline-manager \
                 --load itest:latest=+integration-test-container
-        RUN sleep 5 && docker run --env-file .env --network default_default itest:latest
+        RUN sleep 15 && docker run --env-file .env --network default_default itest:latest
     END
 
 ui-playwright-container:
