@@ -28,11 +28,11 @@ RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
 ENV LC_ALL en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 
 # Use cargo-chef to produce a recipe.json file
 # to cache the requisite dependencies
 FROM base as chef
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 RUN /root/.cargo/bin/cargo install cargo-chef
 WORKDIR app
 
@@ -78,7 +78,7 @@ RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder
 ENV CARGO_INCREMENTAL=0
 COPY --from=planner /app/recipe.json recipe.json
-RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=pipeline-manager --no-default-features
+RUN /root/.cargo/bin/cargo chef cook --release --recipe-path recipe.json --bin=pipeline-manager --features=pg-embed
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY crates crates
@@ -86,7 +86,7 @@ RUN mkdir sql-to-dbsp-compiler || true
 COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
 COPY --from=web-ui-builder /web-console/out web-console-out
 ENV WEBUI_BUILD_DIR=/app/web-console-out
-RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --no-default-features
+RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
 
 # Java build can be performed in parallel
 FROM base as javabuild
@@ -98,29 +98,35 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 # Minimal image for running the pipeline manager
 FROM base as release
-ENV PATH="$PATH:/root/.cargo/bin"
 # Pipeline manager binary
+RUN useradd -ms /bin/bash feldera
+USER feldera
+WORKDIR /home/feldera
 COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
 # SQL compiler uber jar
-RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
-COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
+RUN mkdir -p lib/sql-to-dbsp-compiler/SQL-compiler/target
+COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar lib/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
 # The crates needed for the SQL compiler
-COPY crates/dbsp database-stream-processor/crates/dbsp
-COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
-COPY crates/adapters database-stream-processor/crates/adapters
+COPY crates/dbsp lib/crates/dbsp
+COPY crates/pipeline-types lib/crates/pipeline-types
+COPY crates/adapters lib/crates/adapters
 # Storage crate got folded into the dbsp crate for now. Revert if this changes.
-# COPY crates/feldera-storage database-stream-processor/crates/feldera-storage
-COPY README.md database-stream-processor/README.md
-RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/lib
+# COPY crates/feldera-storage lib/crates/feldera-storage
+COPY README.md lib/README.md
+RUN mkdir -p lib/sql-to-dbsp-compiler/lib
 
 # Copy over the rust code and sql-to-dbsp script
-COPY sql-to-dbsp-compiler/lib database-stream-processor/sql-to-dbsp-compiler/lib
-COPY sql-to-dbsp-compiler/temp database-stream-processor/sql-to-dbsp-compiler/temp
-COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+COPY sql-to-dbsp-compiler/lib lib/sql-to-dbsp-compiler/lib
+COPY sql-to-dbsp-compiler/temp lib/sql-to-dbsp-compiler/temp
+COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp lib/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+
+# Install cargo and rust for this non-root user
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+ENV PATH="$PATH:/home/feldera/.cargo/bin"
 # Run the precompile phase to speed up Rust compilations during deployment
-RUN ./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler --dbsp-override-path=/database-stream-processor --precompile
+RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --dbsp-override-path=/home/feldera/lib --precompile
 ENV BANNER_ADDR localhost
-ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--api-server-working-directory=/working-dir", "--compiler-working-directory=/working-dir", "--runner-working-directory=/working-dir", "--sql-compiler-home=/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/database-stream-processor", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080"]
+ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/lib", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080"]
 
 ##### The stages below are used to build the demo container
 
