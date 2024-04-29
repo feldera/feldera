@@ -278,6 +278,8 @@ it into main, and create a new release from Github. Create a new tag from
 within the `release` page on Github. Follow the versioning format of `vX.Y.Z`
 when creating the new tag. Add the CHANGELOG entry to the release description.
 
+Add `deploy/docker-compose.yml` as an asset for the release.
+
 ### Phase 2: post-release commit
 
 Once the release is out, keep an eye on the CI on the main branch. It should

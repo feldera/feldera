@@ -6,7 +6,7 @@ First, install [Docker compose](https://docs.docker.com/compose/install/).
 Next, to bring up a local Feldera Platform instance run the following:
 
 ```
-curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | docker compose -f - up
+curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | docker compose -f - up
 ```
 
 This will bring up a DBSP and Postgres container.

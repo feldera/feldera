@@ -75,7 +75,8 @@ Next, run the following command to download a Docker Compose file, and use it to
 a Feldera Platform deployment suitable for demos, development and testing:
 
 ```text
-curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | docker compose -f - --profile demo up
+curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
+docker compose -f - --profile demo up
 ```
 
 It can take some time for the container images to be downloaded. About ten seconds after that, the Feldera

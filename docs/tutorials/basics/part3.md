@@ -109,7 +109,7 @@ the Redpanda container should already be running.  Otherwise, you can start it
 using the following command:
 
 ```bash
-curl https://raw.githubusercontent.com/feldera/dbsp/main/deploy/docker-compose.yml | docker compose -f - up redpanda
+curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | docker compose -f - up redpanda
 ```
 
 Next, you will need to install `rpk`, the Redpanda CLI, by following the instructions on

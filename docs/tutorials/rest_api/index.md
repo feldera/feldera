@@ -39,7 +39,7 @@ language (e.g., in Python using the `requests` module).
    to interact with. If you do not have one already, you can start one locally using
    [**docker**](https://docs.docker.com/engine/install/):
    ```
-   curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | \
+   curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
    docker compose -f - up
    ```
    (leave it running in a separate terminal while going through this tutorial)
@@ -610,7 +610,7 @@ them running in the background. In this case, you can also explicitly
 shut them down using `docker compose down`:
 
 ```
-curl https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | \
+curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
 docker compose -f - down
 ```
 
