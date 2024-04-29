@@ -1,9 +1,11 @@
 use super::{GroupTransformer, Monotonicity};
-use crate::algebra::OrdIndexedZSetFactories;
+use crate::algebra::{OrdIndexedZSetFactories, ZRingValue};
 use crate::operator::dynamic::filter_map::DynFilterMap;
 use crate::{
     algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
-    dynamic::{DataTrait, DynPair, DynUnit, DynVec, Erase, Factory, LeanVec, WithFactory},
+    dynamic::{
+        ClonableTrait, DataTrait, DynPair, DynUnit, DynVec, Erase, Factory, LeanVec, WithFactory,
+    },
     trace::{
         cursor::{CursorPair, ReverseKeyCursor},
         BatchReader, BatchReaderFactories, Spillable,
@@ -19,8 +21,7 @@ pub struct LagFactories<B: IndexedZSet + Spillable, OV: DataTrait + ?Sized> {
     input_factories: B::Factories,
     stored_factories: <B::Spilled as BatchReader>::Factories,
     output_factories: OrdIndexedZSetFactories<B::Key, DynPair<B::Val, OV>>,
-    retraction_factory: &'static dyn Factory<ForwardRetraction<DynPair<B::Val, OV>>>,
-    retractions_factory: &'static dyn Factory<ForwardRetractions<DynPair<B::Val, OV>>>,
+    keys_factory: &'static dyn Factory<AffectedKeys<B::Val>>,
     output_val_factory: &'static dyn Factory<OV>,
 }
 
@@ -39,9 +40,7 @@ where
             input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             stored_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             output_factories: BatchReaderFactories::new::<KType, Tup2<VType, OVType>, ZWeight>(),
-            retraction_factory: WithFactory::<Tup2<Tup2<VType, OVType>, ZWeight>>::FACTORY,
-            retractions_factory:
-                WithFactory::<LeanVec<Tup2<Tup2<VType, OVType>, ZWeight>>>::FACTORY,
+            keys_factory: WithFactory::<LeanVec<VType>>::FACTORY,
             output_val_factory: WithFactory::<OVType>::FACTORY,
         }
     }
@@ -100,8 +99,7 @@ where
             &factories.output_factories,
             Box::new(Lag::new(
                 factories.output_factories.val_factory(),
-                factories.retraction_factory,
-                factories.retractions_factory,
+                factories.keys_factory,
                 factories.output_val_factory,
                 offset.unsigned_abs(),
                 offset > 0,
@@ -110,11 +108,6 @@ where
                     |k1: &B::Val, k2: &B::Val| k1.cmp(k2)
                 } else {
                     |k1: &B::Val, k2: &B::Val| k2.cmp(k1)
-                },
-                if offset > 0 {
-                    |v1: &OV, v2: &OV| v1.cmp(v2)
-                } else {
-                    |v1: &OV, v2: &OV| v2.cmp(v1)
                 },
             )),
         )
@@ -164,7 +157,7 @@ where
 }
 
 /// Implement both `lag` and `lead` operators.
-struct Lag<I: DataTrait + ?Sized, O: DataTrait + ?Sized, KCF, VCF> {
+struct Lag<I: DataTrait + ?Sized, O: DataTrait + ?Sized, KCF> {
     name: String,
     lag: usize,
     /// `true` for `lag`, `false` for `lead`.
@@ -172,199 +165,249 @@ struct Lag<I: DataTrait + ?Sized, O: DataTrait + ?Sized, KCF, VCF> {
     project: Box<dyn Fn(Option<&I>, &mut O)>,
     output_pair_factory: &'static dyn Factory<DynPair<I, O>>,
     output_val_factory: &'static dyn Factory<O>,
-    retraction_key: Box<DynPair<I, O>>,
-    retraction: Box<ForwardRetraction<DynPair<I, O>>>,
-    /// Array of retractions reused across multiple
-    /// invocations of the operator.
-    forward_retractions: Box<ForwardRetractions<DynPair<I, O>>>,
-    backward_retractions: Vec<BackwardRetraction>,
-    /// Index of the next key from `retractions` we expect to
+    /// List of keys that must be re-evaluated, computed during
+    /// the forward pass of the algorithm.
+    affected_keys: Box<DynVec<I>>,
+    /// Keys encountered during the backward pass of the algorithm.
+    ///
+    /// See `struct EncounteredKey`.
+    encountered_keys: Vec<EncounteredKey>,
+    /// Index of the next key from `affected_keys` we expect to
     /// encounter.
     next_key: isize,
     /// Number of steps the input cursor took after encountering
-    /// the previous key from `retractions`.
-    offset_from_prev: usize,
+    /// the previous key from `affected_keys`.
+    offset_from_prev: ZWeight,
+    /// For the purpose of computing `lag`, we iterate over a key with weight
+    /// `w` as if it occurred `w` times in the trace.  This field stores the
+    /// remaining number of steps (since it is not tracked by the cursor).
+    remaining_weight: ZWeight,
     /// Key comparison function.  Set to `cmp` for ascending
     /// order and the reverse of `cmp` for descending order.
     key_cmp: KCF,
-    /// Value comparison function.
-    val_cmp: VCF,
+    output_pair: Box<DynPair<I, O>>,
     _phantom: PhantomData<fn(&I, &O)>,
 }
 
-impl<I, O, KCF, VCF> Lag<I, O, KCF, VCF>
+impl<I, O, KCF> Lag<I, O, KCF>
 where
     I: DataTrait + ?Sized,
     O: DataTrait + ?Sized,
     KCF: Fn(&I, &I) -> Ordering + 'static,
-    VCF: Fn(&O, &O) -> Ordering + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     fn new(
         output_pair_factory: &'static dyn Factory<DynPair<I, O>>,
-        retraction_factory: &'static dyn Factory<ForwardRetraction<DynPair<I, O>>>,
-        retractions_factory: &'static dyn Factory<ForwardRetractions<DynPair<I, O>>>,
+        keys_factory: &'static dyn Factory<DynVec<I>>,
         output_val_factory: &'static dyn Factory<O>,
         lag: usize,
         asc: bool,
         project: Box<dyn Fn(Option<&I>, &mut O)>,
         key_cmp: KCF,
-        val_cmp: VCF,
     ) -> Self {
         Self {
             name: format!("{}({lag})", if asc { "lag" } else { "lead" }),
-            retraction_key: output_pair_factory.default_box(),
-            retraction: retraction_factory.default_box(),
             output_pair_factory,
             output_val_factory,
             lag,
             asc,
             project,
-            forward_retractions: retractions_factory.default_box(),
-            backward_retractions: Vec::new(),
+            affected_keys: keys_factory.default_box(),
+            encountered_keys: Vec::new(),
             next_key: 0,
             offset_from_prev: 0,
+            remaining_weight: 0,
             key_cmp,
-            val_cmp,
+            output_pair: output_pair_factory.default_box(),
             _phantom: PhantomData,
         }
     }
 
-    fn push_retraction_from_key(&mut self, key: &I, mut w: ZWeight) {
-        let (i, o) = self.retraction_key.split_mut();
-        key.clone_to(i);
-        (self.project)(None, o);
-
-        self.retraction
-            .from_vals(self.retraction_key.as_mut(), w.erase_mut());
-        self.forward_retractions.push_val(&mut *self.retraction);
-
-        self.backward_retractions.push(BackwardRetraction::new());
+    /// Add `key` to `self.affected_keys`.
+    fn record_affected_key(&mut self, key: &I) -> usize {
+        let idx = self.affected_keys.len();
+        self.affected_keys.push_ref(key);
+        self.encountered_keys.push(EncounteredKey::new());
+        idx
     }
 
-    fn push_retraction_from_ref(&mut self, key: &DynPair<I, O>, w: ZWeight) {
-        self.retraction.from_refs(key, w.erase());
-        self.forward_retractions.push_val(&mut *self.retraction);
+    /// Retract all entries from the output trace whose first element is
+    /// equal to `cursor.key().fst()`; return total weight of removed records.
+    fn retract_key(
+        &mut self,
+        cursor: &mut dyn ZCursor<DynPair<I, O>, DynUnit, ()>,
+        output_cb: &mut dyn FnMut(&mut DynPair<I, O>, &mut DynZWeight),
+    ) -> usize {
+        debug_assert!(cursor.key_valid());
 
-        self.backward_retractions.push(BackwardRetraction::new());
+        let mut result = 0;
+
+        let idx = self.record_affected_key(cursor.key().fst());
+
+        while cursor.key_valid() && cursor.key().fst() == self.affected_keys.index(idx) {
+            let weight = **cursor.weight();
+            // The output trace should not contain negative weights by construction.
+            debug_assert!(weight > 0);
+            cursor.key().clone_to(self.output_pair.as_mut());
+            //println!("retract: {:?} with weight {weight}", &self.output_pair);
+            output_cb(self.output_pair.as_mut(), weight.neg().erase_mut());
+            result += weight as usize;
+            step_key_skip_zeros(cursor);
+        }
+        skip_zeros(cursor);
+
+        result
     }
 
-    /// Move input `cursor` `n` steps back.  Keep track of keys in the
-    /// `self.retractions` array encountered along the way, update their
-    /// `offset` and `new_weight` fields.
+    /// Move input `cursor` `steps` steps back.  Keep track of keys in the
+    /// `self.affected_keys` array encountered along the way, update their
+    /// `offset` and `weight` fields in `self.encountered_keys`.
     fn step_key_reverse_n(&mut self, cursor: &mut dyn ZCursor<I, DynUnit, ()>, mut steps: usize) {
+        // println!(
+        //     "step_key_reverse_n {steps} (offset_from_prev = {}, remaining_weight = {})",
+        //     self.offset_from_prev, self.remaining_weight
+        // );
         while steps > 0 && cursor.key_valid() {
-            step_key_reverse_skip_zeros(cursor);
-
-            while self.next_key >= 0
-                && (!cursor.key_valid()
-                    || (self.key_cmp)(
-                        cursor.key(),
-                        self.forward_retractions[self.next_key as usize].key().fst(),
-                    ) == Ordering::Less)
-            {
-                self.backward_retractions[self.next_key as usize].offset = Some(None);
-                self.next_key -= 1;
-            }
-
             steps -= 1;
             self.offset_from_prev += 1;
 
-            if cursor.key_valid()
-                && self.next_key >= 0
-                && cursor.key() == self.forward_retractions[self.next_key as usize].key().fst()
-            {
-                // println!("reverse_n: found {:?}, offset {offset_from_prev}", cursor.key());
-                self.backward_retractions[self.next_key as usize].offset =
-                    Some(Some(self.offset_from_prev));
-                self.offset_from_prev = 0;
-                self.backward_retractions[self.next_key as usize].new_weight = **cursor.weight();
-                self.next_key -= 1;
+            //println!("remaining_weight: {}", self.remaining_weight);
+            if self.remaining_weight > 0 {
+                self.remaining_weight -= 1;
+            }
+
+            if self.remaining_weight == 0 {
+                step_key_reverse_skip_non_positive(cursor);
+                if cursor.key_valid() {
+                    self.remaining_weight = **cursor.weight();
+                    // println!(
+                    //     "key valid, key: {:?}, weight: {}",
+                    //     cursor.key(),
+                    //     self.remaining_weight
+                    // );
+                }
+
+                //println!("next_key: {}", self.next_key);
+
+                while self.next_key >= 0
+                    && (!cursor.key_valid()
+                        || (self.key_cmp)(
+                            cursor.key(),
+                            &self.affected_keys[self.next_key as usize],
+                        ) == Ordering::Less)
+                {
+                    //println!("skipped {:?}", &self.affected_keys[self.next_key as usize]);
+                    self.encountered_keys[self.next_key as usize].offset = Some(None);
+                    self.next_key -= 1;
+                }
+
+                if cursor.key_valid()
+                    && self.next_key >= 0
+                    && cursor.key() == &self.affected_keys[self.next_key as usize]
+                {
+                    // println!(
+                    //     "encountered {:?} at offset {} with weight {}",
+                    //     &self.affected_keys[self.next_key as usize],
+                    //     self.offset_from_prev,
+                    //     self.remaining_weight
+                    // );
+                    debug_assert!(self.offset_from_prev >= 0);
+
+                    self.encountered_keys[self.next_key as usize].offset =
+                        Some(Some(self.offset_from_prev as usize));
+                    self.offset_from_prev = -self.remaining_weight;
+                    self.encountered_keys[self.next_key as usize].weight = self.remaining_weight;
+                    self.next_key -= 1;
+                }
             }
         }
     }
 
-    /// Forward pass: compute keys that require updates,
-    /// record these keys in `self.retractions`.
+    /// Forward pass: compute keys that require updates.  Retract them from
+    /// output trace and record the keys in `self.affected_keys`, so we can replace
+    /// them with new values during the backward pass.
     ///
     /// # Example
     ///
     /// Consider `lag(3)` operator and assume that the input collection
-    /// contains values `{1, 2, 3, 4, 6, 7, 8, 9, 10}` and the delta contains
-    /// keys `{0, 5, 6}`.  The set of affected keys includes all keys in delta
-    /// and for each key in delta `3` following keys in the output trace:
-    /// `{0, 1, 2, 3, 5, 6, 7, 8, 9}`.
+    /// contains values `{1, 2, 3, 4, 6, 7, 8, 9, 10}`, all with weight 1,
+    /// and the delta contains keys `{0 => 1, 5 => 1}`.  The set
+    /// of affected keys includes all keys in delta and for each key in
+    /// delta `3` following keys in the output trace: `{0, 1, 2, 3, 5, 6, 7, 8}`.
+    ///
+    /// Consider delta equal to `{ 0 => 1, 6 => -1 }`?  The retraction of `6` affects
+    /// the next three keys, so the set of affected keys is:
+    /// `{0, 1, 2, 3, 6, 7, 8, 9}`.
     fn compute_retractions(
         &mut self,
         input_delta: &mut dyn ZCursor<I, DynUnit, ()>,
         output_trace: &mut dyn ZCursor<DynPair<I, O>, DynUnit, ()>,
+        output_cb: &mut dyn FnMut(&mut DynPair<I, O>, &mut DynZWeight),
     ) {
-        self.forward_retractions.clear();
-        self.backward_retractions.clear();
+        // println!("compute retractions");
+        self.affected_keys.clear();
+        self.encountered_keys.clear();
 
-        let mut offset = self.lag + 1;
+        let mut lag: usize = 0;
 
         skip_zeros(output_trace);
 
         while input_delta.key_valid() && output_trace.key_valid() {
             // - `input_delta` points to the _next_ delta key to process.
-            // - `offset` is the number of steps taken from the current key being processed.
+            // - `lag` is the number of remaining retractions to perform to capture the effect
+            //   of the last processed delta.
 
             match (self.key_cmp)(output_trace.key().fst(), input_delta.key()) {
+                Ordering::Less if lag > 0 => {
+                    // We have applied the previous delta and still have some retractions to
+                    // perform. Note that this will retract all values for this key in
+                    // `output_trace`, regardless of the value of `lag`.  The reason is that
+                    // the ordering of `(I, O)` pairs in the trace is determined by the ordering
+                    // of type `O` and not the order in which the corresponding entry that `O`
+                    // was projected from appeared in the input trace, so we don't have a way
+                    // to retract precisely the affected values only.
+                    let retractions = self.retract_key(output_trace, output_cb);
+                    lag = lag.saturating_sub(retractions);
+                }
                 Ordering::Less => {
-                    if offset <= self.lag {
-                        // We are processing the previous key and haven't taken `lag`
-                        // steps yet.
-                        let w = output_trace.weight().neg();
-                        self.push_retraction_from_ref(output_trace.key(), w);
+                    // We have processed the previous delta and all required retractions;
+                    // seek to the next key to process.
+                    let delta_key = input_delta.key();
 
-                        step_key_skip_zeros(output_trace);
-                        offset += 1;
-                    } else {
-                        // Done processing previous key. Seek to the next key to process.
-                        let delta_key = input_delta.key();
-                        output_trace.seek_key_with(&|key| {
-                            (self.key_cmp)(key.fst(), delta_key) != Ordering::Less
-                        });
-                        skip_zeros(output_trace);
-                    }
+                    output_trace.seek_key_with(&|key| {
+                        (self.key_cmp)(key.fst(), delta_key) != Ordering::Less
+                    });
+                    skip_zeros(output_trace);
                 }
                 Ordering::Equal => {
-                    // Reached the next key -- reset offset to 0 and move `input_delta` to the next
-                    // key.
+                    // Delta modifies current key. Retract all existing values for this key
+                    // from the output trace.
+                    self.retract_key(output_trace, output_cb);
+                    lag = self.lag;
                     input_delta.step_key();
-                    offset = 0;
                 }
                 Ordering::Greater => {
-                    // Output cursor overshot next key.  This is only possible if the key is not
-                    // present in the output trace.  Record the key as a zero-weight retraction,
-                    // so we process it during reverse pass.
-                    self.push_retraction_from_key(input_delta.key(), HasZero::zero());
+                    // Record new key.
+                    self.record_affected_key(input_delta.key());
+                    lag = self.lag;
                     input_delta.step_key();
-                    offset = 1;
                 }
             }
         }
 
-        // println!("retractions before suffix: {:?}", retractions);
-
-        // Finish processing the last key.
-        while output_trace.key_valid() && offset <= self.lag {
-            let w = output_trace.weight().neg();
-            self.push_retraction_from_ref(output_trace.key(), w);
-            step_key_skip_zeros(output_trace);
-            offset += 1;
+        // Finish processing remaining retractions.
+        while output_trace.key_valid() && lag > 0 {
+            let retractions = self.retract_key(output_trace, output_cb);
+            lag = lag.saturating_sub(retractions);
         }
-
-        // println!("retractions after output_trace: {:?}", retractions);
 
         // Record remaining keys in `input_delta`.
         while input_delta.key_valid() {
-            self.push_retraction_from_key(input_delta.key(), HasZero::zero());
+            self.record_affected_key(input_delta.key());
             input_delta.step_key();
         }
 
-        // println!("retractions: {:?}", self.retractions);
+        // println!("affected_keys: {:?}", &self.affected_keys);
     }
 
     /// Backward pass: compute updated values for all keys in
@@ -376,30 +419,46 @@ where
     ) where
         CB: FnMut(&mut DynPair<I, O>, &mut DynZWeight),
     {
+        //println!("compute updates");
+
         input_cursor.fast_forward_keys();
-        // println!("current key after fast_forward: {:?}", input_cursor.key());
+        skip_non_positive_reverse(input_cursor);
+        // println!(
+        //     "current key after fast_forward: {:?}",
+        //     input_cursor.get_key()
+        // );
 
-        // Index of the current key in the retractions array for which we are
-        // computing update.  We traverse the array backward, hence the index
-        // is relative to the end of the array.
-        let mut current = self.forward_retractions.len() as isize - 1;
+        // Index of the current key in the `affected_keys` array for which we are
+        // computing update.  We traverse the array backward, starting from the
+        // last element.
+        let mut current = self.affected_keys.len() as isize - 1;
 
-        // The first key in the `retractions` array that hasn't been observed by the
+        // The first key in the `affected_keys` array that hasn't been observed by the
         // cursor yet.  Once the key has been observed, it is assigned a number equal
-        // to its distance from the previous key in `retractions` or `self.lag` if the
+        // to its distance from the previous key or `self.lag` if the
         // previous key is more than `self.lag` steps behind.
         self.next_key = current;
         self.offset_from_prev = 0;
+        if input_cursor.key_valid() {
+            self.remaining_weight = **input_cursor.weight();
+        }
 
         let mut new_val = self.output_val_factory.default_box();
         let mut output_pair = self.output_pair_factory.default_box();
 
         while current >= 0 {
-            // println!("current: {current}");
+            // println!(
+            //     "compute_updates: computing update for affected key at index {current}, next_key: {}",
+            //     self.next_key
+            // );
 
-            match self.backward_retractions[current as usize].offset {
+            match self.encountered_keys[current as usize].offset {
                 Some(Some(offset)) => {
-                    // println!("offset: {offset}");
+                    // println!(
+                    //     "key: {:?} was encountered at offset {offset} with weight {}",
+                    //     &self.affected_keys.index(current as usize),
+                    //     self.encountered_keys[current as usize].weight
+                    // );
 
                     // The key has been observed by the cursor and is known to be
                     // exactly `offset` steps ahead of the previous key.
@@ -409,100 +468,54 @@ where
                     // update offsets in keys we encounter along the way.
                     self.step_key_reverse_n(input_cursor, offset);
 
-                    // Output retraction and insertion in the correct order.
-
-                    (self.project)(input_cursor.get_key(), &mut new_val);
-                    let (key_old_val, old_weight) =
-                        self.forward_retractions[current as usize].split_mut();
-                    let (key, old_val): (&mut I, &mut O) = key_old_val.split_mut();
-                    let mut new_weight = self.backward_retractions[current as usize].new_weight;
-
-                    if old_weight.is_zero() {
-                        if !new_weight.is_zero() {
-                            output_pair.from_vals(key, &mut new_val);
-                            output_cb(output_pair.as_mut(), new_weight.erase_mut());
-                        }
-                    } else if new_weight.is_zero() {
-                        output_pair.from_vals(key, old_val);
-                        output_cb(output_pair.as_mut(), old_weight);
-                    } else {
-                        match (self.val_cmp)(old_val, &new_val) {
-                            Ordering::Greater => {
-                                key.clone_to(output_pair.fst_mut());
-                                old_val.move_to(output_pair.snd_mut());
-                                output_cb(output_pair.as_mut(), old_weight);
-
-                                output_pair.from_vals(key, &mut new_val);
-                                output_cb(output_pair.as_mut(), new_weight.erase_mut());
-                            }
-                            Ordering::Equal => {
-                                let mut weight = new_weight + **old_weight;
-                                if !weight.is_zero() {
-                                    output_cb(key_old_val, weight.erase_mut());
-                                }
-                            }
-                            Ordering::Less => {
-                                key.clone_to(output_pair.fst_mut());
-                                new_val.move_to(output_pair.snd_mut());
-                                output_cb(output_pair.as_mut(), new_weight.erase_mut());
-
-                                output_cb(key_old_val, old_weight);
-                            }
-                        }
+                    // Output insertion.
+                    let weight = self.encountered_keys[current as usize].weight;
+                    for _i in 0..weight {
+                        (self.project)(input_cursor.get_key(), &mut new_val);
+                        output_pair.from_refs(&self.affected_keys[current as usize], &new_val);
+                        //println!("output: {:?}", &output_pair);
+                        output_cb(output_pair.as_mut(), 1.erase_mut());
+                        self.step_key_reverse_n(input_cursor, 1);
                     }
-
                     current -= 1;
                 }
                 Some(None) => {
-                    // println!("offset: Some(None)");
-                    // Key does not occur in the input trace.  Output retraction only.
-                    let (key_old_val, old_weight) =
-                        self.forward_retractions[current as usize].split_mut();
-                    if !old_weight.is_zero() {
-                        output_cb(key_old_val, old_weight);
-                    }
+                    // println!(
+                    //     "key: {:?}, offset: Some(None)",
+                    //     &self.affected_keys.index(current as usize)
+                    // );
+                    // Key does not occur in the input trace.
                     current -= 1;
                 }
                 None => {
-                    // println!("offset: None");
+                    // println!(
+                    //     "key: {:?}, offset: None",
+                    //     &self.affected_keys.index(current as usize)
+                    // );
                     // Key is ahead of the current location of the cursor.
                     // Seek to the key.
-                    input_cursor
-                        .seek_key_reverse(self.forward_retractions[current as usize].key().fst());
-                    self.offset_from_prev = 0;
+                    input_cursor.seek_key_reverse(&self.affected_keys[current as usize]);
 
                     // We may have skipped over `current` and potentially multiple other keys.
-                    // All skipped keys are not in the trace.  Output retractions for them and
-                    // move `current` to the first key that has not been skipped.
+                    // All skipped keys are not in the trace.
                     while !input_cursor.key_valid()
-                        || (self.key_cmp)(
-                            input_cursor.key(),
-                            self.forward_retractions[current as usize].key().fst(),
-                        ) == Ordering::Less
+                        || (self.key_cmp)(input_cursor.key(), &self.affected_keys[current as usize])
+                            == Ordering::Less
                     {
-                        // println!("retract {:?} (key: {:?})", &self.retractions[current as
-                        // usize].key().0, input_cursor.key());
-                        let (old_key_val, old_weight) =
-                            self.forward_retractions[current as usize].split_mut();
-                        if !old_weight.is_zero() {
-                            output_cb(old_key_val, old_weight);
-                        }
                         current -= 1;
                         if current < 0 {
                             break;
                         }
                     }
 
-                    if current >= 0
-                        && self.forward_retractions[current as usize].key().fst()
-                            == input_cursor.key()
-                    {
+                    if current >= 0 && &self.affected_keys[current as usize] == input_cursor.key() {
                         // The cursor points to current key.  Move it `lag` steps to point to
                         // the matching delayed record.
-                        self.backward_retractions[current as usize].offset = Some(Some(self.lag));
-                        self.backward_retractions[current as usize].new_weight =
-                            **input_cursor.weight();
+                        self.encountered_keys[current as usize].offset = Some(Some(self.lag));
+                        self.encountered_keys[current as usize].weight = **input_cursor.weight();
                         self.next_key = current - 1;
+                        self.remaining_weight = **input_cursor.weight();
+                        self.offset_from_prev = -self.remaining_weight;
                     } else {
                         // New current key is again ahead of the cursor; we'll seek to it at the
                         // next iteration.
@@ -514,10 +527,10 @@ where
 
         // We want to reuse the allocation across multiple calls, but cap it
         // at `MAX_RETRACTIONS_CAPACITY`.
-        if self.backward_retractions.capacity() >= MAX_RETRACTIONS_CAPACITY {
-            self.backward_retractions = Vec::new();
-            self.forward_retractions.clear();
-            self.forward_retractions.shrink_to_fit();
+        if self.encountered_keys.capacity() >= MAX_RETRACTIONS_CAPACITY {
+            self.encountered_keys = Vec::new();
+            self.affected_keys.clear();
+            self.affected_keys.shrink_to_fit();
         }
     }
 }
@@ -525,64 +538,58 @@ where
 /// Per-key state created by the `lag` operator during forward pass.
 ///
 /// * Records retractions to be applied to the output collection.
-type ForwardRetraction<K> = DynPair<K, DynZWeight>;
+type AffectedKeys<K> = DynVec<K>;
 
-impl<K: DataTrait + ?Sized> ForwardRetraction<K> {
-    fn key(&self) -> &K {
-        self.fst()
-    }
-}
-
-type ForwardRetractions<K> = DynVec<ForwardRetraction<K>>;
-
-/// Per-key state created by the `lag` operator during backward pass:
-/// * The new weight of each affected key.
+/// Per-key state created by the `lag` operator during backward pass.
+///
+/// The cursor generally stays `lag` steps ahead of the current
+/// key for which we are computing the value of the lag function.
+/// As it moves forward (actually, backward, since this is the
+/// backward pass), it encounters keys that will be evaluated next.
+/// Since the cursor only moves in one direction, we won't get a
+/// chance to visit those keys again, so we store all info we need
+/// about the key in this struct, including
+///
+/// * The weight of each affected key.
 /// * Offset from the previous encountered affected key. Determines how far to
 ///   move the cursor to reach the matching delayed record.
 #[derive(Debug)]
-struct BackwardRetraction {
-    /// The new weight of the key in the input collection.  Populated during
-    /// backward pass.
-    new_weight: ZWeight,
-    /// Offset from the previous key in the retractions array.  Populated during
-    /// backward pass.
+struct EncounteredKey {
+    /// The weight of the key in the input collection.
+    weight: ZWeight,
+    /// Offset from the previous key in the `affected_keys` array that occurs
+    /// in the input trace.
     ///
     /// * `None` - key hasn't been encountered yet
     /// * `Some(None)` - key does not occur in the input trace.
     /// * `Some(Some(n))` - key is `n` steps away from the previous key from
-    ///   `retractions` that is present in the input trace.
+    ///   `affected_keys` that is present in the input trace.  Specifically,
+    ///   it is the sum of all positive weights between the previous key
+    ///   (exclusive) and the current key (exclusive).
     offset: Option<Option<usize>>,
 }
 
-impl BackwardRetraction {
+impl EncounteredKey {
     fn new() -> Self {
         Self {
-            new_weight: HasZero::zero(),
+            weight: HasZero::zero(),
             offset: None,
         }
     }
 }
 
-impl<I, O, KCF, VCF> GroupTransformer<I, DynPair<I, O>> for Lag<I, O, KCF, VCF>
+impl<I, O, KCF> GroupTransformer<I, DynPair<I, O>> for Lag<I, O, KCF>
 where
     I: DataTrait + ?Sized,
     O: DataTrait + ?Sized,
     KCF: Fn(&I, &I) -> Ordering + 'static,
-    VCF: Fn(&O, &O) -> Ordering + 'static,
 {
     fn name(&self) -> &str {
         self.name.as_str()
     }
 
     fn monotonicity(&self) -> Monotonicity {
-        // Since outputs are produced during the second (backward) pass,
-        // `lag` produces outputs in the descending order, while `lead` -- in
-        // ascending.
-        if self.asc {
-            Monotonicity::Descending
-        } else {
-            Monotonicity::Ascending
-        }
+        Monotonicity::Unordered
     }
 
     fn transform(
@@ -592,43 +599,42 @@ where
         output_trace: &mut dyn ZCursor<DynPair<I, O>, DynUnit, ()>,
         output_cb: &mut dyn FnMut(&mut DynPair<I, O>, &mut DynZWeight),
     ) {
-        /*
-        {
-            println!("input_delta:");
-            while input_delta.key_valid() {
-                let w = input_delta.weight();
-                println!("    {:?} -> {:?}", input_delta.key(), w);
-                input_delta.step_key();
-            }
-            input_delta.rewind_keys();
-        }
-        {
-            println!("input_trace:");
-            while input_trace.key_valid() {
-                let w = input_trace.weight();
-                println!("    {:?} -> {:?}", input_trace.key(), w);
-                input_trace.step_key();
-            }
-            input_trace.rewind_keys();
-        }
-        {
-            println!("output_trace:");
-            while output_trace.key_valid() {
-                let w = output_trace.weight();
-                println!("    {:?} -> {:?}", output_trace.key(), w);
-                output_trace.step_key();
-            }
-            output_trace.rewind_keys();
-        }
-        */
+        // {
+        //     println!("input_delta:");
+        //     while input_delta.key_valid() {
+        //         let w = **input_delta.weight();
+        //         println!("    {:?} -> {:?}", input_delta.key(), w);
+        //         input_delta.step_key();
+        //     }
+        //     input_delta.rewind_keys();
+        // }
+        // {
+        //     println!("input_trace:");
+        //     while input_trace.key_valid() {
+        //         let w = **input_trace.weight();
+        //         println!("    {:?} -> {:?}", input_trace.key(), w);
+        //         input_trace.step_key();
+        //     }
+        //     input_trace.rewind_keys();
+        // }
+        // {
+        //     println!("output_trace:");
+        //     while output_trace.key_valid() {
+        //         let w = **output_trace.weight();
+        //         println!("    {:?} -> {:?}", output_trace.key(), w);
+        //         output_trace.step_key();
+        //     }
+        //     output_trace.rewind_keys();
+        // }
 
         if self.asc {
-            self.compute_retractions(input_delta, output_trace);
+            self.compute_retractions(input_delta, output_trace, output_cb);
             self.compute_updates(&mut CursorPair::new(input_delta, input_trace), output_cb);
         } else {
             self.compute_retractions(
                 &mut ReverseKeyCursor::new(input_delta),
                 &mut ReverseKeyCursor::new(output_trace),
+                output_cb,
             );
             self.compute_updates(
                 &mut ReverseKeyCursor::new(&mut CursorPair::new(input_delta, input_trace)),
@@ -646,12 +652,12 @@ where
     skip_zeros(cursor)
 }
 
-fn step_key_reverse_skip_zeros<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
+fn step_key_reverse_skip_non_positive<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
 where
     I: DataTrait + ?Sized,
 {
     cursor.step_key_reverse();
-    skip_zeros_reverse(cursor)
+    skip_non_positive_reverse(cursor)
 }
 
 fn skip_zeros<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
@@ -663,11 +669,11 @@ where
     }
 }
 
-fn skip_zeros_reverse<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
+fn skip_non_positive_reverse<I>(cursor: &mut dyn ZCursor<I, DynUnit, ()>)
 where
     I: DataTrait + ?Sized,
 {
-    while cursor.key_valid() && cursor.weight().is_zero() {
+    while cursor.key_valid() && cursor.weight().le0() {
         cursor.step_key_reverse();
     }
 }

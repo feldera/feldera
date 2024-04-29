@@ -21,9 +21,13 @@ where
     ///
     /// For each key in the input stream, it matches each associated value with
     /// another value in the same group with a smaller (`offset > 0`) or greater
-    /// (`offset < 0`) index according to ascending order of values), applies
+    /// (`offset < 0`) index according to ascending order of values, applies
     /// projection function `project` to it and outputs the input value along
     /// with this projection.
+    ///
+    /// The offset it computed as if each value occurred as many times as its
+    /// weight.  Values with negative weights are ignored; hence the output Z-set
+    /// will only contain positive weights.
     ///
     /// # Arguments
     ///
