@@ -54,13 +54,13 @@ impl PipelineExecutor for ProcessRunner {
     /// Convert a PipelineRevision into a PipelineExecutionDesc.
     async fn to_execution_desc(
         &self,
-        pr: PipelineRevision,
+        mut pr: PipelineRevision,
         binary_ref: String,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
         let pipeline_dir = self.config.pipeline_dir(pr.pipeline.pipeline_id);
         let pipeline_data_dir = pipeline_dir.join("data");
-        let storage_path = if pr.config.global.storage {
-            Some(pipeline_data_dir.into())
+        pr.config.storage_location = if pr.config.global.storage {
+            Some(pipeline_data_dir.to_string_lossy().into())
         } else {
             None
         };
@@ -71,7 +71,6 @@ impl PipelineExecutor for ProcessRunner {
             program_id: pr.program.program_id,
             version: pr.program.version,
             config: pr.config,
-            storage_path,
             binary_ref,
         })
     }
@@ -93,13 +92,10 @@ impl PipelineExecutor for ProcessRunner {
                 e,
             )
         })?;
-        if let Some(pipeline_data_dir) = ped.storage_path {
+        if let Some(ref pipeline_data_dir) = ped.config.storage_location {
             create_dir_all(&pipeline_data_dir).await.map_err(|e| {
                 ManagerError::io_error(
-                    format!(
-                        "creating pipeline data directory '{}'",
-                        pipeline_data_dir.display()
-                    ),
+                    format!("creating pipeline data directory '{}'", pipeline_data_dir),
                     e,
                 )
             })?;

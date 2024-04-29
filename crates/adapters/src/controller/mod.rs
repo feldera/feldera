@@ -438,11 +438,15 @@ impl Controller {
             -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>,
     {
         let mut start: Option<Instant> = None;
-
+        let min_storage_rows = if controller.status.pipeline_config.global.storage {
+            0
+        } else {
+            usize::MAX
+        };
         let config = CircuitConfig {
             layout: Layout::new_solo(controller.status.pipeline_config.global.workers as usize),
             storage: controller.status.pipeline_config.storage_location.clone(),
-            min_storage_rows: usize::MAX,
+            min_storage_rows,
             init_checkpoint: Uuid::nil(),
         };
         let mut circuit = match circuit_factory(config) {

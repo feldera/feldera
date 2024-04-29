@@ -448,7 +448,7 @@ export default function PipelineTable() {
       field: 'name',
       headerName: 'Name',
       editable: true,
-      flex: 2,
+      flex: 0.3,
       valueGetter: params => params.row.descriptor.name,
       valueSetter: (params: GridValueSetterParams) => {
         return { ...params.row, descriptor: { ...params.row.descriptor, name: params.value } }
@@ -478,7 +478,7 @@ export default function PipelineTable() {
       field: 'description',
       headerName: 'Description',
       editable: true,
-      flex: 3,
+      flex: 0.4,
       valueGetter: params => params.row.descriptor.description,
       valueSetter: (params: GridValueSetterParams) => {
         return { ...params.row, descriptor: { ...params.row.descriptor, description: params.value } }
@@ -488,10 +488,14 @@ export default function PipelineTable() {
       field: 'storage',
       headerName: 'Storage',
       editable: true,
-      flex: 3,
-      valueGetter: params => params.row.descriptor.description,
+      type: 'boolean',
+      flex: 0.1,
+      valueGetter: params => params.row.descriptor.config.storage,
       valueSetter: (params: GridValueSetterParams) => {
-        return { ...params.row, descriptor: { ...params.row.descriptor, description: params.value } }
+        return {
+          ...params.row,
+          descriptor: { ...params.row.descriptor, config: { ...params.row.descriptor.config, storage: params.value } }
+        }
       }
     },
     {
@@ -528,7 +532,11 @@ export default function PipelineTable() {
         request: {
           name: newRow.descriptor.name,
           description: newRow.descriptor.description,
-          program_name: newRow.descriptor.program_name
+          program_name: newRow.descriptor.program_name,
+          config: {
+            ...newRow.descriptor.config,
+            storage: newRow.descriptor.config.storage
+          }
         }
       },
       {

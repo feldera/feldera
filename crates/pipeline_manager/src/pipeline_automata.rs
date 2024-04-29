@@ -19,7 +19,6 @@ use pipeline_types::config::PipelineConfig;
 use pipeline_types::error::ErrorResponse;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::{fs, sync::Mutex, time::Duration};
@@ -56,7 +55,6 @@ pub trait PipelineExecutor: Sync + Send {
             program_id: pr.program.program_id,
             version: pr.program.version,
             config: pr.config,
-            storage_path: None,
             binary_ref,
         })
     }
@@ -85,7 +83,6 @@ pub struct PipelineExecutionDesc {
     pub program_id: ProgramId,
     pub version: Version,
     pub config: PipelineConfig,
-    pub storage_path: Option<PathBuf>,
     pub binary_ref: String,
 }
 
