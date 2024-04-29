@@ -13,7 +13,6 @@ use crate::{
 use async_trait::async_trait;
 use log::trace;
 use std::{collections::BTreeMap, process::Stdio, sync::Arc};
-use tokio::net::unix::pipe::pipe;
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
 use tokio::{
@@ -61,15 +60,6 @@ impl PipelineExecutor for ProcessRunner {
         let pipeline_dir = self.config.pipeline_dir(pr.pipeline.pipeline_id);
         let pipeline_data_dir = pipeline_dir.join("data");
         let storage_path = if pr.config.global.storage {
-            create_dir_all(&pipeline_data_dir).await.map_err(|e| {
-                ManagerError::io_error(
-                    format!(
-                        "creating pipeline data directory '{}'",
-                        pipeline_data_dir.display()
-                    ),
-                    e,
-                )
-            })?;
             Some(pipeline_data_dir.into())
         } else {
             None
@@ -86,7 +76,7 @@ impl PipelineExecutor for ProcessRunner {
         })
     }
 
-    async fn start(&mut self, mut ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
+    async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
         let pipeline_id = ped.pipeline_id;
         let program_id = ped.program_id;
         let version = ped.version;
@@ -103,6 +93,17 @@ impl PipelineExecutor for ProcessRunner {
                 e,
             )
         })?;
+        if let Some(pipeline_data_dir) = ped.storage_path {
+            create_dir_all(&pipeline_data_dir).await.map_err(|e| {
+                ManagerError::io_error(
+                    format!(
+                        "creating pipeline data directory '{}'",
+                        pipeline_data_dir.display()
+                    ),
+                    e,
+                )
+            })?;
+        }
 
         let config_file_path = self.config.config_file_path(pipeline_id);
         let expanded_config = serde_yaml::to_string(&ped.config).unwrap();

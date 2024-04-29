@@ -980,6 +980,7 @@ async fn versioning() {
     let gp_config = RuntimeConfig {
         workers: 1,
         cpu_profiler: true,
+        storage: false,
         min_batch_size_records: 0,
         max_buffering_delay_usecs: 0,
         resources: ResourceConfig::default(),
@@ -1277,6 +1278,7 @@ pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
         bool,
         u64,
         u64,
+        bool,
         Option<u64>,
         Option<u64>,
         Option<u64>,
@@ -1288,12 +1290,13 @@ pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
         cpu_profiler: config.1,
         min_batch_size_records: config.2,
         max_buffering_delay_usecs: config.3,
+        storage: config.4,
         resources: ResourceConfig {
-            cpu_cores_min: config.4,
-            cpu_cores_max: config.5,
-            memory_mb_min: config.6,
-            memory_mb_max: config.7,
-            storage_mb_max: config.8,
+            cpu_cores_min: config.5,
+            cpu_cores_max: config.6,
+            memory_mb_min: config.7,
+            memory_mb_max: config.8,
+            storage_mb_max: config.9,
         },
     })
 }
@@ -1306,6 +1309,7 @@ pub(crate) fn option_runtime_config() -> impl Strategy<Value = Option<RuntimeCon
             bool,
             u64,
             u64,
+            bool,
             Option<u64>,
             Option<u64>,
             Option<u64>,
@@ -1319,12 +1323,13 @@ pub(crate) fn option_runtime_config() -> impl Strategy<Value = Option<RuntimeCon
             cpu_profiler: config.1,
             min_batch_size_records: config.2,
             max_buffering_delay_usecs: config.3,
+            storage: config.4,
             resources: ResourceConfig {
-                cpu_cores_min: config.4,
-                cpu_cores_max: config.5,
-                memory_mb_min: config.6,
-                memory_mb_max: config.7,
-                storage_mb_max: config.8,
+                cpu_cores_min: config.5,
+                cpu_cores_max: config.6,
+                memory_mb_min: config.7,
+                memory_mb_max: config.8,
+                storage_mb_max: config.9,
             },
         })
     })
@@ -2108,6 +2113,13 @@ impl Storage for Mutex<DbModel> {
             .ok_or(DBError::UnknownProgram { program_id })?;
         let program_descr = program_descr.clone();
 
+        let (program, _) = s.programs.get(&(tenant_id, program_id)).unwrap();
+        if guard.is_some_and(|g| g.0 != program.version.0) {
+            return Err(DBError::OutdatedProgramVersion {
+                latest_version: program.version,
+            });
+        }
+
         if s.programs
             .iter()
             .filter(|k| k.0 .0 == tenant_id)
@@ -2117,13 +2129,6 @@ impl Storage for Mutex<DbModel> {
             })
         {
             return Err(DBError::DuplicateName);
-        }
-
-        let (program, _) = s.programs.get(&(tenant_id, program_id)).unwrap();
-        if guard.is_some_and(|g| g.0 != program.version.0) {
-            return Err(DBError::OutdatedProgramVersion {
-                latest_version: program.version,
-            });
         }
 
         // This is an artifact of the test code. In the database,
