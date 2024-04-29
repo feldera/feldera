@@ -16,7 +16,6 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use proptest::{collection::vec, prelude::*};
-use std::ops::Neg;
 
 fn input_trace(
     max_key: i32,
@@ -107,15 +106,18 @@ impl TestBatch<DynData, DynData, (), DynZWeight> {
             let mut vals = Vec::new();
 
             while cursor.val_valid() {
+                // Note: we skip weights <= 0.
                 let w = *cursor.weight().downcast_checked::<ZWeight>();
-                vals.push((cursor.val().downcast_checked::<V>().clone(), w.neg()));
+                for _i in 0..w {
+                    vals.push(cursor.val().downcast_checked::<V>().clone());
+                }
                 cursor.step_val();
             }
 
             for i in 0..vals.len() {
-                let (v, w) = vals[i].clone();
+                let v = vals[i].clone();
                 let old_v = if i >= lag {
-                    Some(vals[i - lag].0.clone())
+                    Some(vals[i - lag].clone())
                 } else {
                     None
                 };
@@ -125,7 +127,7 @@ impl TestBatch<DynData, DynData, (), DynZWeight> {
                         Tup2(v, old_v),
                         (),
                     ),
-                    w.neg(),
+                    1,
                 ));
             }
 
@@ -151,14 +153,17 @@ impl TestBatch<DynData, DynData, (), DynZWeight> {
 
             while cursor.val_valid() {
                 let w = *cursor.weight().downcast_checked::<ZWeight>();
-                vals.push((cursor.val().downcast_checked::<V>().clone(), w.neg()));
+                // Note: we skip weights <= 0.
+                for _i in 0..w {
+                    vals.push(cursor.val().downcast_checked::<V>().clone());
+                }
                 cursor.step_val();
             }
 
             for i in 0..vals.len() {
-                let (v, w) = vals[i].clone();
+                let v = vals[i].clone();
                 let old_v = if vals.len() - i > lag {
-                    Some(vals[i + lag].0.clone())
+                    Some(vals[i + lag].clone())
                 } else {
                     None
                 };
@@ -168,7 +173,7 @@ impl TestBatch<DynData, DynData, (), DynZWeight> {
                         Tup2(v, old_v),
                         (),
                     ),
-                    w.neg(),
+                    1,
                 ));
             }
 
@@ -375,11 +380,57 @@ fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
     }
 }
 
+fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
+    let (mut dbsp, (input_handle, lag_handle)) =
+        Runtime::init_circuit(4, lag_test_circuit).unwrap();
+
+    let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
+
+    for batch in trace.into_iter() {
+        let records = batch
+            .iter()
+            .map(|(k, v, r)| ((*k, *v, ()), *r))
+            .collect::<Vec<_>>();
+
+        let ref_batch = TestBatch::from_typed_data(&records);
+        ref_trace.insert(ref_batch);
+
+        for (k, v, r) in batch.into_iter() {
+            input_handle.push(k, (v, r));
+        }
+        dbsp.step().unwrap();
+
+        let lag_result = lag_handle.consolidate();
+        let ref_lag = ref_trace.lag::<i32, i32>(3);
+
+        assert_batch_eq(lag_result.inner(), &ref_lag);
+    }
+}
+
 #[test]
 fn test_lead_regressions() {
     let trace = vec![vec![(0, 0, 1), (0, 73, -1), (0, 1, 1)], vec![(0, 0, 1)]];
 
     lead_test(trace);
+}
+
+#[test]
+fn test_lag_regressions() {
+    let traces = vec![
+        vec![vec![(2, 64, -1), (2, 0, 1)]],
+        vec![vec![(0, 0, -1)]],
+        vec![vec![(4, 0, 4), (4, 4, 1)]],
+        vec![vec![(4, 0, 4), (4, 69, 2)]],
+        vec![
+            vec![(0, 87, 1)],
+            vec![(0, 84, 1), (0, 87, 1), (0, 88, 1)],
+            vec![(0, 0, -1)],
+        ],
+    ];
+
+    for trace in traces {
+        lag_test(trace);
+    }
 }
 
 #[test]
@@ -612,9 +663,10 @@ fn test_lag_custom_ord() {
                 , Tup3(1i32, "b".to_string(), Some(Tup2(1, "e".to_string()))) => 1
                 , Tup3(1i32, "a".to_string(), Some(Tup2(1, "d".to_string()))) => 1
                 , Tup3(2i32, "e".to_string(), Some(Tup2(1, "c".to_string()))) => 1
-                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "b".to_string()))) => 2
-                , Tup3(2i32, "c".to_string(), Some(Tup2(1, "a".to_string()))) => 1
-                , Tup3(2i32, "b".to_string(), Some(Tup2(2, "e".to_string()))) => 1
+                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "b".to_string()))) => 1
+                , Tup3(2i32, "d".to_string(), Some(Tup2(1, "a".to_string()))) => 1
+                , Tup3(2i32, "c".to_string(), Some(Tup2(2, "e".to_string()))) => 1
+                , Tup3(2i32, "b".to_string(), Some(Tup2(2, "d".to_string()))) => 1
                 , Tup3(2i32, "a".to_string(), Some(Tup2(2, "d".to_string()))) => 1
                 , Tup3(3i32, "d".to_string(), Some(Tup2(2, "c".to_string()))) => 1
                 , Tup3(3i32, "c".to_string(), Some(Tup2(2, "b".to_string()))) => 1
@@ -684,26 +736,7 @@ proptest! {
 
     #[test]
     fn test_lag(trace in input_trace(5, 100, 200, 20)) {
-        let (mut dbsp, (input_handle, lag_handle)) = Runtime::init_circuit(4, lag_test_circuit).unwrap();
-
-        let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
-
-        for batch in trace.into_iter() {
-            let records = batch.iter().map(|(k, v, r)| ((*k, *v, ()), *r)).collect::<Vec<_>>();
-
-            let ref_batch = TestBatch::from_typed_data(&records);
-            ref_trace.insert(ref_batch);
-
-            for (k, v, r) in batch.into_iter() {
-                input_handle.push(k, (v, r));
-            }
-            dbsp.step().unwrap();
-
-            let lag_result = lag_handle.consolidate();
-            let ref_lag = ref_trace.lag::<i32, i32>(3);
-
-            assert_batch_eq(lag_result.inner(), &ref_lag);
-        }
+        lag_test(trace)
     }
 
     #[test]

@@ -421,7 +421,7 @@ where
                 // println!("val: {val:?}, w: {w:?}");
                 builder.push_vals(&mut key2, val, w);
             };
-            // Output callaback that pushes to an intermediate buffer.
+            // Output callback that pushes to an intermediate buffer.
             let mut cb_desc = |val: &mut OB::Val, w: &mut B::R| {
                 //println!("val: {val:?}, w: {w:?}");
                 let (kv, weight) = tuple.split_mut();
@@ -513,7 +513,7 @@ where
                 // Unordered transformer: sort the buffer before pushing tuples
                 // to `builder`.
                 Monotonicity::Unordered => {
-                    self.buffer.sort();
+                    self.buffer.consolidate();
                     for tuple in self.buffer.dyn_iter_mut() {
                         builder.push(tuple)
                     }
