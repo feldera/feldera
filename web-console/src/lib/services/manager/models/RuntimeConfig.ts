@@ -29,6 +29,18 @@ export type RuntimeConfig = {
   min_batch_size_records?: number
   resources?: ResourceConfig
   /**
+   * Should persistent storage be enabled for this pipeline?
+   *
+   * - If `true`, the pipeline state is stored in the specified location,
+   * is persisted across restarts, and can be checkpointed and recovered.
+   *
+   * - If `false`, the pipeline's state is kept in in-memory data-structures.
+   * This is useful if the pipeline is ephemeral and does not need to be recovered
+   * after a restart. The pipeline will most likely run faster since it does not
+   * need to read from, or write to disk
+   */
+  storage?: boolean
+  /**
    * Number of DBSP worker threads.
    */
   workers?: number

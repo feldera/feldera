@@ -841,7 +841,6 @@
                   },
                   "max_buffering_delay_usecs": 0,
                   "min_batch_size_records": 0,
-                  "min_storage_rows": 18446744073709551615,
                   "name": "pipeline-67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "outputs": {
                     "Output-To-View": {
@@ -874,6 +873,7 @@
                     "memory_mb_min": null,
                     "storage_mb_max": null
                   },
+                  "storage": false,
                   "storage_location": null,
                   "workers": 8
                 }
@@ -3407,6 +3407,29 @@
       "CsvParserConfig": {
         "type": "object"
       },
+      "DeltaTableWriterConfig": {
+        "type": "object",
+        "description": "Delta table output connector configuration.",
+        "required": [
+          "uri"
+        ],
+        "properties": {
+          "max_parquet_file_size": {
+            "type": "integer",
+            "description": "A bound on the size in bytes of a single Parquet file.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "uri": {
+            "type": "string",
+            "description": "Table URI."
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
+        }
+      },
       "EgressMode": {
         "type": "string",
         "enum": [
@@ -4139,6 +4162,10 @@
               "resources": {
                 "$ref": "#/components/schemas/ResourceConfig"
               },
+              "storage": {
+                "type": "boolean",
+                "description": "Should persistent storage be enabled for this pipeline?\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\n\n- If `false`, the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk"
+              },
               "workers": {
                 "type": "integer",
                 "format": "int32",
@@ -4160,15 +4187,9 @@
                   "$ref": "#/components/schemas/InputEndpointConfig"
                 }
               },
-              "min_storage_rows": {
-                "type": "integer",
-                "description": "Maximum number of rows of any given persistent trace to keep in memory\nbefore spilling it to storage. If this is 0, then all traces will be\nstored on disk; if it is `usize::MAX`, then all traces will be kept in\nmemory; and intermediate values specify a threshold.",
-                "default": "default_min_storage_rows",
-                "minimum": 0
-              },
               "name": {
                 "type": "string",
-                "description": "Pipeline name",
+                "description": "Pipeline name.",
                 "nullable": true
               },
               "outputs": {
@@ -4180,7 +4201,7 @@
               },
               "storage_location": {
                 "type": "string",
-                "description": "Storage location.\n\nAn identifier for location where the pipeline's state is stored.\nIf not set, the pipeline's state is not persisted across\nrestarts.",
+                "description": "The location where the pipeline state is stored.\n\nIt should point to a path on the file-system of the machine/container where the\npipeline can find its persistent state.\n\nThis field must be set by the pipeline runner implementation on startup\nif `global.storage` is `true`.\nIf `global.storage` is `false`, this field is ignored by the pipeline.",
                 "nullable": true
               }
             }
@@ -4660,6 +4681,10 @@
           },
           "resources": {
             "$ref": "#/components/schemas/ResourceConfig"
+          },
+          "storage": {
+            "type": "boolean",
+            "description": "Should persistent storage be enabled for this pipeline?\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\n\n- If `false`, the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk"
           },
           "workers": {
             "type": "integer",

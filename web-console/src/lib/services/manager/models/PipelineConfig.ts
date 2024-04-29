@@ -34,6 +34,18 @@ export type PipelineConfig = {
   min_batch_size_records?: number
   resources?: ResourceConfig
   /**
+   * Should persistent storage be enabled for this pipeline?
+   *
+   * - If `true`, the pipeline state is stored in the specified location,
+   * is persisted across restarts, and can be checkpointed and recovered.
+   *
+   * - If `false`, the pipeline's state is kept in in-memory data-structures.
+   * This is useful if the pipeline is ephemeral and does not need to be recovered
+   * after a restart. The pipeline will most likely run faster since it does not
+   * need to read from, or write to disk
+   */
+  storage?: boolean
+  /**
    * Number of DBSP worker threads.
    */
   workers?: number
@@ -43,14 +55,7 @@ export type PipelineConfig = {
    */
   inputs: Record<string, InputEndpointConfig>
   /**
-   * Maximum number of rows of any given persistent trace to keep in memory
-   * before spilling it to storage. If this is 0, then all traces will be
-   * stored on disk; if it is `usize::MAX`, then all traces will be kept in
-   * memory; and intermediate values specify a threshold.
-   */
-  min_storage_rows?: number
-  /**
-   * Pipeline name
+   * Pipeline name.
    */
   name?: string | null
   /**
@@ -58,11 +63,14 @@ export type PipelineConfig = {
    */
   outputs?: Record<string, OutputEndpointConfig>
   /**
-   * Storage location.
+   * The location where the pipeline state is stored.
    *
-   * An identifier for location where the pipeline's state is stored.
-   * If not set, the pipeline's state is not persisted across
-   * restarts.
+   * It should point to a path on the file-system of the machine/container where the
+   * pipeline can find its persistent state.
+   *
+   * This field must be set by the pipeline runner implementation on startup
+   * if `global.storage` is `true`.
+   * If `global.storage` is `false`, this field is ignored by the pipeline.
    */
   storage_location?: string | null
 }

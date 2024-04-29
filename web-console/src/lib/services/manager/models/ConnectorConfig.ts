@@ -5,6 +5,7 @@
 import type { FormatConfig } from './FormatConfig'
 import type { OutputBufferConfig } from './OutputBufferConfig'
 import type { TransportConfig } from './TransportConfig'
+
 /**
  * A data connector's configuration
  */

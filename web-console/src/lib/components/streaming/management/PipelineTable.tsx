@@ -85,6 +85,7 @@ interface ConnectorData {
   relation: Relation
   connections: [AttachedConnector, ConnectorDescr][]
 }
+
 type InputOrOutput = 'input' | 'output'
 
 // Joins the relation with attached connectors and connectors and returns it as
@@ -476,6 +477,16 @@ export default function PipelineTable() {
     {
       field: 'description',
       headerName: 'Description',
+      editable: true,
+      flex: 3,
+      valueGetter: params => params.row.descriptor.description,
+      valueSetter: (params: GridValueSetterParams) => {
+        return { ...params.row, descriptor: { ...params.row.descriptor, description: params.value } }
+      }
+    },
+    {
+      field: 'storage',
+      headerName: 'Storage',
       editable: true,
       flex: 3,
       valueGetter: params => params.row.descriptor.description,

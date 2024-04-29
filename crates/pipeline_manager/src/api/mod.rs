@@ -209,6 +209,7 @@ request is rejected."
         pipeline_types::transport::s3::ConsumeStrategy,
         pipeline_types::transport::s3::ReadStrategy,
         pipeline_types::transport::s3::S3InputConfig,
+        pipeline_types::transport::delta_table::DeltaTableWriterConfig,
         pipeline_types::format::csv::CsvEncoderConfig,
         pipeline_types::format::csv::CsvParserConfig,
         pipeline_types::format::json::JsonEncoderConfig,

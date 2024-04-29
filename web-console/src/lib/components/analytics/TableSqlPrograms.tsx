@@ -6,37 +6,37 @@
 
 import useStatusNotification from '$lib/components/common/errors/useStatusNotification'
 import EntityTable from '$lib/components/common/table/EntityTable'
-import {ResetColumnViewButton} from '$lib/components/common/table/ResetColumnViewButton'
-import {useDataGridPresentationLocalStorage} from '$lib/compositions/persistence/dataGrid'
-import {useDeleteDialog} from '$lib/compositions/useDialog'
-import {usePipelineManagerQuery} from '$lib/compositions/usePipelineManagerQuery'
-import {invalidateQuery} from '$lib/functions/common/tanstack'
-import {ApiError, ProgramDescr, ProgramsService, ProgramStatus} from '$lib/services/manager'
-import {mutationUpdateProgram, PipelineManagerQueryKey} from '$lib/services/pipelineManagerQuery'
-import {LS_PREFIX} from '$lib/types/localStorage'
-import {useCallback, useState} from 'react'
+import { ResetColumnViewButton } from '$lib/components/common/table/ResetColumnViewButton'
+import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
+import { useDeleteDialog } from '$lib/compositions/useDialog'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
+import { invalidateQuery } from '$lib/functions/common/tanstack'
+import { ApiError, ProgramDescr, ProgramsService, ProgramStatus } from '$lib/services/manager'
+import { mutationUpdateProgram, PipelineManagerQueryKey } from '$lib/services/pipelineManagerQuery'
+import { LS_PREFIX } from '$lib/types/localStorage'
+import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
-import {match, P} from 'ts-pattern'
+import { match, P } from 'ts-pattern'
 import IconPencil from '~icons/bx/pencil'
 import IconTrashAlt from '~icons/bx/trash-alt'
 
-import {Button, IconButton, Tooltip} from '@mui/material'
+import { Button, IconButton, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
-import {GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef} from '@mui/x-data-grid-pro'
-import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
+import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const getStatusChipProps = (status: ProgramStatus) =>
   match(status)
-    .with({SqlError: P._}, () => {
-      return {label: 'SQL Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined}
+    .with({ SqlError: P._ }, () => {
+      return { label: 'SQL Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined }
     })
-    .with({RustError: P._}, () => {
-      return {label: 'Rust Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined}
+    .with({ RustError: P._ }, () => {
+      return { label: 'Rust Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined }
     })
-    .with({SystemError: P._}, () => {
-      return {label: 'System Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined}
+    .with({ SystemError: P._ }, () => {
+      return { label: 'System Error', color: 'error' as const, 'data-testid': 'box-status-error', tooltip: undefined }
     })
     .with('Pending', () => {
       return {
@@ -63,7 +63,7 @@ const getStatusChipProps = (status: ProgramStatus) =>
       }
     })
     .with('Success', () => {
-      return {label: 'Ready', color: 'success' as const, 'data-testid': 'box-status-ready', tooltip: undefined}
+      return { label: 'Ready', color: 'success' as const, 'data-testid': 'box-status-ready', tooltip: undefined }
     })
     .exhaustive()
 
@@ -74,14 +74,14 @@ export const TableSqlPrograms = () => {
     ...pipelineManagerQuery.programs(),
     refetchInterval: 2000
   })
-  const {pushMessage} = useStatusNotification()
+  const { pushMessage } = useStatusNotification()
 
   const apiRef = useGridApiRef()
   const queryClient = useQueryClient()
 
-  const {showDeleteDialog} = useDeleteDialog()
+  const { showDeleteDialog } = useDeleteDialog()
   // Deleting a row
-  const deleteMutation = useMutation<void, ApiError, string>({mutationFn: ProgramsService.deleteProgram})
+  const deleteMutation = useMutation<void, ApiError, string>({ mutationFn: ProgramsService.deleteProgram })
   const deleteProject = useCallback(
     (curRow: ProgramDescr) => {
       setTimeout(() => {
@@ -92,7 +92,7 @@ export const TableSqlPrograms = () => {
               setRows(prevRows => prevRows.filter(row => row.program_id !== curRow.program_id))
             },
             onError: error => {
-              pushMessage({message: error.body.message, key: new Date().getTime(), color: 'error'})
+              pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
               invalidateQuery(queryClient, PipelineManagerQueryKey.programs())
             }
           })
@@ -110,12 +110,12 @@ export const TableSqlPrograms = () => {
       field: 'program_id',
       headerName: 'ID',
       renderCell: (params: GridRenderCellParams) => {
-        const {row} = params
+        const { row } = params
 
         return (
-          <Box sx={{display: 'flex', alignItems: 'center'}}>
-            <Box sx={{display: 'flex', flexDirection: 'column'}}>
-              <Typography noWrap variant='body2' sx={{color: 'text.primary', fontWeight: 600}}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <Typography noWrap variant='body2' sx={{ color: 'text.primary', fontWeight: 600 }}>
                 {row.program_id}
               </Typography>
             </Box>
@@ -129,7 +129,7 @@ export const TableSqlPrograms = () => {
       field: 'name',
       headerName: 'Name',
       renderCell: (params: GridRenderCellParams) => (
-        <Typography variant='body2' sx={{color: 'text.primary'}} data-testid={`box-program-name-${params.row.name}`}>
+        <Typography variant='body2' sx={{ color: 'text.primary' }} data-testid={`box-program-name-${params.row.name}`}>
           {params.row.name}
         </Typography>
       ),
@@ -137,7 +137,7 @@ export const TableSqlPrograms = () => {
         return (
           <Typography
             fontSize={12}
-            sx={{textTransform: 'uppercase', fontWeight: '530'}}
+            sx={{ textTransform: 'uppercase', fontWeight: '530' }}
             data-testid={`box-column-header-${params.field}`}
           >
             {params.field}
@@ -153,7 +153,7 @@ export const TableSqlPrograms = () => {
       renderCell: (params: GridRenderCellParams) => (
         <Typography
           variant='body2'
-          sx={{color: 'text.primary'}}
+          sx={{ color: 'text.primary' }}
           data-testid={`box-program-description-${params.row.name}`}
         >
           {params.row.description}
@@ -166,10 +166,10 @@ export const TableSqlPrograms = () => {
       field: 'status',
       headerName: 'Status',
       renderCell: (params: GridRenderCellParams) => {
-        const {tooltip, ...statusChipProps} = getStatusChipProps(params.row.status)
+        const { tooltip, ...statusChipProps } = getStatusChipProps(params.row.status)
         return (
           <Tooltip title={tooltip}>
-            <CustomChip rounded size='small' skin='light' {...statusChipProps} sx={{width: 120}}/>
+            <CustomChip rounded size='small' skin='light' {...statusChipProps} sx={{ width: 120 }} />
           </Tooltip>
         )
       }
@@ -188,12 +188,12 @@ export const TableSqlPrograms = () => {
                 href={`/analytics/editor/?program_name=${params.row.name}`}
                 data-testid='button-edit'
               >
-                <IconPencil fontSize={20}/>
+                <IconPencil fontSize={20} />
               </IconButton>
             </Tooltip>
             <Tooltip title='Delete'>
               <IconButton size='small' onClick={() => deleteProgram(params.row)} data-testid='button-delete'>
-                <IconTrashAlt fontSize={20}/>
+                <IconTrashAlt fontSize={20} />
               </IconButton>
             </Tooltip>
           </Box>
@@ -203,16 +203,16 @@ export const TableSqlPrograms = () => {
   ]
 
   // Editing a row
-  const {mutate: updateProgram} = useMutation(mutationUpdateProgram(queryClient))
+  const { mutate: updateProgram } = useMutation(mutationUpdateProgram(queryClient))
   const processRowUpdate = (newRow: ProgramDescr, oldRow: ProgramDescr) => {
     updateProgram(
       {
         programName: oldRow.name,
-        update_request: {description: newRow.description, name: newRow.name}
+        update_request: { description: newRow.description, name: newRow.name }
       },
       {
         onError: (error: ApiError) => {
-          pushMessage({message: error.body.message, key: new Date().getTime(), color: 'error'})
+          pushMessage({ message: error.body.message, key: new Date().getTime(), color: 'error' })
           apiRef.current.updateRows([oldRow])
         }
       }
@@ -221,7 +221,7 @@ export const TableSqlPrograms = () => {
     return newRow
   }
 
-  const defaultColumnVisibility = {program_id: false}
+  const defaultColumnVisibility = { program_id: false }
   const gridPersistence = useDataGridPresentationLocalStorage({
     key: LS_PREFIX + 'settings/analytics/programs/grid',
     defaultColumnVisibility
@@ -251,13 +251,13 @@ export const TableSqlPrograms = () => {
         apiRef={apiRef}
         toolbarChildren={[
           btnAdd,
-          <GridToolbarFilterButton key='1' data-testid='button-filter'/>,
+          <GridToolbarFilterButton key='1' data-testid='button-filter' />,
           <ResetColumnViewButton
             key='2'
             setColumnViewModel={gridPersistence.setColumnViewModel}
             setColumnVisibilityModel={() => gridPersistence.setColumnVisibilityModel(defaultColumnVisibility)}
           />,
-          <div style={{marginLeft: 'auto'}} key='3'/>
+          <div style={{ marginLeft: 'auto' }} key='3' />
         ]}
         footerChildren={btnAdd}
       />
