@@ -251,9 +251,11 @@ export const ProgramEditorImpl = ({
   // TODO: The IStandaloneCodeEditor type is not exposed in the react monaco
   // editor package?
   const editorRef = useRef<any /* IStandaloneCodeEditor */>(null)
+
   function handleEditorDidMount(editor: any) {
     editorRef.current = editor
   }
+
   const updateCode = (value: string | undefined) => {
     updateProgram(p => ({ ...p, code: value }))
   }
@@ -309,7 +311,7 @@ export const ProgramEditor = ({ programName }: { programName: string }) => {
       description: '',
       program_id: '',
       status: 'Pending',
-      config: { profile: CompilationProfile.UNOPTIMIZED },
+      config: { profile: CompilationProfile.OPTIMIZED },
       version: 0
     },
     refetchOnWindowFocus: false
