@@ -27,7 +27,7 @@ def main():
     parser.add_argument("--prepare-args", required=False, help="number of SecOps pipelines to simulate")
     parser.add_argument("--kafka-url-for-connector", required=False, default="redpanda:9092",
                         help="Kafka URL from pipeline")
-    parser.add_argument("--registry-url-for-connector", required=False, default="redpanda:8081",
+    parser.add_argument("--registry-url-for-connector", required=False, default="http://redpanda:8081",
                         help="Schema registry URL from pipeline")
 
     args = parser.parse_args()
