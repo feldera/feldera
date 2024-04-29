@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial support for Avro as an output format
   ([#1673](https://github.com/feldera/feldera/pull/1673))
+- Ability to enable persistent storage for a pipeline through API/UI. 
+  ([#1692](https://github.com/feldera/feldera/pull/1692))
 
 ## [0.14.0] - 2024-04-17
 
