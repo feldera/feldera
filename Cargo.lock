@@ -3299,6 +3299,7 @@ dependencies = [
  "num-format",
  "paste",
  "rand 0.8.5",
+ "rdkafka",
  "regex",
  "rkyv",
  "rstest",

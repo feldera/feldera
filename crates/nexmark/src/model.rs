@@ -3,7 +3,9 @@
 //! Based on the equivalent [Nexmark Flink Java model classes](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model).
 
 use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Serialize as SerdeSerialize, Serializer as SerdeSerializer};
 use size_of::SizeOf;
+use time::{format_description::well_known::Iso8601, OffsetDateTime};
 
 /// The Nexmark Person model based on the [Nexmark Java Person class](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/model/Person.java).
 ///
@@ -22,6 +24,7 @@ use size_of::SizeOf;
     Archive,
     Serialize,
     Deserialize,
+    SerdeSerialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -32,6 +35,7 @@ pub struct Person {
     pub credit_card: String,
     pub city: String,
     pub state: String,
+    #[serde(serialize_with = "format_sql_timestamp")]
     pub date_time: u64,
     pub extra: String,
 }
@@ -53,6 +57,7 @@ pub struct Person {
     Archive,
     Serialize,
     Deserialize,
+    SerdeSerialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -62,7 +67,9 @@ pub struct Auction {
     pub description: String,
     pub initial_bid: u64,
     pub reserve: u64,
+    #[serde(serialize_with = "format_sql_timestamp")]
     pub date_time: u64,
+    #[serde(serialize_with = "format_sql_timestamp")]
     pub expires: u64,
     pub seller: u64,
     pub category: u64,
@@ -86,6 +93,7 @@ pub struct Auction {
     Archive,
     Serialize,
     Deserialize,
+    SerdeSerialize,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -102,6 +110,7 @@ pub struct Bid {
     pub url: String,
     /// Instant at which this bid was made. NOTE: This may be earlier than teh
     /// system's event time.
+    #[serde(serialize_with = "format_sql_timestamp")]
     pub date_time: u64,
     /// Additional arbitrary payload for performance testing.
     pub extra: String,
@@ -124,4 +133,24 @@ impl Default for Event {
     fn default() -> Self {
         Event::Person(Default::default())
     }
+}
+
+/// Serializes `timestamp` in a format parseable as a SQL `TIMESTAMP`, that is,
+/// similar to ISO 8601 but using space instead of `T` as a separator and
+/// omitting the time zone.
+pub fn format_sql_timestamp<S>(timestamp: &u64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: SerdeSerializer,
+{
+    let secs = (timestamp / 1000) as i64;
+    let msecs = (timestamp % 1000) as u16;
+    let date_time = OffsetDateTime::from_unix_timestamp(secs)
+        .unwrap()
+        .replace_millisecond(msecs)
+        .unwrap();
+    let s = date_time
+        .format(&Iso8601::DATE_TIME)
+        .unwrap()
+        .replace('T', " ");
+    serializer.serialize_str(&s)
 }
