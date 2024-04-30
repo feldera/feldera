@@ -1,4 +1,4 @@
-use super::super::config::Config as NexmarkConfig;
+use crate::config::GeneratorOptions;
 
 // We start the ids at specific values to help ensure the queries find a match
 // even on small synthesized dataset sizes.
@@ -10,7 +10,7 @@ pub const FIRST_CATEGORY_ID: u64 = 10;
 /// options specific to this generator instantiation.
 #[derive(Clone)]
 pub struct Config {
-    pub nexmark_config: NexmarkConfig,
+    pub options: GeneratorOptions,
 
     /// Time for first event (ms since epoch).
     pub base_time: u64,
@@ -46,7 +46,7 @@ pub struct Config {
 /// [GeneratorConfig.java](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/GeneratorConfig.java)
 impl Config {
     pub fn new(
-        nexmark_config: NexmarkConfig,
+        options: GeneratorOptions,
         base_time: u64,
         first_event_id: u64,
         first_event_number: usize,
@@ -59,27 +59,27 @@ impl Config {
         // event numbers 0, 3 and 6 etc., where as the Java implementation uses
         // 0, 1 and 2 locally for each generator and so adds a factor of
         // num_generators.
-        let inter_event_delay = 1_000_000.0 / (nexmark_config.first_event_rate as f64);
+        let inter_event_delay = 1_000_000.0 / (options.first_event_rate as f64);
 
         // Original Java implementation says:
         // "Scale maximum down to avoid overflow in getEstimatedSizeBytes."
         // but including to ensure similar behavior.
-        let max_events = match nexmark_config.max_events {
+        let max_events = match options.max_events {
             0 => {
                 let max_average = *[
-                    nexmark_config.avg_person_byte_size,
-                    nexmark_config.avg_auction_byte_size,
-                    nexmark_config.avg_bid_byte_size,
+                    options.avg_person_byte_size,
+                    options.avg_auction_byte_size,
+                    options.avg_bid_byte_size,
                 ]
                 .iter()
                 .max()
                 .unwrap();
-                u64::MAX / (nexmark_config.total_proportion() as u64 * max_average as u64)
+                u64::MAX / (options.total_proportion() as u64 * max_average as u64)
             }
-            _ => nexmark_config.max_events,
+            _ => options.max_events,
         };
         Config {
-            nexmark_config,
+            options,
             base_time,
             first_event_id,
             max_events,
@@ -91,14 +91,13 @@ impl Config {
     /// Return the next event number for a generator which has so far emitted
     /// `num_events`.
     pub fn next_event_number(&self, num_events: u64) -> u64 {
-        self.first_event_number as u64
-            + num_events * self.nexmark_config.num_event_generators as u64
+        self.first_event_number as u64 + num_events * self.options.num_event_generators as u64
     }
 
     /// Return the next event number for a generator which has so far emitted
     /// `num_events`, but adjusted to account for `out_of_order_group_size`.
     pub fn next_adjusted_event_number(&self, num_events: u64) -> u64 {
-        let n = self.nexmark_config.out_of_order_group_size as u64;
+        let n = self.options.out_of_order_group_size as u64;
         let event_number = self.next_event_number(num_events);
         let base = (event_number / n) * n;
         let offset = (event_number * 953) % n;
@@ -108,7 +107,7 @@ impl Config {
     /// Return the event number whose event time will be a suitable watermark
     /// for a generator which has so far emitted nts`.
     pub fn next_event_number_for_watermark(&self, num_events: u64) -> u64 {
-        let n = self.nexmark_config.out_of_order_group_size as u64;
+        let n = self.options.out_of_order_group_size as u64;
         let event_number = self.next_event_number(num_events);
         (event_number / n) * n
     }
@@ -134,13 +133,14 @@ impl Default for Config {
         // the Java output before creating an issue against their repo, but for
         // now I'm using defaults of 0 for both, which results in the expected
         // events (first event is a person with id 1000, etc.).
-        Config::new(NexmarkConfig::default(), 0, 0, 0)
+        Config::new(GeneratorOptions::default(), 0, 0, 0)
     }
 }
 
 #[cfg(test)]
 pub mod tests {
-    use super::super::super::config::Config as NexmarkConfig;
+    use crate::config::GeneratorOptions;
+
     use super::*;
     use rstest::rstest;
     use std::iter::zip;
@@ -156,9 +156,9 @@ pub mod tests {
         #[case] expected_next_event_numbers: Vec<u64>,
     ) {
         let config = Config {
-            nexmark_config: NexmarkConfig {
+            options: GeneratorOptions {
                 num_event_generators,
-                ..NexmarkConfig::default()
+                ..GeneratorOptions::default()
             },
             first_event_number,
             ..Config::default()
@@ -182,9 +182,9 @@ pub mod tests {
     ) {
         assert_eq!(
             Config::new(
-                NexmarkConfig {
+                GeneratorOptions {
                     num_event_generators: 1,
-                    ..NexmarkConfig::default()
+                    ..GeneratorOptions::default()
                 },
                 0,
                 0,
@@ -227,10 +227,10 @@ pub mod tests {
     ) {
         // Seems to be issues in the Java implementation?!
         let config = Config {
-            nexmark_config: NexmarkConfig {
+            options: GeneratorOptions {
                 num_event_generators: 1,
                 out_of_order_group_size: 3,
-                ..NexmarkConfig::default()
+                ..GeneratorOptions::default()
             },
             ..Config::default()
         };
@@ -255,9 +255,9 @@ pub mod tests {
     ) {
         // Seems to be issues in the Java implementation?!
         let config = Config {
-            nexmark_config: NexmarkConfig {
+            options: GeneratorOptions {
                 out_of_order_group_size: 3,
-                ..NexmarkConfig::default()
+                ..GeneratorOptions::default()
             },
             ..Config::default()
         };

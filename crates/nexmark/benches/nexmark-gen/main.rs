@@ -4,7 +4,7 @@ use rand::rngs::{mock::StepRng, SmallRng};
 
 use dbsp::mimalloc::MiMalloc;
 use dbsp_nexmark::{
-    config::Config as NexmarkConfig,
+    config::GeneratorOptions,
     generator::{config::Config, NexmarkGenerator},
 };
 
@@ -21,9 +21,9 @@ macro_rules! with_rng {
         let rng_name = $rng_name;
         let rng = $rng;
         let config = Config {
-            nexmark_config: NexmarkConfig {
+            options: GeneratorOptions {
                 num_event_generators,
-                ..NexmarkConfig::default()
+                ..GeneratorOptions::default()
             },
             ..Config::default()
         };

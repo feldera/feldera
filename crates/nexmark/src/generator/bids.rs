@@ -52,10 +52,7 @@ impl<R: Rng> NexmarkGenerator<R> {
     }
 
     pub fn next_bid(&mut self, event_id: u64, timestamp: u64) -> Bid {
-        let auction = match self
-            .rng
-            .gen_range(0..self.config.nexmark_config.hot_auction_ratio)
-        {
+        let auction = match self.rng.gen_range(0..self.config.options.hot_auction_ratio) {
             0 => self.next_base0_auction_id(event_id),
             _ => {
                 // Choose the first auction in the batch of last HOT_AUCTION_RATIO auctions.
@@ -64,10 +61,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             }
         } + FIRST_AUCTION_ID;
 
-        let bidder = match self
-            .rng
-            .gen_range(0..self.config.nexmark_config.hot_bidders_ratio)
-        {
+        let bidder = match self.rng.gen_range(0..self.config.options.hot_bidders_ratio) {
             0 => self.next_base0_person_id(event_id),
             _ => {
                 // Choose the second person (so hot bidders and hot sellers don't collide) in
@@ -107,7 +101,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             channel,
             url,
             date_time: timestamp,
-            extra: self.next_extra(current_size, self.config.nexmark_config.avg_bid_byte_size),
+            extra: self.next_extra(current_size, self.config.options.avg_bid_byte_size),
         }
     }
 }
