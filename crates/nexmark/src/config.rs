@@ -3,7 +3,7 @@
 //! API based on the equivalent [Nexmark Flink Configuration API](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/NexmarkConfiguration.java)
 //! and the specific [Nexmark Flink Generator config](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/java/com/github/nexmark/flink/generator/GeneratorConfig.java).
 
-use clap::Parser;
+use clap::{Args, Parser};
 
 pub use crate::queries::Query;
 
@@ -22,6 +22,46 @@ pub struct Config {
     #[clap(long = "bench", hide = true)]
     pub __bench: bool,
 
+    #[clap(flatten)]
+    pub generator_options: GeneratorOptions,
+
+    /// Number of CPU cores to be available.
+    #[clap(long, default_value = "2", env = "NEXMARK_CPU_CORES")]
+    pub cpu_cores: usize,
+
+    /// Dump DBSP profiles for all executed queries to the specified directory.
+    #[clap(long, env = "NEXMARK_PROFILE_PATH")]
+    pub profile_path: Option<String>,
+
+    /// Queries to run, all by default.
+    #[clap(long, env = "NEXMARK_QUERIES", value_enum)]
+    pub query: Vec<Query>,
+
+    /// DBSP-specific configuration options.
+    /// The size of the batches to be inputted to DBSP per step.
+    #[clap(long, default_value = "40000", env = "DBSP_INPUT_BATCH_SIZE")]
+    pub input_batch_size: usize,
+
+    /// Store results in a csv file in addition to printing on the command-line.
+    #[clap(long = "csv", env = "DBSP_RESULTS_AS_CSV")]
+    pub output_csv: Option<String>,
+
+    /// Disable progress bar.
+    #[clap(long = "no-progress", default_value_t = true, action = clap::ArgAction::SetFalse)]
+    pub progress: bool,
+
+    /// Enable storage.
+    #[clap(long)]
+    pub storage: bool,
+}
+
+/// Properties of the generated input events.
+#[derive(Clone, Debug, Args)]
+pub struct GeneratorOptions {
+    /// The size of the buffer (channel) to use in the Nexmark Source.
+    #[clap(long, default_value = "10000", env = "NEXMARK_SOURCE_BUFFER_SIZE")]
+    pub source_buffer_size: usize,
+
     /// Specify the proportion of events that will be new auctions.
     #[clap(long, default_value = "3", env = "NEXMARK_AUCTION_PROPORTION")]
     pub auction_proportion: usize,
@@ -37,10 +77,6 @@ pub struct Config {
     /// Average idealized size of a 'new person' event, in bytes.
     #[clap(long, default_value = "200", env = "NEXMARK_AVG_PERSON_BYTE_SIZE")]
     pub avg_person_byte_size: usize,
-
-    /// Number of CPU cores to be available.
-    #[clap(long, default_value = "2", env = "NEXMARK_CPU_CORES")]
-    pub cpu_cores: usize,
 
     /// Specify the proportion of events that will be new bids.
     #[clap(long, default_value = "46", env = "NEXMARK_BID_PROPORTION")]
@@ -90,40 +126,11 @@ pub struct Config {
     /// Specify the proportion of events that will be new people.
     #[clap(long, default_value = "1", env = "NEXMARK_PERSON_PROPORTION")]
     pub person_proportion: usize,
-
-    /// Dump DBSP profiles for all executed queries to the specified directory.
-    #[clap(long, env = "NEXMARK_PROFILE_PATH")]
-    pub profile_path: Option<String>,
-
-    /// Queries to run, all by default.
-    #[clap(long, env = "NEXMARK_QUERIES", value_enum)]
-    pub query: Vec<Query>,
-
-    /// The size of the buffer (channel) to use in the Nexmark Source.
-    #[clap(long, default_value = "10000", env = "NEXMARK_SOURCE_BUFFER_SIZE")]
-    pub source_buffer_size: usize,
-
-    /// DBSP-specific configuration options.
-    /// The size of the batches to be inputted to DBSP per step.
-    #[clap(long, default_value = "40000", env = "DBSP_INPUT_BATCH_SIZE")]
-    pub input_batch_size: usize,
-
-    /// Store results in a csv file in addition to printing on the command-line.
-    #[clap(long = "csv", env = "DBSP_RESULTS_AS_CSV")]
-    pub output_csv: Option<String>,
-
-    /// Disable progress bar.
-    #[clap(long = "no-progress", default_value_t = true, action = clap::ArgAction::SetFalse)]
-    pub progress: bool,
-
-    /// Enable storage.
-    #[clap(long)]
-    pub storage: bool,
 }
 
 /// Implementation of config methods based on the Java implementation at
 /// [NexmarkConfig.java](https://github.com/nexmark/nexmark/blob/master/nexmark-flink/src/main/java/com/github/nexmark/flink/NexmarkConfiguration.java).
-impl Config {
+impl GeneratorOptions {
     pub fn total_proportion(&self) -> usize {
         self.person_proportion + self.auction_proportion + self.bid_proportion
     }
@@ -133,12 +140,26 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             __bench: true,
+            generator_options: GeneratorOptions::default(),
+            cpu_cores: 2,
+            profile_path: None,
+            query: Vec::new(),
+            input_batch_size: 40_000,
+            output_csv: None,
+            progress: true,
+            storage: false,
+        }
+    }
+}
+
+impl Default for GeneratorOptions {
+    fn default() -> Self {
+        Self {
             auction_proportion: 3,
             avg_auction_byte_size: 500,
             avg_bid_byte_size: 100,
             avg_person_byte_size: 200,
             bid_proportion: 46,
-            cpu_cores: 2,
             first_event_rate: 10_000_000,
             hot_auction_ratio: 2,
             hot_bidders_ratio: 4,
@@ -149,13 +170,7 @@ impl Default for Config {
             num_in_flight_auctions: 100,
             out_of_order_group_size: 1,
             person_proportion: 1,
-            profile_path: None,
-            query: Vec::new(),
             source_buffer_size: 10_000,
-            input_batch_size: 40_000,
-            output_csv: None,
-            progress: true,
-            storage: false,
         }
     }
 }

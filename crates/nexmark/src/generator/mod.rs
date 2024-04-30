@@ -68,9 +68,9 @@ impl<R: Rng> NexmarkGenerator<R> {
             self.wallclock_base_time + event_timestamp - self.config.base_time;
 
         let (auction_proportion, person_proportion, total_proportion) = (
-            self.config.nexmark_config.auction_proportion as u64,
-            self.config.nexmark_config.person_proportion as u64,
-            self.config.nexmark_config.total_proportion() as u64,
+            self.config.options.auction_proportion as u64,
+            self.config.options.person_proportion as u64,
+            self.config.options.total_proportion() as u64,
         );
 
         let rem = new_event_id % total_proportion;
@@ -137,7 +137,7 @@ pub struct NextEvent {
 pub mod tests {
     use super::*;
     use crate::{
-        config::Config as NexmarkConfig,
+        config::GeneratorOptions,
         model::{Auction, Bid, Person},
     };
     use rand::{rngs::mock::StepRng, thread_rng};
@@ -146,9 +146,9 @@ pub mod tests {
     pub fn make_test_generator() -> NexmarkGenerator<StepRng> {
         NexmarkGenerator::new(
             Config {
-                nexmark_config: NexmarkConfig {
+                options: GeneratorOptions {
                     num_event_generators: 1,
-                    ..NexmarkConfig::default()
+                    ..GeneratorOptions::default()
                 },
                 ..Config::default()
             },
@@ -244,9 +244,9 @@ pub mod tests {
         #[case] expected_next_event_ids: Vec<u64>,
     ) {
         let config = Config {
-            nexmark_config: NexmarkConfig {
+            options: GeneratorOptions {
                 num_event_generators,
-                ..NexmarkConfig::default()
+                ..GeneratorOptions::default()
             },
             first_event_id,
             first_event_number,
@@ -266,9 +266,9 @@ pub mod tests {
     fn test_next_event() {
         let mut ng = NexmarkGenerator::new(
             Config {
-                nexmark_config: NexmarkConfig {
+                options: GeneratorOptions {
                     num_event_generators: 1,
-                    ..NexmarkConfig::default()
+                    ..GeneratorOptions::default()
                 },
                 ..Config::default()
             },

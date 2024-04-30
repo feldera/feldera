@@ -95,7 +95,7 @@ fn spawn_source_producer(
         .name("benchmark producer".into())
         .spawn(move || {
             let batch_size = nexmark_config.input_batch_size;
-            let mut source = NexmarkSource::new(nexmark_config);
+            let mut source = NexmarkSource::new(nexmark_config.generator_options);
             let mut num_events: u64 = 0;
 
             // Start iterating by loading up the first batch of input ready for processing,
@@ -218,10 +218,13 @@ fn create_ascii_table() -> AsciiTable {
 
 fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
     let name = format!("{query:?}");
-    println!("Starting {name} bench of {} events...", config.max_events);
+    println!(
+        "Starting {name} bench of {} events...",
+        config.generator_options.max_events
+    );
 
     let num_cores = config.cpu_cores;
-    let expected_num_events = config.max_events;
+    let expected_num_events = config.generator_options.max_events;
     let circuit_config = CircuitConfig {
         min_storage_rows: if config.storage { 0 } else { usize::MAX },
         ..CircuitConfig::with_workers(num_cores)

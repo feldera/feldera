@@ -33,10 +33,7 @@ impl<R: Rng> NexmarkGenerator<R> {
         let id = self.last_base0_auction_id(event_id) + FIRST_AUCTION_ID;
 
         // Here P(auction will be for a hot seller) = 1 - 1/hot_sellers_ratio.
-        let seller = match self
-            .rng
-            .gen_range(0..self.config.nexmark_config.hot_sellers_ratio)
-        {
+        let seller = match self.rng.gen_range(0..self.config.options.hot_sellers_ratio) {
             0 => self.next_base0_person_id(event_id),
             _ => {
                 // Choose the first person in the batch of last hot_sellers_ratio people.
@@ -73,20 +70,17 @@ impl<R: Rng> NexmarkGenerator<R> {
             expires: timestamp + next_length_ms,
             seller,
             category,
-            extra: self.next_extra(
-                current_size,
-                self.config.nexmark_config.avg_auction_byte_size,
-            ),
+            extra: self.next_extra(current_size, self.config.options.avg_auction_byte_size),
         })
     }
 
     /// Return the last valid auction id (ignoring FIRST_AUCTION_ID). Will be
     /// the current auction id if due to generate an auction.
     pub fn last_base0_auction_id(&self, event_id: u64) -> u64 {
-        let mut epoch = event_id / self.config.nexmark_config.total_proportion() as u64;
-        let mut offset = event_id % self.config.nexmark_config.total_proportion() as u64;
-        let person_proportion = self.config.nexmark_config.person_proportion as u64;
-        let auction_proportion = self.config.nexmark_config.auction_proportion as u64;
+        let mut epoch = event_id / self.config.options.total_proportion() as u64;
+        let mut offset = event_id % self.config.options.total_proportion() as u64;
+        let person_proportion = self.config.options.person_proportion as u64;
+        let auction_proportion = self.config.options.auction_proportion as u64;
 
         if offset < person_proportion {
             // About to generate a person.
@@ -115,7 +109,7 @@ impl<R: Rng> NexmarkGenerator<R> {
         // is difficult to split.
         let min_auction = self
             .last_base0_auction_id(next_event_id)
-            .saturating_sub(self.config.nexmark_config.num_in_flight_auctions as u64);
+            .saturating_sub(self.config.options.num_in_flight_auctions as u64);
         let max_auction = self.last_base0_auction_id(next_event_id);
         min_auction + self.rng.gen_range(0..(max_auction - min_auction + 1))
     }
@@ -127,9 +121,9 @@ impl<R: Rng> NexmarkGenerator<R> {
         // How many events until we've generated num_in_flight_actions?
         // E.g. with defaults, this is 100 * 50 / 3 = 1666 total events (bids, people,
         // auctions)
-        let num_events_for_auctions = (self.config.nexmark_config.num_in_flight_auctions
-            * self.config.nexmark_config.total_proportion())
-            / self.config.nexmark_config.auction_proportion;
+        let num_events_for_auctions = (self.config.options.num_in_flight_auctions
+            * self.config.options.total_proportion())
+            / self.config.options.auction_proportion;
         // When will the auction num_in_flight_auctions beyond now be generated?
         // E.g. with defaults, timestamp for the event 1666 from now
         // (corresponding to 100 auctions from now).

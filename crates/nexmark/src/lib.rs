@@ -11,10 +11,10 @@
 //! parallel when DBSP can be scaled.
 
 use self::{
-    config::Config as NexmarkConfig,
     generator::{config::Config as GeneratorConfig, NexmarkGenerator, NextEvent},
     model::Event,
 };
+use config::GeneratorOptions;
 use rand::{rngs::ThreadRng, Rng};
 use std::{
     collections::VecDeque,
@@ -113,7 +113,7 @@ pub struct NexmarkSource {
 // Creates and spawns the generators according to the nexmark config, returning
 // the receiver to listen on for next events.
 fn create_generators_for_config<R: Rng + Default>(
-    nexmark_config: NexmarkConfig,
+    options: GeneratorOptions,
     // TODO: I originally planned for this function to be generic for Rng, so I could test
     // it with a StepRng, but was unable to because although `R::default()` can be used to
     // instantiate a ThreadRng, `Default` is not supported for `StepRng`. Not sure if it's
@@ -124,16 +124,10 @@ fn create_generators_for_config<R: Rng + Default>(
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    let buffer_size = nexmark_config.source_buffer_size;
-    let mut next_event_rxs: Vec<BatchedReceiver<NextEvent>> = (0..nexmark_config
-        .num_event_generators)
+    let buffer_size = options.source_buffer_size;
+    let mut next_event_rxs: Vec<BatchedReceiver<NextEvent>> = (0..options.num_event_generators)
         .map(|generator_num| {
-            GeneratorConfig::new(
-                nexmark_config.clone(),
-                wallclock_base_time,
-                0,
-                generator_num,
-            )
+            GeneratorConfig::new(options.clone(), wallclock_base_time, 0, generator_num)
         })
         .map(|generator_config| {
             let (mut tx, rx) = batched_channel(buffer_size);
@@ -184,8 +178,8 @@ impl NexmarkSource {
         }
     }
 
-    pub fn new(nexmark_config: NexmarkConfig) -> NexmarkSource {
-        NexmarkSource::from_next_events(create_generators_for_config::<ThreadRng>(nexmark_config))
+    pub fn new(options: GeneratorOptions) -> NexmarkSource {
+        NexmarkSource::from_next_events(create_generators_for_config::<ThreadRng>(options))
     }
 
     fn wallclock_time(&mut self) -> u64 {
@@ -219,6 +213,7 @@ impl Iterator for NexmarkSource {
 #[cfg(test)]
 pub mod tests {
     use self::{
+        config::GeneratorOptions,
         generator::{config::Config as GeneratorConfig, tests::generate_expected_next_events},
         model::Event,
     };
@@ -236,9 +231,9 @@ pub mod tests {
         let (next_event_tx, next_event_rx) = mpsc::sync_channel(max_events as usize + 1);
         let mut generator = NexmarkGenerator::new(
             GeneratorConfig {
-                nexmark_config: NexmarkConfig {
+                options: GeneratorOptions {
                     num_event_generators: 1,
-                    ..NexmarkConfig::default()
+                    ..GeneratorOptions::default()
                 },
                 base_time: times.start,
                 ..GeneratorConfig::default()
@@ -301,13 +296,13 @@ pub mod tests {
 
     #[test]
     fn test_source_with_multiple_generators() {
-        let nexmark_config = NexmarkConfig {
-            num_event_generators: 3,
+        let options = GeneratorOptions {
             first_event_rate: 1_000_000,
+            num_event_generators: 3,
             max_events: 10,
-            ..NexmarkConfig::default()
+            ..GeneratorOptions::default()
         };
-        let receiver = create_generators_for_config::<ThreadRng>(nexmark_config);
+        let receiver = create_generators_for_config::<ThreadRng>(options);
         let source = NexmarkSource::from_next_events(receiver);
 
         let expected_zset_tuple = generate_expected_zset_tuples(0, 10);

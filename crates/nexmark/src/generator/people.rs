@@ -62,10 +62,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             city,
             state,
             date_time: timestamp,
-            extra: self.next_extra(
-                current_size,
-                self.config.nexmark_config.avg_person_byte_size,
-            ),
+            extra: self.next_extra(current_size, self.config.options.avg_person_byte_size),
         }
     }
 
@@ -84,10 +81,7 @@ impl<R: Rng> NexmarkGenerator<R> {
     /// 0".
     pub fn next_base0_person_id(&mut self, event_id: u64) -> u64 {
         let num_people = self.last_base0_person_id(event_id) + 1;
-        let active_people = min(
-            num_people,
-            self.config.nexmark_config.num_active_people as u64,
-        );
+        let active_people = min(num_people, self.config.options.num_active_people as u64);
         let n = self
             .rng
             .gen_range(0..(active_people + nexmark_config::PERSON_ID_LEAD as u64));
@@ -97,16 +91,16 @@ impl<R: Rng> NexmarkGenerator<R> {
     /// Return the last valid person id (ignoring FIRST_PERSON_ID). Will be the
     /// current person id if due to generate a person.
     pub fn last_base0_person_id(&self, event_id: u64) -> u64 {
-        let epoch = event_id / self.config.nexmark_config.total_proportion() as u64;
-        let mut offset = event_id % self.config.nexmark_config.total_proportion() as u64;
+        let epoch = event_id / self.config.options.total_proportion() as u64;
+        let mut offset = event_id % self.config.options.total_proportion() as u64;
 
-        if offset >= self.config.nexmark_config.person_proportion as u64 {
+        if offset >= self.config.options.person_proportion as u64 {
             // About to generate an auction or bid.
             // Go back to the last person generated in this epoch.
-            offset = self.config.nexmark_config.person_proportion as u64 - 1;
+            offset = self.config.options.person_proportion as u64 - 1;
         }
         // About to generate a person.
-        epoch * self.config.nexmark_config.person_proportion as u64 + offset
+        epoch * self.config.options.person_proportion as u64 + offset
     }
 
     // Return a random US state.
@@ -224,7 +218,7 @@ mod tests {
         // which together with the other defaults for person and auction
         // proportion, makes the total 25.
         let mut ng = make_test_generator();
-        ng.config.nexmark_config.bid_proportion = 21;
+        ng.config.options.bid_proportion = 21;
 
         // With the total proportion at 25, there will be a new person
         // at every 25th event.
