@@ -1,6 +1,7 @@
+//! A local runner that watches for pipeline objects in the API
+//! and instantiates them locally as processes.
+
 use crate::db::PipelineRevision;
-/// A local runner that watches for pipeline objects in the API
-/// and instantiates them locally as processes.
 use crate::db_notifier::{DbNotification, Operation};
 use crate::pipeline_automata::{fetch_binary_ref, PipelineAutomaton};
 use crate::pipeline_automata::{PipelineExecutionDesc, PipelineExecutor};
