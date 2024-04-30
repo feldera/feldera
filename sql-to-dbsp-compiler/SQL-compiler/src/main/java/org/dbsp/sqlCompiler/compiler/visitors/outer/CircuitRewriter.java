@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
@@ -305,7 +306,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!outputType.sameType(operator.outputType)
                 || input != operator.input()
                 || function != operator.getFunction()) {
-            result = new DBSPIndexOperator(operator.getNode(), function,
+            result = new DBSPIndexOperator(operator.getNode(), function.to(DBSPClosureExpression.class),
                     outputType.to(DBSPTypeIndexedZSet.class), operator.isMultiset, input);
         }
         this.map(operator, result);

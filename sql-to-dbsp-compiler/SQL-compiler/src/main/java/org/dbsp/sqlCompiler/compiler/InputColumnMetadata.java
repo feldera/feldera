@@ -11,7 +11,7 @@ import javax.annotation.Nullable;
 
 /** Metadata describing an input table column. */
 public class InputColumnMetadata
-        implements IHasLateness, IHasName, IHasSourcePositionRange, IHasType {
+        implements IHasLateness, IHasWatermark, IHasName, IHasSourcePositionRange, IHasType {
     public final CalciteObject node;
     /** Column name. */
     public final String name;
@@ -62,5 +62,11 @@ public class InputColumnMetadata
     @Override
     public SourcePositionRange getPositionRange() {
         return this.getNode().getPositionRange();
+    }
+
+    @Nullable
+    @Override
+    public DBSPExpression getWatermark() {
+        return this.watermark;
     }
 }

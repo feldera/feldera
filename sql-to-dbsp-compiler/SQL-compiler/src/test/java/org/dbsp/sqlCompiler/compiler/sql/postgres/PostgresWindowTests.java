@@ -80,7 +80,7 @@ public class PostgresWindowTests extends SqlIoTest {
                   9 |   8 |
                  10 |   9 |
                 (10 rows)
-                                
+                
                 SELECT lag(ten) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1 WHERE unique2 < 10;
                  lag | ten | four
                 -----+-----+------
@@ -95,7 +95,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      |   1 |    3
                    1 |   3 |    3
                 (10 rows)
-                                
+                
                 SELECT lag(ten, four) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
                 WHERE unique2 < 10;
                  lag | ten | four
@@ -111,7 +111,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      |   1 |    3
                      |   3 |    3
                 (10 rows)
-                                
+                
                 SELECT lag(ten, four, 0) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1
                 WHERE unique2 < 10;
@@ -128,7 +128,7 @@ public class PostgresWindowTests extends SqlIoTest {
                    0 |   1 |    3
                    0 |   3 |    3
                 (10 rows)
-                                
+                
                 SELECT lag(ten, four, 0.7) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1
                 WHERE unique2 < 10 ORDER BY four, ten;
@@ -145,7 +145,7 @@ public class PostgresWindowTests extends SqlIoTest {
                  0.7 |   1 |    3
                  0.7 |   3 |    3
                 (10 rows)
-                                
+                
                 SELECT lead(ten) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
                 WHERE unique2 < 10;
                  lead | ten | four
@@ -161,9 +161,9 @@ public class PostgresWindowTests extends SqlIoTest {
                     3 |   1 |    3
                       |   3 |    3
                 (10 rows)
-                                
+                
                 SELECT lead(ten * 2, 1) OVER (PARTITION BY four ORDER BY ten), ten, four
-                FROM tenk1 
+                FROM tenk1
                 WHERE unique2 < 10;
                  lead | ten | four
                 ------+-----+------
@@ -178,8 +178,8 @@ public class PostgresWindowTests extends SqlIoTest {
                     6 |   1 |    3
                       |   3 |    3
                 (10 rows)
-                                
-                SELECT lead(ten * 2, 1, -1) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1 
+                
+                SELECT lead(ten * 2, 1, -1) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
                 WHERE unique2 < 10;
                  lead | ten | four
                 ------+-----+------
@@ -194,8 +194,8 @@ public class PostgresWindowTests extends SqlIoTest {
                     6 |   1 |    3
                    -1 |   3 |    3
                 (10 rows)
-                                
-                SELECT lead(ten * 2, 1, -1.4) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1 
+                
+                SELECT lead(ten * 2, 1, -1.4) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
                 WHERE unique2 < 10 ORDER BY four, ten;
                  lead | ten | four
                 ------+-----+------

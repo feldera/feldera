@@ -16,9 +16,9 @@ public class DBSPWaterlineOperator extends DBSPUnaryOperator {
     /** Initial value of waterline */
     public final DBSPExpression init;
 
-    public DBSPWaterlineOperator(CalciteObject node, DBSPExpression init, DBSPClosureExpression function, DBSPType
-            outputType, DBSPOperator input) {
-        super(node, "waterline_monotonic", function, outputType, false, input);
+    public DBSPWaterlineOperator(CalciteObject node, DBSPExpression init,
+                                 DBSPClosureExpression function, DBSPOperator input) {
+        super(node, "waterline_monotonic", function, function.getResultType(), false, input);
         this.init = init;
     }
 
@@ -26,14 +26,14 @@ public class DBSPWaterlineOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPWaterlineOperator(this.getNode(), this.init,
                 Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                this.outputType, this.input());
+                this.input());
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWaterlineOperator(this.getNode(), this.init,
-                    this.getFunction().to(DBSPClosureExpression.class), this.outputType, newInputs.get(0));
+                    this.getFunction().to(DBSPClosureExpression.class), newInputs.get(0));
         return this;
     }
 

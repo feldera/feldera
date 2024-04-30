@@ -26,6 +26,10 @@ package org.dbsp.sqlCompiler.ir.type;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.util.IIndentStream;
 
 import java.util.Arrays;
@@ -94,5 +98,27 @@ public class DBSPTypeUser extends DBSPType {
         if (this.mayBeNull)
             builder.append("?");
         return builder;
+    }
+
+    /** Generate a constructor for this type with the signature:
+     * (Self)::method(arguments)
+     * @param method     Method to invoke on this type
+     * @param arguments  Arguments to pass to constructor
+     * @return           An expression which invokes the constructor
+     */
+    public DBSPExpression constructor(String method, DBSPExpression... arguments) {
+        return new DBSPConstructorExpression(
+                new DBSPPathExpression(this, new DBSPPath(this.name, method)),
+                this,
+                arguments);
+    }
+
+    /** Generate a constructor for this type with the signature:
+     * (Self)::new(arguments)
+     * @param arguments  Arguments to pass to constructor
+     * @return           An expression which invokes the constructor
+     */
+    public DBSPExpression constructor(DBSPExpression... arguments) {
+        return this.constructor("new", arguments);
     }
 }

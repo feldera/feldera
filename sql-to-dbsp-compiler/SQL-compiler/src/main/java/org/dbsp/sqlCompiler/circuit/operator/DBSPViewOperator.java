@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
+import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -63,5 +64,11 @@ public class DBSPViewOperator
     @Override
     public Iterable<? extends IHasLateness> getLateness() {
         return this.metadata;
+    }
+
+    @Override
+    public Iterable<? extends IHasWatermark> getWatermarks() {
+        // Currently no watermark information in views
+        return Linq.list();
     }
 }

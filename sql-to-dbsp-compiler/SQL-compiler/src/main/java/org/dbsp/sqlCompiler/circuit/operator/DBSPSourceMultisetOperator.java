@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
+import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -65,6 +66,11 @@ public class DBSPSourceMultisetOperator
 
     @Override
     public Iterable<? extends IHasLateness> getLateness() {
+        return this.metadata.getColumns();
+    }
+
+    @Override
+    public Iterable<? extends IHasWatermark> getWatermarks() {
         return this.metadata.getColumns();
     }
 
