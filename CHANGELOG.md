@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial support for Avro as an output format
   ([#1673](https://github.com/feldera/feldera/pull/1673))
 
+### Changed
+
+- Fixed a bug where sometimes the wrong profile for compilation
+  is chosen by the manager.
+  ([#1696](https://github.com/feldera/feldera/pull/1696))
+
 ## [0.14.0] - 2024-04-17
 
 ### Added

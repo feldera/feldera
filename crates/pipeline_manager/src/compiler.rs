@@ -1064,7 +1064,10 @@ impl CompilationJob {
         Compiler::write_workspace_toml(config, program_id).await?;
 
         // Run cargo, direct stdout and stderr to the same file.
-        let profile = &job.program.config.profile;
+        let profile = &config
+            .compilation_profile
+            .as_ref()
+            .unwrap_or(&job.program.config.profile);
         let compiler_process = Compiler::run_cargo_build(config, program_id, profile).await?;
 
         Ok(Self {
