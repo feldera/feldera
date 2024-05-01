@@ -106,6 +106,11 @@ COPY --from=builder /app/target/release/pipeline-manager pipeline-manager
 # SQL compiler uber jar
 RUN mkdir -p lib/sql-to-dbsp-compiler/SQL-compiler/target
 COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar lib/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
+
+# Reuse `Cargo.lock` to ensure consistent crate versions.
+RUN mkdir -p .feldera/cargo_workspace
+COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
+
 # The crates needed for the SQL compiler
 COPY crates/dbsp lib/crates/dbsp
 COPY crates/pipeline-types lib/crates/pipeline-types
