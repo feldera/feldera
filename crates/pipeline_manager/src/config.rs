@@ -241,6 +241,9 @@ impl ApiServerConfig {
 #[derive(Parser, Default, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CompilationProfile {
+    /// Used primarily for development. Adds source information to binaries.
+    /// This resorts to the `dev` profile in cargo.
+    Dev,
     /// Prioritizes compilation speed over runtime speed
     Unoptimized,
     /// Prioritizes runtime speed over compilation speed
@@ -248,15 +251,26 @@ pub enum CompilationProfile {
     Optimized,
 }
 
+impl CompilationProfile {
+    fn to_target_folder(&self) -> &'static str {
+        match self {
+            CompilationProfile::Dev => "debug",
+            CompilationProfile::Unoptimized => "unoptimized",
+            CompilationProfile::Optimized => "release",
+        }
+    }
+}
+
 impl FromStr for CompilationProfile {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "dev" => Ok(CompilationProfile::Dev),
             "unoptimized" => Ok(CompilationProfile::Unoptimized),
             "optimized" => Ok(CompilationProfile::Optimized),
             e => unimplemented!(
-                "Unsupported option {e}. Available choices are 'unoptimized' and 'optimized'"
+                "Unsupported option {e}. Available choices are 'dev', 'unoptimized' and 'optimized'"
             ),
         }
     }
@@ -265,6 +279,7 @@ impl FromStr for CompilationProfile {
 impl Display for CompilationProfile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
+            CompilationProfile::Dev => write!(f, "dev"),
             CompilationProfile::Unoptimized => write!(f, "unoptimized"),
             CompilationProfile::Optimized => write!(f, "optimized"),
         }
@@ -374,7 +389,7 @@ impl CompilerConfig {
         // Always pick the compiler server's compilation profile if it is configured.
         Path::new(&self.workspace_dir())
             .join("target")
-            .join(profile.to_string())
+            .join(profile.to_target_folder())
             .join(Self::crate_name(program_id))
     }
 
