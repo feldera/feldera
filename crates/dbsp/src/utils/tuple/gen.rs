@@ -305,12 +305,12 @@ macro_rules! declare_tuples {
             */
             impl<$($element: Copy),*> Copy for $tuple_name<$($element),*> {}
 
-            impl<$($element),*> Checkpoint for $tuple_name<$($element),*> {
-                fn checkpoint(&self) -> Result<Vec<u8>, Error> {
+            impl<$($element),*> $crate::circuit::checkpointer::Checkpoint for $tuple_name<$($element),*> {
+                fn checkpoint(&self) -> Result<Vec<u8>, $crate::Error> {
                     todo!()
                 }
 
-                fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
+                fn restore(&mut self, _data: &[u8]) -> Result<(), $crate::Error> {
                     todo!()
                 }
             }

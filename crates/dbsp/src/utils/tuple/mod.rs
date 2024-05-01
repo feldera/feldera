@@ -5,8 +5,6 @@
 // This was introduced to resolve issues with auto-derived rkyv trait
 // implementations.
 
-use crate::circuit::checkpointer::Checkpoint;
-use crate::Error;
 use pipeline_types::deserialize_without_context;
 
 pub mod gen;
