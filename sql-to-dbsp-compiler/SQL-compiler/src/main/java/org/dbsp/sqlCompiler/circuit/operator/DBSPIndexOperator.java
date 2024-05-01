@@ -26,9 +26,11 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -44,11 +46,15 @@ public class DBSPIndexOperator extends DBSPUnaryOperator {
      * @param isMultiset      True if the output can be a multiset.
      * @param input           Source operator.
      */
-    public DBSPIndexOperator(CalciteObject node, DBSPExpression indexFunction,
+    public DBSPIndexOperator(CalciteObject node, DBSPClosureExpression indexFunction,
                              DBSPTypeIndexedZSet outputType,
                              boolean isMultiset, DBSPOperator input) {
         super(node, "map_index", indexFunction,
                 outputType, isMultiset, input);
+        assert indexFunction.body.getType().is(DBSPTypeRawTuple.class);
+        assert indexFunction.body.getType().to(DBSPTypeRawTuple.class).size() == 2;
+        assert outputType.getKVType().sameType(indexFunction.body.getType())
+                : "output type does not match type computed by index function";
     }
 
     @Override
@@ -64,7 +70,7 @@ public class DBSPIndexOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPIndexOperator(
-                this.getNode(), Objects.requireNonNull(expression),
+                this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 ixOutputType, this.isMultiset, this.input());
     }
 
@@ -72,7 +78,7 @@ public class DBSPIndexOperator extends DBSPUnaryOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIndexOperator(
-                    this.getNode(), this.getFunction(),
+                    this.getNode(), this.getFunction().to(DBSPClosureExpression.class),
                     this.outputType.to(DBSPTypeIndexedZSet.class), this.isMultiset, newInputs.get(0));
         return this;
     }

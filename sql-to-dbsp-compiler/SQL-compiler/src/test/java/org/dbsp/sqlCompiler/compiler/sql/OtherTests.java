@@ -135,7 +135,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         // Deterministically name the circuit function.
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         String str = circuit.toString();
-        String expected = """
+        String expected;
+        expected = """
                 Circuit circuit {
                     // DBSPSourceMultisetOperator 39
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
@@ -145,7 +146,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream126: stream<WSet<Tup1<b>>> = stream61;
+                    let stream128: stream<WSet<Tup1<b>>> = stream61;
                 }
                 """;
         Assert.assertEquals(expected, str);

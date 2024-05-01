@@ -78,9 +78,6 @@ annotated columns is too late.
 
 ### `WATERMARK` expressions
 
-*This feature is not yet fully implemented.  This documentation is
- only orientative.*
-
 `WATERMARK` is an annotation on the data in a column of a table that
 is relevant for the case of stream processing.  `WATERMARK` is
 described by an expression that evaluates to a constant value.  The

@@ -4,8 +4,9 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -14,22 +15,31 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
+import org.dbsp.sqlCompiler.compiler.IHasWatermark;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -230,14 +240,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(join, result, true);
     }
 
-    void processLateness(DBSPOperator operator) {
+    /** Process LATENESS annotations.
+     * @return Return the original operator if there aren't any annotations, or
+     * the operator that produces the result of the input filtered otherwise. */
+    DBSPOperator processLateness(DBSPOperator operator) {
         MonotoneExpression expression = this.expansionMonotoneValues.get(operator);
         if (expression == null) {
-            this.replace(operator);
-            return;
+            return operator;
         }
+        List<DBSPExpression> bounds = new ArrayList<>();
         List<DBSPExpression> minimums = new ArrayList<>();
-        List<DBSPExpression> zeros = new ArrayList<>();
         int index = 0;
         DBSPVariablePath t = new DBSPVariablePath("t", operator.getOutputZSetType().elementType.ref());
         for (IHasLateness column: operator.to(IHasColumnsMetadata.class).getLateness()) {
@@ -247,47 +259,120 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 DBSPType type = field.getType();
                 field = new DBSPBinaryExpression(operator.getNode(), field.getType(),
                         DBSPOpcode.SUB, field, lateness);
-                minimums.add(field);
-                DBSPExpression zero = type.to(IsBoundedType.class).getMinValue();
-                zeros.add(zero);
+                bounds.add(field);
+                DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
+                minimums.add(min);
             }
             index++;
         }
-        if (!zeros.isEmpty()) {
-            // The waterline operator will compute the *minimum legal value* of all the
-            // inputs that have a lateness attached.  The output signature contains only
-            // the columns that have lateness.
-            this.addOperator(operator);
-            DBSPTupleExpression zero = new DBSPTupleExpression(zeros, false);
-            DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
-            DBSPType outputType = min.getType();
-            DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
-                    operator.getNode(), zero.closure(), min.closure(t.asParameter()), outputType, operator);
-            this.addOperator(waterline);
-            this.markBound(operator, waterline);
+        if (minimums.isEmpty())
+            return operator;
 
-            // Waterline fed through a delay
-            DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), zero, waterline);
-            this.addOperator(delay);
+        // The waterline operator will compute the *minimum legal value* of all the
+        // inputs that have a lateness attached.  The output signature contains only
+        // the columns that have lateness.
+        this.addOperator(operator);
+        DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
+        DBSPTupleExpression bound = new DBSPTupleExpression(bounds, false);
+        DBSPParameter parameter = t.asParameter();
+        DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
+                operator.getNode(), min.closure(), bound.closure(parameter), operator);
+        this.addOperator(waterline);
+        this.markBound(operator, waterline);
 
-            DBSPControlledFilterOperator filter = DBSPControlledFilterOperator.create(
-                    operator.getNode(), operator, Monotonicity.getBodyType(expression), delay);
-            this.map(operator, filter);
-        } else {
-            this.replace(operator);
-        }
+        // Waterline fed through a delay
+        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), min, waterline);
+        this.addOperator(delay);
+        this.markBound(delay, waterline);
+        return DBSPControlledFilterOperator.create(
+                operator.getNode(), operator, Monotonicity.getBodyType(expression), delay);
     }
 
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
-        this.processLateness(operator);
+        DBSPOperator replacement = this.processLateness(operator);
+
+        // Process watermark annotations.  Very similar to lateness anotations.
+        int index = 0;
+        DBSPType dataType = operator.getOutputZSetType().elementType;
+        DBSPVariablePath t = new DBSPVariablePath("t", dataType.ref());
+        List<DBSPExpression> fields = new ArrayList<>();
+        List<DBSPExpression> bounds = new ArrayList<>();
+        List<DBSPExpression> minimums = new ArrayList<>();
+        for (IHasWatermark column: operator.to(IHasColumnsMetadata.class).getWatermarks()) {
+            DBSPExpression lateness = column.getWatermark();
+
+            if (lateness != null) {
+                DBSPExpression field = t.deref().field(index);
+                fields.add(field);
+                DBSPType type = field.getType();
+                field = new DBSPBinaryExpression(operator.getNode(), field.getType(),
+                        DBSPOpcode.SUB, field.deepCopy(), lateness);
+                bounds.add(field);
+                DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
+                minimums.add(min);
+            }
+            index++;
+        }
+
+        // Currently we only support at most 1 watermark column per table.
+        // TODO: support multiple fields.
+        if (minimums.size() > 1) {
+            throw new UnimplementedException("More than 1 watermark per table not yet supported", operator.getNode());
+        }
+
+        if (!minimums.isEmpty()) {
+            assert fields.size() == 1;
+            this.addOperator(replacement);
+
+            DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
+            DBSPTupleExpression bound = new DBSPTupleExpression(bounds, false);
+            DBSPParameter parameter = t.asParameter();
+            DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
+                    operator.getNode(), min.closure(), bound.closure(parameter), operator);
+            this.addOperator(waterline);
+
+            DBSPType windowBoundType = fields.get(0).getType();
+            DBSPType dynData = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "DynData", false);
+            DBSPTypeUser typedBox = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER,
+                    "TypedBox", false, windowBoundType, dynData);
+
+            DBSPVariablePath var = new DBSPVariablePath("t", bound.getType().ref());
+            DBSPExpression makePair = new DBSPRawTupleExpression(
+                    typedBox.constructor(minimums.get(0)),
+                    typedBox.constructor(var.deref().field(0)));
+            DBSPApplyOperator apply = new DBSPApplyOperator(
+                    operator.getNode(), makePair.closure(var.asParameter()), makePair.getType(), waterline, null);
+            this.addOperator(apply);
+
+            // Window requires data to be indexed
+            DBSPIndexOperator ix = new DBSPIndexOperator(operator.getNode(),
+                    new DBSPRawTupleExpression(fields.get(0), t.deref()).closure(t.asParameter()),
+                    new DBSPTypeIndexedZSet(operator.getNode(),
+                            fields.get(0).getType(), dataType), true, replacement);
+            this.addOperator(ix);
+            DBSPWindowOperator window = new DBSPWindowOperator(operator.getNode(), ix, apply);
+            this.addOperator(window);
+            replacement = new DBSPDeindexOperator(operator.getNode(), window);
+        }
+
+        if (replacement == operator) {
+            this.replace(operator);
+        } else {
+            this.map(operator, replacement);
+        }
     }
 
     @Override
     public void postorder(DBSPViewOperator operator) {
         if (operator.hasLateness()) {
             // Treat like a source operator
-            this.processLateness(operator);
+            DBSPOperator replacement = this.processLateness(operator);
+            if (replacement == operator) {
+                this.replace(operator);
+            } else {
+                this.map(operator, replacement);
+            }
         } else {
             // Treat like an identity function
             this.addBounds(operator, 0);

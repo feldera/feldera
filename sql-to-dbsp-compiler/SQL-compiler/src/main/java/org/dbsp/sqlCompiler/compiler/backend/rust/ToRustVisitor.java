@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
@@ -659,6 +660,21 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(", ");
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPWindowOperator operator) {
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getOutputName())
+                .append(" = ")
+                .append(operator.inputs.get(0).getOutputName())
+                .append(".")
+                .append(operator.operation)
+                .append("(&")
+                .append(operator.inputs.get(1).getOutputName())
+                .append(");");
         return VisitDecision.STOP;
     }
 
