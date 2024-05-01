@@ -1174,9 +1174,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeRef type) {
+        if (type.mayBeNull)
+            this.builder.append("Option<");
         this.builder.append("&")
                 .append(type.mutable ? "mut " : "");
         type.type.accept(this);
+        if (type.mayBeNull)
+            this.builder.append(">");
         return VisitDecision.STOP;
     }
 

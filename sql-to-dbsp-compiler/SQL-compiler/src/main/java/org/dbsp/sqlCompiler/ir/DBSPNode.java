@@ -35,17 +35,13 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Base interface for all DBSP nodes.
- */
+/** Base class for all DBSP nodes. */
 public abstract class DBSPNode
         implements IDBSPNode {
     static long crtId = 0;
     public final long id;
 
-    /**
-     * Original query Sql node that produced this node.
-     */
+    /** Original Calcite object node that produced this node. */
     private final
     CalciteObject node;
 

@@ -49,9 +49,7 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
         this.isNull = false;
     }
 
-    /**
-     * A tuple with value 'null'.
-     */
+    /** A tuple with value 'null'. */
     public DBSPTupleExpression(DBSPTypeTuple type) {
         super(type.getNode(), type);
         this.isNull = true;
@@ -94,9 +92,7 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
         return new DBSPTupleExpression(this.getNode(), fields);
     }
 
-    /**
-     * Cast each element of the tuple to the corresponding type in the destination tuple.
-     */
+    /** Cast each element of the tuple to the corresponding type in the destination tuple. */
     public DBSPTupleExpression pointwiseCast(DBSPTypeTuple destType) {
         if (this.size() != destType.size())
             throw new InternalCompilerError("Cannot cast " + this + " with " + this.size() + " fields "

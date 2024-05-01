@@ -22,7 +22,27 @@ public class PostgresWindowTests extends SqlIoTest {
                 (9),
                 (10);
                 
-                CREATE TABLE tenk1 (
+                --CREATE TABLE tenk1 (
+                --	unique1		int4,
+                --	unique2		int4,
+                --	two			int4,
+                --	four		int4,
+                --	ten			int4,
+                --	twenty		int4,
+                --	hundred		int4,
+                --	thousand	int4,
+                --	twothousand	int4,
+                --	fivethous	int4,
+                --	tenthous	int4,
+                --	odd			int4,
+                --	even		int4,
+                --	stringu1	varchar,
+                --	stringu2	varchar,
+                --	string4		varchar
+                --);
+                --
+                -- smaller version, only contains values where unique2 < 10
+                CREATE TABLE tenk1_small (
                 	unique1		int4,
                 	unique2		int4,
                 	two			int4,
@@ -40,13 +60,15 @@ public class PostgresWindowTests extends SqlIoTest {
                 	stringu2	varchar,
                 	string4		varchar
                 );""");
-        this.insertFromResource("tenk1", compiler);
+        //this.insertFromResource("tenk1", compiler);
+        this.insertFromResource("tenk1_small", compiler);
     }
 
-    @Test @Ignore
-    public void remove() {
+    @Test
+    public void testLeadLag() {
         this.qs("""
-                SELECT lag(ten) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1 WHERE unique2 < 10;
+                SELECT lag(ten) OVER (PARTITION BY four ORDER BY ten), ten, four
+                FROM tenk1_small WHERE unique2 < 10;
                  lag | ten | four
                 -----+-----+------
                      |   0 |    0
@@ -59,11 +81,85 @@ public class PostgresWindowTests extends SqlIoTest {
                      |   0 |    2
                      |   1 |    3
                    1 |   3 |    3
+                (10 rows)
+                
+                SELECT lead(ten) OVER (PARTITION BY four ORDER BY ten), ten, four
+                FROM tenk1_small
+                WHERE unique2 < 10;
+                 lead | ten | four
+                ------+-----+------
+                    0 |   0 |    0
+                    4 |   0 |    0
+                      |   4 |    0
+                    1 |   1 |    1
+                    7 |   1 |    1
+                    9 |   7 |    1
+                      |   9 |    1
+                      |   0 |    2
+                    3 |   1 |    3
+                      |   3 |    3
+                (10 rows)
+                
+                SELECT lead(ten * 2, 1) OVER (PARTITION BY four ORDER BY ten), ten, four
+                FROM tenk1_small
+                WHERE unique2 < 10;
+                 lead | ten | four
+                ------+-----+------
+                    0 |   0 |    0
+                    8 |   0 |    0
+                      |   4 |    0
+                    2 |   1 |    1
+                   14 |   1 |    1
+                   18 |   7 |    1
+                      |   9 |    1
+                      |   0 |    2
+                    6 |   1 |    3
+                      |   3 |    3
+                (10 rows)
+                
+                SELECT lead(ten * 2, 1, -1) OVER (PARTITION BY four ORDER BY ten), ten, four
+                FROM tenk1_small
+                WHERE unique2 < 10;
+                 lead | ten | four
+                ------+-----+------
+                    0 |   0 |    0
+                    8 |   0 |    0
+                   -1 |   4 |    0
+                    2 |   1 |    1
+                   14 |   1 |    1
+                   18 |   7 |    1
+                   -1 |   9 |    1
+                   -1 |   0 |    2
+                    6 |   1 |    3
+                   -1 |   3 |    3
                 (10 rows)""", false);
     }
 
-    @Test @Ignore
-    public void testLeadLag() {
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6382")
+    public void testFails() {
+        this.qs("""
+                SELECT lead(ten * 2, 1, -1.4) OVER (PARTITION BY four ORDER BY ten), ten, four
+                FROM tenk1_small
+                WHERE unique2 < 10
+                -- ORDER BY four, ten
+                ;
+                 lead | ten | four
+                ------+-----+------
+                    0 |   0 |    0
+                    8 |   0 |    0
+                 -1.4 |   4 |    0
+                    2 |   1 |    1
+                   14 |   1 |    1
+                   18 |   7 |    1
+                 -1.4 |   9 |    1
+                 -1.4 |   0 |    2
+                    6 |   1 |    3
+                 -1.4 |   3 |    3
+                (10 rows)""", false);
+    }
+
+    @Test @Ignore("Lead with variable amounts not supported")
+    public void testLeadLagVariable() {
         this.qs("""
                 select x, lag(x, 1) over (order by x), lead(x, 3) over (order by x)
                 from series;
@@ -81,22 +177,8 @@ public class PostgresWindowTests extends SqlIoTest {
                  10 |   9 |
                 (10 rows)
                 
-                SELECT lag(ten) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1 WHERE unique2 < 10;
-                 lag | ten | four
-                -----+-----+------
-                     |   0 |    0
-                   0 |   0 |    0
-                   0 |   4 |    0
-                     |   1 |    1
-                   1 |   1 |    1
-                   1 |   7 |    1
-                   7 |   9 |    1
-                     |   0 |    2
-                     |   1 |    3
-                   1 |   3 |    3
-                (10 rows)
-                
-                SELECT lag(ten, four) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
+                SELECT lag(ten, four) OVER (PARTITION BY four ORDER BY ten), ten, four
+                FROM tenk1_small
                 WHERE unique2 < 10;
                  lag | ten | four
                 -----+-----+------
@@ -113,7 +195,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 (10 rows)
                 
                 SELECT lag(ten, four, 0) OVER (PARTITION BY four ORDER BY ten), ten, four
-                FROM tenk1
+                FROM tenk1_small
                 WHERE unique2 < 10;
                  lag | ten | four
                 -----+-----+------
@@ -130,7 +212,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 (10 rows)
                 
                 SELECT lag(ten, four, 0.7) OVER (PARTITION BY four ORDER BY ten), ten, four
-                FROM tenk1
+                FROM tenk1_small
                 WHERE unique2 < 10 ORDER BY four, ten;
                  lag | ten | four
                 -----+-----+------
@@ -144,71 +226,6 @@ public class PostgresWindowTests extends SqlIoTest {
                  0.7 |   0 |    2
                  0.7 |   1 |    3
                  0.7 |   3 |    3
-                (10 rows)
-                
-                SELECT lead(ten) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
-                WHERE unique2 < 10;
-                 lead | ten | four
-                ------+-----+------
-                    0 |   0 |    0
-                    4 |   0 |    0
-                      |   4 |    0
-                    1 |   1 |    1
-                    7 |   1 |    1
-                    9 |   7 |    1
-                      |   9 |    1
-                      |   0 |    2
-                    3 |   1 |    3
-                      |   3 |    3
-                (10 rows)
-                
-                SELECT lead(ten * 2, 1) OVER (PARTITION BY four ORDER BY ten), ten, four
-                FROM tenk1
-                WHERE unique2 < 10;
-                 lead | ten | four
-                ------+-----+------
-                    0 |   0 |    0
-                    8 |   0 |    0
-                      |   4 |    0
-                    2 |   1 |    1
-                   14 |   1 |    1
-                   18 |   7 |    1
-                      |   9 |    1
-                      |   0 |    2
-                    6 |   1 |    3
-                      |   3 |    3
-                (10 rows)
-                
-                SELECT lead(ten * 2, 1, -1) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
-                WHERE unique2 < 10;
-                 lead | ten | four
-                ------+-----+------
-                    0 |   0 |    0
-                    8 |   0 |    0
-                   -1 |   4 |    0
-                    2 |   1 |    1
-                   14 |   1 |    1
-                   18 |   7 |    1
-                   -1 |   9 |    1
-                   -1 |   0 |    2
-                    6 |   1 |    3
-                   -1 |   3 |    3
-                (10 rows)
-                
-                SELECT lead(ten * 2, 1, -1.4) OVER (PARTITION BY four ORDER BY ten), ten, four FROM tenk1
-                WHERE unique2 < 10 ORDER BY four, ten;
-                 lead | ten | four
-                ------+-----+------
-                    0 |   0 |    0
-                    8 |   0 |    0
-                 -1.4 |   4 |    0
-                    2 |   1 |    1
-                   14 |   1 |    1
-                   18 |   7 |    1
-                 -1.4 |   9 |    1
-                 -1.4 |   0 |    2
-                    6 |   1 |    3
-                 -1.4 |   3 |    3
-                (10 rows)""");
+                (10 rows)""", false);
     }
 }

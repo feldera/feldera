@@ -7,13 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- [SQL] Support for `LEAD`/`LAG` window aggregates
+  ([#1706](https://github.com/feldera/feldera/pull/1706))
+- [SQL] Support for `WATERMARK` table column annotations
+  ([#1694](https://github.com/feldera/feldera/pull/1694))
+
 ## [0.15.0] - 2024-04-30
 
 ### Added
 
 - Initial support for Avro as an output format
   ([#1673](https://github.com/feldera/feldera/pull/1673))
-- Ability to enable persistent storage for a pipeline through API/UI. 
+- Ability to enable persistent storage for a pipeline through API/UI.
   ([#1692](https://github.com/feldera/feldera/pull/1692))
 
 ### Changed

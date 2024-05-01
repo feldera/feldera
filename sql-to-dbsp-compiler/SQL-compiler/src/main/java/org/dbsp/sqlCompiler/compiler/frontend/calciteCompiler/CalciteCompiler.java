@@ -370,11 +370,9 @@ public class CalciteCompiler implements IWritesLogs {
         return sqlParser;
     }
 
-    /**
-     * Given a SQL statement returns a SqlNode - a calcite AST
+    /** Given a SQL statement returns a SqlNode - a calcite AST
      * representation of the query.
-     * @param sql  SQL query to compile
-     */
+     * @param sql  SQL query to compile */
     public SqlNode parse(String sql) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(sql);
         SqlNode result = sqlParser.parseStmt();
