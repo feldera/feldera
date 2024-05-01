@@ -392,7 +392,8 @@ bar,false,-10
         wait(
             || consumer.state().endpoint_error.is_some(),
             DEFAULT_TIMEOUT_MS,
-        );
+        )
+        .unwrap();
         Ok(())
     }
 
