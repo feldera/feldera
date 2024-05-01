@@ -249,6 +249,10 @@ test-python:
     COPY demo/demo_notebooks demo/demo_notebooks
     COPY demo/simple-join demo/simple-join
 
+    # Reuse `Cargo.lock` to ensure consistent crate versions.
+    RUN mkdir -p /working-dir/cargo_workspace
+    COPY Cargo.lock /working-dir/cargo_workspace/Cargo.lock
+
     ENV PGHOST=localhost
     ENV PGUSER=postgres
     ENV PGCLIENTENCODING=UTF8
@@ -283,6 +287,10 @@ build-pipeline-manager-container:
     RUN mkdir -p database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target
     COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql2dbsp-jar-with-dependencies.jar database-stream-processor/sql-to-dbsp-compiler/SQL-compiler/target/
+
+    # Reuse `Cargo.lock` to ensure consistent crate versions.
+    RUN mkdir -p .feldera/cargo_workspace
+    COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
