@@ -276,7 +276,8 @@ where
             .circuit()
             .cache_get_or_insert_with(SpillId::new(self.origin_node_id().clone()), || {
                 let output_factories = output_factories.clone();
-                let spilled = sharded.apply(move |batch| batch.spill(&output_factories));
+                let spilled =
+                    sharded.apply_named("spill", move |batch| batch.spill(&output_factories));
                 self.circuit().cache_insert(
                     BoundsId::<B>::new(spilled.origin_node_id().clone()),
                     bounds.clone(),
@@ -297,7 +298,7 @@ where
         B: Stored,
     {
         let output_factories = output_factories.clone();
-        let unspilled = self.apply(move |batch| batch.unspill(&output_factories));
+        let unspilled = self.apply_named("unspill", move |batch| batch.unspill(&output_factories));
         if self.is_sharded() {
             unspilled.mark_sharded();
         }
