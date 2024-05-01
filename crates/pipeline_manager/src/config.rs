@@ -242,7 +242,8 @@ impl ApiServerConfig {
 #[serde(rename_all = "snake_case")]
 pub enum CompilationProfile {
     /// Used primarily for development. Adds source information to binaries.
-    /// This resorts to the `dev` profile in cargo.
+    ///
+    /// This corresponds to cargo's out-of-the-box "debug" mode
     Dev,
     /// Prioritizes compilation speed over runtime speed
     Unoptimized,
