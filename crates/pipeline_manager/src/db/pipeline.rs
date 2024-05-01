@@ -716,7 +716,6 @@ pub(crate) async fn get_pipeline_deployment(
         let pipeline_revision = serde_json::from_str(&config).unwrap();
         Ok(pipeline_revision)
     } else {
-        // Err(DBError::UnknownPipeline { pipeline_id })
         Err(DBError::NoRevisionAvailable { pipeline_id })
     }
 }

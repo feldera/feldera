@@ -55,6 +55,7 @@ use log::trace;
 use log::{debug, error, info};
 use pipeline_types::query::OutputQuery;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
@@ -443,6 +444,11 @@ impl Controller {
         } else {
             usize::MAX
         };
+        if controller.status.pipeline_config.tcp_metrics_exporter {
+            metrics_exporter_tcp::TcpBuilder::new()
+                .install()
+                .expect("failed to install TCP exporter");
+        }
         let config = CircuitConfig {
             layout: Layout::new_solo(controller.status.pipeline_config.global.workers as usize),
             storage: controller.status.pipeline_config.storage_location.clone(),
