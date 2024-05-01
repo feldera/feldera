@@ -204,9 +204,10 @@ public class CalciteOptimizer implements IWritesLogs {
             HepProgram getProgram(RelNode node) {
                 this.addRules(
                         CoreRules.JOIN_CONDITION_PUSH,
-                        CoreRules.JOIN_PUSH_EXPRESSIONS
-                        // Rule is unsound
-                        // CoreRules.FILTER_INTO_JOIN
+                        CoreRules.JOIN_PUSH_EXPRESSIONS,
+                        // TODO: Rule is unsound
+                        // https://github.com/feldera/feldera/issues/1702
+                        CoreRules.FILTER_INTO_JOIN
                 );
 
                 OuterJoinFinder finder = new OuterJoinFinder();

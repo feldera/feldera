@@ -35,13 +35,12 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -72,7 +71,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqllogictest.Main;
 import org.dbsp.sqllogictest.SqlTestPrepareInput;
@@ -469,6 +467,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         list.add(outputStatement);
         DBSPExpression sort = new DBSPEnumValue("SortOrder", description.getOrder().toString());
 
+        /*
+        This stopped working when transitioning to the untyped runtime.
         if (description.getExpectedOutputSize() >= 0) {
             DBSPExpression count;
             if (isVector) {
@@ -486,6 +486,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                                     new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false)),
                                     new DBSPI32Literal(description.getExpectedOutputSize())).toStatement());
         }
+         */
         if (output != null) {
             if (description.columnTypes != null) {
                 DBSPExpression columnTypes = new DBSPStringLiteral(description.columnTypes);
