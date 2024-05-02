@@ -3129,6 +3129,7 @@
         "type": "string",
         "description": "Argument to `cargo build --profile <>` passed to the rust compiler\n\nNote that this is a hint to the backend, and can be overriden by\nthe Feldera instance depending on the administrator configuration.",
         "enum": [
+          "dev",
           "unoptimized",
           "optimized"
         ]
