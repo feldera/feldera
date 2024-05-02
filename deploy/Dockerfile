@@ -20,7 +20,9 @@ RUN apt update --fix-missing && apt install \
   # Install locale-gen
   locales \
   # To add the nodesource debian repository
-  ca-certificates gnupg
+  ca-certificates gnupg \
+  # Required by the `metrics-exporter-tcp` crate
+  protobuf-compiler
 
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
