@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+
+- Added a new config flag `tcp_metrics_exporter` which allows to inspect
+  the pipeline metrics for debugging purposes with the `metrics-observer`
+  CLI.
+  ([#1710](https://github.com/feldera/feldera/pull/1710))
+  
+
 ## [0.15.0] - 2024-04-30
 
 ### Added
@@ -38,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQL: Support for `ARRAYS_OVERLAP` function ([#1570](https://github.com/feldera/feldera/pull/1570))
 - Connectors: Initial Delta Table output connector support
   ([#1639](https://github.com/feldera/feldera/pull/1639))
+- Added a `dev` profile to the pipeline manager to compile binaries with source information.
+  ([#1707](https://github.com/feldera/feldera/pull/1707))
 
 ### Changed
 

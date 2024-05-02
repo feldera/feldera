@@ -54,6 +54,7 @@ pub struct PipelineConfig {
     /// This field must be set by the pipeline runner implementation on startup
     /// if `global.storage` is `true`.
     /// If `global.storage` is `false`, this field is ignored by the pipeline.
+    #[serde(default)]
     pub storage_location: Option<String>,
 
     /// Input endpoint configuration.
@@ -88,6 +89,14 @@ pub struct RuntimeConfig {
     /// Enable CPU profiler.
     #[serde(default)]
     pub cpu_profiler: bool,
+
+    /// Enable the TCP metrics exporter.
+    ///
+    /// This is used for development purposes only.
+    /// If enabled, the `metrics-observer` CLI tool
+    /// can be used to inspect metrics from the pipeline.
+    #[serde(default)]
+    pub tcp_metrics_exporter: bool,
 
     /// Minimal input batch size.
     ///
