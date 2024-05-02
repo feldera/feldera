@@ -252,7 +252,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType field = this.transform(type.type);
         this.pop(type);
-        DBSPType result = new DBSPTypeRef(field, type.mutable);
+        DBSPType result = new DBSPTypeRef(field, type.mutable, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -896,7 +896,11 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression[] fields = this.transform(expression.fields);
         this.pop(expression);
-        DBSPExpression result = new DBSPTupleExpression(fields);
+        DBSPExpression result;
+        if (expression.isNull)
+            result = new DBSPTupleExpression(expression.getType().to(DBSPTypeTuple.class));
+        else
+            result = new DBSPTupleExpression(fields);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

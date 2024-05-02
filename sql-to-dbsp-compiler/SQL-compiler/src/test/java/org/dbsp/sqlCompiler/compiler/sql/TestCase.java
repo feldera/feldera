@@ -50,15 +50,6 @@ class TestCase {
         this.javaTestName = javaTestName;
         this.ccs = ccs;
         this.message = message;
-        /*
-        if (!ccs.stream.changes.isEmpty()) {
-            InputOutputChange change = ccs.stream.changes.get(0);
-            assert ccs.circuit.getInputTables().size() == change.inputs.getSetCount();
-            // The next one is not true when the circuit is expected to fail at runtime.
-            // Then we have no output provided.
-            assert ccs.circuit.getOutputCount() == change.outputs.getSetCount();
-        }
-         */
     }
 
     /**

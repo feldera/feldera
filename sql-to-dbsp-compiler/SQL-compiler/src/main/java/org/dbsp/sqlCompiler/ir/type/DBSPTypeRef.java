@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.util.IIndentStream;
@@ -32,28 +31,26 @@ import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.REF;
 
-/**
- * A type of the form &type.
- */
+/** A type of the form &type. */
 public class DBSPTypeRef extends DBSPType {
     public final DBSPType type;
     public final boolean mutable;
 
-    public DBSPTypeRef(DBSPType type, boolean mutable) {
-        super(type.getNode(), REF,false);
+    public DBSPTypeRef(DBSPType type, boolean mutable, boolean mayBeNull) {
+        super(type.getNode(), REF, mayBeNull);
         this.type = type;
         this.mutable = mutable;
     }
 
     DBSPTypeRef(DBSPType type) {
-        this(type, false);
+        this(type, false, false);
     }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
-        if (mayBeNull)
-            throw new InternalCompilerError("Reference types cannot be null", this);
-        return this;
+        if (this.mayBeNull == mayBeNull)
+            return this;
+        return new DBSPTypeRef(this.type, this.mutable, mayBeNull);
     }
 
     @Override
@@ -83,8 +80,10 @@ public class DBSPTypeRef extends DBSPType {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder
+                .append(this.mayBeNull ? "Option<" : "")
                 .append("&")
                 .append(this.mutable ? "mut " : "")
-                .append(this.type);
+                .append(this.type)
+                .append(this.mayBeNull ? ">" : "");
     }
 }

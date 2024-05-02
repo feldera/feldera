@@ -109,7 +109,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     }
 
     public DBSPType ref(boolean mutable) {
-        return new DBSPTypeRef(this, mutable);
+        return new DBSPTypeRef(this, mutable, false);
     }
 
     public DBSPVariablePath var(String variable) {
@@ -120,10 +120,8 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return new DBSPPathExpression(this, path);
     }
 
-    /**
-     * Given a type that is expected to be a reference type,
-     * compute the type that is the dereferenced type.
-     */
+    /** Given a type that is expected to be a reference type,
+     * compute the type that is the dereferenced type. */
     public DBSPType deref() {
         if (this.is(DBSPTypeAny.class))
             return this;
@@ -155,5 +153,11 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     /** Returns a lambda which casts the current type to the specified type. */
     public DBSPExpression caster(DBSPType to) {
         throw new UnimplementedException("Casting from " + this + " to " + to, to);
+    }
+
+    /** Type must be nullable.
+     * Return an expression that has a value of this type with value None. */
+    public DBSPExpression none() {
+        return DBSPLiteral.none(this);
     }
 }

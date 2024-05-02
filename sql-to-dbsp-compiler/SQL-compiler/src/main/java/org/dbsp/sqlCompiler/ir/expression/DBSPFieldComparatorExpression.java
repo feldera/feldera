@@ -33,8 +33,7 @@ import org.dbsp.util.IIndentStream;
 /**
  * A comparator that looks at the field of a tuple.
  * A comparator takes a field of a tuple and compares tuples on the specified field.
- * It also takes a direction, indicating whether the sort is ascending or descending.
- */
+ * It also takes a direction, indicating whether the sort is ascending or descending. */
 public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
     public final DBSPComparatorExpression source;
     public final boolean ascending;

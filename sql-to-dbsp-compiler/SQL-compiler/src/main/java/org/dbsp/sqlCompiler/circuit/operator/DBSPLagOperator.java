@@ -17,17 +17,18 @@ public class DBSPLagOperator extends DBSPUnaryOperator {
 
     /**
      * Create a LEAD/LAG window aggregation operator.
-     * @param node        Calcite object that is being compiled.
-     * @param offset      Lead/lag offset.
-     * @param function    Expression that produces the output from two arguments:
-     *                    the current row and the delayed row.
-     * @param projection  Projection that computes the delayed row from the input row.
-     * @param comparator  Comparator used for sorting.
-     * @param outputType  Type of output record produced.
-     * @param source      Input node for the lag operator.
+     *
+     * @param node       Calcite object that is being compiled.
+     * @param offset     Lead/lag offset.
+     * @param projection Projection that computes the delayed row from Option<input row>.
+     * @param function   Expression that produces the output from two arguments:
+     *                   the current row and the delayed row.
+     * @param comparator Comparator used for sorting.
+     * @param outputType Type of output record produced.
+     * @param source     Input node for the lag operator.
      */
     public DBSPLagOperator(CalciteObject node, int offset,
-                           DBSPExpression function, DBSPExpression projection,
+                           DBSPExpression projection, DBSPExpression function,
                            DBSPComparatorExpression comparator,
                            DBSPTypeIndexedZSet outputType, DBSPOperator source) {
         super(node, "lag_custom_order", function, outputType, source.isMultiset, source);
@@ -41,7 +42,7 @@ public class DBSPLagOperator extends DBSPUnaryOperator {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPLagOperator(this.getNode(), this.offset,
-                    this.getFunction(), this.projection, this.comparator,
+                    this.projection, this.getFunction(), this.comparator,
                     this.getOutputIndexedZSetType(), newInputs.get(0));
         }
         return this;

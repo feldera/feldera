@@ -357,7 +357,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.getFunction()
                 || comparator != operator.comparator) {
             result = new DBSPLagOperator(operator.getNode(), operator.offset,
-                    function, projection, comparator,
+                    projection, function, comparator,
                     type.to(DBSPTypeIndexedZSet.class), input);
         }
         this.map(operator, result);

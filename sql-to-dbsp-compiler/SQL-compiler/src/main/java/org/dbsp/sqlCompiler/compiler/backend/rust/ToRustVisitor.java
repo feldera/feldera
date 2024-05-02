@@ -66,7 +66,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
@@ -774,7 +774,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("if ord != Ordering::Equal { return ord");
         if (!ascending)
             this.builder.append(".reverse()");
-        this.builder.append("};")
+        this.builder.append(" };")
                 .newline();
     }
 
@@ -941,7 +941,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(structName)
                 .append(", _>")
                 .append("(");
-        DBSPI64Literal offset = new DBSPI64Literal(operator.offset);
+        DBSPISizeLiteral offset = new DBSPISizeLiteral(operator.offset);
         offset.accept(this.innerVisitor);
         this.builder.append(", ");
         operator.projection.accept(this.innerVisitor);

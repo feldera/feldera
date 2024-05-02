@@ -96,7 +96,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
                 .append("Adding ")
                 .append(operator.toString())
                 .newline();
-        assert !this.operators.contains(operator): "Operators " + operator + " already inserted";
+        assert !this.operators.contains(operator): "Operator " + operator + " already inserted";
         this.operators.add(operator);
         DBSPSourceBaseOperator source = operator.as(DBSPSourceBaseOperator.class);
         if (source != null)

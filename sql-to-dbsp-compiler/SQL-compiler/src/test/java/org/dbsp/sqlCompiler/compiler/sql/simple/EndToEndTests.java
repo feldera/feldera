@@ -232,7 +232,7 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral(t, t));
     }
 
-    @Test @Ignore
+    @Test
     public void lagTest() {
         String query = "SELECT T.COL1, LAG(T.COL1) OVER (ORDER BY T.COL1) FROM T";
         this.testQuery(query, new DBSPZSetLiteral(

@@ -29,9 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 
-/**
- * A base class representing a comparator used for sorting.
- */
+/** A base class representing a comparator used for sorting. */
 public abstract class DBSPComparatorExpression extends DBSPExpression {
     protected DBSPComparatorExpression(CalciteObject node) {
         super(node, DBSPTypeAny.getDefault());
@@ -46,8 +44,6 @@ public abstract class DBSPComparatorExpression extends DBSPExpression {
         visitor.postorder(this);
     }
 
-    /**
-     * Type of tuple that is being compared.
-     */
+    /** Type of tuple that is being compared. */
     public abstract DBSPType tupleType();
 }

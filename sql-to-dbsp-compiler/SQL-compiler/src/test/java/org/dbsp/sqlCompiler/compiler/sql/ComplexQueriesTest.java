@@ -191,9 +191,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                                 merchant,
                                 is_fraud
                             FROM (
-                                SELECT t1.*, t2.*
-                                       -- , LAG(trans_date_trans_time, 1) OVER
-                                       -- (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date
+                                SELECT t1.*, t2.*, LAG(trans_date_trans_time, 1) OVER
+                                       (PARTITION BY t1.cc_num  ORDER BY trans_date_trans_time ASC) AS last_txn_date
                                 FROM  transactions AS t1
                                 LEFT JOIN  demographics AS t2
                                 ON t1.cc_num = t2.cc_num);""";
@@ -338,9 +337,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     merchant,
                     is_fraud
                   FROM (
-                          SELECT t1.*, t2.*
-                          --,    LAG(trans_date_trans_time, 1) OVER (PARTITION BY t1.cc_num
-                          -- ORDER BY trans_date_trans_time ASC) AS last_txn_date
+                          SELECT t1.*, t2.*, LAG(trans_date_trans_time, 1)
+                          OVER (PARTITION BY t1.cc_num ORDER BY trans_date_trans_time ASC) AS last_txn_date
                           FROM  transactions AS t1
                           LEFT JOIN  demographics AS t2
                           ON t1.cc_num =t2.cc_num)""";
