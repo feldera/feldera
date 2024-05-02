@@ -443,7 +443,12 @@ impl Controller {
         } else {
             usize::MAX
         };
-        if controller.status.pipeline_config.global.tcp_metrics_exporter {
+        if controller
+            .status
+            .pipeline_config
+            .global
+            .tcp_metrics_exporter
+        {
             metrics_exporter_tcp::TcpBuilder::new()
                 .install()
                 .expect("failed to install TCP exporter");
