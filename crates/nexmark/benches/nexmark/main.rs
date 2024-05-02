@@ -226,7 +226,7 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
     let num_cores = config.cpu_cores;
     let expected_num_events = config.generator_options.max_events;
     let circuit_config = CircuitConfig {
-        min_storage_rows: if config.storage { 0 } else { usize::MAX },
+        min_storage_rows: config.min_storage_rows,
         ..CircuitConfig::with_workers(num_cores)
     };
     let (dbsp, input_handle) =
