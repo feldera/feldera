@@ -443,6 +443,16 @@ impl Controller {
         } else {
             usize::MAX
         };
+        if controller
+            .status
+            .pipeline_config
+            .global
+            .tcp_metrics_exporter
+        {
+            metrics_exporter_tcp::TcpBuilder::new()
+                .install()
+                .expect("failed to install TCP exporter");
+        }
         let config = CircuitConfig {
             layout: Layout::new_solo(controller.status.pipeline_config.global.workers as usize),
             storage: controller.status.pipeline_config.storage_location.clone(),

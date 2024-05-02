@@ -27,8 +27,6 @@ import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
