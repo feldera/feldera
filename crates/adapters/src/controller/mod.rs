@@ -55,7 +55,6 @@ use log::trace;
 use log::{debug, error, info};
 use pipeline_types::query::OutputQuery;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
@@ -444,7 +443,7 @@ impl Controller {
         } else {
             usize::MAX
         };
-        if controller.status.pipeline_config.tcp_metrics_exporter {
+        if controller.status.pipeline_config.global.tcp_metrics_exporter {
             metrics_exporter_tcp::TcpBuilder::new()
                 .install()
                 .expect("failed to install TCP exporter");
