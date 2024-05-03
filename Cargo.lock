@@ -3463,6 +3463,8 @@ dependencies = [
  "env_logger 0.10.2",
  "hdrhist",
  "indicatif",
+ "metrics",
+ "metrics-util",
  "mimalloc-rust-sys",
  "num-format",
  "paste",
