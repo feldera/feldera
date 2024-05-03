@@ -739,7 +739,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testCastOutOfRange() {
-        this.shouldFail("SELECT CAST(1 AS NUMERIC(10, 20)) % 2",
+        this.queryFailingInCompilation("SELECT CAST(1 AS NUMERIC(10, 20)) % 2",
                 "Illegal type: DECIMAL type must have scale <= precision");
     }
 

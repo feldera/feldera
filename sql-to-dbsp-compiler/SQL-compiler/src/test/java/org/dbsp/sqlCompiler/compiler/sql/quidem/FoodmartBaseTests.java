@@ -54,7 +54,17 @@ public class FoodmartBaseTests extends SqlIoTest {
                 INSERT INTO EMP VALUES(7934,'MILLER','CLERK',32,7782,'1982-01-23',1300,NULL,10,NULL,'2016-09-02 23:15:01','23:15:01','2016-09-02 23:15:01')
                 """);
     }
-    
+
+    @Test @Ignore("Calcite does not desugar qualify, so we don't support it yet")
+    public void testQualify() {
+        this.q("""
+                SELECT empno, ename, deptno, job, mgr
+                FROM emp
+                QUALIFY ROW_NUMBER() over (partition by ename order by deptno) = 1;
+                 empno | ename | deptno | job | mgr
+                ------------------------------------""");
+    }
+
     @Test
     public void testSelect() {
         this.q("""

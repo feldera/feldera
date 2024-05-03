@@ -30,9 +30,9 @@ import org.dbsp.util.ICastable;
 
 import javax.annotation.Nullable;
 
-/**
- * This class is a base class for the results produced by the DDL execution simulator.
- */
+/** Base class for statements produced by the compiler front-end.
+ * The representation is mostly at the level of RelNode, but there
+ * is also some SqlNode-level information. */
 public abstract class FrontEndStatement implements ICastable {
     public final SqlNode node;
     /** Original statement compiled. */

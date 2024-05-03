@@ -1,8 +1,29 @@
 # User-defined functions
 
+The SQL statement `CREATE FUNCTION` can be used to declare new
+functions.  Functions can be implemented either in SQL or in Rust.
+
+## User-defined functions written in SQL
+
+The following example shows a user-defined function:
+
+```sql
+CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
+RETURNS BOOLEAN NOT NULL
+AS (str LIKE ('%' || CAST(value AS VARCHAR) || '%'));
+CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
+```
+
+The function name capitalization obeys the same rules as table and
+view names: the names are converted by default to all-capitals, but if
+the name is quoted capitalization is unchanged.
+
+## User-defined functions written in Rust
+
 :::caution Feature under construction
 
-This feature is still being developed and is not yet usable through Feldera's public API or Web Console.
+This feature is still being developed and is not yet usable through
+Feldera's public API or Web Console.
 
 :::
 
@@ -15,8 +36,8 @@ separate file, whose name is specified using the `--udf` flag.
 The following example shows a user-defined function:
 
 ```sql
-CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL
-CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
+CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
+CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5);
 ```
 
 The function name capitalization obeys the same rules as table and
@@ -104,7 +125,7 @@ The function should return an error only for fatal conditions, similar
 to other SQL functions (e.g., array index out of bounds, arithmetic
 overflows, etc.).
 
-## Source position information
+### Source position information
 
 The first argument passed to the Rust function is always `pos:
 &SourcePositionRange`.  This argument indicates the position in the
@@ -127,6 +148,5 @@ cannot be implemented as a single user-defined function.
 
 The current type checker is very strict, and it requires the function
 arguments to have exactly the specified types.  No casts are inserted
-by the compiler.  That is why the previous example requires casting
-the string `'YES: 10 NO: 5'` to `VARCHAR`.
+by the compiler.
 

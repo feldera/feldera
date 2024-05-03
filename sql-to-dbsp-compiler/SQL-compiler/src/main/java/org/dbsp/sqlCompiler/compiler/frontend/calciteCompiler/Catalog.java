@@ -39,18 +39,31 @@ import java.util.Map;
 /** Maintains the catalog: a mapping from names to objects. */
 // I am not sure this class is needed.
 public class Catalog extends AbstractSchema {
+    private static int crtid = 0;
+
     public final String schemaName;
+    private final int id;
     private final Map<String, Table> tableMap;
     private final Map<String, FrontEndStatement> definition;
     private final Multimap<String, Function> functionMap;
     private final Map<String, RelProtoDataType> typeMap;
 
     public Catalog(String schemaName) {
+        this.id = crtid++;
         this.schemaName = schemaName;
         this.tableMap = new HashMap<>();
         this.definition = new HashMap<>();
         this.typeMap = new HashMap<>();
         this.functionMap = ArrayListMultimap.create();
+    }
+
+    public Catalog(Catalog other) {
+        this.id = crtid++;
+        this.schemaName = other.schemaName;
+        this.tableMap = new HashMap<>(other.tableMap);
+        this.definition = new HashMap<>(other.definition);
+        this.typeMap = new HashMap<>(other.typeMap);
+        this.functionMap = ArrayListMultimap.create(other.functionMap);
     }
 
     boolean addDefinition(String name, IErrorReporter reporter, FrontEndStatement statement) {

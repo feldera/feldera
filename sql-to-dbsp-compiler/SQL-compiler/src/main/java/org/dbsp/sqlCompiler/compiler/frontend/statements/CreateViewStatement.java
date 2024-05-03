@@ -32,9 +32,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * The representation of a CREATE VIEW AS ... DDL statement.
- */
+/** The representation of a CREATE VIEW AS ... DDL statement. */
 public class CreateViewStatement extends CreateRelationStatement {
     /** Compiled and optimized query. */
     private final RelRoot compiled;

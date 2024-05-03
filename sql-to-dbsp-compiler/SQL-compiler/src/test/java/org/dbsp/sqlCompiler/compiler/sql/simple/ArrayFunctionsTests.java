@@ -188,23 +188,23 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayPositionDiffTypes() {
-        this.shouldFail("SELECT array_position(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
-        this.shouldFail("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
-        this.shouldFail("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_position(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_position(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
     }
 
     @Test
     public void testArrayContainsDiffTypes() {
-        this.shouldFail("SELECT array_contains(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
-        this.shouldFail("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
-        this.shouldFail("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_contains(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_contains(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
     }
 
     @Test
     public void testArrayRemoveDiffTypes() {
-        this.shouldFail("SELECT array_remove(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
-        this.shouldFail("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
-        this.shouldFail("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_remove(ARRAY [1, 2, 3, 4], 1e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 1e0)", "different types", false);
+        this.queryFailingInCompilation("SELECT array_remove(ARRAY [1.0, 2.0, 3.0, 4.0], 0e0)", "different types", false);
     }
 
     @Test
@@ -779,8 +779,8 @@ public class ArrayFunctionsTests extends SqlIoTest {
     @Test
     public void testArraysOverlapDiffTypes() {
         // fails for the Calcite optimized version as Calcite returns false
-        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])", "different types", false);
-        this.shouldFail("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])", "different types", false);
+        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2e0, 4e0])", "different types", false);
+        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])", "different types", false);
     }
 
     @Test @Ignore("similar to: https://github.com/feldera/feldera/issues/1465")

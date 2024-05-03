@@ -214,6 +214,7 @@ SqlCreateFunctionDeclaration SqlCreateFunction(Span s, boolean replace) :
     final SqlNodeList parameters;
     final SqlDataTypeSpec type;
     final boolean nullable;
+    SqlNode body = null;
 }
 {
     <FUNCTION> ifNotExists = IfNotExistsOpt()
@@ -222,9 +223,10 @@ SqlCreateFunctionDeclaration SqlCreateFunction(Span s, boolean replace) :
     <RETURNS>
     type = DataType()
     nullable = NullableOptDefaultTrue()
+    [ <AS> body = OrderedQueryOrExpr(ExprContext.ACCEPT_NON_QUERY) ]
     {
         return new SqlCreateFunctionDeclaration(s.end(this), replace, ifNotExists,
-            id, parameters, type.withNullable(nullable));
+            id, parameters, type.withNullable(nullable), body);
     }
 }
 

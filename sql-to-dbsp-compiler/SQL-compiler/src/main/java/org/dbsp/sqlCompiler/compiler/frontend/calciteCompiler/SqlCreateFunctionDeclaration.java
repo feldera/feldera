@@ -11,37 +11,40 @@ import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.parser.SqlParserPos;
 
+import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/** Our own version of CREATE FUNCTION, different from Calcite.
- * We only expect a signature of the function. */
+/** Our own version of CREATE FUNCTION, different from Calcite. */
 public class SqlCreateFunctionDeclaration extends SqlCreate {
     private final SqlIdentifier name;
     private final SqlNodeList parameters;
     private final SqlDataTypeSpec returnType;
+    @Nullable private final SqlNode body;
 
     private static final SqlSpecialOperator OPERATOR =
             new SqlSpecialOperator("CREATE FUNCTION", SqlKind.CREATE_FUNCTION);
 
     public SqlCreateFunctionDeclaration(SqlParserPos pos, boolean replace,
                                         boolean ifNotExists, SqlIdentifier name,
-                                        SqlNodeList parameters, SqlDataTypeSpec returnType) {
+                                        SqlNodeList parameters, SqlDataTypeSpec returnType,
+                                        @Nullable SqlNode body) {
         super(OPERATOR, pos, replace, ifNotExists);
         this.name = Objects.requireNonNull(name, "name");
         this.parameters = Objects.requireNonNull(parameters, "parameters");
         this.returnType = returnType;
+        this.body = body;
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec,
                                   int rightPrec) {
         writer.keyword(getReplace() ? "CREATE OR REPLACE" : "CREATE");
         writer.keyword("FUNCTION");
-        if (ifNotExists) {
+        if (this.ifNotExists) {
             writer.keyword("IF NOT EXISTS");
         }
-        name.unparse(writer, 0, 0);
+        this.name.unparse(writer, 0, 0);
         final SqlWriter.Frame frame = writer.startList(SqlWriter.FrameTypeEnum.SIMPLE);
         for (SqlNode parameter : this.parameters) {
             writer.sep(",");
@@ -49,6 +52,10 @@ public class SqlCreateFunctionDeclaration extends SqlCreate {
         }
         writer.endList(frame);
         this.returnType.unparse(writer, 0, 0);
+        if (this.body != null) {
+            writer.keyword("AS");
+            this.body.unparse(writer, 0, 0);
+        }
     }
 
     @Override public SqlOperator getOperator() {
@@ -70,4 +77,6 @@ public class SqlCreateFunctionDeclaration extends SqlCreate {
     @Override public List<SqlNode> getOperandList() {
         return Arrays.asList(this.name, this.parameters);
     }
+
+    @Nullable public SqlNode getBody() { return this.body; }
 }

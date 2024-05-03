@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [SQL] Support for user-defined functions implemented in SQL
+  ([#1714](https://github.com/feldera/feldera/pull/1714))
 - [SQL] Support for `LEAD`/`LAG` window aggregates
   ([#1706](https://github.com/feldera/feldera/pull/1706))
 - [SQL] Support for `WATERMARK` table column annotations
@@ -17,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the pipeline metrics for debugging purposes with the `metrics-observer`
   CLI.
   ([#1710](https://github.com/feldera/feldera/pull/1710))
-  
+
 ## [0.15.0] - 2024-04-30
 
 ### Added
