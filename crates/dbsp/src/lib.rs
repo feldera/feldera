@@ -68,7 +68,7 @@ pub mod dynamic;
 mod error;
 mod hash;
 mod num_entries;
-mod ref_pair;
+//mod ref_pair;
 
 pub mod typed_batch;
 
