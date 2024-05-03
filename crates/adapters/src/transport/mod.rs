@@ -36,6 +36,7 @@ mod secret_resolver;
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
 
+use crate::catalog::InputCollectionHandle;
 use pipeline_types::config::TransportConfig;
 
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
@@ -66,7 +67,7 @@ pub type AtomicStep = AtomicU64;
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
 pub fn input_transport_config_to_endpoint(
     config: TransportConfig,
-) -> AnyResult<Option<Box<dyn InputEndpoint>>> {
+) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     match config {
         TransportConfig::FileInput(config) => Ok(Some(Box::new(FileInputEndpoint::new(config)))),
         #[cfg(feature = "with-kafka")]
@@ -98,7 +99,7 @@ pub fn output_transport_config_to_endpoint(
     }
 }
 
-/// A configured input transport endpoint.
+/// A configured input endpoint.
 ///
 /// Input endpoints come in two flavors:
 ///
@@ -111,20 +112,6 @@ pub fn output_transport_config_to_endpoint(
 pub trait InputEndpoint: Send {
     /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
     fn is_fault_tolerant(&self) -> bool;
-
-    /// Returns an [`InputReader`] for reading the endpoint's data.  For a
-    /// fault-tolerant endpoint, `step` indicates the first step to be read; for
-    /// a non-fault-tolerant endpoint, it is ignored.
-    ///
-    /// Data and status will be passed to `consumer`.
-    ///
-    /// The reader is initially paused.  The caller may call
-    /// [`InputReader::start`] to start reading.
-    fn open(
-        &self,
-        consumer: Box<dyn InputConsumer>,
-        start_step: Step,
-    ) -> AnyResult<Box<dyn InputReader>>;
 
     /// For a fault-tolerant endpoint, notifies the endpoint that steps less
     /// than `step` aren't needed anymore.  It may optionally discard them.
@@ -142,9 +129,33 @@ pub trait InputEndpoint: Send {
     }
 }
 
+pub trait TransportInputEndpoint: InputEndpoint {
+    /// Returns an [`InputReader`] for reading the endpoint's data.  For a
+    /// fault-tolerant endpoint, `step` indicates the first step to be read; for
+    /// a non-fault-tolerant endpoint, it is ignored.
+    ///
+    /// Data and status will be passed to `consumer`.
+    ///
+    /// The reader is initially paused.  The caller may call
+    /// [`InputReader::start`] to start reading.
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        start_step: Step,
+    ) -> AnyResult<Box<dyn InputReader>>;
+}
+
+pub trait IntegratedInputEndpoint: InputEndpoint {
+    fn open(
+        &self,
+        input_handle: &InputCollectionHandle,
+        start_step: Step,
+    ) -> AnyResult<Box<dyn InputReader>>;
+}
+
 /// Reads data from an endpoint.
 ///
-/// Use [`InputEndpoint::open`] to obtain an [`InputReader`].
+/// Use [`TransportInputEndpoint::open`] to obtain an [`InputReader`].
 ///
 /// A new reader is initially paused.  Call [`InputReader::start`] to start
 /// reading.
@@ -152,7 +163,7 @@ pub trait InputReader: Send {
     /// Start or resume the endpoint.
     ///
     /// The endpoint must start receiving data and pushing it downstream to the
-    /// consumer passed to [`InputEndpoint::open`].
+    /// consumer passed to [`TransportInputEndpoint::open`].
     ///
     /// A fault-tolerant endpoint must not push data for a step greater than
     /// `step`.  If `step` completes, then it must still report it by calling

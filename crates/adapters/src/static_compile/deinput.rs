@@ -1,14 +1,17 @@
+use crate::catalog::ArrowStream;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::byte_record_deserializer,
     ControllerError, DeCollectionHandle,
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
+use arrow::array::RecordBatch;
 use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
 };
 use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+use serde_arrow::{deserializer_from_record_batch, Mut};
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
@@ -311,6 +314,13 @@ where
             }
         }
     }
+
+    fn configure_arrow_deserializer(
+        &self,
+        config: SqlSerdeConfig,
+    ) -> Result<Box<dyn ArrowStream>, ControllerError> {
+        Ok(Box::new(ArrowZSetStream::new(self.handle.clone(), config)))
+    }
 }
 
 /// An input handle that wraps a [`MapHandle<K, R>`](`MapHandle`)
@@ -397,6 +407,51 @@ where
     }
 }
 
+pub struct ArrowZSetStream<K, D, C> {
+    handle: ZSetHandle<K>,
+    config: C,
+    phantom: PhantomData<D>,
+}
+
+impl<K, D, C> ArrowZSetStream<K, D, C> {
+    pub fn new(handle: ZSetHandle<K>, config: C) -> Self {
+        Self {
+            handle,
+            config,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, D, C> ArrowStream for ArrowZSetStream<K, D, C>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    C: Clone + Send + 'static,
+{
+    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+        let mut deserializer = deserializer_from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        self.handle
+            .append(&mut records.into_iter().map(|r| Tup2(K::from(r), 1)).collect());
+
+        Ok(())
+    }
+
+    fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
+        let mut deserializer = deserializer_from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        self.handle
+            .append(&mut records.into_iter().map(|r| Tup2(K::from(r), -1)).collect());
+
+        Ok(())
+    }
+
+    fn fork(&self) -> Box<dyn ArrowStream> {
+        Box::new(Self::new(self.handle.clone(), self.config.clone()))
+    }
+}
+
 pub struct DeSetHandle<K, D> {
     handle: SetHandle<K>,
     phantom: PhantomData<D>,
@@ -443,6 +498,13 @@ where
                 todo!()
             }
         }
+    }
+
+    fn configure_arrow_deserializer(
+        &self,
+        config: SqlSerdeConfig,
+    ) -> Result<Box<dyn ArrowStream>, ControllerError> {
+        Ok(Box::new(ArrowSetStream::new(self.handle.clone(), config)))
     }
 }
 
@@ -521,6 +583,59 @@ where
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
+        Box::new(Self::new(self.handle.clone(), self.config.clone()))
+    }
+}
+
+pub struct ArrowSetStream<K, D, C> {
+    handle: SetHandle<K>,
+    config: C,
+    phantom: PhantomData<D>,
+}
+
+impl<K, D, C> ArrowSetStream<K, D, C> {
+    pub fn new(handle: SetHandle<K>, config: C) -> Self {
+        Self {
+            handle,
+            config,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, D, C> ArrowStream for ArrowSetStream<K, D, C>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    C: Clone + Send + 'static,
+{
+    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+        let mut deserializer = deserializer_from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        self.handle.append(
+            &mut records
+                .into_iter()
+                .map(|r| Tup2(K::from(r), true))
+                .collect(),
+        );
+
+        Ok(())
+    }
+
+    fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
+        let mut deserializer = deserializer_from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        self.handle.append(
+            &mut records
+                .into_iter()
+                .map(|r| Tup2(K::from(r), false))
+                .collect(),
+        );
+
+        Ok(())
+    }
+
+    fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(Self::new(self.handle.clone(), self.config.clone()))
     }
 }
@@ -609,6 +724,17 @@ where
                 todo!()
             }
         }
+    }
+
+    fn configure_arrow_deserializer(
+        &self,
+        config: SqlSerdeConfig,
+    ) -> Result<Box<dyn ArrowStream>, ControllerError> {
+        Ok(Box::new(ArrowMapStream::new(
+            self.handle.clone(),
+            self.value_key_func.clone(),
+            config,
+        )))
     }
 }
 
@@ -719,6 +845,84 @@ where
             self.handle.clone(),
             self.value_key_func.clone(),
             self.update_key_func.clone(),
+            self.config.clone(),
+        ))
+    }
+}
+
+pub struct ArrowMapStream<K, KD, V, VD, U, VF, C>
+where
+    V: DBData,
+    U: DBData,
+{
+    value_key_func: VF,
+    handle: MapHandle<K, V, U>,
+    config: C,
+    phantom: PhantomData<fn(KD, VD)>,
+}
+
+impl<K, KD, V, VD, U, VF, C> ArrowMapStream<K, KD, V, VD, U, VF, C>
+where
+    V: DBData,
+    U: DBData,
+    C: Clone,
+{
+    pub fn new(handle: MapHandle<K, V, U>, value_key_func: VF, config: C) -> Self {
+        Self {
+            value_key_func,
+            handle,
+            config,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, KD, V, VD, U, VF, C> ArrowStream for ArrowMapStream<K, KD, V, VD, U, VF, C>
+where
+    C: Clone + Send + 'static,
+    K: DBData + From<KD>,
+    KD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    V: DBData + From<VD>,
+    VD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    U: DBData,
+    VF: Fn(&V) -> K + Clone + Send + 'static,
+{
+    fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
+        let mut deserializer = deserializer_from_record_batch(data)?;
+        let records = Vec::<VD>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        self.handle.append(
+            &mut records
+                .into_iter()
+                .map(|r| {
+                    let v = V::from(r);
+                    Tup2((self.value_key_func)(&v), Update::Insert(v))
+                })
+                .collect(),
+        );
+
+        Ok(())
+    }
+
+    fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
+        let mut deserializer = deserializer_from_record_batch(data)?;
+        let records = Vec::<VD>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        self.handle.append(
+            &mut records
+                .into_iter()
+                .map(|r| {
+                    let v = V::from(r);
+                    Tup2((self.value_key_func)(&v), Update::Delete)
+                })
+                .collect(),
+        );
+
+        Ok(())
+    }
+
+    fn fork(&self) -> Box<dyn ArrowStream> {
+        Box::new(Self::new(
+            self.handle.clone(),
+            self.value_key_func.clone(),
             self.config.clone(),
         ))
     }

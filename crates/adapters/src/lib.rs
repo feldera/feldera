@@ -78,7 +78,7 @@
 //!
 //! The transport adapter API consists of the following traits:
 //!
-//! * [`InputEndpoint`] represents a configured data connection, e.g., a file,
+//! * [`TransportInputEndpoint`] represents a configured data connection, e.g., a file,
 //!   an S3 bucket or a Kafka topic.  By providing an [`InputConsumer`], a
 //!   client may open an endpoint and thereby obtain an [`InputReader`].
 //!
@@ -194,4 +194,5 @@ pub use controller::{
 };
 pub use transport::{
     AsyncErrorCallback, InputConsumer, InputEndpoint, InputReader, OutputEndpoint,
+    TransportInputEndpoint,
 };

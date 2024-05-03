@@ -30,7 +30,7 @@
 //! by the circuit, but the counter shows that 10 records are still
 //! pending.
 
-use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
+use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::{
     transport::{AtomicStep, Step},
     PipelineState,
@@ -354,7 +354,6 @@ impl ControllerStatus {
         endpoint_id: EndpointId,
         num_bytes: usize,
         num_records: usize,
-        global_config: &RuntimeConfig,
         circuit_thread_unparker: &Unparker,
         backpressure_thread_unparker: &Unparker,
     ) {
@@ -366,8 +365,8 @@ impl ControllerStatus {
         let old = self.global_metrics.input_batch(num_records);
 
         if old == 0
-            || (old <= global_config.min_batch_size_records
-                && old + num_records > global_config.min_batch_size_records)
+            || (old <= self.pipeline_config.global.min_batch_size_records
+                && old + num_records > self.pipeline_config.global.min_batch_size_records)
         {
             circuit_thread_unparker.unpark();
         }

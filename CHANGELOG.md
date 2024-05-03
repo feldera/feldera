@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [adapters] Delta Lake input adapter.
+  ([#1743](https://github.com/feldera/feldera/pull/1743))
 - [SQL] Support for user-defined functions implemented in SQL
   ([#1714](https://github.com/feldera/feldera/pull/1714))
 - [Kafka] Allow specifying Kafka headers as part of output Kafka connector

@@ -119,6 +119,11 @@ pub enum ConfigError {
         endpoint_name: String,
         error: String,
     },
+
+    InvalidTransportConfig {
+        endpoint_name: String,
+        error: String,
+    },
 }
 
 impl StdError for ConfigError {}
@@ -145,6 +150,7 @@ impl DetailedError for ConfigError {
             Self::OutputFormatNotSpecified { .. } => Cow::from("OutputFormatNotSpecified"),
             Self::InvalidEncoderConfig { .. } => Cow::from("InvalidEncoderConfig"),
             Self::InvalidParserConfig { .. } => Cow::from("InvalidParserConfig"),
+            Self::InvalidTransportConfig { .. } => Cow::from("InvalidTransportConfig"),
         }
     }
 }
@@ -272,6 +278,15 @@ impl Display for ConfigError {
                 write!(
                     f,
                     "invalid format configuration for input endpoint '{endpoint_name}': {error}"
+                )
+            }
+            Self::InvalidTransportConfig {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "invalid transport configuration for endpoint '{endpoint_name}': {error}"
                 )
             }
         }
@@ -411,6 +426,13 @@ impl ConfigError {
 
     pub fn invalid_parser_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::InvalidParserConfig {
+            endpoint_name: endpoint_name.to_string(),
+            error: error.to_string(),
+        }
+    }
+
+    pub fn invalid_transport_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::InvalidTransportConfig {
             endpoint_name: endpoint_name.to_string(),
             error: error.to_string(),
         }
@@ -840,6 +862,12 @@ impl ControllerError {
     pub fn invalid_parser_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
             config_error: ConfigError::invalid_parser_configuration(endpoint_name, error),
+        }
+    }
+
+    pub fn invalid_transport_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::Config {
+            config_error: ConfigError::invalid_transport_configuration(endpoint_name, error),
         }
     }
 

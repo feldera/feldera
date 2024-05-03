@@ -7,10 +7,11 @@ use tokio::sync::{
     watch::{channel, Receiver, Sender},
 };
 
-use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState};
+use crate::{InputConsumer, InputReader, PipelineState, TransportInputEndpoint};
 #[cfg(test)]
 use mockall::automock;
 
+use crate::transport::InputEndpoint;
 use pipeline_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
 
 pub struct S3InputEndpoint {
@@ -29,7 +30,9 @@ impl InputEndpoint for S3InputEndpoint {
     fn is_fault_tolerant(&self) -> bool {
         false
     }
+}
 
+impl TransportInputEndpoint for S3InputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn crate::InputConsumer>,

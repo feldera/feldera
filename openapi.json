@@ -3380,6 +3380,131 @@
       "CsvParserConfig": {
         "type": "object"
       },
+      "DeltaTableIngestMode": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Read a snapshot of the table and stop.",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "snapshot"
+                ]
+              },
+              "snapshot_datetime": {
+                "type": "string",
+                "description": "Optional timestamp for the snapshot.\n\nWhen specified, the connector computes the snapshot of the smallest version\ncreated at time `t >= snapshot_datetime` in the transaction log of the table.\n\nNote: at most one of `snapshot_version` and `snapshot_datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+                "nullable": true
+              },
+              "snapshot_filter": {
+                "type": "string",
+                "description": "Optional row filter.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`.",
+                "nullable": true
+              },
+              "snapshot_version": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Optional table version for the snapshot.\n\nWhen specified, the connector retrieves the snapshot of the smallest version,\n`v >= snapshot_version` in the transaction log of the table.\n\nNote: at most one of `snapshot_version` and `snapshot_datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+                "nullable": true
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Follow the changelog of the table, only ingesting changes (new and deleted rows).",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "follow"
+                ]
+              },
+              "start_datetime": {
+                "type": "string",
+                "description": "Optional timestamp to start reading from.\n\nWhen specified, the connector follows the changelog starting from the first version\nof the table created at time `t >= start_datetime`.\n\nNote: at most one of `start_version` and `start_datetime` options can be specified.\nWhen neither of the two options is specified, the connector ingests changes that show\nup _after_ the latest committed version of the table.",
+                "nullable": true
+              },
+              "start_version": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Optional table version to start reading from.\n\nWhen specified, the connector follows the changelog starting from the first version\n`v >= start_version` of the table.\n\nNote: at most one of `start_version` and `start_datetime` options can be specified.\nWhen neither of the two options is specified, the connector ingests changes that show\nup _after_ the latest committed version of the table.",
+                "nullable": true
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Take a snapshot of the table before switching to the `follow` mode.",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "snapshot_and_follow"
+                ]
+              },
+              "snapshot_filter": {
+                "type": "string",
+                "description": "Optional row filter.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts > '2005-01-01 00:00:00'`.\n\nNote: the filter condition only applies to the initial snapshot of the table, and not\nto the records subsequently ingested in the `follow` mode.",
+                "nullable": true
+              },
+              "start_datetime": {
+                "type": "string",
+                "description": "Optional timestamp to start following from.\n\nWhen specified, the connector retrives the snapshot of the first version\nof the table created at time `t >= start_datetime` and starts following the change\nlog after that.\n\nNote: at most one of `start_version` and `start_datetime` options can be specified.\nWhen neither of the two options is specified, the connector uses the latest committed\nversion.",
+                "nullable": true
+              },
+              "start_version": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Optional table version to start following from.\n\nWhen specified, the connector retrieves the snapshot of the first version\n`v >= start_version` of the table and starts following transaction log after that.\n\nNote: at most one of `start_version` and `start_datetime` options can be specified.\nWhen neither of the two options is specified, the connector uses the latest committed\nversion.",
+                "nullable": true
+              }
+            }
+          }
+        ],
+        "description": "Delta table read mode.\n\nThree options are available:\n\n* `snapshot` - read a snapshot of the table and stop.\n\n* `follow` - continuously ingest changes to the table, starting from a specified version\nor timestamp.\n\n* `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion\nmode.",
+        "discriminator": {
+          "propertyName": "mode"
+        }
+      },
+      "DeltaTableReaderConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DeltaTableIngestMode"
+          },
+          {
+            "type": "object",
+            "required": [
+              "uri"
+            ],
+            "properties": {
+              "timestamp_column": {
+                "type": "string",
+                "description": "Table column that serves as an event timestamp.\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\nthe snapshot of the table will be sorted by the corresponding column.",
+                "nullable": true
+              },
+              "uri": {
+                "type": "string",
+                "description": "Table URI."
+              }
+            },
+            "additionalProperties": {
+              "type": "string",
+              "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
+            }
+          }
+        ],
+        "description": "Delta table output connector configuration."
+      },
       "DeltaTableWriterConfig": {
         "type": "object",
         "description": "Delta table output connector configuration.",
@@ -3387,12 +3512,6 @@
           "uri"
         ],
         "properties": {
-          "max_parquet_file_size": {
-            "type": "integer",
-            "description": "A bound on the size in bytes of a single Parquet file.",
-            "nullable": true,
-            "minimum": 0
-          },
           "uri": {
             "type": "string",
             "description": "Table URI."
@@ -5282,6 +5401,24 @@
                 "type": "string",
                 "enum": [
                   "s3_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/DeltaTableReaderConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "delta_table_input"
                 ]
               }
             }
