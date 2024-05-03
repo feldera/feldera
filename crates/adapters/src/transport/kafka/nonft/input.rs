@@ -1,10 +1,11 @@
+use crate::transport::InputEndpoint;
 use crate::{
     transport::{
         kafka::{rdkafka_loglevel_from, refine_kafka_error, DeferredLogging},
         secret_resolver::MaybeSecret,
         InputReader, Step,
     },
-    InputConsumer, InputEndpoint, PipelineState,
+    InputConsumer, PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
@@ -362,16 +363,18 @@ impl KafkaInputReader {
 }
 
 impl InputEndpoint for KafkaInputEndpoint {
+    fn is_fault_tolerant(&self) -> bool {
+        false
+    }
+}
+
+impl TransportInputEndpoint for KafkaInputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
         _start_step: Step,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(KafkaInputReader::new(&self.config, consumer)?))
-    }
-
-    fn is_fault_tolerant(&self) -> bool {
-        false
     }
 }
 

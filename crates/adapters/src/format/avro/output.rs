@@ -382,11 +382,6 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        trace!(
-            "output: {}",
-            std::str::from_utf8(&consumer_data.lock().unwrap().concat()).unwrap()
-        );
-
         let mut actual_output = Vec::new();
         for avro_datum in consumer_data.lock().unwrap().iter() {
             let avro_value =

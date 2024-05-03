@@ -4,9 +4,9 @@ use crate::{
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, FormatConfig, InputEndpoint,
+    CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, FormatConfig,
     InputEndpointConfig, InputFormat, OutputEndpoint, OutputEndpointConfig, OutputFormat,
-    PipelineConfig,
+    PipelineConfig, TransportInputEndpoint,
 };
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
@@ -593,7 +593,7 @@ async fn input_endpoint(
             match controller.add_input_endpoint(
                 &endpoint_name,
                 config,
-                Box::new(endpoint.clone()) as Box<dyn InputEndpoint>,
+                Box::new(endpoint.clone()) as Box<dyn TransportInputEndpoint>,
             ) {
                 Ok(endpoint_id) => endpoint_id,
                 Err(e) => {

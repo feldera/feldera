@@ -39,9 +39,9 @@ use crate::transport::{
     input_transport_config_to_endpoint, output_transport_config_to_endpoint, AtomicStep,
 };
 use crate::{
-    catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputEndpoint, InputFormat,
+    catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputFormat,
     OutputConsumer, OutputEndpoint, OutputFormat, OutputQueryHandles, ParseError, Parser,
-    PipelineState,
+    PipelineState, TransportInputEndpoint,
 };
 use crate::{create_integrated_output_endpoint, DbspCircuitHandle};
 use anyhow::Error as AnyError;
@@ -70,12 +70,13 @@ mod error;
 mod stats;
 
 use crate::catalog::{SerBatchReader, SerTrace};
+use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
+use pipeline_types::config::OutputBufferConfig;
 pub use pipeline_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-use pipeline_types::config::{OutputBufferConfig, TransportConfigVariant};
 use pipeline_types::program_schema::canonical_identifier;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
@@ -254,12 +255,12 @@ impl Controller {
         &self,
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
-        endpoint: Box<dyn InputEndpoint>,
+        endpoint: Box<dyn TransportInputEndpoint>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
         self.inner
-            .add_input_endpoint(endpoint_name, endpoint_config, endpoint)
+            .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint))
     }
 
     /// Disconnect an existing output endpoint.
@@ -317,7 +318,7 @@ impl Controller {
                 .all(|descr| descr.is_fault_tolerant)
     }
 
-    /// Increment the nubmber of active API connections.
+    /// Increment the number of active API connections.
     ///
     /// API connections are created dynamically via the `ingress` and `egress`
     /// REST API endpoints.
@@ -328,7 +329,7 @@ impl Controller {
         self.inner.register_api_connection()
     }
 
-    /// Decrement the nubmber of active API connections.
+    /// Decrement the number of active API connections.
     pub fn unregister_api_connection(&self) {
         self.inner.unregister_api_connection();
     }
@@ -343,7 +344,7 @@ impl Controller {
     ///
     /// Can be used in two situations:
     ///
-    /// * To process scalar inputs, such as neighborhood or quantile querues
+    /// * To process scalar inputs, such as neighborhood or quantile queries
     ///   that are not reflected in input buffer sizes.
     ///
     /// * When input buffers are not completely empty, but contain fewer than
@@ -413,7 +414,7 @@ impl Controller {
     /// * All input records received from all endpoints have been processed by
     ///   the circuit.
     /// * All output records have been sent to respective output transport
-    ///   endponts.
+    ///   endpoints.
     ///
     /// Note that, depending on the type and configuration of the output
     /// transport, this may not guarantee that all output records have been
@@ -989,15 +990,10 @@ impl ControllerInner {
         let endpoint =
             input_transport_config_to_endpoint(endpoint_config.connector_config.transport.clone())
                 .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
-        match endpoint {
-            None => Err(ControllerError::unknown_input_transport(
-                endpoint_name,
-                &endpoint_config.connector_config.transport.name(),
-            )),
-            Some(endpoint) => {
-                self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
-            }
-        }
+
+        // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
+        // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
+        self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
     }
 
     fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -1015,7 +1011,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
-        endpoint: Box<dyn InputEndpoint>,
+        endpoint: Option<Box<dyn TransportInputEndpoint>>,
     ) -> Result<EndpointId, ControllerError> {
         let mut inputs = self.inputs.lock().unwrap();
 
@@ -1037,39 +1033,66 @@ impl ControllerInner {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
             })?;
 
-        // Create parser.
-        let format_config = endpoint_config
-            .connector_config
-            .format
-            .as_ref()
-            .ok_or_else(|| ControllerError::input_format_not_specified(endpoint_name))?
-            .clone();
-        let format = <dyn InputFormat>::get_format(&format_config.name).ok_or_else(|| {
-            ControllerError::unknown_input_format(endpoint_name, &format_config.name)
-        })?;
-
-        let parser = format.new_parser(endpoint_name, input_handle, &format_config.config)?;
-
         // Create probe.
         let endpoint_id = inputs.keys().next_back().map(|k| k + 1).unwrap_or(0);
-        let probe = Box::new(InputProbe::new(
-            endpoint_id,
-            endpoint_name,
-            parser,
-            self.clone(),
-        ));
 
-        // Initialize endpoint stats.
-        self.status.add_input(
-            &endpoint_id,
-            endpoint_name,
-            endpoint_config,
-            endpoint.is_fault_tolerant(),
-        );
+        let reader = match endpoint {
+            Some(endpoint) => {
+                // Create parser.
+                let format_config = endpoint_config
+                    .connector_config
+                    .format
+                    .as_ref()
+                    .ok_or_else(|| ControllerError::input_format_not_specified(endpoint_name))?
+                    .clone();
+                let format =
+                    <dyn InputFormat>::get_format(&format_config.name).ok_or_else(|| {
+                        ControllerError::unknown_input_format(endpoint_name, &format_config.name)
+                    })?;
 
-        let reader = endpoint
-            .open(probe, 0)
-            .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+                let parser =
+                    format.new_parser(endpoint_name, input_handle, &format_config.config)?;
+                let probe = Box::new(InputProbe::new(
+                    endpoint_id,
+                    endpoint_name,
+                    parser,
+                    self.clone(),
+                ));
+
+                // Initialize endpoint stats.
+                self.status.add_input(
+                    &endpoint_id,
+                    endpoint_name,
+                    endpoint_config,
+                    endpoint.is_fault_tolerant(),
+                );
+
+                endpoint
+                    .open(probe, 0)
+                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
+            }
+            None => {
+                let endpoint = create_integrated_input_endpoint(
+                    endpoint_id,
+                    endpoint_name,
+                    &endpoint_config,
+                    Arc::downgrade(self),
+                )?;
+
+                // Initialize endpoint stats.
+                self.status.add_input(
+                    &endpoint_id,
+                    endpoint_name,
+                    endpoint_config,
+                    endpoint.is_fault_tolerant(),
+                );
+
+                endpoint
+                    .open(input_handle, 0)
+                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
+            }
+        };
+
         if self.state() == PipelineState::Running {
             reader
                 .start(0)
@@ -1127,14 +1150,9 @@ impl ControllerInner {
             output_transport_config_to_endpoint(endpoint_config.connector_config.transport.clone())
                 .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
-        // If `endpoint` is `None`, it means that the endpoint config specifies and integrated
+        // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // output connector.  Such endpoints are instantiated inside `add_output_endpoint`.
-        match endpoint {
-            None => self.add_output_endpoint(endpoint_name, endpoint_config, None),
-            Some(endpoint) => {
-                self.add_output_endpoint(endpoint_name, endpoint_config, Some(endpoint))
-            }
-        }
+        self.add_output_endpoint(endpoint_name, endpoint_config, endpoint)
     }
 
     fn disconnect_output(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -1465,12 +1483,12 @@ impl ControllerInner {
         ));
     }
 
-    fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
+    pub fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
         self.status.parse_error(endpoint_id);
         self.error(ControllerError::parse_error(endpoint_name, error));
     }
 
-    fn encode_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
+    pub fn encode_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
         self.status.encode_error(endpoint_id);
         self.error(ControllerError::encode_error(endpoint_name, error));
     }
@@ -1497,18 +1515,11 @@ impl ControllerInner {
     /// Update counters after receiving a new input batch.
     ///
     /// See [ControllerStatus::input_batch].
-    pub fn input_batch(
-        &self,
-        endpoint_id: EndpointId,
-        num_bytes: usize,
-        num_records: usize,
-        global_config: &RuntimeConfig,
-    ) {
+    pub fn input_batch(&self, endpoint_id: EndpointId, num_bytes: usize, num_records: usize) {
         self.status.input_batch(
             endpoint_id,
             num_bytes,
             num_records,
-            global_config,
             &self.circuit_thread_unparker,
             &self.backpressure_thread_unparker,
         )
@@ -1572,12 +1583,8 @@ impl InputProbe {
             self.controller
                 .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
         }
-        self.controller.input_batch(
-            self.endpoint_id,
-            data.len(),
-            num_records,
-            &self.controller.status.pipeline_config.global,
-        );
+        self.controller
+            .input_batch(self.endpoint_id, data.len(), num_records);
 
         errors
     }

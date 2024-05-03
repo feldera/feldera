@@ -224,10 +224,7 @@ impl OutputFormat for ParquetOutputFormat {
     }
 }
 
-pub fn relation_to_parquet_schema(
-    relation: &Relation,
-    delta_lake: bool,
-) -> Result<SerdeArrowSchema, ControllerError> {
+pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<ArrowField> {
     fn field_to_arrow_field(f: &Field, delta_lake: bool) -> ArrowField {
         ArrowField::new(
             &f.name,
@@ -296,11 +293,17 @@ pub fn relation_to_parquet_schema(
         }
     }
 
-    let fields = relation
-        .fields
+    fields
         .iter()
         .map(|f| field_to_arrow_field(f, delta_lake))
-        .collect::<Vec<ArrowField>>();
+        .collect::<Vec<ArrowField>>()
+}
+
+pub fn relation_to_parquet_schema(
+    fields: &[Field],
+    delta_lake: bool,
+) -> Result<SerdeArrowSchema, ControllerError> {
+    let fields = relation_to_arrow_fields(fields, delta_lake);
 
     SerdeArrowSchema::from_arrow_fields(&fields).map_err(|e| ControllerError::SchemaParseError {
         error: format!("Unable to convert schema to parquet/arrow: {e}"),
@@ -327,7 +330,7 @@ impl ParquetEncoder {
         Ok(Self {
             output_consumer,
             config,
-            parquet_schema: relation_to_parquet_schema(&_relation, false)?,
+            parquet_schema: relation_to_parquet_schema(&_relation.fields, false)?,
             _relation,
             buffer: Vec::new(),
             max_buffer_size,

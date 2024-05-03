@@ -2,16 +2,17 @@
 
 use crate::{
     controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
-    DbspCircuitHandle, FormatConfig,
+    DbspCircuitHandle, FormatConfig, InputFormat,
 };
 use anyhow::Result as AnyResult;
-use dbsp::{DBData, Runtime};
+use dbsp::{DBData, OrdZSet, Runtime};
 use log::{Log, Metadata, Record};
 use pipeline_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use std::ffi::OsStr;
-use std::fs::read_dir;
+use std::fs::{read_dir, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{
     thread::sleep,
@@ -32,10 +33,11 @@ mod mock_output_consumer;
 use crate::catalog::InputCollectionHandle;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
-    generate_test_batch, generate_test_batches, generate_test_batches_with_weights, EmbeddedStruct,
-    TestStruct, TestStruct2,
+    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
+    DatabricksPeople, EmbeddedStruct, TestStruct, TestStruct2,
 };
 use dbsp::circuit::CircuitConfig;
+use dbsp::utils::Tup2;
 pub use mock_dezset::{MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
@@ -183,4 +185,45 @@ pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf
         }
     }
     Ok(result)
+}
+
+/// Parse file with data encoded using specified format into a Z-set.
+pub fn file_to_zset<T>(file: &mut File, format: &str, format_config_yaml: &str) -> OrdZSet<T>
+where
+    T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+{
+    let format = <dyn InputFormat>::get_format(format).unwrap();
+    let buffer = MockDeZSet::<T, T>::new();
+
+    // Input parsers don't care about schema yet.
+    let schema = Relation::new("mock_schema", false, vec![]);
+
+    let mut parser = format
+        .new_parser(
+            "BaseConsumer",
+            &InputCollectionHandle::new(schema, buffer.clone()),
+            &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
+        )
+        .unwrap();
+
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+    let (_, errors) = parser.input_chunk(&bytes);
+
+    // Use assert_eq, so errors are printed in case of a failure.
+    assert_eq!(errors, vec![]);
+
+    let records = buffer.state().flushed.clone();
+
+    OrdZSet::from_tuples(
+        (),
+        records
+            .into_iter()
+            .map(|update| match update {
+                MockUpdate::Insert(x) => Tup2(Tup2(x, ()), 1),
+                MockUpdate::Delete(x) => Tup2(Tup2(x, ()), -1),
+                MockUpdate::Update(_) => panic!("Unexpected MockUpdate::Update"),
+            })
+            .collect::<Vec<_>>(),
+    )
 }

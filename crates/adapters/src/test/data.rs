@@ -515,3 +515,158 @@ deserialize_table_record!(TestStruct2["TestStruct", 6] {
     // (r#field_4, "t", false, Time, None),
     (r#field_5, "es", false, EmbeddedStruct, None)
 });
+
+/// Record in the databricks people dataset.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive(compare(PartialEq, PartialOrd))]
+pub struct DatabricksPeople {
+    pub id: i32,
+    pub first_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub last_name: Option<String>,
+    pub gender: Option<String>,
+    pub birth_date: Option<Timestamp>,
+    pub ssn: Option<String>,
+    pub salary: Option<i32>,
+}
+
+impl DatabricksPeople {
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field {
+                name: "id".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Int,
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+            Field {
+                name: "firstName".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Varchar,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+            Field {
+                name: "middleName".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Varchar,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+            Field {
+                name: "lastName".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Varchar,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+            Field {
+                name: "gender".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Varchar,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+            Field {
+                name: "birthDate".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Timestamp,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+            Field {
+                name: "ssn".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Varchar,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+            Field {
+                name: "salary".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Int,
+                    nullable: true,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                },
+            },
+        ]
+    }
+}
+
+serialize_table_record!(DatabricksPeople[8]{
+    r#id["id"]: i32,
+    r#first_name["firstname"]: Option<String>,
+    r#middle_name["middlename"]: Option<String>,
+    r#last_name["lastname"]: Option<String>,
+    r#gender["gender"]: Option<String>,
+    r#birth_date["birthdate"]: Option<Timestamp>,
+    r#ssn["ssn"]: Option<String>,
+    r#salary["salary"]: Option<i32>
+});
+
+deserialize_table_record!(DatabricksPeople["DatabricksPeople", 8] {
+    (r#id, "id", false, i32, None),
+    (r#first_name, "firstname", false, Option<String>, Some(None)),
+    (r#middle_name, "middlename", false, Option<String>, Some(None)),
+    (r#last_name, "lastname", false, Option<String>, Some(None)),
+    (r#gender, "gender", false, Option<String>, Some(None)),
+    (r#birth_date, "birthdate", false, Option<Timestamp>, Some(None)),
+    (r#ssn, "ssn", false, Option<String>, Some(None)),
+    (r#salary, "salary", false, Option<i32>, Some(None))
+});

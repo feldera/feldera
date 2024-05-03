@@ -1,4 +1,4 @@
-use super::{InputConsumer, InputEndpoint, InputReader, Step};
+use super::{InputConsumer, InputEndpoint, InputReader, Step, TransportInputEndpoint};
 use crate::PipelineState;
 use actix::System;
 use actix_web::http::header::{ByteRangeSpec, ContentRangeSpec, Range, CONTENT_RANGE};
@@ -28,16 +28,18 @@ impl UrlInputEndpoint {
 }
 
 impl InputEndpoint for UrlInputEndpoint {
+    fn is_fault_tolerant(&self) -> bool {
+        false
+    }
+}
+
+impl TransportInputEndpoint for UrlInputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
         _start_step: Step,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(UrlInputReader::new(&self.config, consumer)?))
-    }
-
-    fn is_fault_tolerant(&self) -> bool {
-        false
     }
 }
 

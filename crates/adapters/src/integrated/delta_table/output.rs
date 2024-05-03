@@ -1,7 +1,9 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::controller::{ControllerInner, EndpointId};
+use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::relation_to_parquet_schema;
 use crate::format::MAX_DUPLICATES;
+use crate::integrated::delta_table::register_storage_handlers;
 use crate::transport::Step;
 use crate::{
     AsyncErrorCallback, ControllerError, Encoder, OutputConsumer, OutputEndpoint, RecordFormat,
@@ -17,7 +19,7 @@ use deltalake::operations::transaction::{CommitBuilder, TableReference};
 use deltalake::operations::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 use pipeline_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrowBuilder;
@@ -60,23 +62,20 @@ impl DeltaTableWriter {
         schema: &Relation,
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
-        // Register url handlers, so URL's like `s3://...` are recognized.
-        // I hope it is harmless to do this every time a DeltaTablWriter is created.
-        deltalake::aws::register_handlers(None);
-        deltalake::azure::register_handlers(None);
-        deltalake::gcp::register_handlers(None);
-
-        // Create serde arrow schema.
-        let serde_arrow_schema = relation_to_parquet_schema(schema, true)?;
+        register_storage_handlers();
 
         // Create arrow schema
-        let arrow_schema = Arc::new(ArrowSchema::new(
-            serde_arrow_schema.to_arrow_fields().map_err(|e| {
-                ControllerError::schema_validation_error(&format!(
-                    "error converting serde schema to arrow schema: {e}"
-                ))
-            })?,
-        ));
+        let arrow_fields = relation_to_arrow_fields(&schema.fields, true);
+
+        // Create serde arrow schema.
+        let serde_arrow_schema =
+            SerdeArrowSchema::from_arrow_fields(&arrow_fields).map_err(|e| {
+                ControllerError::SchemaParseError {
+                    error: format!("Unable to convert schema to parquet/arrow: {e}"),
+                }
+            })?;
+
+        let arrow_schema = Arc::new(ArrowSchema::new(arrow_fields));
 
         let mut struct_fields: Vec<_> = vec![];
 
@@ -225,18 +224,27 @@ struct WriterTask {
 
 impl WriterTask {
     async fn create(inner: Arc<DeltaTableWriterInner>) -> AnyResult<Self> {
-        trace!(
+        info!(
             "delta_table {}: opening or creating delta table '{}'",
-            &inner.endpoint_name,
-            &inner.config.uri
+            &inner.endpoint_name, &inner.config.uri
         );
+
+        let mut storage_options = inner.config.object_store_config.clone();
+
+        // FIXME: S3 does not support the atomic rename operation required by delta. This is not a problem
+        // with a single writer, but multiple writers require an external coordinator service.
+        // `delta-rs` users tend to rely on the DynamoDB lock client for this
+        // (see `object_store::aws::DynamoCommit`), but that only helps if all writers use the
+        // same lock service.  For now we simply tell the object store client to use unsafe renames
+        // and hope for the best.  Without this config option, writes to S3-based delta tables will fail.
+        storage_options.insert("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string());
 
         let delta_table = CreateBuilder::new()
             .with_location(inner.config.uri.clone())
             // I expected `SaveMode::Append` to be the correct setting, but
             // that always returns an error.
             .with_save_mode(SaveMode::Ignore)
-            .with_storage_options(inner.config.object_store_config.clone())
+            .with_storage_options(storage_options)
             .with_columns(inner.struct_fields.clone())
             .await
             .map_err(|e| {
@@ -246,7 +254,7 @@ impl WriterTask {
                 )
             })?;
 
-        debug!(
+        info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
             &inner.endpoint_name,
             &inner.config.uri,
@@ -295,7 +303,7 @@ impl WriterTask {
             // The snapshot version for the next commit is computed as the current version + 1.
             // We need to update the current version manually, since it doesn't happen automatically.
             self.delta_table
-                .update()
+                .update_incremental(None)
                 .await
                 .map_err(|e| anyhow!("error updating delta table version before commit: {e}"))?;
 
@@ -489,192 +497,5 @@ impl OutputEndpoint for DeltaTableWriter {
         // TODO: make this connector fault tolerant.  Delta tables already allow atomic
         // updates, we just need to record the step-to-table-snapshot mapping somewhere.
         false
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::format::parquet::test::load_parquet_file;
-    use crate::test::{list_files_recursive, test_circuit, wait, TestStruct2};
-    use crate::Controller;
-    use env_logger::Env;
-    use pipeline_types::config::PipelineConfig;
-    use pipeline_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
-    use proptest::collection::vec;
-    use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
-    use proptest::proptest;
-    use std::collections::HashMap;
-    use std::ffi::OsStr;
-    use std::io::Write;
-    use std::os::unix::ffi::OsStrExt;
-    use std::path::Path;
-    use tempfile::{NamedTempFile, TempDir};
-
-    /// Test function that works for both local FS and remote object stores.
-    ///
-    /// * `verify` - verify the final contents of the delta table is equivalent to
-    ///   `data`.  Currently only works for tables in the local FS.
-    ///
-    /// TODO: implement verification using the delta table API rather than
-    /// by reading parquet files directly.  I guess the best way to do this is
-    /// to build an input connector.
-    fn delta_table_output_test(
-        data: Vec<TestStruct2>,
-        table_uri: &str,
-        object_store_config: &HashMap<String, String>,
-        verify: bool,
-    ) {
-        let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-            .is_test(true)
-            .try_init();
-
-        // Output buffer size.
-        // Requires: `num_records % buffer_size = 0`.
-        let buffer_size = 2000;
-
-        // Buffer timeout.  Must be much longer than what it takes the pipeline
-        // to process `buffer_size` records.
-        let buffer_timeout_ms = 100;
-
-        println!("delta_table_output_test: preparing input file");
-        let mut input_file = NamedTempFile::new().unwrap();
-        for v in data.iter() {
-            let buffer: Vec<u8> = Vec::new();
-            let mut serializer = serde_json::Serializer::new(buffer);
-            v.serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
-                .unwrap();
-            input_file
-                .as_file_mut()
-                .write_all(&serializer.into_inner())
-                .unwrap();
-            input_file.write_all(b"\n").unwrap();
-        }
-
-        let mut storage_options = String::new();
-        for (key, val) in object_store_config.iter() {
-            storage_options += &format!("                {key}: \"{val}\"\n");
-        }
-
-        // Create controller.
-        let config_str = format!(
-            r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: "{}"
-        format:
-            name: json
-            config:
-                update_format: "raw"
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: "delta_table_output"
-            config:
-                uri: "{table_uri}"
-{}
-        enable_output_buffer: true
-        max_output_buffer_size_records: {buffer_size}
-        max_output_buffer_time_millis: {buffer_timeout_ms}
-"#,
-            input_file.path().display(),
-            storage_options,
-        );
-
-        println!(
-            "delta_table_output_test: {} records, input file: {}, table uri: {table_uri}",
-            data.len(),
-            input_file.path().display(),
-        );
-        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
-
-        let controller = Controller::with_config(
-            |workers| Ok(test_circuit::<TestStruct2>(workers, &TestStruct2::schema())),
-            &config,
-            Box::new(move |e| panic!("delta_table_output_test: error: {e}")),
-        )
-        .unwrap();
-
-        controller.start();
-
-        wait(|| controller.status().pipeline_complete(), 40_000).unwrap();
-
-        if verify {
-            let parquet_files =
-                list_files_recursive(&Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
-
-            // // Uncomment to inspect the input JSON file.
-            // std::mem::forget(input_file);
-
-            let mut output_records = Vec::with_capacity(data.len());
-            for parquet_file in parquet_files {
-                let mut records: Vec<TestStruct2> = load_parquet_file(&parquet_file);
-                output_records.append(&mut records);
-            }
-
-            output_records.sort();
-
-            assert_eq!(output_records, data);
-        }
-
-        controller.stop().unwrap();
-        println!("delta_table_output_test: success");
-    }
-
-    /// Generate up to `max_records` _unique_ records.
-    fn data(max_records: usize) -> impl Strategy<Value = Vec<TestStruct2>> {
-        vec(TestStruct2::arbitrary(), 0..max_records).prop_map(|vec| {
-            let mut idx = 0;
-            vec.into_iter()
-                .map(|mut x| {
-                    x.field = idx;
-                    idx += 1;
-                    x
-                })
-                .collect()
-        })
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2))]
-        #[test]
-        fn delta_table_output_file_proptest(data in data(100_000))
-        {
-            let table_dir = TempDir::new().unwrap();
-            delta_table_output_test(data, &table_dir.path().display().to_string(), &HashMap::new(), true);
-            // // Uncomment to inspect output parquet files produced by the test.
-            // std::mem::forget(table_dir);
-        }
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(1))]
-
-        #[cfg(feature = "delta-s3-test")]
-        #[test]
-        fn delta_table_output_s3_proptest(data in data(100_000))
-        {
-            let uuid = uuid::Uuid::new_v4();
-            let object_store_config = [
-                ("aws_access_key_id".to_string(), std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID").unwrap()),
-                ("aws_secret_access_key".to_string(), std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY").unwrap()),
-                // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
-                ("aws_region".to_string(), "us-east-2".to_string()),
-                ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string()),
-            ]
-                .into_iter()
-                .collect::<HashMap<_,_>>();
-
-            // TODO: enable verification when it's supported for S3.
-            delta_table_output_test(data.clone(), &format!("s3://feldera-delta-table-test/{uuid}/"), &object_store_config, false);
-            delta_table_output_test(data, &format!("s3://feldera-delta-table-test/{uuid}/"), &object_store_config, false);
-        }
-
     }
 }

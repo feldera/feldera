@@ -46,11 +46,7 @@ pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
 #[test]
 fn rel_to_schema() {
     use super::relation_to_parquet_schema;
-    relation_to_parquet_schema(
-        &Relation::new("TestStruct2", false, TestStruct2::schema()),
-        false,
-    )
-    .expect("Can convert");
+    relation_to_parquet_schema(&TestStruct2::schema(), false).expect("Can convert");
 }
 
 #[test]

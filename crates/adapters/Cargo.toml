@@ -71,9 +71,8 @@ tempfile = "3.10.0"
 async-trait = "0.1"
 parquet = { version = "51.0.0", features = ["json"] }
 arrow = { version = "51.0.0", features = ["chrono-tz"] }
-#serde_arrow = { version = "0.10.1-rc.1", features = ["arrow-50"] }
-#serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arrow-50"], rev = "2c3a1ad" }
-serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arrow-51"], rev = "4ebd888" }
+serde_arrow = { git = "https://github.com/gz/serde_arrow.git", features = ["arrow-51"], rev = "c9b5cff" }
+# serde_arrow = { path = "../../../serde_arrow/serde_arrow", features = ["arrow-51"] }
 bytes = "1.5.0"
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.
 deltalake = { version = "0.17.3", features = ["datafusion", "s3", "gcs", "azure"], optional = true }
@@ -81,6 +80,7 @@ apache-avro = { version = "0.16.0", optional = true }
 schema_registry_converter = { version = "4.0.0", features = ["avro", "blocking"], optional = true }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 metrics-exporter-tcp = { version = "0.9.0" }
+url = "2.5.0"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 psutil = "3.2.2"
