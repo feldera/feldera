@@ -1057,8 +1057,6 @@ impl ControllerInner {
             endpoint_name,
             parser,
             self.clone(),
-            self.circuit_thread_unparker.clone(),
-            self.backpressure_thread_unparker.clone(),
         ));
 
         // Initialize endpoint stats.
@@ -1496,6 +1494,45 @@ impl ControllerInner {
         ));
     }
 
+    /// Update counters after receiving a new input batch.
+    ///
+    /// See [ControllerStatus::input_batch].
+    pub fn input_batch(
+        &self,
+        endpoint_id: EndpointId,
+        num_bytes: usize,
+        num_records: usize,
+        global_config: &RuntimeConfig,
+    ) {
+        self.status.input_batch(
+            endpoint_id,
+            num_bytes,
+            num_records,
+            global_config,
+            &self.circuit_thread_unparker,
+            &self.backpressure_thread_unparker,
+        )
+    }
+
+    /// Update counters after receiving an end-of-input event on an input
+    /// endpoint.
+    ///
+    /// See [`ControllerStatus::eoi`].
+    pub fn eoi(&self, endpoint_id: EndpointId, num_records: usize) {
+        self.status
+            .eoi(endpoint_id, num_records, &self.circuit_thread_unparker)
+    }
+
+    pub fn start_step(&self, endpoint_id: EndpointId, step: Step) {
+        self.status.start_step(endpoint_id, step);
+        self.circuit_thread_unparker.unpark();
+    }
+
+    pub fn committed(&self, endpoint_id: EndpointId, step: Step) {
+        self.status.committed(endpoint_id, step);
+        self.circuit_thread_unparker.unpark();
+    }
+
     fn output_buffers_full(&self) -> bool {
         self.status.output_buffers_full()
     }
@@ -1508,8 +1545,6 @@ struct InputProbe {
     endpoint_name: String,
     parser: Box<dyn Parser>,
     controller: Arc<ControllerInner>,
-    circuit_thread_unparker: Unparker,
-    backpressure_thread_unparker: Unparker,
 }
 
 impl InputProbe {
@@ -1518,16 +1553,12 @@ impl InputProbe {
         endpoint_name: &str,
         parser: Box<dyn Parser>,
         controller: Arc<ControllerInner>,
-        circuit_thread_unparker: Unparker,
-        backpressure_thread_unparker: Unparker,
     ) -> Self {
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             parser,
             controller,
-            circuit_thread_unparker,
-            backpressure_thread_unparker,
         }
     }
 
@@ -1541,13 +1572,11 @@ impl InputProbe {
             self.controller
                 .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
         }
-        self.controller.status.input_batch(
+        self.controller.input_batch(
             self.endpoint_id,
             data.len(),
             num_records,
             &self.controller.status.pipeline_config.global,
-            &self.circuit_thread_unparker,
-            &self.backpressure_thread_unparker,
         );
 
         errors
@@ -1576,9 +1605,7 @@ impl InputConsumer for InputProbe {
             self.controller
                 .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
         }
-        self.controller
-            .status
-            .eoi(self.endpoint_id, num_records, &self.circuit_thread_unparker);
+        self.controller.eoi(self.endpoint_id, num_records);
 
         errors
     }
@@ -1594,19 +1621,15 @@ impl InputConsumer for InputProbe {
             &self.endpoint_name,
             self.parser.fork(),
             self.controller.clone(),
-            self.circuit_thread_unparker.clone(),
-            self.backpressure_thread_unparker.clone(),
         ))
     }
 
     fn start_step(&mut self, step: Step) {
-        self.controller.status.start_step(self.endpoint_id, step);
-        self.circuit_thread_unparker.unpark();
+        self.controller.start_step(self.endpoint_id, step);
     }
 
     fn committed(&mut self, step: Step) {
-        self.controller.status.committed(self.endpoint_id, step);
-        self.circuit_thread_unparker.unpark();
+        self.controller.committed(self.endpoint_id, step);
     }
 }
 
