@@ -137,6 +137,7 @@ pub type OrdPartitionedTreeAggregateFactories<TS, V, Z, Acc> = PartitionedTreeAg
 >;
 
 /// Cursor over partitioned radix tree.
+#[allow(unused)]
 pub trait PartitionedRadixTreeCursor<PK, TS, A>:
     Cursor<PK, DynPair<DynPrefix<TS>, DynTreeNode<TS, A>>, (), DynZWeight> + Sized
 where

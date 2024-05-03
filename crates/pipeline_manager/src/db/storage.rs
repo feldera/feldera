@@ -34,6 +34,7 @@ pub(crate) trait Storage {
     /// # Note
     /// This should be called after the SQL compilation succeeded, e.g., in the
     /// same transaction that sets status to  [`ProgramStatus::CompilingRust`].
+    #[allow(dead_code)]
     async fn set_program_schema(
         &self,
         tenant_id: TenantId,
@@ -62,6 +63,7 @@ pub(crate) trait Storage {
     /// database matches `expected_version`. Setting the status to
     /// `ProgramStatus::Pending` resets the schema and is used to queue the
     /// program for compilation.
+    #[allow(dead_code)]
     async fn set_program_status_guarded(
         &self,
         tenant_id: TenantId,
@@ -199,6 +201,7 @@ pub(crate) trait Storage {
     ) -> Result<Version, DBError>;
 
     /// Get input/output status for an attached connector.
+    #[allow(dead_code)]
     async fn attached_connector_is_input(
         &self,
         tenant_id: TenantId,

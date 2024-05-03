@@ -3,7 +3,6 @@ use crate::{
     transport::{InputReader, Step},
     ControllerError, InputConsumer, InputEndpoint, ParseError, PipelineState, TransportConfig,
 };
-use actix::Message;
 use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use circular_queue::CircularQueue;
@@ -79,10 +78,6 @@ impl HttpInputEndpointInner {
         }
     }
 }
-
-#[derive(Message)]
-#[rtype(result = "()")]
-struct EndpointStateNotification;
 
 /// Input endpoint that streams input data via HTTP.
 #[derive(Clone)]
