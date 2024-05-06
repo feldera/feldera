@@ -187,6 +187,8 @@ request is rejected."
         pipeline_types::query::NeighborhoodQuery,
         pipeline_types::query::OutputQuery,
         pipeline_types::config::PipelineConfig,
+        pipeline_types::config::StorageConfig,
+        pipeline_types::config::StorageCacheConfig,
         pipeline_types::config::InputEndpointConfig,
         pipeline_types::config::OutputEndpointConfig,
         pipeline_types::config::FormatConfig,

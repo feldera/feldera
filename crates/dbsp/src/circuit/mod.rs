@@ -34,7 +34,9 @@ pub use circuit_builder::{
     ChildCircuit, Circuit, CircuitHandle, ExportId, ExportStream, FeedbackConnector, GlobalNodeId,
     NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
-pub use dbsp_handle::{CircuitConfig, DBSPHandle, Host, IntoCircuitConfig, Layout};
+pub use dbsp_handle::{
+    CircuitConfig, DBSPHandle, Host, IntoCircuitConfig, Layout, StorageCacheConfig, StorageConfig,
+};
 pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
 
 pub use schedule::Error as SchedulerError;

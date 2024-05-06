@@ -860,7 +860,7 @@
                     "storage_mb_max": null
                   },
                   "storage": false,
-                  "storage_location": null,
+                  "storage_config": null,
                   "tcp_metrics_exporter": false,
                   "workers": 8
                 }
@@ -4208,15 +4208,18 @@
                   "$ref": "#/components/schemas/OutputEndpointConfig"
                 }
               },
-              "storage_location": {
-                "type": "string",
-                "description": "The location where the pipeline state is stored.\n\nIt should point to a path on the file-system of the machine/container where the\npipeline can find its persistent state.\n\nThis field must be set by the pipeline runner implementation on startup\nif `global.storage` is `true`.\nIf `global.storage` is `false`, this field is ignored by the pipeline.",
+              "storage_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageConfig"
+                  }
+                ],
                 "nullable": true
               }
             }
           }
         ],
-        "description": "Pipeline configuration specified by the user when creating\na new pipeline instance.\n\nThis is the shape of the overall pipeline configuration, but is not\nthe publicly exposed type with which users configure pipelines."
+        "description": "Pipeline configuration specified by the user when creating\na new pipeline instance.\n\nThis is the shape of the overall pipeline configuration. It encapsulates a\n[`RuntimeConfig`], which is the publicly exposed way for users to configure\npipelines."
       },
       "PipelineDescr": {
         "type": "object",
@@ -5143,6 +5146,31 @@
           }
         ],
         "description": "The available SQL types as specified in `CREATE` statements."
+      },
+      "StorageCacheConfig": {
+        "type": "string",
+        "description": "How to cache access to storage within a Feldera pipeline.",
+        "enum": [
+          "page_cache",
+          "feldera_cache"
+        ]
+      },
+      "StorageConfig": {
+        "type": "object",
+        "description": "Configuration for persistent storage in a [`PipelineConfig`].",
+        "required": [
+          "path",
+          "cache"
+        ],
+        "properties": {
+          "cache": {
+            "$ref": "#/components/schemas/StorageCacheConfig"
+          },
+          "path": {
+            "type": "string",
+            "description": "The location where the pipeline state is stored or will be stored.\n\nIt should point to a path on the file-system of the machine/container\nwhere the pipeline will run. If that path doesn't exist yet, or if it\ndoes not contain any checkpoints, then the pipeline creates it and\nstarts from an initial state in which no data has yet been received. If\nit does exist, then the pipeline starts from the most recent checkpoint\nthat already exists there. In either case, (further) checkpoints will be\nwritten there."
+          }
+        }
       },
       "TenantId": {
         "type": "string",

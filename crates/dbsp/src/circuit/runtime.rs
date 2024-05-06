@@ -15,6 +15,7 @@ use crate::{
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use once_cell::sync::Lazy;
+use pipeline_types::config::{StorageCacheConfig, StorageConfig};
 use serde::Serialize;
 use std::{
     backtrace::Backtrace,
@@ -189,6 +190,7 @@ impl WorkerPanicInfo {
 struct RuntimeInner {
     layout: Layout,
     storage: StorageLocation,
+    cache: StorageCacheConfig,
     min_storage_rows: usize,
     store: LocalStore,
     // Panic info collected from failed worker threads.
@@ -251,7 +253,7 @@ impl Debug for RuntimeInner {
 impl RuntimeInner {
     fn new(
         layout: Layout,
-        storage: Option<String>,
+        storage: Option<StorageConfig>,
         start_checkpoint: Uuid,
         min_storage_rows: usize,
     ) -> Result<Self, DBSPError> {
@@ -260,6 +262,9 @@ impl RuntimeInner {
         for _ in 0..local_workers {
             panic_info.push(RwLock::new(None));
         }
+        let cache = storage
+            .as_ref()
+            .map_or(Default::default(), |storage| storage.cache);
         let storage: Result<StorageLocation, DBSPError> = storage.map_or_else(
             // Note that we use into_path() here which avoids deleting the temporary directory
             // we still clean it up when the runtime is dropped -- but keep it around on panic.
@@ -274,7 +279,7 @@ impl RuntimeInner {
                 ))
             },
             |s| {
-                let locked_path = LockedDirectory::new(s)?;
+                let locked_path = LockedDirectory::new(s.path)?;
                 Ok(StorageLocation::Permanent(locked_path))
             },
         );
@@ -293,6 +298,7 @@ impl RuntimeInner {
 
         Ok(Self {
             layout,
+            cache,
             storage,
             min_storage_rows,
             store: TypedDashMap::new(),
@@ -471,12 +477,12 @@ impl Runtime {
 
     fn new_backend() -> Rc<Backend> {
         let rt = Runtime::runtime();
-        let dir = if let Some(rt) = rt {
-            rt.inner().storage.as_ref().to_path_buf()
+        let (dir, cache) = if let Some(rt) = rt {
+            (rt.inner().storage.as_ref().to_path_buf(), rt.inner().cache)
         } else {
-            tempdir_for_thread()
+            (tempdir_for_thread(), StorageCacheConfig::default())
         };
-        Rc::new(new_default_backend(dir))
+        Rc::new(new_default_backend(dir, cache))
     }
 
     /// Returns the (thread-local) storage backend.
@@ -720,6 +726,7 @@ mod tests {
         operator::Generator,
         Circuit, RootCircuit,
     };
+    use pipeline_types::config::{StorageCacheConfig, StorageConfig};
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -749,7 +756,10 @@ mod tests {
         let path_clone = path.clone();
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
-            storage: Some(path.to_str().unwrap().to_string()),
+            storage: Some(StorageConfig {
+                path: path.to_str().unwrap().to_string(),
+                cache: StorageCacheConfig::default(),
+            }),
             min_storage_rows: usize::MAX,
             init_checkpoint: Uuid::nil(),
         };

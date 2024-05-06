@@ -5,12 +5,14 @@
 import type { InputEndpointConfig } from './InputEndpointConfig'
 import type { OutputEndpointConfig } from './OutputEndpointConfig'
 import type { ResourceConfig } from './ResourceConfig'
+import type { StorageConfig } from './StorageConfig'
 /**
  * Pipeline configuration specified by the user when creating
  * a new pipeline instance.
  *
- * This is the shape of the overall pipeline configuration, but is not
- * the publicly exposed type with which users configure pipelines.
+ * This is the shape of the overall pipeline configuration. It encapsulates a
+ * [`RuntimeConfig`], which is the publicly exposed way for users to configure
+ * pipelines.
  */
 export type PipelineConfig = {
   /**
@@ -71,15 +73,5 @@ export type PipelineConfig = {
    * Output endpoint configuration.
    */
   outputs?: Record<string, OutputEndpointConfig>
-  /**
-   * The location where the pipeline state is stored.
-   *
-   * It should point to a path on the file-system of the machine/container where the
-   * pipeline can find its persistent state.
-   *
-   * This field must be set by the pipeline runner implementation on startup
-   * if `global.storage` is `true`.
-   * If `global.storage` is `false`, this field is ignored by the pipeline.
-   */
-  storage_location?: string | null
+  storage_config?: StorageConfig | null
 }

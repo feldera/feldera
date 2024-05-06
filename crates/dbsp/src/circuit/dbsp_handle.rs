@@ -8,6 +8,7 @@ use core::fmt;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use hashbrown::HashMap;
 use itertools::Either;
+pub use pipeline_types::config::{StorageCacheConfig, StorageConfig};
 use std::{
     collections::HashSet,
     error::Error as StdError,
@@ -211,9 +212,8 @@ impl StdError for LayoutError {}
 pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
-    /// Directory where the circuit stores data, either for working with data
-    /// bigger than more or for fault tolerance.
-    pub storage: Option<String>,
+    /// Storage configuration (if storage is enabled).
+    pub storage: Option<StorageConfig>,
     /// Minimum number of rows in a persistent trace to spill it to storage. If
     /// this is 0, then all traces will be stored on disk; if it is
     /// `usize::MAX`, then all traces will be kept in memory; and intermediate
@@ -243,7 +243,7 @@ impl IntoCircuitConfig for &CircuitConfig {
         self.layout.clone()
     }
 
-    fn storage(&self) -> Option<String> {
+    fn storage(&self) -> Option<StorageConfig> {
         self.storage.clone()
     }
 
@@ -261,7 +261,7 @@ impl IntoCircuitConfig for CircuitConfig {
         self.layout.clone()
     }
 
-    fn storage(&self) -> Option<String> {
+    fn storage(&self) -> Option<StorageConfig> {
         self.storage.clone()
     }
 
@@ -279,7 +279,7 @@ impl IntoCircuitConfig for CircuitConfig {
 pub trait IntoCircuitConfig {
     fn layout(&self) -> Layout;
 
-    fn storage(&self) -> Option<String> {
+    fn storage(&self) -> Option<StorageConfig> {
         None
     }
 
@@ -838,6 +838,7 @@ mod tests {
         TypedBox, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
+    use pipeline_types::config::{StorageCacheConfig, StorageConfig};
     use tempfile::{tempdir, TempDir};
     use uuid::Uuid;
 
@@ -1087,7 +1088,10 @@ mod tests {
         let temp = tempdir().expect("Can't create temp dir for storage");
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
-            storage: Some(temp.path().to_str().unwrap().to_string()),
+            storage: Some(StorageConfig {
+                path: temp.path().to_str().unwrap().to_string(),
+                cache: StorageCacheConfig::default(),
+            }),
             min_storage_rows: 0,
             init_checkpoint: Uuid::nil(),
         };

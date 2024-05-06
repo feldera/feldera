@@ -56,6 +56,12 @@ pub struct Config {
     /// to contain at least `ROWS` rows.
     #[clap(long="storage", default_value_t = usize::MAX, default_missing_value = "0", hide_default_value(true), value_name("ROWS"))]
     pub min_storage_rows: usize,
+
+    /// Storage cache configuration. By default, the benchmark uses the
+    /// operating system page cache. This option enables the internal Feldera
+    /// cache, which is currently experimental.
+    #[clap(long, default_value_t, action = clap::ArgAction::SetTrue)]
+    pub feldera_cache: bool,
 }
 
 /// Properties of the generated input events.
@@ -151,6 +157,7 @@ impl Default for Config {
             output_csv: None,
             progress: true,
             min_storage_rows: usize::MAX,
+            feldera_cache: false,
         }
     }
 }

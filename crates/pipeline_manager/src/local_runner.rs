@@ -13,6 +13,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use log::trace;
+use pipeline_types::config::{StorageCacheConfig, StorageConfig};
 use std::{collections::BTreeMap, process::Stdio, sync::Arc};
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
@@ -60,8 +61,11 @@ impl PipelineExecutor for ProcessRunner {
     ) -> Result<PipelineExecutionDesc, ManagerError> {
         let pipeline_dir = self.config.pipeline_dir(pr.pipeline.pipeline_id);
         let pipeline_data_dir = pipeline_dir.join("data");
-        pr.config.storage_location = if pr.config.global.storage {
-            Some(pipeline_data_dir.to_string_lossy().into())
+        pr.config.storage_config = if pr.config.global.storage {
+            Some(StorageConfig {
+                path: pipeline_data_dir.to_string_lossy().into(),
+                cache: StorageCacheConfig::default(),
+            })
         } else {
             None
         };
@@ -93,7 +97,12 @@ impl PipelineExecutor for ProcessRunner {
                 e,
             )
         })?;
-        if let Some(ref pipeline_data_dir) = ped.config.storage_location {
+        if let Some(pipeline_data_dir) = ped
+            .config
+            .storage_config
+            .as_ref()
+            .map(|storage| &storage.path)
+        {
             create_dir_all(&pipeline_data_dir).await.map_err(|e| {
                 ManagerError::io_error(
                     format!("creating pipeline data directory '{}'", pipeline_data_dir),
