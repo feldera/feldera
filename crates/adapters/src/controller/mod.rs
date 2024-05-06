@@ -455,7 +455,7 @@ impl Controller {
         }
         let config = CircuitConfig {
             layout: Layout::new_solo(controller.status.pipeline_config.global.workers as usize),
-            storage: controller.status.pipeline_config.storage_location.clone(),
+            storage: controller.status.pipeline_config.storage_config.clone(),
             min_storage_rows,
             init_checkpoint: Uuid::nil(),
         };

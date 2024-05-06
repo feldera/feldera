@@ -10,6 +10,7 @@
 #![warn(missing_docs)]
 
 use std::{
+    fs::OpenOptions,
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -19,6 +20,7 @@ use std::{
 };
 
 use log::warn;
+use pipeline_types::config::StorageCacheConfig;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use tempfile::TempDir;
 use thiserror::Error;
@@ -390,7 +392,7 @@ pub fn tempdir_for_thread() -> PathBuf {
 }
 
 /// Create and returns a backend of the default kind.
-pub fn new_default_backend(tempdir: PathBuf) -> Backend {
+pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backend {
     #[cfg(target_os = "linux")]
     {
         use nix::sys::statfs::{statfs, TMPFS_MAGIC};
@@ -413,17 +415,32 @@ pub fn new_default_backend(tempdir: PathBuf) -> Backend {
             ONCE.call_once(|| {
                 warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
             });
-            Box::new(posixio_impl::PosixBackend::with_base(&tempdir))
+            Box::new(posixio_impl::PosixBackend::with_base(&tempdir, cache))
         }
     }
-    Box::new(posixio_impl::PosixBackend::with_base(tempdir))
+    Box::new(posixio_impl::PosixBackend::with_base(tempdir, cache))
 }
 
 /// Returns a thread-local default backend.
 pub fn default_backend_for_thread() -> Rc<Backend> {
     thread_local! {
         pub static DEFAULT_BACKEND: Rc<Backend>
-            = Rc::new(new_default_backend(tempdir_for_thread()));
+            = Rc::new(new_default_backend(tempdir_for_thread(), StorageCacheConfig::default()));
     }
     DEFAULT_BACKEND.with(|rc| rc.clone())
+}
+
+trait StorageCacheFlags {
+    fn cache_flags(&mut self, cache: &StorageCacheConfig) -> &mut Self;
+}
+
+impl StorageCacheFlags for OpenOptions {
+    fn cache_flags(&mut self, cache: &StorageCacheConfig) -> &mut Self {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            self.custom_flags(cache.to_custom_open_flags());
+        }
+        self
+    }
 }

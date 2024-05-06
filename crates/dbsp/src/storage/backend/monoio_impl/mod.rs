@@ -7,7 +7,6 @@ use std::{
     collections::HashMap,
     fs,
     future::Future,
-    io,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     rc::Rc,
@@ -23,6 +22,7 @@ use monoio::{
     fs::{File, OpenOptions},
     FusionDriver, FusionRuntime, LegacyDriver, RuntimeBuilder,
 };
+use pipeline_types::config::StorageCacheConfig;
 
 use super::{
     append_to_path,
@@ -31,7 +31,7 @@ use super::{
         READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
     tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage,
-    StorageError, MUTABLE_EXTENSION, NEXT_FILE_HANDLE,
+    StorageCacheFlags, StorageError, MUTABLE_EXTENSION, NEXT_FILE_HANDLE,
 };
 use crate::storage::{buffer_cache::FBuf, init};
 
@@ -41,17 +41,15 @@ pub(crate) mod tests;
 /// Number of entries an IO-ring will have.
 pub const MAX_RING_ENTRIES: u32 = 4096;
 
-/// Helper function that opens files as direct IO files on linux.
-async fn open_as_direct<P: AsRef<Path>>(
-    p: P,
-    options: &mut OpenOptions,
-) -> Result<File, io::Error> {
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_DIRECT);
+impl StorageCacheFlags for OpenOptions {
+    fn cache_flags(&mut self, cache: &StorageCacheConfig) -> &mut Self {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            self.custom_flags(cache.to_custom_open_flags());
+        }
+        self
     }
-    options.open(p).await
 }
 
 /// Meta-data we keep per file we created.
@@ -69,6 +67,8 @@ pub struct MonoioBackend {
     files: RwLock<HashMap<i64, FileMetaData>>,
     /// A global counter to get unique identifiers for file-handles.
     next_file_id: Arc<AtomicIncrementOnlyI64>,
+    /// How to cache file access in this backend.
+    cache: StorageCacheConfig,
 }
 
 impl MonoioBackend {
@@ -76,24 +76,31 @@ impl MonoioBackend {
     ///
     /// ## Parameters
     /// - `base`: Directory in which we keep the files.
+    /// - `cache`: How to cache files read and written by this backend.
     /// - `next_file_id`: A counter to get unique identifiers for file-handles.
     ///   Note that in case we use a global buffer cache, this counter should be
     ///   shared among all instances of the backend.
-    pub fn new<P: AsRef<Path>>(base: P, next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
+    pub fn new<P: AsRef<Path>>(
+        base: P,
+        cache: StorageCacheConfig,
+        next_file_id: Arc<AtomicIncrementOnlyI64>,
+    ) -> Self {
         init();
         describe_disk_metrics();
         Self {
             base: base.as_ref().to_path_buf(),
             files: RwLock::new(HashMap::new()),
             next_file_id,
+            cache,
         }
     }
 
     /// See [`MonoioBackend::new`]. This function is a convenience function that
     /// creates a new backend with global unique file-handle counter.
-    pub fn with_base<P: AsRef<Path>>(base: P) -> Self {
+    pub fn with_base<P: AsRef<Path>>(base: P, cache: StorageCacheConfig) -> Self {
         Self::new(
             base,
+            cache,
             NEXT_FILE_HANDLE
                 .get_or_init(|| Arc::new(Default::default()))
                 .clone(),
@@ -117,6 +124,7 @@ impl MonoioBackend {
     fn new_default() -> Rc<Self> {
         Rc::new(MonoioBackend::new(
             tempdir_for_thread(),
+            StorageCacheConfig::default(),
             NEXT_FILE_HANDLE
                 .get_or_init(|| Arc::new(Default::default()))
                 .clone(),
@@ -133,11 +141,13 @@ impl MonoioBackend {
 
     async fn create_named_inner(&self, name: &Path) -> Result<FileHandle, StorageError> {
         let path = append_to_path(self.base.join(name), MUTABLE_EXTENSION);
-        let file = open_as_direct(
-            &path,
-            OpenOptions::new().create_new(true).write(true).read(true),
-        )
-        .await?;
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .read(true)
+            .cache_flags(&self.cache)
+            .open(&path)
+            .await?;
         let mut files = self.files.write().await;
 
         let file_counter = self.next_file_id.increment();
@@ -159,7 +169,11 @@ impl MonoioBackend {
         let path = self.base.join(name);
         let attr = fs::metadata(&path)?;
 
-        let file = open_as_direct(&path, OpenOptions::new().read(true)).await?;
+        let file = OpenOptions::new()
+            .read(true)
+            .cache_flags(&self.cache)
+            .open(&path)
+            .await?;
         let mut files = self.files.write().await;
 
         let file_counter = self.next_file_id.increment();

@@ -5,7 +5,8 @@
 use anyhow::{anyhow, Result};
 use ascii_table::AsciiTable;
 use clap::Parser;
-use dbsp::circuit::CircuitConfig;
+use dbsp::circuit::{CircuitConfig, StorageCacheConfig, StorageConfig};
+use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
 use dbsp::{
     mimalloc::{AllocStats, MiMalloc},
@@ -226,6 +227,14 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
     let num_cores = config.cpu_cores;
     let expected_num_events = config.generator_options.max_events;
     let circuit_config = CircuitConfig {
+        storage: Some(StorageConfig {
+            path: tempdir_for_thread().to_string_lossy().to_string(),
+            cache: if config.feldera_cache {
+                StorageCacheConfig::FelderaCache
+            } else {
+                StorageCacheConfig::PageCache
+            },
+        }),
         min_storage_rows: config.min_storage_rows,
         ..CircuitConfig::with_workers(num_cores)
     };

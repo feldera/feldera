@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Error as IoError, ErrorKind};
 use std::mem::ManuallyDrop;
-use std::os::fd::AsRawFd;
+use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -32,16 +32,6 @@ use super::StorageError;
 
 #[cfg(test)]
 mod tests;
-
-/// Helper function that opens files as direct IO files on linux.
-fn open_as_direct<P: AsRef<Path>>(p: P, options: &mut OpenOptions) -> Result<File, IoError> {
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_DIRECT);
-    }
-    options.open(p)
-}
 
 /// Meta-data we keep per file we created.
 struct FileMetaData {
@@ -349,11 +339,17 @@ impl Inner {
         }
     }
 
-    fn create_named(&mut self, path: PathBuf) -> Result<FileHandle, StorageError> {
-        let file = open_as_direct(
-            &path,
-            OpenOptions::new().create_new(true).write(true).read(true),
-        )?;
+    fn create_named(
+        &mut self,
+        path: PathBuf,
+        cache: StorageCacheConfig,
+    ) -> Result<FileHandle, StorageError> {
+        let open_options = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .read(true)
+            .cache_flags(&cache)
+            .open(&path);
 
         let file_counter = self.next_file_id.increment();
         self.files.insert(
@@ -414,11 +410,11 @@ impl Inner {
         let path = fm.path.clone();
 
         // Submit an `fsync` request for the file.  We don't wait for it to
-        // complete.  This ensures that the metadata (and data, but we used
-        // O_DIRECT) for the file will be committed "soon".  It also ensures
-        // that we can make sure that everything we've written is on stable
-        // storage for the purpose of a checkpoint (which we don't do yet)
-        // simply by waiting for the entire io_uring to drain.
+        // complete.  This ensures that the metadata (and data, but we probably
+        // used `O_DIRECT`) for the file will be committed "soon".  It also
+        // ensures that we can make sure that everything we've written is on
+        // stable storage for the purpose of a checkpoint (which we don't do
+        // yet) simply by waiting for the entire io_uring to drain.
         self.submit_request(
             fd,
             opcode::Fsync::new(Fd(file.as_raw_fd())).build(),

@@ -34,8 +34,9 @@ const fn default_workers() -> u16 {
 /// Pipeline configuration specified by the user when creating
 /// a new pipeline instance.
 ///
-/// This is the shape of the overall pipeline configuration, but is not
-/// the publicly exposed type with which users configure pipelines.
+/// This is the shape of the overall pipeline configuration. It encapsulates a
+/// [`RuntimeConfig`], which is the publicly exposed way for users to configure
+/// pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineConfig {
     /// Global controller configuration.
@@ -46,16 +47,13 @@ pub struct PipelineConfig {
     /// Pipeline name.
     pub name: Option<String>,
 
-    /// The location where the pipeline state is stored.
+    /// Configuration for persistent storage
     ///
-    /// It should point to a path on the file-system of the machine/container where the
-    /// pipeline can find its persistent state.
-    ///
-    /// This field must be set by the pipeline runner implementation on startup
-    /// if `global.storage` is `true`.
-    /// If `global.storage` is `false`, this field is ignored by the pipeline.
+    /// If `global.storage` is `true`, this field must be set to some
+    /// [`StorageConfig`].  If `global.storage` is `false`, the pipeline ignores
+    /// this field.
     #[serde(default)]
-    pub storage_location: Option<String>,
+    pub storage_config: Option<StorageConfig>,
 
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
@@ -63,6 +61,56 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+/// Configuration for persistent storage in a [`PipelineConfig`].
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct StorageConfig {
+    /// The location where the pipeline state is stored or will be stored.
+    ///
+    /// It should point to a path on the file-system of the machine/container
+    /// where the pipeline will run. If that path doesn't exist yet, or if it
+    /// does not contain any checkpoints, then the pipeline creates it and
+    /// starts from an initial state in which no data has yet been received. If
+    /// it does exist, then the pipeline starts from the most recent checkpoint
+    /// that already exists there. In either case, (further) checkpoints will be
+    /// written there.
+    pub path: String,
+
+    /// How to cache access to storage in this pipeline.
+    pub cache: StorageCacheConfig,
+}
+
+/// How to cache access to storage within a Feldera pipeline.
+#[derive(Copy, Clone, Default, Deserialize, Serialize, Debug, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageCacheConfig {
+    /// Use the operating system's page cache as the primary storage cache.
+    ///
+    /// This is the default because it currently performs better than
+    /// `FelderaCache`.
+    #[default]
+    PageCache,
+
+    /// Use Feldera's internal cache implementation.
+    ///
+    /// This is under development. It will become the default when its
+    /// performance exceeds that of `PageCache`.
+    FelderaCache,
+}
+
+impl StorageCacheConfig {
+    #[cfg(unix)]
+    pub fn to_custom_open_flags(&self) -> i32 {
+        match self {
+            StorageCacheConfig::PageCache => (),
+            StorageCacheConfig::FelderaCache => {
+                #[cfg(target_os = "linux")]
+                return libc::O_DIRECT;
+            }
+        }
+        0
+    }
 }
 
 /// Global pipeline configuration settings. This is the publicly

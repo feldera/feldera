@@ -512,7 +512,7 @@ impl PipelineRevision {
         let pc = PipelineConfig {
             name: Some(format!("pipeline-{pipeline_id}")),
             global: pipeline.config.clone(),
-            storage_location: None,
+            storage_config: None,
             inputs: expanded_inputs,
             outputs: expanded_outputs,
         };

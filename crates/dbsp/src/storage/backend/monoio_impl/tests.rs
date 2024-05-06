@@ -4,6 +4,7 @@
 //! [`InMemoryBackend`].
 use std::fs;
 
+use pipeline_types::config::StorageCacheConfig;
 use pretty_assertions::assert_eq;
 use proptest::{proptest, test_runner::Config};
 use proptest_state_machine::{prop_state_machine, ReferenceStateMachine, StateMachineTest};
@@ -48,7 +49,11 @@ impl StateMachineTest for MonoioBackend {
     ) -> Self::SystemUnderTest {
         init_test_logger();
         let tmpdir = tempfile::tempdir().unwrap();
-        let backend = MonoioBackend::new(tmpdir.path(), Default::default());
+        let backend = MonoioBackend::new(
+            tmpdir.path(),
+            StorageCacheConfig::default(),
+            Default::default(),
+        );
 
         MonoioTest { backend, tmpdir }
     }
