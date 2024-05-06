@@ -856,6 +856,7 @@
                       "transport": {
                         "config": {
                           "fault_tolerance": null,
+                          "headers": [],
                           "initialization_timeout_secs": 60,
                           "kafka_service": null,
                           "log_level": null,
@@ -3635,6 +3636,31 @@
           "raw"
         ]
       },
+      "KafkaHeader": {
+        "type": "object",
+        "description": "Kafka message header.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaHeaderValue"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "KafkaHeaderValue": {
+        "type": "string",
+        "format": "binary",
+        "description": "Kafka header value encoded as a UTF-8 string or a byte array."
+      },
       "KafkaInputConfig": {
         "type": "object",
         "description": "Configuration for reading data from Kafka topics with `InputTransport`.",
@@ -3754,6 +3780,13 @@
               }
             ],
             "nullable": true
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KafkaHeader"
+            },
+            "description": "Kafka headers to be added to each message produced by this connector."
           },
           "initialization_timeout_secs": {
             "type": "integer",

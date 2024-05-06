@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 use log::{error, info};
 use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::kafka::default_redpanda_server;
+use rdkafka::message::BorrowedMessage;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},
     client::{Client, DefaultClientContext},
@@ -230,7 +231,12 @@ impl Drop for BufferConsumer {
 }
 
 impl BufferConsumer {
-    pub fn new(topic: &str, format: &str, format_config_yaml: &str) -> Self {
+    pub fn new(
+        topic: &str,
+        format: &str,
+        format_config_yaml: &str,
+        message_cb: Option<Box<dyn Fn(&BorrowedMessage) + Send>>,
+    ) -> Self {
         let shutdown_flag = Arc::new(AtomicBool::new(false));
         let shutdown_flag_clone = shutdown_flag.clone();
 
@@ -287,6 +293,9 @@ impl BufferConsumer {
                         Some(Ok(message)) => {
                             // println!("received {} bytes", message.payload().unwrap().len());
                             // message.payload().map(|payload| consumer.input(payload));
+                            if let Some(cb) = &message_cb {
+                                cb(&message)
+                            };
 
                             if let Some(payload) = message.payload() {
                                 parser.input_chunk(payload);

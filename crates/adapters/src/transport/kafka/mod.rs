@@ -1,5 +1,7 @@
 use anyhow::Error as AnyError;
-use pipeline_types::transport::kafka::KafkaLogLevel;
+use parquet::data_type::AsBytes;
+use pipeline_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
+use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
     client::{Client as KafkaClient, ClientContext},
     config::RDKafkaLogLevel,
@@ -165,4 +167,17 @@ impl DeferredLogging {
             }
         }
     }
+}
+
+pub fn build_headers(headers: &Vec<KafkaHeader>) -> OwnedHeaders {
+    let mut result = OwnedHeaders::new_with_capacity(headers.len());
+
+    for header in headers {
+        result = result.insert(Header {
+            key: &header.key,
+            value: header.value.as_ref().map(|val| val.0.as_bytes()),
+        });
+    }
+
+    result
 }
