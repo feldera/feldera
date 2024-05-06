@@ -1,3 +1,4 @@
+use crate::transport::kafka::build_headers;
 use crate::{
     transport::{kafka::DeferredLogging, Step},
     AsyncErrorCallback, OutputEndpoint,
@@ -5,6 +6,7 @@ use crate::{
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use log::{debug, info, warn};
 use pipeline_types::transport::kafka::KafkaOutputConfig;
+use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     config::FromClientConfigAndContext,
     consumer::BaseConsumer,
@@ -77,6 +79,7 @@ impl OutputPosition {
 pub struct KafkaOutputEndpoint {
     kafka_producer: ThreadedProducer<DataProducerContext>,
     topic: String,
+    headers: OwnedHeaders,
     next_partition: usize,
     n_partitions: usize,
     max_message_size: usize,
@@ -139,6 +142,7 @@ impl KafkaOutputEndpoint {
         Ok(Self {
             kafka_producer,
             topic: config.topic.clone(),
+            headers: build_headers(&config.headers),
             n_partitions,
             next_partition: 0,
             max_message_size,
@@ -229,7 +233,8 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             let record = BaseRecord::to(&self.topic)
                 .key(&key)
                 .partition(self.next_partition as i32)
-                .payload(buffer);
+                .payload(buffer)
+                .headers(self.headers.clone());
             self.kafka_producer
                 .send(record)
                 .map_err(|(err, _record)| err)?;

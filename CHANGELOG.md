@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [Kafka] Allow specifying Kafka headers as part of output Kafka connector
+  config
+  ([#1718](https://github.com/feldera/feldera/pull/1718))
 - [SQL] Support for `LEAD`/`LAG` window aggregates
   ([#1706](https://github.com/feldera/feldera/pull/1706))
 - [SQL] Support for `WATERMARK` table column annotations
