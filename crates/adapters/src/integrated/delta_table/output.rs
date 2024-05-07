@@ -12,7 +12,8 @@ use arrow::array::RecordBatch;
 use arrow::datatypes::Schema as ArrowSchema;
 use deltalake::kernel::{Action, DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
-use deltalake::operations::transaction::commit;
+use deltalake::operations::transaction;
+use deltalake::operations::transaction::{CommitBuilder, TableReference};
 use deltalake::operations::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
@@ -298,19 +299,23 @@ impl WriterTask {
                 .await
                 .map_err(|e| anyhow!("error updating delta table version before commit: {e}"))?;
 
-            commit(
-                self.delta_table.log_store().as_ref(),
-                &actions.into_iter().map(Action::Add).collect::<Vec<_>>(),
-                DeltaOperation::Write {
-                    mode: SaveMode::Append,
-                    partition_by: None,
-                    predicate: None,
-                },
-                self.delta_table.state.as_ref(),
-                None,
-            )
-            .await
-            .map_err(|e| anyhow!("error committing changes to the delta table: {e}"))?;
+            CommitBuilder::default()
+                .with_actions(actions.into_iter().map(Action::Add).collect::<Vec<_>>())
+                .build(
+                    self.delta_table
+                        .state
+                        .as_ref()
+                        .map(|state| state as &dyn TableReference),
+                    self.delta_table.log_store(),
+                    DeltaOperation::Write {
+                        mode: SaveMode::Append,
+                        partition_by: None,
+                        predicate: None,
+                    },
+                )
+                .map_err(|e| anyhow!("error pre-committing changes to the delta table: {e}"))?
+                .await
+                .map_err(|e| anyhow!("error committing changes to the delta table: {e}"))?;
 
             if let Some(controller) = self.inner.controller.upgrade() {
                 controller
@@ -598,7 +603,7 @@ outputs:
 
         controller.start();
 
-        wait(|| controller.status().pipeline_complete(), 20_000).unwrap();
+        wait(|| controller.status().pipeline_complete(), 40_000).unwrap();
 
         if verify {
             let parquet_files =

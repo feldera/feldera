@@ -15,7 +15,6 @@
           "Authentication"
         ],
         "summary": "Get authentication provider configuration",
-        "description": "Get authentication provider configuration",
         "operationId": "get_authentication_config",
         "responses": {
           "200": {
@@ -47,7 +46,6 @@
           "API keys"
         ],
         "summary": "List all API keys",
-        "description": "List all API keys",
         "operationId": "list_api_keys",
         "parameters": [
           {
@@ -108,7 +106,6 @@
           "API keys"
         ],
         "summary": "Create an API key",
-        "description": "Create an API key",
         "operationId": "create_api_key",
         "requestBody": {
           "description": "",
@@ -161,7 +158,6 @@
           "API keys"
         ],
         "summary": "Get an API key description",
-        "description": "Get an API key description",
         "operationId": "get_api_key",
         "parameters": [
           {
@@ -218,7 +214,6 @@
           "API keys"
         ],
         "summary": "Delete an API key",
-        "description": "Delete an API key",
         "operationId": "delete_api_key",
         "parameters": [
           {
@@ -270,7 +265,6 @@
           "Configuration"
         ],
         "summary": "Get the list of demo URLs.",
-        "description": "Get the list of demo URLs.",
         "operationId": "get_demos",
         "responses": {
           "200": {
@@ -300,7 +294,6 @@
           "Connectors"
         ],
         "summary": "Fetch connectors, optionally filtered by name or ID",
-        "description": "Fetch connectors, optionally filtered by name or ID",
         "operationId": "list_connectors",
         "parameters": [
           {
@@ -381,7 +374,6 @@
           "Connectors"
         ],
         "summary": "Create a new connector.",
-        "description": "Create a new connector.",
         "operationId": "new_connector",
         "requestBody": {
           "content": {
@@ -433,7 +425,6 @@
           "Connectors"
         ],
         "summary": "Fetch a connector by name.",
-        "description": "Fetch a connector by name.",
         "operationId": "get_connector",
         "parameters": [
           {
@@ -486,7 +477,6 @@
           "Connectors"
         ],
         "summary": "Create or replace a connector.",
-        "description": "Create or replace a connector.",
         "operationId": "create_or_replace_connector",
         "parameters": [
           {
@@ -557,7 +547,6 @@
           "Connectors"
         ],
         "summary": "Delete an existing connector.",
-        "description": "Delete an existing connector.",
         "operationId": "delete_connector",
         "parameters": [
           {
@@ -603,7 +592,6 @@
           "Connectors"
         ],
         "summary": "Update the name, description and/or configuration of a connector.",
-        "description": "Update the name, description and/or configuration of a connector.",
         "operationId": "update_connector",
         "parameters": [
           {
@@ -668,7 +656,6 @@
           "Pipelines"
         ],
         "summary": "Fetch pipelines, optionally filtered by name or ID.",
-        "description": "Fetch pipelines, optionally filtered by name or ID.",
         "operationId": "list_pipelines",
         "parameters": [
           {
@@ -719,7 +706,6 @@
           "Pipelines"
         ],
         "summary": "Create a new pipeline.",
-        "description": "Create a new pipeline.",
         "operationId": "new_pipeline",
         "requestBody": {
           "content": {
@@ -788,7 +774,6 @@
           "Pipelines"
         ],
         "summary": "Fetch a pipeline by ID.",
-        "description": "Fetch a pipeline by ID.",
         "operationId": "get_pipeline",
         "parameters": [
           {
@@ -911,7 +896,6 @@
           "Pipelines"
         ],
         "summary": "Create or replace a pipeline.",
-        "description": "Create or replace a pipeline.",
         "operationId": "create_or_replace_pipeline",
         "parameters": [
           {
@@ -982,7 +966,6 @@
           "Pipelines"
         ],
         "summary": "Delete a pipeline. The pipeline must be in the shutdown state.",
-        "description": "Delete a pipeline. The pipeline must be in the shutdown state.",
         "operationId": "pipeline_delete",
         "parameters": [
           {
@@ -1064,7 +1047,7 @@
           "Pipelines"
         ],
         "summary": "Change a pipeline's name, description, code, configuration, or connectors.",
-        "description": "Change a pipeline's name, description, code, configuration, or connectors.\nOn success, increments the pipeline's version by 1.",
+        "description": "On success, increments the pipeline's version by 1.",
         "operationId": "update_pipeline",
         "parameters": [
           {
@@ -1142,7 +1125,7 @@
           "Pipelines"
         ],
         "summary": "Fetch a pipeline's configuration.",
-        "description": "Fetch a pipeline's configuration.\n\nWhen defining a pipeline, clients have to provide an optional\n`RuntimeConfig` for the pipelines and references to existing\nconnectors to attach to the pipeline. This endpoint retrieves\nthe *expanded* definition of the pipeline's configuration,\nwhich comprises both the `RuntimeConfig` and the complete\ndefinitions of the attached connectors.",
+        "description": "When defining a pipeline, clients have to provide an optional\n`RuntimeConfig` for the pipelines and references to existing\nconnectors to attach to the pipeline. This endpoint retrieves\nthe *expanded* definition of the pipeline's configuration,\nwhich comprises both the `RuntimeConfig` and the complete\ndefinitions of the attached connectors.",
         "operationId": "get_pipeline_config",
         "parameters": [
           {
@@ -1197,7 +1180,6 @@
           "Pipelines"
         ],
         "summary": "Return the currently deployed version of the pipeline, if any.",
-        "description": "Return the currently deployed version of the pipeline, if any.",
         "operationId": "pipeline_deployed",
         "parameters": [
           {
@@ -1257,7 +1239,7 @@
           "HTTP input/output"
         ],
         "summary": "Subscribe to a stream of updates from a SQL view or table.",
-        "description": "Subscribe to a stream of updates from a SQL view or table.\n\nThe pipeline responds with a continuous stream of changes to the specified\ntable or view, encoded using the format specified in the `?format=`\nparameter. Updates are split into `Chunk`s.\n\nThe pipeline continues sending updates until the client closes the\nconnection or the pipeline is shut down.\n\nThis API is a POST instead of a GET, because when performing neighborhood\nqueries (query='neighborhood'), the call expects a request body which\ncontains, among other things, a full row to execute a neighborhood search\naround. A row can be quite large and is not appropriate as a query\nparameter.",
+        "description": "The pipeline responds with a continuous stream of changes to the specified\ntable or view, encoded using the format specified in the `?format=`\nparameter. Updates are split into `Chunk`s.\n\nThe pipeline continues sending updates until the client closes the\nconnection or the pipeline is shut down.\n\nThis API is a POST instead of a GET, because when performing neighborhood\nqueries (query='neighborhood'), the call expects a request body which\ncontains, among other things, a full row to execute a neighborhood search\naround. A row can be quite large and is not appropriate as a query\nparameter.",
         "operationId": "http_output",
         "parameters": [
           {
@@ -1426,7 +1408,7 @@
           "HTTP input/output"
         ],
         "summary": "Push data to a SQL table.",
-        "description": "Push data to a SQL table.\n\nThe client sends data encoded using the format specified in the `?format=`\nparameter as a body of the request.  The contents of the data must match\nthe SQL table schema specified in `table_name`\n\nThe pipeline ingests data as it arrives without waiting for the end of\nthe request.  Successful HTTP response indicates that all data has been\ningested successfully.",
+        "description": "The client sends data encoded using the format specified in the `?format=`\nparameter as a body of the request.  The contents of the data must match\nthe SQL table schema specified in `table_name`\n\nThe pipeline ingests data as it arrives without waiting for the end of\nthe request.  Successful HTTP response indicates that all data has been\ningested successfully.",
         "operationId": "http_input",
         "parameters": [
           {
@@ -1556,7 +1538,6 @@
           "Pipelines"
         ],
         "summary": "Retrieve pipeline metrics and performance counters.",
-        "description": "Retrieve pipeline metrics and performance counters.",
         "operationId": "pipeline_stats",
         "parameters": [
           {
@@ -1629,7 +1610,7 @@
           "Pipelines"
         ],
         "summary": "Validate a pipeline.",
-        "description": "Validate a pipeline.\n\nChecks whether a pipeline is configured correctly. This includes\nchecking whether the pipeline references a valid compiled program,\nwhether the connectors reference valid tables/views in the program,\nand more.",
+        "description": "Checks whether a pipeline is configured correctly. This includes\nchecking whether the pipeline references a valid compiled program,\nwhether the connectors reference valid tables/views in the program,\nand more.",
         "operationId": "pipeline_validate",
         "parameters": [
           {
@@ -1761,7 +1742,7 @@
           "Pipelines"
         ],
         "summary": "Change the desired state of the pipeline.",
-        "description": "Change the desired state of the pipeline.\n\nThis endpoint allows the user to control the execution of the pipeline,\nby changing its desired state attribute (see the discussion of the desired\nstate model in the [`PipelineStatus`] documentation).\n\nThe endpoint returns immediately after validating the request and forwarding\nit to the pipeline. The requested status change completes asynchronously.\nOn success, the pipeline enters the requested desired state.  On error, the\npipeline transitions to the `Failed` state. The user\ncan monitor the current status of the pipeline by polling the `GET\n/pipeline` endpoint.\n\nThe following values of the `action` argument are accepted by this endpoint:\n\n- 'start': Start processing data.\n- 'pause': Pause the pipeline.\n- 'shutdown': Terminate the execution of the pipeline.",
+        "description": "This endpoint allows the user to control the execution of the pipeline,\nby changing its desired state attribute (see the discussion of the desired\nstate model in the [`PipelineStatus`] documentation).\n\nThe endpoint returns immediately after validating the request and forwarding\nit to the pipeline. The requested status change completes asynchronously.\nOn success, the pipeline enters the requested desired state.  On error, the\npipeline transitions to the `Failed` state. The user\ncan monitor the current status of the pipeline by polling the `GET\n/pipeline` endpoint.\n\nThe following values of the `action` argument are accepted by this endpoint:\n\n- 'start': Start processing data.\n- 'pause': Pause the pipeline.\n- 'shutdown': Terminate the execution of the pipeline.",
         "operationId": "pipeline_action",
         "parameters": [
           {
@@ -1955,7 +1936,6 @@
           "Programs"
         ],
         "summary": "Fetch programs, optionally filtered by name or ID.",
-        "description": "Fetch programs, optionally filtered by name or ID.",
         "operationId": "get_programs",
         "parameters": [
           {
@@ -2046,7 +2026,6 @@
           "Programs"
         ],
         "summary": "Create a new program.",
-        "description": "Create a new program.",
         "operationId": "new_program",
         "requestBody": {
           "content": {
@@ -2098,7 +2077,6 @@
           "Programs"
         ],
         "summary": "Fetch a program by name.",
-        "description": "Fetch a program by name.",
         "operationId": "get_program",
         "parameters": [
           {
@@ -2161,7 +2139,6 @@
           "Programs"
         ],
         "summary": "Create or replace a program.",
-        "description": "Create or replace a program.",
         "operationId": "create_or_replace_program",
         "parameters": [
           {
@@ -2232,7 +2209,7 @@
           "Programs"
         ],
         "summary": "Delete a program.",
-        "description": "Delete a program.\n\nDeletion fails if there is at least one pipeline associated with the\nprogram.",
+        "description": "Deletion fails if there is at least one pipeline associated with the\nprogram.",
         "operationId": "delete_program",
         "parameters": [
           {
@@ -2295,7 +2272,7 @@
           "Programs"
         ],
         "summary": "Change one or more of a program's code, description or name.",
-        "description": "Change one or more of a program's code, description or name.\n\nIf a program's code changes, any ongoing compilation gets cancelled,\nthe program status is reset to `None`, and the program version\nis incremented by 1.\n\nChanging only the program's name or description does not affect its\nversion or the compilation process.",
+        "description": "If a program's code changes, any ongoing compilation gets cancelled,\nthe program status is reset to `None`, and the program version\nis incremented by 1.\n\nChanging only the program's name or description does not affect its\nversion or the compilation process.",
         "operationId": "update_program",
         "parameters": [
           {
@@ -2375,7 +2352,7 @@
           "Programs"
         ],
         "summary": "Deprecated. Mark a program for compilation.",
-        "description": "Deprecated. Mark a program for compilation.\n\nThe client can track a program's compilation status by polling the\n`/program/{program_name}` or `/programs` endpoints, and\nthen checking the `status` field of the program object.",
+        "description": "The client can track a program's compilation status by polling the\n`/program/{program_name}` or `/programs` endpoints, and\nthen checking the `status` field of the program object.",
         "operationId": "compile_program",
         "parameters": [
           {
@@ -2450,7 +2427,6 @@
           "Services"
         ],
         "summary": "Fetch services, optionally filtered by name, ID or configuration type.",
-        "description": "Fetch services, optionally filtered by name, ID or configuration type.",
         "operationId": "list_services",
         "parameters": [
           {
@@ -2541,7 +2517,6 @@
           "Services"
         ],
         "summary": "Create a new service.",
-        "description": "Create a new service.",
         "operationId": "new_service",
         "requestBody": {
           "content": {
@@ -2593,7 +2568,6 @@
           "Services"
         ],
         "summary": "Fetch a service by name.",
-        "description": "Fetch a service by name.",
         "operationId": "get_service",
         "parameters": [
           {
@@ -2646,7 +2620,6 @@
           "Services"
         ],
         "summary": "Delete an existing service.",
-        "description": "Delete an existing service.",
         "operationId": "delete_service",
         "parameters": [
           {
@@ -2692,7 +2665,6 @@
           "Services"
         ],
         "summary": "Update the name, description and/or configuration of a service.",
-        "description": "Update the name, description and/or configuration of a service.",
         "operationId": "update_service",
         "parameters": [
           {
@@ -2757,7 +2729,6 @@
           "Services"
         ],
         "summary": "Fetch a list of probes for a service, optionally filtered by id.",
-        "description": "Fetch a list of probes for a service, optionally filtered by id.",
         "operationId": "list_service_probes",
         "parameters": [
           {
@@ -2850,7 +2821,6 @@
           "Services"
         ],
         "summary": "Create a service probe.",
-        "description": "Create a service probe.",
         "operationId": "new_service_probe",
         "parameters": [
           {
