@@ -305,7 +305,7 @@ public class TableParser {
                     result = new DBSPVecLiteral(fieldType.mayBeNull, fields);
                 } else {
                     // empty vector
-                    result = new DBSPVecLiteral(vec.getElementType());
+                    result = new DBSPVecLiteral(vec, false);
                 }
             }
         } else if (fieldType.is(DBSPTypeBinary.class)) {

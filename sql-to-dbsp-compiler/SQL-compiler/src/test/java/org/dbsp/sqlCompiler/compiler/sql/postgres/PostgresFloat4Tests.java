@@ -18,7 +18,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 INSERT INTO FLOAT4_TBL(f1) VALUES ('1.2345678901234e-20');""");
     }
 
-    @Test @Ignore("Waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6094")
+    @Test
     public void testOverflow() {
         this.q("""
                 SELECT 10e70 :: FLOAT4;
@@ -35,17 +35,21 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 result
                 ------
                 -Infinity""");
+    }
+
+    @Test @Ignore("Waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6059")
+    public void testSpecialFP() {
         this.q("""
                 SELECT -10e-70 :: FLOAT4;
                 result
                 ------
-                0""");
+                 -0""");
         // The next one fails in Postgres
         this.q("""
                 SELECT -10e-400 :: FLOAT4;
                 result
                 ------
-                0""");
+                 -0""");
     }
 
     @Test

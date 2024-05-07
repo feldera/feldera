@@ -1072,17 +1072,26 @@ macro_rules! cast_to_i_i {
         ::paste::paste! {
             #[inline]
             pub fn [<cast_to_ $result_type _ $arg_type_name>]( value: $arg_type ) -> $result_type {
-                $result_type::try_from(value).unwrap()
+                $result_type::try_from(value)
+                    .unwrap_or_else(|_| panic!("Value '{}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type)))
             }
 
             #[inline]
             pub fn [<cast_to_ $result_type _ $arg_type_name N>]( value: Option<$arg_type> ) -> $result_type {
-                $result_type::try_from(value.unwrap()).unwrap()
+                $result_type::try_from(value.unwrap())
+                    .unwrap_or_else(|_| panic!("Value '{:?}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type)))
             }
 
             #[inline]
             pub fn [<cast_to_ $result_type N_ $arg_type_name >]( value: $arg_type ) -> Option<$result_type> {
-                Some($result_type::try_from(value).unwrap())
+                Some($result_type::try_from(value)
+                    .unwrap_or_else(|_| panic!("Value '{:?}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type))))
             }
 
             #[inline]
@@ -1128,12 +1137,18 @@ macro_rules! cast_to_i {
 
             #[inline]
             pub fn [< cast_to_ $result_type _decimal >](value: Decimal) -> $result_type {
-                value.trunc().[<to_ $result_type >]().unwrap()
+                value.trunc().[<to_ $result_type >]()
+                    .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                              value,
+                                              stringify!($result_type)))
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_decimal >](value: Decimal) -> Option<$result_type> {
-                Some(value.trunc().[<to_ $result_type >]().unwrap())
+                Some(value.trunc().[<to_ $result_type >]()
+                    .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                              value,
+                                              stringify!($result_type))))
             }
 
             #[inline]
@@ -1152,26 +1167,38 @@ macro_rules! cast_to_i {
             #[inline]
             pub fn [< cast_to_ $result_type _d >](value: F64) -> $result_type {
                 let value = value.into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as NumCast>::from(value)
+                    .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                              value,
+                                              stringify!($result_type)))
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type _dN >](value: Option<F64>) -> $result_type {
                 let value = value.unwrap().into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as NumCast>::from(value)
+                    .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                              value,
+                                              stringify!($result_type)))
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_d >](value: F64) -> Option<$result_type> {
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as NumCast>::from(value)
+                     .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type))))
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_dN >](value: Option<F64>) -> Option<$result_type> {
                 let value = value?;
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as NumCast>::from(value)
+                     .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type))))
             }
 
             // F32
@@ -1179,38 +1206,56 @@ macro_rules! cast_to_i {
             #[inline]
             pub fn [< cast_to_ $result_type _f >](value: F32) -> $result_type {
                 let value = value.into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as NumCast>::from(value)
+                     .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type)))
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type _fN >](value: Option<F32>) -> $result_type {
                 let value = value.unwrap().into_inner().trunc();
-                <$result_type as NumCast>::from(value).unwrap()
+                <$result_type as NumCast>::from(value)
+                     .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type)))
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_f >](value: F32) -> Option<$result_type> {
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as NumCast>::from(value)
+                     .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type))))
             }
 
             #[inline]
             pub fn [< cast_to_ $result_type N_fN >](value: Option<F32>) -> Option<$result_type> {
                 let value = value?;
                 let value = value.into_inner().trunc();
-                Some(<$result_type as NumCast>::from(value).unwrap())
+                Some(<$result_type as NumCast>::from(value)
+                     .unwrap_or_else(|| panic!("Value '{}' out of range for type '{}'",
+                                               value,
+                                               stringify!($result_type))))
             }
 
             // From string
 
             #[inline]
             pub fn [< cast_to_ $result_type _s >](value: String) -> $result_type {
-                value.trim().parse().unwrap()
+                value.trim().parse()
+                    .unwrap_or_else(|_| panic!("Could not parse '{:?}' as a value of type '{}'",
+                                               value.clone(),
+                                               stringify!($result_type)))
             }
 
             #[inline]
             pub fn [<cast_to_ $result_type _sN >](value: Option<String>) -> $result_type {
-                value.unwrap().trim().parse().unwrap()
+                value.as_ref().unwrap().trim().parse()
+                    .unwrap_or_else(|_| panic!("Could not parse '{:?}' as a value of type '{}'",
+                                               &value,
+                                               stringify!($result_type)))
             }
 
             #[inline]
@@ -1338,10 +1383,14 @@ cast_function!(Timestamp, Timestamp, Timestamp, Timestamp);
 
 #[inline]
 pub fn cast_to_u_i32(value: i32) -> usize {
-    value.try_into().unwrap()
+    value
+        .try_into()
+        .unwrap_or_else(|_| panic!("Value '{}' out of range for type 'usize'", value))
 }
 
 #[inline]
 pub fn cast_to_u_i64(value: i64) -> usize {
-    value.try_into().unwrap()
+    value
+        .try_into()
+        .unwrap_or_else(|_| panic!("Value '{}' out of range for type 'usize'", value))
 }

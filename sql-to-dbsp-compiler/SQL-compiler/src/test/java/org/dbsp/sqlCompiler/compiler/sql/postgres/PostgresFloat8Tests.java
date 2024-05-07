@@ -42,25 +42,25 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 --------
                     NaN
                 (1 row)
-                                
+                
                 SELECT 'nan'::float8;
                  float8
                 --------
                     NaN
                 (1 row)
-                                
+                
                 SELECT '   NAN  '::float8;
                  float8
                 --------
                     NaN
                 (1 row)
-                                
+                
                 SELECT 'infinity'::float8;
                   float8
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT '          -INFINiTY   '::float8;
                   float8
                 -----------
@@ -72,37 +72,37 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT 'Infinity'::float8 / 'Infinity'::float8;
                  ?column?
                 ----------
                       NaN
                 (1 row)
-                                
+                
                 SELECT '42'::float8 / 'Infinity'::float8;
                  ?column?
                 ----------
                         0
                 (1 row)
-                                
+                
                 SELECT 'nan'::float8 / 'nan'::float8;
                  ?column?
                 ----------
                       NaN
                 (1 row)
-                                
+                
                 SELECT 'nan'::float8 / '0'::float8;
                  ?column?
                 ----------
                       NaN
                 (1 row)
-                                
+                
                 SELECT 'nan'::float8; -- the original postgres version was: 'nan'::numeric::float8
                  float8
                 --------
                     NaN
                 (1 row)
-                                
+                
                 SELECT * FROM FLOAT8_TBL;
                           f1
                 ----------------------
@@ -112,7 +112,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200
                  1.2345678901234e-200
                 (5 rows)
-                                
+                
                 SELECT f.* FROM FLOAT8_TBL f WHERE f.f1 <> '1004.3';
                           f1
                 ----------------------
@@ -121,13 +121,13 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200
                  1.2345678901234e-200
                 (4 rows)
-                                
+                
                 SELECT f.* FROM FLOAT8_TBL f WHERE f.f1 = '1004.3';
                    f1
                 --------
                  1004.3
                 (1 row)
-                                
+                
                 SELECT f.* FROM FLOAT8_TBL f WHERE '1004.3' > f.f1;
                           f1
                 ----------------------
@@ -135,7 +135,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                                -34.84
                  1.2345678901234e-200
                 (3 rows)
-                                
+                
                 SELECT f.* FROM FLOAT8_TBL f WHERE  f.f1 < '1004.3';
                           f1
                 ----------------------
@@ -143,7 +143,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                                -34.84
                  1.2345678901234e-200
                 (3 rows)
-                                
+                
                 SELECT f.* FROM FLOAT8_TBL f WHERE '1004.3' >= f.f1;
                           f1
                 ----------------------
@@ -152,7 +152,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                                -34.84
                  1.2345678901234e-200
                 (4 rows)
-                                
+                
                 SELECT f.* FROM FLOAT8_TBL f WHERE  f.f1 <= '1004.3';
                           f1
                 ----------------------
@@ -161,7 +161,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                                -34.84
                  1.2345678901234e-200
                 (4 rows)
-                                
+                
                 SELECT f.f1, f.f1 * '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
@@ -171,7 +171,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200 | -1.2345678901234e+201
                  1.2345678901234e-200 | -1.2345678901234e-199
                 (3 rows)
-                                
+                
                 SELECT f.f1, f.f1 + '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
@@ -181,7 +181,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200 | 1.2345678901234e+200
                  1.2345678901234e-200 |                  -10
                 (3 rows)
-                                
+                
                 SELECT f.f1, f.f1 / '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
@@ -191,7 +191,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200 | -1.2345678901234e+199
                  1.2345678901234e-200 | -1.2345678901234e-201
                 (3 rows)
-                                
+                
                 SELECT f.f1, f.f1 - '-10' AS x
                    FROM FLOAT8_TBL f
                    WHERE f.f1 > '0.0';
@@ -201,7 +201,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200 | 1.2345678901234e+200
                  1.2345678901234e-200 |                   10
                 (3 rows)
-                                
+                
                 -- absolute value
                 SELECT f.f1, abs(f.f1) AS abs_f1
                    FROM FLOAT8_TBL f;
@@ -248,7 +248,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200
                                     1
                 (5 rows)
-                                
+                
                 select ceiling(f1) as ceiling_f1 from float8_tbl f;
                       ceiling_f1
                 ----------------------
@@ -258,7 +258,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200
                                     1
                 (5 rows)
-                                
+                
                 -- floor
                 select floor(f1) as floor_f1 from float8_tbl f;
                        floor_f1
@@ -269,7 +269,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200
                                     0
                 (5 rows)
-                                
+                
                 -- sign
                 select sign(f1) as sign_f1 from float8_tbl f;
                  sign_f1
@@ -287,55 +287,55 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 -------
                     12
                 (1 row)
-                                
+                
                 SELECT power('NaN'::DOUBLE, '0.5'::DOUBLE);
                  power
                 -------
                    NaN
                 (1 row)
-                                
+                
                 SELECT power('144'::DOUBLE, 'NaN'::DOUBLE);
                  power
                 -------
                    NaN
                 (1 row)
-                                
+                
                 SELECT power('NaN'::DOUBLE, 'NaN'::DOUBLE);
                  power
                 -------
                    NaN
                 (1 row)
-                                
+                
                 SELECT power('-1'::DOUBLE, 'NaN'::DOUBLE);
                  power
                 -------
                    NaN
                 (1 row)
-                                
+                
                 SELECT power('1'::DOUBLE, 'NaN'::DOUBLE);
                  power
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('NaN'::DOUBLE, '0'::DOUBLE);
                  power
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('inf'::DOUBLE, '0'::DOUBLE);
                  power
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('-inf'::DOUBLE, '0'::DOUBLE);
                  power
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('0'::DOUBLE, 'inf'::DOUBLE);
                  power
                 -------
@@ -347,91 +347,91 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('1'::double, '-inf'::double);
                  power
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('-1'::double, 'inf'::double);
                  power
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('-1'::double, '-inf'::double);
                  power
                 -------
                      1
                 (1 row)
-                                
+                
                 SELECT power('0.1'::double, 'inf'::double);
                  power
                 -------
                      0
                 (1 row)
-                                
+                
                 SELECT power('-0.1'::double, 'inf'::double);
                  power
                 -------
                      0
                 (1 row)
-                                
+                
                 SELECT power('1.1'::double, 'inf'::double);
                   power
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('-1.1'::double, 'inf'::double);
                   power
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('0.1'::double, '-inf'::double);
                   power
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('-0.1'::double, '-inf'::double);
                   power
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('1.1'::double, '-inf'::double);
                  power
                 -------
                      0
                 (1 row)
-                                
+                
                 SELECT power('-1.1'::double, '-inf'::double);
                  power
                 -------
                      0
                 (1 row)
-                                
+                
                 SELECT power('inf'::double, '-2'::double);
                  power
                 -------
                      0
                 (1 row)
-                                
+                
                 SELECT power('inf'::double, '2'::double);
                   power
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('inf'::double, 'inf'::double);
                   power
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('inf'::double, '-inf'::double);
                  power
                 -------
@@ -450,13 +450,13 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 -------
                     -0
                 (1 row)
-                                
+                
                 SELECT power('-inf'::double, '2'::double);
                   power
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('-inf'::double, '3'::double);
                    power
                 -----------
@@ -468,13 +468,13 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT power('-inf'::double, '-inf'::double);
                  power
                 -------
                      0
                 (1 row)
-                                
+                
                 SELECT sqrt('64'::float8) AS eight;
                  eight
                 -------
@@ -487,7 +487,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 -------
                      3
                 (1 row)
-                                
+                
                 SELECT f.f1, cbrt(f.f1) AS cbrt_f1 FROM FLOAT8_TBL f;
                           f1          |       cbrt_f1
                 ----------------------+--------------------------
@@ -497,7 +497,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e+200 |    4.979338592347648e+66
                  1.2345678901234e-200 |   2.3112042409018007e-67
                 (5 rows)
-                                
+                
                 SELECT * FROM FLOAT8_TBL;
                           f1
                 ----------------------
@@ -513,104 +513,104 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 -----------------
                  1.175201193643801
                 (1 row)
-                                
+                
                 SELECT cosh('1'::double);
                        cosh
                 ------------------
                  1.543080634815244
                 (1 row)
-                                
+                
                 SELECT tanh('1'::double);
                        tanh
                 -------------------
                  0.761594155955765
                 (1 row)
-                                
+                
                 SELECT asinh('1'::double);
                        asinh
                 -------------------
                  0.881373587019543
                 (1 row)
-                                
+                
                 SELECT acosh('2'::double);
                       acosh
                 ------------------
                  1.316957896924817
                 (1 row)
-                                
+                
                 SELECT atanh('0.5'::double);
                        atanh
                 -------------------
                  0.549306144334055
                 (1 row)
-                                
+                
                 -- test Inf/NaN cases for hyperbolic functions
                 SELECT sinh('infinity'::double);
                    sinh
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT sinh('-infinity'::double);
                    sinh
                 -----------
                  -Infinity
                 (1 row)
-                                
+                
                 SELECT sinh('nan'::double);
                  sinh
                 ------
                   NaN
                 (1 row)
-                                
+                
                 SELECT cosh('infinity'::double);
                    cosh
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT cosh('-infinity'::double);
                    cosh
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT cosh('nan'::double);
                  cosh
                 ------
                   NaN
                 (1 row)
-                                
+                
                 SELECT tanh('infinity'::double);
                  tanh
                 ------
                     1
                 (1 row)
-                                
+                
                 SELECT tanh('-infinity'::double);
                  tanh
                 ------
                    -1
                 (1 row)
-                                
+                
                 SELECT tanh('nan'::double);
                  tanh
                 ------
                   NaN
                 (1 row)
-                                
+                
                 SELECT asinh('infinity'::double);
                   asinh
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT asinh('-infinity'::double);
                    asinh
                 -----------
                  -Infinity
                 (1 row)
-                                
+                
                 SELECT asinh('nan'::double);
                  asinh
                 -------
@@ -860,7 +860,7 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
         this.qf("SELECT atanh('-infinity'::double)", "out of range");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1153")
+    @Test
     public void castToInt() {
         this.qf("SELECT '32768.6'::double::int2", "out of range");
         this.qf("SELECT '-9223372036854780000'::float8::int8", "out of range");
@@ -1091,19 +1091,19 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
                 ----------
                      0.22
                 (1 row)
-                                
+                
                 select 1.12::DOUBLE % -0.3::DOUBLE;
                  ?column?
                 ----------
                      0.22
                 (1 row)
-                                
+                
                 select -1.12::DOUBLE % 0.3::DOUBLE;
                  ?column?
                 ----------
                     -0.22
                 (1 row)
-                                
+                
                 select -1.12::DOUBLE % -0.3::DOUBLE;
                  ?column?
                 ----------

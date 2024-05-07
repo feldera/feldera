@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -75,10 +74,10 @@ public class CastTests extends BaseSQLTests {
         this.addRustTestCase(query, ccs);
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6168")
+    @Test
     public void testTinyInt() {
         String query = "SELECT CAST(256 AS TINYINT)";
-        this.testQuery(query, new DBSPZSetLiteral(new DBSPTupleExpression()));
+        this.runtimeConstantFail(query, "Value '256' out of range for type");
     }
 
     @Test

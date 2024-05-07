@@ -233,111 +233,108 @@ public class TimestampdiffTests extends SqlIoTest {
 
     @Test
     public void testMonthDiff() {
-        this.qs("select timestampdiff(month, DATE '2004-09-11', DATE '2004-09-11');\n" +
-                "timestampdiff(month, DATE '2004-09-11', DATE '2004-09-11')\n" +
-                "-----\n" +
-                "0\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2004-09-11', DATE '2005-09-11');\n" +
-                "timestampdiff(month, DATE '2004-09-11', DATE '2005-09-11')\n" +
-                "-----\n" +
-                "12\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2004-09-11', DATE '2006-09-11');\n" +
-                "timestampdiff(month, DATE '2004-09-11', DATE '2006-09-11')\n" +
-                "-----\n" +
-                "24\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2004-09-11', DATE '2007-09-11');\n" +
-                "timestampdiff(month, DATE '2004-09-11', DATE '2007-09-11')\n" +
-                "-----\n" +
-                "36\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2005-09-11', DATE '2004-09-11');\n" +
-                "timestampdiff(month, DATE '2005-09-11', DATE '2004-09-11')\n" +
-                "-----\n" +
-                "-12\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2005-09-11', DATE '2003-09-11');\n" +
-                "timestampdiff(month, DATE '2005-09-11', DATE '2003-09-11')\n" +
-                "-----\n" +
-                "-24\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28');\n" +
-                "timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28')\n" +
-                "-----\n" +
-                "12\n" +
-                "(1 row)\n" +
-                "\n" +
-                // TODO: enable this test when https://issues.apache.org/jira/browse/CALCITE-5981
-                // is fixed.  The bug is closed, but the fix is in Avatica, and Avatica
-                // hasn't released a new version.
-                //"select timestampdiff(month, DATE '2004-02-29', DATE '2005-02-28');\n" +
-                //"timestampdiff(month, DATE '2004-02-29', DATE '2005-02-28')\n" +
-                //"-----\n" +
-                //"11\n" +
-                //"(1 row)\n" +
-                //"\n" +
-                "select timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28');\n" +
-                "timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28')\n" +
-                "-----\n" +
-                "12\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2004-03-29', DATE '2005-03-28');\n" +
-                "timestampdiff(month, DATE '2004-03-29', DATE '2005-03-28')\n" +
-                "-----\n" +
-                "11\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2003-02-28', DATE '2004-02-29');\n" +
-                "timestampdiff(month, DATE '2003-02-28', DATE '2004-02-29')\n" +
-                "-----\n" +
-                "12\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '2003-02-28', DATE '2005-02-28');\n" +
-                "timestampdiff(month, DATE '2003-02-28', DATE '2005-02-28')\n" +
-                "-----\n" +
-                "24\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '1999-09-11', DATE '2001-10-10');\n" +
-                "timestampdiff(month, DATE '1999-09-11', DATE '2001-10-10')\n" +
-                "-----\n" +
-                "24\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(month, DATE '1999-09-11', DATE '2001-9-11');\n" +
-                "timestampdiff(month, DATE '1999-09-11', DATE '2001-9-11')\n" +
-                "-----\n" +
-                "24\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(year, DATE '1999-09-11', DATE '2001-9-11');\n" +
-                "timestampdiff(year, DATE '1999-09-11', DATE '2001-9-11')\n" +
-                "-----\n" +
-                "2\n" +
-                "(1 row)\n" +
-                "\n" +
-                "select timestampdiff(year, DATE '2004-02-28', DATE '2005-02-28');\n" +
-                "timestampdiff(year, DATE '2004-02-28', DATE '2005-02-28')\n" +
-                "-----\n" +
-                "1\n" +
-                // TODO: enable this test when https://issues.apache.org/jira/browse/CALCITE-5981
-                // is fixed.
-                //"(1 row)\n" +
-                //"\n" +
-                //"select timestampdiff(year, DATE '2004-02-29', DATE '2005-02-28');\n" +
-                //"timestampdiff(year, DATE '2004-02-29', DATE '2005-02-28')\n" +
-                //"-----\n" +
-                //"0\n" +
-                "(1 row)");
+        this.qs("""
+                select timestampdiff(month, DATE '2004-09-11', DATE '2004-09-11');
+                timestampdiff(month, DATE '2004-09-11', DATE '2004-09-11')
+                -----
+                0
+                (1 row)
+
+                select timestampdiff(month, DATE '2004-09-11', DATE '2005-09-11');
+                timestampdiff(month, DATE '2004-09-11', DATE '2005-09-11')
+                -----
+                12
+                (1 row)
+
+                select timestampdiff(month, DATE '2004-09-11', DATE '2006-09-11');
+                timestampdiff(month, DATE '2004-09-11', DATE '2006-09-11')
+                -----
+                24
+                (1 row)
+
+                select timestampdiff(month, DATE '2004-09-11', DATE '2007-09-11');
+                timestampdiff(month, DATE '2004-09-11', DATE '2007-09-11')
+                -----
+                36
+                (1 row)
+
+                select timestampdiff(month, DATE '2005-09-11', DATE '2004-09-11');
+                timestampdiff(month, DATE '2005-09-11', DATE '2004-09-11')
+                -----
+                -12
+                (1 row)
+
+                select timestampdiff(month, DATE '2005-09-11', DATE '2003-09-11');
+                timestampdiff(month, DATE '2005-09-11', DATE '2003-09-11')
+                -----
+                -24
+                (1 row)
+
+                select timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28');
+                timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28')
+                -----
+                12
+                (1 row)
+
+                select timestampdiff(month, DATE '2004-02-29', DATE '2005-02-28');
+                timestampdiff(month, DATE '2004-02-29', DATE '2005-02-28')
+                -----
+                11
+                (1 row)
+
+                select timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28');
+                timestampdiff(month, DATE '2004-02-28', DATE '2005-02-28')
+                -----
+                12
+                (1 row)
+
+                select timestampdiff(month, DATE '2004-03-29', DATE '2005-03-28');
+                timestampdiff(month, DATE '2004-03-29', DATE '2005-03-28')
+                -----
+                11
+                (1 row)
+
+                select timestampdiff(month, DATE '2003-02-28', DATE '2004-02-29');
+                timestampdiff(month, DATE '2003-02-28', DATE '2004-02-29')
+                -----
+                12
+                (1 row)
+
+                select timestampdiff(month, DATE '2003-02-28', DATE '2005-02-28');
+                timestampdiff(month, DATE '2003-02-28', DATE '2005-02-28')
+                -----
+                24
+                (1 row)
+
+                select timestampdiff(month, DATE '1999-09-11', DATE '2001-10-10');
+                timestampdiff(month, DATE '1999-09-11', DATE '2001-10-10')
+                -----
+                24
+                (1 row)
+
+                select timestampdiff(month, DATE '1999-09-11', DATE '2001-9-11');
+                timestampdiff(month, DATE '1999-09-11', DATE '2001-9-11')
+                -----
+                24
+                (1 row)
+
+                select timestampdiff(year, DATE '1999-09-11', DATE '2001-9-11');
+                timestampdiff(year, DATE '1999-09-11', DATE '2001-9-11')
+                -----
+                2
+                (1 row)
+
+                select timestampdiff(year, DATE '2004-02-28', DATE '2005-02-28');
+                timestampdiff(year, DATE '2004-02-28', DATE '2005-02-28')
+                -----
+                1
+                (1 row)
+
+                select timestampdiff(year, DATE '2004-02-29', DATE '2005-02-28');
+                timestampdiff(year, DATE '2004-02-29', DATE '2005-02-28')
+                -----
+                 0
+                (1 row)"""
+                );
     }
 }

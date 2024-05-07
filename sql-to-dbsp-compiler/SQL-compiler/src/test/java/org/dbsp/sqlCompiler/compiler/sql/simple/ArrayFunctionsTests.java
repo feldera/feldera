@@ -83,10 +83,10 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1474")
+    @Test
     public void testArrayRepeat3() {
         this.qs("""
-                SELECT array_repeat( 'a', 6);
+                SELECT array_repeat('a', 6);
                  array_repeat
                 --------------
                  { a, a, a, a, a, a}
@@ -266,40 +266,13 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1465")
+    @Test
     public void testNullArray() {
-        this.qs("""
-                SELECT array_position(null, 3);
-                 array_position
-                ----------------
-                 NULL
-                (1 row)
-                
-                SELECT array_max(NULL);
-                 array_max
-                -----------
-                 NULL
-                (1 row)
-                
-                SELECT array_min(NULL);
-                 array_max
-                -----------
-                 NULL
-                (1 row)
-                
-                SELECT array_prepend(null, 1);
-                 array_prepend
-                --------------
-                 NULL
-                (1 row)
-                
-                SELECT array_remove(NULL, 1);
-                 array_remove
-                --------------
-                 NULL
-                (1 row)
-                """
-        );
+        this.statementFailingInCompilation("SELECT array_position(null, 3)", "Illegal use of 'NULL'");
+        this.statementFailingInCompilation("SELECT array_max(NULL)", "Cannot apply 'ARRAY_MAX' to arguments of type");
+        this.statementFailingInCompilation("SELECT array_min(NULL)", "Cannot apply 'ARRAY_MIN' to arguments of type");
+        this.statementFailingInCompilation("SELECT array_prepend(null, 1)", "Illegal use of 'NULL'");
+        this.statementFailingInCompilation("SELECT array_remove(NULL, 1)", "Illegal use of 'NULL'");
     }
 
     @Test
