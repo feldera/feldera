@@ -174,14 +174,14 @@ addition to the normal way of `''`.
   <tr>
     <td><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
     <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
-    <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br>
-        <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br>
+    <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>
+        <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br>
         <code>SUBSTRING('Thomas' for 2)</code> => <code>Th</code></td>
   </tr>
   <tr>
     <td><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
     <td>Remove the specified characters from the specified ends of the string argument</td>
-    <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br>
+    <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br></br>
         <code>TRIM(leading 'xyz' from 'yxTomxx')</code> => <code>Tomxx</code>
     </td>
   </tr>
