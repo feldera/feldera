@@ -552,9 +552,9 @@ public class PostgresInt8Tests extends SqlIoTest {
         this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int2)", "Could not parse");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1199")
+    @Test
     public void issue1199() {
-        this.runtimeConstantFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "out of range for type");
     }
 
     @Test
