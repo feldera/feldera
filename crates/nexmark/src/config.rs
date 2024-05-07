@@ -50,9 +50,12 @@ pub struct Config {
     #[clap(long = "no-progress", default_value_t = true, action = clap::ArgAction::SetFalse)]
     pub progress: bool,
 
-    /// Enable storage.
-    #[clap(long)]
-    pub storage: bool,
+    /// Configure storage. Without this option, data is kept in memory. With
+    /// this option, if `ROWS` is 0 or omitted, all data is written to storage;
+    /// otherwise, data batches are written to storage when they are estimated
+    /// to contain at least `ROWS` rows.
+    #[clap(long="storage", default_value_t = usize::MAX, default_missing_value = "0", hide_default_value(true), value_name("ROWS"))]
+    pub min_storage_rows: usize,
 }
 
 /// Properties of the generated input events.
@@ -147,7 +150,7 @@ impl Default for Config {
             input_batch_size: 40_000,
             output_csv: None,
             progress: true,
-            storage: false,
+            min_storage_rows: usize::MAX,
         }
     }
 }

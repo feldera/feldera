@@ -36,7 +36,6 @@ def main():
 
 
 def prepare_feldera(api_url, pipeline_to_redpanda_server, pipeline_to_schema_registry):
-
     # Create program
     program_name = "demo-sec-ops-program"
     program_sql = open(PROJECT_SQL).read()
@@ -62,7 +61,7 @@ def prepare_feldera(api_url, pipeline_to_redpanda_server, pipeline_to_schema_reg
     # Connectors
     connectors = []
     for (connector_name, stream, topic_topics, is_input) in [
-        ("secops_pipeline", 'PIPELINE',  ["secops_pipeline"], True),
+        ("secops_pipeline", 'PIPELINE', ["secops_pipeline"], True),
         ("secops_pipeline_sources", 'PIPELINE_SOURCES', ["secops_pipeline_sources"], True),
         ("secops_artifact", 'ARTIFACT', ["secops_artifact"], True),
         ("secops_vulnerability", 'VULNERABILITY', ["secops_vulnerability"], True),
@@ -135,7 +134,9 @@ def prepare_feldera(api_url, pipeline_to_redpanda_server, pipeline_to_schema_reg
                 "name": "kafka_output",
                 "config": {
                     "bootstrap.servers": pipeline_to_redpanda_server,
-                    "topic": "secops_vulnerability_stats_avro"
+                    "topic": "secops_vulnerability_stats_avro",
+                    "headers": [{"key": "header1", "value": "this is a string"},
+                                {"key": "header2", "value": list(b'byte array')}]
                 }
             }
         }
@@ -146,7 +147,6 @@ def prepare_feldera(api_url, pipeline_to_redpanda_server, pipeline_to_schema_reg
         "name": "secops_vulnerability_stats_avro",
         "relation_name": "k8scluster_vulnerability_stats"
     })
-
 
     # Create pipeline
     pipeline_name = "demo-sec-ops-pipeline"

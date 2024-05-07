@@ -423,6 +423,7 @@ pub(super) trait Payload<'a> {
 
     unsafe fn copy_payload(src: Self::Ptr, dest: Self::Ptr, count: usize);
 
+    #[allow(dead_code)]
     unsafe fn copy_payload_nonoverlapping(src: Self::Ptr, dest: Self::Ptr, count: usize);
 
     unsafe fn drop_payload_in_place(payload: Self::Ptr);
@@ -539,10 +540,12 @@ where
 pub(super) trait PayloadLen: Copy + 'static {
     fn equal_to(&self, len: usize) -> bool;
 
+    #[allow(dead_code)]
     fn is_empty(&self) -> bool {
         self.equal_to(0)
     }
 
+    #[allow(dead_code)]
     fn from_usize(len: usize) -> Self;
 }
 
@@ -579,10 +582,12 @@ where
 }
 
 pub(super) trait PayloadPtr: Copy {
+    #[allow(dead_code)]
     unsafe fn offset(self, count: isize) -> Self;
 
     unsafe fn add(self, count: usize) -> Self;
 
+    #[allow(dead_code)]
     unsafe fn sub(self, count: usize) -> Self;
 }
 

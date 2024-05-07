@@ -197,7 +197,7 @@ outputs:
         .unwrap();
     assert!(controller.is_fault_tolerant());
 
-    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config);
+    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config, None);
 
     info!("{test_name}: Sending inputs");
     let producer = TestProducer::new();

@@ -200,6 +200,8 @@ request is rejected."
         pipeline_types::transport::url::UrlInputConfig,
         pipeline_types::transport::kafka::KafkaInputConfig,
         pipeline_types::transport::kafka::KafkaInputFtConfig,
+        pipeline_types::transport::kafka::KafkaHeader,
+        pipeline_types::transport::kafka::KafkaHeaderValue,
         pipeline_types::transport::kafka::KafkaOutputConfig,
         pipeline_types::transport::kafka::KafkaOutputFtConfig,
         pipeline_types::transport::kafka::KafkaLogLevel,

@@ -65,10 +65,6 @@ where
     }
 }
 
-pub trait AnyFactory {
-    fn downcast<Trait: ArchiveTrait + ?Sized>(&self) -> Option<&dyn Factory<Trait>>;
-}
-
 impl<T, Trait> WithFactory<T> for Trait
 where
     Trait: ArchiveTrait + ?Sized + 'static,

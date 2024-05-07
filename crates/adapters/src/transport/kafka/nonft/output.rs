@@ -1,4 +1,4 @@
-use crate::transport::kafka::{rdkafka_loglevel_from, DeferredLogging};
+use crate::transport::kafka::{build_headers, rdkafka_loglevel_from, DeferredLogging};
 use crate::transport::secret_resolver::MaybeSecret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
@@ -6,6 +6,7 @@ use crossbeam::sync::{Parker, Unparker};
 use log::debug;
 use pipeline_types::secret_ref::MaybeSecretRef;
 use pipeline_types::transport::kafka::KafkaOutputConfig;
+use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     config::FromClientConfigAndContext,
     error::KafkaError,
@@ -89,6 +90,7 @@ impl ProducerContext for KafkaOutputContext {
 pub struct KafkaOutputEndpoint {
     kafka_producer: ThreadedProducer<KafkaOutputContext>,
     config: KafkaOutputConfig,
+    headers: OwnedHeaders,
     parker: Parker,
     max_message_size: usize,
 }
@@ -114,6 +116,8 @@ impl KafkaOutputEndpoint {
                 }
             }
         }
+
+        let headers = build_headers(&config.headers);
 
         if let Some(log_level) = config.log_level {
             client_config.set_log_level(rdkafka_loglevel_from(log_level));
@@ -141,6 +145,7 @@ impl KafkaOutputEndpoint {
         Ok(Self {
             kafka_producer,
             config,
+            headers,
             parker,
             max_message_size,
         })
@@ -196,7 +201,9 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         self.wait_for_in_flight_acks();
 
-        let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic).payload(buffer);
+        let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic)
+            .payload(buffer)
+            .headers(self.headers.clone());
         self.kafka_producer
             .send(record)
             .map_err(|(err, _record)| err)?;
@@ -208,7 +215,8 @@ impl OutputEndpoint for KafkaOutputEndpoint {
 
         let record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic)
             .key(key)
-            .payload(val);
+            .payload(val)
+            .headers(self.headers.clone());
         self.kafka_producer
             .send(record)
             .map_err(|(err, _record)| err)?;

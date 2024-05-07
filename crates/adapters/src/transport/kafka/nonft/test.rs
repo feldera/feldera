@@ -8,7 +8,10 @@ use crate::{
 };
 use env_logger::Env;
 use log::info;
+use parquet::data_type::AsBytes;
 use proptest::prelude::*;
+use rdkafka::message::{BorrowedMessage, Header, Headers};
+use rdkafka::Message;
 use std::{
     io::Write,
     sync::{
@@ -187,7 +190,7 @@ outputs:
     )
     .unwrap();
 
-    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config);
+    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config, None);
 
     info!("{test_name}: Sending inputs");
     let producer = TestProducer::new();
@@ -391,6 +394,11 @@ outputs:
                 topic: {output_topic}
                 max_inflight_messages: 0
                 message.max.bytes: "1000000"
+                headers:
+                    - key: header1
+                      value: "foobar"
+                    - key: header2
+                      value: [1,2,3,4,5]
         format:
             name: csv
             config:
@@ -419,7 +427,25 @@ outputs:
     )
         .unwrap();
 
-    let buffer_consumer = BufferConsumer::new(&output_topic, "csv", "");
+    let cb = Box::new(|message: &BorrowedMessage| {
+        let headers = message.headers().unwrap();
+        assert_eq!(headers.count(), 2);
+        assert_eq!(
+            headers.try_get(0).unwrap(),
+            Header {
+                key: "header1",
+                value: Some(b"foobar".as_bytes())
+            }
+        );
+        assert_eq!(
+            headers.try_get(1).unwrap(),
+            Header {
+                key: "header2",
+                value: Some([1u8, 2, 3, 4, 5].as_bytes())
+            }
+        );
+    });
+    let buffer_consumer = BufferConsumer::new(&output_topic, "csv", "", Some(cb));
 
     info!("buffer_test: Sending inputs");
     let producer = TestProducer::new();

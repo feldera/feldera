@@ -11,9 +11,6 @@ use crate::{
     DBData, DBWeight,
 };
 
-pub trait AggInitFunc<V: ?Sized, A: ?Sized>: Fn(&V, &mut A) + DynClone {}
-impl<V: ?Sized, A: ?Sized, F> AggInitFunc<V, A> for F where F: Fn(&V, &mut A) + Clone {}
-
 pub trait AggOutputFunc<A: ?Sized, O: ?Sized>: Fn(&mut A, &mut O) + DynClone {}
 impl<A: ?Sized, O: ?Sized, F> AggOutputFunc<A, O> for F where F: Fn(&mut A, &mut O) + Clone {}
 

@@ -257,7 +257,7 @@ impl CompilationProfile {
         match self {
             CompilationProfile::Dev => "debug",
             CompilationProfile::Unoptimized => "unoptimized",
-            CompilationProfile::Optimized => "release",
+            CompilationProfile::Optimized => "optimized",
         }
     }
 }

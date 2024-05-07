@@ -364,8 +364,6 @@ macro_rules! serialize_table_record {
 #[cfg(test)]
 mod test {
     use lazy_static::lazy_static;
-    use rust_decimal::Decimal;
-    use rust_decimal_macros::dec;
     use serde::{Deserialize, Serialize};
 
     use crate::serde_with_context::{SerializationContext, SerializeWithContext, SqlSerdeConfig};
@@ -402,13 +400,10 @@ mod test {
         cc_num: u64,
         #[allow(non_snake_case)]
         first: Option<String>,
-        #[allow(non_snake_case)]
-        dec: Decimal,
     }
     serialize_struct!(Struct2()[3] {
         cc_num["cc_num"]: u64,
-        first["FIRST"]: Option<String>,
-        dec["DEC"]: Decimal
+        first["FIRST"]: Option<String>
     });
 
     #[test]
@@ -417,30 +412,27 @@ mod test {
             serialize_json_with_default_context(&Struct2 {
                 cc_num: 100,
                 first: None,
-                dec: dec!(0.123),
             })
             .unwrap(),
-            r#"{"cc_num":100,"FIRST":null,"DEC":"0.123"}"#
+            r#"{"cc_num":100,"FIRST":null}"#
         );
 
         assert_eq!(
             serialize_json_with_default_context(&Struct2 {
                 cc_num: 100,
                 first: None,
-                dec: dec!(-1.40),
             })
             .unwrap(),
-            r#"{"cc_num":100,"FIRST":null,"DEC":"-1.40"}"#
+            r#"{"cc_num":100,"FIRST":null}"#
         );
 
         assert_eq!(
             serialize_json_with_default_context(&Struct2 {
                 cc_num: 100,
                 first: Some("foo".to_string()),
-                dec: dec!(1e20),
             })
             .unwrap(),
-            r#"{"cc_num":100,"FIRST":"foo","DEC":"100000000000000000000"}"#
+            r#"{"cc_num":100,"FIRST":"foo"}"#
         );
     }
 

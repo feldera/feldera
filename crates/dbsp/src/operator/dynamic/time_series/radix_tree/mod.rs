@@ -282,6 +282,7 @@ where
 
     /// Produce a semi-human-readable representation of the tree for debugging
     /// purposes.
+    #[allow(unused)]
     fn format_tree<W>(&mut self, writer: &mut W) -> Result<(), fmt::Error>
     where
         W: Write,
@@ -306,6 +307,7 @@ where
 
     /// Self-diagnostics: validate that `self` points to a well-formed
     /// radix-tree whose contents is equivalent to `contents`.
+    #[allow(unused)]
     fn validate(&mut self, contents: &BTreeMap<TS, Box<A>>, combine: &dyn Fn(&mut A, &A)) {
         let mut contents_clone = BTreeMap::new();
 

@@ -1,4 +1,5 @@
 use serde_json::Value as JsonValue;
+use std::fmt::Formatter;
 use std::{
     collections::BTreeMap,
     env,
@@ -9,7 +10,8 @@ use crate::config::TransportConfigVariant;
 use crate::service::{KafkaService, ServiceConfig, ServiceConfigVariant};
 use crate::transport::error::{TransportReplaceError, TransportResolveError};
 use anyhow::{Error as AnyError, Result as AnyResult};
-use serde::{Deserialize, Serialize};
+use serde::de::{Error, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
 /// Configuration for reading data from Kafka topics with `InputTransport`.
@@ -193,6 +195,83 @@ const fn default_initialization_timeout_secs() -> u32 {
     60
 }
 
+/// Kafka header value encoded as a UTF-8 string or a byte array.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, ToSchema)]
+#[repr(transparent)]
+pub struct KafkaHeaderValue(pub Vec<u8>);
+
+/// Visitor for deserializing Kafka headers value.
+struct HeaderVisitor;
+
+impl<'de> Visitor<'de> for HeaderVisitor {
+    type Value = KafkaHeaderValue;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("a string (e.g., \"xyz\") or a byte array (e.g., '[1,2,3])")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Ok(KafkaHeaderValue(v.as_bytes().to_owned()))
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Ok(KafkaHeaderValue(v.into_bytes()))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut result = Vec::with_capacity(seq.size_hint().unwrap_or_default());
+
+        while let Some(b) = seq.next_element()? {
+            result.push(b);
+        }
+
+        Ok(KafkaHeaderValue(result))
+    }
+}
+
+impl<'de> Deserialize<'de> for KafkaHeaderValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(HeaderVisitor)
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn test_kafka_header_value_deserialize() {
+    assert_eq!(
+        serde_json::from_str::<KafkaHeaderValue>(r#""foobar""#).unwrap(),
+        KafkaHeaderValue(br#"foobar"#.to_vec())
+    );
+
+    assert_eq!(
+        serde_json::from_str::<KafkaHeaderValue>(r#"[1,2,3,4,5]"#).unwrap(),
+        KafkaHeaderValue(vec![1u8, 2, 3, 4, 5])
+    );
+
+    assert!(serde_json::from_str::<KafkaHeaderValue>(r#"150"#).is_err());
+
+    assert!(serde_json::from_str::<KafkaHeaderValue>(r#"{{"foo": "bar"}}"#).is_err());
+}
+
+/// Kafka message header.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct KafkaHeader {
+    pub key: String,
+    pub value: Option<KafkaHeaderValue>,
+}
+
 /// Configuration for writing data to a Kafka topic with `OutputTransport`.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct KafkaOutputConfig {
@@ -205,6 +284,10 @@ pub struct KafkaOutputConfig {
 
     /// Topic to write to.
     pub topic: String,
+
+    /// Kafka headers to be added to each message produced by this connector.
+    #[serde(default)]
+    pub headers: Vec<KafkaHeader>,
 
     /// The log level of the client.
     ///
@@ -472,6 +555,7 @@ impl TransportConfigVariant for KafkaOutputConfig {
                             &self.kafka_options,
                         )?,
                         topic: self.topic,
+                        headers: self.headers,
                         log_level: self.log_level,
                         max_inflight_messages: self.max_inflight_messages,
                         initialization_timeout_secs: self.initialization_timeout_secs,

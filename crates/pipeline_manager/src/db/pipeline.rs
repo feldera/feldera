@@ -1221,6 +1221,7 @@ pub(crate) async fn set_pipeline_desired_status(
 }
 
 /// Returns true if the connector of a given name is an input connector.
+#[allow(dead_code)]
 pub(crate) async fn attached_connector_is_input(
     db: &ProjectDB,
     tenant_id: TenantId,
