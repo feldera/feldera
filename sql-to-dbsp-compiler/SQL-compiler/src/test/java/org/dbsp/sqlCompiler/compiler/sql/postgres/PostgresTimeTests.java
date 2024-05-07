@@ -133,29 +133,30 @@ public class PostgresTimeTests extends SqlIoTest {
     public void testUnits() {
         // Removed dates
         // Extract second and millisecond return integers in Calcite instead of DECIMAL
-        this.qs("SELECT EXTRACT(MILLISECOND FROM TIME '13:30:25.575401');\n" +
-                "  extract  \n" +
-                "-----------\n" +
-                " 25575\n" + // -- 25575.401
-                "(1 row)\n" +
-                "\n" +
-                "SELECT EXTRACT(SECOND      FROM TIME '13:30:25.575401');\n" +
-                "  extract  \n" +
-                "-----------\n" +
-                " 25\n" + // -- 25.575401
-                "(1 row)\n" +
-                "\n" +
-                "SELECT EXTRACT(MINUTE      FROM TIME '13:30:25.575401');\n" +
-                " extract \n" +
-                "---------\n" +
-                "      30\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT EXTRACT(HOUR        FROM TIME '13:30:25.575401');\n" +
-                " extract \n" +
-                "---------\n" +
-                "      13\n" +
-                "(1 row)");
+        this.qs("""
+                SELECT EXTRACT(MILLISECOND FROM TIME '13:30:25.575401');
+                  extract \s
+                -----------
+                 25575
+                (1 row)
+
+                SELECT EXTRACT(SECOND      FROM TIME '13:30:25.575401');
+                  extract \s
+                -----------
+                 25
+                (1 row)
+
+                SELECT EXTRACT(MINUTE      FROM TIME '13:30:25.575401');
+                 extract\s
+                ---------
+                      30
+                (1 row)
+
+                SELECT EXTRACT(HOUR        FROM TIME '13:30:25.575401');
+                 extract\s
+                ---------
+                      13
+                (1 row)""");
     }
 
     @Test

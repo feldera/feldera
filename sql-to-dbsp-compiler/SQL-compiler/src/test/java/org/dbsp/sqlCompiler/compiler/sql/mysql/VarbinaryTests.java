@@ -24,7 +24,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testVarBinary() {
-        this.statementFailingInCompilation("select X'ffff'+0", "Cannot apply '+' to arguments of type");
+        this.queryFailingInCompilation("select X'ffff'+0", "Cannot apply '+' to arguments of type");
     }
 
     @Test

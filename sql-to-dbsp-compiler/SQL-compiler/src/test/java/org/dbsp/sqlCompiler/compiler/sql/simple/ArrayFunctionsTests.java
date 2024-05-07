@@ -268,11 +268,11 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testNullArray() {
-        this.statementFailingInCompilation("SELECT array_position(null, 3)", "Illegal use of 'NULL'");
-        this.statementFailingInCompilation("SELECT array_max(NULL)", "Cannot apply 'ARRAY_MAX' to arguments of type");
-        this.statementFailingInCompilation("SELECT array_min(NULL)", "Cannot apply 'ARRAY_MIN' to arguments of type");
-        this.statementFailingInCompilation("SELECT array_prepend(null, 1)", "Illegal use of 'NULL'");
-        this.statementFailingInCompilation("SELECT array_remove(NULL, 1)", "Illegal use of 'NULL'");
+        this.queryFailingInCompilation("SELECT array_position(null, 3)", "Illegal use of 'NULL'");
+        this.queryFailingInCompilation("SELECT array_max(NULL)", "Cannot apply 'ARRAY_MAX' to arguments of type");
+        this.queryFailingInCompilation("SELECT array_min(NULL)", "Cannot apply 'ARRAY_MIN' to arguments of type");
+        this.queryFailingInCompilation("SELECT array_prepend(null, 1)", "Illegal use of 'NULL'");
+        this.queryFailingInCompilation("SELECT array_remove(NULL, 1)", "Illegal use of 'NULL'");
     }
 
     @Test

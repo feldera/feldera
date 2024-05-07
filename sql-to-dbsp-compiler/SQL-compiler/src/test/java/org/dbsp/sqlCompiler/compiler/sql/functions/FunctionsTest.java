@@ -1579,8 +1579,8 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testRoundBigInt() {
-        this.statementFailingInCompilation("SELECT round(123.123, 2::bigint)", "Cannot apply 'ROUND' to arguments of type");
-        this.statementFailingInCompilation("select truncate(5678.123451,1::bigint)", "Cannot apply 'TRUNCATE' to arguments of type");
+        this.queryFailingInCompilation("SELECT round(123.123, 2::bigint)", "Cannot apply 'ROUND' to arguments of type");
+        this.queryFailingInCompilation("select truncate(5678.123451,1::bigint)", "Cannot apply 'TRUNCATE' to arguments of type");
     }
 
     @Test
