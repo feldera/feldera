@@ -105,18 +105,18 @@ public class PostgresTimeTests extends SqlIoTest {
     public void testFailConstants() {
         // The following tests pass in Postgres.
         // Changed to TIME literals from strings cast to ::time
-        this.shouldFail("SELECT TIME '23:59:60'", "Illegal TIME literal");
-        this.shouldFail("SELECT TIME '24:00:00'::time", "Illegal TIME literal");
-        this.shouldFail("SELECT TIME '24:00:00.01'", "Illegal TIME literal");
-        this.shouldFail("SELECT TIME '23:59:60.01'", "Illegal TIME literal");
-        this.shouldFail("SELECT TIME '24:01:00'", "Illegal TIME literal");
-        this.shouldFail("SELECT TIME '25:00:00'", "Illegal TIME literal");
+        this.queryFailingInCompilation("SELECT TIME '23:59:60'", "Illegal TIME literal");
+        this.queryFailingInCompilation("SELECT TIME '24:00:00'::time", "Illegal TIME literal");
+        this.queryFailingInCompilation("SELECT TIME '24:00:00.01'", "Illegal TIME literal");
+        this.queryFailingInCompilation("SELECT TIME '23:59:60.01'", "Illegal TIME literal");
+        this.queryFailingInCompilation("SELECT TIME '24:01:00'", "Illegal TIME literal");
+        this.queryFailingInCompilation("SELECT TIME '25:00:00'", "Illegal TIME literal");
     }
 
     @Test
     public void testFailPlus() {
         // Changed TIME literal to conform
-        this.shouldFail("SELECT f1 + time '00:01:00' AS \"Illegal\" FROM TIME_TBL",
+        this.queryFailingInCompilation("SELECT f1 + time '00:01:00' AS \"Illegal\" FROM TIME_TBL",
                 "Cannot apply '+' to arguments");
     }
 
@@ -160,11 +160,11 @@ public class PostgresTimeTests extends SqlIoTest {
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6015")
     public void illegalUnits() {
-        this.shouldFail("SELECT EXTRACT(DAY FROM TIME '13:30:25.575401')", "??");
+        this.queryFailingInCompilation("SELECT EXTRACT(DAY FROM TIME '13:30:25.575401')", "??");
         // Following don't work in Calcite
         // SELECT EXTRACT(FORTNIGHT FROM TIME '13:30:25.575401')
         // SELECT EXTRACT(TIMEZONE FROM TIME '13:30:25.575401')
-        this.shouldFail("SELECT EXTRACT(EPOCH FROM TIME '2020-05-26 13:30:25.575401')", "");
+        this.queryFailingInCompilation("SELECT EXTRACT(EPOCH FROM TIME '2020-05-26 13:30:25.575401')", "");
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6030")

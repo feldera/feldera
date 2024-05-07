@@ -123,7 +123,8 @@ import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
 
-public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implements IWritesLogs, ICompilerComponent {
+public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
+        implements IWritesLogs, ICompilerComponent {
     private final TypeCompiler typeCompiler;
     @Nullable
     public final DBSPVariablePath inputRow;
@@ -1370,7 +1371,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression> implement
             return new DBSPApplyExpression(function, type, arguments);
     }
 
-    DBSPExpression compile(RexNode expression) {
+    public DBSPExpression compile(RexNode expression) {
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
                 .append(expression.toString())

@@ -50,9 +50,9 @@ public class PostgresFloat4Tests extends SqlIoTest {
 
     @Test
     public void testOverflowException() {
-        this.shouldFail("SELECT 10e400 :: FLOAT4",
+        this.queryFailingInCompilation("SELECT 10e400 :: FLOAT4",
                 "out of range");
-        this.shouldFail("SELECT-10e400 :: FLOAT4",
+        this.queryFailingInCompilation("SELECT-10e400 :: FLOAT4",
                 "out of range");
     }
 
@@ -64,9 +64,9 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 result
                 ------
                 0""");
-        this.shouldFail("SELECT 5.0.0",
+        this.queryFailingInCompilation("SELECT 5.0.0",
                 "Error parsing SQL");
-        this.shouldFail("SELECT 5.  0",
+        this.queryFailingInCompilation("SELECT 5.  0",
                 "Error parsing SQL");
     }
 

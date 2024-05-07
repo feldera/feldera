@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- [SQL] Support for user-defined functions implemented in SQL
+  ([#1714](https://github.com/feldera/feldera/pull/1714))
 - [Kafka] Allow specifying Kafka headers as part of output Kafka connector
   config
   ([#1718](https://github.com/feldera/feldera/pull/1718))
@@ -20,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the pipeline metrics for debugging purposes with the `metrics-observer`
   CLI.
   ([#1710](https://github.com/feldera/feldera/pull/1710))
-  
+
 ## [0.15.0] - 2024-04-30
 
 ### Added

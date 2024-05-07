@@ -196,29 +196,32 @@ public abstract class SqlIoTest extends BaseSQLTests {
         this.q(queryAndOutput, true);
     }
 
-    /**
-     * Run a query that is expected to fail in compilation.
+    /** Run a query that is expected to fail in compilation.
      * @param query             Query to run.
-     * @param messageFragment   This fragment should appear in the error message.
-     */
-    public void shouldFail(String query, String messageFragment) {
+     * @param messageFragment   This fragment should appear in the error message. */
+    public void queryFailingInCompilation(String query, String messageFragment) {
+        this.statementFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
+    }
+
+    /** Run a statement that is expected to fail in compilation.
+     * @param statement         Statement to compile.
+     * @param messageFragment   This fragment should appear in the error message. */
+    public void statementFailingInCompilation(String statement, String messageFragment) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
+        compiler.compileStatement(statement);
         compiler.optimize();
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
         Assert.assertTrue(message.contains(messageFragment));
     }
 
-    /**
-     * Run a query that is expected to fail in compilation.
+    /** Run a query that is expected to fail in compilation.
      * @param query             Query to run.
      * @param messageFragment   This fragment should appear in the error message.
-     * @param optimize          Boolean that indicates if the query should be compiled with optimizations.
-     */
-    public void shouldFail(String query, String messageFragment, boolean optimize) {
+     * @param optimize          Boolean that indicates if the query should be compiled with optimizations. */
+    public void queryFailingInCompilation(String query, String messageFragment, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);

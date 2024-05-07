@@ -227,7 +227,7 @@ public class PostgresInt2Tests extends SqlIoTest {
 
     @Test
     public void testBadSelect() {
-        this.shouldFail("SELECT * FROM INT2_TBL AS s (a, b)", "List of column aliases must have same degree as table; table has 1 columns ('F1'), whereas alias list has 2 columns");
+        this.queryFailingInCompilation("SELECT * FROM INT2_TBL AS s (a, b)", "List of column aliases must have same degree as table; table has 1 columns ('F1'), whereas alias list has 2 columns");
     }
 
     // We round down to zero

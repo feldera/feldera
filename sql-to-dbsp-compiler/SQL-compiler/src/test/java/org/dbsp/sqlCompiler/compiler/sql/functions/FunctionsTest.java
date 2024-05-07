@@ -12,8 +12,32 @@ public class FunctionsTest extends SqlIoTest {
                 CREATE TABLE ARR_TABLE (VALS INTEGER ARRAY NOT NULL,ID INTEGER NOT NULL);
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 6);
                 INSERT INTO ARR_TABLE VALUES(ARRAY [1, 2, 3], 7);
+                CREATE FUNCTION dbl(x INTEGER) RETURNS INTEGER AS x * 2;
+                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
+                RETURNS BOOLEAN NOT NULL
+                AS (str LIKE ('%' || COALESCE(CAST(value AS VARCHAR), 'NULL') || '%'));
                 """;
         compiler.compileStatements(setup);
+    }
+
+    @Test
+    public void testTypeError() {
+        this.statementFailingInCompilation("CREATE FUNCTION error(x INTEGER) RETURNS INTEGER AS ''",
+                "should return");
+    }
+
+    @Test
+    public void testSqlFunc() {
+        this.q("""
+                SELECT dbl(3);
+                 result
+                ---------
+                 6""");
+        this.q("""
+                SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5);
+                 result
+                ---------
+                 t""");
     }
 
     @Test
@@ -430,19 +454,19 @@ public class FunctionsTest extends SqlIoTest {
                 "cannot represent 1234.124 as DECIMAL(6, 3)"
         );
 
-        this.shouldFail("select cast(1234.1234 AS DECIMAL(6, 3))",
+        this.queryFailingInCompilation("select cast(1234.1234 AS DECIMAL(6, 3))",
                 "cannot represent 1234.1234 as DECIMAL(6, 3)"
         );
 
-        this.shouldFail("select cast(1234.1236 AS DECIMAL(6, 3))",
+        this.queryFailingInCompilation("select cast(1234.1236 AS DECIMAL(6, 3))",
                 "cannot represent 1234.1236 as DECIMAL(6, 3)"
         );
 
-        this.shouldFail("select cast(143.481 as decimal(2, 1))", "cannot represent 143.481 as DECIMAL(2, 1)");
+        this.queryFailingInCompilation("select cast(143.481 as decimal(2, 1))", "cannot represent 143.481 as DECIMAL(2, 1)");
 
         // this only fails in runtime
         this.runtimeConstantFail("select cast(99.6 as decimal(2, 0))", "cannot represent 99.6 as DECIMAL(2, 0)");
-        this.shouldFail("select cast(-13.4 as decimal(2,1))", "cannot represent -13.4 as DECIMAL(2, 1)");
+        this.queryFailingInCompilation("select cast(-13.4 as decimal(2,1))", "cannot represent -13.4 as DECIMAL(2, 1)");
     }
 
     @Test
@@ -614,50 +638,50 @@ public class FunctionsTest extends SqlIoTest {
                 -------
                  4.0000000000000000
                 (1 row)
-                 
+                
                 SELECT power(2, 2e0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                 
+                
                 SELECT power(2e0, 2.0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                 
+                
                 SELECT power(2.0, 2e0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                 
+                
                 SELECT power(2e0, 2e0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                 
+                
                 SELECT power(2.0, 2.0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                 
+                
                 SELECT power(2.0, 2);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                 
-                 
+                
+                
                 SELECT power(2, 2.0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                 
+                
                 SELECT POWER(2, 2);
                  power
                 -------
@@ -687,7 +711,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testRoundDecimalDecimal() {
-        this.shouldFail("SELECT round(15.1, 1.0)", "Error in SQL statement: Cannot apply 'ROUND' to arguments of type 'ROUND(<DECIMAL(3, 1)>, <DECIMAL(2, 1)>)'. Supported form(s): 'ROUND(<NUMERIC>, <INTEGER>)'");
+        this.queryFailingInCompilation("SELECT round(15.1, 1.0)", "Error in SQL statement: Cannot apply 'ROUND' to arguments of type 'ROUND(<DECIMAL(3, 1)>, <DECIMAL(2, 1)>)'. Supported form(s): 'ROUND(<NUMERIC>, <INTEGER>)'");
     }
 
     @Test

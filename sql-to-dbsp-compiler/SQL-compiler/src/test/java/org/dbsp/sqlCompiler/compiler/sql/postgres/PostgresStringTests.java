@@ -53,7 +53,7 @@ public class PostgresStringTests extends SqlIoTest {
     @Test
     public void illegalContinuationTest() {
         // Cannot continue a string without a newline
-        this.shouldFail("""
+        this.queryFailingInCompilation("""
                         SELECT 'first line' ' - next line'
                         \tAS "Illegal comment within continuation"
                         """,
@@ -101,7 +101,7 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void invalidUnicodeTest() {
-        this.shouldFail("SELECT U&'wrong: \\061'\n",
+        this.queryFailingInCompilation("SELECT U&'wrong: \\061'\n",
                 "Unicode escape sequence starting at character 7 is not exactly four hex digits");
     }
 
@@ -131,11 +131,11 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void invalidDigits() {
-        this.shouldFail("SELECT x'A b'",
+        this.queryFailingInCompilation("SELECT x'A b'",
                 "Binary literal string must contain only characters");
-        this.shouldFail("SELECT x'Ax'",
+        this.queryFailingInCompilation("SELECT x'Ax'",
                 "Binary literal string must contain an even number of hexits");
-        this.shouldFail("SELECT x'A'",
+        this.queryFailingInCompilation("SELECT x'A'",
                 "Binary literal string must contain an even number of hexits");
     }
 

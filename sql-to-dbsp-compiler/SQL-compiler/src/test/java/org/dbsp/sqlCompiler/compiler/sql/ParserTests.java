@@ -19,19 +19,20 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- *
- *
  */
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
+import org.apache.calcite.sql.ddl.SqlCreateView;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration;
 import org.junit.Assert;
 import org.junit.Test;
@@ -60,8 +61,11 @@ public class ParserTests {
 
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateTable);
+
         node = calcite.parse(ddl1);
         Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateView);
     }
 
     @Test
@@ -71,8 +75,24 @@ public class ParserTests {
                 CREATE FUNCTION to_json(data VARCHAR) RETURNS VARBINARY;
                 CREATE FUNCTION from_json(data VARBINARY) RETURNS VARCHAR;
                 """;
-        SqlNode node = calcite.parseStatements(ddl);
-        Assert.assertNotNull(node);
+        SqlNodeList list = calcite.parseStatements(ddl);
+        Assert.assertNotNull(list);
+        Assert.assertEquals(2, list.size());
+    }
+
+    @Test
+    public void createFunctionBodyTest() throws SqlParseException {
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = """
+                CREATE FUNCTION dbl(n INTEGER) RETURNS INTEGER AS n * 2;
+                """;
+        SqlNodeList list = calcite.parseStatements(ddl);
+        Assert.assertNotNull(list);
+        Assert.assertEquals(1, list.size());
+        SqlNode first = list.get(0);
+        Assert.assertTrue(first instanceof SqlCreateFunctionDeclaration);
+        SqlCreateFunctionDeclaration func = (SqlCreateFunctionDeclaration) first;
+        Assert.assertNotNull(func.getBody());
     }
 
     @Test

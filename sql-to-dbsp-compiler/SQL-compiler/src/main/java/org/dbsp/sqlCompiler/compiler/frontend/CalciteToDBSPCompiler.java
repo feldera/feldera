@@ -312,7 +312,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return new DBSPAggregate(obj, rowVar, implementations, false);
     }
 
-    public void visitCorrelate(LogicalCorrelate correlate) {
+    void visitCorrelate(LogicalCorrelate correlate) {
         // We decorrelate queries using Calcite's optimizer.
         // So we assume that the only correlated queries we receive
         // are unnest-type queries.  We assume that unnest queries
@@ -387,7 +387,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.assignOperator(correlate, flatMap);
     }
 
-    public void visitUncollect(Uncollect uncollect) {
+    void visitUncollect(Uncollect uncollect) {
         // This represents an unnest.
         // flat_map(move |x| { x.0.into_iter().map(move |e| Tuple1::new(e)) })
         CalciteObject node = CalciteObject.create(uncollect);
@@ -590,7 +590,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * described by a set of groups.  The aggregate is computed for each group,
      * and the results are combined.
      */
-    public void visitAggregate(LogicalAggregate aggregate) {
+    void visitAggregate(LogicalAggregate aggregate) {
         CalciteObject node = CalciteObject.create(aggregate);
         List<ImmutableBitSet> plan = this.planGroups(
                 aggregate.getGroupSet(), aggregate.getGroupSets());
@@ -614,7 +614,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    public void visitScan(TableScan scan, boolean create) {
+    void visitScan(TableScan scan, boolean create) {
         CalciteObject node = CalciteObject.create(scan);
         List<String> name = scan.getTable().getQualifiedName();
         String tableName = name.get(name.size() - 1);
@@ -664,7 +664,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return Utilities.getExists(this.nodeOperator, node);
     }
 
-    public void visitProject(LogicalProject project) {
+    void visitProject(LogicalProject project) {
         CalciteObject node = CalciteObject.create(project);
         RelNode input = project.getInput();
         DBSPOperator opInput = this.getInputAs(input, true);
@@ -757,7 +757,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    public void visitFilter(LogicalFilter filter) {
+    void visitFilter(LogicalFilter filter) {
         // If this filter is already implemented, use it.
         // This comes from the implementation of Filter(Window)
         // that compiles to nested TopK, which is detected in Window.
@@ -1013,7 +1013,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * Visit a LogicalValue: a SQL literal, as produced by a VALUES expression.
      * This can be invoked by a DDM statement, or by a SQL query that computes a constant result.
      */
-    public void visitLogicalValues(LogicalValues values) {
+    void visitLogicalValues(LogicalValues values) {
         CalciteObject node = CalciteObject.create(values);
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
         DBSPTypeTuple sourceType = this.convertType(values.getRowType(), false).to(DBSPTypeTuple.class);
@@ -1064,7 +1064,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
     }
 
-    public void visitIntersect(LogicalIntersect intersect) {
+    void visitIntersect(LogicalIntersect intersect) {
         CalciteObject node = CalciteObject.create(intersect);
         // Intersect is a special case of join.
         List<RelNode> inputs = intersect.getInputs();
@@ -1629,7 +1629,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return result;
     }
 
-    public void visitWindow(LogicalWindow window) {
+    void visitWindow(LogicalWindow window) {
         DBSPOperator input = this.getInputAs(window.getInput(0), true);
         DBSPTypeTuple inputRowType = this.convertType(
                 window.getInput().getRowType(), false).to(DBSPTypeTuple.class);
@@ -1682,7 +1682,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return Utilities.last(this.ancestors);
     }
 
-    public void visitSort(LogicalSort sort) {
+    void visitSort(LogicalSort sort) {
         CalciteObject node = CalciteObject.create(sort);
         RelNode input = sort.getInput();
         DBSPOperator opInput = this.getOperator(input);
@@ -2046,11 +2046,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     @Nullable
     DBSPNode compileCreateFunction(CreateFunctionStatement stat) {
-        DBSPFunction function = stat.function.getImplementation(this.compiler.getTypeCompiler(), this.compiler);
+        DBSPFunction function = stat.function.getImplementation(
+                this.compiler.getTypeCompiler(), this.compiler);
         if (function != null) {
             DBSPType returnType = stat.function.getFunctionReturnType(this.compiler.getTypeCompiler());
-            this.circuit.addDeclaration(new DBSPDeclaration(
-                    new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class))));
+            if (returnType.is(DBSPTypeStruct.class)) {
+                this.circuit.addDeclaration(new DBSPDeclaration(
+                        new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class))));
+            }
             this.circuit.addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
         }
         return null;

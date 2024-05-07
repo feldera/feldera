@@ -32,7 +32,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testWrongBinary() {
-        this.shouldFail("select x'hello'",
+        this.queryFailingInCompilation("select x'hello'",
                 "Binary literal string must contain only characters '0' - '9', 'A' - 'F'");
     }
 

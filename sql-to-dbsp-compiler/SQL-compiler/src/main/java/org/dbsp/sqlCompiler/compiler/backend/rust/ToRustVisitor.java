@@ -351,10 +351,6 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPCircuit circuit) {
         for (DBSPDeclaration item: circuit.circuit.declarations) {
-            if (item.item.is(DBSPFunctionItem.class)) {
-                item.accept(this);
-                this.builder.newline().newline();
-            }
             if (item.item.is(DBSPStructWithHelperItem.class)) {
                 DBSPStructWithHelperItem i = item.item.to(DBSPStructWithHelperItem.class);
                 this.generateStructHelpers(i.type, null);
@@ -413,6 +409,14 @@ public class ToRustVisitor extends CircuitVisitor {
                 .increase();
         if (!this.useHandles)
             this.builder.append("let mut catalog = Catalog::new();").newline();
+
+        for (DBSPDeclaration item: circuit.declarations) {
+            // Generate functions used locally
+            if (item.item.is(DBSPFunctionItem.class)) {
+                item.accept(this);
+                this.builder.newline().newline();
+            }
+        }
 
         for (IDBSPNode node : circuit.getAllOperators())
             this.processNode(node);

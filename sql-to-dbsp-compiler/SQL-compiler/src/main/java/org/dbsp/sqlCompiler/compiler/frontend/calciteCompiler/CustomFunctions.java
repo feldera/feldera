@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -25,15 +26,22 @@ import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
 
 /** Several functions that we define and add to the existing ones. */
 public class CustomFunctions {
-    private final List<SqlFunction> initial = new ArrayList<>();
+    private final List<SqlFunction> initial;
     private final HashMap<String, ExternalFunction> udf;
 
     public CustomFunctions() {
+        this.initial = new ArrayList<>();
         this.initial.add(new RlikeFunction());
         this.initial.add(new GunzipFunction());
         this.initial.add(new WriteLogFunction());
         this.initial.add(new SequenceFunction());
         this.udf = new HashMap<>();
+    }
+
+    /** Make a copy of the other object */
+    public CustomFunctions(CustomFunctions other) {
+        this.initial = new ArrayList<>(other.initial);
+        this.udf = new HashMap<>(other.udf);
     }
 
     /** RLIKE used as a function.  RLIKE in SQL uses infix notation */
@@ -117,17 +125,19 @@ public class CustomFunctions {
     }
 
     /**
-     * Create a new user-defined function with a specified signature.
-     *
+     * Create a new user-defined function.
      * @param name       Function name.
      * @param signature  Description of arguments as a struct.
      * @param returnType Return type of function.
+     * @param body       Optional body of the function.  If missing,
+     *                   the function is defined in Rust.
      */
-    public ExternalFunction createUDF(CalciteObject node, SqlIdentifier name, RelDataType signature, RelDataType returnType) {
+    public ExternalFunction createUDF(CalciteObject node, SqlIdentifier name,
+                                      RelDataType signature, RelDataType returnType, @Nullable RexNode body) {
         List<RelDataTypeField> parameterList = signature.getFieldList();
         String functionName = name.getSimple();
-        boolean generated = functionName.toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_");
-        ExternalFunction result = new ExternalFunction(name, returnType, parameterList, generated);
+        boolean generated = functionName.toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_") || body != null;
+        ExternalFunction result = new ExternalFunction(name, returnType, parameterList, body, generated);
         if (this.udf.containsKey(functionName)) {
             throw new CompilationError("Function with name " +
                     Utilities.singleQuote(functionName) + " already exists", node);
