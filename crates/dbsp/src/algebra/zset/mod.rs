@@ -126,12 +126,7 @@ impl<Z> IndexedZSetReader for Z where Z: BatchReader<Time = (), R = DynZWeight> 
 ///
 /// For more information, see [`IndexedZSetReader`].
 pub trait IndexedZSet:
-    Batch<Time = (), R = DynZWeight>
-    + AddByRef
-    + AddAssignByRef
-    + Neg<Output = Self>
-    + NegByRef
-    + Eq
+    Batch<Time = (), R = DynZWeight> + AddByRef + AddAssignByRef + Neg<Output = Self> + NegByRef + Eq
 {
     /// Returns an indexed Z-set that contains all elements with positive
     /// weights from `self` with weights set to 1.

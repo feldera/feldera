@@ -21,8 +21,8 @@ use crate::{
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::path::Path;
 use std::fmt::{self, Debug};
+use std::path::Path;
 use std::{ops::Neg, path::PathBuf};
 
 use super::utils::GenericMerger;

@@ -7,11 +7,7 @@ use crate::{
         Circuit, OwnershipPreference, Scope, Stream,
     },
 };
-use std::{
-    borrow::Cow,
-    marker::PhantomData,
-    ops::Neg,
-};
+use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 impl<C, D> Stream<C, D>
 where

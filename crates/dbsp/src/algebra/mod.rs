@@ -239,15 +239,9 @@ where
 /// (this cannot be checked statically).
 // TODO: Add a `for<'a> Add<&'a Self, Output = Self>` bound for adding an owned
 // and a referenced value together
-pub trait SemigroupValue:
-    Clone + Eq + SizeOf + AddByRef + AddAssignByRef + 'static
-{
-}
+pub trait SemigroupValue: Clone + Eq + SizeOf + AddByRef + AddAssignByRef + 'static {}
 
-impl<T> SemigroupValue for T where
-    T: Clone + Eq + SizeOf + AddByRef + AddAssignByRef + 'static
-{
-}
+impl<T> SemigroupValue for T where T: Clone + Eq + SizeOf + AddByRef + AddAssignByRef + 'static {}
 
 /// A type with an associative addition and a zero.
 pub trait MonoidValue: SemigroupValue + HasZero {}
