@@ -123,7 +123,7 @@ macro_rules! make_mul {
                 *self
             }
         }
-    }
+    };
 }
 
 make_mul!(i8);
