@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Error as IoError, ErrorKind};
 use std::mem::ManuallyDrop;
-use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
+use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -16,6 +16,7 @@ use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
 use metrics::{counter, histogram};
+use pipeline_types::config::StorageCacheConfig;
 
 use crate::storage::backend::{
     metrics::{
@@ -28,7 +29,7 @@ use crate::storage::buffer_cache::FBuf;
 use crate::storage::init;
 
 use super::metrics::describe_disk_metrics;
-use super::StorageError;
+use super::{StorageCacheFlags, StorageError};
 
 #[cfg(test)]
 mod tests;
@@ -344,12 +345,12 @@ impl Inner {
         path: PathBuf,
         cache: StorageCacheConfig,
     ) -> Result<FileHandle, StorageError> {
-        let open_options = OpenOptions::new()
+        let file = OpenOptions::new()
             .create_new(true)
             .write(true)
             .read(true)
             .cache_flags(&cache)
-            .open(&path);
+            .open(&path)?;
 
         let file_counter = self.next_file_id.increment();
         self.files.insert(
@@ -366,6 +367,33 @@ impl Inner {
         counter!(FILES_CREATED).increment(1);
 
         Ok(FileHandle(file_counter))
+    }
+
+    fn open(
+        &mut self,
+        path: PathBuf,
+        cache: StorageCacheConfig,
+    ) -> Result<ImmutableFileHandle, StorageError> {
+        let attr = std::fs::metadata(&path)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .cache_flags(&cache)
+            .open(&path)?;
+
+        let file_counter = self.next_file_id.increment();
+        self.files.insert(
+            file_counter,
+            FileMetaData {
+                file: Rc::new(file),
+                path,
+                size: attr.size(),
+                queued_work: 0,
+                error: None,
+                write: VectoredWrite::default(),
+            },
+        );
+
+        Ok(ImmutableFileHandle(file_counter))
     }
 
     fn write_block(
@@ -485,6 +513,7 @@ impl Inner {
 /// State of the backend needed to satisfy the storage APIs.
 pub struct IoUringBackend {
     inner: RefCell<Inner>,
+    cache: StorageCacheConfig,
     /// Directory in which we keep the files.
     base: PathBuf,
 }
@@ -499,21 +528,24 @@ impl IoUringBackend {
     ///   shared among all instances of the backend.
     pub fn new<P: AsRef<Path>>(
         base: P,
+        cache: StorageCacheConfig,
         next_file_id: Arc<AtomicIncrementOnlyI64>,
     ) -> Result<Self, IoError> {
         init();
         describe_disk_metrics();
         Ok(Self {
             base: base.as_ref().to_path_buf(),
+            cache,
             inner: RefCell::new(Inner::new(next_file_id)?),
         })
     }
 
     /// See [`IoUringBackend::new`]. This function is a convenience function
     /// that creates a new backend with global unique file-handle counter.
-    pub fn with_base<P: AsRef<Path>>(base: P) -> Result<Self, IoError> {
+    pub fn with_base<P: AsRef<Path>>(base: P, cache: StorageCacheConfig) -> Result<Self, IoError> {
         Self::new(
             base,
+            cache,
             NEXT_FILE_HANDLE
                 .get_or_init(|| Arc::new(Default::default()))
                 .clone(),
@@ -533,7 +565,15 @@ impl IoUringBackend {
 
 impl Storage for IoUringBackend {
     fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
-        self.inner.borrow_mut().create_named(self.base.join(name))
+        self.inner
+            .borrow_mut()
+            .create_named(self.base.join(name), self.cache)
+    }
+
+    fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
+        self.inner
+            .borrow_mut()
+            .open(self.base.join(name), self.cache)
     }
 
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
@@ -574,5 +614,9 @@ impl Storage for IoUringBackend {
 
     fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
         Ok(self.inner.borrow().files.get(&fd.0).unwrap().size)
+    }
+
+    fn base(&self) -> &Path {
+        &self.base
     }
 }

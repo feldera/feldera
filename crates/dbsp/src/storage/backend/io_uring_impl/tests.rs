@@ -4,6 +4,7 @@
 //! [`InMemoryBackend`].
 use std::fs;
 
+use pipeline_types::config::StorageCacheConfig;
 use pretty_assertions::assert_eq;
 use proptest::proptest;
 use proptest::test_runner::Config;
@@ -45,7 +46,12 @@ impl StateMachineTest for IoUringBackend {
     ) -> Self::SystemUnderTest {
         init_test_logger();
         let tmpdir = tempfile::tempdir().unwrap();
-        let backend = IoUringBackend::new(tmpdir.path(), Default::default()).unwrap();
+        let backend = IoUringBackend::new(
+            tmpdir.path(),
+            StorageCacheConfig::default(),
+            Default::default(),
+        )
+        .unwrap();
 
         IoUringTest { backend, tmpdir }
     }

@@ -30,7 +30,7 @@ use crate::storage::buffer_cache::FBuf;
 
 pub mod metrics;
 
-#[cfg(feature = "io_uring")]
+#[cfg(target_os = "linux")]
 pub mod io_uring_impl;
 pub mod memory_impl;
 pub mod monoio_impl;
@@ -407,17 +407,17 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
         }
     }
 
-    #[cfg(feature = "io_uring")]
-    match io_uring_impl::IoUringBackend::with_base(&tempdir) {
-        Ok(backend) => Box::new(backend),
+    #[cfg(target_os = "linux")]
+    match io_uring_impl::IoUringBackend::with_base(&tempdir, cache) {
+        Ok(backend) => return Box::new(backend),
         Err(error) => {
             static ONCE: std::sync::Once = std::sync::Once::new();
             ONCE.call_once(|| {
                 warn!("could not initialize io_uring backend ({error}), falling back to POSIX I/O")
             });
-            Box::new(posixio_impl::PosixBackend::with_base(&tempdir, cache))
         }
     }
+
     Box::new(posixio_impl::PosixBackend::with_base(tempdir, cache))
 }
 
