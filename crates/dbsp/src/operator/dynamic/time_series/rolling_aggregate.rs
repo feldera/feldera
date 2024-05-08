@@ -942,7 +942,7 @@ where
 
         let retractions = retraction_builder.done();
         let insertions = insertion_builder.done();
-        retractions.add(insertions)
+        retractions.add_by_ref(&insertions)
     }
 }
 

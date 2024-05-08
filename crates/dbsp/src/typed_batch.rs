@@ -30,7 +30,7 @@ use dyn_clone::clone_box;
 use size_of::SizeOf;
 use std::{
     marker::PhantomData,
-    ops::{Add, AddAssign, Deref, DerefMut, Neg},
+    ops::{Deref, DerefMut, Neg},
 };
 
 use crate::{
@@ -79,7 +79,7 @@ pub trait BatchReader: 'static {
 
     fn inner_mut(&mut self) -> &mut Self::Inner;
 
-    /// Drop the statically typed wrapper and return the inner dynamic batch type.  
+    /// Drop the statically typed wrapper and return the inner dynamic batch type.
     fn into_inner(self) -> Self::Inner;
 
     /// Create a statically typed wrapper around `inner`.
@@ -286,32 +286,6 @@ where
 {
     fn neg_by_ref(&self) -> Self {
         Self::new(self.inner().neg_by_ref())
-    }
-}
-
-impl<K, V, R, B> Add for TypedBatch<K, V, R, B>
-where
-    B: DynBatchReader + Add<Output = B>,
-    K: DBData + Erase<B::Key>,
-    V: DBData + Erase<B::Val>,
-    R: DBWeight + Erase<B::R>,
-{
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self::new(self.inner.add(rhs.inner))
-    }
-}
-
-impl<K, V, R, B> AddAssign for TypedBatch<K, V, R, B>
-where
-    B: DynBatchReader + AddAssign,
-    K: DBData + Erase<B::Key>,
-    V: DBData + Erase<B::Val>,
-    R: DBWeight + Erase<B::R>,
-{
-    fn add_assign(&mut self, rhs: Self) {
-        self.inner.add_assign(rhs.inner)
     }
 }
 

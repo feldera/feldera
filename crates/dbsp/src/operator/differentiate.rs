@@ -1,6 +1,6 @@
 //! Differentiation operators.
 
-use std::ops::{Add, Neg};
+use std::ops::Neg;
 
 use crate::circuit::checkpointer::Checkpoint;
 use crate::{
@@ -59,7 +59,6 @@ where
         + SizeOf
         + NumEntries
         + Neg<Output = D>
-        + Add<Output = D>
         + Clone
         + AddByRef
         + AddAssignByRef

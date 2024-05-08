@@ -24,7 +24,7 @@ use size_of::SizeOf;
 use std::{
     cmp::max,
     fmt::{self, Debug, Display},
-    ops::{Add, AddAssign, Neg},
+    ops::Neg,
 };
 
 pub struct VecWSetFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
@@ -272,26 +272,6 @@ where
             // weighted_item_factory: self.weighted_item_factory,
             // batch_item_factory: self.batch_item_factory,
         }
-    }
-}
-
-// TODO: by-value merge
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Add<Self> for VecWSet<K, R> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            layer: self.layer.add(rhs.layer),
-            factories: self.factories,
-            // weighted_item_factory: self.weighted_item_factory,
-            // batch_item_factory: self.batch_item_factory,
-        }
-    }
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> AddAssign<Self> for VecWSet<K, R> {
-    fn add_assign(&mut self, rhs: Self) {
-        self.layer.add_assign(rhs.layer);
     }
 }
 

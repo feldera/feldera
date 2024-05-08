@@ -10,13 +10,13 @@ use crate::{
 use std::{
     borrow::Cow,
     marker::PhantomData,
-    ops::{Add, Neg},
+    ops::Neg,
 };
 
 impl<C, D> Stream<C, D>
 where
     C: Circuit,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + 'static,
+    D: AddByRef + AddAssignByRef + Clone + 'static,
 {
     /// Apply the [`Plus`] operator to `self` and `other`.
     /// Adding two indexed Z-sets adds the weights of matching key-value pairs.
@@ -76,7 +76,7 @@ where
 impl<C, D> Stream<C, D>
 where
     C: Circuit,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
+    D: AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
 {
     /// Apply the [`Minus`] operator to `self` and `other`.
     /// Subtracting two indexed Z-sets subtracts the weights of matching
@@ -130,7 +130,7 @@ where
 
 impl<D> BinaryOperator<D, D, D> for Plus<D>
 where
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + 'static,
+    D: AddByRef + AddAssignByRef + Clone + 'static,
 {
     fn eval(&mut self, i1: &D, i2: &D) -> D {
         i1.add_by_ref(i2)
@@ -147,7 +147,7 @@ where
     }
 
     fn eval_owned(&mut self, i1: D, i2: D) -> D {
-        i1 + i2
+        i1.add_by_ref(&i2)
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
@@ -189,7 +189,7 @@ where
 // can be more efficient than negate followed by plus.
 impl<D> BinaryOperator<D, D, D> for Minus<D>
 where
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
+    D: AddByRef + AddAssignByRef + Neg<Output = D> + NegByRef + Clone + 'static,
 {
     fn eval(&mut self, i1: &D, i2: &D) -> D {
         let mut i2neg = i2.neg_by_ref();
@@ -198,7 +198,7 @@ where
     }
 
     fn eval_owned_and_ref(&mut self, i1: D, i2: &D) -> D {
-        i1.add(i2.neg_by_ref())
+        i1.add_by_ref(&i2.neg_by_ref())
     }
 
     fn eval_ref_and_owned(&mut self, i1: &D, i2: D) -> D {
@@ -206,7 +206,7 @@ where
     }
 
     fn eval_owned(&mut self, i1: D, i2: D) -> D {
-        i1 + i2.neg()
+        i1.add_by_ref(&i2.neg())
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {

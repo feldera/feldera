@@ -23,7 +23,7 @@ use crate::{
     },
 };
 use dyn_clone::clone_box;
-use std::ops::{Add, Neg};
+use std::ops::Neg;
 
 use super::{AddAssignByRef, AddByRef, HasOne, NegByRef, ZRingValue};
 
@@ -127,7 +127,6 @@ impl<Z> IndexedZSetReader for Z where Z: BatchReader<Time = (), R = DynZWeight> 
 /// For more information, see [`IndexedZSetReader`].
 pub trait IndexedZSet:
     Batch<Time = (), R = DynZWeight>
-    + Add<Self, Output = Self>
     + AddByRef
     + AddAssignByRef
     + Neg<Output = Self>
@@ -157,7 +156,6 @@ pub trait IndexedZSet:
 impl<Z> IndexedZSet for Z
 where
     Z: Batch<Time = (), R = DynZWeight>
-        + Add<Z, Output = Z>
         + AddByRef
         + AddAssignByRef
         + Neg<Output = Z>

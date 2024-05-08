@@ -13,13 +13,12 @@ use std::{
     cmp::Reverse,
     iter::once,
     mem::{take, ManuallyDrop},
-    ops::Add,
 };
 
 impl<C, D> Stream<C, D>
 where
     C: Circuit,
-    D: Add<Output = D> + AddByRef + AddAssignByRef + Clone + NumEntries + 'static,
+    D: AddByRef + AddAssignByRef + Clone + NumEntries + 'static,
 {
     /// Apply the [`Sum`] operator to `self` and all streams in `streams`.
     /// The first output is the sum of the first input from each input stream,
@@ -78,7 +77,7 @@ where
 
 impl<D> NaryOperator<D, D> for Sum<D>
 where
-    D: Add<Output = D> + AddAssignByRef + Clone + NumEntries + 'static,
+    D: AddByRef + AddAssignByRef + Clone + NumEntries + 'static,
 {
     fn eval<'a, Iter>(&mut self, inputs: Iter) -> D
     where
@@ -110,7 +109,7 @@ where
         for input in iter {
             match input {
                 Cow::Borrowed(v) => res.add_assign_by_ref(v),
-                Cow::Owned(v) => res = res + v,
+                Cow::Owned(v) => res = res.add_by_ref(&v),
             }
         }
 

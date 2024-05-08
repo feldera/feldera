@@ -15,7 +15,7 @@ use std::{
     fmt::Debug,
     hash::Hash,
     mem::take,
-    ops::{Add, AddAssign, Div, Neg},
+    ops::{Div, Neg},
 };
 
 pub struct AvgFactories<Z, A, W, T>
@@ -137,18 +137,6 @@ where
     }
 }
 
-impl<T, R> Add for Avg<T, R>
-where
-    T: Add<Output = T>,
-    R: Add<Output = R>,
-{
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self::new(self.sum + rhs.sum, self.count + rhs.count)
-    }
-}
-
 impl<T, R> AddByRef for Avg<T, R>
 where
     T: AddByRef,
@@ -159,17 +147,6 @@ where
             self.sum.add_by_ref(&other.sum),
             self.count.add_by_ref(&other.count),
         )
-    }
-}
-
-impl<T, R> AddAssign for Avg<T, R>
-where
-    T: AddAssign,
-    R: AddAssign,
-{
-    fn add_assign(&mut self, rhs: Self) {
-        self.sum += rhs.sum;
-        self.count += rhs.count;
     }
 }
 
