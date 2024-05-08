@@ -663,7 +663,7 @@ where
             let new_len = new.len();
             let position = batches
                 .binary_search_by(|element| element.len().cmp(&new_len).reverse())
-                .map_or_else(|err| err, |ok| ok);
+                .unwrap_or_else(|err| err);
             batches.insert(position, new);
         }
     }

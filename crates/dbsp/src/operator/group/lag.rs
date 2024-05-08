@@ -121,7 +121,7 @@ where
                 }),
                 Box::new(move |v2, vl, ov| {
                     *unsafe { ov.downcast_mut::<OV>() } = output(
-                        &unsafe { &v2.downcast::<WithCustomOrd<V, CF>>() }.val,
+                        &unsafe { v2.downcast::<WithCustomOrd<V, CF>>() }.val,
                         unsafe { vl.downcast::<VL>() },
                     )
                 }),
