@@ -55,7 +55,7 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
 
     public DBSPVecLiteral(DBSPType vectorType, boolean isNull) {
         super(CalciteObject.EMPTY, vectorType, isNull);
-        this.data = null;
+        this.data = isNull ? null : new ArrayList<>();
         this.vecType = this.getType().to(DBSPTypeVec.class);
     }
 
@@ -128,9 +128,7 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        if (mayBeNull)
-            throw new InternalCompilerError("Nullable vec");
-        return this;
+        return new DBSPVecLiteral(this.getNode(), this.type.setMayBeNull(mayBeNull), this.data);
     }
 
     @Override

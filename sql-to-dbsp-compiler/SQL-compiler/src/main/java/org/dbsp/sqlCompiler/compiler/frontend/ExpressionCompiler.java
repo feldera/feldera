@@ -797,6 +797,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 return result;
             }
+            case CHAR_LENGTH: {
+                return compileFunction(call, node, type, ops, 1);
+            }
             case ST_POINT: {
                 // Sometimes the Calcite type for ST_POINT is nullable
                 // even if all arguments are not nullable.  So we can't
@@ -830,7 +833,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         DBSPType leftType = left.getType();
                         DBSPType rightType = right.getType();
 
-                        if (rightType.is(DBSPTypeNull.class)) {
+                        if (rightType.is(DBSPTypeNull.class) ||
+                                (right.is(DBSPLiteral.class) && right.to(DBSPLiteral.class).isNull)) {
                             this.compiler.reportWarning(node.getPositionRange(),
                                     "evaluates to NULL", node + ": always returns NULL");
                             return type.nullValue();
@@ -972,7 +976,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
                         return compileFunction(module_prefix + getCallName(call), node, type, ops, 3, 4);
                     }
-                    case "char_length":
                     case "ascii":
                     case "chr":
                     case "lower":
@@ -1003,8 +1006,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "element": {
-                        // https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6228
-                        type = type.setMayBeNull(true);
                         DBSPExpression arg = ops.get(0);
                         DBSPTypeVec arrayType = arg.getType().to(DBSPTypeVec.class);
                         String method = "element";
@@ -1308,10 +1309,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_REPEAT: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
-
                 String method = getArrayCallName(call);
-
-                return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
+                // Calcite thinks this is nullable, but it probably shouldn't be
+                DBSPType nonNull = type.setMayBeNull(false);
+                return new DBSPApplyExpression(node, method, nonNull, ops.get(0), ops.get(1)).cast(type);
             }
             case HOP:
             case DOT:

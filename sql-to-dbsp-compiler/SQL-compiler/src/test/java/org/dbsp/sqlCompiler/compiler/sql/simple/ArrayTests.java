@@ -263,7 +263,7 @@ public class ArrayTests extends BaseSQLTests {
         this.testQuery(ddl, query);
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6228")
+    @Test
     public void test2DArrayElements() {
         String ddl = "CREATE TABLE ARR_TABLE (\n"
                 + "VALS INTEGER ARRAY ARRAY)";
@@ -279,11 +279,11 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(3, true),
                                 new DBSPI32Literal(2),
-                                new DBSPI32Literal(2))
+                                new DBSPI32Literal(2, true))
                 ))).toStream());
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6227")
+    @Test
     public void testElementNull() {
         this.testQuery("", "SELECT ELEMENT(NULL)", new InputOutputChange(new Change(),
                 new Change(new DBSPZSetLiteral(

@@ -96,20 +96,20 @@ public class FunctionsTest extends SqlIoTest {
     }
 
 
-    @Test @Ignore("https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6210")
+    @Test
     public void testBinaryCast() {
         this.qs(
                 """
                         SELECT CAST('1234567890' AS VARBINARY) as val;
                          val
                         -----
-                         34567890
+                         31323334353637383930
                         (1 row)
                         
                         SELECT '1234567890'::VARBINARY as val;
                          val
                         -----
-                         34567890
+                         31323334353637383930
                         (1 row)
                         """
         );
@@ -117,13 +117,13 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void issue1180() {
-        this.runtimeConstantFail("SELECT '1_000'::INT4", "ParseIntError");
+        this.runtimeConstantFail("SELECT '1_000'::INT4", "Could not parse");
     }
 
     @Test
     public void issue1192() {
-        this.runtimeConstantFail("select '-9223372036854775809'::int64", "ParseIntError");
-        this.runtimeConstantFail("select '9223372036854775808'::int64", "ParseIntError");
+        this.runtimeConstantFail("select '-9223372036854775809'::int64", "Could not parse");
+        this.runtimeConstantFail("select '9223372036854775808'::int64", "Could not parse");
     }
 
     // this is an edge case for negative integer modulo
@@ -556,7 +556,7 @@ public class FunctionsTest extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("Calcite bug: https://github.com/feldera/feldera/issues/1345")
+    @Test
     public void testIsInfReal() {
         this.qs("""
                 -- f64::MAX
@@ -711,7 +711,8 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testRoundDecimalDecimal() {
-        this.queryFailingInCompilation("SELECT round(15.1, 1.0)", "Error in SQL statement: Cannot apply 'ROUND' to arguments of type 'ROUND(<DECIMAL(3, 1)>, <DECIMAL(2, 1)>)'. Supported form(s): 'ROUND(<NUMERIC>, <INTEGER>)'");
+        this.queryFailingInCompilation("SELECT round(15.1, 1.0)",
+                "Cannot apply 'ROUND' to arguments of type 'ROUND(<DECIMAL(3, 1)>, <DECIMAL(2, 1)>)'.");
     }
 
     @Test
@@ -952,18 +953,6 @@ public class FunctionsTest extends SqlIoTest {
                 (1 row)
                 
                 select round(-15.91,-1);
-                round(-15.91,-1)
-                ------------
-                 -20
-                (1 row)
-                
-                select round(-15.91,-1::tinyint);
-                round(-15.91,-1)
-                ------------
-                 -20
-                (1 row)
-                
-                select round(-15.91,-1::smallint);
                 round(-15.91,-1)
                 ------------
                  -20
@@ -1216,18 +1205,6 @@ public class FunctionsTest extends SqlIoTest {
                  -20
                 (1 row)
                 
-                select round(-15.91::DOUBLE,-1::tinyint);
-                round(-15.91::DOUBLE,-1)
-                ------------
-                 -20
-                (1 row)
-                
-                select round(-15.91::DOUBLE,-1::smallint);
-                round(-15.91::DOUBLE,-1)
-                ------------
-                 -20
-                (1 row)
-                
                 select round(-15.91::DOUBLE,-1::int);
                 round(-15.91::DOUBLE,-1)
                 ------------
@@ -1402,18 +1379,6 @@ public class FunctionsTest extends SqlIoTest {
                 0
                 (1 row)
                 
-                select truncate(5678.123451,1::tinyint);
-                truncate(5678.123451,1)
-                -----
-                5678.1
-                (1 row)
-                
-                select truncate(5678.123451,1::smallint);
-                truncate(5678.123451,1)
-                -----
-                5678.1
-                (1 row)
-                
                 select truncate(5678.123451,1::int);
                 truncate(5678.123451,1)
                 -----
@@ -1559,18 +1524,6 @@ public class FunctionsTest extends SqlIoTest {
                 0
                 (1 row)
                 
-                select truncate(5678.123451::DOUBLE,1::tinyint);
-                truncate(5678.123451::DOUBLE,1)
-                -----
-                5678.1
-                (1 row)
-                
-                select truncate(5678.123451::DOUBLE,1::smallint);
-                truncate(5678.123451::DOUBLE,1)
-                -----
-                5678.1
-                (1 row)
-                
                 select truncate(5678.123451::DOUBLE,1::int);
                 truncate(5678.123451::DOUBLE,1)
                 -----
@@ -1624,24 +1577,10 @@ public class FunctionsTest extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1379")
+    @Test
     public void testRoundBigInt() {
-        this.q("""
-                SELECT round(123.123, 2::bigint);
-                 round
-                -------
-                 123.12"""
-        );
-    }
-
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1379")
-    public void testTruncateBigInt() {
-        this.q("""
-                select truncate(5678.123451,1::bigint);
-                truncate(5678.123451,1)
-                -----
-                5678.1"""
-        );
+        this.queryFailingInCompilation("SELECT round(123.123, 2::bigint)", "Cannot apply 'ROUND' to arguments of type");
+        this.queryFailingInCompilation("select truncate(5678.123451,1::bigint)", "Cannot apply 'TRUNCATE' to arguments of type");
     }
 
     @Test

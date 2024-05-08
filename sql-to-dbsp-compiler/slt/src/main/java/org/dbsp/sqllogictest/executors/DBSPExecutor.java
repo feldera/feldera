@@ -468,7 +468,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPExpression sort = new DBSPEnumValue("SortOrder", description.getOrder().toString());
 
         /*
-        This stopped working when transitioning to the untyped runtime.
+        This stopped working when dynamic types were merged.
         if (description.getExpectedOutputSize() >= 0) {
             DBSPExpression count;
             if (isVector) {

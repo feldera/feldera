@@ -262,7 +262,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testArray() {
         String query = "SELECT ELEMENT(ARRAY [2])";
-        DBSPZSetLiteral result = new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI32Literal(2)));
+        DBSPZSetLiteral result = new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPI32Literal(2, true)));
         this.testConstantOutput(query, result);
     }
 
@@ -721,7 +721,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void divZero0() {
         String query = "SELECT 'Infinity' / 0";
-        this.runtimeConstantFail(query, "InvalidDigit");
+        this.runtimeConstantFail(query, "Could not parse");
     }
 
     @Test

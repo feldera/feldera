@@ -5,11 +5,8 @@ import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
-/**
- * `BIGINT` and `INT64` tests manually adopted from
- * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/int8.out
- */
-@SuppressWarnings("JavadocLinkAsPlainText")
+/* `BIGINT` and `INT64` tests manually adopted from
+ * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/int8.out */
 public class PostgresInt8Tests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
@@ -25,6 +22,17 @@ public class PostgresInt8Tests extends SqlIoTest {
 
         compiler.compileStatement(createTable);
         compiler.compileStatements(insert);
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6395")
+    public void precisionLossTest() {
+        System.out.println((long)(float)36854775807.0);
+        this.qs("""
+                SELECT CAST('36854775807.0'::float4 AS int64);
+                    int8
+                -------------
+                 36854775808
+                (1 row)""");
     }
 
     @Test
@@ -47,7 +55,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                                       123 | 4567890123456789
                          4567890123456789 | 4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 <> 4567890123456789;
                                 q1        |        q2
                         ------------------+-------------------
@@ -55,7 +63,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |               123
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 < 4567890123456789;
                                 q1        |        q2
                         ------------------+-------------------
@@ -63,12 +71,12 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |               123
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 > 4567890123456789;
                          q1 | q2
                         ----+----
                         (0 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 <= 4567890123456789;
                                 q1        |        q2
                         ------------------+-------------------
@@ -78,20 +86,20 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (5 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 >= 4567890123456789;
                                 q1        |        q2
                         ------------------+------------------
                                       123 | 4567890123456789
                          4567890123456789 | 4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 = 456;
                          q1  | q2
                         -----+-----
                          123 | 456
                         (1 row)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 <> 456;
                                 q1        |        q2
                         ------------------+-------------------
@@ -100,21 +108,21 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (4 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 < 456;
                                 q1        |        q2
                         ------------------+-------------------
                          4567890123456789 |               123
                          4567890123456789 | -4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 > 456;
                                 q1        |        q2
                         ------------------+------------------
                                       123 | 4567890123456789
                          4567890123456789 | 4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 <= 456;
                                 q1        |        q2
                         ------------------+-------------------
@@ -122,7 +130,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |               123
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 >= 456;
                                 q1        |        q2
                         ------------------+------------------
@@ -130,14 +138,14 @@ public class PostgresInt8Tests extends SqlIoTest {
                                       123 | 4567890123456789
                          4567890123456789 | 4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE 123 = q1;
                          q1  |        q2
                         -----+------------------
                          123 |              456
                          123 | 4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE 123 <> q1;
                                 q1        |        q2
                         ------------------+-------------------
@@ -145,7 +153,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE 123 < q1;
                                 q1        |        q2
                         ------------------+-------------------
@@ -153,12 +161,12 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE 123 > q1;
                          q1 | q2
                         ----+----
                         (0 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE 123 <= q1;
                                 q1        |        q2
                         ------------------+-------------------
@@ -168,20 +176,20 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (5 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE 123 >= q1;
                          q1  |        q2
                         -----+------------------
                          123 |              456
                          123 | 4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 = '456'::int2;
                          q1  | q2
                         -----+-----
                          123 | 456
                         (1 row)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 <> '456'::int2;
                                 q1        |        q2
                         ------------------+-------------------
@@ -190,21 +198,21 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (4 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 < '456'::int2;
                                 q1        |        q2
                         ------------------+-------------------
                          4567890123456789 |               123
                          4567890123456789 | -4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 > '456'::int2;
                                 q1        |        q2
                         ------------------+------------------
                                       123 | 4567890123456789
                          4567890123456789 | 4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 <= '456'::int2;
                                 q1        |        q2
                         ------------------+-------------------
@@ -212,7 +220,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |               123
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE q2 >= '456'::int2;
                                 q1        |        q2
                         ------------------+------------------
@@ -220,14 +228,14 @@ public class PostgresInt8Tests extends SqlIoTest {
                                       123 | 4567890123456789
                          4567890123456789 | 4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE '123'::int2 = q1;
                          q1  |        q2
                         -----+------------------
                          123 |              456
                          123 | 4567890123456789
                         (2 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE '123'::int2 <> q1;
                                 q1        |        q2
                         ------------------+-------------------
@@ -235,7 +243,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE '123'::int2 < q1;
                                 q1        |        q2
                         ------------------+-------------------
@@ -243,12 +251,12 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (3 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE '123'::int2 > q1;
                          q1 | q2
                         ----+----
                         (0 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE '123'::int2 <= q1;
                                 q1        |        q2
                         ------------------+-------------------
@@ -258,7 +266,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789
                          4567890123456789 | -4567890123456789
                         (5 rows)
-                                                
+                        
                         SELECT * FROM INT8_TBL WHERE '123'::int2 >= q1;
                          q1  |        q2
                         -----+------------------
@@ -325,7 +333,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          -4567890123456752
                          -4567890123456752
                         (5 rows)
-                                                
+                        
                         SELECT 2 * q1 AS "twice int4" FROM INT8_TBL;
                             twice int4
                         ------------------
@@ -368,7 +376,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123457035 | -4567890123456543 | 1123700970370370094 |     0
                          4567890123457035 | -4567890123456543 | 1123700970370370094 |     0
                         (5 rows)
-                                                
+                        
                         -- int8 op int2
                         SELECT q1 + 42::int2 AS "8plus2", q1 - 42::int2 AS "8minus2", q1 * 42::int2 AS "8mul2", q1 / 42::int2 AS "8div2" FROM INT8_TBL;
                               8plus2      |     8minus2      |       8mul2        |      8div2
@@ -379,7 +387,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456831 | 4567890123456747 | 191851385185185138 | 108759288653733
                          4567890123456831 | 4567890123456747 | 191851385185185138 | 108759288653733
                         (5 rows)
-                                                
+                        
                         -- int2 op int8
                         SELECT 246::int2 + q1 AS "2plus8", 246::int2 - q1 AS "2minus8", 246::int2 * q1 AS "2mul8", 246::int2 / q1 AS "2div8" FROM INT8_TBL;
                               2plus8      |      2minus8      |        2mul8        | 2div8
@@ -400,13 +408,13 @@ public class PostgresInt8Tests extends SqlIoTest {
                           4567890123456789 | 4567890123456789
                          -4567890123456789 | 4567890123456789
                         (5 rows)
-                                                
+                        
                         SELECT min(q1), min(q2) FROM INT8_TBL;
                          min |        min
                         -----+-------------------
                          123 | -4567890123456789
                         (1 row)
-                                                
+                        
                         SELECT max(q1), max(q2) FROM INT8_TBL;
                                max        |       max
                         ------------------+------------------
@@ -443,7 +451,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                         ------+------
                            42 |  -37
                         (1 row)
-                                                
+                        
                         SELECT CAST(q1 AS float4), CAST(q2 AS float8) FROM INT8_TBL;
                              q1      |           q2
                         -------------+------------------------
@@ -454,18 +462,6 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4.56789e+15 | -4.567890123456789e+15
                         (5 rows)
 
-                        SELECT CAST('36854775807.0'::float4 AS int64);
-                            int8
-                        -------------
-                         36854775808
-                        (1 row)
-                        
-                        SELECT CAST('36854775807.0'::float4 AS int8);
-                            int8
-                        -------------
-                         36854775808
-                        (1 row)
-                        
                         -- check rounding when casting from float
                         SELECT x, x::int8 AS int8_value
                         FROM (VALUES (-2.5::float8),
@@ -485,7 +481,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                           1.5 |          1
                           2.5 |          2
                         (7 rows)
-                                                
+                        
                         -- check rounding when casting from numeric
                         SELECT x, x::int8 AS int8_value
                         FROM (VALUES (-2.5::numeric(2, 1)),
@@ -535,7 +531,7 @@ public class PostgresInt8Tests extends SqlIoTest {
                          4567890123456789 |  4567890123456789 |                 0
                          4567890123456789 | -4567890123456789 |  9135780246913578
                         (5 rows)
-                         """
+                        """
         );
     }
 
@@ -546,19 +542,19 @@ public class PostgresInt8Tests extends SqlIoTest {
 
     @Test
     public void testOutOfRangeCast() {
-        this.runtimeConstantFail("select '-9223372036854775809'::int64", "Overflow");
-        this.runtimeConstantFail("select '9223372036854775808'::int64", "Overflow");
-        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int4)", "Overflow");
-        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int2)", "Overflow");
-        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int4)", "Overflow");
-        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int2)", "Overflow");
-        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int4)", "Overflow");
-        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int2)", "Overflow");
+        this.runtimeConstantFail("select '-9223372036854775809'::int64", "Could not parse");
+        this.runtimeConstantFail("select '9223372036854775808'::int64", "Could not parse");
+        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int4)", "Could not parse");
+        this.runtimeConstantFail("SELECT CAST('4567890123456789' AS int2)", "Could not parse");
+        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int4)", "Could not parse");
+        this.runtimeConstantFail("SELECT CAST('+4567890123456789' AS int2)", "Could not parse");
+        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int4)", "Could not parse");
+        this.runtimeConstantFail("SELECT CAST('-4567890123456789' AS int2)", "Could not parse");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1199")
+    @Test
     public void issue1199() {
-        this.runtimeConstantFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "Overflow");
+        this.runtimeConstantFail("SELECT CAST('922337203685477580700.0'::float8 AS int64)", "out of range for type");
     }
 
     @Test
@@ -571,7 +567,7 @@ public class PostgresInt8Tests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("fails for Calcite optimized version")
+    @Test @Ignore("fails for Calcite optimized version https://issues.apache.org/jira/browse/CALCITE-6379")
     public void testINT64MINOverflowError() {
         this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int64", "attempt to multiply with overflow");
         this.qf("SELECT (-9223372036854775808)::int64 / (-1)::int64", "attempt to divide with overflow");

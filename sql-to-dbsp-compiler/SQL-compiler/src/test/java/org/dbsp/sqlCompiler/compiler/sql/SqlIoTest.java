@@ -214,7 +214,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
         compiler.optimize();
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
-        Assert.assertTrue(message.contains(messageFragment));
+        boolean contains = message.contains(messageFragment);
+        Assert.assertTrue(contains);
     }
 
     /** Run a query that is expected to fail in compilation.
