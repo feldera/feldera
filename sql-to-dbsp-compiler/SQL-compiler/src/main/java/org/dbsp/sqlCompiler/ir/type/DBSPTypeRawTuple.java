@@ -34,9 +34,7 @@ import org.dbsp.util.IIndentStream;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * A Raw Rust tuple.
- */
+/** A Raw Rust tuple. */
 public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
     private DBSPTypeRawTuple(CalciteObject node, DBSPTypeCode code, boolean mayBeNull, DBSPType... tupArgs) {
         super(node, code, mayBeNull, tupArgs);

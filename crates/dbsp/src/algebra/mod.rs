@@ -558,6 +558,7 @@ impl OptionWeightType for f64 {}
 impl OptionWeightType for F32 {}
 impl OptionWeightType for F64 {}
 impl OptionWeightType for Decimal {}
+impl OptionWeightType for Present {}
 
 impl<T, S> MulByRef<S> for Option<T>
 where

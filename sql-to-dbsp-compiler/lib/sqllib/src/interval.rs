@@ -68,6 +68,7 @@ where
 impl<T> From<T> for ShortInterval
 where
     i64: From<T>,
+    T: PrimInt,
 {
     fn from(value: T) -> Self {
         Self {
@@ -132,6 +133,7 @@ where
 impl<T> From<T> for LongInterval
 where
     i32: From<T>,
+    T: PrimInt,
 {
     fn from(value: T) -> Self {
         Self {
