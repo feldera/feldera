@@ -1,5 +1,6 @@
 use crate::algebra::{HasOne, HasZero, MulByRef};
 use rkyv::{Archive, Deserialize, Serialize};
+use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -110,41 +111,28 @@ impl MulAssign<&'_ Present> for Present {
     fn mul_assign(&mut self, _rhs: &Self) {}
 }
 
-impl MulByRef<Present> for i32 {
-    type Output = Self;
+macro_rules! make_mul {
+    (
+        $type: ty
+    ) => {
+        impl MulByRef<Present> for $type {
+            type Output = Self;
 
-    #[inline]
-    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
-        *self
-    }
+            #[inline]
+            fn mul_by_ref(&self, _other: &Present) -> Self::Output {
+                *self
+            }
+        }
+    };
 }
 
-impl MulByRef<Present> for i64 {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
-        *self
-    }
-}
-
-impl MulByRef<Present> for F32 {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
-        *self
-    }
-}
-
-impl MulByRef<Present> for F64 {
-    type Output = Self;
-
-    #[inline]
-    fn mul_by_ref(&self, _other: &Present) -> Self::Output {
-        *self
-    }
-}
+make_mul!(i8);
+make_mul!(i16);
+make_mul!(i32);
+make_mul!(i64);
+make_mul!(F32);
+make_mul!(F64);
+make_mul!(Decimal);
 
 // FIXME: This doesn't really make sense and is wrong
 impl Neg for Present {

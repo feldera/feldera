@@ -26,10 +26,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.IntStream;
 
-/**
- * This class helps generate Rust code.
- * It is given a set of circuit and functions and generates a compilable Rust file.
- */
+/** This class helps generate Rust code.
+ * It is given a set of circuit and functions and generates a compilable Rust file. */
 public class RustFileWriter {
     final List<IDBSPNode> toWrite;
     final PrintStream outputStream;
@@ -99,8 +97,8 @@ public class RustFileWriter {
      */
     @SuppressWarnings("SpellCheckingInspection")
     static final String rustPreamble = """
-                    use paste::paste;
-                    use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
+                    // use paste::paste;
+                    // use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
                     use dbsp::{
                         algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
                              UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
@@ -139,11 +137,8 @@ public class RustFileWriter {
                         convert::identity,
                         ops::{Add, Neg, AddAssign},
                         fmt::{Debug, Formatter, Result as FmtResult},
-                        cell::RefCell,
                         path::Path,
-                        rc::Rc,
                         marker::PhantomData,
-                        str::FromStr,
                     };
                     use core::cmp::Ordering;
                     use rust_decimal::Decimal;

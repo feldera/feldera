@@ -38,9 +38,7 @@ import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TUPLE;
 
-/**
- * A Raw Rust tuple.
- */
+/** Our own version of a tuple */
 public class DBSPTypeTuple extends DBSPTypeTupleBase {
     public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, DBSPType... tupFields) {
         super(node, TUPLE, mayBeNull, tupFields);

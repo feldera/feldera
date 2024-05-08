@@ -122,14 +122,10 @@ import org.dbsp.util.Utilities;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * This visitor generate a Rust implementation of the program.
- */
+/** This visitor generates a Rust implementation of the program. */
 public class ToRustInnerVisitor extends InnerVisitor {
     protected final IndentStream builder;
-    /**
-     * If set use a more compact display, which is not necessarily compilable.
-     */
+    /** If set use a more compact display, which is not necessarily compilable. */
     protected final boolean compact;
     protected final CompilerOptions options;
 

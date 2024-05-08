@@ -53,7 +53,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
@@ -101,7 +100,7 @@ public class ToRustVisitor extends CircuitVisitor {
     protected final IndentStream builder;
     // Assemble here the list of streams that is output by the circuit
     protected final IndentStream streams;
-    final InnerVisitor innerVisitor;
+    final ToRustInnerVisitor innerVisitor;
     final boolean useHandles;
     final CompilerOptions options;
     final ProgramMetadata metadata;
@@ -125,12 +124,16 @@ public class ToRustVisitor extends CircuitVisitor {
         super(reporter);
         this.options = options;
         this.builder = builder;
-        this.innerVisitor = new ToRustInnerVisitor(reporter, builder, options, false);
         this.useHandles = this.options.ioOptions.emitHandles;
         StringBuilder streams = new StringBuilder();
         this.streams = new IndentStream(streams);
         this.metadata = metadata;
         this.structsGenerated = new HashSet<>();
+        this.innerVisitor = this.createInnerVisitor(builder);
+    }
+
+    ToRustInnerVisitor createInnerVisitor(IndentStream builder) {
+        return new ToRustInnerVisitor(this.errorReporter, builder, options, false);
     }
 
     protected void generateFromTrait(DBSPTypeStruct type) {
@@ -367,8 +370,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
         StringBuilder b = new StringBuilder();
         IndentStream signature = new IndentStream(b);
-        ToRustInnerVisitor inner = new ToRustInnerVisitor(
-                this.errorReporter, signature, this.options, false);
+        ToRustInnerVisitor inner = this.createInnerVisitor(signature);
 
         if (!this.useHandles) {
             signature.append("Catalog");
@@ -481,7 +483,8 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        this.generateStructHelpers(type, operator.metadata);
+        if (!this.options.ioOptions.emitHandles)
+            this.generateStructHelpers(type, operator.metadata);
 
         this.writeComments(operator)
                 .append("let (")
@@ -516,15 +519,18 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        this.generateStructHelpers(type, operator.metadata);
+        if (!this.options.ioOptions.emitHandles)
+            this.generateStructHelpers(type, operator.metadata);
 
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 operator.originalRowType.sanitizedName + "_key");
-        this.generateStructHelpers(keyStructType, operator.metadata);
+        if (!this.options.ioOptions.emitHandles)
+            this.generateStructHelpers(keyStructType, operator.metadata);
 
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 operator.originalRowType.sanitizedName + "_upsert");
-        this.generateStructHelpers(upsertStruct, operator.metadata);
+        if (!this.options.ioOptions.emitHandles)
+            this.generateStructHelpers(upsertStruct, operator.metadata);
 
         this.writeComments(operator)
                 .append("let (")
@@ -709,7 +715,8 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator);
         DBSPTypeStruct type = operator.originalRowType;
-        this.generateStructHelpers(type, null);
+        if (!this.options.ioOptions.emitHandles)
+            this.generateStructHelpers(type, null);
         if (!this.useHandles) {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
             DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);

@@ -5,6 +5,7 @@ use crate::interval::{LongInterval, ShortInterval};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
+use num::PrimInt;
 use pipeline_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
@@ -168,6 +169,7 @@ impl Timestamp {
 impl<T> From<T> for Timestamp
 where
     i64: From<T>,
+    T: PrimInt,
 {
     fn from(value: T) -> Self {
         Self {
@@ -548,6 +550,7 @@ impl fmt::Debug for Date {
 impl<T> From<T> for Date
 where
     i32: From<T>,
+    T: PrimInt,
 {
     fn from(value: T) -> Self {
         Self {
@@ -869,6 +872,7 @@ impl Sub<ShortInterval> for Time {
 impl<T> From<T> for Time
 where
     u64: From<T>,
+    T: PrimInt,
 {
     fn from(value: T) -> Self {
         Self {
