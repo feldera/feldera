@@ -15,7 +15,7 @@ use crate::{
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
 use once_cell::sync::Lazy;
-use pipeline_types::config::{StorageCacheConfig, StorageConfig};
+use pipeline_types::config::StorageCacheConfig;
 use serde::Serialize;
 use std::{
     backtrace::Backtrace,
@@ -36,7 +36,8 @@ use std::{
 use typedmap::{TypedDashMap, TypedMapKey};
 use uuid::Uuid;
 
-use super::dbsp_handle::{IntoCircuitConfig, Layout};
+use super::dbsp_handle::Layout;
+use super::CircuitConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
@@ -251,27 +252,23 @@ impl Debug for RuntimeInner {
 }
 
 impl RuntimeInner {
-    fn new(
-        layout: Layout,
-        storage: Option<StorageConfig>,
-        start_checkpoint: Uuid,
-        min_storage_rows: usize,
-    ) -> Result<Self, DBSPError> {
-        let local_workers = layout.local_workers().len();
+    fn new(config: CircuitConfig) -> Result<Self, DBSPError> {
+        let local_workers = config.layout.local_workers().len();
         let mut panic_info = Vec::with_capacity(local_workers);
         for _ in 0..local_workers {
             panic_info.push(RwLock::new(None));
         }
-        let cache = storage
+        let cache = config
+            .storage
             .as_ref()
             .map_or(Default::default(), |storage| storage.cache);
-        let storage: Result<StorageLocation, DBSPError> = storage.map_or_else(
+        let storage: Result<StorageLocation, DBSPError> = config.storage.map_or_else(
             // Note that we use into_path() here which avoids deleting the temporary directory
             // we still clean it up when the runtime is dropped -- but keep it around on panic.
             || {
-                if start_checkpoint != Uuid::nil() {
+                if config.init_checkpoint != Uuid::nil() {
                     return Err(DBSPError::Storage(StorageError::CheckpointNotFound(
-                        start_checkpoint,
+                        config.init_checkpoint,
                     )));
                 }
                 Ok(StorageLocation::Temporary(
@@ -286,10 +283,13 @@ impl RuntimeInner {
         let storage = storage?;
 
         // Check if the selected checkpoint to resume from exists.
-        let checkpoint_dir = storage.as_ref().join(start_checkpoint.to_string());
-        if start_checkpoint != Uuid::nil() && !checkpoint_dir.exists() && !checkpoint_dir.is_dir() {
+        let checkpoint_dir = storage.as_ref().join(config.init_checkpoint.to_string());
+        if config.init_checkpoint != Uuid::nil()
+            && !checkpoint_dir.exists()
+            && !checkpoint_dir.is_dir()
+        {
             return Err(DBSPError::Storage(StorageError::CheckpointNotFound(
-                start_checkpoint,
+                config.init_checkpoint,
             )));
         }
         // Clean up any stale checkpoints / files.
@@ -297,10 +297,10 @@ impl RuntimeInner {
         checkpointer.gc_startup()?;
 
         Ok(Self {
-            layout,
+            layout: config.layout,
             cache,
             storage,
-            min_storage_rows,
+            min_storage_rows: config.min_storage_rows,
             store: TypedDashMap::new(),
             panic_info,
         })
@@ -396,22 +396,15 @@ impl Runtime {
     /// hruntime.join().unwrap();
     /// # }
     /// ```
-    pub fn run<F>(cconf: impl IntoCircuitConfig, circuit: F) -> Result<RuntimeHandle, DBSPError>
+    pub fn run<F>(config: impl Into<CircuitConfig>, circuit: F) -> Result<RuntimeHandle, DBSPError>
     where
         F: FnOnce() + Clone + Send + 'static,
     {
-        let storage = cconf.storage();
-        let layout = cconf.layout();
+        let config: CircuitConfig = config.into();
 
-        let workers = layout.local_workers();
+        let workers = config.layout.local_workers();
         let nworkers = workers.len();
-        let checkpoint = cconf.start_checkpoint();
-        let runtime = Self(Arc::new(RuntimeInner::new(
-            layout,
-            storage,
-            checkpoint,
-            cconf.min_storage_rows(),
-        )?));
+        let runtime = Self(Arc::new(RuntimeInner::new(config)?));
 
         // Install custom panic hook.
 

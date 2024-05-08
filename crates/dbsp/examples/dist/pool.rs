@@ -1,11 +1,11 @@
 use anyhow::Result as AnyResult;
 use chrono::Datelike;
 use clap::Parser;
+use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
 use dbsp::{
-    circuit::{IntoCircuitConfig, Layout},
-    utils::Tup3,
-    DBSPHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle,
+    circuit::Layout, utils::Tup3, DBSPHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
+    ZSetHandle,
 };
 use futures::{
     future::{self, Ready},
@@ -76,7 +76,7 @@ struct Inner {
 }
 
 impl Inner {
-    fn new(layout: impl IntoCircuitConfig) -> AnyResult<Inner> {
+    fn new(layout: impl Into<CircuitConfig>) -> AnyResult<Inner> {
         let (circuit, (input_handle, output_handle)) =
             Runtime::init_circuit(layout, build_circuit)?;
         Ok(Inner {
@@ -97,7 +97,7 @@ impl Server {
     fn inner(&self) -> MutexGuard<'_, Option<Inner>> {
         self.0.lock().unwrap()
     }
-    fn replace(&self, layout: impl IntoCircuitConfig) {
+    fn replace(&self, layout: impl Into<CircuitConfig>) {
         let mut inner = self.inner();
 
         // First clear the old server, if any, and clean up.  It's important to
