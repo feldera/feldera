@@ -158,13 +158,9 @@ impl<'a> SerializeStruct for StructSerializer<'a> {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
-    fn serialize_field<T: ?Sized>(
-        &mut self,
-        name: &'static str,
-        value: &T,
-    ) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, name: &'static str, value: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         let field_schema_idx = *self.schema.lookup.get(name).ok_or_else(|| {
             AvroSerializerError::unknown_field(name, self.schema.name.to_string())
@@ -201,9 +197,9 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
-    fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_element<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         self.items
             .push(value.serialize(AvroSchemaSerializer::new(self.schema))?);
@@ -235,9 +231,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
-    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<(), Self::Error>
+    fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         let key = key
             .serialize(AvroSchemaSerializer::new(&AvroSchema::String))
@@ -253,9 +249,9 @@ impl<'a> SerializeMap for MapSerializer<'a> {
         }
     }
 
-    fn serialize_value<T: ?Sized>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_value<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         let value = value.serialize(AvroSchemaSerializer::new(self.schema))?;
         self.map.insert(take(&mut self.key), value);
@@ -274,9 +270,9 @@ impl SerializeTuple for TupleSerializer {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
-    fn serialize_element<T: ?Sized>(&mut self, _value: &T) -> Result<(), Self::Error>
+    fn serialize_element<T>(&mut self, _value: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         unreachable!()
     }
@@ -293,9 +289,9 @@ impl SerializeTupleStruct for TupleStructSerializer {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
-    fn serialize_field<T: ?Sized>(&mut self, _value: &T) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, _value: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         unreachable!()
     }
@@ -312,9 +308,9 @@ impl SerializeTupleVariant for TupleVariantSerializer {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
-    fn serialize_field<T: ?Sized>(&mut self, _value: &T) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, _value: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         unreachable!()
     }
@@ -331,13 +327,9 @@ impl SerializeStructVariant for StructVariantSerializer {
     type Ok = AvroValue;
     type Error = AvroSerializerError;
 
-    fn serialize_field<T: ?Sized>(
-        &mut self,
-        _key: &'static str,
-        _value: &T,
-    ) -> Result<(), Self::Error>
+    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<(), Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         unreachable!()
     }
@@ -501,9 +493,9 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         }
     }
 
-    fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Self::Ok, Self::Error>
+    fn serialize_some<T>(self, value: &T) -> Result<Self::Ok, Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         match self.schema {
             AvroSchema::Union(union_schema) => match union_schema.variants() {
@@ -548,18 +540,18 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         }
     }
 
-    fn serialize_newtype_struct<T: ?Sized>(
+    fn serialize_newtype_struct<T>(
         self,
         _name: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T: ?Sized>(
+    fn serialize_newtype_variant<T>(
         self,
         name: &'static str,
         _variant_index: u32,
@@ -567,7 +559,7 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         _value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
-        T: Serialize,
+        T: Serialize + ?Sized,
     {
         Err(AvroSerializerError::custom(format!("unable to serialize newtype variant '{name}::{variant}': newtype variant serialization is not implemented")))
     }

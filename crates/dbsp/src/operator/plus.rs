@@ -9,6 +9,7 @@ use crate::{
 };
 use std::{
     borrow::Cow,
+    default::Default,
     marker::PhantomData,
     ops::{Add, Neg},
 };
@@ -107,6 +108,14 @@ pub struct Plus<D> {
     phantom: PhantomData<D>,
 }
 
+impl<D> Default for Plus<D> {
+    fn default() -> Self {
+        Self {
+            phantom: PhantomData,
+        }
+    }
+}
+
 impl<D> Plus<D> {
     pub const fn new() -> Self {
         Self {
@@ -162,6 +171,14 @@ where
 /// each timestamp.
 pub struct Minus<D> {
     phantom: PhantomData<D>,
+}
+
+impl<D> Default for Minus<D> {
+    fn default() -> Self {
+        Self {
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<D> Minus<D> {
