@@ -209,6 +209,7 @@ impl StdError for LayoutError {}
 /// As opposed to `RuntimeConfig`, this struct stores state about which hosts
 /// run the circuit and where they store data, e.g., state typically not
 /// tunable/exposed by the user.
+#[derive(Clone)]
 pub struct CircuitConfig {
     /// How the circuit is laid out across one or multiple machines.
     pub layout: Layout,
@@ -227,6 +228,12 @@ pub struct CircuitConfig {
     pub init_checkpoint: Uuid,
 }
 
+impl Default for CircuitConfig {
+    fn default() -> Self {
+        Self::with_workers(1)
+    }
+}
+
 impl CircuitConfig {
     pub fn with_workers(n: usize) -> Self {
         Self {
@@ -238,69 +245,24 @@ impl CircuitConfig {
     }
 }
 
-impl IntoCircuitConfig for &CircuitConfig {
-    fn layout(&self) -> Layout {
-        self.layout.clone()
-    }
-
-    fn storage(&self) -> Option<StorageConfig> {
-        self.storage.clone()
-    }
-
-    fn min_storage_rows(&self) -> usize {
-        self.min_storage_rows
-    }
-
-    fn start_checkpoint(&self) -> Uuid {
-        self.init_checkpoint
+impl From<&CircuitConfig> for CircuitConfig {
+    fn from(value: &CircuitConfig) -> Self {
+        value.clone()
     }
 }
 
-impl IntoCircuitConfig for CircuitConfig {
-    fn layout(&self) -> Layout {
-        self.layout.clone()
-    }
-
-    fn storage(&self) -> Option<StorageConfig> {
-        self.storage.clone()
-    }
-
-    fn min_storage_rows(&self) -> usize {
-        self.min_storage_rows
-    }
-
-    fn start_checkpoint(&self) -> Uuid {
-        self.init_checkpoint
+impl From<usize> for CircuitConfig {
+    fn from(n_workers: usize) -> Self {
+        Self::with_workers(n_workers)
     }
 }
 
-/// Convenience trait that allows specifying a [`Layout`] as a `usize` for a
-/// single-machine layout with the specified number of worker threads,
-pub trait IntoCircuitConfig {
-    fn layout(&self) -> Layout;
-
-    fn storage(&self) -> Option<StorageConfig> {
-        None
-    }
-
-    fn min_storage_rows(&self) -> usize {
-        usize::MAX
-    }
-
-    fn start_checkpoint(&self) -> Uuid {
-        Uuid::nil()
-    }
-}
-
-impl IntoCircuitConfig for usize {
-    fn layout(&self) -> Layout {
-        Layout::new_solo(*self)
-    }
-}
-
-impl IntoCircuitConfig for Layout {
-    fn layout(&self) -> Layout {
-        self.clone()
+impl From<Layout> for CircuitConfig {
+    fn from(layout: Layout) -> Self {
+        Self {
+            layout,
+            ..Self::default()
+        }
     }
 }
 
@@ -339,16 +301,16 @@ impl Runtime {
     /// TODO: Document other requirements.  Not all operators are currently
     /// thread-safe.
     pub fn init_circuit<F, T>(
-        cconf: impl IntoCircuitConfig,
+        config: impl Into<CircuitConfig>,
         constructor: F,
     ) -> Result<(DBSPHandle, T), DBSPError>
     where
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError> + Clone + Send + 'static,
         T: Send + 'static,
     {
-        let layout = cconf.layout();
-        let nworkers = layout.local_workers().len();
-        let worker_ofs = layout.local_workers().start;
+        let config: CircuitConfig = config.into();
+        let nworkers = config.layout.local_workers().len();
+        let worker_ofs = config.layout.local_workers().start;
 
         // When a worker finishes building the circuit, it sends completion status back
         // to us via this channel.  The function returns after receiving a
@@ -364,8 +326,7 @@ impl Runtime {
         let (status_senders, status_receivers): (Vec<_>, Vec<_>) =
             (0..nworkers).map(|_| bounded(1)).unzip();
 
-        let start_checkpoint = cconf.start_checkpoint();
-        let runtime = Self::run(cconf, move || {
+        let runtime = Self::run(&config, move || {
             let worker_index = Runtime::worker_index() - worker_ofs;
 
             // Drop all but one channels.  This makes sure that if one of the worker panics
@@ -498,8 +459,8 @@ impl Runtime {
 
         let mut dbsp = DBSPHandle::new(runtime, command_senders, status_receivers);
         let result = init_status[0].take();
-        if start_checkpoint != Uuid::nil() {
-            dbsp.send_restore(start_checkpoint)?;
+        if config.init_checkpoint != Uuid::nil() {
+            dbsp.send_restore(config.init_checkpoint)?;
         }
 
         // `constructor` should return identical results in all workers.  Use
