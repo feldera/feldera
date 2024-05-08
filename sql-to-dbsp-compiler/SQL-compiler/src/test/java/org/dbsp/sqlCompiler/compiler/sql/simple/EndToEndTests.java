@@ -841,6 +841,15 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void emptyAggregate() {
+        String query = "SELECT COUNT(*), COUNT(DISTINCT COL1) FROM T WHERE false";
+        this.testConstantOutput(query, new DBSPZSetLiteral(
+                new DBSPTupleExpression(
+                        new DBSPI64Literal(0), new DBSPI64Literal(0))));
+    }
+
+
+    @Test
     public void constAggregateExpression() {
         String query = "SELECT 34 / SUM (1) FROM T GROUP BY COL1";
         this.testQuery(query, new DBSPZSetLiteral(

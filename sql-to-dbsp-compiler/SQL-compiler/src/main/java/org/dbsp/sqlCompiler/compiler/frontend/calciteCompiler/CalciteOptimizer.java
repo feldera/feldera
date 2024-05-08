@@ -10,6 +10,7 @@ import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
+import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -30,7 +31,7 @@ public class CalciteOptimizer implements IWritesLogs {
             planner.setRoot(rel);
             RelNode result = planner.findBestExp();
             if (rel != result) {
-                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 3)
+                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
                         .append("After ")
                         .append(this.getName())
                         .increase()
@@ -62,16 +63,28 @@ public class CalciteOptimizer implements IWritesLogs {
         }
 
         void addRules(RelOptRule... rules) {
-            for (RelOptRule rule: rules)
+            for (RelOptRule rule: rules) {
+                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 2)
+                        .append(this.getName())
+                        .append(" adding rule: ")
+                        .append(rule.toString())
+                        .newline();
                 this.builder.addRuleInstance(rule);
+            }
         }
     }
 
     public class SimpleOptimizerStep extends BaseOptimizerStep {
         SimpleOptimizerStep(String name, RelOptRule... rules) {
             super(name);
-            for (RelOptRule r: rules)
-                this.builder.addRuleInstance(r);
+            for (RelOptRule rule: rules) {
+                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 2)
+                        .append(this.getName())
+                        .append(" adding rule: ")
+                        .append(rule.toString())
+                        .newline();
+                this.builder.addRuleInstance(rule);
+            }
         }
     }
 
@@ -148,6 +161,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates",
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES));
+
         this.addStep(new BaseOptimizerStep("Join order") {
             @Override
             HepProgram getProgram(RelNode node) {
