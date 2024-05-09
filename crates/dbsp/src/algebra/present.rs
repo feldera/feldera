@@ -2,7 +2,7 @@ use crate::algebra::{HasOne, HasZero, MulByRef};
 use rkyv::{Archive, Deserialize, Serialize};
 use rust_decimal::Decimal;
 use size_of::SizeOf;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::ops::{Mul, MulAssign, Neg, Sub, SubAssign};
 
 use super::{F32, F64};
 
@@ -41,31 +41,6 @@ impl HasOne for Present {
     fn one() -> Self {
         Self
     }
-}
-
-impl<T> Add<T> for Present {
-    type Output = T;
-
-    #[inline]
-    fn add(self, rhs: T) -> Self::Output {
-        rhs
-    }
-}
-
-impl Add<&Present> for &Present {
-    type Output = Present;
-
-    fn add(self, _rhs: &Present) -> Self::Output {
-        Present
-    }
-}
-
-impl AddAssign for Present {
-    fn add_assign(&mut self, _rhs: Self) {}
-}
-
-impl AddAssign<&'_ Present> for Present {
-    fn add_assign(&mut self, _rhs: &Self) {}
 }
 
 impl<T> Sub<T> for Present {

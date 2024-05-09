@@ -97,8 +97,6 @@ public class RustFileWriter {
      */
     @SuppressWarnings("SpellCheckingInspection")
     static final String rustPreamble = """
-                    // use paste::paste;
-                    // use derive_more::{Add,Sub,Neg,From,Into,AddAssign};
                     use dbsp::{
                         algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
                              UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
@@ -135,7 +133,7 @@ public class RustFileWriter {
                     use compare::{Compare, Extract};
                     use std::{
                         convert::identity,
-                        ops::{Add, Neg, AddAssign},
+                        ops::Neg,
                         fmt::{Debug, Formatter, Result as FmtResult},
                         path::Path,
                         marker::PhantomData,

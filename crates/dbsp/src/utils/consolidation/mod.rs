@@ -22,7 +22,6 @@ use crate::{
 use std::{
     marker::PhantomData,
     mem::{replace, size_of},
-    ops::AddAssign,
     ptr,
 };
 use utils::{dedup_payload_starting_at, retain_payload_starting_at};
@@ -41,7 +40,7 @@ where
     // TODO: Combine the `.dedup_by()` and `.retain()` calls together
     vec.dedup_by(|(key1, data1), (key2, data2)| {
         if key1 == key2 {
-            data2.add_assign(replace(data1, R::zero()));
+            data2.add_assign_by_ref(&replace(data1, R::zero()));
             true
         } else {
             false
@@ -70,7 +69,7 @@ where
     // TODO: Combine the `.dedup_by()` and `.retain()` calls together
     vec.dedup_by(|Tup2(key1, data1), Tup2(key2, data2)| {
         if key1 == key2 {
-            data2.add_assign(replace(data1, R::zero()));
+            data2.add_assign_by_ref(&replace(data1, R::zero()));
             true
         } else {
             false
@@ -88,7 +87,7 @@ where
 pub fn consolidate_from<T, R>(vec: &mut LeanVec<Tup2<T, R>>, offset: usize)
 where
     T: Ord,
-    R: HasZero + AddAssign,
+    R: HasZero + AddAssignByRef,
 {
     if vec[offset..].is_empty() {
         return;
@@ -99,7 +98,7 @@ where
     });
     vec.dedup_by_starting_at(offset, |Tup2(key1, data1), Tup2(key2, data2)| {
         if key1 == key2 {
-            data2.add_assign(replace(data1, R::zero()));
+            data2.add_assign_by_ref(&replace(data1, R::zero()));
             true
         } else {
             false
@@ -212,7 +211,7 @@ where
 pub fn consolidate_payload_from<K, R>(keys: &mut Vec<K>, diffs: &mut Vec<R>, offset: usize)
 where
     K: Ord,
-    R: HasZero + AddAssign,
+    R: HasZero + AddAssignByRef,
 {
     // Ensure that the paired slices are the same length
     assert_eq!(keys.len(), diffs.len());
@@ -228,7 +227,7 @@ where
     // Deduplicate all difference values
     dedup_payload_starting_at(keys, &mut *diffs, offset, |key1, diff1, key2, diff2| {
         if key1 == key2 {
-            diff2.add_assign(replace(diff1, R::zero()));
+            diff2.add_assign_by_ref(&replace(diff1, R::zero()));
             true
         } else {
             false

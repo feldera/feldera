@@ -22,7 +22,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display},
-    ops::{Add, AddAssign, Neg},
+    ops::Neg,
 };
 
 use crate::trace::ord::merge_batcher::MergeBatcher;
@@ -308,38 +308,6 @@ where
             layer: self.layer.neg(),
             factories: self.factories.clone(),
         }
-    }
-}
-
-// TODO: by-value merge
-impl<K, V, R, O> Add<Self> for VecIndexedWSet<K, V, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    type Output = Self;
-    #[inline]
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            layer: self.layer.add(rhs.layer),
-            factories: self.factories.clone(),
-        }
-    }
-}
-
-impl<K, V, R, O> AddAssign<Self> for VecIndexedWSet<K, V, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-    O: OrdOffset,
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: Self) {
-        self.layer.add_assign(rhs.layer);
     }
 }
 

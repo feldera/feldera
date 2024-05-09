@@ -16,7 +16,7 @@ use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     fmt::{self, Debug, Display, Formatter},
-    ops::{Add, AddAssign, Neg},
+    ops::Neg,
 };
 use textwrap::indent;
 
@@ -265,43 +265,6 @@ where
             // otherwise `self.offs` will be invalid.
             vals: self.vals.neg(),
             lower_bound: self.lower_bound,
-        }
-    }
-}
-
-// TODO: by-value merge
-impl<K, L, O> Add<Self> for Layer<K, L, O>
-where
-    K: DataTrait + ?Sized,
-    L: Trie,
-    O: OrdOffset,
-{
-    type Output = Self;
-
-    // TODO: In-place merge
-    fn add(self, rhs: Self) -> Self::Output {
-        if self.is_empty() {
-            rhs
-        } else if rhs.is_empty() {
-            self
-        } else {
-            self.merge(&rhs)
-        }
-    }
-}
-
-impl<K, L, O> AddAssign<Self> for Layer<K, L, O>
-where
-    K: DataTrait + ?Sized,
-    L: Trie,
-    O: OrdOffset,
-{
-    // TODO: In-place merge
-    fn add_assign(&mut self, rhs: Self) {
-        if self.is_empty() {
-            *self = rhs;
-        } else if !rhs.is_empty() {
-            *self = self.merge(&rhs);
         }
     }
 }

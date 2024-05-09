@@ -520,7 +520,7 @@ mod test {
         OrdPartitionedRadixTree, PartitionCursor, PartitionedRadixTreeCursor,
     };
     use crate::{
-        algebra::{DefaultSemigroup, Semigroup},
+        algebra::{AddAssignByRef, DefaultSemigroup, Semigroup},
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynPair, Erase},
         operator::{
             dynamic::{
@@ -537,7 +537,6 @@ mod test {
     use num::PrimInt;
     use std::{
         collections::{btree_map::Entry, BTreeMap},
-        ops::AddAssign,
         sync::{Arc, Mutex},
     };
 
@@ -637,7 +636,7 @@ mod test {
                     tree_trace
                         .cursor()
                         .validate(&contents_clone.lock().unwrap(), &|acc, val| {
-                            acc.downcast_mut_checked::<u64>().add_assign(val.downcast_checked::<u64>())
+                            acc.downcast_mut_checked::<u64>().add_assign_by_ref(&val.downcast_checked::<u64>())
                         });
                     test_partitioned_aggregate_range::<u64, u64, u64, _, DefaultSemigroup<_>>(
                         &mut tree_trace.cursor(),

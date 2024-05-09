@@ -12,7 +12,7 @@ use dbsp::{
     trace::Batch,
     zset, DBData, DBWeight, OrdZSet,
 };
-use derive_more::{Add, AddAssign, From, Into, Neg, Sub};
+use derive_more::{From, Into, Neg, Sub};
 use paste::paste;
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ use sqlx::{
     AnyConnection, Connection, Executor, Row,
 };
 use std::fmt::{Debug, Formatter, Result as FmtResult};
-use std::ops::{Add, Neg};
+use std::ops::Neg;
 use std::{fs::File, io::BufReader, path::Path};
 
 pub fn read_csv<T>(source_file_path: &str) -> WSet<T>

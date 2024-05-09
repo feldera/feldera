@@ -29,7 +29,7 @@ use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     fmt::{self, Debug},
-    ops::{Add, AddAssign, Neg},
+    ops::Neg,
     path::{Path, PathBuf},
 };
 
@@ -295,39 +295,6 @@ where
     #[inline]
     fn neg(self) -> Self {
         self.neg_by_ref()
-    }
-}
-
-impl<K, V, R> Add<Self> for FileIndexedWSet<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    type Output = Self;
-    #[inline]
-    fn add(self, rhs: Self) -> Self::Output {
-        if self.is_empty() {
-            rhs
-        } else if rhs.is_empty() {
-            self
-        } else {
-            self.merge(&rhs)
-        }
-    }
-}
-
-impl<K, V, R> AddAssign<Self> for FileIndexedWSet<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: Self) {
-        if !rhs.is_empty() {
-            *self = self.merge(&rhs);
-        }
     }
 }
 

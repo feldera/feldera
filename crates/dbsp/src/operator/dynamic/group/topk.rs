@@ -3,7 +3,8 @@ use dyn_clone::clone_box;
 use super::{DiffGroupTransformer, Monotonicity, NonIncrementalGroupTransformer};
 use crate::{
     algebra::{
-        HasOne, HasZero, IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, ZCursor, ZRingValue,
+        AddAssignByRef, HasOne, HasZero, IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories,
+        ZCursor, ZRingValue,
     },
     dynamic::{DataTrait, DynUnit, Erase, Factory, WeightTrait},
     trace::{
@@ -12,10 +13,7 @@ use crate::{
     },
     DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
-use std::{
-    marker::PhantomData,
-    ops::{AddAssign, Neg},
-};
+use std::{marker::PhantomData, ops::Neg};
 
 pub struct TopKFactories<B: IndexedZSet + Spillable> {
     input_factories: B::Factories,
@@ -534,7 +532,7 @@ where
                 }
                 (self.output_func)(count as i64, cursor.key(), &mut output_val);
                 output_cb(&mut output_val, ZWeight::one().erase_mut());
-                AddAssign::add_assign(&mut w, ZWeight::one().neg());
+                AddAssignByRef::add_assign_by_ref(&mut w, &ZWeight::one().neg());
             }
             cursor.step_key();
         }

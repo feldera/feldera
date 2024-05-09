@@ -126,7 +126,7 @@ macro_rules! leaf_benches {
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
-                        |(left, right)| left + right,
+                        |(left, right)| left.add_by_ref(&right),
                         BatchSize::PerIteration,
                     );
                 });
@@ -160,7 +160,7 @@ macro_rules! leaf_benches {
 
                     b.iter_batched(
                         || (left.clone(), right.clone()),
-                        |(mut left, right)| left += right,
+                        |(mut left, right)| left.add_assign_by_ref(&right),
                         BatchSize::PerIteration,
                     );
                 });

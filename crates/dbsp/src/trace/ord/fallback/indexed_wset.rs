@@ -21,11 +21,8 @@ use crate::{
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
+use std::fmt::{self, Debug};
 use std::path::Path;
-use std::{
-    fmt::{self, Debug},
-    ops::{Add, AddAssign},
-};
 use std::{ops::Neg, path::PathBuf};
 
 use super::utils::GenericMerger;
@@ -259,40 +256,6 @@ where
     #[inline]
     fn neg(self) -> Self {
         self.neg_by_ref()
-    }
-}
-
-impl<K, V, R> Add<Self> for FallbackIndexedWSet<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    type Output = Self;
-    #[inline]
-
-    fn add(self, rhs: Self) -> Self::Output {
-        if self.is_empty() {
-            rhs
-        } else if rhs.is_empty() {
-            self
-        } else {
-            self.merge(&rhs)
-        }
-    }
-}
-
-impl<K, V, R> AddAssign<Self> for FallbackIndexedWSet<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: Self) {
-        if !rhs.is_empty() {
-            *self = self.merge(&rhs);
-        }
     }
 }
 

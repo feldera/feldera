@@ -15,7 +15,7 @@ use size_of::SizeOf;
 use std::{
     cmp::{min, Ordering},
     fmt::{self, Debug, Display},
-    ops::{Add, AddAssign, Deref, DerefMut, Neg},
+    ops::{Deref, DerefMut, Neg},
 };
 
 use super::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder};
@@ -325,30 +325,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Trie for Leaf<K, R> {
 
     fn lower_bound(&self) -> usize {
         self.lower_bound
-    }
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Add<Self> for Leaf<K, R> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        if self.is_empty() {
-            rhs
-        } else if rhs.is_empty() {
-            self
-        } else {
-            // FIXME: We want to reuse allocations if at all possible
-            self.merge(&rhs)
-        }
-    }
-}
-
-impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> AddAssign<Self> for Leaf<K, R> {
-    fn add_assign(&mut self, rhs: Self) {
-        if !rhs.is_empty() {
-            // FIXME: We want to reuse allocations if at all possible
-            *self = self.merge(&rhs);
-        }
     }
 }
 
