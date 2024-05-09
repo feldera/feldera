@@ -111,7 +111,7 @@ impl FileCacheEntry {
 }
 
 lazy_static! {
-    static ref DEFAULT_CACHE: Arc<FileCache> = Arc::new(FileCache::new());
+    static ref DEFAULT_CACHE: Arc<FileCache> = Arc::new(FileCache::new(0xbeef));
 }
 
 /// Returns a global `FileCache` suitable for examples, tests, and other

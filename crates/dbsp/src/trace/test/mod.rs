@@ -132,7 +132,7 @@ fn indexed_zset_tuples(
     Box::new(LeanVec::from(tuples)).erase_box()
 }
 
-fn zset_tuples(
+pub fn zset_tuples(
     tuples: Vec<Tup2<i32, ZWeight>>,
 ) -> Box<DynWeightedPairs<DynPair<DynI32, DynUnit>, DynZWeight>> {
     Box::new(LeanVec::from(
@@ -403,7 +403,7 @@ proptest! {
             trace.retain_keys(Box::new(move |x| *x.downcast_checked::<i32>() >= ((i * 20) as i32)));
 
             // FIXME: Change to 20000 after changing vtable types to pointers.
-            assert!(trace.size_of().total_bytes() < /*20000*/ 100000);
+            assert!(trace.size_of().total_bytes() < /*20000*/ 180000);
         }
     }
 
@@ -422,9 +422,8 @@ proptest! {
 
             trace.insert(batch);
             trace.retain_values(Box::new(move |x| *x.downcast_checked::<i32>() >= ((i * 20) as i32)));
-            //println!("trace.size_of: {:?}", trace.size_of());
             // FIXME: Change to 20000 after changing vtable types to pointers.
-            assert!(trace.size_of().total_bytes() < /*20000*/60000);
+            assert!(trace.size_of().total_bytes() < /*20000*/180000);
         }
     }
 

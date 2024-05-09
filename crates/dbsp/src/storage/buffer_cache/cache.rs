@@ -2,9 +2,9 @@
 //!
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
-use std::cell::RefCell;
+use std::fmt::Debug;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{
     collections::BTreeMap,
     ops::Range,
@@ -96,6 +96,9 @@ struct CacheInner<E>
 where
     E: CacheEntry,
 {
+    /// Unique identifier for this cache within a runtime.
+    id: usize,
+
     /// Cache contents.
     cache: BTreeMap<CacheKey, CacheValue<E>>,
 
@@ -118,7 +121,7 @@ where
     E: CacheEntry,
 {
     fn default() -> Self {
-        Self::new()
+        Self::new(0)
     }
 }
 
@@ -126,13 +129,14 @@ impl<E> CacheInner<E>
 where
     E: CacheEntry,
 {
-    fn new() -> Self {
+    fn new(id: usize) -> Self {
         Self {
+            id,
             cache: BTreeMap::new(),
             lru: BTreeMap::new(),
             next_serial: 0,
             cur_cost: 0,
-            max_cost: 1024 * 1024 * 128,
+            max_cost: 1024 * 1024 * 256,
         }
     }
 
@@ -214,14 +218,23 @@ where
     }
 }
 
-use thread_local::ThreadLocal;
-
 /// A cache on top of a storage [backend](crate::storage::backend).
 pub struct BufferCache<E>
 where
     E: CacheEntry,
 {
-    inner: ThreadLocal<RefCell<CacheInner<E>>>,
+    inner: Mutex<CacheInner<E>>,
+}
+
+impl<E> Debug for BufferCache<E>
+where
+    E: CacheEntry,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BufferCache")
+            .field("id", &self.inner.lock().unwrap().id)
+            .finish()
+    }
 }
 
 impl<E> Default for CacheInner<E>
@@ -229,7 +242,7 @@ where
     E: CacheEntry,
 {
     fn default() -> Self {
-        Self::new()
+        Self::new(0)
     }
 }
 
@@ -241,9 +254,9 @@ where
     ///
     /// It's best to use a single `StorageCache` for all uses of a given
     /// `backend`, because otherwise the cache will end up with duplicates.
-    pub fn new() -> Self {
+    pub fn new(id: usize) -> Self {
         Self {
-            inner: ThreadLocal::new(),
+            inner: Mutex::new(CacheInner::new(id)),
         }
     }
 
@@ -266,7 +279,7 @@ where
         F: Fn(&E) -> Result<T, ()>,
     {
         let key = CacheKey::from((fd, offset));
-        if let Some(aux) = self.inner.get_or_default().borrow_mut().get(key) {
+        if let Some(aux) = self.inner.lock().unwrap().get(key) {
             counter!(BUFFER_CACHE_HIT).increment(1);
             return convert(aux)
                 .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
@@ -278,10 +291,7 @@ where
         let aux = E::from_read(block, offset, size)?;
         let retval = convert(&aux)
             .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
-        self.inner
-            .get_or_default()
-            .borrow_mut()
-            .insert(key, aux.clone());
+        self.inner.lock().unwrap().insert(key, aux.clone());
         retval
     }
 
@@ -293,8 +303,8 @@ where
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
         self.inner
-            .get_or_default()
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .insert(CacheKey::from((fd, offset)), aux);
         Ok(())
     }
@@ -314,25 +324,16 @@ where
         Self::backend().open(name)
     }
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner
-            .get_or_default()
-            .borrow_mut()
-            .delete_file((&fd).into());
+        self.inner.lock().unwrap().delete_file((&fd).into());
         Self::backend().delete(fd)
     }
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.inner
-            .get_or_default()
-            .borrow_mut()
-            .delete_file((&fd).into());
+        self.inner.lock().unwrap().delete_file((&fd).into());
         Self::backend().delete_mut(fd)
     }
 
     fn evict(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner
-            .get_or_default()
-            .borrow_mut()
-            .delete_file((&fd).into());
+        self.inner.lock().unwrap().delete_file((&fd).into());
         Ok(())
     }
 
@@ -350,8 +351,8 @@ where
         let size = data.len();
         let aux = E::from_write(data.clone(), offset, size).unwrap();
         self.inner
-            .get_or_default()
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .insert(CacheKey::from((fd, offset)), aux);
         Ok(data)
     }

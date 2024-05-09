@@ -7,8 +7,9 @@ use ascii_table::AsciiTable;
 use clap::Parser;
 use dbsp::circuit::{CircuitConfig, StorageCacheConfig, StorageConfig};
 use dbsp::storage::backend::metrics::{
-    BUFFER_CACHE_HIT, BUFFER_CACHE_MISS, FILES_CREATED, READS_SUCCESS, TOTAL_BYTES_READ,
-    TOTAL_BYTES_WRITTEN, TOTAL_COMPACTIONS, WRITES_SUCCESS,
+    BUFFER_CACHE_HIT, BUFFER_CACHE_MISS, COMPACTION_SIZE_SAVINGS, COMPACTION_STALL_TIME,
+    FILES_CREATED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, TOTAL_COMPACTIONS,
+    WRITES_SUCCESS,
 };
 use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
@@ -217,10 +218,7 @@ fn create_ascii_table(config: &NexmarkConfig) -> AsciiTable {
         "Throughput/Cores",
         "Total Usr CPU",
         "Total Sys CPU",
-        "Current RSS",
         "Peak RSS",
-        "Current Commit",
-        "Peak Commit",
         "Page Faults",
     ];
     let mut max_width = 200;
@@ -228,15 +226,14 @@ fn create_ascii_table(config: &NexmarkConfig) -> AsciiTable {
     if config.min_storage_rows != usize::MAX {
         result_columns.extend_from_slice(&[
             "# Files",
-            "# Writes",
-            "# Reads",
             "Avg WrSz",
             "Avg RdSz",
             "Writes",
             "Reads",
-            "Cache Hit",
-            "Cache Miss",
-            "Compactions",
+            "Cache Hit Rate",
+            "Cpcts",
+            "Cpct Saving",
+            "Cpct Stall [s]",
         ]);
         max_width += 50;
     }
@@ -387,6 +384,8 @@ struct Metrics {
     buffer_cache_hit: u64,
     buffer_cache_miss: u64,
     total_compactions: u64,
+    compaction_savings: u64,
+    compaction_stall_time: u64,
 }
 
 impl From<&MetricsSnapshot> for Metrics {
@@ -400,6 +399,8 @@ impl From<&MetricsSnapshot> for Metrics {
             buffer_cache_hit: parse_counter(source, BUFFER_CACHE_HIT),
             buffer_cache_miss: parse_counter(source, BUFFER_CACHE_MISS),
             total_compactions: parse_counter(source, TOTAL_COMPACTIONS),
+            compaction_savings: parse_counter(source, COMPACTION_SIZE_SAVINGS),
+            compaction_stall_time: parse_counter(source, COMPACTION_STALL_TIME),
         }
     }
 }
@@ -410,8 +411,8 @@ fn div(num: u64, denom: u64) -> u64 {
 
 struct MetricsDiff {
     n_created: u64,
-    n_writes: u64,
-    n_reads: u64,
+    _n_writes: u64,
+    _n_reads: u64,
     avg_wblock: u64,
     avg_rblock: u64,
     total_bytes_written: u64,
@@ -419,6 +420,8 @@ struct MetricsDiff {
     cache_miss: u64,
     cache_hit: u64,
     total_compactions: u64,
+    compaction_savings: u64,
+    compaction_stall_time: u64,
 }
 
 impl Sub<&Metrics> for &Metrics {
@@ -434,8 +437,8 @@ impl Sub<&Metrics> for &Metrics {
 
         MetricsDiff {
             n_created: lhs.files_created - rhs.files_created,
-            n_writes,
-            n_reads,
+            _n_writes: n_writes,
+            _n_reads: n_reads,
             avg_wblock: div(wbytes_diff, n_writes),
             avg_rblock: div(rbytes_diff, n_reads),
             total_bytes_written: lhs.total_bytes_written - rhs.total_bytes_written,
@@ -443,6 +446,8 @@ impl Sub<&Metrics> for &Metrics {
             cache_miss: lhs.buffer_cache_miss - rhs.buffer_cache_miss,
             cache_hit: lhs.buffer_cache_hit - rhs.buffer_cache_hit,
             total_compactions: lhs.total_compactions - rhs.total_compactions,
+            compaction_savings: lhs.compaction_savings - rhs.compaction_savings,
+            compaction_stall_time: lhs.compaction_stall_time - rhs.compaction_stall_time,
         }
     }
 }
@@ -483,24 +488,24 @@ fn main() -> Result<()> {
                 "{:#.3?}",
                 Duration::from_millis((after.system_ms - before.system_ms) as u64),
             ),
-            format!("{}", HumanBytes::from(after.current_rss)),
             format!("{}", HumanBytes::from(after.peak_rss)),
-            format!("{}", HumanBytes::from(after.current_commit)),
-            format!("{}", HumanBytes::from(after.peak_commit)),
             format!("{}", after.page_faults - before.page_faults),
         ];
         if nexmark_config.min_storage_rows != usize::MAX {
             row.extend_from_slice(&[
                 format!("{}", diff.n_created),
-                format!("{}", diff.n_writes),
-                format!("{}", diff.n_reads),
                 format!("{}", HumanBytes::from(diff.avg_wblock)),
                 format!("{}", HumanBytes::from(diff.avg_rblock)),
                 format!("{}", HumanBytes::from(diff.total_bytes_written)),
                 format!("{}", HumanBytes::from(diff.total_bytes_read)),
-                format!("{}", diff.cache_hit),
-                format!("{}", diff.cache_miss),
+                format!(
+                    "{:.0}%",
+                    (diff.cache_hit as f64 / (diff.cache_miss as f64 + diff.cache_hit as f64))
+                        * 100.0
+                ),
                 format!("{}", diff.total_compactions),
+                format!("{}", diff.compaction_savings),
+                format!("{}", diff.compaction_stall_time / 1000),
             ])
         }
         row

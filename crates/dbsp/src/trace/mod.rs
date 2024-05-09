@@ -45,11 +45,11 @@ use std::{fmt::Debug, hash::Hash, path::PathBuf};
 pub mod cursor;
 pub mod layers;
 pub mod ord;
-//pub mod spine_async;
-//pub use spine_async::Spine;
+pub mod spine_async;
+pub use spine_async::Spine;
 
 mod spine_fueled;
-pub use spine_fueled::Spine;
+pub use spine_fueled::Spine as OldSpine;
 #[cfg(test)]
 pub mod test;
 

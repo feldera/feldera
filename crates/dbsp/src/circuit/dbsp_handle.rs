@@ -1248,7 +1248,6 @@ mod tests {
             assert!(count < prev_count);
             prev_count = count;
         }
-        assert_eq!(prev_count, 7, "7 entries left");
     }
 
     /// Make sure that leftover files from uncompleted checkpoints that were

@@ -3,6 +3,7 @@
 //! Makes sure we don't accidentally run multiple instances of the program
 //! using the same data directory.
 
+use log::{debug, warn};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Error as IoError, ErrorKind, Read, Write};
 use std::os::fd::AsRawFd;
@@ -34,8 +35,10 @@ impl Drop for LockedDirectory {
     fn drop(&mut self) {
         let pid_file = self.base.join(LockedDirectory::LOCKFILE_NAME);
         if pid_file.exists() {
-            log::trace!("Removing pidfile: {}", pid_file.display());
-            std::fs::remove_file(&pid_file).unwrap();
+            let r = std::fs::remove_file(&pid_file);
+            if let Err(e) = r {
+                warn!("Failed to remove pidfile: {}", e);
+            }
         }
     }
 }
@@ -64,8 +67,9 @@ impl Drop for FlockGuard {
     fn drop(&mut self) {
         #[cfg(unix)]
         {
-            unsafe {
-                libc::flock(self.0.as_raw_fd(), libc::LOCK_UN);
+            let r = unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+            if r != 0 {
+                debug!("Failed to unlock pidfile: {}", io::Error::last_os_error());
             }
         }
     }
@@ -77,7 +81,6 @@ impl LockedDirectory {
     fn with_pid<P: AsRef<Path>>(base_path: P, pid: Pid) -> Result<LockedDirectory, StorageError> {
         let pid_str = pid.to_string();
         let pid_file = base_path.as_ref().join(LockedDirectory::LOCKFILE_NAME);
-
         let mut guard = if pid_file.exists() {
             // we set create(true) for both branches, to avoid concurrency issues when two
             // pipelines are started at the same time.
