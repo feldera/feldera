@@ -172,7 +172,7 @@ pub struct ApiServerConfig {
     /// can use this option to set up environment-specific demos for users
     /// (e.g., ones that connect to an internal data source).
     #[serde(default)]
-    #[arg(long)]
+    #[arg(long, value_name = "HTTPS_URL")]
     pub demos: Vec<String>,
 }
 
