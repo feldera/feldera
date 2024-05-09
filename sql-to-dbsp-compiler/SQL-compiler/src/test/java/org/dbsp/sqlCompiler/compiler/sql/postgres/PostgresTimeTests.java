@@ -133,63 +133,71 @@ public class PostgresTimeTests extends SqlIoTest {
     public void testUnits() {
         // Removed dates
         // Extract second and millisecond return integers in Calcite instead of DECIMAL
-        this.qs("SELECT EXTRACT(MILLISECOND FROM TIME '13:30:25.575401');\n" +
-                "  extract  \n" +
-                "-----------\n" +
-                " 25575\n" + // -- 25575.401
-                "(1 row)\n" +
-                "\n" +
-                "SELECT EXTRACT(SECOND      FROM TIME '13:30:25.575401');\n" +
-                "  extract  \n" +
-                "-----------\n" +
-                " 25\n" + // -- 25.575401
-                "(1 row)\n" +
-                "\n" +
-                "SELECT EXTRACT(MINUTE      FROM TIME '13:30:25.575401');\n" +
-                " extract \n" +
-                "---------\n" +
-                "      30\n" +
-                "(1 row)\n" +
-                "\n" +
-                "SELECT EXTRACT(HOUR        FROM TIME '13:30:25.575401');\n" +
-                " extract \n" +
-                "---------\n" +
-                "      13\n" +
-                "(1 row)");
+        this.qs("""
+                SELECT EXTRACT(MILLISECOND FROM TIME '13:30:25.575401');
+                  extract \s
+                -----------
+                 25575
+                (1 row)
+
+                SELECT EXTRACT(SECOND      FROM TIME '13:30:25.575401');
+                  extract \s
+                -----------
+                 25
+                (1 row)
+
+                SELECT EXTRACT(MINUTE      FROM TIME '13:30:25.575401');
+                 extract\s
+                ---------
+                      30
+                (1 row)
+
+                SELECT EXTRACT(HOUR        FROM TIME '13:30:25.575401');
+                 extract\s
+                ---------
+                      13
+                (1 row)""");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6015")
+    @Test
     public void illegalUnits() {
-        this.queryFailingInCompilation("SELECT EXTRACT(DAY FROM TIME '13:30:25.575401')", "??");
+        this.queryFailingInCompilation("SELECT EXTRACT(DAY FROM TIME '13:30:25.575401')",
+                "Cannot apply 'EXTRACT' to");
         // Following don't work in Calcite
         // SELECT EXTRACT(FORTNIGHT FROM TIME '13:30:25.575401')
         // SELECT EXTRACT(TIMEZONE FROM TIME '13:30:25.575401')
-        this.queryFailingInCompilation("SELECT EXTRACT(EPOCH FROM TIME '2020-05-26 13:30:25.575401')", "");
+        this.queryFailingInCompilation("SELECT EXTRACT(EPOCH FROM TIME '13:30:25.575401')",
+                "Cannot apply 'EXTRACT' to");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6030")
+    @Test
     public void testDatePart() {
+        /* Results are truncated to millisecond due to https://issues.apache.org/jira/browse/CALCITE-5919 */
         this.qs("""
                 SELECT date_part(microsecond, TIME '13:30:25.575401');
                  date_part
                 -----------
-                  25575401
+                  25575000
                 (1 row)
-                SELECT date_part('millisecond', TIME '13:30:25.575401');
+                
+                SELECT date_part(millisecond, TIME '13:30:25.575401');
                  date_part
                 -----------
-                 25575.401
+                 25575
                 (1 row)
 
-                SELECT date_part('second',      TIME '13:30:25.575401');
+                SELECT date_part(second,      TIME '13:30:25.575401');
                  date_part
                 -----------
-                 25.575401
-                (1 row)
-
-                SELECT date_part('epoch',       TIME '13:30:25.575401');
+                 25
+                (1 row)""");
+                /*
+                Calcite does not yet handle date_part(epoch, ...);
+                """SELECT date_part(epoch,       TIME '13:30:25.575401');
                   date_part
                 --------------
-                 48625.575401""");
+                 48625
+                (1 row)"""
+                 */
     }
 }

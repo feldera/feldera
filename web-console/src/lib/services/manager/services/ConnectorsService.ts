@@ -15,7 +15,6 @@ import { request as __request } from '../core/request'
 export class ConnectorsService {
   /**
    * Fetch connectors, optionally filtered by name or ID
-   * Fetch connectors, optionally filtered by name or ID
    * @param id Unique connector identifier.
    * @param name Unique connector name.
    * @returns ConnectorDescr List of connectors retrieved successfully
@@ -36,7 +35,6 @@ export class ConnectorsService {
   }
   /**
    * Create a new connector.
-   * Create a new connector.
    * @param requestBody
    * @returns NewConnectorResponse Connector successfully created
    * @throws ApiError
@@ -53,7 +51,6 @@ export class ConnectorsService {
     })
   }
   /**
-   * Fetch a connector by name.
    * Fetch a connector by name.
    * @param connectorName Unique connector name
    * @returns ConnectorDescr Connector retrieved successfully
@@ -72,7 +69,6 @@ export class ConnectorsService {
     })
   }
   /**
-   * Create or replace a connector.
    * Create or replace a connector.
    * @param connectorName Unique connector name
    * @param requestBody
@@ -98,7 +94,6 @@ export class ConnectorsService {
   }
   /**
    * Delete an existing connector.
-   * Delete an existing connector.
    * @param connectorName Unique connector name
    * @returns any Connector successfully deleted
    * @throws ApiError
@@ -116,7 +111,6 @@ export class ConnectorsService {
     })
   }
   /**
-   * Update the name, description and/or configuration of a connector.
    * Update the name, description and/or configuration of a connector.
    * @param connectorName Unique connector name
    * @param requestBody

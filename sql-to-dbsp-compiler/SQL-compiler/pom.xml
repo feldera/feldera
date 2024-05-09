@@ -16,11 +16,14 @@
         <maven.compiler.source>19</maven.compiler.source>
         <maven.compiler.target>19</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <calcite.version>1.36.0</calcite.version>
+        <calcite.version>1.37.0</calcite.version>
+        <jackson.version>2.17.1</jackson.version>
+        <janino.version>3.1.12</janino.version>
     </properties>
 
     <repositories>
         <repository>
+            <!-- repository for some Avro packages -->
             <id>confluent</id>
             <url>https://packages.confluent.io/maven</url>
         </repository>
@@ -175,10 +178,45 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-dbcp2</artifactId>
+            <version>2.12.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-math3</artifactId>
+            <version>3.6.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.codehaus.janino</groupId>
+            <artifactId>janino</artifactId>
+            <version>${janino.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.codehaus.janino</groupId>
+            <artifactId>commons-compiler</artifactId>
+            <version>${janino.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.jayway.jsonpath</groupId>
+            <artifactId>json-path</artifactId>
+            <version>2.9.0</version>
+        </dependency>
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.17.0</version>
+        </dependency>
+        <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-csv</artifactId>
-            <version>2.16.1</version>
+            <version>${jackson.version}</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <version>${jackson.version}</version>
         </dependency>
         <!-- used by other dependencies -->
         <dependency>
@@ -210,6 +248,11 @@
         </dependency>
         <dependency>
             <groupId>org.apache.calcite</groupId>
+            <artifactId>calcite-linq4j</artifactId>
+            <version>${calcite.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.calcite</groupId>
             <artifactId>calcite-babel</artifactId>
             <version>${calcite.version}</version>
         </dependency>
@@ -217,6 +260,17 @@
             <groupId>org.apache.calcite</groupId>
             <artifactId>calcite-server</artifactId>
             <version>${calcite.version}</version>
+        </dependency>
+        <!-- GEO library -->
+        <dependency>
+            <groupId>org.locationtech.jts</groupId>
+            <artifactId>jts-core</artifactId>
+            <version>1.19.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.calcite.avatica</groupId>
+            <artifactId>avatica-core</artifactId>
+            <version>1.25.0</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>

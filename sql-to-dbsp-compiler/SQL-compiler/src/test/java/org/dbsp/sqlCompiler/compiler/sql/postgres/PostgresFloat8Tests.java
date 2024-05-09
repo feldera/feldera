@@ -860,7 +860,7 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
         this.qf("SELECT atanh('-infinity'::double)", "out of range");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1153")
+    @Test
     public void castToInt() {
         this.qf("SELECT '32768.6'::double::int2", "out of range");
         this.qf("SELECT '-9223372036854780000'::float8::int8", "out of range");

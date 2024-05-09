@@ -13,8 +13,6 @@ import { request as __request } from '../core/request'
 export class HttpInputOutputService {
   /**
    * Subscribe to a stream of updates from a SQL view or table.
-   * Subscribe to a stream of updates from a SQL view or table.
-   *
    * The pipeline responds with a continuous stream of changes to the specified
    * table or view, encoded using the format specified in the `?format=`
    * parameter. Updates are split into `Chunk`s.
@@ -74,8 +72,6 @@ export class HttpInputOutputService {
   }
   /**
    * Push data to a SQL table.
-   * Push data to a SQL table.
-   *
    * The client sends data encoded using the format specified in the `?format=`
    * parameter as a body of the request.  The contents of the data must match
    * the SQL table schema specified in `table_name`

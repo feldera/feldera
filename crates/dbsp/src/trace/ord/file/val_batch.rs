@@ -647,7 +647,7 @@ where
                                 &mut cursor2.next_column().unwrap().first().unwrap(),
                                 value_filter,
                             ) {
-                                output.write0((&key1, &())).unwrap();
+                                output.write0((key1, &())).unwrap();
                             }
                             cursor1.move_next().unwrap();
                             cursor2.move_next().unwrap();
@@ -989,7 +989,7 @@ where
     fn current(&mut self, _tmp: &mut R) -> Option<(&T, &R)> {
         if self.index < self.timediffs.len() {
             let (time, diff) = self.timediffs[self.index].split();
-            Some((&time, &diff))
+            Some((time, diff))
         } else {
             None
         }

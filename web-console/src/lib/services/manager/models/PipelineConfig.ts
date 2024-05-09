@@ -36,15 +36,24 @@ export type PipelineConfig = {
   /**
    * Should persistent storage be enabled for this pipeline?
    *
-   * - If `true`, the pipeline state is stored in the specified location,
-   * is persisted across restarts, and can be checkpointed and recovered.
-   *
-   * - If `false`, the pipeline's state is kept in in-memory data-structures.
+   * - If `false` (default), the pipeline's state is kept in in-memory data-structures.
    * This is useful if the pipeline is ephemeral and does not need to be recovered
    * after a restart. The pipeline will most likely run faster since it does not
    * need to read from, or write to disk
+   *
+   * - If `true`, the pipeline state is stored in the specified location,
+   * is persisted across restarts, and can be checkpointed and recovered.
+   * This feature is currently experimental.
    */
   storage?: boolean
+  /**
+   * Enable the TCP metrics exporter.
+   *
+   * This is used for development purposes only.
+   * If enabled, the `metrics-observer` CLI tool
+   * can be used to inspect metrics from the pipeline.
+   */
+  tcp_metrics_exporter?: boolean
   /**
    * Number of DBSP worker threads.
    */

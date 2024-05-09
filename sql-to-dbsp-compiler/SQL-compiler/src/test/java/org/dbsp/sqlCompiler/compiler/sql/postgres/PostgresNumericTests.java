@@ -695,15 +695,14 @@ public class PostgresNumericTests extends SqlIoTest {
         this.testTwoViews(intermediate, last);
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-5795")
+    @Test
     public void testCast() {
-        this.q(
-                """
-                        WITH v(x) AS (VALUES(0::numeric),(4.2)) SELECT x FROM v as v1(x);
-                            x1    \s
-                        -----------
-                                 0\s
-                               4.2\s""");
+        this.q("""
+               WITH v(x) AS (VALUES(0::numeric),(4.2)) SELECT x FROM v as v1(x);
+                x1
+               ------
+                  0
+                4.2""");
     }
 
     @Test

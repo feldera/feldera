@@ -44,7 +44,7 @@ public class DateFormatsTests extends SqlIoTest {
                 "Could not parse string '%Y-%m-%d %H:%i:%s' as a Date");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6247")
+    @Test
     public void testFormat2() {
         // MySql seems to have different format specifiers!
         // %W in MySql is %A

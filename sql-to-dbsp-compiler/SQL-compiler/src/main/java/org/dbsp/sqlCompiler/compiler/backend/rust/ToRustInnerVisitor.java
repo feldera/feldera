@@ -564,11 +564,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
-        /*
-         * Default implementation of cast of a source expression to the 'this' type.
+        /* Default implementation of cast of a source expression to the 'this' type.
          * For example, to cast source which is an Option[i16] to a bool
-         * the function called will be cast_to_b_i16N.
-         */
+         * the function called will be cast_to_b_i16N. */
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
         if (destType.sameType(sourceType)) {
@@ -584,11 +582,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 throw new UnsupportedException("Cast from " + sourceType + " to " + destType, expression.getNode());
             // TODO: This should probably be handled in Simplify
             if (destVec.getElementType().sameType(sourceVec.getElementType()) &&
-                destVec.mayBeNull && !sourceVec.mayBeNull)
+                destVec.mayBeNull && !sourceVec.mayBeNull) {
+                // TODO: This can happen when source is an empty vector literal with unknown type.
+                // Can anything else happen?
                 expression.source.some().accept(this);
-            // TODO: This can happen when source is an empty vector literal with unknown type.
-            // Can anything else happen?
-            expression.source.accept(this);
+            } else {
+                expression.source.accept(this);
+            }
             return VisitDecision.STOP;
         }
 
