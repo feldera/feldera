@@ -71,7 +71,28 @@ options, or you can use `suite.mk`, which is a wrapper around
 
 ## Feldera setup
 
-`run-nexmark.sh` supports Feldera without special setup.
+`run-nexmark.sh` supports Feldera for the Nexmark benchmarks
+implemented in Rust (the default) and SQL.  The Rust implementation is
+more mature and more complete than the SQL implementation.
+
+## Feldera setup for SQL
+
+To use `run-nexmark.sh` for the SQL implementation of Nexmark with
+Feldera, first follow the instructions for step 1 in
+`feldera-sql/README.md`, that is, start Kafka (or Redpanda) and the
+Feldera pipeline manager.  If you start them as suggested there, then
+nothing additional is needed; otherwise, you might need to use
+`--kafka-broker` and `--api-url` to tell `run-nexmark.sh` where to
+find them.
+
+The first time you run `run-nexmark.sh` for a given number of events
+with a particular Kafka broker, the script will generate that number
+of events into the Kafka broker, which can take a while.  Afterward,
+subsequent runs with the same broker and event count will run faster.
+
+## Feldera setup for Rust
+
+The Rust implementation does not need special setup.
 
 Feldera uses temporary files for storage, by default in `/tmp`.  If
 `/tmp` is `tmpfs`, as is the default on Fedora and some other

@@ -98,21 +98,31 @@ struct Options {
     #[clap(long, default_value = "")]
     topic_prefix: String,
 
-    /// Topic for producing person events (plus the prefix).
+    /// Specify a suffix to add to each of the topic names.
+    #[clap(long, default_value = "")]
+    topic_suffix: String,
+
+    /// Topic for producing person events (plus the prefix and suffix, if any).
     #[clap(long, default_value = "person")]
     person_topic: String,
 
-    /// Topic for producing auction events (plus the prefix).
+    /// Topic for producing auction events (plus the prefix and suffix, if any).
     #[clap(long, default_value = "auction")]
     auction_topic: String,
 
-    /// Topic for producing bid events (plus the prefix).
+    /// Topic for producing bid events (plus the prefix and suffix, if any).
     #[clap(long, default_value = "bid")]
     bid_topic: String,
 
     /// Disable progress bar.
     #[clap(long = "no-progress", default_value_t = true, action = clap::ArgAction::SetFalse)]
     pub progress: bool,
+}
+
+impl Options {
+    fn topic(&self, infix: &str) -> String {
+        format!("{}{}{}", &self.topic_prefix, infix, &self.topic_suffix)
+    }
 }
 
 fn main() {
@@ -125,28 +135,19 @@ fn main() {
         ProgressBar::hidden()
     };
 
-    let mut source = NexmarkSource::new(options.generator_options);
+    let mut source = NexmarkSource::new(options.generator_options.clone());
     let mut client_config = ClientConfig::new();
     client_config.set("bootstrap.servers", "localhost:9092");
-    for option in options.kafka_options {
+    for option in &options.kafka_options {
         let (key, value) = option
             .split_once('=')
             .expect(&format!("{option}: expected '=' in argument"));
         client_config.set(key, value);
     }
     let producer = ThreadedProducer::from_config(&client_config).unwrap();
-    let mut persons = BufferedTopic::new(
-        &producer,
-        format!("{}{}", &options.topic_prefix, &options.person_topic,),
-    );
-    let mut auctions = BufferedTopic::new(
-        &producer,
-        format!("{}{}", &options.topic_prefix, &options.auction_topic,),
-    );
-    let mut bids = BufferedTopic::new(
-        &producer,
-        format!("{}{}", &options.topic_prefix, &options.bid_topic,),
-    );
+    let mut persons = BufferedTopic::new(&producer, options.topic(&options.person_topic));
+    let mut auctions = BufferedTopic::new(&producer, options.topic(&options.auction_topic));
+    let mut bids = BufferedTopic::new(&producer, options.topic(&options.bid_topic));
     for event in &mut source {
         match event {
             dbsp_nexmark::model::Event::Person(person) => persons.write(person),

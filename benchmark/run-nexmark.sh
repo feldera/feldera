@@ -14,6 +14,10 @@ fi
 run=:
 parse=false
 
+# Feldera SQL options.
+kafka_broker=localhost:9092
+api_url=http://localhost:8080
+
 # Dataflow options.
 project=
 bucket=
@@ -84,6 +88,18 @@ do
 	    parse=:
 	    run=false
 	    ;;
+	--kafka-broker=*)
+	    kafka_broker=${arg#--kafka-broker=}
+	    ;;
+	--kafka-broker)
+	    nextarg=kafka_broker
+	    ;;
+	--api-url=*)
+	    api_url=${arg#--api-url=}
+	    ;;
+	--api-url)
+	    nextarg=api_url
+	    ;;
 	--project=*)
 	    project=${arg#--project=}
 	    ;;
@@ -128,6 +144,10 @@ By default, run-nexmark runs the tests and appends parsed results to
 nexmark.txt.  These options select other modes of operation:
   -n, --dry-run         Don't run anything, just print what would have run
   --parse < LOG         Parse log output from stdin, print results to stdout.
+
+The feldera backend with --language=sql takes the following additional options:
+  --kafka-broker=BROKER  Kafka broker (default: $kafka_broker)
+  --api-url=URL         URL to the Feldera API (default: $api_url)
 
 The beam.dataflow backend takes more configuration.  These settings are
 required:
@@ -175,8 +195,9 @@ case $runner in
     *) echo >&2 "$0: unknown runner '$runner'"; exit 1 ;;
 esac
 case $runner:$language in
-    *:default | beam.*:sql | beam.*:zetasql) ;;
-    *:sql | *:zetasql) echo >&2 "$0: only beam.* support $language" ;;
+    *:default | feldera:sql | beam.*:sql | beam.*:zetasql) ;;
+    *:sql) echo >&2 "$0: only beam.* and feldera support $language" ;;
+    *:zetasql) echo >&2 "$0: only beam.* support $language" ;;
     *) echo >&2 "$0: unknown query language '$language'"; exit 1 ;;
 esac
 case $events in
@@ -305,6 +326,9 @@ beam2csv() {
 feldera2csv() {
     sed 's/[ 	]//g' | tr Q q | while read line; do
 	case $line in
+	    *,feldera,stream,sql,*)
+		echo "$line"
+		;;
 	    *'│'*)
 		save_IFS=$IFS IFS=│; set $line; IFS=$save_IFS
 		shift
@@ -393,8 +417,11 @@ Running Nexmark suite with configuration:
   query: $query
   cores: $cores
 EOF
-case $runner in
-    feldera)
+case $runner:$language in
+    feldera:default)
+	if stat -f ${TMPDIR:-/tmp} 2>&1 | grep -q 'Type: tmpfs'; then
+	    echo >&2 "$0: warning: temporary files will be stored on tmpfs in ${TMPDIR:-/tmp}, suggest setting \$TMPDIR to point to a physical file system"
+	fi
 	rm -f results.csv
 	set -- \
 	    --first-event-rate=10000000 \
@@ -411,7 +438,40 @@ case $runner in
 	run_log $CARGO bench --bench nexmark -- "$@"
 	;;
 
-    flink)
+    feldera:sql)
+	RPK=$(find_program rpk)
+	CARGO=$(find_program cargo)
+	topics="auction-$events bid-$events person-$events"
+	echo >&2 "$0: checking for already generated events in '$topics'..."
+	count_events() {
+	    for topic in $topics; do
+		$RPK -X brokers="$kafka_broker" topic consume -f '%v' -o :end $topic
+	    done | wc -l
+	}
+	n_events=$(count_events)
+	if test "$n_events" != $events; then
+	    echo >&2 "$0: topics '$topics' contained $n_events events instead of $events.  Recreating..."
+	    run_log $RPK topic -X brokers=$kafka_broker delete $topics
+	    run_log $CARGO run -p dbsp_nexmark --example generate --features with-kafka -- --max-events $events --topic-suffix=-$events -O bootstrap.servers=$kafka_broker || exit 1
+
+	    n_events=$(count_events)
+	    if test "$n_events" != $events; then
+		echo >&2 "$0: generation failed: topics '$topics' now contain $n_events events instead of $events."
+		exit 1
+	    fi
+	fi
+	rm -f results.csv
+	CARGO=$(find_program cargo)
+	run_log feldera-sql/run.py \
+	    --api-url="$api_url" \
+	    --kafka-broker="$kafka_broker" \
+	    --cores $cores \
+	    --input-topic-suffix "-$events" \
+	    --csv results.csv \
+	    --query $query
+	;;
+
+    flink:*)
 	# XXX --stream
 	# Each Flink replica has two cores.
 	replicas=$(expr \( $cores + 1 \) / 2)
@@ -431,13 +491,13 @@ s/replicas: .*/replicas: $replicas/" < flink/docker-compose.yml > $yml
 	run $DOCKER compose -p nexmark -f $yml down -t 0 || exit 1
 	;;
 
-    beam.direct)
+    beam.direct:*)
 	run_beam_nexmark direct-java \
 		    --runner=DirectRunner \
 		    --targetParallelism=$cores
 	;;
 
-    beam.flink)
+    beam.flink:*)
 	# Flink tends to peak at about 2*parallelism cores according to 'top'.
 	parallelism=$(expr \( $cores + 1 \) / 2)
 	run_beam_nexmark flink:1.13 \
@@ -447,7 +507,7 @@ s/replicas: .*/replicas: $replicas/" < flink/docker-compose.yml > $yml
 		    --maxParallelism=$parallelism
 	;;
 
-    beam.spark)
+    beam.spark:*)
 	if test $streaming = true; then
 	    echo >&2 "$0: warning: $runner hangs in streaming mode"
 	fi
@@ -456,7 +516,7 @@ s/replicas: .*/replicas: $replicas/" < flink/docker-compose.yml > $yml
 		    --sparkMaster="local[$cores]"
 	;;
 
-    beam.dataflow)
+    beam.dataflow:*)
 	region=us-west1
 	cores_per_worker=4	# For the default Dataflow worker machine type
 	n_workers=$(expr $cores / $cores_per_worker)
