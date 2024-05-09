@@ -719,6 +719,14 @@ export const librdkafkaOptions = [
     `Controls how to read messages written transactionally: \`read_committed\` - only return transactional messages which have been committed. \`read_uncommitted\` - return all messages, even transactional messages which have been aborted.  \n*Type: enum value*`
   ],
   [
+    'enable.partition.eof                    ',
+    'C',
+    'true, false    ',
+    '        false',
+    'low       ',
+    `Emit RD_KAFKA_RESP_ERR__PARTITION_EOF event whenever the consumer reaches the end of a partition.  \n*Type: boolean*`
+  ],
+  [
     'check.crcs                              ',
     'C',
     'true, false    ',
