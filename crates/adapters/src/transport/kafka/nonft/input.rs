@@ -308,6 +308,10 @@ impl KafkaInputReader {
                 None => {
                     // println!("poll returned None");
                 }
+                Some(Err(KafkaError::PartitionEOF(_p))) => {
+                    consumer.eoi();
+                    return;
+                }
                 Some(Err(e)) => {
                     // println!("poll returned error");
                     let (fatal, e) = endpoint.refine_error(e);
