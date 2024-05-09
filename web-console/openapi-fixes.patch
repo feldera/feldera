@@ -77,10 +77,10 @@ index 1adc4562e..c826d84c8 100644
 +    HTTP_OUTPUT = 'http_output'
    }
  }
-diff --git a/web-console/src/lib/services/manager/models/ConnectorConfig.ts b/web-console/src/lib/services/manager/models/ConnectorConfig.ts
+diff --git b/web-console/src/lib/services/manager/models/ConnectorConfig.ts a/web-console/src/lib/services/manager/models/ConnectorConfig.ts
 index 1e6fdd524..9c994ea19 100644
---- a/web-console/src/lib/services/manager/models/ConnectorConfig.ts
-+++ b/web-console/src/lib/services/manager/models/ConnectorConfig.ts
+--- b/web-console/src/lib/services/manager/models/ConnectorConfig.ts
++++ a/web-console/src/lib/services/manager/models/ConnectorConfig.ts
 @@ -9,7 +9,7 @@ import type { TransportConfig } from './TransportConfig'
   * A data connector's configuration
   */
