@@ -8,7 +8,6 @@ use std::io::{Error as IoError, ErrorKind};
 use std::mem::ManuallyDrop;
 use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -23,7 +22,8 @@ use crate::storage::backend::{
         FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, READ_LATENCY, TOTAL_BYTES_READ,
         TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
     },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, NEXT_FILE_HANDLE,
+    AtomicIncrementOnlyI64, FileHandle, ImmutableFile, ImmutableFileHandle, ImmutableFiles,
+    Storage, IMMUTABLE_FILE_METADATA, NEXT_FILE_HANDLE,
 };
 use crate::storage::buffer_cache::FBuf;
 use crate::storage::init;
@@ -37,7 +37,7 @@ mod tests;
 /// Meta-data we keep per file we created.
 struct FileMetaData {
     /// The file.
-    file: Rc<File>,
+    file: Arc<File>,
 
     /// File name.
     path: PathBuf,
@@ -74,7 +74,7 @@ struct VectoredWrite {
     /// Buffers accumulated to write so far.
     buffers: Vec<Arc<FBuf>>,
 
-    /// Starting offset for the write.  If there are no buffers yet, this is not
+    /// Starting offset for the write. If there are no buffers yet, this is not
     /// meaningful (and should be 0).
     offset: u64,
 
@@ -121,7 +121,7 @@ struct RequestResources {
 
     /// Needs to be kept until request submission (but it's easier to just keep
     /// it until completion).
-    file: Rc<File>,
+    file: Arc<File>,
 }
 
 /// A "write" or "fsync" request passed to the kernel via `io_uring`.
@@ -161,11 +161,14 @@ struct Inner {
     /// Kernel `io_uring` structure.
     io_uring: IoUring,
 
-    /// All files we created so far.
+    /// All files we can read from.
+    immutable_files: Arc<ImmutableFiles>,
+
+    /// Files we're currently writing to on this thread.
     files: HashMap<i64, FileMetaData>,
 
     /// All requests that have been submitted to `io_uring` and not yet
-    /// completed..
+    /// completed.
     requests: HashMap<u64, Request>,
 
     /// Next request ID to use.
@@ -180,7 +183,10 @@ struct Inner {
 }
 
 impl Inner {
-    fn new(next_file_id: Arc<AtomicIncrementOnlyI64>) -> Result<Self, IoError> {
+    fn new(
+        next_file_id: Arc<AtomicIncrementOnlyI64>,
+        immutable_files: Arc<ImmutableFiles>,
+    ) -> Result<Self, IoError> {
         // Create our io_uring.
         //
         // We specify a submission queue size of 1 because the kernel sizes the
@@ -199,6 +205,7 @@ impl Inner {
 
         Ok(Self {
             io_uring,
+            immutable_files,
             files: HashMap::new(),
             requests: HashMap::new(),
             next_request_id: 0,
@@ -356,7 +363,7 @@ impl Inner {
         self.files.insert(
             file_counter,
             FileMetaData {
-                file: Rc::new(file),
+                file: Arc::new(file),
                 path,
                 size: 0,
                 queued_work: 0,
@@ -381,17 +388,10 @@ impl Inner {
             .open(&path)?;
 
         let file_counter = self.next_file_id.increment();
-        self.files.insert(
-            file_counter,
-            FileMetaData {
-                file: Rc::new(file),
-                path,
-                size: attr.size(),
-                queued_work: 0,
-                error: None,
-                write: VectoredWrite::default(),
-            },
-        );
+
+        let file = Arc::new(file);
+        let imf = ImmutableFile::new(file, path, attr.size());
+        self.immutable_files.insert(file_counter, imf);
 
         Ok(ImmutableFileHandle(file_counter))
     }
@@ -436,6 +436,7 @@ impl Inner {
         let fm = self.files.get(&fd).unwrap();
         let file = fm.file.clone();
         let path = fm.path.clone();
+        let size = fm.size;
 
         // Submit an `fsync` request for the file.  We don't wait for it to
         // complete.  This ensures that the metadata (and data, but we probably
@@ -451,9 +452,12 @@ impl Inner {
             RequestResources {
                 iovec: Vec::new(),
                 buffers: Vec::new(),
-                file,
+                file: file.clone(),
             },
         )?;
+
+        let imf = ImmutableFile::new(file, path.clone(), size);
+        self.immutable_files.insert(fd, imf);
 
         Ok((ImmutableFileHandle(fd), path))
     }
@@ -469,13 +473,9 @@ impl Inner {
     fn read_block(&self, fd: i64, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
         let mut buffer = FBuf::with_capacity(size);
 
-        let fm = self.files.get(&fd).unwrap();
-
+        let fm = self.immutable_files.get(fd).unwrap();
         let request_start = Instant::now();
-        match fm
-            .error()
-            .and_then(|_| buffer.read_exact_at(&fm.file, offset, size))
-        {
+        match buffer.read_exact_at(&fm.file, offset, size) {
             Ok(()) => {
                 counter!(TOTAL_BYTES_READ).increment(buffer.len() as u64);
                 histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
@@ -530,13 +530,14 @@ impl IoUringBackend {
         base: P,
         cache: StorageCacheConfig,
         next_file_id: Arc<AtomicIncrementOnlyI64>,
+        immutable_files: Arc<ImmutableFiles>,
     ) -> Result<Self, IoError> {
         init();
         describe_disk_metrics();
         Ok(Self {
             base: base.as_ref().to_path_buf(),
             cache,
-            inner: RefCell::new(Inner::new(next_file_id)?),
+            inner: RefCell::new(Inner::new(next_file_id, immutable_files)?),
         })
     }
 
@@ -547,6 +548,9 @@ impl IoUringBackend {
             base,
             cache,
             NEXT_FILE_HANDLE
+                .get_or_init(|| Arc::new(Default::default()))
+                .clone(),
+            IMMUTABLE_FILE_METADATA
                 .get_or_init(|| Arc::new(Default::default()))
                 .clone(),
         )
@@ -613,7 +617,7 @@ impl Storage for IoUringBackend {
     }
 
     fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        Ok(self.inner.borrow().files.get(&fd.0).unwrap().size)
+        Ok(self.inner.borrow().immutable_files.get(fd.0).unwrap().size)
     }
 
     fn base(&self) -> PathBuf {

@@ -9,6 +9,8 @@
 //! The API also prevents reading from a file that is not completed.
 #![warn(missing_docs)]
 
+use dashmap::DashMap;
+use std::fs::File;
 use std::{
     fs::OpenOptions,
     path::{Path, PathBuf},
@@ -18,7 +20,7 @@ use std::{
     },
 };
 
-use log::warn;
+use log::{trace, warn};
 use pipeline_types::config::StorageCacheConfig;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use tempfile::TempDir;
@@ -48,6 +50,8 @@ const CREATE_FILE_EXTENSION: &str = ".feldera";
 
 /// A global counter for default backends that are initiated per-core.
 static NEXT_FILE_HANDLE: OnceLock<Arc<AtomicIncrementOnlyI64>> = OnceLock::new();
+
+static IMMUTABLE_FILE_METADATA: OnceLock<Arc<ImmutableFiles>> = OnceLock::new();
 
 /// Helper function that appends to a [`PathBuf`].
 fn append_to_path(p: PathBuf, s: &str) -> PathBuf {
@@ -80,6 +84,8 @@ impl AtomicIncrementOnlyI64 {
 }
 
 /// A file-descriptor we can write to.
+
+#[derive(Eq, PartialEq, Debug, Hash)]
 pub struct FileHandle(i64);
 
 impl From<&FileHandle> for i64 {
@@ -89,11 +95,66 @@ impl From<&FileHandle> for i64 {
 }
 
 /// A file-descriptor we can read or prefetch from.
+#[derive(Eq, PartialEq, Debug, Hash)]
 pub struct ImmutableFileHandle(i64);
+
+impl Drop for ImmutableFileHandle {
+    fn drop(&mut self) {
+        if let Some(iftable) = IMMUTABLE_FILE_METADATA.get() {
+            iftable.remove(self.0);
+        }
+    }
+}
 
 impl From<&ImmutableFileHandle> for i64 {
     fn from(fd: &ImmutableFileHandle) -> Self {
         fd.0
+    }
+}
+
+/// This struct stores the open files in a way
+/// so that is globally accessible by all backends.
+pub struct ImmutableFiles {
+    inner: DashMap<i64, Arc<ImmutableFile>>,
+}
+
+impl ImmutableFiles {
+    fn insert(&self, fd: i64, imf: Arc<ImmutableFile>) {
+        let r = self.inner.insert(fd, imf);
+        assert!(r.is_none());
+    }
+
+    fn get(&self, fd: i64) -> Option<Arc<ImmutableFile>> {
+        self.inner.get(&fd).map(|v| v.value().clone())
+    }
+
+    fn remove(&self, fd: i64) {
+        self.inner.remove(&fd);
+    }
+}
+
+impl Default for ImmutableFiles {
+    fn default() -> Self {
+        Self {
+            inner: DashMap::with_capacity(1024),
+        }
+    }
+}
+
+/// We use this to keep track of the files that are currently open
+/// for reading (and may be read by multiple threads).
+pub(crate) struct ImmutableFile {
+    /// The file.
+    file: Arc<File>,
+    /// File name.
+    path: PathBuf,
+    /// File size.
+    size: u64,
+}
+
+impl ImmutableFile {
+    pub(crate) fn new(file: Arc<File>, path: PathBuf, size: u64) -> Arc<Self> {
+        Arc::new(Self { file, path, size })
     }
 }
 
@@ -132,6 +193,18 @@ pub enum StorageError {
     /// Unknown checkpoint specified in configuration.
     #[error("Couldn't find the specified checkpoint ({0:?}).")]
     CheckpointNotFound(Uuid),
+
+    /// Unable to receive a message from the thread that does storage compaction.
+    #[error("Unable to receive a message from the merge-thread.")]
+    TryRx(#[from] crossbeam::channel::TryRecvError),
+
+    /// Error when sending a message to the thread that merges batches.
+    #[error("Unable to receive a message from the compactor-thread.")]
+    Rx(#[from] crossbeam::channel::RecvError),
+
+    /// The thread that merges batches exited unexpectedly.
+    #[error("Compactor Thread exited unexpectedly.")]
+    MergerThreadExited,
 }
 
 impl Serialize for StorageError {
@@ -151,11 +224,11 @@ impl Serialize for StorageError {
     }
 }
 
-#[cfg(test)]
 /// Implementation of PartialEq for StorageError.
 ///
 /// This is for testing only and therefore intentionally not a complete
 /// implementation.
+#[cfg(test)]
 impl PartialEq for StorageError {
     fn eq(&self, other: &Self) -> bool {
         fn is_unexpected_eof(error: &StorageError) -> bool {
@@ -397,6 +470,8 @@ pub fn tempdir_for_thread() -> PathBuf {
 
 /// Create and returns a backend of the default kind.
 pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backend {
+    trace!("new_default_backend: dir={:?}", tempdir);
+
     #[cfg(target_os = "linux")]
     {
         use nix::sys::statfs::{statfs, TMPFS_MAGIC};

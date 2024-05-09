@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::Debug;
 
 /// Extension methods for [`Vec`]
 pub(crate) trait VecExt<T> {
@@ -47,7 +48,10 @@ pub(crate) trait VecExt<T> {
     }
 }
 
-impl<T> VecExt<T> for Vec<T> {
+impl<T> VecExt<T> for Vec<T>
+where
+    T: Debug,
+{
     #[inline]
     fn spare_capacity(&self) -> usize {
         self.capacity() - self.len()

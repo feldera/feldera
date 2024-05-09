@@ -46,8 +46,23 @@ pub const TOTAL_COMPACTIONS: &str = "file.compacted";
 /// Sizes of batches that get compacted.
 pub const COMPACTION_SIZE: &str = "file.compaction_size";
 
+/// This counts the differences by subtracting the size of old batches
+/// from a newly formed batch. It represents the total sum of entries
+/// saved through compaction.
+pub const COMPACTION_SIZE_SAVINGS: &str = "file.compaction_size";
+
 /// Compaction duration for a single batch.
 pub const COMPACTION_DURATION: &str = "file.compaction_duration";
+
+/// Time a worker was stalled waiting for more merges to complete.
+pub const COMPACTION_STALL_TIME: &str = "file.compaction_stall_time";
+
+/// The queue length of the compaction thread.
+///
+/// If this is always close to the configured limit in `BatchMerger::RX_QUEUE_SIZE`,
+/// it means the compaction thread is not able to keep up with the incoming compaction requests
+/// and the system is under pressure to keep up with the write load.
+pub const COMPACTION_QUEUE_LENGTH: &str = "file.compaction_queue_length";
 
 /// Adds descriptions for the metrics we expose.
 pub(super) fn describe_disk_metrics() {
@@ -84,5 +99,21 @@ pub(super) fn describe_disk_metrics() {
         Unit::Count,
         "Batch sizes encountered in compaction"
     );
+    describe_counter!(
+        COMPACTION_SIZE_SAVINGS,
+        Unit::Count,
+        "Eliminated entries in batches through merging"
+    );
     describe_histogram!(COMPACTION_DURATION, Unit::Seconds, "Time to compact batch");
+    describe_histogram!(
+        COMPACTION_QUEUE_LENGTH,
+        Unit::Count,
+        "Length of the compaction queue"
+    );
+
+    describe_counter!(
+        COMPACTION_STALL_TIME,
+        Unit::Seconds,
+        "Time a worker was stalled waiting for more merges to complete"
+    );
 }

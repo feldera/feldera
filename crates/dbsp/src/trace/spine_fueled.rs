@@ -115,17 +115,17 @@ use uuid::Uuid;
 
 /// A spine that is serialized to a file.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
-struct CommittedSpine<B: Batch> {
-    batches: Vec<String>,
-    merged: Vec<(String, String)>,
-    lower: Vec<B::Time>,
-    upper: Vec<B::Time>,
-    effort: u64,
-    dirty: bool,
-    lower_key_bound: Option<Vec<u8>>,
+pub(crate) struct CommittedSpine<B: Batch + Send + Sync> {
+    pub batches: Vec<String>,
+    pub merged: Vec<(String, String)>,
+    pub lower: Vec<B::Time>,
+    pub upper: Vec<B::Time>,
+    pub effort: u64,
+    pub dirty: bool,
+    pub lower_key_bound: Option<Vec<u8>>,
 }
 
-impl<B: Batch> From<&Spine<B>> for CommittedSpine<B> {
+impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
     fn from(value: &Spine<B>) -> Self {
         let mut batches = vec![];
         value.map_batches(|b| {
@@ -163,7 +163,7 @@ impl<B: Batch> From<&Spine<B>> for CommittedSpine<B> {
 #[derive(SizeOf)]
 pub struct Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     #[size_of(skip)]
     factories: B::Factories,
@@ -182,7 +182,7 @@ where
 
 impl<B> Display for Spine<B>
 where
-    B: Batch + Display,
+    B: Batch + Send + Sync + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.try_fold_batches((), |_, batch| {
@@ -193,7 +193,7 @@ where
 
 impl<B> Debug for Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         let mut cursor = self.cursor();
@@ -219,7 +219,7 @@ where
 // TODO.
 impl<B> Clone for Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     fn clone(&self) -> Self {
         unimplemented!()
@@ -228,7 +228,7 @@ where
 
 impl<B> Archive for Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     type Archived = ();
     type Resolver = ();
@@ -238,13 +238,13 @@ where
     }
 }
 
-impl<B: Batch, S: Serializer + ?Sized> Serialize<S> for Spine<B> {
+impl<B: Batch + Send + Sync, S: Serializer + ?Sized> Serialize<S> for Spine<B> {
     fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
         unimplemented!();
     }
 }
 
-impl<B: Batch, D: Fallible> Deserialize<Spine<B>, D> for Archived<Spine<B>> {
+impl<B: Batch + Send + Sync, D: Fallible> Deserialize<Spine<B>, D> for Archived<Spine<B>> {
     fn deserialize(&self, _deserializer: &mut D) -> Result<Spine<B>, D::Error> {
         unimplemented!();
     }
@@ -252,7 +252,7 @@ impl<B: Batch, D: Fallible> Deserialize<Spine<B>, D> for Archived<Spine<B>> {
 
 impl<B> NumEntries for Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
@@ -267,7 +267,7 @@ where
 
 impl<B> BatchReader for Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     type Key = B::Key;
     type Val = B::Val;
@@ -402,7 +402,7 @@ where
 
 impl<B> Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     /// Display the structure of the spine, including the type of each bin and
     /// the sizes of batches.
@@ -520,12 +520,12 @@ where
     }
 }
 
-pub struct SpineCursor<'s, B: Batch + 's> {
+pub struct SpineCursor<'s, B: Batch + Send + Sync + 's> {
     #[allow(clippy::type_complexity)]
     cursor: CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor<'s>>,
 }
 
-impl<'s, B: Batch + 's> Clone for SpineCursor<'s, B> {
+impl<'s, B: Batch + Send + Sync + 's> Clone for SpineCursor<'s, B> {
     fn clone(&self) -> Self {
         Self {
             cursor: self.cursor.clone(),
@@ -533,7 +533,7 @@ impl<'s, B: Batch + 's> Clone for SpineCursor<'s, B> {
     }
 }
 
-impl<'s, B: Batch> SpineCursor<'s, B> {
+impl<'s, B: Batch + Send + Sync> SpineCursor<'s, B> {
     fn new(factories: &B::Factories, cursors: Vec<B::Cursor<'s>>) -> Self {
         Self {
             cursor: CursorList::new(factories.weight_factory(), cursors),
@@ -541,7 +541,7 @@ impl<'s, B: Batch> SpineCursor<'s, B> {
     }
 }
 
-impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<'s, B> {
+impl<'s, B: Batch + Send + Sync> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<'s, B> {
     // fn key_vtable(&self) -> &'static VTable<B::Key> {
     //     self.cursor.key_vtable()
     // }
@@ -659,7 +659,7 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<'s, B> 
 
 impl<B> Trace for Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     type Batch = B;
 
@@ -827,7 +827,7 @@ where
 
 impl<B> Spine<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     #[inline]
     fn key_factory(&self) -> &'static dyn Factory<B::Key> {
@@ -1184,7 +1184,7 @@ where
 #[derive(SizeOf)]
 pub enum MergeState<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     /// An empty layer, containing no updates.
     Vacant,
@@ -1199,7 +1199,7 @@ where
 
 impl<B> MergeState<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     /// The number of actual updates contained in the level.
     fn len(&self) -> usize {
@@ -1309,7 +1309,7 @@ where
 
 impl<B> Debug for MergeState<B>
 where
-    B: Batch + Debug,
+    B: Batch + Send + Sync + Debug,
     B::Merger: Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1324,7 +1324,7 @@ where
 #[derive(SizeOf)]
 pub enum MergeVariant<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     /// Describes an actual in-progress merge between two non-trivial batches.
     InProgress(B, B, <B as Batch>::Merger, Instant),
@@ -1335,7 +1335,7 @@ where
 
 impl<B> MergeVariant<B>
 where
-    B: Batch,
+    B: Batch + Send + Sync,
 {
     /// Completes and extracts the batch, unless structurally empty.
     ///
@@ -1384,7 +1384,7 @@ where
 
 impl<B> Debug for MergeVariant<B>
 where
-    B: Batch + Debug,
+    B: Batch + Send + Sync + Debug,
     B::Merger: Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

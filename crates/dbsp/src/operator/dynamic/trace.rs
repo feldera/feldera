@@ -1015,7 +1015,7 @@ mod test {
                     );
 
                 let trace = stream.spill().integrate_trace();
-                stream.spill().integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0 - 100);
+                stream.spill().integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
                 trace.apply(|trace| {
                     // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
                     assert!(trace.size_of().total_bytes() < 70000);
@@ -1024,7 +1024,7 @@ mod test {
                 let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
 
                 let trace2 = stream2.spill().integrate_trace();
-                stream2.spill().integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1 - 1000);
+                stream2.spill().integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000));
 
                 trace2.apply(|trace| {
                     // println!("retain_vals: {}bytes", trace.size_of().total_bytes());

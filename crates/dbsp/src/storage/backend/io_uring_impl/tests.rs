@@ -50,6 +50,7 @@ impl StateMachineTest for IoUringBackend {
             tmpdir.path(),
             StorageCacheConfig::default(),
             Default::default(),
+            Default::default(),
         )
         .unwrap();
 
