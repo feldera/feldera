@@ -15,8 +15,33 @@
 const sidebars = {
   docsSidebar: [
     'what-is-feldera',
-    'demo/demo',
-    'tour/tour',
+    {
+      type: 'category',
+      label: 'Get started',
+      items: [
+        'intro',
+        'demo/demo',
+        'tour/tour',
+      ]
+    },
+    {
+      type: 'category',
+      label: 'Deploy',
+      link: { type: 'doc', id: 'cloud/index' },
+      items: [
+        'intro',
+        {
+          type: 'category',
+          label: 'Bring Your Own Cloud',
+          link: { type: 'doc', id: 'cloud/index' },
+          items: [
+            'cloud/assets',
+            'cloud/deployment',
+            'cloud/secret-management'
+          ]
+        },
+      ]
+    },
     {
       type: 'category',
       label: 'Tutorials',
@@ -78,48 +103,46 @@ const sidebars = {
           }
       ]
     },
+    'troubleshooting/index',
     {
       type: 'category',
-      label: 'SQL Reference',
-      link: { type: 'doc', id: 'sql/intro' },
+      label: 'Reference',
       items: [
-        'sql/grammar',
-        'sql/identifiers',
-        'sql/operators',
-        'sql/aggregates',
-        'sql/casts',
-        'sql/types',
-        'sql/boolean',
-        'sql/comparisons',
-        'sql/integer',
-        'sql/float',
-        'sql/decimal',
-        'sql/string',
-        'sql/binary',
-        'sql/array',
-        'sql/datetime',
-        'sql/streaming',
-        'sql/udf'
-      ]
+            {
+              type: 'category',
+              label: 'SQL Reference',
+              link: { type: 'doc', id: 'sql/intro' },
+              items: [
+                'sql/grammar',
+                'sql/identifiers',
+                'sql/operators',
+                'sql/aggregates',
+                'sql/casts',
+                'sql/types',
+                'sql/boolean',
+                'sql/comparisons',
+                'sql/integer',
+                'sql/float',
+                'sql/decimal',
+                'sql/string',
+                'sql/binary',
+                'sql/array',
+                'sql/datetime',
+                'sql/streaming',
+                'sql/udf'
+              ]
+            },
+            'api/rest', 
+            'api/json', 
+            'api/parquet', 
+            'api/csv', 
+            'api/rust']
     },
     {
       type: 'category',
-      label: 'API Reference',
-      items: ['api/rest', 'api/json', 'api/parquet', 'api/csv', 'api/rust']
+      label: 'Learn',
+      items: ['papers', 'videos']
     },
-    {
-      type: 'category',
-      label: 'Bring Your Own Cloud',
-      link: { type: 'doc', id: 'cloud/index' },
-      items: [
-        'cloud/assets',
-        'cloud/deployment',
-        'cloud/secret-management'
-      ]
-    },
-    'intro',
-    'papers',
-    'videos',
     {
       type: 'category',
       label: 'Contributing',
