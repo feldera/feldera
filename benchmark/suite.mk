@@ -31,13 +31,14 @@ cores = 16
 #
 #   - Spark streaming (which hangs)
 #   - Feldera batching (Feldera only does streaming)
-#   - languages other than the default except for Beam
+#   - languages other than the default except for Beam and Feldera
 #   - Dataflow (unless project and bucket are configured)
 targets = \
 $(filter-out beam.spark-stream-% feldera-batch-% \
 	     $(if $(project)$(bucket),,beam.dataflow-%),\
 $(foreach runner,$(runners),\
-$(foreach language,$(if $(filter beam.%,$(runner)),$(languages),default),\
+$(foreach language,$(if $(filter beam.%,$(runner)),$(languages), \
+                     $(if (filter feldera,$(runner)),default sql,default)),\
 $(foreach mode,$(modes),\
 $(runner)-$(mode)-$(language)-$(events).csv))))
 
