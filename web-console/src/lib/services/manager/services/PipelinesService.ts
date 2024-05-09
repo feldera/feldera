@@ -17,7 +17,6 @@ import { request as __request } from '../core/request'
 export class PipelinesService {
   /**
    * Fetch pipelines, optionally filtered by name or ID.
-   * Fetch pipelines, optionally filtered by name or ID.
    * @param id Unique pipeline id.
    * @param name Unique pipeline name.
    * @returns Pipeline Pipeline list retrieved successfully.
@@ -34,7 +33,6 @@ export class PipelinesService {
     })
   }
   /**
-   * Create a new pipeline.
    * Create a new pipeline.
    * @param requestBody
    * @returns NewPipelineResponse Pipeline successfully created.
@@ -53,7 +51,6 @@ export class PipelinesService {
   }
   /**
    * Fetch a pipeline by ID.
-   * Fetch a pipeline by ID.
    * @param pipelineName Unique pipeline name
    * @returns Pipeline Pipeline descriptor retrieved successfully.
    * @throws ApiError
@@ -71,7 +68,6 @@ export class PipelinesService {
     })
   }
   /**
-   * Create or replace a pipeline.
    * Create or replace a pipeline.
    * @param pipelineName Unique pipeline name
    * @param requestBody
@@ -97,7 +93,6 @@ export class PipelinesService {
   }
   /**
    * Delete a pipeline. The pipeline must be in the shutdown state.
-   * Delete a pipeline. The pipeline must be in the shutdown state.
    * @param pipelineName Unique pipeline name
    * @returns any Pipeline successfully deleted.
    * @throws ApiError
@@ -116,7 +111,6 @@ export class PipelinesService {
     })
   }
   /**
-   * Change a pipeline's name, description, code, configuration, or connectors.
    * Change a pipeline's name, description, code, configuration, or connectors.
    * On success, increments the pipeline's version by 1.
    * @param pipelineName Unique pipeline name
@@ -143,8 +137,6 @@ export class PipelinesService {
   }
   /**
    * Fetch a pipeline's configuration.
-   * Fetch a pipeline's configuration.
-   *
    * When defining a pipeline, clients have to provide an optional
    * `RuntimeConfig` for the pipelines and references to existing
    * connectors to attach to the pipeline. This endpoint retrieves
@@ -169,7 +161,6 @@ export class PipelinesService {
   }
   /**
    * Return the currently deployed version of the pipeline, if any.
-   * Return the currently deployed version of the pipeline, if any.
    * @param pipelineName Unique pipeline name
    * @returns any Last deployed version of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).
    * @throws ApiError
@@ -187,7 +178,6 @@ export class PipelinesService {
     })
   }
   /**
-   * Retrieve pipeline metrics and performance counters.
    * Retrieve pipeline metrics and performance counters.
    * @param pipelineName Unique pipeline name
    * @returns any Pipeline metrics retrieved successfully.
@@ -208,8 +198,6 @@ export class PipelinesService {
   }
   /**
    * Validate a pipeline.
-   * Validate a pipeline.
-   *
    * Checks whether a pipeline is configured correctly. This includes
    * checking whether the pipeline references a valid compiled program,
    * whether the connectors reference valid tables/views in the program,
@@ -233,8 +221,6 @@ export class PipelinesService {
   }
   /**
    * Change the desired state of the pipeline.
-   * Change the desired state of the pipeline.
-   *
    * This endpoint allows the user to control the execution of the pipeline,
    * by changing its desired state attribute (see the discussion of the desired
    * state model in the [`PipelineStatus`] documentation).

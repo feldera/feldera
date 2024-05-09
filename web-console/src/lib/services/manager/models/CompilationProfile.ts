@@ -9,6 +9,7 @@
  * the Feldera instance depending on the administrator configuration.
  */
 export enum CompilationProfile {
+  DEV = 'dev',
   UNOPTIMIZED = 'unoptimized',
   OPTIMIZED = 'optimized'
 }
