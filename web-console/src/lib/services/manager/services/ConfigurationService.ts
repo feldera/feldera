@@ -8,7 +8,6 @@ import { request as __request } from '../core/request'
 export class ConfigurationService {
   /**
    * Get the list of demo URLs.
-   * Get the list of demo URLs.
    * @returns string URLs to JSON objects that describe a set of demos
    * @throws ApiError
    */

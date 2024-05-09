@@ -4,7 +4,6 @@
 /* eslint-disable */
 import type { Field } from './Field'
 import type { SqlType } from './SqlType'
-
 /**
  * A SQL column type description.
  *

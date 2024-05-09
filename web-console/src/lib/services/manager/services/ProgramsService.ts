@@ -16,7 +16,6 @@ import { request as __request } from '../core/request'
 export class ProgramsService {
   /**
    * Fetch programs, optionally filtered by name or ID.
-   * Fetch programs, optionally filtered by name or ID.
    * @param id Unique program identifier.
    * @param name Unique program name.
    * @param withCode Option to include the SQL program code or not
@@ -46,7 +45,6 @@ export class ProgramsService {
   }
   /**
    * Create a new program.
-   * Create a new program.
    * @param requestBody
    * @returns NewProgramResponse Program created successfully
    * @throws ApiError
@@ -63,7 +61,6 @@ export class ProgramsService {
     })
   }
   /**
-   * Fetch a program by name.
    * Fetch a program by name.
    * @param programName Unique program name
    * @param withCode Option to include the SQL program code or not
@@ -90,7 +87,6 @@ export class ProgramsService {
   }
   /**
    * Create or replace a program.
-   * Create or replace a program.
    * @param programName Unique program name
    * @param requestBody
    * @returns CreateOrReplaceProgramResponse Program updated successfully
@@ -115,8 +111,6 @@ export class ProgramsService {
   }
   /**
    * Delete a program.
-   * Delete a program.
-   *
    * Deletion fails if there is at least one pipeline associated with the
    * program.
    * @param programName Unique program name
@@ -138,8 +132,6 @@ export class ProgramsService {
   }
   /**
    * Change one or more of a program's code, description or name.
-   * Change one or more of a program's code, description or name.
-   *
    * If a program's code changes, any ongoing compilation gets cancelled,
    * the program status is reset to `None`, and the program version
    * is incremented by 1.
@@ -171,8 +163,6 @@ export class ProgramsService {
   }
   /**
    * Deprecated. Mark a program for compilation.
-   * Deprecated. Mark a program for compilation.
-   *
    * The client can track a program's compilation status by polling the
    * `/program/{program_name}` or `/programs` endpoints, and
    * then checking the `status` field of the program object.

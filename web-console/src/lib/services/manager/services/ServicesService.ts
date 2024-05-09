@@ -17,7 +17,6 @@ import { request as __request } from '../core/request'
 export class ServicesService {
   /**
    * Fetch services, optionally filtered by name, ID or configuration type.
-   * Fetch services, optionally filtered by name, ID or configuration type.
    * @param id If provided, will filter based on exact match of the service identifier.
    * @param name If provided, will filter based on exact match of the service name.
    * @param configType If provided, will filter based on exact match of the configuration type.
@@ -44,7 +43,6 @@ export class ServicesService {
   }
   /**
    * Create a new service.
-   * Create a new service.
    * @param requestBody
    * @returns NewServiceResponse Service successfully created
    * @throws ApiError
@@ -61,7 +59,6 @@ export class ServicesService {
     })
   }
   /**
-   * Fetch a service by name.
    * Fetch a service by name.
    * @param serviceName Unique service name
    * @returns ServiceDescr Service retrieved successfully
@@ -81,7 +78,6 @@ export class ServicesService {
   }
   /**
    * Delete an existing service.
-   * Delete an existing service.
    * @param serviceName Unique service name
    * @returns any Service successfully deleted
    * @throws ApiError
@@ -99,7 +95,6 @@ export class ServicesService {
     })
   }
   /**
-   * Update the name, description and/or configuration of a service.
    * Update the name, description and/or configuration of a service.
    * @param serviceName Unique service name
    * @param requestBody
@@ -124,7 +119,6 @@ export class ServicesService {
     })
   }
   /**
-   * Fetch a list of probes for a service, optionally filtered by id.
    * Fetch a list of probes for a service, optionally filtered by id.
    * @param serviceName Unique service name
    * @param id If provided, will filter based on exact match of the service probe
@@ -157,7 +151,6 @@ export class ServicesService {
     })
   }
   /**
-   * Create a service probe.
    * Create a service probe.
    * @param serviceName Unique service name
    * @param requestBody
