@@ -3,7 +3,7 @@ import { Children } from 'react'
 
 import { Box } from '@mui/system'
 
-const DataGridToolbar = ({ children }: { children: ReactNode }) => {
+const DataGridToolbar = ({ children }: { children?: ReactNode }) => {
   return (
     <Box
       sx={{

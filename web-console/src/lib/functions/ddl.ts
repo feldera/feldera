@@ -173,8 +173,8 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
       return date
     })
     .with({ type: 'TIMESTAMP' }, () => {
-      invariant(typeof value === 'string' && value.length === 19)
-      const date = dayjs(value, 'YYYY-MM-DD HH:mm:ss')
+      invariant(typeof value === 'string' && value.length >= 19 && value.length <= 26)
+      const date = dayjs(value.padEnd(23, '.000'), 'YYYY-MM-DD HH:mm:ss.SSS')
       invariant(date.isValid())
       return date
     })

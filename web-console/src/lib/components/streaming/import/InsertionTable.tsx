@@ -20,13 +20,10 @@ import invariant from 'tiny-invariant'
 
 import Card from '@mui/material/Card'
 import {
+  GridColDef,
   GridPreProcessEditCellProps,
   GridRenderCellParams,
-  GridRenderEditCellParams,
-  GridValueFormatterParams,
-  GridValueGetterParams,
-  GridValueSetterParams,
-  useGridApiRef
+  GridRenderEditCellParams
 } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
@@ -34,6 +31,17 @@ import ImportToolbar from './ImportToolbar'
 import { SQLValueInput } from './SQLValueInput'
 
 import type { Row } from '$lib/functions/ddl'
+
+// augment the props for the toolbar slot
+declare module '@mui/x-data-grid-pro' {
+  interface ToolbarPropsOverrides {
+    relation: Relation
+    rows: Row[]
+    setRows: Dispatch<SetStateAction<any[]>>
+    pipelineRevision: PipelineRevision
+    setLoading: Dispatch<SetStateAction<boolean>>
+  }
+}
 
 const useInsertionTable = (props: {
   pipeline: Pipeline
@@ -43,7 +51,6 @@ const useInsertionTable = (props: {
   const [pipelineRevision, setPipelineRevision] = useState<PipelineRevision | undefined>(undefined)
   const [relation, setRelation] = useState<Relation | undefined>(undefined)
   const [isPending, setLoading] = useState<boolean>(false)
-  const apiRef = useGridApiRef()
 
   const pipelineManagerQuery = usePipelineManagerQuery()
   const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.name))
@@ -80,7 +87,6 @@ const useInsertionTable = (props: {
   return {
     relation,
     pipelineRevision,
-    apiRef,
     isPending,
     setLoading,
     insert: props.insert
@@ -113,7 +119,6 @@ const SQLValueInputCell =
 const InsertionTableImpl = ({
   relation,
   pipelineRevision,
-  apiRef,
   isPending,
   setLoading,
   insert
@@ -130,7 +135,6 @@ const InsertionTableImpl = ({
   return (
     <Card>
       <DataGridPro
-        apiRef={apiRef}
         autoHeight
         editMode='cell'
         density='compact'
@@ -146,7 +150,7 @@ const InsertionTableImpl = ({
         }}
         getRowId={(row: Row) => row.genId}
         columns={[
-          ...relation.fields.map((col: Field) => {
+          ...relation.fields.map((col: Field): GridColDef<Row> => {
             return {
               type: undefined,
               field: getCaseIndependentName(col),
@@ -154,16 +158,17 @@ const InsertionTableImpl = ({
               description: getCaseIndependentName(col),
               width: 150,
               editable: true,
+              display: 'flex',
               preProcessEditCellProps: (params: GridPreProcessEditCellProps) => {
                 // We'll add support for this once we have JSON format + better
                 // errors from backend
                 const hasError = false
                 return { ...params.props, error: hasError }
               },
-              valueGetter: (params: GridValueGetterParams) => {
-                return params.row.record[col.name]
+              valueGetter: (_, row) => {
+                return row.record[col.name]
               },
-              valueParser: (value: any) => {
+              valueParser: value => {
                 // It looks like this doesn't do anything -- it just returns the
                 // value, but I found without having defined this, if you edit a
                 // cell and enter e.g., 'ab' into a number field it will throw
@@ -171,9 +176,8 @@ const InsertionTableImpl = ({
                 // and set it to an empty string...
                 return value
               },
-              valueSetter: (params: GridValueSetterParams) => {
-                const row = params.row
-                row.record[col.name] = params.value !== undefined ? params.value : getDefaultValue(col.columntype)
+              valueSetter: (value, row) => {
+                row.record[col.name] = value !== undefined ? value : getDefaultValue(col.columntype)
                 return row
               },
               renderHeader: () => <SQLTypeHeader col={col}></SQLTypeHeader>,
@@ -194,20 +198,20 @@ const InsertionTableImpl = ({
               const hasError = false
               return { ...params.props, error: hasError }
             },
-            valueFormatter: (params: GridValueFormatterParams<number>) => {
-              return String(params.value) as string | null
+            valueFormatter: value => {
+              return String(value) as string | null
             },
-            valueParser: (value: any) => {
+            valueParser: value => {
               return value
             },
-            valueGetter: (params: any) => params.row.genId,
-            valueSetter: (params: GridValueSetterParams) => {
-              return params.row
+            valueGetter: (_, row) => row.genId,
+            valueSetter: (_, row) => {
+              return row
             },
             renderHeader: () => <></>,
             renderCell: () => <></>,
             renderEditCell: () => <></>
-          }
+          } as GridColDef<Row>
         ]}
         slots={{
           toolbar: ImportToolbar
@@ -217,7 +221,6 @@ const InsertionTableImpl = ({
             relation,
             pipelineRevision,
             setLoading,
-            apiRef,
             children: (
               <ResetColumnViewButton
                 setColumnViewModel={gridPersistence.setColumnViewModel}

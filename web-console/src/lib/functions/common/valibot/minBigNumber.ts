@@ -1,19 +1,44 @@
-import type { ErrorMessage, PipeResult } from 'valibot'
+import type { BaseValidation, ErrorMessage } from 'valibot'
 import { BigNumber } from 'bignumber.js'
-import { getOutput, getPipeIssues } from 'valibot'
+import { actionIssue, actionOutput } from 'valibot'
+
+/**
+ * Min value validation type.
+ */
+interface MinBigNumberValidation<TInput extends BigNumber, TRequirement extends TInput> extends BaseValidation<TInput> {
+  /**
+   * The validation type.
+   */
+  type: 'min_big_number'
+  /**
+   * The minimum value.
+   */
+  requirement: TRequirement
+}
 
 /**
  * Creates a validation function that validates the value of a string, number or date.
  *
  * @param requirement The minimum value.
- * @param error The error message.
+ * @param message The error message.
  *
  * @returns A validation function.
  */
 export function minBigNumber<TInput extends BigNumber, TRequirement extends TInput>(
   requirement: TRequirement,
-  error?: ErrorMessage
-) {
-  return (input: TInput): PipeResult<TInput> =>
-    input.lt(requirement) ? getPipeIssues('min_value', error || 'Invalid value', input) : getOutput(input)
+  message?: ErrorMessage
+): MinBigNumberValidation<TInput, TRequirement> {
+  return {
+    type: 'min_big_number',
+    expects: `>=${requirement.toFixed()}`,
+    async: false,
+    message,
+    requirement,
+    _parse(input) {
+      if (input.gte(this.requirement)) {
+        return actionOutput(input)
+      }
+      return actionIssue(this, minBigNumber, input, 'value', input.toFixed())
+    }
+  }
 }

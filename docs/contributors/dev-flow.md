@@ -8,7 +8,7 @@ Spin up the Devcontainer, e.g. by opening the Feldera repository in VS Code with
 
 On your first launch you might need to change the ownership of the files:
 ```bash
-sudo chown -R user /workspaces/dbsp
+sudo chown -R user /workspaces/feldera
 ```
 
 Build the SQL Compiler:

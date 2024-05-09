@@ -92,8 +92,8 @@ export const LibrdkafkaOptionElement = (props: {
           input: (v: string[]) => {
             return v?.join(', ') ?? ''
           },
-          output: (v: string) => {
-            return v.split(', ')
+          output: event => {
+            return event.target.value.split(', ')
           }
         }}
         name={props.parentName + '.' + props.field}

@@ -107,27 +107,14 @@ export const TableSqlPrograms = () => {
   // Table columns
   const columns: GridColDef[] = [
     {
-      field: 'program_id',
-      headerName: 'ID',
-      renderCell: (params: GridRenderCellParams) => {
-        const { row } = params
-
-        return (
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              <Typography noWrap variant='body2' sx={{ color: 'text.primary', fontWeight: 600 }}>
-                {row.program_id}
-              </Typography>
-            </Box>
-          </Box>
-        )
-      }
+      field: 'program_id'
     },
     {
       flex: 0.3,
       minWidth: 150,
       field: 'name',
       headerName: 'Name',
+      display: 'flex',
       renderCell: (params: GridRenderCellParams) => (
         <Typography variant='body2' sx={{ color: 'text.primary' }} data-testid={`box-program-name-${params.row.name}`}>
           {params.row.name}
@@ -150,6 +137,7 @@ export const TableSqlPrograms = () => {
       flex: 0.45,
       field: 'description',
       headerName: 'Description',
+      display: 'flex',
       renderCell: (params: GridRenderCellParams) => (
         <Typography
           variant='body2'
@@ -165,6 +153,7 @@ export const TableSqlPrograms = () => {
       flex: 0.15,
       field: 'status',
       headerName: 'Status',
+      display: 'flex',
       renderCell: (params: GridRenderCellParams) => {
         const { tooltip, ...statusChipProps } = getStatusChipProps(params.row.status)
         return (
@@ -179,6 +168,7 @@ export const TableSqlPrograms = () => {
       sortable: false,
       field: 'actions',
       headerName: 'Actions',
+      display: 'flex',
       renderCell: (params: GridRenderCellParams<ProgramDescr>) => {
         return (
           <Box data-testid={'box-program-actions-' + params.row.name}>

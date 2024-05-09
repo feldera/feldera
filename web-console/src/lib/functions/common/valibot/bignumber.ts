@@ -1,12 +1,23 @@
 import type { BaseSchema, ErrorMessage, Pipe } from 'valibot'
 import { BigNumber } from 'bignumber.js'
-import { executePipe, getDefaultArgs, getSchemaIssues } from 'valibot'
+import { defaultArgs, IssueReason, pipeResult, schemaIssue } from 'valibot'
 
 /**
  * BigNumber schema type.
  */
-export type BigNumberSchema<TOutput = BigNumber> = BaseSchema<BigNumber, TOutput> & {
-  schema: 'bignumber'
+interface BigNumberSchema<TOutput = BigNumber> extends BaseSchema<BigNumber, TOutput> {
+  /**
+   * The schema type.
+   */
+  type: IssueReason & 'instance'
+  /**
+   * The error message.
+   */
+  message: ErrorMessage | undefined
+  /**
+   * The validation and transformation pipeline.
+   */
+  pipe: Pipe<BigNumber> | undefined
 }
 
 /**
@@ -26,23 +37,29 @@ export function bignumber(pipe?: Pipe<BigNumber>): BigNumberSchema
  *
  * @returns A BigNumber schema.
  */
-export function bignumber(error?: ErrorMessage, pipe?: Pipe<BigNumber>): BigNumberSchema
+export function bignumber(message?: ErrorMessage, pipe?: Pipe<BigNumber>): BigNumberSchema
 
 export function bignumber(arg1?: ErrorMessage | Pipe<BigNumber>, arg2?: Pipe<BigNumber>): BigNumberSchema {
   // Get error and pipe argument
-  const [error, pipe] = getDefaultArgs(arg1, arg2)
+  const [message, pipe] = defaultArgs(arg1, arg2)
 
   // Create and return BigNumber schema
   return {
     /**
      * The schema type.
      */
-    schema: 'bignumber',
+    type: 'instance',
+
+    expects: 'bignumber',
 
     /**
      * Whether it's async.
      */
     async: false,
+
+    message,
+
+    pipe,
 
     /**
      * Parses unknown input based on its schema.
@@ -52,14 +69,14 @@ export function bignumber(arg1?: ErrorMessage | Pipe<BigNumber>, arg2?: Pipe<Big
      *
      * @returns The parsed output.
      */
-    _parse(input, info) {
+    _parse(input, config) {
       // Check type of input
       if (!BigNumber.isBigNumber(input)) {
-        return getSchemaIssues(info, 'type', 'bignumber', error || 'Invalid type', input)
+        return schemaIssue(this, bignumber, input, config)
       }
 
       // Execute pipe and return result
-      return executePipe(input, pipe, info, 'type')
+      return pipeResult(this, input, config)
     }
   }
 }

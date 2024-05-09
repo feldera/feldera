@@ -17,7 +17,7 @@ import { ColumnType, Field } from '$lib/services/manager'
 import assert from 'assert'
 import BigNumber from 'bignumber.js'
 import * as d3 from 'd3-random'
-import dayjs from 'dayjs'
+import dayjs, { Dayjs } from 'dayjs'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 import * as va from 'valibot'
@@ -80,14 +80,15 @@ export interface IRngGenMethod {
     // The compnent to render for the form
     component: React.FunctionComponent<any>
     // The props to pass to the component
-    props:
-      | AddFieldName<TextFieldProps>
-      | AddFieldName<SwitchProps>
-      | AddFieldName<TimePickerProps<Date>>
-      | AddFieldName<DatePickerProps<Date>>
-      | AddFieldName<DateRangePickerProps<Date>>
-      | AddFieldName<DateTimePickerProps<Date>>
-      | AddFieldName<MultiInputDateTimeRangeFieldProps<Date>>
+    props: AddFieldName<
+      | TextFieldProps
+      | SwitchProps
+      | TimePickerProps<Dayjs>
+      | DatePickerProps<Dayjs>
+      | DateRangePickerProps<Dayjs>
+      | DateTimePickerProps<Dayjs>
+      | MultiInputDateTimeRangeFieldProps<Dayjs>
+    >
   }[]
   // A validation schema for the form fields to display errors in case an
   // invalid value is entered in a form.
@@ -289,16 +290,9 @@ const NUMBER_GENERATORS: IRngGenMethod[] = [
     ],
     validationSchema: ct => {
       const range = rangeBigNumber(numericRange(ct))
-      return va.object(
-        {
-          value: va.optional(bignumber(range))
-        },
-        [
-          (v: any) => {
-            return v
-          }
-        ]
-      )
+      return va.object({
+        value: va.optional(bignumber(range))
+      })
     }
   },
   {

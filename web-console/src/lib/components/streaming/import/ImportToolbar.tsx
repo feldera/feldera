@@ -9,7 +9,7 @@ import { PipelineStatus } from '$lib/types/pipeline'
 import BigNumber from 'bignumber.js'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
-import { ChangeEvent, Dispatch, MutableRefObject, ReactNode, SetStateAction, useCallback } from 'react'
+import { ChangeEvent, Dispatch, ReactNode, SetStateAction, useCallback } from 'react'
 import { getCaseIndependentName } from 'src/lib/functions/felderaRelation'
 import JSONbig from 'true-json-bigint'
 import IconDuplicate from '~icons/bx/duplicate'
@@ -20,10 +20,10 @@ import IconUpload from '~icons/bx/upload'
 import { useLocalStorage } from '@mantine/hooks'
 import { Button } from '@mui/material'
 import {
-  GridApi,
   GridToolbarColumnsButton,
   GridToolbarContainer,
-  GridToolbarDensitySelector
+  GridToolbarDensitySelector,
+  useGridApiRef
 } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
@@ -37,21 +37,20 @@ export type StoreSettingsFn = (
 
 const ImportToolbar = ({
   relation,
+  rows,
   setRows,
   pipelineRevision,
   setLoading,
-  apiRef,
-  rows,
   children
 }: {
   relation: Relation
+  rows: Row[]
   setRows: Dispatch<SetStateAction<any[]>>
   pipelineRevision: PipelineRevision
   setLoading: Dispatch<SetStateAction<boolean>>
-  apiRef: MutableRefObject<GridApi>
-  rows: Row[]
-  children: ReactNode
+  children?: ReactNode
 }) => {
+  const apiRef = useGridApiRef()
   const pipelineManagerQuery = usePipelineManagerQuery()
   const { data: pipeline } = useQuery(pipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.name))
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
@@ -89,8 +88,8 @@ const ImportToolbar = ({
     setRows([])
   }
 
-  const insertDefaultRows = useDefaultRows(apiRef, setRows, relation)
-  const insertRandomRows = useGenerateRows(apiRef, setRows, relation, settings)
+  const insertDefaultRows = useDefaultRows(rows.length, setRows, relation)
+  const insertRandomRows = useGenerateRows(rows.length, setRows, relation, settings)
 
   // Function to handle the CSV file import
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

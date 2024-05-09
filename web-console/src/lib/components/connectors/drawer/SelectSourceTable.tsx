@@ -27,16 +27,14 @@ const SelectSourceTable = (props: {
 
   const columns: GridColDef[] = [
     {
-      flex: 0.05,
-      minWidth: 50,
-      field: 'connector_id',
-      headerName: 'ID'
+      field: 'connector_id'
     },
     {
       flex: 0.3,
       minWidth: 290,
       headerName: 'Name',
-      field: 'name'
+      field: 'name',
+      display: 'flex'
     },
     {
       width: 120,

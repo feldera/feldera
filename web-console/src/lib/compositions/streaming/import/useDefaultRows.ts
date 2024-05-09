@@ -4,11 +4,9 @@ import { Row, SQLValueJS } from '$lib/functions/ddl'
 import { ColumnType, Field, Relation } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js'
 import dayjs from 'dayjs'
-import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
+import { Dispatch, SetStateAction, useCallback } from 'react'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
-
-import { GridApi } from '@mui/x-data-grid-pro'
 
 export const getDefaultValue = (columntype: ColumnType): SQLValueJS =>
   match(columntype)
@@ -28,19 +26,14 @@ export const getDefaultValue = (columntype: ColumnType): SQLValueJS =>
     .with({ type: 'NULL' }, () => invariant(false, 'NULL not supported for ingress') as never)
     .exhaustive()
 
-function useDefaultRows(
-  apiRef: MutableRefObject<GridApi>,
-  setRows: Dispatch<SetStateAction<Row[]>>,
-  relation: Relation
-) {
+function useDefaultRows(rowCount: number, setRows: Dispatch<SetStateAction<Row[]>>, relation: Relation) {
   const insertRows = useCallback(
-    (rowCount: number) => {
+    (count: number) => {
       if (relation) {
         const newRows: Row[] = []
-        const curRowCount = apiRef.current?.getRowsCount()
 
-        for (let i = 0; i < rowCount; i++) {
-          const row: Row = { genId: curRowCount + i, weight: 1, record: {} }
+        for (let i = 0; i < count; i++) {
+          const row: Row = { genId: rowCount + i, weight: 1, record: {} }
           relation.fields.forEach((field: Field) => {
             row.record[field.name] = getDefaultValue(field.columntype)
           })
@@ -50,7 +43,7 @@ function useDefaultRows(
         setRows(prevRows => [...prevRows, ...newRows])
       }
     },
-    [apiRef, setRows, relation]
+    [rowCount, setRows, relation]
   )
 
   return insertRows
