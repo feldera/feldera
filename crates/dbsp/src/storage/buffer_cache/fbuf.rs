@@ -25,7 +25,6 @@ use std::{
 };
 
 use libc::c_void;
-use monoio::buf::{IoBuf, IoBufMut};
 use rkyv::{
     ser::{ScratchSpace, Serializer},
     vec::ArchivedVec,
@@ -708,30 +707,6 @@ impl io::Write for FBuf {
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         self.extend_from_slice(buf);
         Ok(())
-    }
-}
-
-unsafe impl IoBufMut for FBuf {
-    fn write_ptr(&mut self) -> *mut u8 {
-        self.as_mut_ptr()
-    }
-
-    fn bytes_total(&mut self) -> usize {
-        self.capacity()
-    }
-
-    unsafe fn set_init(&mut self, init_len: usize) {
-        self.set_len(init_len);
-    }
-}
-
-unsafe impl IoBuf for FBuf {
-    fn read_ptr(&self) -> *const u8 {
-        self.as_ptr()
-    }
-
-    fn bytes_init(&self) -> usize {
-        self.len()
     }
 }
 

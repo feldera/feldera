@@ -1142,17 +1142,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "auto-const-array"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62f7df18977a1ee03650ee4b31b4aefed6d56bac188760b6e37610400fe8d4bb"
-dependencies = [
- "proc-macro2 1.0.82",
- "quote 1.0.36",
- "syn 2.0.63",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3316,7 +3305,6 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "arc-swap",
- "async-lock 3.3.0",
  "binrw",
  "chrono 0.4.31",
  "clap 4.5.4",
@@ -3336,11 +3324,11 @@ dependencies = [
  "indicatif",
  "io-uring",
  "itertools 0.10.5",
+ "lazy_static",
  "libc",
  "log",
  "metrics",
  "mimalloc-rust-sys",
- "monoio",
  "nix 0.27.1",
  "num",
  "num-derive 0.4.2",
@@ -4335,15 +4323,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "fxhash"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
-dependencies = [
- "byteorder",
 ]
 
 [[package]]
@@ -5342,15 +5321,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memoffset"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "metrics"
 version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5458,35 +5428,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monoio"
-version = "0.2.1"
-source = "git+https://github.com/gz/monoio.git?rev=9303e02#9303e024249863234be91a31c86ab237c5dc6bfa"
-dependencies = [
- "auto-const-array",
- "bytes",
- "fxhash",
- "io-uring",
- "libc",
- "memchr",
- "mio",
- "monoio-macros",
- "nix 0.26.4",
- "pin-project-lite",
- "socket2 0.5.7",
- "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "monoio-macros"
-version = "0.1.0"
-source = "git+https://github.com/gz/monoio.git?rev=9303e02#9303e024249863234be91a31c86ab237c5dc6bfa"
-dependencies = [
- "proc-macro2 1.0.82",
- "quote 1.0.36",
- "syn 2.0.63",
-]
-
-[[package]]
 name = "multimap"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5530,8 +5471,6 @@ dependencies = [
  "bitflags 1.3.2",
  "cfg-if",
  "libc",
- "memoffset",
- "pin-utils",
 ]
 
 [[package]]

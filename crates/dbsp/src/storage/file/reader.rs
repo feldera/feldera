@@ -9,7 +9,7 @@ use std::{
     mem::size_of,
     ops::{Bound, Range, RangeBounds},
     path::{Path as IoPath, PathBuf},
-    rc::Rc,
+    sync::Arc,
 };
 
 use crate::dynamic::{DataTrait, DeserializeDyn, Factory};
@@ -382,7 +382,7 @@ impl ValueMapReader {
 /// Cached data block details.
 pub struct InnerDataBlock {
     location: BlockLocation,
-    raw: Rc<FBuf>,
+    raw: Arc<FBuf>,
     value_map: ValueMapReader,
     row_groups: Option<VarintReader>,
 }
@@ -391,7 +391,7 @@ impl InnerDataBlock {
     pub(super) fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.len()
     }
-    pub(super) fn from_raw(raw: Rc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+    pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let header = DataBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         Ok(Self {
             location,
@@ -411,10 +411,8 @@ impl InnerDataBlock {
         })
     }
 
-    fn new<S>(file: &ImmutableFileRef<S>, node: &TreeNode) -> Result<Rc<Self>, Error>
-    where
-        S: Storage,
-    {
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error>
+where {
         file.cache.read_data_block(
             file.file_handle.as_ref().unwrap(),
             node.location.offset,
@@ -448,7 +446,7 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
-    inner: Rc<InnerDataBlock>,
+    inner: Arc<InnerDataBlock>,
     first_row: u64,
     factories: Factories<K, A>,
     _phantom: PhantomData<fn(&K, &A)>,
@@ -474,14 +472,12 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
-    fn new<S>(
+    fn new(
         factories: &Factories<K, A>,
-        file: &ImmutableFileRef<S>,
+        file: &ImmutableFileRef,
         node: &TreeNode,
     ) -> Result<Self, Error>
-    where
-        S: Storage,
-    {
+where {
         let inner = InnerDataBlock::new(file, node)?;
 
         let expected_rows = node.rows.end - node.rows.start;
@@ -617,9 +613,8 @@ struct TreeNode {
 }
 
 impl TreeNode {
-    fn read<S, K, A>(self, file: &ImmutableFileRef<S>) -> Result<TreeBlock<K, A>, Error>
+    fn read<K, A>(self, file: &ImmutableFileRef) -> Result<TreeBlock<K, A>, Error>
     where
-        S: Storage,
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
@@ -668,7 +663,7 @@ where
 /// Cached index block details.
 pub struct InnerIndexBlock {
     location: BlockLocation,
-    raw: Rc<FBuf>,
+    raw: Arc<FBuf>,
     child_type: NodeType,
     bounds: VarintReader,
     row_totals: VarintReader,
@@ -679,7 +674,7 @@ impl InnerIndexBlock {
     pub(super) fn cost(&self) -> usize {
         size_of::<Self>() + self.raw.len()
     }
-    pub(super) fn from_raw(raw: Rc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
+    pub(super) fn from_raw(raw: Arc<FBuf>, location: BlockLocation) -> Result<Self, Error> {
         let header = IndexBlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         if header.n_children == 0 {
             return Err(CorruptionError::EmptyIndex {
@@ -729,10 +724,8 @@ impl InnerIndexBlock {
         })
     }
 
-    fn new<S>(file: &ImmutableFileRef<S>, node: &TreeNode) -> Result<Rc<Self>, Error>
-    where
-        S: Storage,
-    {
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error>
+where {
         file.cache.read_index_block(
             file.file_handle.as_ref().unwrap(),
             node.location.offset,
@@ -745,7 +738,7 @@ struct IndexBlock<K>
 where
     K: DataTrait + ?Sized,
 {
-    inner: Rc<InnerIndexBlock>,
+    inner: Arc<InnerIndexBlock>,
     first_row: u64,
     depth: usize,
     key_factory: &'static dyn Factory<K>,
@@ -773,14 +766,12 @@ impl<K> IndexBlock<K>
 where
     K: DataTrait + ?Sized,
 {
-    fn new<S>(
+    fn new(
         factories: &AnyFactories,
-        file: &ImmutableFileRef<S>,
+        file: &ImmutableFileRef,
         node: &TreeNode,
     ) -> Result<Self, Error>
-    where
-        S: Storage,
-    {
+where {
         const MAX_DEPTH: usize = 64;
         if node.depth > MAX_DEPTH {
             // A depth of 64 (very deep) with a branching factor of 2 (very
@@ -1014,42 +1005,36 @@ impl Column {
 }
 
 /// Encapsulates storage and a file handle.
-pub(crate) struct ImmutableFileRef<S>
-where
-    S: Storage,
-{
+pub(crate) struct ImmutableFileRef {
     path: PathBuf,
-    cache: Rc<BufferCache<S, FileCacheEntry>>,
-    file_handle: Option<ImmutableFileHandle>,
+    cache: Arc<BufferCache<FileCacheEntry>>,
+    file_handle: Option<Arc<ImmutableFileHandle>>,
 }
 
-impl<S> Drop for ImmutableFileRef<S>
-where
-    S: Storage,
-{
+impl Drop for ImmutableFileRef {
     fn drop(&mut self) {
-        let _ = self.cache.evict(self.file_handle.take().unwrap());
+        let ifh = self.file_handle.take().unwrap();
+        if let Some(file_handle) = Arc::into_inner(ifh) {
+            let _ = self.cache.evict(file_handle);
+        }
     }
 }
 
-impl<S> ImmutableFileRef<S>
-where
-    S: Storage,
-{
+impl ImmutableFileRef {
     pub(crate) fn new(
-        cache: &Rc<BufferCache<S, FileCacheEntry>>,
+        cache: &Arc<BufferCache<FileCacheEntry>>,
         file_handle: ImmutableFileHandle,
         path: PathBuf,
     ) -> Self {
         Self {
-            cache: Rc::clone(cache),
+            cache: Arc::clone(cache),
             path,
-            file_handle: Some(file_handle),
+            file_handle: Some(Arc::new(file_handle)),
         }
     }
 
     pub(crate) fn open(
-        cache: &Rc<BufferCache<S, FileCacheEntry>>,
+        cache: &Arc<BufferCache<FileCacheEntry>>,
         path: &IoPath,
     ) -> Result<Self, Error> {
         let file_handle = cache.open(path)?;
@@ -1057,11 +1042,8 @@ where
     }
 }
 
-struct ReaderInner<S, T>
-where
-    S: Storage,
-{
-    file: Rc<ImmutableFileRef<S>>,
+struct ReaderInner<T> {
+    file: Arc<ImmutableFileRef>,
     /// Location of the file on disk.
     columns: Vec<Column>,
 
@@ -1107,21 +1089,18 @@ where
 
 /// Layer file reader.
 ///
-/// `T` in `Reader<S, T>` must be a [`ColumnSpec`] that specifies the key and
+/// `T` in `Reader<T>` must be a [`ColumnSpec`] that specifies the key and
 /// auxiliary data types for all of the columns in the file to be read.
-pub struct Reader<S, T>(Rc<ReaderInner<S, T>>)
-where
-    S: Storage;
+pub struct Reader<T>(Arc<ReaderInner<T>>);
 
-impl<S, T> Reader<S, T>
+impl<T> Reader<T>
 where
-    S: Storage,
     T: ColumnSpec,
 {
     /// Creates and returns a new `Reader` for `file`.
     pub(crate) fn new(
         factories: &[&AnyFactories],
-        file: Rc<ImmutableFileRef<S>>,
+        file: Arc<ImmutableFileRef>,
     ) -> Result<Self, Error> {
         let file_size = file.cache.get_size(file.file_handle.as_ref().unwrap())?;
 
@@ -1168,7 +1147,7 @@ where
             }
         }
 
-        Ok(Self(Rc::new(ReaderInner {
+        Ok(Self(Arc::new(ReaderInner {
             file,
             columns,
             _phantom: PhantomData,
@@ -1179,14 +1158,12 @@ where
     ///
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
-    pub fn empty(cache: &Rc<BufferCache<S, FileCacheEntry>>) -> Result<Self, Error>
-    where
-        S: Storage,
-    {
+    pub fn empty(cache: &Arc<BufferCache<FileCacheEntry>>) -> Result<Self, Error>
+where {
         let file_handle = cache.create()?;
         let (file_handle, path) = cache.complete(file_handle)?;
-        Ok(Self(Rc::new(ReaderInner {
-            file: Rc::new(ImmutableFileRef::new(cache, file_handle, path)),
+        Ok(Self(Arc::new(ReaderInner {
+            file: Arc::new(ImmutableFileRef::new(cache, file_handle, path)),
             columns: (0..T::n_columns()).map(|_| Column::empty()).collect(),
             _phantom: PhantomData,
         })))
@@ -1195,11 +1172,11 @@ where
     /// Instantiates a reader given an existing path.
     pub fn open(
         factories: &[&AnyFactories],
-        cache: &Rc<BufferCache<S, FileCacheEntry>>,
+        cache: &Arc<BufferCache<FileCacheEntry>>,
         path: &IoPath,
     ) -> Result<Self, Error> {
         let file = ImmutableFileRef::open(cache, path)?;
-        Self::new(factories, Rc::new(file))
+        Self::new(factories, Arc::new(file))
     }
 
     /// The number of columns in the layer file.
@@ -1226,24 +1203,20 @@ where
     }
 }
 
-impl<S, T> Clone for Reader<S, T>
-where
-    S: Storage,
-{
+impl<T> Clone for Reader<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<S, K, A, N> Reader<S, (&'static K, &'static A, N)>
+impl<K, A, N> Reader<(&'static K, &'static A, N)>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     (&'static K, &'static A, N): ColumnSpec,
 {
     /// Returns a [`RowGroup`] for all of the rows in column 0.
-    pub fn rows(&self) -> RowGroup<S, K, A, N, (&'static K, &'static A, N)> {
+    pub fn rows(&self) -> RowGroup<K, A, N, (&'static K, &'static A, N)> {
         RowGroup::new(self, 0, 0..self.0.columns[0].n_rows)
     }
 }
@@ -1258,22 +1231,20 @@ where
 /// for a row in column 0 and calling [`Cursor::next_column`] to get its row
 /// group in column 1, and then repeating as many times as necessary to get to
 /// the desired column.
-pub struct RowGroup<'a, S, K, A, N, T>
+pub struct RowGroup<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
 {
-    reader: &'a Reader<S, T>,
+    reader: &'a Reader<T>,
     column: usize,
     rows: Range<u64>,
     _phantom: PhantomData<fn(&K, &A, N)>,
 }
 
-impl<'a, S, K, A, N, T> Clone for RowGroup<'a, S, K, A, N, T>
+impl<'a, K, A, N, T> Clone for RowGroup<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
@@ -1288,9 +1259,8 @@ where
     }
 }
 
-impl<'a, S, K, A, N, T> Debug for RowGroup<'a, S, K, A, N, T>
+impl<'a, K, A, N, T> Debug for RowGroup<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
@@ -1300,14 +1270,13 @@ where
     }
 }
 
-impl<'a, S, K, A, N, T> RowGroup<'a, S, K, A, N, T>
+impl<'a, K, A, N, T> RowGroup<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
 {
-    fn new(reader: &'a Reader<S, T>, column: usize, rows: Range<u64>) -> Self {
+    fn new(reader: &'a Reader<T>, column: usize, rows: Range<u64>) -> Self {
         Self {
             reader,
             column,
@@ -1316,7 +1285,7 @@ where
         }
     }
 
-    fn cursor(&self, position: Position<K, A>) -> Cursor<'a, S, K, A, N, T> {
+    fn cursor(&self, position: Position<K, A>) -> Cursor<'a, K, A, N, T> {
         Cursor {
             row_group: self.clone(),
             position,
@@ -1338,21 +1307,19 @@ where
     }
 
     /// Returns a cursor for just before the row group.
-    pub fn before(&self) -> Cursor<'a, S, K, A, N, T> {
+    pub fn before(&self) -> Cursor<'a, K, A, N, T> {
         self.cursor(Position::Before)
     }
 
     /// Return a cursor for just after the row group.
-    pub fn after(&self) -> Cursor<'a, S, K, A, N, T> {
+    pub fn after(&self) -> Cursor<'a, K, A, N, T> {
         self.cursor(Position::After)
     }
 
     /// Return a cursor for the first row in the row group, or just after the
     /// row group if it is empty.
-    pub fn first(&self) -> Result<Cursor<'a, S, K, A, N, T>, Error>
-    where
-        S: Storage,
-    {
+    pub fn first(&self) -> Result<Cursor<'a, K, A, N, T>, Error>
+where {
         let position = if self.is_empty() {
             Position::After
         } else {
@@ -1363,10 +1330,8 @@ where
 
     /// Return a cursor for the last row in the row group, or just after the
     /// row group if it is empty.
-    pub fn last(&self) -> Result<Cursor<'a, S, K, A, N, T>, Error>
-    where
-        S: Storage,
-    {
+    pub fn last(&self) -> Result<Cursor<'a, K, A, N, T>, Error>
+where {
         let position = if self.is_empty() {
             Position::After
         } else {
@@ -1378,10 +1343,8 @@ where
     /// If `row` is less than the number of rows in the row group, returns a
     /// cursor for that row; otherwise, returns a cursor for just after the row
     /// group.
-    pub fn nth(&self, row: u64) -> Result<Cursor<'a, S, K, A, N, T>, Error>
-    where
-        S: Storage,
-    {
+    pub fn nth(&self, row: u64) -> Result<Cursor<'a, K, A, N, T>, Error>
+where {
         let position = if row < self.len() {
             Position::for_row(self, self.rows.start + row)?
         } else {
@@ -1423,22 +1386,20 @@ pub trait FallibleEq {
     fn equals(&self, other: &Self) -> Result<bool, Error>;
 }
 
-impl<S, K, A, N> FallibleEq for Reader<S, (&'static K, &'static A, N)>
+impl<K, A, N> FallibleEq for Reader<(&'static K, &'static A, N)>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     (&'static K, &'static A, N): ColumnSpec,
-    for<'a> RowGroup<'a, S, K, A, N, (&'static K, &'static A, N)>: FallibleEq,
+    for<'a> RowGroup<'a, K, A, N, (&'static K, &'static A, N)>: FallibleEq,
 {
     fn equals(&self, other: &Self) -> Result<bool, Error> {
         self.rows().equals(&other.rows())
     }
 }
 
-impl<'a, S, K, A, T> FallibleEq for RowGroup<'a, S, K, A, (), T>
+impl<'a, K, A, T> FallibleEq for RowGroup<'a, K, A, (), T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
@@ -1447,8 +1408,8 @@ where
         if self.len() != other.len() {
             return Ok(false);
         }
-        let mut sc: Cursor<'a, _, _, _, _, _> = self.clone().first()?;
-        let mut oc: Cursor<'a, _, _, _, _, _> = other.clone().first()?;
+        let mut sc: Cursor<'a, _, _, _, _> = self.clone().first()?;
+        let mut oc: Cursor<'a, _, _, _, _> = other.clone().first()?;
 
         while sc.has_value() {
             if unsafe { sc.archived_item() != oc.archived_item() } {
@@ -1461,16 +1422,14 @@ where
     }
 }
 
-impl<'a, S, K, A, NK, NA, NN, T> FallibleEq
-    for RowGroup<'a, S, K, A, (&'static NK, &'static NA, NN), T>
+impl<'a, K, A, NK, NA, NN, T> FallibleEq for RowGroup<'a, K, A, (&'static NK, &'static NA, NN), T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     NK: DataTrait + ?Sized,
     NA: DataTrait + ?Sized,
     T: ColumnSpec,
-    RowGroup<'a, S, NK, NA, NN, T>: FallibleEq,
+    RowGroup<'a, NK, NA, NN, T>: FallibleEq,
 {
     fn equals(&self, other: &Self) -> Result<bool, Error> {
         if self.len() != other.len() {
@@ -1497,20 +1456,18 @@ where
 /// A cursor traverses a [`RowGroup`].  It can be positioned on a particular row
 /// or before or after the row group.  (If the row group is empty, then the
 /// cursor can only be before or after the row group.)
-pub struct Cursor<'a, S, K, A, N, T>
+pub struct Cursor<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
 {
-    row_group: RowGroup<'a, S, K, A, N, T>,
+    row_group: RowGroup<'a, K, A, N, T>,
     position: Position<K, A>,
 }
 
-impl<'a, S, K, A, N, T> Clone for Cursor<'a, S, K, A, N, T>
+impl<'a, K, A, N, T> Clone for Cursor<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
@@ -1523,9 +1480,8 @@ where
     }
 }
 
-impl<'a, S, K, A, N, T> Debug for Cursor<'a, S, K, A, N, T>
+impl<'a, K, A, N, T> Debug for Cursor<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
@@ -1535,9 +1491,8 @@ where
     }
 }
 
-impl<'a, S, K, A, N, T> Cursor<'a, S, K, A, N, T>
+impl<'a, K, A, N, T> Cursor<'a, K, A, N, T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     T: ColumnSpec,
@@ -1707,7 +1662,7 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let position = Position::best_match::<S, N, T, _>(&self.row_group, compare, Less)?;
+        let position = Position::best_match::<N, T, _>(&self.row_group, compare, Less)?;
         if position > self.position {
             self.position = position;
         }
@@ -1766,7 +1721,7 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let position = Position::best_match::<S, N, T, _>(&self.row_group, compare, Greater)?;
+        let position = Position::best_match::<N, T, _>(&self.row_group, compare, Greater)?;
         if position < self.position {
             self.position = position;
         }
@@ -1774,9 +1729,8 @@ where
     }
 }
 
-impl<'a, S, K, A, NK, NA, NN, T> Cursor<'a, S, K, A, (&'static NK, &'static NA, NN), T>
+impl<'a, K, A, NK, NA, NN, T> Cursor<'a, K, A, (&'static NK, &'static NA, NN), T>
 where
-    S: Storage,
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
     NK: DataTrait + ?Sized,
@@ -1787,7 +1741,7 @@ where
     /// row.  If the cursor is on a row, the returned row group will contain at
     /// least one row.  If the cursor is before or after the row group, the
     /// returned row group will be empty.
-    pub fn next_column<'b>(&'b self) -> Result<RowGroup<'a, S, NK, NA, NN, T>, Error> {
+    pub fn next_column<'b>(&'b self) -> Result<RowGroup<'a, NK, NA, NN, T>, Error> {
         Ok(RowGroup::new(
             self.row_group.reader,
             self.row_group.column + 1,
@@ -1839,9 +1793,8 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
-    fn for_row<S, N, T>(row_group: &RowGroup<'_, S, K, A, N, T>, row: u64) -> Result<Self, Error>
+    fn for_row<N, T>(row_group: &RowGroup<'_, K, A, N, T>, row: u64) -> Result<Self, Error>
     where
-        S: Storage,
         T: ColumnSpec,
     {
         Self::for_row_from_ancestor(
@@ -1854,15 +1807,13 @@ where
             row,
         )
     }
-    fn for_row_from_ancestor<S, T>(
-        reader: &Reader<S, T>,
+    fn for_row_from_ancestor<T>(
+        reader: &Reader<T>,
         mut indexes: Vec<IndexBlock<K>>,
         mut node: TreeNode,
         row: u64,
     ) -> Result<Self, Error>
-    where
-        S: Storage,
-    {
+where {
         loop {
             let block = node.read(&reader.0.file)?;
             let next = block.lookup_row(row)?;
@@ -1881,10 +1832,8 @@ where
             node = next.unwrap();
         }
     }
-    fn for_row_from_hint<S, T>(reader: &Reader<S, T>, hint: &Self, row: u64) -> Result<Self, Error>
-    where
-        S: Storage,
-    {
+    fn for_row_from_hint<T>(reader: &Reader<T>, hint: &Self, row: u64) -> Result<Self, Error>
+where {
         if hint.data.rows().contains(&row) {
             return Ok(Self {
                 row,
@@ -1919,10 +1868,8 @@ where
     fn row_group(&self) -> Result<Range<u64>, Error> {
         self.data.row_group(self.row)
     }
-    fn move_to_row<S, T>(&mut self, reader: &Reader<S, T>, row: u64) -> Result<(), Error>
-    where
-        S: Storage,
-    {
+    fn move_to_row<T>(&mut self, reader: &Reader<T>, row: u64) -> Result<(), Error>
+where {
         if self.data.rows().contains(&row) {
             self.row = row;
         } else {
@@ -1930,13 +1877,12 @@ where
         }
         Ok(())
     }
-    unsafe fn best_match<S, N, T, C>(
-        row_group: &RowGroup<'_, S, K, A, N, T>,
+    unsafe fn best_match<N, T, C>(
+        row_group: &RowGroup<'_, K, A, N, T>,
         compare: &C,
         bias: Ordering,
     ) -> Result<Option<Self>, Error>
     where
-        S: Storage,
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
@@ -2094,17 +2040,14 @@ where
     K: DataTrait + ?Sized,
     A: DataTrait + ?Sized,
 {
-    fn for_row<S, N, T>(row_group: &RowGroup<'_, S, K, A, N, T>, row: u64) -> Result<Self, Error>
+    fn for_row<N, T>(row_group: &RowGroup<'_, K, A, N, T>, row: u64) -> Result<Self, Error>
     where
-        S: Storage,
-
         T: ColumnSpec,
     {
         Ok(Self::Row(Path::for_row(row_group, row)?))
     }
-    fn next<S, N, T>(&mut self, row_group: &RowGroup<'_, S, K, A, N, T>) -> Result<(), Error>
+    fn next<N, T>(&mut self, row_group: &RowGroup<'_, K, A, N, T>) -> Result<(), Error>
     where
-        S: Storage,
         T: ColumnSpec,
     {
         let row = match self {
@@ -2119,9 +2062,8 @@ where
             Ok(())
         }
     }
-    fn prev<S, N, T>(&mut self, row_group: &RowGroup<'_, S, K, A, N, T>) -> Result<(), Error>
+    fn prev<N, T>(&mut self, row_group: &RowGroup<'_, K, A, N, T>) -> Result<(), Error>
     where
-        S: Storage,
         T: ColumnSpec,
     {
         match self {
@@ -2143,13 +2085,12 @@ where
         }
         Ok(())
     }
-    fn move_to_row<S, N, T>(
+    fn move_to_row<N, T>(
         &mut self,
-        row_group: &RowGroup<'_, S, K, A, N, T>,
+        row_group: &RowGroup<'_, K, A, N, T>,
         row: u64,
     ) -> Result<(), Error>
     where
-        S: Storage,
         T: ColumnSpec,
     {
         if !row_group.rows.is_empty() {
@@ -2200,14 +2141,12 @@ where
     fn has_value(&self) -> bool {
         self.path().is_some()
     }
-    unsafe fn best_match<S, N, T, C>(
-        row_group: &RowGroup<'_, S, K, A, N, T>,
+    unsafe fn best_match<N, T, C>(
+        row_group: &RowGroup<'_, K, A, N, T>,
         compare: &C,
         bias: Ordering,
     ) -> Result<Self, Error>
     where
-        S: Storage,
-
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
@@ -2220,9 +2159,8 @@ where
             }),
         }
     }
-    fn absolute_position<S, N, T>(&self, row_group: &RowGroup<S, K, A, N, T>) -> u64
+    fn absolute_position<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
     where
-        S: Storage,
         T: ColumnSpec,
     {
         match self {
@@ -2231,9 +2169,8 @@ where
             Position::After => row_group.rows.end,
         }
     }
-    fn remaining_rows<S, N, T>(&self, row_group: &RowGroup<S, K, A, N, T>) -> u64
+    fn remaining_rows<N, T>(&self, row_group: &RowGroup<K, A, N, T>) -> u64
     where
-        S: Storage,
         T: ColumnSpec,
     {
         match self {

@@ -2,7 +2,8 @@
 //!
 //! This implements an approximately LRU cache for layer files.  The
 //! [`Reader`](super::reader::Reader) and [writer](super::writer) use it.
-use std::{mem::size_of, rc::Rc};
+use std::mem::size_of;
+use std::sync::Arc;
 
 use crc32c::crc32c;
 
@@ -10,9 +11,10 @@ use binrw::{
     io::{self},
     BinRead,
 };
+use lazy_static::lazy_static;
 
 use crate::storage::{
-    backend::{default_backend_for_thread, Backend, ImmutableFileHandle, Storage},
+    backend::ImmutableFileHandle,
     buffer_cache::{BufferCache, CacheEntry, FBuf},
     file::BlockLocation,
 };
@@ -26,19 +28,19 @@ use super::{
 
 /// Buffer cache type for [`Reader`](super::reader::Reader) and
 /// [`Writer`](super::writer::Writer1).
-pub type FileCache<B> = BufferCache<B, FileCacheEntry>;
+pub type FileCache = BufferCache<FileCacheEntry>;
 
 /// A cached interpretation of a particular block.
 #[derive(Clone)]
 pub enum FileCacheEntry {
     /// File trailer block.
-    FileTrailer(Rc<FileTrailer>),
+    FileTrailer(Arc<FileTrailer>),
 
     /// Index block.
-    Index(Rc<InnerIndexBlock>),
+    Index(Arc<InnerIndexBlock>),
 
     /// Data block.
-    Data(Rc<InnerDataBlock>),
+    Data(Arc<InnerDataBlock>),
 }
 
 impl CacheEntry for FileCacheEntry {
@@ -49,7 +51,7 @@ impl CacheEntry for FileCacheEntry {
             Self::Data(data_block) => data_block.cost(),
         }
     }
-    fn from_read(raw: Rc<FBuf>, offset: u64, size: usize) -> Result<Self, Error> {
+    fn from_read(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error> {
         let computed_checksum = crc32c(&raw[4..]);
         let checksum = u32::from_le_bytes(raw[..4].try_into().unwrap());
         if checksum != computed_checksum {
@@ -64,18 +66,18 @@ impl CacheEntry for FileCacheEntry {
 
         Self::from_write(raw, offset, size)
     }
-    fn from_write(raw: Rc<FBuf>, offset: u64, size: usize) -> Result<Self, Error> {
+    fn from_write(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error> {
         let block_header = BlockHeader::read_le(&mut io::Cursor::new(raw.as_slice()))?;
         match block_header.magic {
-            DATA_BLOCK_MAGIC => Ok(Self::Data(Rc::new(InnerDataBlock::from_raw(
+            DATA_BLOCK_MAGIC => Ok(Self::Data(Arc::new(InnerDataBlock::from_raw(
                 raw,
                 BlockLocation { offset, size },
             )?))),
-            INDEX_BLOCK_MAGIC => Ok(Self::Index(Rc::new(InnerIndexBlock::from_raw(
+            INDEX_BLOCK_MAGIC => Ok(Self::Index(Arc::new(InnerIndexBlock::from_raw(
                 raw,
                 BlockLocation { offset, size },
             )?))),
-            FILE_TRAILER_BLOCK_MAGIC => Ok(Self::FileTrailer(Rc::new(FileTrailer::read_le(
+            FILE_TRAILER_BLOCK_MAGIC => Ok(Self::FileTrailer(Arc::new(FileTrailer::read_le(
                 &mut io::Cursor::new(raw.as_slice()),
             )?))),
             _ => Err(
@@ -86,21 +88,21 @@ impl CacheEntry for FileCacheEntry {
 }
 
 impl FileCacheEntry {
-    fn as_file_trailer(&self) -> Result<Rc<FileTrailer>, ()> {
+    fn as_file_trailer(&self) -> Result<Arc<FileTrailer>, ()> {
         match self {
             Self::FileTrailer(inner) => Ok(inner.clone()),
             _ => Err(()),
         }
     }
 
-    fn as_data_block(&self) -> Result<Rc<InnerDataBlock>, ()> {
+    fn as_data_block(&self) -> Result<Arc<InnerDataBlock>, ()> {
         match self {
             Self::Data(inner) => Ok(inner.clone()),
             _ => Err(()),
         }
     }
 
-    fn as_index_block(&self) -> Result<Rc<InnerIndexBlock>, ()> {
+    fn as_index_block(&self) -> Result<Arc<InnerIndexBlock>, ()> {
         match self {
             Self::Index(inner) => Ok(inner.clone()),
             _ => Err(()),
@@ -108,23 +110,17 @@ impl FileCacheEntry {
     }
 }
 
-fn new_default_cache_for_thread() -> Rc<FileCache<Backend>> {
-    Rc::new(BufferCache::new(default_backend_for_thread()))
+lazy_static! {
+    static ref DEFAULT_CACHE: Arc<FileCache> = Arc::new(FileCache::new());
 }
 
-/// Returns a per-thread `FileCache` suitable for examples, tests, and other
+/// Returns a global `FileCache` suitable for examples, tests, and other
 /// programs that don't need a specific backend configuration.
-pub fn default_cache_for_thread() -> Rc<FileCache<Backend>> {
-    thread_local! {
-        pub static DEFAULT_CACHE: Rc<FileCache<Backend>> = new_default_cache_for_thread();
-    }
-    DEFAULT_CACHE.with(|rc| rc.clone())
+pub fn default_cache() -> Arc<FileCache> {
+    DEFAULT_CACHE.clone()
 }
 
-impl<B> BufferCache<B, FileCacheEntry>
-where
-    B: Storage,
-{
+impl BufferCache<FileCacheEntry> {
     /// Reads a `size`-byte block at `offset` in `fd` and returns it converted
     /// to `InnerDataBlock`.
     pub(super) fn read_data_block(
@@ -132,7 +128,7 @@ where
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<InnerDataBlock>, Error> {
+    ) -> Result<Arc<InnerDataBlock>, Error> {
         self.read(fd, offset, size, FileCacheEntry::as_data_block)
     }
 
@@ -143,7 +139,7 @@ where
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<InnerIndexBlock>, Error> {
+    ) -> Result<Arc<InnerIndexBlock>, Error> {
         self.read(fd, offset, size, FileCacheEntry::as_index_block)
     }
 
@@ -154,7 +150,7 @@ where
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FileTrailer>, Error> {
+    ) -> Result<Arc<FileTrailer>, Error> {
         self.read(fd, offset, size, FileCacheEntry::as_file_trailer)
     }
 }

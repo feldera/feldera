@@ -22,6 +22,7 @@ use std::{
     marker::PhantomData,
     ops::Deref,
     rc::Rc,
+    sync::Arc,
 };
 use uuid::Uuid;
 
@@ -180,8 +181,8 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> TraceBounds<K, V> {
                 .get()
                 .deref()
                 .as_ref()
-                .map(|bx| Rc::from(clone_box(bx.as_ref())))
-                .map(|bound: Rc<V>| {
+                .map(|bx| Arc::from(clone_box(bx.as_ref())))
+                .map(|bound: Arc<V>| {
                     Box::new(move |v: &V| bound.as_ref().cmp(v) != Ordering::Greater) as Filter<V>
                 }),
             Predicate::Filter(filter) => Some(filter.clone()),
@@ -251,7 +252,7 @@ pub type FileValSpine<B, C> = Spine<
 impl<C, B> Stream<C, B>
 where
     C: Circuit,
-    B: Clone + 'static,
+    B: Clone + Send + Sync + 'static,
 {
     /// Spills the in-memory batches in `self` to storage.
     pub fn dyn_spill(

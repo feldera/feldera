@@ -9,7 +9,7 @@ use std::{
 };
 
 /// Custom comparison function.
-pub trait CmpFunc<T>: Send + 'static {
+pub trait CmpFunc<T>: Send + Sync + 'static {
     fn cmp(left: &T, right: &T) -> Ordering;
 }
 

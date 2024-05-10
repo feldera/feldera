@@ -196,7 +196,7 @@ where
         retain_key_func: RK,
     ) where
         TS: DBData + Erase<DynData>,
-        RK: Fn(&B::Key, &TS) -> bool + Clone + 'static,
+        RK: Fn(&B::Key, &TS) -> bool + Clone + Send + Sync + 'static,
     {
         self.inner().dyn_integrate_trace_retain_keys(
             &bounds_stream.inner_data(),
@@ -222,7 +222,7 @@ where
         retain_value_func: RV,
     ) where
         TS: DBData + Erase<DynData>,
-        RV: Fn(&B::Val, &TS) -> bool + Clone + 'static,
+        RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
     {
         self.inner().dyn_integrate_trace_retain_values(
             &bounds_stream.inner_data(),

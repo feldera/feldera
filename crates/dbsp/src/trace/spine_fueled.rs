@@ -155,11 +155,8 @@ impl<B: Batch> From<&Spine<B>> for CommittedSpine<B> {
     }
 }
 
-/// General-purpose [trace][crate::trace::Trace] implementation based on
-/// collection and merging immutable batches of updates.
-///
-/// See [module documentation][crate::trace::spine_fueled] for a description of
-/// the internal data structures.
+/// General-purpose [trace][crate::trace::Trace] implementation for DRAM based
+/// collections and merging immutable batches of updates.
 #[derive(SizeOf)]
 pub struct Spine<B>
 where

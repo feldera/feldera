@@ -20,7 +20,6 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 
 use feldera_storage::backend::io_uring_impl::IoUringBackend;
-use feldera_storage::backend::monoio_impl::MonoioBackend;
 use feldera_storage::backend::posixio_impl::PosixBackend;
 use feldera_storage::backend::{AtomicIncrementOnlyI64, Storage};
 use feldera_storage::buffer_cache::FBuf;
@@ -181,7 +180,6 @@ impl BenchResult {
 
 #[derive(Debug, Clone)]
 enum Backend {
-    Monoio,
     Posix,
     IoUring,
 }
@@ -189,7 +187,6 @@ enum Backend {
 impl From<String> for Backend {
     fn from(s: String) -> Self {
         match s.as_str() {
-            "Monoio" => Backend::Monoio,
             "Posix" => Backend::Posix,
             "IoUring" => Backend::IoUring,
             _ => panic!("invalid backend"),
@@ -213,7 +210,7 @@ struct Args {
     path: std::path::PathBuf,
 
     /// Which backend to use.
-    #[clap(long, default_value = "Monoio")]
+    #[clap(long, default_value = "Posix")]
     backend: Backend,
 
     /// Number of threads to use
@@ -316,38 +313,6 @@ fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenchResul
     }
 }
 
-fn monoio_main(args: Args) -> BenchResult {
-    let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
-    let barrier = Arc::new(Barrier::new(args.threads));
-    // spawn n-1 threads
-    let threads: Vec<_> = (1..args.threads)
-        .map(|_| {
-            let args = args.clone();
-            let barrier = barrier.clone();
-            let counter = counter.clone();
-            thread::spawn(move || {
-                let barrier = barrier.clone();
-                let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
-                benchmark(&monoio_backend, barrier)
-            })
-        })
-        .collect();
-
-    // Run on main thread
-    let monoio_backend = MonoioBackend::new(args.path.clone(), counter);
-    let mut br = BenchResult::default();
-    let main_res = benchmark(&monoio_backend, barrier);
-    br.times.push(main_res);
-
-    // Wait for other n-1 threads
-    threads.into_iter().for_each(|t| {
-        let tres = t.join().expect("thread panicked");
-        br.times.push(tres);
-    });
-
-    br
-}
-
 fn posixio_main(args: Args) -> BenchResult {
     let counter: Arc<AtomicIncrementOnlyI64> = Default::default();
     let barrier = Arc::new(Barrier::new(args.threads));
@@ -431,7 +396,6 @@ fn main() {
     }
 
     let br = match args.backend {
-        Backend::Monoio => monoio_main(args.clone()),
         Backend::Posix => posixio_main(args.clone()),
         Backend::IoUring => io_uring_main(args.clone()),
     };

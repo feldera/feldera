@@ -3,13 +3,10 @@ use crate::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
         Factory, LeanVec, WeightTrait, WithFactory,
     },
-    storage::{
-        backend::Backend,
-        file::{
-            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-            writer::{Parameters, Writer2},
-            Factories as FileFactories,
-        },
+    storage::file::{
+        reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+        writer::{Parameters, Writer2},
+        Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -144,14 +141,11 @@ where
 {
     factories: FileKeyBatchFactories<K, T, R>,
     #[allow(clippy::type_complexity)]
-    file: Reader<
-        Backend,
-        (
-            &'static K,
-            &'static DynUnit,
-            (&'static DynDataTyped<T>, &'static R, ()),
-        ),
-    >,
+    file: Reader<(
+        &'static K,
+        &'static DynUnit,
+        (&'static DynDataTyped<T>, &'static R, ()),
+    )>,
     lower_bound: usize,
     pub lower: Antichain<T>,
     pub upper: Antichain<T>,
@@ -370,7 +364,7 @@ where
     lower2: usize,
 
     // Output so far.
-    writer: Writer2<Backend, K, DynUnit, DynDataTyped<T>, R>,
+    writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
 }
 
 impl<K, T, R> FileKeyMerger<K, T, R>
@@ -558,7 +552,6 @@ where
 
 type RawKeyCursor<'s, K, T, R> = FileCursor<
     's,
-    Backend,
     K,
     DynUnit,
     (&'static DynDataTyped<T>, &'static R, ()),
@@ -571,7 +564,6 @@ type RawKeyCursor<'s, K, T, R> = FileCursor<
 
 type RawTimeDiffCursor<'s, K, T, R> = FileCursor<
     's,
-    Backend,
     DynDataTyped<T>,
     R,
     (),
@@ -844,7 +836,7 @@ where
 {
     factories: FileKeyBatchFactories<K, T, R>,
     time: T,
-    writer: Writer2<Backend, K, DynUnit, DynDataTyped<T>, R>,
+    writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
     key: Box<DynOpt<K>>,
 }
 

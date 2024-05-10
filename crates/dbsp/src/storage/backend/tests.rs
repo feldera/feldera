@@ -4,6 +4,7 @@
 //! TODO: Currently only functional STM, should later be expanded to cover
 //! error/corner cases.
 
+use std::sync::Arc;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -11,7 +12,6 @@ use std::{
     io::{Error as IoError, ErrorKind},
     iter,
     path::{Path, PathBuf},
-    rc::Rc,
     sync::atomic::{AtomicI64, Ordering},
 };
 
@@ -38,6 +38,7 @@ fn limited_pow2() -> BoxedStrategy<u64> {
 }
 
 /// The maximum number of transitions to be generated for each test case.
+#[cfg(target_os = "linux")]
 pub(crate) const MAX_TRANSITIONS: usize = 20;
 
 /// How many files the test case try to read/write to.
@@ -158,8 +159,8 @@ impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
         Ok(())
     }
 
-    fn base(&self) -> &Path {
-        Path::new("")
+    fn base(&self) -> PathBuf {
+        PathBuf::from("")
     }
 
     fn write_block(
@@ -167,12 +168,12 @@ impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let mut files = self.files.borrow_mut();
         let file = files.get(&fd.0).unwrap();
         let new_file = insert_slice_at_offset(file, offset as usize, &data, ALLOW_OVERWRITE)?;
         files.insert(fd.0, new_file);
-        Ok(Rc::new(data))
+        Ok(Arc::new(data))
     }
 
     fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
@@ -188,7 +189,7 @@ impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let files = self.immutable_files.borrow();
         let file = files.get(&fd.0).unwrap();
         let offset = offset as usize;
@@ -205,7 +206,7 @@ impl<const ALLOW_OVERWRITE: bool> Storage for InMemoryBackend<ALLOW_OVERWRITE> {
             .map(|x| x.unwrap_or_default())
             .collect();
         buf.extend_from_slice(&slice);
-        Ok(Rc::new(buf))
+        Ok(Arc::new(buf))
     }
 
     fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {

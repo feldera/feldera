@@ -350,7 +350,9 @@ where
     offset
 }
 
-pub trait ConsolidatePairedSlices<T1: DataTrait + ?Sized, T2: WeightTrait + ?Sized> {
+pub trait ConsolidatePairedSlices<T1: DataTrait + ?Sized, T2: WeightTrait + ?Sized>:
+    Send + Sync
+{
     fn consolidate_paired_slices(
         &self,
         keys: (&mut DynVec<T1>, usize, usize),

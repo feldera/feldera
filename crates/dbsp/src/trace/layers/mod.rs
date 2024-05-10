@@ -31,6 +31,7 @@ pub trait OrdOffset:
     + Sized
     + Rkyv
     + Send
+    + Sync
     + 'static
 {
     fn from_usize(offset: usize) -> Self;
@@ -52,6 +53,7 @@ where
         + Sized
         + Rkyv
         + Send
+        + Sync
         + 'static,
     <O as TryInto<usize>>::Error: Debug,
     <O as TryFrom<usize>>::Error: Debug,

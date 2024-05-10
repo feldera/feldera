@@ -20,11 +20,11 @@ pub use zset::{
     OrdZSetFactories, ZBatch, ZBatchReader, ZCursor, ZSet, ZSetReader, ZTrace, ZWeight,
 };
 
-use core::fmt::{Debug, Display};
 use num::PrimInt;
 use rust_decimal::{prelude::One, prelude::Zero, Decimal};
 use size_of::SizeOf;
 use std::{
+    fmt::{Debug, Display},
     marker::PhantomData,
     num::Wrapping,
     ops::{Add, AddAssign, Mul, Neg},

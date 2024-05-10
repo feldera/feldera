@@ -25,7 +25,7 @@ use super::{
 #[derive(Default)]
 struct FileMetaData {
     name: PathBuf,
-    blocks: HashMap<u64, Rc<FBuf>>,
+    blocks: HashMap<u64, Arc<FBuf>>,
     size: u64,
 }
 
@@ -118,7 +118,7 @@ impl Storage for MemoryBackend {
         self.delete_inner(fd.0)
     }
 
-    fn base(&self) -> &Path {
+    fn base(&self) -> PathBuf {
         todo!()
     }
 
@@ -127,8 +127,8 @@ impl Storage for MemoryBackend {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
-        let data = Rc::new(data);
+    ) -> Result<Arc<FBuf>, StorageError> {
+        let data = Arc::new(data);
         let mut files = self.files.write().unwrap();
         let fm = files.get_mut(&fd.0).unwrap();
         fm.blocks.insert(offset, data.clone());
@@ -161,7 +161,7 @@ impl Storage for MemoryBackend {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         let files = self.files.read().unwrap();
         let fm = files.get(&fd.0).unwrap();
         let block = fm.blocks.get(&offset);

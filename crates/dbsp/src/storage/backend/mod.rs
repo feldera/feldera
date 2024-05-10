@@ -12,7 +12,6 @@
 use std::{
     fs::OpenOptions,
     path::{Path, PathBuf},
-    rc::Rc,
     sync::{
         atomic::{AtomicI64, Ordering},
         Arc, OnceLock,
@@ -33,7 +32,6 @@ pub mod metrics;
 #[cfg(target_os = "linux")]
 pub mod io_uring_impl;
 pub mod memory_impl;
-pub mod monoio_impl;
 pub mod posixio_impl;
 
 #[cfg(test)]
@@ -231,7 +229,7 @@ pub trait Storage {
     }
 
     /// Returns the root of the storage backend.
-    fn base(&self) -> &Path;
+    fn base(&self) -> PathBuf;
 
     /// Allocates a buffer suitable for writing to a file using Direct I/O over
     /// `io_uring`.
@@ -259,7 +257,7 @@ pub trait Storage {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError>;
+    ) -> Result<Arc<FBuf>, StorageError>;
 
     /// Completes writing of a file.
     ///
@@ -319,7 +317,7 @@ pub trait Storage {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError>;
+    ) -> Result<Arc<FBuf>, StorageError>;
 
     /// Returns the file's size in bytes.
     fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError>;
@@ -345,7 +343,7 @@ where
         (**self).delete_mut(fd)
     }
 
-    fn base(&self) -> &Path {
+    fn base(&self) -> PathBuf {
         (**self).base()
     }
 
@@ -354,7 +352,7 @@ where
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         (**self).write_block(fd, offset, data)
     }
 
@@ -371,7 +369,7 @@ where
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         (**self).read_block(fd, offset, size)
     }
 
@@ -419,15 +417,6 @@ pub fn new_default_backend(tempdir: PathBuf, cache: StorageCacheConfig) -> Backe
     }
 
     Box::new(posixio_impl::PosixBackend::with_base(tempdir, cache))
-}
-
-/// Returns a thread-local default backend.
-pub fn default_backend_for_thread() -> Rc<Backend> {
-    thread_local! {
-        pub static DEFAULT_BACKEND: Rc<Backend>
-            = Rc::new(new_default_backend(tempdir_for_thread(), StorageCacheConfig::default()));
-    }
-    DEFAULT_BACKEND.with(|rc| rc.clone())
 }
 
 trait StorageCacheFlags {
