@@ -25,7 +25,7 @@
     "generate-openapi": "openapi --input ../openapi.json --output ./src/lib/services/manager && yarn format",
     "build-openapi": "cd .. && cargo run --bin pipeline-manager -- --dump-openapi",
     "test": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test",
-    "test:ui": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test --ui-port=0",
+    "test:ui": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test --ui-host=0.0.0.0",
     "test:report": "yarn playwright show-report",
     "test:prepare": "git clone --depth 1 https://github.com/feldera/playwright-snapshots.git"
   },
@@ -69,8 +69,8 @@
     "@types/nprogress": "^0.2.3",
     "@types/papaparse": "^5.3.14",
     "@types/react": "^18.3.1",
-    "@typescript-eslint/eslint-plugin": "^7.8.0",
-    "@typescript-eslint/parser": "^6.21.0",
+    "@typescript-eslint/eslint-plugin": "^7.9.0",
+    "@typescript-eslint/parser": "^7.9.0",
     "ahooks": "^3.7.11",
     "ajv": "^8.13.0",
     "apexcharts": "^3.49.0",
@@ -84,7 +84,7 @@
     "dayjs": "^1.11.11",
     "diff": "^5.2.0",
     "encoding": "^0.1.13",
-    "eslint": "^9.2.0",
+    "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.3",
     "eslint-config-prettier": "^9.1.0",
     "eslint-import-resolver-alias": "^1.1.2",
@@ -123,6 +123,7 @@
     "unplugin-icons": "^0.19.0",
     "use-debounce": "^10.0.0",
     "valibot": "^0.30.0",
+    "vite": "^5.2.11",
     "yaml": "^2.4.2",
     "zustand": "^4.5.2"
   }

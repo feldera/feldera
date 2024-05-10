@@ -200,6 +200,7 @@ test('Accrual demo test', async ({ page, request }) => {
       await page.getByTestId('button-expand-relations').hover() // Prevent the cursor causing flakes by tooltip popups
       await page.getByTestId('box-relation-options').waitFor({ state: 'hidden' })
       await page.getByTestId('box-relation-row').first().waitFor()
+      await page.waitForTimeout(50)
       await expect(page).toHaveScreenshot(`5-1-relation ${relation}.png`)
     }
   })
