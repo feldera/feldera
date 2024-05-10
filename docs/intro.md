@@ -1,4 +1,4 @@
-# Docker Compose Install
+# Docker Install
 
 These instructions explain how to run the Feldera Platform on a single machine
 in a configuration suitable for demos, development, and testing.  For production
@@ -51,10 +51,10 @@ You also need `curl` and a web browser such as Chrome or Firefox.
    how to set up the demo's containers:
 
    ```bash
-   curl -O https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml
+   curl -LO https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml
    ```
 
-   You only need to do the first time.
+   You only need to do this the first time.
 
    :::caution
 
@@ -123,7 +123,7 @@ restart it a few different ways:
 ## Troubleshooting
 
 If the demo fails to start after it previously ran successfully, then
-it might not have fully shut down from the previous run.  To ensure
+it might not have fully shut down from the previous run. To ensure
 that it is fully shut down, run the following command, and then try
 starting it again:
 
