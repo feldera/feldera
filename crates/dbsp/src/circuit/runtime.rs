@@ -14,6 +14,7 @@ use crate::{
 };
 use crossbeam::channel::bounded;
 use crossbeam_utils::sync::{Parker, Unparker};
+use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use pipeline_types::config::StorageCacheConfig;
 use serde::Serialize;
@@ -26,7 +27,6 @@ use std::{
     fmt::{Debug, Display, Error as FmtError, Formatter},
     panic::{self, Location, PanicInfo},
     path::{Path, PathBuf},
-    rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
@@ -468,31 +468,22 @@ impl Runtime {
         RUNTIME.with(|rt| rt.borrow().clone())
     }
 
-    fn new_backend() -> Rc<Backend> {
+    pub(crate) fn new_backend() -> Backend {
         let rt = Runtime::runtime();
         let (dir, cache) = if let Some(rt) = rt {
             (rt.inner().storage.as_ref().to_path_buf(), rt.inner().cache)
         } else {
             (tempdir_for_thread(), StorageCacheConfig::default())
         };
-        Rc::new(new_default_backend(dir, cache))
+        new_default_backend(dir, cache)
     }
 
     /// Returns the (thread-local) storage backend.
-    pub fn backend() -> Rc<Backend> {
-        thread_local! {
-            pub static DEFAULT_BACKEND: Rc<Backend> = Runtime::new_backend();
+    pub fn storage() -> Arc<BufferCache<FileCacheEntry>> {
+        lazy_static! {
+            pub static ref CACHE: Arc<BufferCache<FileCacheEntry>> = Arc::new(BufferCache::new());
         }
-        DEFAULT_BACKEND.with(|rc| rc.clone())
-    }
-
-    /// Returns the (thread-local) storage backend.
-    pub fn storage() -> Rc<BufferCache<Backend, FileCacheEntry>> {
-        thread_local! {
-            pub static CACHE: Rc<BufferCache<Backend, FileCacheEntry>> =
-                Rc::new(BufferCache::new(Runtime::backend()));
-        }
-        CACHE.with(|rc| rc.clone())
+        CACHE.clone()
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.

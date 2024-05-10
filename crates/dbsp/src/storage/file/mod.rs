@@ -80,6 +80,7 @@ use rkyv::{
     },
     Archive, Archived, Deserialize, Fallible, Infallible, Serialize,
 };
+use std::fmt::Debug;
 use std::{any::Any, sync::Arc};
 
 use crate::storage::buffer_cache::{FBuf, FBufSerializer};
@@ -162,10 +163,16 @@ where
 /// representation of factory objects, which can be downcast to concrete factory
 /// types on demand. This struct offers such a representation by casting key and
 /// item factories to `dyn Any`.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AnyFactories {
-    key_factory: Arc<dyn Any>,
-    item_factory: Arc<dyn Any>,
+    key_factory: Arc<(dyn Any + Send + Sync + 'static)>,
+    item_factory: Arc<(dyn Any + Send + Sync + 'static)>,
+}
+
+impl Debug for AnyFactories {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnyFactories").finish()
+    }
 }
 
 impl AnyFactories {
@@ -175,6 +182,7 @@ impl AnyFactories {
     {
         *self
             .key_factory
+            .as_ref()
             .downcast_ref::<&'static dyn Factory<K>>()
             .unwrap()
     }
@@ -186,6 +194,7 @@ impl AnyFactories {
     {
         *self
             .item_factory
+            .as_ref()
             .downcast_ref::<&'static dyn ItemFactory<K, A>>()
             .unwrap()
     }
@@ -286,10 +295,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::storage::{backend::Storage, test::init_test_logger};
+    use crate::storage::test::init_test_logger;
 
     use super::{
-        cache::default_cache_for_thread,
+        cache::default_cache,
         reader::{ColumnSpec, RowGroup},
         writer::{Parameters, Writer1, Writer2},
         Factories,
@@ -318,14 +327,13 @@ mod test {
         fn aux1(row0: usize, row1: usize) -> Self::A1;
     }
 
-    fn test_find<S, K, A, N, T>(
-        row_group: &RowGroup<S, DynData, DynData, N, T>,
+    fn test_find<K, A, N, T>(
+        row_group: &RowGroup<DynData, DynData, N, T>,
         before: &K,
         key: &K,
         after: &K,
         mut aux: A,
     ) where
-        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -396,12 +404,11 @@ mod test {
         );
     }
 
-    fn test_out_of_range<S, K, A, N, T>(
-        row_group: &RowGroup<S, DynData, DynData, N, T>,
+    fn test_out_of_range<K, A, N, T>(
+        row_group: &RowGroup<DynData, DynData, N, T>,
         before: &K,
         after: &K,
     ) where
-        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -429,13 +436,12 @@ mod test {
     }
 
     #[allow(clippy::len_zero)]
-    fn test_cursor_helper<S, K, A, N, T>(
-        rows: &RowGroup<S, DynData, DynData, N, T>,
+    fn test_cursor_helper<K, A, N, T>(
+        rows: &RowGroup<DynData, DynData, N, T>,
         offset: u64,
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
-        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -511,16 +517,15 @@ mod test {
         if n > 0 {
             let (before, _, _, _) = expected(0);
             let (_, _, after, _) = expected(n - 1);
-            test_out_of_range::<S, K, A, N, T>(rows, &before, &after);
+            test_out_of_range::<K, A, N, T>(rows, &before, &after);
         }
     }
 
-    fn test_cursor<S, K, A, N, T>(
-        rows: &RowGroup<S, DynData, DynData, N, T>,
+    fn test_cursor<K, A, N, T>(
+        rows: &RowGroup<DynData, DynData, N, T>,
         n: usize,
         expected: impl Fn(usize) -> (K, K, K, A),
     ) where
-        S: Storage,
         K: DBData,
         A: DBData,
         T: ColumnSpec,
@@ -543,13 +548,8 @@ mod test {
         let factories0 = Factories::<DynData, DynData>::new::<T::K0, T::A0>();
         let factories1 = Factories::<DynData, DynData>::new::<T::K1, T::A1>();
 
-        let mut layer_file = Writer2::new(
-            &factories0,
-            &factories1,
-            &default_cache_for_thread(),
-            parameters,
-        )
-        .unwrap();
+        let mut layer_file =
+            Writer2::new(&factories0, &factories1, &default_cache(), parameters).unwrap();
         let n0 = T::n0();
         for row0 in 0..n0 {
             for row1 in 0..T::n1(row0) {
@@ -642,7 +642,7 @@ mod test {
         A: DBData,
     {
         let factories = Factories::<DynData, DynData>::new::<K, A>();
-        let mut writer = Writer1::new(&factories, &default_cache_for_thread(), parameters).unwrap();
+        let mut writer = Writer1::new(&factories, &default_cache(), parameters).unwrap();
         for row in 0..n {
             let (_before, key, _after, aux) = expected(row);
             writer.write0((&key, &aux)).unwrap();

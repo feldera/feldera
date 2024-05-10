@@ -4,7 +4,6 @@ use crate::{
     RuntimeError, SchedulerError,
 };
 use anyhow::Error as AnyError;
-use core::fmt;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use hashbrown::HashMap;
 use itertools::Either;
@@ -12,7 +11,7 @@ pub use pipeline_types::config::{StorageCacheConfig, StorageConfig};
 use std::{
     collections::HashSet,
     error::Error as StdError,
-    fmt::{Debug, Display, Error as FmtError, Formatter},
+    fmt::{self, Debug, Display, Error as FmtError, Formatter},
     fs::{self, create_dir_all},
     iter::empty,
     net::SocketAddr,

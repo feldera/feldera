@@ -45,9 +45,11 @@ use std::{fmt::Debug, hash::Hash, path::PathBuf};
 pub mod cursor;
 pub mod layers;
 pub mod ord;
-pub mod spine_fueled;
-pub use spine_fueled::Spine;
+//pub mod spine_async;
+//pub use spine_async::Spine;
 
+mod spine_fueled;
+pub use spine_fueled::Spine;
 #[cfg(test)]
 pub mod test;
 
@@ -81,13 +83,13 @@ pub use layers::Trie;
 /// `DBData` as a trait bound on types.  Conversely, a trait bound of the form
 /// `B: BatchReader` implies `B::Key: DBData` and `B::Val: DBData`.
 pub trait DBData:
-    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Debug + ArchivedDBData + 'static
+    Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static
 {
 }
 
 /// Automatically implement DBData for everything that satisfied the bounds.
 impl<T> DBData for T where
-    T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
+    T: Default + Clone + Eq + Ord + Hash + SizeOf + Send + Sync + Debug + ArchivedDBData + 'static /* as ArchivedDBData>::Repr: Ord + PartialOrd<T>, */
 {
 }
 
@@ -126,9 +128,9 @@ pub fn unaligned_deserialize<T: Deserializable>(bytes: &[u8]) -> T {
 pub trait DBWeight: DBData + MonoidValue {}
 impl<T> DBWeight for T where T: DBData + MonoidValue {}
 
-pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone {}
+pub trait FilterFunc<V: ?Sized>: Fn(&V) -> bool + DynClone + Send + Sync {}
 
-impl<V: ?Sized, F> FilterFunc<V> for F where F: Fn(&V) -> bool + Clone + 'static {}
+impl<V: ?Sized, F> FilterFunc<V> for F where F: Fn(&V) -> bool + Clone + Send + Sync + 'static {}
 
 dyn_clone::clone_trait_object! {<V: ?Sized> FilterFunc<V>}
 pub type Filter<V> = Box<dyn FilterFunc<V>>;
@@ -370,7 +372,10 @@ where
 }
 
 pub trait Spillable: BatchReader<Time = ()> {
-    type Spilled: Batch<Key = Self::Key, Val = Self::Val, R = Self::R, Time = ()> + Stored;
+    type Spilled: Batch<Key = Self::Key, Val = Self::Val, R = Self::R, Time = ()>
+        + Stored
+        + Sync
+        + Send;
 
     fn spill(&self, output_factories: &<Self::Spilled as BatchReader>::Factories) -> Self::Spilled {
         copy_batch(self, &(), output_factories)
@@ -394,7 +399,7 @@ where
     type Spilled = FallbackWSet<K, R>;
 }
 
-pub trait Stored: BatchReader<Time = ()> {
+pub trait Stored: BatchReader<Time = ()> + Send + Sync {
     type Unspilled: Batch<Key = Self::Key, Val = Self::Val, R = Self::R, Time = ()> + Spillable;
 
     fn unspill(
@@ -435,7 +440,7 @@ where
 /// traces.
 ///
 /// [`recede_to`]: Self::recede_to
-pub trait Batch: BatchReader + Clone
+pub trait Batch: BatchReader + Clone + Send + Sync
 where
     Self: Sized,
 {

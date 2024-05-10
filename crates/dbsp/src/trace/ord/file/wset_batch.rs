@@ -4,13 +4,10 @@ use crate::{
         DataTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
         WeightTrait, WeightTraitTyped, WithFactory,
     },
-    storage::{
-        backend::Backend,
-        file::{
-            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-            writer::{Parameters, Writer1},
-            Factories as FileFactories,
-        },
+    storage::file::{
+        reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+        writer::{Parameters, Writer1},
+        Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -136,7 +133,7 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileWSetFactories<K, R>,
-    file: Reader<Backend, (&'static K, &'static R, ())>,
+    file: Reader<(&'static K, &'static R, ())>,
     lower_bound: usize,
 }
 
@@ -451,7 +448,7 @@ where
     lower2: usize,
 
     // Output so far.
-    writer: Writer1<Backend, K, R>,
+    writer: Writer1<K, R>,
 }
 
 impl<K, R> Merger<K, DynUnit, (), R, FileWSet<K, R>> for FileWSetMerger<K, R>
@@ -555,7 +552,7 @@ where
     }
 }
 
-type RawCursor<'s, K, R> = FileCursor<'s, Backend, K, R, (), (&'static K, &'static R, ())>;
+type RawCursor<'s, K, R> = FileCursor<'s, K, R, (), (&'static K, &'static R, ())>;
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
@@ -758,7 +755,7 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileWSetFactories<K, R>,
-    writer: Writer1<Backend, K, R>,
+    writer: Writer1<K, R>,
 }
 
 impl<K, R> Builder<FileWSet<K, R>> for FileWSetBuilder<K, R>

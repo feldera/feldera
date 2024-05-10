@@ -65,9 +65,6 @@ thiserror = "1.0"
 uuid = { version = "1.6.1", features = ["v7"] }
 clap = { version = "4.4.14", features = ["derive", "env", "wrap_help"] }
 fdlimit = { version = "0.3.0" }
-# Waiting for https://github.com/bytedance/monoio/pull/227 to be merged
-monoio = { git = "https://github.com/gz/monoio.git", rev = "9303e02" }
-async-lock = { version = "3.3" }
 metrics = { version = "0.22.0" }
 log = { version = "0.4", features = [] }
 rlimit = "0.10.1"
@@ -77,6 +74,7 @@ pipeline_types = { path = "../pipeline-types" }
 sysinfo = "0.30.5"
 libc = "0.2.153"
 static_assertions = "1.1.0"
+lazy_static = "1.4.0"
 
 [dependencies.time]
 version = "0.3.20"

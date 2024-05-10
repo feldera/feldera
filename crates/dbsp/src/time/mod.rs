@@ -110,7 +110,9 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
         + SizeOf;
 
     type FileValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
-        + SizeOf;
+        + SizeOf
+        + Send
+        + Sync;
 
     type FileKeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
         + SizeOf;

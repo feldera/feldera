@@ -4,13 +4,10 @@ use crate::{
         DataTrait, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, LeanVec,
         WeightTrait, WeightTraitTyped, WithFactory,
     },
-    storage::{
-        backend::Backend,
-        file::{
-            reader::{Cursor as FileCursor, Error as ReaderError, Reader},
-            writer::{Parameters, Writer2},
-            Factories as FileFactories,
-        },
+    storage::file::{
+        reader::{Cursor as FileCursor, Error as ReaderError, Reader},
+        writer::{Parameters, Writer2},
+        Factories as FileFactories,
     },
     time::{Antichain, AntichainRef},
     trace::{
@@ -148,7 +145,7 @@ where
 {
     factories: FileIndexedWSetFactories<K, V, R>,
     #[allow(clippy::type_complexity)]
-    file: Reader<Backend, (&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
+    file: Reader<(&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
     lower_bound: usize,
 }
 
@@ -459,7 +456,7 @@ where
     lower2: usize,
 
     // Output so far.
-    writer: Writer2<Backend, K, DynUnit, V, R>,
+    writer: Writer2<K, DynUnit, V, R>,
 }
 
 impl<K, V, R> FileIndexedWSetMerger<K, V, R>
@@ -652,7 +649,6 @@ where
 
 type KeyCursor<'s, K, V, R> = FileCursor<
     's,
-    Backend,
     K,
     DynUnit,
     (&'static V, &'static R, ()),
@@ -660,7 +656,7 @@ type KeyCursor<'s, K, V, R> = FileCursor<
 >;
 
 type ValCursor<'s, K, V, R> =
-    FileCursor<'s, Backend, V, R, (), (&'static K, &'static DynUnit, (&'static V, &'static R, ()))>;
+    FileCursor<'s, V, R, (), (&'static K, &'static DynUnit, (&'static V, &'static R, ()))>;
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
@@ -889,7 +885,7 @@ where
     R: WeightTrait + ?Sized,
 {
     factories: FileIndexedWSetFactories<K, V, R>,
-    writer: Writer2<Backend, K, DynUnit, V, R>,
+    writer: Writer2<K, DynUnit, V, R>,
     key: Box<DynOpt<K>>,
 }
 

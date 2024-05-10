@@ -72,7 +72,7 @@ impl FileMetaData {
 #[derive(Default)]
 struct VectoredWrite {
     /// Buffers accumulated to write so far.
-    buffers: Vec<Rc<FBuf>>,
+    buffers: Vec<Arc<FBuf>>,
 
     /// Starting offset for the write.  If there are no buffers yet, this is not
     /// meaningful (and should be 0).
@@ -86,7 +86,7 @@ impl VectoredWrite {
     /// Tries to add a write of `block` at `offset` to this vectored write.
     /// This will fail if adding `block` would make the vectored write too big
     /// or non-sequential.
-    fn append(&mut self, block: &Rc<FBuf>, offset: u64) -> Result<(), ()> {
+    fn append(&mut self, block: &Arc<FBuf>, offset: u64) -> Result<(), ()> {
         if self.len >= 1024 * 1024 || (self.len > 0 && self.offset + self.len != offset) {
             Err(())
         } else {
@@ -109,7 +109,7 @@ impl VectoredWrite {
 #[allow(dead_code)]
 struct RequestResources {
     /// Needs to be kept until request completion.
-    buffers: Vec<Rc<FBuf>>,
+    buffers: Vec<Arc<FBuf>>,
 
     /// Needs to be kept until request completion.  (The kernel does not copy
     /// out the iovec at submission time, it accesses it throughout request
@@ -400,8 +400,8 @@ impl Inner {
         &mut self,
         fd: &FileHandle,
         offset: u64,
-        block: Rc<FBuf>,
-    ) -> Result<Rc<FBuf>, StorageError> {
+        block: Arc<FBuf>,
+    ) -> Result<Arc<FBuf>, StorageError> {
         let end_offset = offset + block.len() as u64;
 
         let fm = self.files.get_mut(&fd.0).unwrap();
@@ -466,7 +466,7 @@ impl Inner {
         retval
     }
 
-    fn read_block(&self, fd: i64, offset: u64, size: usize) -> Result<Rc<FBuf>, StorageError> {
+    fn read_block(&self, fd: i64, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
         let mut buffer = FBuf::with_capacity(size);
 
         let fm = self.files.get(&fd).unwrap();
@@ -480,7 +480,7 @@ impl Inner {
                 counter!(TOTAL_BYTES_READ).increment(buffer.len() as u64);
                 histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
                 counter!(READS_SUCCESS).increment(1);
-                Ok(Rc::new(buffer))
+                Ok(Arc::new(buffer))
             }
             Err(e) => {
                 counter!(READS_FAILED).increment(1);
@@ -589,10 +589,10 @@ impl Storage for IoUringBackend {
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         self.inner
             .borrow_mut()
-            .write_block(fd, offset, Rc::new(data))
+            .write_block(fd, offset, Arc::new(data))
     }
 
     fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
@@ -608,7 +608,7 @@ impl Storage for IoUringBackend {
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
+    ) -> Result<Arc<FBuf>, StorageError> {
         self.inner.borrow().read_block(fd.0, offset, size)
     }
 
@@ -616,7 +616,7 @@ impl Storage for IoUringBackend {
         Ok(self.inner.borrow().files.get(&fd.0).unwrap().size)
     }
 
-    fn base(&self) -> &Path {
-        &self.base
+    fn base(&self) -> PathBuf {
+        self.base.clone()
     }
 }

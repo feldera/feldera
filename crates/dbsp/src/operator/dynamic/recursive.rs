@@ -55,7 +55,7 @@ impl<C, B> RecursiveStreams<C> for Stream<C, B>
 where
     C: Circuit,
     C::Parent: Circuit,
-    B: Checkpoint + IndexedZSet + Spillable + Send,
+    B: Checkpoint + IndexedZSet + Spillable + Send + Sync,
     Spine<B>: SizeOf,
 {
     type Feedback = DelayedFeedback<C, B>;

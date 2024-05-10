@@ -2,17 +2,18 @@
 //!
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
+use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use std::{
-    cell::RefCell,
     collections::BTreeMap,
     ops::Range,
     path::{Path, PathBuf},
-    rc::Rc,
 };
 
 use crc32c::crc32c;
 use metrics::counter;
 
+use crate::storage::backend::Backend;
 use crate::storage::file::reader::{CorruptionError, Error};
 use crate::{
     storage::backend::{
@@ -20,6 +21,7 @@ use crate::{
         FileHandle, ImmutableFileHandle, Storage, StorageError,
     },
     storage::buffer_cache::FBuf,
+    Runtime,
 };
 
 /// A key for the block cache.
@@ -80,13 +82,13 @@ where
     serial: u64,
 }
 
-pub trait CacheEntry: Clone
+pub trait CacheEntry: Clone + Send
 where
     Self: Sized,
 {
     fn cost(&self) -> usize;
-    fn from_read(raw: Rc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
-    fn from_write(raw: Rc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
+    fn from_read(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
+    fn from_write(raw: Arc<FBuf>, offset: u64, size: usize) -> Result<Self, Error>;
 }
 
 struct CacheInner<E>
@@ -108,6 +110,15 @@ where
 
     /// Maximum `size`, in bytes.
     max_cost: usize,
+}
+
+impl<E> Default for BufferCache<E>
+where
+    E: CacheEntry,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<E> CacheInner<E>
@@ -203,29 +214,33 @@ where
 }
 
 /// A cache on top of a storage [backend](crate::storage::backend).
-pub struct BufferCache<B, E>
+pub struct BufferCache<E>
 where
-    B: Storage,
     E: CacheEntry,
 {
-    backend: Rc<B>,
-    inner: RefCell<CacheInner<E>>,
+    inner: RwLock<CacheInner<E>>,
 }
 
-impl<B, E> BufferCache<B, E>
+impl<E> BufferCache<E>
 where
-    B: Storage,
     E: CacheEntry,
 {
     /// Creates a new cache on top of `backend`.
     ///
     /// It's best to use a single `StorageCache` for all uses of a given
     /// `backend`, because otherwise the cache will end up with duplicates.
-    pub fn new(backend: Rc<B>) -> Self {
+    pub fn new() -> Self {
         Self {
-            backend,
-            inner: RefCell::new(CacheInner::new()),
+            inner: RwLock::new(CacheInner::new()),
         }
+    }
+
+    /// Returns the (thread-local) storage backend.
+    pub fn backend() -> Rc<Backend> {
+        thread_local! {
+            pub static DEFAULT_BACKEND: Rc<Backend> = Rc::new(Runtime::new_backend());
+        }
+        DEFAULT_BACKEND.with(|rc| rc.clone())
     }
 
     pub fn read<F, T>(
@@ -239,7 +254,7 @@ where
         F: Fn(&E) -> Result<T, ()>,
     {
         let key = CacheKey::from((fd, offset));
-        if let Some(aux) = self.inner.borrow_mut().get(key) {
+        if let Some(aux) = self.inner.write().unwrap().get(key) {
             counter!(BUFFER_CACHE_HIT).increment(1);
             return convert(aux)
                 .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
@@ -247,11 +262,11 @@ where
 
         counter!(BUFFER_CACHE_MISS).increment(1);
 
-        let block = self.backend.read_block(fd, offset, size)?;
+        let block = Self::backend().read_block(fd, offset, size)?;
         let aux = E::from_read(block, offset, size)?;
         let retval = convert(&aux)
             .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
-        self.inner.borrow_mut().insert(key, aux.clone());
+        self.inner.write().unwrap().insert(key, aux.clone());
         retval
     }
 
@@ -259,46 +274,46 @@ where
         let checksum = crc32c(&data[4..]).to_le_bytes();
         data[..4].copy_from_slice(checksum.as_slice());
 
-        let data = self.write_block(fd, offset, data)?;
+        let data = Self::backend().write_block(fd, offset, data)?;
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
         self.inner
-            .borrow_mut()
+            .write()
+            .unwrap()
             .insert(CacheKey::from((fd, offset)), aux);
         Ok(())
     }
 }
 
-impl<B, E> Storage for BufferCache<B, E>
+impl<E> Storage for BufferCache<E>
 where
-    B: Storage,
     E: CacheEntry,
 {
     fn create(&self) -> Result<FileHandle, StorageError> {
-        self.backend.create()
+        Self::backend().create()
     }
     fn create_named(&self, name: &Path) -> Result<FileHandle, StorageError> {
-        self.backend.create_named(name)
+        Self::backend().create_named(name)
     }
     fn open(&self, name: &Path) -> Result<ImmutableFileHandle, StorageError> {
-        self.backend.open(name)
+        Self::backend().open(name)
     }
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.borrow_mut().delete_file((&fd).into());
-        self.backend.delete(fd)
+        self.inner.write().unwrap().delete_file((&fd).into());
+        Self::backend().delete(fd)
     }
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.inner.borrow_mut().delete_file((&fd).into());
-        self.backend.delete_mut(fd)
+        self.inner.write().unwrap().delete_file((&fd).into());
+        Self::backend().delete_mut(fd)
     }
 
     fn evict(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.borrow_mut().delete_file((&fd).into());
+        self.inner.write().unwrap().delete_file((&fd).into());
         Ok(())
     }
 
-    fn base(&self) -> &Path {
-        self.backend.base()
+    fn base(&self) -> PathBuf {
+        Self::backend().base()
     }
 
     fn write_block(
@@ -306,22 +321,23 @@ where
         fd: &FileHandle,
         offset: u64,
         data: FBuf,
-    ) -> Result<Rc<FBuf>, StorageError> {
-        let data = self.backend.write_block(fd, offset, data)?;
+    ) -> Result<Arc<FBuf>, StorageError> {
+        let data = Self::backend().write_block(fd, offset, data)?;
         let size = data.len();
         let aux = E::from_write(data.clone(), offset, size).unwrap();
         self.inner
-            .borrow_mut()
+            .write()
+            .unwrap()
             .insert(CacheKey::from((fd, offset)), aux);
         Ok(data)
     }
 
     fn complete(&self, fd: FileHandle) -> Result<(ImmutableFileHandle, PathBuf), StorageError> {
-        self.backend.complete(fd)
+        Self::backend().complete(fd)
     }
 
     fn prefetch(&self, fd: &ImmutableFileHandle, offset: u64, size: usize) {
-        self.backend.prefetch(fd, offset, size)
+        Self::backend().prefetch(fd, offset, size)
     }
 
     fn read_block(
@@ -329,11 +345,11 @@ where
         fd: &ImmutableFileHandle,
         offset: u64,
         size: usize,
-    ) -> Result<Rc<FBuf>, StorageError> {
-        self.backend.read_block(fd, offset, size)
+    ) -> Result<Arc<FBuf>, StorageError> {
+        Self::backend().read_block(fd, offset, size)
     }
 
     fn get_size(&self, fd: &ImmutableFileHandle) -> Result<u64, StorageError> {
-        self.backend.get_size(fd)
+        Self::backend().get_size(fd)
     }
 }

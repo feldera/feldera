@@ -62,8 +62,6 @@
 
 #![allow(clippy::type_complexity)]
 
-extern crate core;
-
 pub mod dynamic;
 mod error;
 mod hash;
