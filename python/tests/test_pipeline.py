@@ -1,4 +1,6 @@
 import unittest
+import uuid
+
 from tests import TEST_CLIENT
 
 from feldera.pipeline import Pipeline
@@ -20,20 +22,20 @@ class TestPipeline(unittest.TestCase):
             TEST_CLIENT.delete_pipeline(pipeline.name)
 
     def test_validate_pipeline(self):
-        name = "blah"
+        name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
         assert TEST_CLIENT.validate_pipeline(name)
 
         TEST_CLIENT.delete_pipeline(name)
 
     def test_delete_pipeline(self):
-        name = "blah"
+        name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
 
         TEST_CLIENT.delete_pipeline(name)
 
     def __test_push_to_pipeline(self, data, format, array):
-        name = "blah"
+        name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
 
         TEST_CLIENT.start_pipeline(name)
@@ -64,7 +66,7 @@ class TestPipeline(unittest.TestCase):
         self.__test_push_to_pipeline(data, format="csv", array=False)
 
     def test_list_pipelines(self):
-        name = "blah"
+        name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
         pipelines = TEST_CLIENT.pipelines()
         assert len(pipelines) > 0
@@ -73,14 +75,38 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.delete_pipeline(name)
 
     def test_get_pipeline(self):
-        name = "blah"
+        name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
         p = TEST_CLIENT.get_pipeline(name)
         assert name == p.name
 
         TEST_CLIENT.delete_pipeline(name)
 
-    # def test_get_pipeline_config(self):
+    def test_get_pipeline_config(self):
+        name = str(uuid.uuid4())
+        self.test_create_pipeline(name, False)
+        config = TEST_CLIENT.get_pipeline_config(name)
+
+        assert config is not None
+        assert config.get("workers") is not None
+        assert config.get("storage") is not None
+
+        TEST_CLIENT.delete_pipeline(name)
+
+    def test_get_pipeline_stats(self):
+        name = str(uuid.uuid4())
+        self.test_create_pipeline(name, delete=False)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        stats = TEST_CLIENT.get_pipeline_stats(name)
+
+        assert stats is not None
+        assert stats.get("pipeline_config") is not None
+
+        TEST_CLIENT.pause_pipeline(name)
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
 
 
 if __name__ == '__main__':
