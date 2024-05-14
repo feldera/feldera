@@ -144,6 +144,10 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return this.mayBeNull ? "N" : "";
     }
 
+    public String asSqlString() {
+        return this.code.sqlName;
+    }
+
     /** The name of the type as used in the runtime library.
      * Only defined for base types. */
     public String baseTypeWithSuffix() {

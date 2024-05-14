@@ -32,6 +32,7 @@ import java.util.stream.Stream;
 public interface IIndentStream {
     IIndentStream appendChar(char c);
     IIndentStream append(String string);
+    IIndentStream append(boolean b);
     <T extends ToIndentableString> IIndentStream append(T value);
     IIndentStream append(int value);
     IIndentStream append(long value);

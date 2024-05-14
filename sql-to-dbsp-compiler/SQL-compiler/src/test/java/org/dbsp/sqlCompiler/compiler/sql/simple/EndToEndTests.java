@@ -309,9 +309,10 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPI32Literal(10),
                 new DBSPDoubleLiteral(13.0),
                 new DBSPI64Literal(2));
-        String query = "SELECT T.COL1, " +
-                "SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING), " +
-                "COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        String query = """
+                SELECT T.COL1,
+                SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING),
+                COUNT(*) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T""";
         this.testQuery(query, new DBSPZSetLiteral(t, t));
     }
 
@@ -319,7 +320,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void overConstantWindowTest() {
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),
-                new DBSPI64Literal(2));
+                new DBSPI64Literal(0));
         String query = "SELECT T.COL1, " +
                 "COUNT(*) OVER (ORDER BY T.COL1 RANGE BETWEEN 2 PRECEDING AND 1 PRECEDING) FROM T";
         this.testQuery(query, new DBSPZSetLiteral(t, t));
@@ -330,10 +331,11 @@ public class EndToEndTests extends BaseSQLTests {
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),
                 new DBSPDoubleLiteral(13.0),
-                new DBSPI64Literal(2));
-        String query = "SELECT T.COL1, " +
-                "SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING), " +
-                "COUNT(*) OVER (ORDER BY T.COL1 RANGE BETWEEN 2 PRECEDING AND 1 PRECEDING) FROM T";
+                new DBSPI64Literal(0));
+        String query = """
+                SELECT T.COL1,
+                SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING),
+                COUNT(*) OVER (ORDER BY T.COL1 RANGE BETWEEN 2 PRECEDING AND 1 PRECEDING) FROM T""";
         this.testQuery(query, new DBSPZSetLiteral(t, t));
     }
 
@@ -842,12 +844,12 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void emptyAggregate() {
-        String query = "SELECT COUNT(*), COUNT(DISTINCT COL1) FROM T WHERE false";
+        // Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 2);
+        String query = "SELECT COUNT(*), COUNT(DISTINCT COL1) FROM T WHERE COL1 > 10000";
         this.testConstantOutput(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPI64Literal(0), new DBSPI64Literal(0))));
     }
-
 
     @Test
     public void constAggregateExpression() {

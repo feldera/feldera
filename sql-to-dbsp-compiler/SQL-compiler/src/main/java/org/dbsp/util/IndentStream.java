@@ -81,6 +81,11 @@ public class IndentStream implements IIndentStream {
     }
 
     @Override
+    public IIndentStream append(boolean b) {
+        return this.append(Boolean.toString(b));
+    }
+
+    @Override
     public <T extends ToIndentableString> IIndentStream append(T value) {
         value.toString(this);
         return this;

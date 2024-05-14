@@ -37,22 +37,22 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPU32Literal extends DBSPIntLiteral implements IsNumericLiteral {
+public class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
-    public final Long value;
+    public final Integer value;
 
     @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        DBSPU32Literal that = (DBSPU32Literal) o;
+        DBSPU16Literal that = (DBSPU16Literal) o;
         return Objects.equals(value, that.value);
     }
 
-    public DBSPU32Literal(CalciteObject node, DBSPType type, @Nullable Long value) {
+    public DBSPU16Literal(CalciteObject node, DBSPType type, @Nullable Integer value) {
         super(node, type, value == null);
         if (value != null && value < 0)
-            throw new CompilationError("Negative value for u32 literal " + value);
+            throw new CompilationError("Negative value for u16 literal " + value);
         this.value = value;
     }
 
@@ -62,12 +62,12 @@ public class DBSPU32Literal extends DBSPIntLiteral implements IsNumericLiteral {
         return this.value > 0;
     }
 
-    public DBSPU32Literal(long value) {
+    public DBSPU16Literal(Integer value) {
         this(value, false);
     }
 
-    public DBSPU32Literal(@Nullable Long value, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, 32, false, nullable), value);
+    public DBSPU16Literal(@Nullable Integer value, boolean nullable) {
+        this(CalciteObject.EMPTY, new DBSPTypeInteger(CalciteObject.EMPTY, 16, false, nullable), value);
         if (value == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
         if (value != null && value < 0)
@@ -76,7 +76,7 @@ public class DBSPU32Literal extends DBSPIntLiteral implements IsNumericLiteral {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPU32Literal(this.getNode(), this.type, this.value);
+        return new DBSPU16Literal(this.getNode(), this.type, this.value);
     }
 
     @Override
@@ -90,7 +90,7 @@ public class DBSPU32Literal extends DBSPIntLiteral implements IsNumericLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPU32Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
+        return new DBSPU16Literal(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }
 
     @Override

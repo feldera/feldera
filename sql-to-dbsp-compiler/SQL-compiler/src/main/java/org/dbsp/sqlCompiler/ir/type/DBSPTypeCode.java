@@ -1,53 +1,59 @@
 package org.dbsp.sqlCompiler.ir.type;
 
-public enum DBSPTypeCode {
-    ANY("_", "_"),
-    BOOL("b", "bool"),
-    BYTES("bytes", "ByteArray"),
-    DATE("Date", "Date"),
-    DATE_TZ("", ""),
-    DECIMAL("decimal", "Decimal"),
-    DOUBLE("d", "F64"),
-    REAL("f", "F32"),
-    GEOPOINT("geopoint", "GeoPoint"),
-    INT8("i8", "i8"),
-    INT16("i16", "i16"),
-    INT32("i32", "i32"),
-    INT64("i64", "i64"),
-    INTERVAL_SHORT("ShortInterval", "ShortInterval"),
-    INTERVAL_LONG("LongInterval", "LongInterval"),
-    ISIZE("i", "isize"),
-    KEYWORD("", ""),
-    NULL("null", "()"),
-    STR("str", "str"),
-    STRING("s", "String"),
-    TIME("Time", "Time"),
-    TIMESTAMP("Timestamp", "Timestamp"),
-    TIMESTAMP_TZ("", ""),
-    UINT16("u16", "u16"),
-    UINT32("u32", "u32"),
-    UINT64("u64", "u64"),
-    USIZE("u", "usize"),
-    VOID("void", ""),
-    WEIGHT("Weight", "Weight"),
-    // Derived types
-    FUNCTION("", ""),
-    INDEXED_ZSET("", ""),
-    RAW_TUPLE("", ""),
-    REF("", ""),
-    RESULT("", "Result"),
-    SEMIGROUP("", ""),
-    STREAM("", ""),
-    STRUCT("", ""),
-    TUPLE("", "Tup"),
-    USER("", ""),
-    VEC("", ""),
-    ZSET("", "");
+import javax.annotation.Nullable;
 
+public enum DBSPTypeCode {
+    ANY("ANY", "_", "_"),
+    BOOL("BOOL", "b", "bool"),
+    BYTES("BINARY", "bytes", "ByteArray"),
+    DATE("DATE", "Date", "Date"),
+    DECIMAL("DECIMAL", "decimal", "Decimal"),
+    DOUBLE("DOUBLE", "d", "F64"),
+    REAL("REAL", "f", "F32"),
+    GEOPOINT("GEOPOINT", "geopoint", "GeoPoint"),
+    INT8("TINYINT", "i8", "i8"),
+    INT16("SHORTINT", "i16", "i16"),
+    INT32("INT", "i32", "i32"),
+    INT64("BIGINT", "i64", "i64"),
+    INT128(null, "i128", "i128"),
+    INTERVAL_SHORT("INTERVAL SECONDS", "ShortInterval", "ShortInterval"),
+    INTERVAL_LONG("INTERVAL MONTHS", "LongInterval", "LongInterval"),
+    ISIZE(null, "i", "isize"),
+    KEYWORD(null, "", ""),
+    NULL("NULL", "null", "()"),
+    STR(null, "str", "str"),
+    STRING("VARCHAR", "s", "String"),
+    TIME("TIME", "Time", "Time"),
+    TIMESTAMP("TIMESTAMP", "Timestamp", "Timestamp"),
+    TIMESTAMP_TZ("TIMESTAMP WITH TIME ZONE", "", ""),
+    UINT16(null, "u16", "u16"),
+    UINT32(null, "u32", "u32"),
+    UINT64(null, "u64", "u64"),
+    UINT128(null, "u128", "u128"),
+    USIZE(null, "u", "usize"),
+    VOID(null, "void", ""),
+    WEIGHT(null, "Weight", "Weight"),
+    // Derived types
+    FUNCTION("FUNCTION", "", ""),
+    INDEXED_ZSET(null, "", ""),
+    RAW_TUPLE(null, "", ""),
+    REF(null, "", ""),
+    RESULT(null, "", "Result"),
+    SEMIGROUP(null, "", ""),
+    STREAM(null, "", ""),
+    STRUCT("ROW TYPE", "", ""),
+    TUPLE(null, "", "Tup"),
+    USER(null, "", ""),
+    VEC("ARRAY", "", ""),
+    ZSET("MULTISET", "", "");
+
+    @Nullable
+    public final String sqlName;
     public final String shortName;
     public final String rustName;
 
-    DBSPTypeCode(String shortName, String rustName) {
+    DBSPTypeCode(@Nullable String sqlName, String shortName, String rustName) {
+        this.sqlName = sqlName;
         this.shortName = shortName;
         this.rustName = rustName;
     }

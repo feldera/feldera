@@ -1,7 +1,7 @@
 use crate::dynamic::Erase;
 use crate::trace::BatchReaderFactories;
 use crate::{
-    algebra::MulByRef,
+    algebra::{MulByRef, UnsignedPrimInt},
     dynamic::{DowncastTrait, DynData, DynDataTyped, DynOpt, DynPair, DynWeight},
     operator::{
         dynamic::{
@@ -147,7 +147,7 @@ where
 impl<PK, TS, V> Stream<RootCircuit, OrdPartitionedIndexedZSet<PK, TS, DynDataTyped<TS>, V, DynData>>
 where
     PK: DBData,
-    TS: DBData + PrimInt,
+    TS: DBData + UnsignedPrimInt,
     V: DBData,
 {
     /// Rolling aggregate of a partitioned stream over time range.

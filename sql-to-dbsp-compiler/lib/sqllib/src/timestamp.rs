@@ -1,7 +1,10 @@
 //! Support for SQL Timestamp and Date data types.
 
-use crate::casts::*;
-use crate::interval::{LongInterval, ShortInterval};
+use crate::{
+    casts::*,
+    interval::{LongInterval, ShortInterval},
+    FromInteger, ToInteger,
+};
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
@@ -48,6 +51,20 @@ use crate::{
 pub struct Timestamp {
     // since unix epoch
     milliseconds: i64,
+}
+
+impl ToInteger<i64> for Timestamp {
+    fn to_integer(&self) -> i64 {
+        self.milliseconds
+    }
+}
+
+impl FromInteger<i64> for Timestamp {
+    fn from_integer(value: &i64) -> Self {
+        Timestamp {
+            milliseconds: *value,
+        }
+    }
 }
 
 impl Debug for Timestamp {
@@ -559,6 +576,18 @@ where
     }
 }
 
+impl ToInteger<i32> for Date {
+    fn to_integer(&self) -> i32 {
+        self.days()
+    }
+}
+
+impl FromInteger<i32> for Date {
+    fn from_integer(value: &i32) -> Self {
+        Self { days: *value }
+    }
+}
+
 impl SerializeWithContext<SqlSerdeConfig> for Date {
     fn serialize_with_context<S>(
         &self,
@@ -812,6 +841,20 @@ some_function2!(format_date, String, Date, String);
 #[serde(transparent)]
 pub struct Time {
     nanoseconds: u64,
+}
+
+impl ToInteger<u64> for Time {
+    fn to_integer(&self) -> u64 {
+        self.nanoseconds
+    }
+}
+
+impl FromInteger<u64> for Time {
+    fn from_integer(value: &u64) -> Self {
+        Self {
+            nanoseconds: *value,
+        }
+    }
 }
 
 const BILLION: u64 = 1_000_000_000;

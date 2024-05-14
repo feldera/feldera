@@ -47,6 +47,11 @@ public class NullIndentStream implements IIndentStream {
     }
 
     @Override
+    public IIndentStream append(boolean b) {
+        return this;
+    }
+
+    @Override
     public <T extends ToIndentableString> IIndentStream append(T value) {
         return this;
     }

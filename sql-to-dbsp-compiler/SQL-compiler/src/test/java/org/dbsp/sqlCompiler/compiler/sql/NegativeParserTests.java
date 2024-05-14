@@ -125,7 +125,6 @@ public class NegativeParserTests extends BaseSQLTests {
                     part_order.customer,
                     AVG(DATEDIFF(day, part_order.target_date, fulfillment.fulfillment_date))
                     OVER (PARTITION BY part_order.customer
-                          ORDER BY fulfillment.fulfillment_date
                           RANGE BETWEEN INTERVAL 90 days PRECEDING and CURRENT ROW) as avg_delay
                 from
                     part_order
@@ -134,7 +133,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     on part_order.id = fulfillment.part_order;
                 """);
         TestUtil.assertMessagesContain(compiler.messages, 
-                "Not yet implemented: OVER currently does not support sorting on nullable column");
+                "Window specification must contain an ORDER BY clause");
     }
 
     @Test
