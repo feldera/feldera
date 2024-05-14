@@ -10,7 +10,7 @@ import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } fro
 import { Relation } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { SetStateAction, useEffect, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { nonNull } from 'src/lib/functions/common/function'
 
@@ -85,7 +85,13 @@ const TableInspector = ({
   const logError = (error: Error) => {
     console.error('InspectionTable error: ', error)
   }
-  const [rows, setRows] = useState<Row[]>([])
+  const [relationsRows, setRelationsRows] = useState<Record<string, Row[]>>({})
+  const rows = relationsRows[caseIndependentName] ?? []
+  const setRows = (rows: SetStateAction<Row[]>) =>
+    setRelationsRows(old => ({
+      ...old,
+      [caseIndependentName]: rows instanceof Function ? rows(old[caseIndependentName] ?? []) : rows
+    }))
 
   return (
     <TabContext value={tab}>
