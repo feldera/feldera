@@ -15,6 +15,7 @@
 const sidebars = {
   docsSidebar: [
     'what-is-feldera',
+    'concepts',
     {
       type: 'category',
       label: 'Get started',
