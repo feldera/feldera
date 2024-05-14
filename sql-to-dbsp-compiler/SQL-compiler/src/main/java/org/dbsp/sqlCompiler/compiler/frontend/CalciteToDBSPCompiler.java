@@ -120,6 +120,7 @@ import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
@@ -135,6 +136,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -1126,7 +1128,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression[] fields = new DBSPExpression[group.keys.cardinality()];
         int ix = 0;
         for (int field : group.keys.toList()) {
-            fields[ix++] = t.deepCopy().deref().field(field);
+            fields[ix++] = t.deepCopy().deref().field(field).applyCloneIfNeeded();
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(fields);
         DBSPClosureExpression groupKeys =
@@ -1218,7 +1220,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 Integer value = literal.getValueAs(Integer.class);
                 Objects.requireNonNull(value);
                 if (!eq)
-                    value++;
+                    value--;
                 return value;
             }
         }
@@ -1264,8 +1266,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * Calcite can sometimes use the same group for window computations
      * that we cannot perform in one operator, so we
      * divide some group/window combinations into multiple
-     * combinations.
-     */
+     * combinations. */
     static abstract class GroupAndAggregates {
         final CalciteToDBSPCompiler compiler;
         final ExpressionCompiler eComp;
@@ -1332,13 +1333,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             List<DBSPExpression> expressions = Linq.map(partitionKeys,
                     f -> inputRowRefVar.deepCopy().deref().field(f).applyCloneIfNeeded());
             DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
-
-            // Order by the specified fields
-            List<RelFieldCollation> orderKeys = group.orderKeys.getFieldCollations();
-            List<DBSPExpression> orderFields = Linq.map(orderKeys,
-                    f -> inputRowRefVar.deepCopy().deref().field(f.getFieldIndex())
-                            .applyCloneIfNeeded());
-            DBSPTupleExpression order = new DBSPTupleExpression(node, orderFields);
 
             // Map each row to an expression of the form: |t| (partition, (*t).clone()))
             DBSPExpression row = DBSPTupleExpression.flatten(
@@ -1439,8 +1433,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, lag);
             this.compiler.circuit.addOperator(integral);
 
-            DBSPDeindexOperator deindex = new DBSPDeindexOperator(node, integral);
-            return deindex;
+            return new DBSPDeindexOperator(node, integral);
         }
 
         @Override
@@ -1474,7 +1467,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression compileWindowBound(RexWindowBound bound, DBSPType boundType, ExpressionCompiler eComp) {
             IsNumericType numType = boundType.as(IsNumericType.class);
             if (numType == null) {
-                throw new UnimplementedException("Currently windows must use integer values ",
+                throw new UnimplementedException("Currently windows must use integer values, so "
+                        + boundType + " is not legal",
                         CalciteObject.create(this.window));
             }
             DBSPExpression numericBound;
@@ -1484,7 +1478,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 numericBound = numType.getZero();
             else {
                 DBSPExpression value = eComp.compile(Objects.requireNonNull(bound.getOffset()));
-                numericBound = value.cast(boundType);
+                if (value.getType().is(DBSPTypeInteger.class))
+                    numericBound = value.cast(boundType);
+                else
+                    numericBound = new DBSPApplyMethodExpression("to_bound", boundType, value);
             }
             String beforeAfter = bound.isPreceding() ? "Before" : "After";
             return new DBSPConstructorExpression(
@@ -1502,11 +1499,26 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     f -> inputRowRefVar.deepCopy().deref().field(f).applyCloneIfNeeded());
             DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
 
-            if (orderKeys.size() > 1)
-                throw new UnimplementedException("ORDER BY not yet supported with multiple columns", node);
+            if (orderKeys.size() != 1)
+                // TODO: this is only true if we have window bounds
+                throw new UnimplementedException("ORDER BY should be on exactly one column", node);
             RelFieldCollation collation = orderKeys.get(0);
             int orderColumnIndex = collation.getFieldIndex();
-            DBSPExpression orderField = inputRowRefVar.deref().field(orderColumnIndex);
+
+            DBSPExpression originalOrderField = inputRowRefVar.deref().field(orderColumnIndex);
+            DBSPType sortType = originalOrderField.getType();
+            if (!sortType.is(DBSPTypeInteger.class) &&
+                    !sortType.is(DBSPTypeTimestamp.class) &&
+                    !sortType.is(DBSPTypeDate.class))
+                throw new UnimplementedException("OVER currently cannot sort on columns with type "
+                        + Utilities.singleQuote(sortType.asSqlString()), node);
+            boolean ascending = collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
+            boolean nullsLast = collation.nullDirection != RelFieldCollation.NullDirection.FIRST;
+
+            // This only works correctly if the order field is unsigned.
+            DBSPExpression orderField = new DBSPUnsignedWrapExpression(
+                    node, originalOrderField, ascending, nullsLast);
+            DBSPType unsignedSortType = orderField.getType();
 
             // Map each row to an expression of the form: |t| (partition, (order, (*t).clone()))
             DBSPExpression orderAndRow = new DBSPTupleExpression(
@@ -1522,23 +1534,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, mapIndex);
             this.compiler.circuit.addOperator(diff);
 
-            if (collation.getDirection() != RelFieldCollation.Direction.ASCENDING)
-                throw new UnimplementedException("OVER only supports ascending sorting", node);
-            DBSPType sortType = inputRowType.tupFields[orderColumnIndex];
-            if (!sortType.is(DBSPTypeInteger.class) &&
-                    !sortType.is(DBSPTypeTimestamp.class) &&
-                    !sortType.is(DBSPTypeDate.class))
-                throw new UnimplementedException("OVER currently requires an integer type for ordering "
-                        + "and cannot handle " + sortType, node);
-            if (sortType.mayBeNull) {
-                RelDataTypeField relDataTypeField = window.getInput().getRowType().getFieldList().get(orderColumnIndex);
-                throw new UnimplementedException("OVER currently does not support sorting on nullable column " +
-                        Utilities.singleQuote(relDataTypeField.getName()) + ":", node);
-            }
-
             // Create window description
-            DBSPExpression lb = this.compileWindowBound(group.lowerBound, sortType, eComp);
-            DBSPExpression ub = this.compileWindowBound(group.upperBound, sortType, eComp);
+            DBSPExpression lb = this.compileWindowBound(group.lowerBound, unsignedSortType, eComp);
+            DBSPExpression ub = this.compileWindowBound(group.upperBound, unsignedSortType, eComp);
             DBSPExpression windowExpr = new DBSPConstructorExpression(
                     new DBSPPath("RelRange", "new").toExpression(),
                     DBSPTypeAny.getDefault(), lb, ub);
@@ -1555,7 +1553,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     windowExpr,
                     makeIndexedZSet(
                             new DBSPTypeTuple(partition.getType(), sortType),
-                            aggResultType), diff);
+                            aggResultType), ascending, nullsLast, diff);
             this.compiler.circuit.addOperator(windowAgg);
 
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, windowAgg);
@@ -1567,7 +1565,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath previousRowRefVar = currentTupleType.ref().var("t");
             DBSPExpression partAndOrder = new DBSPTupleExpression(
                     partition.applyCloneIfNeeded(),
-                    orderField.applyCloneIfNeeded());
+                    originalOrderField.applyCloneIfNeeded());
             DBSPExpression indexedInput = new DBSPRawTupleExpression(
                     partAndOrder, previousRowRefVar.deepCopy().deref().applyClone());
             DBSPClosureExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
@@ -1609,6 +1607,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
     List<GroupAndAggregates> splitWindow(LogicalWindow window, int windowFieldIndex) {
         List<GroupAndAggregates> result = new ArrayList<>();
         for (Window.Group group: window.groups) {
+            if (group.isRows)
+                throw new UnimplementedException("WINDOW aggregate with ROWS not yet implemented",
+                        CalciteObject.create(window));
             List<AggregateCall> calls = group.getAggregateCalls(window);
             GroupAndAggregates previous = null;
             // Must keep call in the same order as in the original list,

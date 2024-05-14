@@ -25,6 +25,7 @@
 
 package org.dbsp.sqlCompiler.compiler.errors;
 
+import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 /**
@@ -40,6 +41,10 @@ public class UnsupportedException extends BaseCompilerException {
 
     public UnsupportedException(String msg, CalciteObject obj) {
         super(msg, obj);
+    }
+
+    public UnsupportedException(String msg, IHasCalciteObject obj) {
+        super(msg, obj.getNode());
     }
 
     @Override

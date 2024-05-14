@@ -121,7 +121,7 @@ withItem
       AS '(' query ')'
 
 orderItem
-  :   expression [ ASC | DESC ]
+  :   expression [ ASC | DESC ] [ NULLS FIRST | NULLS LAST ]
 
 projectItem
   :   expression [ [ AS ] columnAlias ]
@@ -285,6 +285,9 @@ windowRange
 
 Where `agg` is a window aggregate function as described in the [section
 on aggregation](aggregates.md#window-aggregate-functions).
+
+Currently we require window ranges to have constant values.  This
+precludes ranges such as `INTERVAL 1 YEAR`, which have variable sizes.
 
 ### LATENESS
 

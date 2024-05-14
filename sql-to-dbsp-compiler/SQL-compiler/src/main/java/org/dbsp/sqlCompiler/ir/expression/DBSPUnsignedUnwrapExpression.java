@@ -1,0 +1,68 @@
+package org.dbsp.sqlCompiler.ir.expression;
+
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
+
+/** This is the dual of the UnsignedWrapExpression: it unwraps an unsigned number */
+public class DBSPUnsignedUnwrapExpression extends DBSPUnaryExpression {
+    public final DBSPUnsignedWrapExpression.TypeSequence sequence;
+    public final boolean nullsLast;
+    public final boolean ascending;
+
+    public DBSPUnsignedUnwrapExpression(
+            CalciteObject node, DBSPExpression source, DBSPType resultType,
+            boolean ascending, boolean nullsLast) {
+        super(node, resultType, DBSPOpcode.UNSIGNED_UNWRAP, source);
+        this.sequence = new DBSPUnsignedWrapExpression.TypeSequence(resultType);
+        this.nullsLast = nullsLast;
+        this.ascending = ascending;
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
+        visitor.push(this);
+        this.source.accept(visitor);
+        visitor.pop(this);
+        visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameFields(IDBSPNode other) {
+        DBSPUnsignedUnwrapExpression o = other.as(DBSPUnsignedUnwrapExpression.class);
+        if (o == null)
+            return false;
+        return this.source == o.source && this.type.sameType(o.type)
+                && this.ascending == o.ascending && this.nullsLast == o.nullsLast;
+    }
+
+    public String getMethod() {
+        return this.getType().mayBeNull ? "to_signed_option" : "to_signed";
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("UnsignedWrapper")
+                .append("::")
+                .append(this.getMethod())
+                .append("(")
+                .append(source)
+                .append(", ")
+                .append(this.ascending)
+                .append(", ")
+                .append(this.nullsLast)
+                .append(")");
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return new DBSPUnsignedUnwrapExpression(
+                this.getNode(), this.source.deepCopy(), this.getType(),
+                this.ascending, this.nullsLast);
+    }
+}

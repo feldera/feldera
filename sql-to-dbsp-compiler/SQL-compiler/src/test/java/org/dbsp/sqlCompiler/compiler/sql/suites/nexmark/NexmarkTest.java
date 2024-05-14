@@ -842,8 +842,6 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
             add(12); // proctime
             add(13); // proctime
             add(14); // count_char
-            add(15); // error in Hep planner
-            add(16); // error in Hep planner
             add(21); // regexp_extract
             add(22); // split_index
         }};

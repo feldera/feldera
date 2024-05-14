@@ -10,7 +10,6 @@ import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
-import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -160,6 +159,7 @@ public class CalciteOptimizer implements IWritesLogs {
         ));
         this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates",
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
+                // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES));
 
         this.addStep(new BaseOptimizerStep("Join order") {

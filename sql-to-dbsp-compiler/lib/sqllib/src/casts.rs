@@ -1284,6 +1284,10 @@ cast_to_i!(i8);
 cast_to_i!(i16);
 cast_to_i!(i32);
 cast_to_i!(i64);
+cast_to_i!(u16);
+cast_to_i!(u32);
+cast_to_i!(u64);
+cast_to_i!(u128);
 
 #[inline]
 pub fn cast_to_i64_ShortInterval(value: ShortInterval) -> i64 {
@@ -1298,7 +1302,7 @@ pub fn cast_to_i64N_ShortIntervalN(value: Option<ShortInterval>) -> Option<i64> 
 
 #[inline]
 pub fn cast_to_i64_LongInterval(value: LongInterval) -> i64 {
-    value.days() as i64
+    value.months() as i64
 }
 
 #[inline]

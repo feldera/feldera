@@ -1,14 +1,114 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
+#![allow(clippy::let_and_return)]
 
 use crate::binary::ByteArray;
 use crate::timestamp::*;
+use crate::{FromInteger, ToInteger};
 use core::ops::Add;
-use dbsp::algebra::{F32, F64};
+use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
 use num::PrimInt;
 use rust_decimal::Decimal;
 use std::cmp::Ord;
+use std::fmt::Debug;
 use std::marker::Copy;
+
+/// Holds some methods for wrapping values into unsigned values
+/// This is used by partitioned_rolling_aggregate
+pub struct UnsignedWrapper {}
+
+/// The conversion involves four types:
+/// O: the original type which is being converted
+/// S: a signed type that the original type can be converted to losslessly
+/// I: an intermediate signed type wider than S
+/// U: an unsigned type the same width as I
+//  None of the 'unwrap' calls below should ever fail.
+impl UnsignedWrapper {
+    // Conversion from O to U
+    // O cannot be nullable, so nullsLast is irrelevant
+    pub fn from_signed<O, S, I, U>(value: O, ascending: bool, _nullsLast: bool) -> U
+    where
+        O: ToInteger<S> + Debug,
+        S: PrimInt,
+        I: SignedPrimInt + From<S>,
+        U: UnsignedPrimInt + TryFrom<I> + Debug,
+        <U as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        let s = <O as ToInteger<S>>::to_integer(&value);
+        let i = <I as From<S>>::from(s);
+        let i = if ascending { i } else { -i };
+        // We reserve 0 for NULL, so we start at 1 in case !nullsLast
+        let i = i - <I as From<S>>::from(S::min_value()) + <I as HasOne>::one();
+        debug_assert!(i >= <I as HasZero>::zero());
+        let result = <U as TryFrom<I>>::try_from(i).unwrap();
+        // println!("Encoded {:?} as {:?}", value, result);
+        result
+    }
+
+    // Conversion from O to U
+    pub fn from_option<O, S, I, U>(value: Option<O>, ascending: bool, nullsLast: bool) -> U
+    where
+        O: ToInteger<S> + Debug,
+        S: SignedPrimInt,
+        I: SignedPrimInt + From<S>,
+        U: UnsignedPrimInt + TryFrom<I> + HasZero + Debug,
+        <U as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        match value {
+            None => {
+                if nullsLast {
+                    U::large()
+                } else {
+                    <U as HasZero>::zero()
+                }
+            }
+            Some(value) => UnsignedWrapper::from_signed::<O, S, I, U>(value, ascending, nullsLast),
+        }
+    }
+
+    // Conversion from U to O
+    // O cannot be nullable, so nullsLast is irrelevant
+    // However, we still have it so that the signature of both
+    // functions is the same.
+    pub fn to_signed<O, S, I, U>(value: U, ascending: bool, _nullsLast: bool) -> O
+    where
+        O: FromInteger<S> + Debug,
+        S: SignedPrimInt + TryFrom<I> + Debug,
+        I: SignedPrimInt + From<S> + TryFrom<U>,
+        U: UnsignedPrimInt + TryFrom<I>,
+        <I as TryFrom<U>>::Error: std::fmt::Debug,
+        <S as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        let i = <I as TryFrom<U>>::try_from(value).unwrap();
+        let i = i + <I as From<S>>::from(S::min_value()) - <I as HasOne>::one();
+        let i = if ascending { i } else { -i };
+        let s = <S as TryFrom<I>>::try_from(i).unwrap();
+        let result = <O as FromInteger<S>>::from_integer(&s);
+        // println!("Decoded {:?} as {:?}", value, result);
+        result
+    }
+
+    // Conversion from U to O where the 0 of U is converted to None
+    pub fn to_signed_option<O, S, I, U>(value: U, ascending: bool, nullsLast: bool) -> Option<O>
+    where
+        O: FromInteger<S> + Debug,
+        S: SignedPrimInt + TryFrom<U> + TryFrom<I>,
+        I: SignedPrimInt + From<S> + TryFrom<U>,
+        U: UnsignedPrimInt + TryFrom<I> + Debug,
+        <I as TryFrom<U>>::Error: std::fmt::Debug,
+        <S as TryFrom<I>>::Error: std::fmt::Debug,
+    {
+        if nullsLast {
+            if <U as FirstLargeValue>::large() == value {
+                return None;
+            }
+        } else if <U as HasZero>::is_zero(&value) {
+            return None;
+        }
+        let o = UnsignedWrapper::to_signed::<O, S, I, U>(value, ascending, nullsLast);
+        Some(o)
+    }
+}
 
 // Macro to create variants of an aggregation function
 // There must exist a function g(left: T, right: T) -> T ($base_name = g)

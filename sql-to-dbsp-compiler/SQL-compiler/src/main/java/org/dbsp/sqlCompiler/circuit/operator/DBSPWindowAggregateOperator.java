@@ -39,19 +39,24 @@ import java.util.List;
  * It is implemented as a sequence of 2 DBSP operators: partitioned_rolling_aggregate and
  * map_index.
  * This operator only operates correctly on deltas.  To operate on collections it
- * must differentiate its input, and integrate its output.
- */
+ * must differentiate its input, and integrate its output. */
 public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPExpression window;
+    // TODO: these fields should not be here
+    public final boolean ascending;
+    public final boolean nullsLast;
 
     public DBSPWindowAggregateOperator(
             CalciteObject node,
             @Nullable DBSPExpression function, @Nullable DBSPAggregate aggregate,
             DBSPExpression window,
             DBSPTypeIndexedZSet outputType,
+            boolean ascending, boolean nullsLast,
             DBSPOperator input) {
         super(node, "window_aggregate", outputType, function, aggregate, true, input, false);
         this.window = window;
+        this.ascending = ascending;
+        this.nullsLast = nullsLast;
         // Expect a tuple with 2 fields
         DBSPTypeTuple partAndTime = outputType.keyType.to(DBSPTypeTuple.class);
         if (partAndTime.size() != 2)
@@ -63,6 +68,7 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
         return new DBSPWindowAggregateOperator(
                 this.getNode(), expression, this.aggregate, this.window,
                 outputType.to(DBSPTypeIndexedZSet.class),
+                this.ascending, this.nullsLast,
                 this.input());
     }
 
@@ -71,7 +77,8 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowAggregateOperator(
                     this.getNode(), this.function, this.aggregate, this.window,
-                    this.getOutputIndexedZSetType(), newInputs.get(0));
+                    this.getOutputIndexedZSetType(),
+                    this.ascending, this.nullsLast, newInputs.get(0));
         return this;
     }
 

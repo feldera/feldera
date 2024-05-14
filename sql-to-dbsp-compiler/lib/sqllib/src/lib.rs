@@ -15,14 +15,12 @@ use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
 pub use interval::LongInterval;
 pub use interval::ShortInterval;
-use num_traits::Pow;
-use num_traits::Zero;
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::Date;
 pub use timestamp::Time;
 pub use timestamp::Timestamp;
 
-use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories};
+use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories, UnsignedPrimInt};
 use dbsp::dynamic::{DowncastTrait, DynData, Erase};
 use dbsp::trace::ord::vec::indexed_wset_batch::VecIndexedWSetBuilder;
 use dbsp::trace::ord::vec::wset_batch::VecWSetBuilder;
@@ -36,12 +34,59 @@ use dbsp::{
     utils::*,
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
-use num::{Signed, ToPrimitive};
+use num::{PrimInt, Signed, ToPrimitive};
+use num_traits::{Pow, Zero};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
 use std::str::FromStr;
+
+/// Convert a value of a SQL data type to an integer
+/// that preserves ordering.  Used for partitioned_rolling_aggregates
+pub trait ToInteger<T>
+where
+    T: PrimInt,
+{
+    fn to_integer(&self) -> T;
+}
+
+/// Trait that provides the inverse functionality of the ToInteger trait.
+/// Used for partitioned_rolling_aggregates
+pub trait FromInteger<T>
+where
+    T: PrimInt,
+{
+    fn from_integer(value: &T) -> Self;
+}
+
+impl<T> ToInteger<T> for T
+where
+    T: PrimInt,
+{
+    fn to_integer(&self) -> T {
+        *self
+    }
+}
+
+impl<T> FromInteger<T> for T
+where
+    T: PrimInt,
+{
+    fn from_integer(value: &T) -> Self {
+        *value
+    }
+}
+
+/// Trait used to convert values to window bounds in OVER
+/// queries.  partitioned_rolling_aggregates always requires
+/// unsigned bounds.
+pub trait ToWindowBound<T>
+where
+    T: UnsignedPrimInt,
+{
+    fn to_bound(&self) -> T;
+}
 
 pub type Weight = i64; // Default weight type
 pub type WSet<D> = OrdZSet<D>;
