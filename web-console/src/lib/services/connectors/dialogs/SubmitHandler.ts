@@ -64,13 +64,7 @@ export const useNewConnectorRequest = <TData extends FieldValues>(
 // Sends the request to update a connector.
 //
 // Display success or error status message on completion.
-export const useUpdateConnectorRequest = <
-  TData extends /*{
-  name: string,
-  description: string,
-  config: ConnectorConfig
-}*/ FieldValues
->(
+export const useUpdateConnectorRequest = <TData extends FieldValues>(
   oldConnector: ConnectorDescr,
   onSuccess: (connector: ConnectorDescr, oldConnectorName: string) => void,
   onSettled: () => void,
@@ -124,12 +118,11 @@ export const useConnectorRequest = <T extends FieldValues, R>(
       ? /* eslint-disable react-hooks/rules-of-hooks */
         useNewConnectorRequest(onSuccess ?? (() => {}), handleClose, prepareData as (data: T) => NewConnectorRequest)
       : /* eslint-disable react-hooks/rules-of-hooks */
-        (updateRequest => useUpdateConnectorRequest(connector, onSuccess ?? (() => {}), handleClose, updateRequest))(
-          (data: T) =>
-            tuple(
-              { connectorId: connector.connector_id, connectorName: connector.name },
-              prepareData(data) as UpdateConnectorRequest
-            )
+        useUpdateConnectorRequest(connector, onSuccess ?? (() => {}), handleClose, (data: T) =>
+          tuple(
+            { connectorId: connector.connector_id, connectorName: connector.name },
+            prepareData(data) as UpdateConnectorRequest
+          )
         )
 
   return onSubmit

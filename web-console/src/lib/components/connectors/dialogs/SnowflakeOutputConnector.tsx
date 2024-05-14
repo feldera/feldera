@@ -9,18 +9,19 @@ import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import Transition from '$lib/components/connectors/dialogs/tabs/Transition'
 import {
-  connectorTransportName,
+  normalizeSnowflakeOutputConfig,
   parseSnowflakeOutputSchema,
-  parseSnowflakeOutputSchemaConfig
+  parseSnowflakeOutputSchemaConfig,
+  prepareDataWith
 } from '$lib/functions/connectors'
 import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
-import { LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import { ConnectorType, Direction } from '$lib/types/connectors'
+import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer } from 'react-hook-form-mui'
+import JSONbig from 'true-json-bigint'
 import * as va from 'valibot'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
@@ -93,30 +94,12 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
     props.setShow(false)
   }
 
-  // Define what should happen when the form is submitted
-  const prepareData = (data: SnowflakeOutputSchema) => ({
-    name: data.name,
-    description: data.description,
-    config: normalizeConfig(data)
-  })
-
-  const normalizeConfig = (data: {
-    transport: Record<string, LibrdkafkaOptionType>
-    format: Record<string, string | boolean>
-  }) => ({
-    transport: {
-      name: connectorTransportName(ConnectorType.SNOWFLAKE_OUT),
-      config: toKafkaConfig(data.transport)
-    },
-    format: {
-      name: data.format.format_name,
-      config: {
-        update_format: data.format.update_format
-      }
-    }
-  })
-
-  const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
+  const onSubmit = useConnectorRequest(
+    props.connector,
+    prepareDataWith(normalizeSnowflakeOutputConfig),
+    props.onSuccess,
+    handleClose
+  )
 
   // If there is an error, switch to the earliest tab with an error
   const handleErrors = ({ name, description, transport, format }: FieldErrors<SnowflakeOutputSchema>) => {
@@ -186,8 +169,8 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 <GenericEditorForm
                   disabled={props.disabled}
                   direction={Direction.OUTPUT}
-                  configFromText={text => parseSnowflakeOutputSchemaConfig(JSON.parse(text))}
-                  configToText={config => JSON.stringify(normalizeConfig(config), undefined, '\t')}
+                  configFromText={text => parseSnowflakeOutputSchemaConfig(JSONbig.parse(text))}
+                  configToText={config => JSONbig.stringify(normalizeSnowflakeOutputConfig(config), undefined, '\t')}
                   setEditorDirty={setEditorDirty}
                 />
                 <Box sx={{ display: 'flex', justifyContent: 'end', pt: 4 }}>{props.submitButton}</Box>

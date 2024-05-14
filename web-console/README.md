@@ -64,7 +64,7 @@ and run `yarn install`.
 
 ## OpenAPI bindings
 
-The bindings for OpenAPI (under src/lib/services/manager) are generated using
+The bindings for OpenAPI (under $lib/services/manager) are generated using
 [openapi typescript codegen](https://www.npmjs.com/package/openapi-typescript-codegen).
 
 If you change the API, execute the following steps to update the bindings:

@@ -32,7 +32,7 @@ export const TabLabel = (props: TabLabelProps) => {
           {icon}
         </Avatar>
         <Box sx={{ textAlign: 'left' }}>
-          <Typography>{title}</Typography>
+          <Typography sx={{ whiteSpace: 'nowrap' }}>{title}</Typography>
           <Typography variant='caption' sx={{ textTransform: 'none' }}>
             {subtitle}
           </Typography>

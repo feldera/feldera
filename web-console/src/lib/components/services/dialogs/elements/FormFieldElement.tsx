@@ -1,25 +1,27 @@
-import { NumberInput } from '$lib/components/input/NumberInput'
-import { LibrdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
+import { BigNumberElement } from '$lib/components/input/BigNumberInput'
+import { FormFieldOptions } from '$lib/functions/forms'
 import { AutocompleteElement, SwitchElement, TextFieldElement } from 'react-hook-form-mui'
 import { match } from 'ts-pattern'
 
 import { Box } from '@mui/system'
 
-export const LibrdkafkaOptionElement = (props: {
+export const FormFieldElement = (props: {
   field: string
-  fieldOptions: LibrdkafkaOptions | undefined
+  fieldOptions: FormFieldOptions | undefined
   disabled?: boolean
-  parentName: string
+  parentName: string | undefined
 }) => {
   if (!props.fieldOptions) {
     return <></>
   }
 
+  const fieldPrefix = props.parentName ? props.parentName + '.' : ''
+
   return match(props.fieldOptions)
     .with({ type: 'string' }, () => (
       <TextFieldElement
         key={props.field}
-        name={props.parentName + '.' + props.field}
+        name={fieldPrefix + props.field}
         size='small'
         fullWidth
         inputProps={{
@@ -27,27 +29,40 @@ export const LibrdkafkaOptionElement = (props: {
         }}
       ></TextFieldElement>
     ))
-    .with({ type: 'number' }, options => (
+    .with({ type: 'number' }, ({ range }) => (
       <TextFieldElement
         key={props.field}
-        name={props.parentName + '.' + props.field}
+        name={fieldPrefix + props.field}
         size='small'
         fullWidth
-        component={NumberInput as any}
-        {...options.range}
-        {...{ allowInvalidRange: true }}
+        type='number'
         inputProps={{
+          ...range,
           inputProps: {
             'data-testid': 'input-' + props.field
           }
         }}
       ></TextFieldElement>
     ))
-    .with({ type: 'enum' }, options => (
+    .with({ type: 'bignumber' }, ({ range }) => (
+      <BigNumberElement
+        key={props.field}
+        name={fieldPrefix + props.field}
+        size='small'
+        fullWidth
+        inputProps={{
+          ...range,
+          inputProps: {
+            'data-testid': 'input-' + props.field
+          }
+        }}
+      />
+    ))
+    .with({ type: 'enum' }, ({ range }) => (
       <AutocompleteElement
         key={props.field}
-        name={props.parentName + '.' + props.field}
-        options={options.range.map(option => ({
+        name={fieldPrefix + props.field}
+        options={range.map(option => ({
           id: option,
           label: option
         }))}
@@ -73,7 +88,7 @@ export const LibrdkafkaOptionElement = (props: {
       <Box sx={{ width: '100%' }}>
         <SwitchElement
           key={props.field}
-          name={props.parentName + '.' + props.field}
+          name={fieldPrefix + props.field}
           label={''}
           switchProps={{
             inputProps: {
@@ -89,13 +104,13 @@ export const LibrdkafkaOptionElement = (props: {
         multiline
         transform={{
           input: (v: string[]) => {
-            return v?.join(', ')
+            return v?.join(', ') ?? ''
           },
           output: event => {
             return event.target.value.split(', ')
           }
         }}
-        name={props.parentName + '.' + props.field}
+        name={fieldPrefix + props.field}
         size='small'
         fullWidth
         disabled={props.disabled}

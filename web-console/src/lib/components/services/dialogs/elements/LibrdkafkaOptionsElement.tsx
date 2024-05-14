@@ -1,6 +1,7 @@
-import { LibrdkafkaOptionElement } from '$lib/components/services/dialogs/elements/LibrdkafkaOptionElement'
-import { PickLibrdkafkaOptionElement } from '$lib/components/services/dialogs/elements/PickLibrdkafkaOptionElement'
+import { FormFieldElement } from '$lib/components/services/dialogs/elements/FormFieldElement'
+import { PickFormFieldElement } from '$lib/components/services/dialogs/elements/PickFormFieldElement'
 import { nubLast } from '$lib/functions/common/array'
+import { formFieldDefaultValue } from '$lib/functions/forms'
 import { LibrdkafkaOptions, librdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
 import { useFormContext, useWatch } from 'react-hook-form-mui'
 import Markdown from 'react-markdown'
@@ -54,12 +55,12 @@ export const LibrdkafkaOptionsElement = (props: {
               </Grid>
               <Grid item xs={12} sm={6}>
                 <Box sx={{ display: 'flex' }}>
-                  <LibrdkafkaOptionElement
+                  <FormFieldElement
                     fieldOptions={props.fieldOptions[field]}
                     field={field}
                     disabled={props.disabled}
                     parentName={props.parentName}
-                  ></LibrdkafkaOptionElement>
+                  ></FormFieldElement>
                   {props.requiredFields.includes(field) ? (
                     <></>
                   ) : (
@@ -77,11 +78,13 @@ export const LibrdkafkaOptionsElement = (props: {
           ))}
 
           <Grid item xs={12} sm={6}>
-            <PickLibrdkafkaOptionElement
+            <PickFormFieldElement
               parentName={props.parentName}
-              fieldOptions={props.fieldOptions}
-              usedFields={usedFields}
-            ></PickLibrdkafkaOptionElement>
+              options={Object.keys(props.fieldOptions)
+                .filter(option => !usedFields.includes(option))
+                .map(option => option.replaceAll('_', '.'))}
+              getDefault={(field: string) => formFieldDefaultValue(props.fieldOptions[field])}
+            ></PickFormFieldElement>
           </Grid>
         </Grid>
       </Box>

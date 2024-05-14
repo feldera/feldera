@@ -1108,12 +1108,3 @@ export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, str
 }
 
 export type LibrdkafkaOptions = (typeof librdkafkaOptions)[number]
-
-export const librdkafkaDefaultValue = (option: Omit<LibrdkafkaOptions, 'scope' | 'importance'>) =>
-  match(option.type)
-    .with('boolean', () => option.default === 'true')
-    .with('number', () => parseInt(option.default))
-    .with('enum', 'string', () => option.default)
-    .with('list', () => option.default.split(', '))
-    .with('array', () => option.default.split(', '))
-    .exhaustive()

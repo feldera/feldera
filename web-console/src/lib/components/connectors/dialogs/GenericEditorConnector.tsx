@@ -11,6 +11,7 @@ import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FormContainer } from 'react-hook-form-mui'
+import JSONbig from 'true-json-bigint'
 import * as va from 'valibot'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
@@ -98,8 +99,8 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
           <GenericEditorForm
             disabled={props.disabled}
             direction={Direction.INPUT}
-            configFromText={config => JSON.parse(config)}
-            configToText={config => JSON.stringify(config, null, 2)}
+            configFromText={config => JSONbig.parse(config)}
+            configToText={config => JSONbig.stringify(config, null, 2)}
           ></GenericEditorForm>
         </DialogContent>
         <DialogActions sx={{ pb: { xs: 8, sm: 12.5 }, justifyContent: 'center' }}>

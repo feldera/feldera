@@ -5,6 +5,8 @@ import {
   UrlConnectorDialog
 } from '$lib/components/connectors/dialogs'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
+import { DeltaLakeInputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeInputConnector'
+import { DeltaLakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeOutputConnector'
 import { S3InputConnectorDialog } from '$lib/components/connectors/dialogs/S3InputConnector'
 import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { connectorDescrToType } from '$lib/functions/connectors'
@@ -19,6 +21,8 @@ export const getConnectorDialogComponent = (type: ConnectorType) =>
     .with(ConnectorType.KAFKA_OUT, () => KafkaOutputConnectorDialog)
     .with(ConnectorType.DEBEZIUM_IN, () => DebeziumInputConnectorDialog)
     .with(ConnectorType.SNOWFLAKE_OUT, () => SnowflakeOutputConnectorDialog)
+    .with(ConnectorType.DELTALAKE_IN, () => DeltaLakeInputConnectorDialog)
+    .with(ConnectorType.DELTALAKE_OUT, () => DeltaLakeOutputConnectorDialog)
     .with(ConnectorType.S3_IN, () => S3InputConnectorDialog)
     .with(ConnectorType.URL_IN, () => UrlConnectorDialog)
     .with(ConnectorType.UNKNOWN, () => ConfigEditorDialog)

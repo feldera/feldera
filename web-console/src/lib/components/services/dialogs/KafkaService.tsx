@@ -13,11 +13,12 @@ import {
   toLibrdkafkaConfig
 } from '$lib/functions/kafka/librdkafkaOptions'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
+import { ServiceDescr } from '$lib/services/manager'
 import { ServiceDialogProps } from '$lib/types/xgressServices/ServiceDialog'
 import { Dispatch, SetStateAction, useState } from 'react'
 import { FieldErrors, FormContainer, TextFieldElement, useFormContext, useFormState } from 'react-hook-form-mui'
 import { JSONEditor } from 'src/lib/components/common/JSONEditor'
-import { ServiceDescr } from 'src/lib/services/manager'
+import JSONbig from 'true-json-bigint'
 import * as va from 'valibot'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
@@ -338,8 +339,8 @@ export const ServiceConfigEditorElement = (props: {
   return (
     <JSONEditor
       disabled={props.disabled}
-      valueFromText={text => fromLibrdkafkaConfig(JSON.parse(text))}
-      valueToText={config => JSON.stringify(toLibrdkafkaConfig(config as any), undefined, '\t')}
+      valueFromText={text => fromLibrdkafkaConfig(JSONbig.parse(text))}
+      valueToText={config => JSONbig.stringify(toLibrdkafkaConfig(config as any), undefined, '\t')}
       errors={(errors?.config as Record<string, { message: string }>) ?? {}}
       value={config}
       setValue={config => {

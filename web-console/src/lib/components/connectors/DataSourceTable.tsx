@@ -12,7 +12,7 @@ import { useDataGridPresentationLocalStorage } from '$lib/compositions/persisten
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { invalidateQuery } from '$lib/functions/common/tanstack'
-import { connectorDescrToType, getStatusObj } from '$lib/functions/connectors'
+import { connectorDescrToType, connectorTypeToTitle } from '$lib/functions/connectors'
 import { ApiError, ConnectorDescr, ConnectorsService } from '$lib/services/manager'
 import { mutationUpdateConnector, PipelineManagerQueryKey } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
@@ -122,7 +122,7 @@ const DataSourceTable = () => {
       editable: true
     },
     {
-      width: 130,
+      width: 145,
       minWidth: 130,
       field: 'typ',
       headerName: 'Type',
@@ -130,15 +130,16 @@ const DataSourceTable = () => {
       renderCell: (params: GridRenderCellParams<ConnectorDescr>) =>
         (() => {
           // Shows the connector type in a chip
-          const status = getStatusObj(connectorDescrToType(params.row.config))
+          const label = connectorTypeToTitle(connectorDescrToType(params.row.config)).short
           return (
             <CustomChip
               rounded
               size='small'
               skin='light'
-              color={status.color}
-              label={status.title}
-              sx={{ width: 110 }}
+              color='secondary'
+              label={label}
+              sx={{ width: 125 }}
+              data-testid='box-connector-type'
             />
           )
         })()

@@ -175,7 +175,7 @@ const SideBarAddIo = () => {
                 {drawer.nodeType === 'add_input' ? 'Add Input Source' : 'Add Output Destination'}
               </Link>
               <Typography color='text.primary'>
-                {drawer.connectorType && connectorTypeToTitle(drawer.connectorType)}
+                {drawer.connectorType && connectorTypeToTitle(drawer.connectorType).full}
               </Typography>
             </Breadcrumbs>
           )}

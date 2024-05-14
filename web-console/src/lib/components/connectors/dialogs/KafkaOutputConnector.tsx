@@ -4,15 +4,21 @@
 import { TabKafkaNameAndDesc } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
 import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { connectorTransportName, parseKafkaOutputSchema, parseKafkaOutputSchemaConfig } from '$lib/functions/connectors'
+import {
+  normalizeKafkaOutputConfig,
+  parseKafkaOutputSchema,
+  parseKafkaOutputSchemaConfig,
+  prepareDataWith
+} from '$lib/functions/connectors'
+import { outputBufferConfigSchema } from '$lib/functions/connectors/outputBuffer'
 import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
-import { LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import { ConnectorType, Direction } from '$lib/types/connectors'
+import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer } from 'react-hook-form-mui'
+import JSONbig from 'true-json-bigint'
 import * as va from 'valibot'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
@@ -25,41 +31,44 @@ import Dialog from '@mui/material/Dialog'
 import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 
+import TabOutputFormatDetails from './tabs/generic/TabOutputFormatDetails'
 import { GenericEditorForm } from './tabs/GenericConnectorForm'
 import { TabKafkaAuth } from './tabs/kafka/TabKafkaAuth'
 import { TabKafkaOutputDetails } from './tabs/kafka/TabKafkaOutputDetails'
-import TabOutputFormatDetails from './tabs/TabOutputFormatDetails'
 import Transition from './tabs/Transition'
 
-const schema = va.object({
-  name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
-  description: va.optional(va.string(), ''),
-  transport: va.intersect([
-    va.object(
-      {
-        bootstrap_servers: va.optional(
-          va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
-            va.minLength(1, 'Specify at least one server')
-          ])
-        ),
-        topic: va.optional(va.string(), ''),
-        preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
-      },
-      // Allow configurations options not mentioned in the schema
-      va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
-    ),
-    authParamsSchema
-  ]),
-  format: va.object({
-    format_name: va.nonOptional(va.picklist(['json', 'csv'])),
-    json_array: va.nonOptional(va.boolean())
-  })
-})
+const schema = va.merge([
+  va.object({
+    name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
+    description: va.optional(va.string(), ''),
+    transport: va.intersect([
+      va.object(
+        {
+          bootstrap_servers: va.optional(
+            va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+              va.minLength(1, 'Specify at least one server')
+            ])
+          ),
+          topic: va.optional(va.string(), ''),
+          preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
+        },
+        // Allow configurations options not mentioned in the schema
+        va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
+      ),
+      authParamsSchema
+    ]),
+    format: va.object({
+      format_name: va.nonOptional(va.picklist(['json', 'csv'])),
+      json_array: va.nonOptional(va.boolean())
+    })
+  }),
+  outputBufferConfigSchema
+])
 
 export type KafkaOutputSchema = va.Input<typeof schema>
 
 export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
-  const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab'] as const
+  const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab', 'bufferTab'] as const
   const [rawJSON, setRawJSON] = useState(false)
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<KafkaOutputSchema | undefined>(undefined)
@@ -90,34 +99,12 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
     props.setShow(false)
   }
 
-  // Define what should happen when the form is submitted
-  const prepareData = (data: KafkaOutputSchema) => ({
-    name: data.name,
-    description: data.description,
-    config: normalizeConfig(data)
-  })
-
-  const normalizeConfig = (data: {
-    transport: Record<string, LibrdkafkaOptionType>
-    format: Record<string, string | boolean>
-  }) => ({
-    transport: {
-      name: connectorTransportName(ConnectorType.KAFKA_OUT),
-      config: toKafkaConfig(data.transport)
-    },
-    format: {
-      name: data.format.format_name,
-      config: {
-        ...(data.format.format_name === 'json'
-          ? {
-              array: data.format.json_array
-            }
-          : {})
-      }
-    }
-  })
-
-  const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
+  const onSubmit = useConnectorRequest(
+    props.connector,
+    prepareDataWith(normalizeKafkaOutputConfig),
+    props.onSuccess,
+    handleClose
+  )
 
   // If there is an error, switch to the earliest tab with an error
   const handleErrors = ({ name, description, transport, format }: FieldErrors<KafkaOutputSchema>) => {
@@ -185,8 +172,8 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                 <GenericEditorForm
                   disabled={props.disabled}
                   direction={Direction.OUTPUT}
-                  configFromText={text => parseKafkaOutputSchemaConfig(JSON.parse(text))}
-                  configToText={config => JSON.stringify(normalizeConfig(config), undefined, '\t')}
+                  configFromText={text => parseKafkaOutputSchemaConfig(JSONbig.parse(text))}
+                  configToText={config => JSONbig.stringify(normalizeKafkaOutputConfig(config), undefined, '\t')}
                   setEditorDirty={setEditorDirty}
                 />
                 <Box sx={{ display: 'flex', justifyContent: 'end', pt: 4 }}>{props.submitButton}</Box>

@@ -2,9 +2,10 @@ import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
 import { nonNull } from '$lib/functions/common/function'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import { ChangeEventHandler } from 'react'
+import { TextFieldElementProps, useFormContext, useFormState, useWatch } from 'react-hook-form-mui'
 import invariant from 'tiny-invariant'
 
-import { TextField, TextFieldProps } from '@mui/material'
+import { FormHelperText, TextField, TextFieldProps } from '@mui/material'
 
 const validValue = (
   value: BigNumber | null | undefined,
@@ -27,17 +28,19 @@ const validValue = (
   )
 }
 
+type BigNumberInputProps = {
+  value?: BigNumber | null
+  defaultValue?: BigNumber
+  precision?: number | null
+  scale?: number | null
+  onChange?: ChangeEventHandler<HTMLInputElement>
+  min?: BigNumber.Value
+  max?: BigNumber.Value
+  allowInvalidRange?: boolean
+}
+
 export const BigNumberInput = (
-  props: Omit<TextFieldProps, 'type' | 'value' | 'defaultValue' | 'onChange' | 'min' | 'max'> & {
-    value?: BigNumber | null
-    defaultValue?: BigNumber
-    precision?: number | null
-    scale?: number | null
-    onChange?: ChangeEventHandler<HTMLInputElement>
-    min?: BigNumber.Value
-    max?: BigNumber.Value
-    allowInvalidRange?: boolean
-  }
+  props: Omit<TextFieldProps, 'type' | 'value' | 'defaultValue' | 'onChange' | 'min' | 'max'> & BigNumberInputProps
 ) => {
   // In a sane world we could expect value to be BigNumber
   const propsValue = props.value === null ? null : props.value ? BigNumber(props.value) : undefined
@@ -91,4 +94,26 @@ export const BigNumberInput = (
     ...cfg
   })
   return <TextField {...intermediateInputProps} />
+}
+
+export const BigNumberElement = (props: Omit<TextFieldElementProps & BigNumberInputProps, 'value'>) => {
+  const ctx = useFormContext()
+  const value = useWatch({ name: props.name })
+  const state = useFormState({ name: props.name })
+
+  invariant(value === undefined || BigNumber.isBigNumber(value))
+  return (
+    <>
+      <BigNumberInput
+        {...props}
+        value={value ?? null}
+        onChange={event => {
+          ctx.setValue(props.name, event.target.value)
+        }}
+      />
+      {(e => e && <FormHelperText sx={{ color: 'error.main' }}>{e.message?.toString()}</FormHelperText>)(
+        state.errors[props.name]
+      )}
+    </>
+  )
 }
