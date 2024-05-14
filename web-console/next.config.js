@@ -1,5 +1,5 @@
 
-const UnpluginIcons = require("unplugin-icons/webpack")
+const { default: UnpluginIcons } = require("unplugin-icons/webpack")
 const { FileSystemIconLoader } = require("unplugin-icons/loaders")
 
 /** @type {import("next").NextConfig} */
@@ -36,7 +36,7 @@ module.exports = {
       ],
     })
     config.plugins.push(
-      require('unplugin-icons/webpack')({
+      UnpluginIcons({
         compiler: 'jsx',
         jsx: 'react',
       }),

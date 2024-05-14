@@ -4,39 +4,36 @@ import { getDefaultRngMethod, getRngMethodByName } from '$lib/components/streami
 import { StoredFieldSettings } from '$lib/components/streaming/import/RngSettingsDialog'
 import { Row } from '$lib/functions/ddl'
 import { Field, Relation } from '$lib/services/manager'
-import { Dispatch, MutableRefObject, SetStateAction, useCallback } from 'react'
-
-import { GridApi } from '@mui/x-data-grid-pro'
+import { Dispatch, SetStateAction, useCallback } from 'react'
 
 function useGenerateRows(
-  apiRef: MutableRefObject<GridApi>,
+  rowCount: number,
   setRows: Dispatch<SetStateAction<Row[]>>,
   relation: Relation,
   settings: Map<string, StoredFieldSettings>
 ) {
   const insertRows = useCallback(
-    (rowCount: number) => {
-      if (relation) {
-        const newRows: Row[] = []
-        const curRowCount = apiRef.current?.getRowsCount()
-
-        for (let i = 0; i < rowCount; i++) {
-          const row: Row = { genId: curRowCount + i, weight: 1, record: {} }
-          relation.fields.forEach((field: Field) => {
-            let rngMethod = getDefaultRngMethod(field.columntype)
-            const fieldSettings = settings.get(field.name)
-            if (fieldSettings && fieldSettings.method) {
-              rngMethod = getRngMethodByName(fieldSettings.method, field.columntype) || rngMethod
-            }
-            row.record[field.name] = rngMethod.generator(field.columntype, fieldSettings?.config)
-          })
-          newRows.push(row)
-        }
-
-        setRows(prevRows => [...prevRows, ...newRows])
+    (count: number) => {
+      if (!relation) {
+        return
       }
+      const newRows: Row[] = []
+      for (let i = 0; i < count; i++) {
+        const row: Row = { genId: rowCount + i, weight: 1, record: {} }
+        relation.fields.forEach((field: Field) => {
+          let rngMethod = getDefaultRngMethod(field.columntype)
+          const fieldSettings = settings.get(field.name)
+          if (fieldSettings && fieldSettings.method) {
+            rngMethod = getRngMethodByName(fieldSettings.method, field.columntype) || rngMethod
+          }
+          row.record[field.name] = rngMethod.generator(field.columntype, fieldSettings?.config)
+        })
+        newRows.push(row)
+      }
+
+      setRows(prevRows => [...prevRows, ...newRows])
     },
-    [apiRef, setRows, relation, settings]
+    [rowCount, setRows, relation, settings]
   )
 
   return insertRows

@@ -26,7 +26,8 @@ RUN apt-get update && \
    libssl-dev \
    libsasl2-dev \
    ca-certificates \
-   gnupg
+   gnupg \
+   protobuf-compiler
 
 ## Setup Java and Python
 

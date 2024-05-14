@@ -76,7 +76,6 @@ import {
   GridRowId,
   GridRowProps,
   GridToolbarFilterButton,
-  GridValueSetterParams,
   useGridApiRef
 } from '@mui/x-data-grid-pro'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -150,83 +149,91 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         field: 'name',
         headerName: direction === 'input' ? 'Input' : 'Output',
         flex: 0.4,
-        renderCell: params => {
-          if (params.row.connections.length > 0) {
-            return params.row.connections.map(c => c[1].name).join(', ')
-          } else {
-            return <Box sx={{ fontStyle: 'italic' }}>No connection.</Box>
-          }
-        }
+        display: 'flex',
+        renderCell: params =>
+          params.row.connections.length > 0 ? (
+            params.row.connections.map(c => c[1].name).join(', ')
+          ) : (
+            <Box sx={{ fontStyle: 'italic' }}>No connection.</Box>
+          )
       },
       {
         field: 'config',
-        valueGetter: params => getCaseIndependentName(params.row.relation),
         headerName: direction === 'input' ? 'Table' : 'View',
-        flex: 0.6
+        flex: 0.6,
+        valueGetter: (_, row) => getCaseIndependentName(row.relation),
+        display: 'flex'
       },
       {
         field: 'records',
         headerName: 'Records',
         flex: 0.3,
-        renderCell: params => {
-          if (params.row.connections.length > 0) {
-            const records =
-              (direction === 'input'
-                ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_records
-                : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_records) || 0
-            return format(records >= 1000 ? '.3s' : '~s')(records)
-          } else {
-            // TODO: we need to count records also when relation doesn't have
-            // connections in the backend.
-            return '-'
-          }
-        }
+        display: 'flex',
+        renderCell: params =>
+          (() => {
+            if (params.row.connections.length > 0) {
+              const records =
+                (direction === 'input'
+                  ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_records
+                  : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_records) || 0
+              return format(records >= 1000 ? '.3s' : '~s')(records)
+            } else {
+              // TODO: we need to count records also when relation doesn't have
+              // connections in the backend.
+              return '-'
+            }
+          })()
       },
       {
         field: 'traffic',
         headerName: 'Traffic',
         flex: 0.15,
-        renderCell: params => {
-          const bytes =
-            direction === 'input'
-              ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_bytes
-              : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_bytes
-          return humanSize(bytes || 0)
-        }
+        display: 'flex',
+        renderCell: params =>
+          (() => {
+            const bytes =
+              direction === 'input'
+                ? metrics.input.get(getCaseIndependentName(params.row.relation))?.total_bytes
+                : metrics.output.get(getCaseIndependentName(params.row.relation))?.transmitted_bytes
+            return humanSize(bytes || 0)
+          })()
       },
       {
         field: 'errors',
         headerName: 'Errors',
         flex: 0.15,
-        renderCell: params => {
-          const errors =
-            direction === 'input'
-              ? (m => (m ? m.num_parse_errors + m.num_transport_errors : 0))(
-                  metrics.input.get(getCaseIndependentName(params.row.relation))
-                )
-              : (m => (m ? m.num_encode_errors + m.num_transport_errors : 0))(
-                  metrics.output.get(getCaseIndependentName(params.row.relation))
-                )
-          return (
-            <Box
-              sx={{
-                width: '100%',
-                height: '200%',
-                display: 'flex',
-                px: 2,
-                alignItems: 'center',
-                backgroundColor: errors > 0 ? alpha(theme.palette.warning.main, 0.5) : undefined
-              }}
-            >
-              {format(',')(errors)}
-            </Box>
-          )
-        }
+        display: 'flex',
+        renderCell: params =>
+          (() => {
+            const errors =
+              direction === 'input'
+                ? (m => (m ? m.num_parse_errors + m.num_transport_errors : 0))(
+                    metrics.input.get(getCaseIndependentName(params.row.relation))
+                  )
+                : (m => (m ? m.num_encode_errors + m.num_transport_errors : 0))(
+                    metrics.output.get(getCaseIndependentName(params.row.relation))
+                  )
+            return (
+              <Box
+                sx={{
+                  width: '100%',
+                  height: '200%',
+                  display: 'flex',
+                  px: 2,
+                  alignItems: 'center',
+                  backgroundColor: errors > 0 ? alpha(theme.palette.warning.main, 0.5) : undefined
+                }}
+              >
+                {format(',')(errors)}
+              </Box>
+            )
+          })()
       },
       {
         field: 'action',
         headerName: 'Action',
         flex: 0.15,
+        display: 'flex',
         renderCell: params => (
           <Box data-testid={`box-relation-actions-${params.row.relation.name}`}>
             <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
@@ -355,10 +362,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
 }
 
 // Only show the details tab button if this pipeline has a revision
-function CustomDetailPanelToggle({
-  value: isExpanded,
-  row: row
-}: Pick<GridRenderCellParams<Pipeline>, 'value' | 'row'>) {
+function CustomDetailPanelToggleCell({ value: isExpanded, row: row }: GridRenderCellParams<Pipeline, boolean>) {
   const [hadRevision, setHadRevision] = useState<boolean>(false)
   const pipelineManagerQuery = usePipelineManagerQuery()
   const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(row.descriptor.name))
@@ -439,19 +443,21 @@ export default function PipelineTable() {
     ({ row }) => <DetailPanelContent row={row} />,
     []
   )
-  const columns: GridColDef[] = [
+  const columns: GridColDef<Pipeline>[] = [
     {
       ...GRID_DETAIL_PANEL_TOGGLE_COL_DEF,
-      renderCell: params => <CustomDetailPanelToggle value={params.value} row={params.row} />
+      display: 'flex',
+      renderCell: CustomDetailPanelToggleCell
     },
     {
       field: 'name',
       headerName: 'Name',
       editable: true,
       flex: 0.3,
-      valueGetter: params => params.row.descriptor.name,
-      valueSetter: (params: GridValueSetterParams) => {
-        return { ...params.row, descriptor: { ...params.row.descriptor, name: params.value } }
+      display: 'flex',
+      valueGetter: (_, row) => row.descriptor.name,
+      valueSetter: (value, row) => {
+        return { ...row, descriptor: { ...row.descriptor, name: value } }
       },
       renderCell: (params: GridRenderCellParams<Pipeline>) => (
         <Typography
@@ -478,23 +484,26 @@ export default function PipelineTable() {
       field: 'description',
       headerName: 'Description',
       editable: true,
+      type: 'string',
       flex: 0.4,
-      valueGetter: params => params.row.descriptor.description,
-      valueSetter: (params: GridValueSetterParams) => {
-        return { ...params.row, descriptor: { ...params.row.descriptor, description: params.value } }
+      display: 'flex',
+      valueGetter: (_, row) => row.descriptor.description,
+      valueSetter: (value, row) => {
+        return { ...row, descriptor: { ...row.descriptor, description: value } }
       }
     },
     {
       field: 'storage',
       headerName: 'Storage',
+      width: 90,
       editable: true,
       type: 'boolean',
-      flex: 0.1,
-      valueGetter: params => params.row.descriptor.config.storage,
-      valueSetter: (params: GridValueSetterParams) => {
+      display: 'flex',
+      valueGetter: (_, row) => row.descriptor.config.storage,
+      valueSetter: (value, row) => {
         return {
-          ...params.row,
-          descriptor: { ...params.row.descriptor, config: { ...params.row.descriptor.config, storage: params.value } }
+          ...row,
+          descriptor: { ...row.descriptor, config: { ...row.descriptor.config, storage: value } }
         }
       }
     },
@@ -502,21 +511,22 @@ export default function PipelineTable() {
       field: 'modification',
       headerName: 'Changes',
       width: 145,
-      renderCell: (params: GridRenderCellParams<Pipeline>) => {
-        return <PipelineRevisionStatusChip pipeline={params.row} />
-      }
+      display: 'flex',
+      renderCell: (params: GridRenderCellParams<Pipeline>) => <PipelineRevisionStatusChip pipeline={params.row} />
     },
     {
       field: 'status',
       headerName: 'Status',
       width: 145,
+      display: 'flex',
       renderCell: PipelineStatusCell
     },
     {
       field: 'actions',
       headerName: 'Actions',
       width: 120,
-      renderCell: PipelineActions
+      display: 'flex',
+      renderCell: PipelineActionsCell
     }
   ]
 
@@ -607,7 +617,6 @@ export default function PipelineTable() {
         apiRef={apiRef}
         getRowId={(row: Pipeline) => row.descriptor.pipeline_id}
         columns={columns}
-        rowThreshold={0}
         getDetailPanelHeight={() => 'auto'}
         getDetailPanelContent={getDetailPanelContent}
         slots={{
@@ -807,17 +816,17 @@ const PipelineStatusCell = (params: GridRenderCellParams<Pipeline>) => {
       <Badge badgeContent={(params.row as any).error_cnt} color='error'>
         {chipProps.tooltip ? (
           <Tooltip title={chipProps.tooltip} disableInteractive>
-            <CustomChip rounded size='small' skin='light' sx={{ width: 120 }} {...chipProps} />
+            <CustomChip rounded size='small' skin='light' sx={{ width: 125 }} {...chipProps} />
           </Tooltip>
         ) : (
-          <CustomChip rounded size='small' skin='light' sx={{ width: 120 }} {...chipProps} />
+          <CustomChip rounded size='small' skin='light' sx={{ width: 125 }} {...chipProps} />
         )}
       </Badge>
     </Badge>
   )
 }
 
-const PipelineActions = (params: { row: Pipeline }) => {
+const PipelineActionsCell = (params: { row: Pipeline }) => {
   const pipeline = params.row.descriptor
 
   const [status, programStatus] = usePipelineStatus(params)

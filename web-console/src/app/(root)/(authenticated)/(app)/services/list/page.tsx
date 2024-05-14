@@ -77,8 +77,9 @@ const ServiceList = () => {
     {
       field: 'type',
       headerName: 'Type',
-      valueGetter: params => {
-        return params.row.config_type
+      display: 'flex',
+      valueGetter: (_, row) => {
+        return row.config_type
       },
       renderCell: row => {
         return <Chip label={row.row.config_type} sx={{ borderRadius: 1 }} />
@@ -89,31 +90,29 @@ const ServiceList = () => {
       headerName: 'Name',
       maxWidth: 180,
       flex: 1,
-      valueGetter: params => {
-        return params.row.name
-      }
+      display: 'flex'
     },
     {
       field: 'service',
       headerName: 'Service',
       maxWidth: 250,
       flex: 1,
-      valueGetter: params => {
-        return getServiceConfigThumb(params.row)
+      display: 'flex',
+      valueGetter: (_, row) => {
+        return getServiceConfigThumb(row)
       }
     },
     {
       field: 'description',
       headerName: 'Description',
       flex: 1,
-      valueGetter: params => {
-        return params.row.description
-      }
+      display: 'flex'
     },
     {
       field: 'actions',
       headerName: 'Actions',
       width: 120,
+      display: 'flex',
       renderCell: ServiceActions
     }
   ]

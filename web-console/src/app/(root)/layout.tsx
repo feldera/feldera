@@ -12,7 +12,7 @@ import ThemeComponent from 'src/@core/theme/ThemeComponent'
 import { useTheme } from '@mui/material/styles'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
-import { LicenseInfo } from '@mui/x-license-pro'
+import { LicenseInfo } from '@mui/x-license'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import EmotionRootStyleRegistry from './EmotionRootStyleRegistry'

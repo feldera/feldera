@@ -22,8 +22,7 @@ import IconCheck from '~icons/bx/check'
 import IconPencil from '~icons/bx/pencil'
 import IconTrashAlt from '~icons/bx/trash-alt'
 
-import { Button, IconButton, Tooltip } from '@mui/material'
-import Box from '@mui/material/Box'
+import { Box, Button, IconButton, Tooltip } from '@mui/material'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import { GridColDef, GridRenderCellParams, GridToolbarFilterButton, useGridApiRef } from '@mui/x-data-grid-pro'
@@ -103,35 +102,21 @@ const DataSourceTable = () => {
   // Definition of the table columns
   const columns: GridColDef[] = [
     {
-      flex: 0.05,
-      minWidth: 50,
-      field: 'connector_id',
-      headerName: 'ID',
-      renderCell: (params: GridRenderCellParams) => {
-        const { row } = params
-
-        return (
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-              <Typography noWrap variant='body2' sx={{ color: 'text.primary', fontWeight: 600 }}>
-                {row.connector_id}
-              </Typography>
-            </Box>
-          </Box>
-        )
-      }
+      field: 'connector_id'
     },
     {
       flex: 0.3,
       minWidth: 150,
       headerName: 'Name',
       field: 'name',
-      editable: true
+      editable: true,
+      display: 'flex'
     },
     {
       flex: 0.5,
       field: 'description',
       headerName: 'Description',
+      display: 'flex',
       renderCell: (params: GridRenderCellParams) => (
         <Typography variant='body2' sx={{ color: 'text.primary' }}>
           {params.row.description}
@@ -140,22 +125,34 @@ const DataSourceTable = () => {
       editable: true
     },
     {
-      flex: 0.15,
-      minWidth: 140,
+      width: 130,
+      minWidth: 130,
       field: 'typ',
       headerName: 'Type',
-      renderCell: (params: GridRenderCellParams<ConnectorDescr>) => {
-        // Shows the connector type in a chip
-        const status = getStatusObj(connectorDescrToType(params.row.config))
-        return <CustomChip rounded size='small' skin='light' color={status.color} label={status.title} />
-      }
+      display: 'flex',
+      renderCell: (params: GridRenderCellParams<ConnectorDescr>) =>
+        (() => {
+          // Shows the connector type in a chip
+          const status = getStatusObj(connectorDescrToType(params.row.config))
+          return (
+            <CustomChip
+              rounded
+              size='small'
+              skin='light'
+              color={status.color}
+              label={status.title}
+              sx={{ width: 110 }}
+            />
+          )
+        })()
     },
     {
-      flex: 0.1,
+      width: 90,
       minWidth: 90,
       sortable: false,
       field: 'actions',
       headerName: 'Actions',
+      display: 'flex',
       renderCell: (params: GridRenderCellParams<ConnectorDescr>) => {
         return (
           <Box data-testid={'box-connector-actions-' + params.row.name}>
