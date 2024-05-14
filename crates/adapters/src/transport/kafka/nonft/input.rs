@@ -19,6 +19,7 @@ use rdkafka::{
     ClientConfig, ClientContext, Message,
 };
 use std::{
+    collections::HashSet,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex, Weak,
@@ -275,6 +276,7 @@ impl KafkaInputReader {
 
     fn worker_thread(endpoint: Arc<KafkaInputReaderInner>, mut consumer: Box<dyn InputConsumer>) {
         let mut actual_state = PipelineState::Paused;
+        let mut partition_eofs = HashSet::new();
         loop {
             // endpoint.debug_consumer();
             match endpoint.state() {
@@ -308,9 +310,23 @@ impl KafkaInputReader {
                 None => {
                     // println!("poll returned None");
                 }
-                Some(Err(KafkaError::PartitionEOF(_p))) => {
-                    consumer.eoi();
-                    return;
+                Some(Err(KafkaError::PartitionEOF(p))) => {
+                    partition_eofs.insert(p);
+
+                    // If all the partitions we're subscribed to have received
+                    // an EOF, then we're done.
+                    if endpoint
+                        .kafka_consumer
+                        .assignment()
+                        .unwrap_or_default()
+                        .elements()
+                        .iter()
+                        .map(|tpl| tpl.partition())
+                        .all(|p| partition_eofs.contains(&p))
+                    {
+                        consumer.eoi();
+                        return;
+                    }
                 }
                 Some(Err(e)) => {
                     // println!("poll returned error");
