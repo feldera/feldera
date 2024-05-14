@@ -1,13 +1,16 @@
 import unittest
 import uuid
+import threading
 
 from tests import TEST_CLIENT
 
-from feldera.pipeline import Pipeline
-from feldera.program import Program
+from feldera.rest.pipeline import Pipeline
+from feldera.rest.program import Program
 
 
 class TestPipeline(unittest.TestCase):
+    result = None
+
     def test_create_pipeline(self, name: str = "blah", delete=False):
         sql = """
         CREATE TABLE tbl(id INT);
@@ -103,6 +106,45 @@ class TestPipeline(unittest.TestCase):
 
         assert stats is not None
         assert stats.get("pipeline_config") is not None
+
+        TEST_CLIENT.pause_pipeline(name)
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
+
+    def __listener(self, name: str) -> bool:
+
+        gen_obj = TEST_CLIENT.listen_to_pipeline(
+            pipeline_name=name,
+            table_name="V",
+            format="csv",
+        )
+        counter = 0
+        for chunk in gen_obj:
+            counter += 1
+            text_data = chunk.get("text_data")
+            if text_data:
+                assert text_data == "1,1\n2,1\n"
+                self.result = True
+                break
+            if counter > 10:
+                self.result = False
+                break
+
+    def test_listen_to_pipeline(self):
+        data = "1\n2\n"
+        name = str(uuid.uuid4())
+        self.test_create_pipeline(name, False)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        t1 = threading.Thread(target=self.__listener, args=(name,))
+        t1.start()
+
+        TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
+
+        t1.join()
+
+        assert self.result
 
         TEST_CLIENT.pause_pipeline(name)
         TEST_CLIENT.shutdown_pipeline(name)

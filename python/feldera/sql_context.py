@@ -1,0 +1,278 @@
+import time
+import pandas
+import re
+
+from typing import Optional, Dict
+from typing_extensions import Self
+from queue import Queue
+
+from feldera import FelderaClient
+from feldera.rest.program import Program
+from feldera.rest.pipeline import Pipeline
+from feldera._sql_table import SQLTable
+from feldera.sql_schema import SQLSchema
+from feldera.output_handler import OutputHandler
+from feldera.output_handler import _OutputHandlerInstruction
+from enum import Enum
+
+
+class BuildMode(Enum):
+    CREATE = 1
+    GET = 2
+    GET_OR_CREATE = 3
+
+
+def _table_name_from_sql(ddl: str) -> str:
+    return re.findall(r"[\w']+", ddl)[2]
+
+
+class SQLContext:
+    """
+    The SQLContext is the main entry point for the Feldera SQL API.
+    Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
+    """
+    client: FelderaClient
+    pipeline_name: str
+    program_name: str
+    build_mode: BuildMode
+
+    pipeline_description: str = ""
+    program_description: str = ""
+    ddl: str = ""
+    views: Dict[str, str] = {}
+    tables: Dict[str, SQLTable] = {}
+    todo_tables: Dict[str, Optional[SQLTable]] = {}
+    http_input_buffer: list[Dict[str, dict | list[dict] | str]] = []
+
+    views_tx: list[Dict[str, Queue]] = []
+
+    def __init__(
+            self,
+            pipeline_name: str,
+            client: FelderaClient,
+            pipeline_description: str = None,
+            program_name: str = None,
+            program_description: str = None,
+    ):
+        self.client = client
+
+        self.pipeline_name = pipeline_name
+        self.pipeline_description = pipeline_description or ""
+
+        self.program_name = program_name or pipeline_name
+        self.program_description = program_description or ""
+
+    def __build_ddl(self):
+        """
+        Internal function used to create the DDL from the registered tables and views.
+        """
+        tables = "\n".join([tbl.build_ddl() for tbl in self.tables.values()])
+        views = "\n".join([view for view in self.views.values()])
+
+        self.ddl = tables + "\n" + views
+
+    def __setup(self):
+        """
+        Internal function used to setup the pipeline and program on the Feldera API.
+        """
+
+        self.__build_ddl()
+
+        # TODO: handle different build modes
+
+        program = Program(self.program_name, self.ddl, self.program_description)
+
+        self.client.compile_program(program)
+
+        # TODO: connectors
+
+        pipeline = Pipeline(self.pipeline_name, self.program_name, self.pipeline_description)
+        self.client.create_pipeline(pipeline)
+
+    def create(self) -> Self:
+        """
+        Sets the build mode to CREATE, meaning that the pipeline will be created from scratch.
+        """
+
+        self.build_mode = BuildMode.CREATE
+        return self
+
+    def get(self) -> Self:
+        """
+        Sets the build mode to GET, meaning that an existing pipeline will be used.
+        """
+
+        self.build_mode = BuildMode.GET
+        return self
+
+    def get_or_create(self) -> Self:
+        """
+        Sets the build mode to GET_OR_CREATE, meaning that an existing pipeline will be used if it exists,
+        else a new one will be created.
+        """
+
+        self.build_mode = BuildMode.GET_OR_CREATE
+        return self
+
+    def register_table(self, table_name: str, schema: Optional[SQLSchema] = None, ddl: str = None):
+        """
+        Registers a table with the SQLContext. The table can be registered with a schema or with the SQL DDL.
+        One of the two must be provided, but not both.
+        Auto inserts the trailing semicolon if not present.
+        In the future, schema will be inferred from the data provided from applicable sources.
+
+        :param table_name: The name of the table.
+        :param schema: The schema of the table.
+        :param ddl: The SQL DDL of the table.
+        """
+
+        if not schema and not ddl:
+            raise ValueError("Schema inference isn't supported yet, either provide a schema or the SQL DDL")
+
+        if schema and ddl:
+            raise ValueError("Provide either a schema or the SQL DDL, not both")
+
+        if ddl:
+            self.register_table_from_sql(ddl)
+            return
+
+        if schema:
+            self.tables[table_name] = SQLTable(table_name, schema=schema)
+        else:
+            self.todo_tables[table_name] = None
+
+    def register_table_from_sql(self, ddl: str):
+        """
+        Registers a table with the provided SQL DDL.
+        Auto inserts the trailing semicolon if not present.
+
+        :param ddl: The SQL DDL of the table.
+        """
+
+        if ddl[-1] != ';':
+            ddl += ';'
+
+        name = _table_name_from_sql(ddl)
+
+        self.tables[name] = SQLTable(name, ddl)
+
+    def input_from_pandas(self, table_name: str, df: pandas.DataFrame):
+        """
+        Adds a pandas DataFrame to the input buffer of the SQLContext, to be pushed to the pipeline.
+
+        :param table_name: The name of the table.
+        :param df: The pandas DataFrame to be pushed to the pipeline.
+        """
+
+        tbl = self.tables.get(table_name)
+
+        if tbl:
+            # tbl.validate_schema(df)   TODO: something like this would be nice
+            self.http_input_buffer.append({tbl.name: df.to_dict('records')})
+            return
+
+        tbl = self.todo_tables.get(table_name)
+
+        if not tbl:
+            raise ValueError(f"Table {table_name} not registered")
+
+        # tbl.infer_schema(df)  TODO: support schema inference
+
+        self.tables[table_name] = tbl
+        self.todo_tables.pop(table_name)
+
+        self.http_input_buffer.append({tbl.name: df.to_dict('records')})
+
+    def register_view(self, name: str, query: str):
+        """
+        Registers a Feldera View based on the provided query.
+        Auto inserts the trailing semicolon if not present.
+
+        :param name: The name of the view.
+        :param query: The query to be used to create the view.
+        """
+
+        if query[-1] != ';':
+            query += ';'
+
+        self.views[name] = f"CREATE VIEW {name} AS {query}"
+
+    def listen(self, view_name: str) -> OutputHandler:
+        """
+        Listens to the output of the provided view so that it is available in the notebook / python code.
+
+        :param view_name: The name of the view to listen to.
+        """
+
+        queue = Queue(maxsize=1)
+
+        self.views_tx.append({view_name: queue})
+
+        handler = OutputHandler(self.client, self.pipeline_name, view_name, queue)
+        handler.start()
+
+        return handler
+
+    def run_to_completion(self):
+        """
+        Runs the pipeline to completion, waiting for all input records to be processed.
+
+        :raises RuntimeError: If the pipeline returns unknown metrics.
+        """
+
+        self.__setup()
+
+        self.client.start_pipeline(self.pipeline_name)
+
+        for view_queue in self.views_tx:
+            for view_name, queue in view_queue.items():
+                queue.put(_OutputHandlerInstruction.PipelineStarted)
+                queue.join()
+
+        for input_buffer in self.http_input_buffer:
+            for tbl_name, data in input_buffer.items():
+                self.client.push_to_pipeline(self.pipeline_name, tbl_name, "json", data, array=True)
+
+        while True:
+            metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
+            input_records = metrics.get("total_input_records")
+            processed_records = metrics.get("total_processed_records")
+
+            if input_records == processed_records:
+                break
+
+            if not input_records or not processed_records:
+                raise RuntimeError("received unknown metrics from the pipeline")
+
+            time.sleep(1)
+
+        for view_queue in self.views_tx:
+            for view_name, queue in view_queue.items():
+                queue.put(_OutputHandlerInstruction.RanToCompletion)
+                queue.join()
+
+    def start(self):
+        # TODO: implement this later
+        pass
+
+    def pause(self):
+        """
+        Pauses the pipeline.
+        """
+
+        self.client.pause_pipeline(self.pipeline_name)
+
+    def shutdown(self):
+        """
+        Pauses and shuts down the pipeline.
+        """
+
+        self.client.pause_pipeline(self.pipeline_name)
+        self.client.shutdown_pipeline(self.pipeline_name)
+
+    def resume(self):
+        """
+        Resumes the pipeline.
+        """
+
+        self.client.start_pipeline(self.pipeline_name)

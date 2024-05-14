@@ -5,7 +5,7 @@ import logging
 import sys
 
 from tests import TEST_CLIENT
-from feldera.program import Program
+from feldera.rest.program import Program
 
 NAME = str(uuid.uuid4())
 

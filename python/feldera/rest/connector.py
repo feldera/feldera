@@ -1,5 +1,5 @@
 from typing import Any, Mapping, Optional
-from feldera.attached_connector import AttachedConnector
+from feldera.rest.attached_connector import AttachedConnector
 
 
 class Connector:

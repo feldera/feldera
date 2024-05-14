@@ -1,13 +1,14 @@
 from typing import Optional
 import logging
 import time
+import json
 
-from feldera.config import Config
-from feldera.connector import Connector
-from feldera.attached_connector import AttachedConnector
-from feldera.program import Program
-from feldera.pipeline import Pipeline
-from feldera._httprequests import HttpRequests
+from feldera.rest.config import Config
+from feldera.rest.connector import Connector
+from feldera.rest.attached_connector import AttachedConnector
+from feldera.rest.program import Program
+from feldera.rest.pipeline import Pipeline
+from feldera.rest._httprequests import HttpRequests
 
 
 class Client:
@@ -396,3 +397,59 @@ class Client:
             content_type=content_type,
             body=data,
         )
+
+    def listen_to_pipeline(
+            self,
+            pipeline_name: str,
+            table_name: str,
+            format: str,
+            mode: str = "watch",
+            query: Optional[str] = None,
+            quantiles: Optional[int] = None,
+            array: bool = False,
+            timeout: Optional[float] = None,
+    ):
+        """
+        Listen for updates to views for pipeline, yields the chunks of data
+        :param pipeline_name: The name of the pipeline
+        :param table_name: The name of the table to listen to
+        :param format: The format of the data, either "json" or "csv"
+        :param mode: The mode to listen in, either "watch" or "snapshot"
+        :param quantiles: For 'quantiles' queries: the number of quantiles to output. The default value is 100
+        :param query: Query to execute on the table, either "table", "neighborhood" or "quantiles"
+        :param array: Set True to group updates in this stream into JSON arrays, used in conjunction with the
+            "json" format, the default value is False
+        :param timeout: The amount of time in seconds to listen to the stream for
+        """
+
+        if mode not in ["watch", "snapshot"]:
+            raise ValueError("mode must be either 'watch' or 'snapshot'")
+
+        if query is not None and query not in ["table", "neighborhood", "quantiles"]:
+            raise ValueError("query must be either 'table', 'neighborhood' or 'quantiles'")
+
+        params = {
+            "mode": mode,
+            "format": format,
+        }
+
+        if quantiles:
+            params["quantiles"] = quantiles
+
+        if format == "json":
+            params["array"] = "true" if array else "false"
+
+        resp = self.http.post(
+            path=f"/pipelines/{pipeline_name}/egress/{table_name}",
+            params=params,
+            stream=True,
+        )
+
+        end = time.time() + timeout if timeout else None
+
+        for chunk in resp.iter_content(chunk_size=None):
+            if end and time.time() > end:
+                break
+            if chunk:
+                chunk = json.loads(chunk)
+                yield chunk

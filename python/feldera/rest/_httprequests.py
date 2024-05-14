@@ -1,8 +1,8 @@
 import logging
 
-from feldera.config import Config
+from feldera.rest.config import Config
 
-from feldera.errors import FelderaAPIError, FelderaTimeoutError, FelderaCommunicationError
+from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError, FelderaCommunicationError
 
 import json
 import requests
@@ -27,6 +27,7 @@ class HttpRequests:
             ] = None,
             content_type: str = "application/json",
             params: Optional[Mapping[str, Any]] = None,
+            stream: bool = False,
     ) -> Any:
         """
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
@@ -62,6 +63,7 @@ class HttpRequests:
                     headers=headers,
                     data=body,
                     params=params,
+                    stream=stream,
                 )
             else:
                 request = http_method(
@@ -70,7 +72,10 @@ class HttpRequests:
                     headers=headers,
                     data=json.dumps(body) if body else "" if body == "" else "null",
                     params=params,
+                    stream=stream,
                 )
+                if stream:
+                    return request
             resp = self.__validate(request)
             logging.debug("got response: %s", str(resp))
             return resp
@@ -94,9 +99,10 @@ class HttpRequests:
                 Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
             ] = None,
             content_type: Optional[str] = "application/json",
-            params: Optional[Mapping[str, Any]] = None
+            params: Optional[Mapping[str, Any]] = None,
+            stream: bool = False,
     ) -> Any:
-        return self.send_request(requests.post, path, body, content_type, params)
+        return self.send_request(requests.post, path, body, content_type, params, stream=stream)
 
     def patch(
             self,

@@ -1,6 +1,6 @@
 import unittest
 from tests import TEST_CLIENT
-from feldera.connector import Connector
+from feldera.rest.connector import Connector
 
 
 class TestConnector(unittest.TestCase):

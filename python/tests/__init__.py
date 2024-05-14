@@ -1,4 +1,4 @@
-from feldera.client import Client
+from feldera.rest import Client
 
 BASE_URL = 'http://localhost:8080'
 
