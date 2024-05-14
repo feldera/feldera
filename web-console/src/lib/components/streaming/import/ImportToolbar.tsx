@@ -19,12 +19,7 @@ import IconUpload from '~icons/bx/upload'
 
 import { useLocalStorage } from '@mantine/hooks'
 import { Button } from '@mui/material'
-import {
-  GridToolbarColumnsButton,
-  GridToolbarContainer,
-  GridToolbarDensitySelector,
-  useGridApiRef
-} from '@mui/x-data-grid-pro'
+import { GridToolbarColumnsButton, GridToolbarContainer, GridToolbarDensitySelector } from '@mui/x-data-grid-pro'
 import { useQuery } from '@tanstack/react-query'
 
 import RngSettingsDialog, { StoredFieldSettings } from './RngSettingsDialog'
@@ -50,7 +45,6 @@ const ImportToolbar = ({
   setLoading: Dispatch<SetStateAction<boolean>>
   children?: ReactNode
 }) => {
-  const apiRef = useGridApiRef()
   const pipelineManagerQuery = usePipelineManagerQuery()
   const { data: pipeline } = useQuery(pipelineManagerQuery.pipelineStatus(pipelineRevision.pipeline.name))
   const isRunning = pipeline?.state.current_status === PipelineStatus.RUNNING
