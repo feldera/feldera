@@ -6,7 +6,7 @@ The REST API is still evolving and might see backwards incompatible changes.
 
 :::
 
-The Feldera platform features a comprehensive REST API for managing
+Feldera features a comprehensive REST API for managing
 [programs](https://www.feldera.com/docs/#programs),
 [connectors](https://www.feldera.com/docs/#connectors),
 and [pipelines](https://www.feldera.com/docs/#pipelines).

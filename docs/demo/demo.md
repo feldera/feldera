@@ -2,7 +2,7 @@
 
 This section provides a detailed walkthrough of the "developer
 security operations" (DevSecOps) scenario included in the demo
-container.  This scenario uses the Feldera Platform to analyze streams
+container.  This scenario uses Feldera to analyze streams
 of data about software as it is transformed from source code to binary
 artifacts through CI build pipelines and deployed using Kubernetes.
 
@@ -19,7 +19,7 @@ to familiarize yourself with Feldera concepts and user interface.
 ## Tables
 
 We'll start by looking at how the DevSecOps demo defines its input
-tables using SQL.  Fire up the Feldera Platform demo and visit
+tables using SQL.  Fire up the Feldera demo and visit
 <http://localhost:8080/> to bring up the UI.  On the sidebar, click on
 "SQL Programs", then find the "SecOps demo" row in the table of
 programs and click on the pencil icon <icon icon="bx:pencil" />.  The

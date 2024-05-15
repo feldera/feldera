@@ -1,8 +1,8 @@
 # Docker Install
 
-These instructions explain how to run the Feldera Platform on a single machine
+These instructions explain how to run Feldera on a single machine
 in a configuration suitable for demos, development, and testing.  For production
-use, or for developing parts of Feldera Platform itself, Feldera Platform
+use, or for developing parts of Feldera itself, Feldera
 supports other forms of deployment.
 
 ## Install prerequisites
@@ -22,7 +22,7 @@ these ways:
   :::tip
 
   The plugin implements Docker Compose v2, invoked as `docker
-  compose`. Feldera Platform does not support the older Docker Compose v1,
+  compose`. Feldera does not support the older Docker Compose v1,
   which was invoked with `docker-compose` (note the ` ` versus `-`
   distinction).
 
@@ -78,12 +78,12 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 
    The first time you run this command, it will download container
    images, which can take a while.  Once `docker compose` begins
-   bringing up the images, it takes about 10 seconds for the Feldera Platform user
+   bringing up the images, it takes about 10 seconds for the Feldera user
    interface to become available.  On fast systems, this includes a
    pause of a few seconds in which nothing is logged.
 
 3. Visit <http://localhost:8080/> in your web browser to bring up the
-   Feldera Platform Console UI.
+   Feldera Console UI.
 
 4. Try out one of the [demos](demo/).
 
