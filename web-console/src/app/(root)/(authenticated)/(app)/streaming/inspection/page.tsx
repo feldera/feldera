@@ -7,10 +7,10 @@ import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
 import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
-import { Relation } from '$lib/services/manager'
+import { PipelineRevision, Relation } from '$lib/services/manager'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
-import { SetStateAction, useEffect, useState } from 'react'
+import { SetStateAction, useEffect, useReducer, useState } from 'react'
 import { ErrorBoundary } from 'react-error-boundary'
 import { nonNull } from 'src/lib/functions/common/function'
 
@@ -75,23 +75,43 @@ const TableInspector = ({
   pipeline,
   setTab,
   tab,
-  caseIndependentName
+  pipelineRevision,
+  caseIndependentName,
+  relation
 }: {
   pipeline: Pipeline
   setTab: (tab: Tab) => void
   tab: string
+  pipelineRevision: PipelineRevision
   caseIndependentName: string
+  relation: Relation
 }) => {
   const logError = (error: Error) => {
     console.error('InspectionTable error: ', error)
   }
   const [relationsRows, setRelationsRows] = useState<Record<string, Row[]>>({})
   const rows = relationsRows[caseIndependentName] ?? []
+
   const setRows = (rows: SetStateAction<Row[]>) =>
     setRelationsRows(old => ({
       ...old,
       [caseIndependentName]: rows instanceof Function ? rows(old[caseIndependentName] ?? []) : rows
     }))
+
+  {
+    // If the revision of the pipeline has changed we drop the rows ready to be imported
+    // as they may no longer be valid as program schema might have changed
+    const [, updateRevision] = useReducer((oldRevision: string, newRevision: string) => {
+      if (oldRevision !== newRevision) {
+        setRows([])
+      }
+      return newRevision
+    }, pipelineRevision.revision)
+
+    useEffect(() => {
+      updateRevision(pipelineRevision.revision)
+    }, [pipelineRevision.revision, updateRevision])
+  }
 
   return (
     <TabContext value={tab}>
@@ -110,7 +130,7 @@ const TableInspector = ({
       <TabPanel value='insert'>
         {pipeline.state.current_status === PipelineStatus.RUNNING ? (
           <ErrorBoundary FallbackComponent={ErrorOverlay} onError={logError} key={location.pathname}>
-            <InsertionTable pipeline={pipeline} caseIndependentName={caseIndependentName} insert={{ rows, setRows }} />
+            <InsertionTable pipelineRevision={pipelineRevision} relation={relation} insert={{ rows, setRows }} />
           </ErrorBoundary>
         ) : (
           <Alert severity='info'>
@@ -164,16 +184,15 @@ export default () => {
       const tables = program?.schema?.inputs || []
       const views = program?.schema?.outputs || []
       return {
-        ...pipelineRevision,
+        ...pipelineRevision!,
         tables,
         views
       }
     }
   })
 
-  // If we request to be on the insert tab for a view, we force-switch to the
-  // browse tab.
   {
+    // If we request to be on the insert tab for a view, we force-switch to the browse tab.
     const views = pipelineRevision?.views
     useEffect(() => {
       if (
@@ -186,20 +205,21 @@ export default () => {
       }
     }, [setTab, caseIndependentName, views, tab])
   }
+
   if (!caseIndependentName || !pipeline || !pipelineRevision) {
     return <></>
   }
   const { tables, views } = pipelineRevision
-  const relationType = (() => {
-    const validTable = tables.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
-    if (validTable) {
-      return 'table'
+  const { relation, relationType } = (() => {
+    const table = tables.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
+    if (table) {
+      return { relation: table, relationType: 'table' } as const
     }
-    const validView = views.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
-    if (validView) {
-      return 'view'
+    const view = views.find(caseDependentNameEq(getCaseDependentName(caseIndependentName)))
+    if (view) {
+      return { relation: view, relationType: 'view' } as const
     }
-    return undefined
+    return { relation: undefined, relationType: undefined }
   })()
 
   if (!relationType) {
@@ -233,7 +253,14 @@ export default () => {
       <Box data-testid='box-inspection-background' sx={{ width: 2, height: 2 }}></Box>
       <Grid item xs={12}>
         {relationType === 'table' && (
-          <TableInspector pipeline={pipeline} setTab={setTab} tab={tab} caseIndependentName={caseIndependentName} />
+          <TableInspector
+            pipeline={pipeline}
+            setTab={setTab}
+            tab={tab}
+            pipelineRevision={pipelineRevision}
+            caseIndependentName={caseIndependentName}
+            relation={relation}
+          />
         )}
         {relationType === 'view' && <ViewInspector pipeline={pipeline} caseIndependentName={caseIndependentName} />}
       </Grid>

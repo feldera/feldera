@@ -9,14 +9,11 @@ import { SQLTypeHeader } from '$lib/components/streaming/inspection/SQLTypeHeade
 import { SQLValueDisplay } from '$lib/components/streaming/inspection/SQLValueDisplay'
 import { useDataGridPresentationLocalStorage } from '$lib/compositions/persistence/dataGrid'
 import { getDefaultValue } from '$lib/compositions/streaming/import/useDefaultRows'
-import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { sqlValueComparator } from '$lib/functions/ddl'
-import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
+import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { ColumnType, Field, PipelineRevision, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
-import { Pipeline } from '$lib/types/pipeline'
-import { Dispatch, SetStateAction, useEffect, useState } from 'react'
-import invariant from 'tiny-invariant'
+import { Dispatch, SetStateAction, useState } from 'react'
 
 import Card from '@mui/material/Card'
 import {
@@ -25,7 +22,6 @@ import {
   GridRenderCellParams,
   GridRenderEditCellParams
 } from '@mui/x-data-grid-pro'
-import { useQuery } from '@tanstack/react-query'
 
 import ImportToolbar from './ImportToolbar'
 import { SQLValueInput } from './SQLValueInput'
@@ -39,72 +35,8 @@ declare module '@mui/x-data-grid-pro' {
     rows: Row[]
     setRows: Dispatch<SetStateAction<any[]>>
     pipelineRevision: PipelineRevision
-    setLoading: Dispatch<SetStateAction<boolean>>
+    setIsBusy: Dispatch<SetStateAction<boolean>>
   }
-}
-
-const useInsertionTable = (props: {
-  pipeline: Pipeline
-  caseIndependentName: string
-  insert: { rows: Row[]; setRows: Dispatch<SetStateAction<Row[]>> }
-}) => {
-  const [pipelineRevision, setPipelineRevision] = useState<PipelineRevision | undefined>(undefined)
-  const [relation, setRelation] = useState<Relation | undefined>(undefined)
-  const [isPending, setLoading] = useState<boolean>(false)
-
-  const pipelineManagerQuery = usePipelineManagerQuery()
-  const pipelineRevisionQuery = useQuery(pipelineManagerQuery.pipelineLastRevision(props.pipeline.descriptor.name))
-
-  // If a revision is loaded, find the requested relation that we want to insert
-  // data into. We use it to display the table headers etc.
-  useEffect(() => {
-    if (pipelineRevisionQuery.isPending || pipelineRevisionQuery.isError || !pipelineRevisionQuery.data) {
-      return
-    }
-    const newPipelineRevision = pipelineRevisionQuery.data
-    if (pipelineRevision && pipelineRevision.revision !== newPipelineRevision.revision) {
-      props.insert.setRows([])
-    }
-
-    const program = newPipelineRevision.program
-    const tables = program.schema?.inputs.find(caseDependentNameEq(getCaseDependentName(props.caseIndependentName)))
-    const views = program.schema?.outputs.find(caseDependentNameEq(getCaseDependentName(props.caseIndependentName)))
-    const relation = tables || views // name is unique in the schema
-    if (!relation) {
-      return
-    }
-    setPipelineRevision(newPipelineRevision)
-    setRelation(relation)
-  }, [
-    pipelineRevisionQuery.isPending,
-    pipelineRevisionQuery.isError,
-    pipelineRevisionQuery.data,
-    props.caseIndependentName,
-    pipelineRevision,
-    props.insert
-  ])
-
-  return {
-    relation,
-    pipelineRevision,
-    isPending,
-    setLoading,
-    insert: props.insert
-  }
-}
-
-export const InsertionTable = (props: {
-  pipeline: Pipeline
-  caseIndependentName: string
-  insert: { rows: Row[]; setRows: Dispatch<SetStateAction<Row[]>> }
-}) => {
-  const { relation, ...data } = useInsertionTable(props)
-
-  if (!relation) {
-    return <></>
-  }
-
-  return <InsertionTableImpl {...{ relation, ...data }} />
 }
 
 const SQLValueInputCell =
@@ -116,14 +48,19 @@ const SQLValueInputCell =
     return <SQLValueInput columnType={ct} value={value} onChange={onChange} sx={{ width: '100%' }} autoFocus={true} />
   }
 
-const InsertionTableImpl = ({
+export const InsertionTable = ({
   relation,
   pipelineRevision,
-  isPending,
-  setLoading,
   insert
-}: ReturnType<typeof useInsertionTable>) => {
-  invariant(relation && pipelineRevision)
+}: {
+  relation: Relation
+  pipelineRevision: PipelineRevision
+  insert: {
+    rows: Row[]
+    setRows: Dispatch<SetStateAction<Row[]>>
+  }
+}) => {
+  const [isBusy, setIsBusy] = useState<boolean>(false)
 
   const defaultColumnVisibility = { genId: false }
   const gridPersistence = useDataGridPresentationLocalStorage({
@@ -138,7 +75,7 @@ const InsertionTableImpl = ({
         autoHeight
         editMode='cell'
         density='compact'
-        loading={isPending}
+        loading={isBusy}
         rows={insert.rows}
         disableColumnFilter
         initialState={{
@@ -220,7 +157,7 @@ const InsertionTableImpl = ({
           toolbar: {
             relation,
             pipelineRevision,
-            setLoading,
+            setIsBusy,
             children: (
               <ResetColumnViewButton
                 setColumnViewModel={gridPersistence.setColumnViewModel}
