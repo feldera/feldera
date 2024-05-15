@@ -2,7 +2,7 @@
 
 ## SQL programs
 
-The compiler, which runs internally in the Feldera Platform, must be given the
+The compiler, which runs internally to Feldera, must be given the
 table definition first, and then the view definition. e.g.,
 
 ```sql

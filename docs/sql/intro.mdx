@@ -10,15 +10,15 @@ Parts of this documentation are adapted from the Calcite
 documentation, governed by the [Apache 2.0
 License](https://github.com/apache/calcite/blob/main/LICENSE).
 
-## Feldera Analytics Platform, DBSP and incremental view maintenance
+## Feldera, DBSP and incremental view maintenance
 
-Feldera Analytics Platform's implementation is based on a query engine optimized
+Feldera's implementation is based on a query engine optimized
 for *incremental view maintenance*. This engine is called Database Stream
 Processor, DBSP.
 
-Feldera Platform is used in the following way:
+Feldera is used in the following way:
 
-- users define a set of database tables in the Feldera Platform. These tables
+- users define a set of database tables in Feldera. These tables
   become *inputs* for DBSP.
 - users define a set of database views.  The views become *outputs* for DBSP.
   The views can be defined either in Rust, using the DBSP library, or can be

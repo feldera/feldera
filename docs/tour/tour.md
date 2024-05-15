@@ -1,12 +1,12 @@
 # Tour
 
-Once you've started the Feldera Platform demo, as described in [Get
+Once you've started the Feldera demo, as described in [Get
 Started](/docs/intro), navigate to [localhost:8080](http://localhost:8080)
-in your web browser to view the Feldera Platform user interface.  A status
+in your web browser to view the Feldera user interface.  A status
 dashboard fills most of the home screen, as shown below, and a
-sidebar on the left offers access to tabs for Feldera Platform features:
+sidebar on the left offers access to tabs for Feldera features:
 
-![Feldera Platform home screen](home.png)
+![Feldera home screen](home.png)
 
 Let's take a quick tour around the options on the sidebar.
 
@@ -15,10 +15,10 @@ Let's take a quick tour around the options on the sidebar.
 ![Analytics](analytics.png)
 
 Click on the "SQL Programs" tab.  This tab
-allows a Feldera Platform user to define the structure of
+allows a Feldera user to define the structure of
 data and specify analyses.  The user writes both of these in SQL: data
 definitions as `CREATE TABLE` commands, and analyses as `CREATE VIEW`
-commands.  Feldera Platform implements a rich SQL feature set that permits
+commands.  Feldera implements a rich SQL feature set that permits
 sophisticated SQL written for popular SQL databases to run with only
 minimal changes.
 
@@ -40,18 +40,18 @@ program's name and description and code:
 Scroll through the SQL code. It should consist of `CREATE TABLE` and
 `CREATE VIEW` commands:
 
-* `CREATE TABLE` specifies a data format.  Feldera Platform processes streaming
-  data, rather than storing it, so Feldera Platform does not reserve disk space in
+* `CREATE TABLE` specifies a data format.  Feldera processes streaming
+  data, rather than storing it, so Feldera does not reserve disk space in
   response to table definitions.
 
 * `CREATE VIEW` describes an analysis in terms of tables or views.
-  Feldera Platform updates views whenever it receives new data in a table.
+  Feldera updates views whenever it receives new data in a table.
 
 ## Connectors
 
 ![Input & Output](io.png)
 
-For a Feldera Platform program to be useful, it must be able to access data.  This
+For a Feldera program to be useful, it must be able to access data.  This
 happens through **connectors**, which are divided into **input
 connectors** for obtaining data from a source to feed into a table and
 **output connectors** that receive data output by views.
@@ -72,7 +72,7 @@ connector type. The connectors in the demo are already set up
 properly, so don't make changes.
 
 Click on "Add Connector" to see the types of connectors that Feldera
-Platform supports for input or output or both:
+supports for input or output or both:
 
 ![Connector Creator](connector-creator.png)
 
@@ -87,7 +87,7 @@ streaming pipelines.
 
 A user assembles a **pipeline** by attaching a program's tables to
 input connectors and its views to output connectors.  The "Pipelines"
-page allow a Feldera Platform user to set up, manage and monitor pipelines.
+page allow a Feldera user to set up, manage and monitor pipelines.
 
 Click on the "Pipelines" tab to see a list of the existing pipelines
 as well as an "Add Pipeline" button for creating a new pipeline.  Each
