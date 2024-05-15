@@ -18,17 +18,20 @@ const sidebars = {
     'concepts',
     {
       type: 'category',
-      label: 'Get started',
+      label: 'Get Started',
+      link: {
+        type: 'doc',
+        id: 'get-started'
+      },
       items: [
-        'intro',
-        'demo/demo',
-        'tour/tour',
+	'intro',
+	'sandbox',
       ]
     },
     {
       type: 'category',
       label: 'Deploy',
-      link: { type: 'doc', id: 'cloud/index' },
+      link: { type: 'doc', id: 'deploy' },
       items: [
         'intro',
         {
@@ -69,46 +72,62 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Connectors',
-      link: {
-        type: 'doc',
-        id: 'connectors/index'
-      },
+      label: 'Use Cases',
       items: [
-          {
-              type: 'category',
-              label: 'Input',
-              link: {
-                  type: 'doc',
-                  id: 'connectors/sources/index',
-              },
-              items: [
-                  'connectors/sources/http',
-                  'connectors/sources/http-get',
-                  'connectors/sources/kafka',
-                  'connectors/sources/debezium-mysql'
-              ]
-          },
-          {
-              type: 'category',
-              label: 'Output',
-              link: {
-                  type: 'doc',
-                  id: 'connectors/sinks/index',
-              },
-              items: [
-                  'connectors/sinks/http',
-                  'connectors/sinks/kafka',
-                  'connectors/sinks/snowflake'
-              ]
-          }
+        'tour/tour',
       ]
     },
-    'troubleshooting/index',
     {
       type: 'category',
       label: 'Reference',
       items: [
+            'api/rest', 
+	    {
+	      type: 'category',
+	      label: 'Connectors',
+	      link: {
+		type: 'doc',
+		id: 'connectors/index'
+	      },
+	      items: [
+		  {
+		      type: 'category',
+		      label: 'Input',
+		      link: {
+			  type: 'doc',
+			  id: 'connectors/sources/index',
+		      },
+		      items: [
+			  'connectors/sources/http',
+			  'connectors/sources/http-get',
+			  'connectors/sources/kafka',
+			  'connectors/sources/debezium-mysql'
+		      ]
+		  },
+		  {
+		      type: 'category',
+		      label: 'Output',
+		      link: {
+			  type: 'doc',
+			  id: 'connectors/sinks/index',
+		      },
+		      items: [
+			  'connectors/sinks/http',
+			  'connectors/sinks/kafka',
+			  'connectors/sinks/snowflake'
+		      ]
+		  }
+	      ]
+	    },
+            {
+              type: 'category',
+	      label: 'Formats',
+	      items: [
+		'api/json', 
+		'api/parquet', 
+                'api/csv',
+	      ],
+	    },
             {
               type: 'category',
               label: 'SQL Reference',
@@ -133,10 +152,6 @@ const sidebars = {
                 'sql/udf'
               ]
             },
-            'api/rest', 
-            'api/json', 
-            'api/parquet', 
-            'api/csv', 
             'api/rust']
     },
     {
