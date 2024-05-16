@@ -24,54 +24,43 @@ For output, being incremental means that Feldera outputs query results
 as sets of changes from the previous output. This improves performance
 and reduces output size.
 
-## Programs
+## Pipeline
 
-In Feldera, a SQL **program** is a collection of SQL DDL (table and
-view definitions):
+A Feldera **pipeline** continuously pulls data from sources, runs it
+through a computation, and pushes the results to sinks.  The user can
+start, stop, manage, and monitor pipelines.
 
-* SQL table definitions with `CREATE TABLE` specify the format of
-  data.  Feldera does not store tables, since it is not a database, so
-  table definitions do not reserve disk space or other storage.
+A pipeline is created by attaching input and output
+[connectors](#connector) to a [SQL program](#program).
 
-* SQL view definitions with `CREATE VIEW` specify transformations and
-  computations.  Views may draw data from tables and from other views.
-  Feldera provides powerful SQL analysis features, including
-  time-series operators.
+<!-- The GIFs below were generated with the utility in demo/docs-demo. -->
 
-A program defines a computation, but it doesn't specify the source or
-destination for data.  Those are the province of **connectors** and
-**pipelines**, described below.
+![Pipeline demonstration](pipeline.gif)
 
-## Connectors
+## Program
 
-A **connector** gives Feldera computation access to data.  There are
-two classes of connectors: **input connectors** that connect a source
-of input records to a Feldera table, and **output connectors** that
-connect a Feldera view to a destination.
+A **program** written in SQL specifies what a pipeline computes.
+`CREATE TABLE` statements specify the format of data, and `CREATE
+VIEW` statements specify transformations and computations.  Views may
+draw data from tables and from other views.  Feldera provides powerful
+SQL analysis features, including time-series operators.
 
-Feldera includes input and output connectors for [Kafka], open source
-event streaming software from the [Apache Software
-Foundation][Apache].  Kafka's API is widely adopted, which means that
-these connectors also allow Feldera to work directly with [RedPanda]
-and other software that use the same API.
+![Program demonstration](program.gif)
 
-Feldera has a plug-in connector model.  This means that connectors can
-be written to interface with whatever data sources and sinks a user
-would find most convenient.
+## Connector
 
-[Kafka]: https://kafka.apache.org/
-[Apache]: https://www.apache.org/
-[RedPanda]: https://redpanda.com/
+A **connector** attaches a pipeline's program to its data.  **Input
+connectors** connect a data source to SQL tables, and **output
+connectors** connect a SQL view to a data sink.
 
-## Pipelines
+Feldera includes connectors for working with HTTPS, Kafka, Debezium,
+Snowflake, Delta Lake, S3, and other systems.  New connectors can
+easily be written to interface with whatever data sources and sinks a
+user would find most convenient.
 
-A user assembles a **pipeline** by attaching a program's tables to
-input connectors and its views to output connectors. A Feldera
-pipeline is the top-level unit of execution. Once a Feldera user
-assembles a pipeline from a program and connectors, they may start,
-stop, manage, and monitor it.
+![Connector demonstration](connectors.gif)
 
-# Foundations
+# Foundation
 
 Feldera is the pioneering implementation of a new theory that unifies
 databases, streaming computation, and incremental view maintenance,
