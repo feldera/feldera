@@ -1,4 +1,4 @@
-# Debezium MySQL Source Connector
+# Debezium-MySQL input connector
 
 :::caution Under Construction
 
