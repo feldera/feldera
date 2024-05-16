@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [Docs] Re-organize documentation sections
   ([#1734](https://github.com/feldera/feldera/pull/1734))
+- [Docs] Expand connectors documentation
+  ([#1746](https://github.com/feldera/feldera/pull/1746))
 
 ## [0.15.0] - 2024-04-30
 

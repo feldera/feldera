@@ -1,4 +1,4 @@
-# Snowflake Sink Connector (Experimental)
+# Snowflake output connector (experimental)
 
 The Feldera Snowflake connector ingests data change events produced by a Feldera
 pipeline into a Snowflake database in near-realtime.

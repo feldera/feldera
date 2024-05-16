@@ -90,33 +90,61 @@ const sidebars = {
 		id: 'connectors/index'
 	      },
 	      items: [
-		  {
-		      type: 'category',
-		      label: 'Input',
-		      link: {
-			  type: 'doc',
-			  id: 'connectors/sources/index',
-		      },
-		      items: [
-			  'connectors/sources/http',
-			  'connectors/sources/http-get',
-			  'connectors/sources/kafka',
-			  'connectors/sources/debezium-mysql'
-		      ]
-		  },
-		  {
-		      type: 'category',
-		      label: 'Output',
-		      link: {
-			  type: 'doc',
-			  id: 'connectors/sinks/index',
-		      },
-		      items: [
-			  'connectors/sinks/http',
-			  'connectors/sinks/kafka',
-			  'connectors/sinks/snowflake'
-		      ]
-		  }
+              {
+                  type: 'category',
+                  label: 'Input',
+                  link: {
+                      type: 'doc',
+                      id: 'connectors/sources/index',
+                  },
+                  items: [
+                      {
+                          type: 'doc',
+                          id: 'connectors/sources/http',
+                          label: 'HTTP'
+                      },
+                      {
+                          type: 'doc',
+                          id: 'connectors/sources/http-get',
+                          label: 'HTTP GET (URL)'
+                      },
+                      {
+                          type: 'doc',
+                          id: 'connectors/sources/kafka',
+                          label: 'Kafka'
+                      },
+                      {
+                          type: 'doc',
+                          id: 'connectors/sources/debezium-mysql',
+                          label: 'Debezium-MySQL'
+                      }
+                  ]
+              },
+              {
+                  type: 'category',
+                  label: 'Output',
+                  link: {
+                      type: 'doc',
+                      id: 'connectors/sinks/index',
+                  },
+                  items: [
+                      {
+                          type: 'doc',
+                          id: 'connectors/sinks/http',
+                          label: 'HTTP'
+                      },
+                      {
+                          type: 'doc',
+                          id: 'connectors/sinks/kafka',
+                          label: 'Kafka'
+                      },
+                      {
+                          type: 'doc',
+                          id: 'connectors/sinks/snowflake',
+                          label: 'Snowflake (experimental)'
+                      }
+                  ]
+              }
 	      ]
 	    },
             {
