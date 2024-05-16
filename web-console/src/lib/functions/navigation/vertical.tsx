@@ -1,17 +1,7 @@
 import { OpenAPI } from '$lib/services/manager'
+import SalesforceSlack from '$public/icons/vendors/salesforce-slack.svg'
 // The main menu that shows up on the left side of the screen.
 import { VerticalNavItemsType } from 'src/@core/layouts/types'
-import IconAlignLeft from '~icons/bx/align-left'
-import IconCodeCurly from '~icons/bx/code-curly'
-import IconEnvelope from '~icons/bx/envelope'
-import IconFile from '~icons/bx/file'
-import IconGitRepoForked from '~icons/bx/git-repo-forked'
-import IconHomeCircle from '~icons/bx/home-circle'
-import IconRocket from '~icons/bx/rocket'
-import IconServer from '~icons/bx/server'
-import IconUnite from '~icons/bx/unite'
-import IconSlack from '~icons/bxl/slack'
-import CogOutline from '~icons/mdi/cog-outline'
 
 // TODO: remove conditional Settings page link display
 // after more content is added to Settings page
@@ -21,13 +11,13 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
     {
       title: 'Home',
       path: '/home',
-      icon: IconHomeCircle,
+      icon: <i className='bx bx-home-circle' />,
       testid: 'button-vertical-nav-home'
     },
     {
       title: 'Demos',
       path: '/demos',
-      icon: IconRocket
+      icon: <i className='bx bx-rocket' />
     },
     {
       sectionTitle: 'Analytics'
@@ -40,7 +30,7 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
     {
       title: 'SQL Programs',
       path: ['/analytics/programs', '/analytics/editor'],
-      icon: IconAlignLeft,
+      icon: <i className='bx bx-align-left' />,
       testid: 'button-vertical-nav-sql-programs'
     },
     // {
@@ -51,7 +41,7 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
     {
       title: 'Pipelines', // 'Pipeline Management',
       path: ['/streaming/management', '/streaming/builder'],
-      icon: IconGitRepoForked,
+      icon: <i className='bx bx-git-repo-forked' />,
       testid: 'button-vertical-nav-pipelines'
     },
     //{
@@ -70,13 +60,13 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
     {
       title: 'Data Services',
       path: ['/services/list', '/services/create'],
-      icon: IconServer,
+      icon: <i className='bx bx-server' />,
       testid: 'button-vertical-nav-services'
     },
     {
       title: 'Connectors',
       path: ['/connectors/list', '/connectors/create'],
-      icon: IconUnite,
+      icon: <i className='bx bx-unite' />,
       testid: 'button-vertical-nav-connectors'
     },
     //{
@@ -93,7 +83,7 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
             {
               title: 'Settings',
               path: '/settings',
-              icon: CogOutline
+              icon: <i className='bx bx-cog' />
             }
           ]
         : []
@@ -101,28 +91,28 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
     {
       title: 'Documentation',
       path: 'https://www.feldera.com/docs/',
-      icon: IconFile,
+      icon: <i className='bx bx-file' />,
       openInNewTab: true,
       testid: 'button-vertical-nav-documentation'
     },
     {
       title: 'Swagger',
       path: OpenAPI.BASE + '/swagger-ui/',
-      icon: IconCodeCurly,
+      icon: <i className='bx bx-code-curly' />,
       openInNewTab: true,
       testid: 'button-vertical-nav-swagger'
     },
     {
       title: 'Email',
       path: 'mailto:learnmore@feldera.com',
-      icon: IconEnvelope,
+      icon: <i className='bx bx-envelope' />,
       openInNewTab: true,
       testid: 'button-vertical-nav-email'
     },
     {
       title: 'Slack',
       path: 'https://felderacommunity.slack.com',
-      icon: IconSlack,
+      icon: <SalesforceSlack width='24' />,
       openInNewTab: true,
       testid: 'button-vertical-nav-slack'
     }

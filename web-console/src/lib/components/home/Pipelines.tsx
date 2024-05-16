@@ -5,7 +5,6 @@ import { PipelineThumb } from '$lib/components/home/pipelines/PipelineThumb'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { partition } from '$lib/functions/common/array'
 import { PipelineStatus } from '$lib/types/pipeline'
-import IconChevronDown from '~icons/bx/chevron-down'
 
 import { Accordion, AccordionDetails, AccordionSummary, Stack } from '@mui/material'
 import Card from '@mui/material/Card'
@@ -34,7 +33,7 @@ export const Pipelines = () => {
         </Stack>
       </CardContent>
       <Accordion disableGutters>
-        <AccordionSummary expandIcon={<IconChevronDown fontSize={24} />} data-testid='button-expand-inactive-pipelines'>
+        <AccordionSummary expandIcon={<i className={`bx bx-chevron-down`} style={{ fontSize: 24 }} />}>
           <Typography color='text.secondary'>and {inactive.length} inactive</Typography>
         </AccordionSummary>
         <AccordionDetails>

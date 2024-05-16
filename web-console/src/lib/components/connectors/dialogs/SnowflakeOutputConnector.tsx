@@ -22,11 +22,6 @@ import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer } from 'react-hook-form-mui'
 import * as va from 'valibot'
-import IconCategoryAlt from '~icons/bx/category-alt'
-import IconData from '~icons/bx/data'
-import IconFile from '~icons/bx/file'
-import IconLockOpen from '~icons/bx/lock-open'
-import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
 import TabContext from '@mui/lab/TabContext'
@@ -180,7 +175,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
           sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
           data-testid='button-close-modal'
         >
-          <IconX />
+          <i className={`bx bx-x`} style={{}} />
         </IconButton>
         {jsonSwitch}
         <Box sx={{ height: '70vh' }}>
@@ -225,7 +220,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           title='Metadata'
                           subtitle='Description'
                           active={activeTab === 'detailsTab'}
-                          icon={<IconFile />}
+                          icon={<i className={`bx bx-file`} style={{}} />}
                         />
                       }
                       data-testid='button-tab-name'
@@ -238,7 +233,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           title='Server'
                           subtitle='Sink details'
                           active={activeTab === 'sourceTab'}
-                          icon={<IconData />}
+                          icon={<i className={`bx bx-data`} style={{}} />}
                         />
                       }
                       data-testid='button-tab-server'
@@ -251,7 +246,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           title='Security'
                           subtitle='Authentication protocol'
                           active={activeTab === 'authTab'}
-                          icon={<IconLockOpen />}
+                          icon={<i className={`bx bx-lock-open`} style={{}} />}
                         />
                       }
                       data-testid='button-tab-auth'
@@ -264,7 +259,7 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                           title='Format'
                           subtitle='Data details'
                           active={activeTab === 'formatTab'}
-                          icon={<IconCategoryAlt />}
+                          icon={<i className={`bx bx-category-alt`} style={{}} />}
                         />
                       }
                       data-testid='button-tab-format'

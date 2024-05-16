@@ -22,9 +22,6 @@ import { ServiceProps } from '$lib/types/xgressServices/ServiceDialog'
 import { useEffect } from 'react'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
-import IconCheck from '~icons/bx/check'
-import IconPencil from '~icons/bx/pencil'
-import IconTrashAlt from '~icons/bx/trash-alt'
 
 import { Box, Button, Card, Chip, IconButton } from '@mui/material'
 import { GridColDef } from '@mui/x-data-grid-pro'
@@ -45,7 +42,7 @@ const ServiceActions = ({ row: service }: { row: ServiceDescr }) => {
   const actions = {
     edit: () => (
       <IconButton className='editButton' size='small' href={`#edit/` + service.name} data-testid='button-edit'>
-        <IconPencil fontSize={20} />
+        <i className={`bx bx-pencil`} style={{ fontSize: 24 }} />
       </IconButton>
     ),
     delete: () => (
@@ -57,7 +54,7 @@ const ServiceActions = ({ row: service }: { row: ServiceDescr }) => {
         )}
         data-testid='button-delete'
       >
-        <IconTrashAlt fontSize={20} />
+        <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
       </IconButton>
     )
   }
@@ -211,7 +208,15 @@ const ServiceDialogs = () => {
           createService(toNewServiceRequest(serviceType, form))
         },
         submitButton: (
-          <Button type='submit' variant='contained' color='success' endIcon={<IconCheck />}>
+          <Button
+            type='submit'
+            variant='contained'
+            color='success'
+            endIcon={
+              // <i className={`bx bx-check`} style={{  }} />
+              <i className={`bx bx-check`} style={{}} />
+            }
+          >
             Register
           </Button>
         )
@@ -231,7 +236,15 @@ const ServiceDialogs = () => {
           })
         },
         submitButton: (
-          <Button type='submit' variant='contained' color='success' endIcon={<IconCheck />}>
+          <Button
+            type='submit'
+            variant='contained'
+            color='success'
+            endIcon={
+              // <i className={`bx bx-check`} style={{  }} />
+              <i className={`bx bx-check`} style={{}} />
+            }
+          >
             Update
           </Button>
         )

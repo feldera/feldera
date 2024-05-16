@@ -5,8 +5,7 @@ import { CreateApiKeyDialog } from '$lib/components/settings/CreateApiKeyDialog'
 import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { mutationDeleteApiKey } from '$lib/services/pipelineManagerQuery'
-import IconTrashAlt from '~icons/bx/trash-alt'
-import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
+import { TwoSeventyRingWithBg } from 'react-svg-spinners'
 
 import { Box, Button, IconButton, List, ListItem, ListItemText, Stack, Typography } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -39,7 +38,8 @@ export const ApiKeyList = () => {
       <Stack spacing={4}>
         {title}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Icon270RingWithBg></Icon270RingWithBg>Fetching keys...
+          <TwoSeventyRingWithBg />
+          Fetching keys...
         </Box>
       </Stack>
     )
@@ -66,7 +66,7 @@ export const ApiKeyList = () => {
                 edge='end'
                 onClick={() => showDeleteDialog('Revoke', name => `API key ${name}`, deleteKey)(key.name)}
               >
-                <IconTrashAlt fontSize={20} />
+                <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
               </IconButton>
             }
           >

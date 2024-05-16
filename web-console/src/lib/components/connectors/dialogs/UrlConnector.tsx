@@ -12,9 +12,6 @@ import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
 import * as va from 'valibot'
-import IconCategoryAlt from '~icons/bx/category-alt'
-import IconFile from '~icons/bx/file'
-import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
 import TabContext from '@mui/lab/TabContext'
@@ -147,7 +144,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
             sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
             data-testid='button-close-modal'
           >
-            <IconX />
+            <i className={`bx bx-x`} style={{}} />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>
@@ -181,7 +178,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       title='Source'
                       subtitle='Description'
                       active={activeTab === 'detailsTab'}
-                      icon={<IconFile />}
+                      icon={<i className={`bx bx-file`} style={{}} />}
                     />
                   }
                   data-testid='button-tab-name'
@@ -194,7 +191,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
                       title='Format'
                       active={activeTab === 'formatTab'}
                       subtitle='Data details'
-                      icon={<IconCategoryAlt />}
+                      icon={<i className={`bx bx-category-alt`} style={{}} />}
                     />
                   }
                   data-testid='button-tab-format'

@@ -3,9 +3,6 @@
 import { useAuth } from '$lib/compositions/auth/useAuth'
 import { Fragment, SyntheticEvent, useState } from 'react'
 import invariant from 'tiny-invariant'
-import AccountOutline from '~icons/mdi/account-outline'
-import CogOutline from '~icons/mdi/cog-outline'
-import LogoutVariant from '~icons/mdi/logout-variant'
 
 import { useClipboard } from '@mantine/hooks'
 import { Button, Link } from '@mui/material'
@@ -125,14 +122,14 @@ const UserDropdown = () => {
         <Divider sx={{ mt: 0, mb: 1 }} />
         <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled data-testid='button-profile'>
           <Box sx={styles}>
-            <AccountOutline />
+            <i className={`bx bx-user`} style={{}} />
             Profile
           </Box>
         </MenuItem>
         <Link href='/settings/' data-testid='button-settings'>
           <MenuItem sx={{ p: 0 }}>
             <Box sx={styles}>
-              <CogOutline />
+              <i className={`bx bx-cog`} style={{}} />
               Settings
             </Box>
           </MenuItem>
@@ -140,7 +137,7 @@ const UserDropdown = () => {
         <Divider />
         <Link href={auth.signOutUrl} data-testid='button-signout'>
           <MenuItem sx={styles} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
-            <LogoutVariant />
+            <i className={`bx bx-log-out`} style={{}} />
             Logout
           </MenuItem>
         </Link>

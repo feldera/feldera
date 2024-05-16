@@ -6,7 +6,6 @@ import { format } from 'd3-format'
 import { useState } from 'react'
 import ReactApexcharts from 'src/@core/components/react-apexcharts'
 import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
-import IconDotsVerticalRounded from '~icons/bx/dots-vertical-rounded'
 
 import { Box, Button, Collapse, Link, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
@@ -140,7 +139,7 @@ export const PipelineThumb = (props: Pipeline) => {
                     <Typography sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
                       {format(item.tput[1] >= 1000 ? '.3s' : '.0f')(item.tput[1]) + ' rows/s'}
                     </Typography>
-                    <IconDotsVerticalRounded fontSize={28} style={{ margin: -4, marginRight: -16 }} />
+                    <i className={`bx bx-dots-vertical-rounded`} style={{ fontSize: 32 }} />
                   </Box>
                 </Collapse>
                 <Collapse orientation='horizontal' in={sqlHover}>

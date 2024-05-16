@@ -39,7 +39,6 @@ import { ReactFlowProvider, useReactFlow } from 'reactflow'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
-import IconCheck from '~icons/bx/check'
 
 import { Button, Card, CardContent } from '@mui/material'
 import Grid from '@mui/material/Grid'
@@ -319,7 +318,10 @@ const PipelineBuilderPage = ({
               <Button
                 variant='contained'
                 color='success'
-                endIcon={<IconCheck />}
+                endIcon={
+                  // <i className={`bx bx-check`} style={{  }} />
+                  <i className={`bx bx-check`} style={{}} />
+                }
                 type='submit'
                 data-testid='button-update'
               >

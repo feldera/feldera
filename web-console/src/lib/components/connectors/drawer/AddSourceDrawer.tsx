@@ -18,8 +18,6 @@ import { ConnectorType, Direction } from '$lib/types/connectors'
 import { SVGImport } from '$lib/types/imports'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import IconCheck from '~icons/bx/check'
-import IconX from '~icons/bx/x'
 
 import NavigateNextIcon from '@mui/icons-material/NavigateNext'
 import { Breadcrumbs, Button, Card, CardContent, Chip, Grid, Link } from '@mui/material'
@@ -184,7 +182,7 @@ const SideBarAddIo = () => {
         </Typography>
 
         <IconButton size='small' href='#' sx={{ color: 'text.primary' }}>
-          <IconX fontSize={20} />
+          <i className={`bx bx-x`} style={{ fontSize: 24 }} />
         </IconButton>
       </Header>
       {drawer && !drawer.connectorType && (
@@ -239,7 +237,7 @@ const SideBarAddIo = () => {
               <Button
                 variant='contained'
                 color='success'
-                endIcon={<IconCheck />}
+                endIcon={<i className={`bx bx-check`} style={{}} />}
                 type='submit'
                 data-testid='button-create'
               >

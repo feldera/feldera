@@ -7,8 +7,6 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
 import * as va from 'valibot'
-import IconCopy from '~icons/bx/copy'
-import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
 import { useClipboard } from '@mantine/hooks'
@@ -66,7 +64,7 @@ export const CreateApiKeyDialog = () => {
       <DialogTitle>Generate a new API key</DialogTitle>
       <DialogContent>
         <IconButton size='small' onClick={handleClose} sx={{ position: 'absolute', right: '1rem', top: '1rem' }}>
-          <IconX />
+          <i className={`bx bx-x`} style={{}} />
         </IconButton>
         <FormContainer
           defaultValues={defaultValues}
@@ -97,7 +95,7 @@ export const CreateApiKeyDialog = () => {
               key={key.api_key_id}
               secondaryAction={
                 <IconButton onClick={() => copy(key.api_key)}>
-                  <IconCopy fontSize={20} />
+                  <i className={`bx bx-copy`} style={{ fontSize: 24 }} />
                 </IconButton>
               }
             >

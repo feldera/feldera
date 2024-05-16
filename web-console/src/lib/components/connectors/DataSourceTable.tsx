@@ -18,9 +18,6 @@ import { mutationUpdateConnector, PipelineManagerQueryKey } from '$lib/services/
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
-import IconCheck from '~icons/bx/check'
-import IconPencil from '~icons/bx/pencil'
-import IconTrashAlt from '~icons/bx/trash-alt'
 
 import { Box, Button, IconButton, Tooltip } from '@mui/material'
 import Card from '@mui/material/Card'
@@ -158,12 +155,12 @@ const DataSourceTable = () => {
           <Box data-testid={'box-connector-actions-' + params.row.name}>
             <Tooltip title='Edit'>
               <IconButton size='small' onClick={() => editConnector(params.row)} data-testid='button-edit'>
-                <IconPencil fontSize={20} />
+                <i className={`bx bx-pencil`} style={{ fontSize: 24 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title='Delete'>
               <IconButton size='small' onClick={() => deleteConnector(params.row)} data-testid='button-delete'>
-                <IconTrashAlt fontSize={20} />
+                <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
               </IconButton>
             </Tooltip>
           </Box>
@@ -223,7 +220,7 @@ const DataSourceTable = () => {
             <Button
               variant='contained'
               color='success'
-              endIcon={<IconCheck />}
+              endIcon={<i className={`bx bx-check`} style={{}} />}
               type='submit'
               data-testid='button-update'
             >

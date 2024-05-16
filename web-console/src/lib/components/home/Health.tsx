@@ -7,9 +7,6 @@ import { nonNull } from '$lib/functions/common/function'
 import { ProgramDescr, ProgramsService } from '$lib/services/manager'
 import { Pipeline } from '$lib/types/pipeline'
 import { match, P } from 'ts-pattern'
-import IconChevronDown from '~icons/bx/chevron-down'
-import IconCopy from '~icons/bx/copy'
-import IconErrorCircle from '~icons/bx/error-circle'
 
 import { useClipboard } from '@mantine/hooks'
 import {
@@ -164,7 +161,7 @@ const CopyButton = (props: IconButtonProps) => {
       }}
     >
       <IconButton size='small' {...props}>
-        <IconCopy fontSize={16} />
+        <i className={`bx bx-copy`} style={{ fontSize: 20 }} />
       </IconButton>
     </Box>
   )
@@ -195,9 +192,9 @@ const Health = () => {
       >
         <CardHeader title='Feldera Health'></CardHeader>
         <Accordion disableGutters>
-          <AccordionSummary expandIcon={<IconChevronDown fontSize={24} />} data-testid='button-expand-errors'>
+          <AccordionSummary expandIcon={<i className={`bx bx-chevron-down`} style={{ fontSize: 24 }} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
-              <IconErrorCircle fontSize={20} />
+              <i className={`bx bx-error-circle`} style={{ fontSize: 24 }} />
               <Typography>Platform errors</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 {errors.length}
@@ -277,9 +274,9 @@ const Health = () => {
           )}
         </Accordion>
         <Accordion disableGutters>
-          <AccordionSummary expandIcon={<IconChevronDown fontSize={24} />} data-testid='button-expand-warnings'>
+          <AccordionSummary expandIcon={<i className={`bx bx-chevron-down`} style={{ fontSize: 24 }} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
-              <IconErrorCircle fontSize={20} />
+              <i className={`bx bx-error-circle`} style={{ fontSize: 24 }} />
               <Typography>Platform warnings</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 0

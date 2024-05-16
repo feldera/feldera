@@ -12,10 +12,6 @@ import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, ReactNode, SetStateAction, useCallback } from 'react'
 import { getCaseIndependentName } from 'src/lib/functions/felderaRelation'
 import JSONbig from 'true-json-bigint'
-import IconDuplicate from '~icons/bx/duplicate'
-import IconPlusCircle from '~icons/bx/plus-circle'
-import IconTrash from '~icons/bx/trash'
-import IconUpload from '~icons/bx/upload'
 
 import { useLocalStorage } from '@mantine/hooks'
 import { Button } from '@mui/material'
@@ -127,14 +123,14 @@ const ImportToolbar = ({
     <GridToolbarContainer>
       <GridToolbarColumnsButton />
       <GridToolbarDensitySelector />
-      <Button size='small' onClick={handleClearData} startIcon={<IconTrash />} data-testid='button-clear'>
+      <Button size='small' onClick={handleClearData} startIcon={<i className={`bx bx-trash />}`} style={{}} />}>
         Clear
       </Button>
       <RngSettingsDialog relation={relation} settings={settings} setSettings={setSettings} />
       <Button
         size='small'
         onClick={() => insertDefaultRows(1)}
-        startIcon={<IconPlusCircle />}
+        startIcon={<i className={`bx bx-plus-circle`} style={{}} />}
         data-testid='button-add-1-empty'
       >
         Add Default Row
@@ -142,7 +138,7 @@ const ImportToolbar = ({
       <Button
         size='small'
         onClick={() => insertRandomRows(1)}
-        startIcon={<IconPlusCircle />}
+        startIcon={<i className={`bx bx-plus-circle`} style={{}} />}
         data-testid='button-add-1-random'
       >
         1 Random Row
@@ -150,7 +146,7 @@ const ImportToolbar = ({
       <Button
         size='small'
         onClick={() => insertRandomRows(5)}
-        startIcon={<IconDuplicate />}
+        startIcon={<i className={`bx bx-duplicate`} style={{}} />}
         data-testid='button-add-5-random'
       >
         5 Random Rows
@@ -158,7 +154,7 @@ const ImportToolbar = ({
       <Button
         size='small'
         onClick={handleInsertRows}
-        startIcon={<IconUpload />}
+        startIcon={<i className={`bx bx-upload`} style={{}} />}
         color='info'
         data-testid='button-insert-rows'
       >

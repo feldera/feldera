@@ -1,5 +1,3 @@
-import IconMoveHorizontal from '~icons/bx/move-horizontal'
-
 import { IconButton, Tooltip } from '@mui/material'
 import { GridCallbackDetails, GridColumnVisibilityModel, useGridApiRef } from '@mui/x-data-grid-pro'
 
@@ -19,7 +17,7 @@ export const ResetColumnViewButton = (props: {
   return (
     <Tooltip title='Reset columns'>
       <IconButton onClick={resetColumnView} data-testid='button-reset-columns' size='small'>
-        <IconMoveHorizontal />
+        <i className={`bx bx-move-horizontal`} style={{}} />
       </IconButton>
     </Tooltip>
   )

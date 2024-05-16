@@ -1,8 +1,6 @@
 // An input field that can be used to search the table (on the client-side).
 
 import { ChangeEvent } from 'react'
-import IconSearch from '~icons/bx/search'
-import IconX from '~icons/bx/x'
 
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
@@ -27,12 +25,12 @@ const QuickSearch = (props: Props) => {
       InputProps={{
         startAdornment: (
           <Box sx={{ mr: 2, display: 'flex' }}>
-            <IconSearch fontSize={20} />
+            <i className={`bx bx-search`} style={{ fontSize: 24 }} />
           </Box>
         ),
         endAdornment: (
           <IconButton size='small' title='Clear' aria-label='Clear' onClick={props.clearSearch}>
-            <IconX fontSize={20} />
+            <i className={`bx bx-x`} style={{ fontSize: 24 }} />
           </IconButton>
         )
       }}

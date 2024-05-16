@@ -1,8 +1,6 @@
 'use client'
 
 import { LS_PREFIX } from '$lib/types/localStorage'
-import IconExpandMore from '~icons/bx/chevron-down'
-import IconClose from '~icons/bx/x'
 
 import { useLocalStorage } from '@mantine/hooks'
 import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Link, Typography } from '@mui/material'
@@ -16,7 +14,13 @@ const WelcomeCard = () => {
     <>
       <Accordion expanded={!welcomed} onChange={() => setWelcomed(!welcomed)} disableGutters sx={{}}>
         <AccordionSummary
-          expandIcon={!welcomed ? <IconClose fontSize={24} /> : <IconExpandMore fontSize={24} />}
+          expandIcon={
+            !welcomed ? (
+              <i className={`bx bx-x`} style={{ fontSize: 24 }} />
+            ) : (
+              <i className={`bx bx-chevron-down`} style={{ fontSize: 24 }} />
+            )
+          }
           aria-controls='panel1-content'
           id='panel1-header'
           sx={{
