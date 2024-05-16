@@ -9,7 +9,7 @@ data computational engine for **continuous analytics**. Feldera allows
 users to run continuous queries directly on data in motion, without storing
 the data in databases or storage systems, before querying.
 
-With Feldera, DML and DDL SQL written for popular databases can operate
+With Feldera, SQL written for popular databases can operate
 continuously, with few changes, on data as it continuously arrives. This
 site explains the concepts behind Feldera and how to use it
 through its user interface and API.
