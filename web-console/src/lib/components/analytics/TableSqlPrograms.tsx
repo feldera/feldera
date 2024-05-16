@@ -17,8 +17,6 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
 import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
-import IconPencil from '~icons/bx/pencil'
-import IconTrashAlt from '~icons/bx/trash-alt'
 
 import { Button, IconButton, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
@@ -178,12 +176,15 @@ export const TableSqlPrograms = () => {
                 href={`/analytics/editor/?program_name=${params.row.name}`}
                 data-testid='button-edit'
               >
-                <IconPencil fontSize={20} />
+                {/* <i className={`bx bx-pencil`} style={{ fontSize: 20 }} /> */}
+
+                <i className={`bx bx-pencil`} style={{ fontSize: 20 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title='Delete'>
               <IconButton size='small' onClick={() => deleteProgram(params.row)} data-testid='button-delete'>
-                <IconTrashAlt fontSize={20} />
+                {/* <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} /> */}
+                <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} />
               </IconButton>
             </Tooltip>
           </Box>

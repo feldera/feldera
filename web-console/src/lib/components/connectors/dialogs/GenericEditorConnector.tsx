@@ -12,7 +12,6 @@ import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps
 import { useEffect, useState } from 'react'
 import { FormContainer } from 'react-hook-form-mui'
 import * as va from 'valibot'
-import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
 import Box from '@mui/material/Box'
@@ -87,7 +86,7 @@ export const ConfigEditorDialog = (props: ConnectorDialogProps) => {
             onClick={() => props.setShow(false)}
             sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
           >
-            <IconX />
+            <i className={`bx bx-x`} style={{}} />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>

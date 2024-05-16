@@ -6,7 +6,6 @@ import Menu from 'mdi-material-ui/Menu'
 import { Settings } from 'src/@core/context/settingsTypes'
 import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
 import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
-import IconLockOpenAlt from '~icons/bx/lock-open-alt'
 
 import { Tooltip } from '@mui/material'
 // also has the search bar and the user dropdown and the notification dropdown.
@@ -41,7 +40,7 @@ const AppBarContent = (props: Props) => {
           {auth === 'NoAuth' ? (
             <Tooltip title='No authentication'>
               <IconButton disableRipple data-testid='icon-no-auth' sx={{ width: 40, height: 40 }}>
-                <IconLockOpenAlt />
+                <i className={`bx bx-lock-open-alt`} style={{}} />
               </IconButton>
             </Tooltip>
           ) : (

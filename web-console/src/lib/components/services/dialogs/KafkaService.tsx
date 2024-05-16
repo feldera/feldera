@@ -18,10 +18,6 @@ import { FieldErrors, FormContainer, TextFieldElement, useFormContext, useFormSt
 import { JSONEditor } from 'src/lib/components/common/JSONEditor'
 import { ServiceDescr } from 'src/lib/services/manager'
 import * as va from 'valibot'
-import IconCog from '~icons/bx/cog'
-import IconFile from '~icons/bx/file'
-import IconLockOpen from '~icons/bx/lock-open'
-import IconX from '~icons/bx/x'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
 import TabContext from '@mui/lab/TabContext'
@@ -130,7 +126,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
           }}
           data-testid='button-close-modal'
         >
-          <IconX />
+          <i className={`bx bx-x`} style={{}} />
         </IconButton>
         {jsonSwitch}
         <Box sx={{ height: '70vh' }}>
@@ -170,7 +166,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
                             title='Metadata'
                             subtitle='Name and description'
                             active={activeTab === 'nameTab'}
-                            icon={<IconFile />}
+                            icon={<i className={`bx bx-file`} style={{}} />}
                           />
                         }
                         data-testid='button-tab-name'
@@ -183,7 +179,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
                             title='Configuration'
                             subtitle='Data details'
                             active={activeTab === 'configTab'}
-                            icon={<IconCog />}
+                            icon={<i className={`bx bx-cog`} style={{}} />}
                           />
                         }
                         data-testid='button-tab-config'
@@ -196,7 +192,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
                             title='Security'
                             subtitle='Authentication protocol'
                             active={activeTab === 'authTab'}
-                            icon={<IconLockOpen />}
+                            icon={<i className={`bx bx-lock-open`} style={{}} />}
                           />
                         }
                         data-testid='button-tab-auth'

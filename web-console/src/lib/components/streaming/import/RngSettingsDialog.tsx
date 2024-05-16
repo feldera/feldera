@@ -6,8 +6,6 @@ import { displaySQLColumnType } from '$lib/functions/sql'
 import { Field, Relation, SqlType } from '$lib/services/manager'
 import { forwardRef, ReactElement, Ref, useState } from 'react'
 import invariant from 'tiny-invariant'
-import IconCog from '~icons/bx/cog'
-import IconX from '~icons/bx/x'
 
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -94,7 +92,7 @@ export const RngSettingsDialog = (props: {
 
   return (
     <>
-      <Button size='small' onClick={() => setShow(true)} startIcon={<IconCog />}>
+      <Button size='small' onClick={() => setShow(true)} startIcon={<i className={`bx bx-cog`} style={{}} />}>
         Rng Settings
       </Button>
       <Dialog
@@ -104,7 +102,6 @@ export const RngSettingsDialog = (props: {
         scroll='body'
         onClose={() => setShow(true)}
         TransitionComponent={Transition}
-        onBackdropClick={() => setShow(true)}
       >
         <DialogContent
           sx={{
@@ -119,7 +116,7 @@ export const RngSettingsDialog = (props: {
             onClick={() => setShow(false)}
             sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
           >
-            <IconX />
+            <i className={`bx bx-x`} style={{}} />
           </IconButton>
           <Box sx={{ mb: 8, textAlign: 'center' }}>
             <Typography variant='h5' sx={{ mb: 3 }}>

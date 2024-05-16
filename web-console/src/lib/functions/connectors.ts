@@ -6,7 +6,13 @@ import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
 import { fromKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
 import { ConnectorDescr, TransportConfig } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
-import ImageBoilingFlask from '$public/icons/generic/boiling-flask.svg'
+import { SVGImport } from '$lib/types/imports'
+import IconGenericBoilingFlask from '$public/icons/generic/boiling-flask.svg'
+import IconGenericHttpGet from '$public/icons/generic/http-get.svg'
+import IconVendorsAmazonS3 from '$public/icons/vendors/amazon-s3.svg'
+import IconVendorsApacheKafka from '$public/icons/vendors/apache-kafka.svg'
+import IconVendorsDebezium from '$public/icons/vendors/debezium.svg'
+import IconVendorsSnowflake from '$public/icons/vendors/snowflake.svg'
 import ImageHttpGet from '$public/images/generic/http-get.svg'
 import S3Logo from '$public/images/vendors/amazon-s3-logo.svg'
 import DebeziumLogo from '$public/images/vendors/debezium-logo-color.svg'
@@ -14,14 +20,6 @@ import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
-import iconBoilingFlask from '~icons/generic/boiling-flask'
-import iconHttpGet from '~icons/tabler/http-get'
-import iconS3 from '~icons/vendors/amazon-s3-icon'
-import iconKafka from '~icons/vendors/apache-kafka-icon'
-import iconDebezium from '~icons/vendors/debezium-icon-color'
-import iconSnowflake from '~icons/vendors/snowflake-icon'
-
-import { SVGImport } from '../types/imports'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (config: ConnectorDescr['config']): ConnectorType => {
@@ -277,7 +275,7 @@ export const connectorTypeToLogo = (status: ConnectorType): SVGImport =>
       return ImageHttpGet
     })
     .with(ConnectorType.UNKNOWN, () => {
-      return ImageBoilingFlask
+      return IconGenericBoilingFlask
     })
     .exhaustive()
 
@@ -285,25 +283,25 @@ export const connectorTypeToLogo = (status: ConnectorType): SVGImport =>
 export const connectorTypeToIcon = (status: ConnectorType) =>
   match(status)
     .with(ConnectorType.KAFKA_IN, () => {
-      return iconKafka
+      return IconVendorsApacheKafka
     })
     .with(ConnectorType.KAFKA_OUT, () => {
-      return iconKafka
+      return IconVendorsApacheKafka
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
-      return iconDebezium
+      return IconVendorsDebezium
     })
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
-      return iconSnowflake
+      return IconVendorsSnowflake
     })
     .with(ConnectorType.S3_IN, () => {
-      return iconS3
+      return IconVendorsAmazonS3
     })
     .with(ConnectorType.URL_IN, () => {
-      return iconHttpGet
+      return IconGenericHttpGet
     })
     .with(ConnectorType.UNKNOWN, () => {
-      return iconBoilingFlask
+      return IconGenericBoilingFlask
     })
     .exhaustive()
 

@@ -30,7 +30,6 @@ const MenuItemTextMetaWrapper = styled(Box)<BoxProps>({
 
 const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
   const pathname = usePathname()
-  const IconTag = item.icon || (() => <></>)
   const isNavLinkActive = () =>
     (Array.isArray(item.path) ? item.path : [item.path]).find(path => path && pathname.startsWith(path) && path !== '/')
   const theme = useTheme()
@@ -76,8 +75,9 @@ const VerticalNavLink = ({ item, navVisible, toggleNavVisibility }: Props) => {
             color: 'text.primary',
             transition: 'margin .25s ease-in-out'
           }}
+          style={{ fontSize: '1.5rem' }}
         >
-          <IconTag style={{ fontSize: '1.5rem' }} />
+          {item.icon}
         </ListItemIcon>
 
         <MenuItemTextMetaWrapper>

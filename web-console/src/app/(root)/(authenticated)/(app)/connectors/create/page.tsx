@@ -16,7 +16,6 @@ import { connectorTypeToLogo } from '$lib/functions/connectors'
 import { showOnHashPart } from '$lib/functions/urlHash'
 import { ConnectorType } from '$lib/types/connectors'
 import { match } from 'ts-pattern'
-import IconCheck from '~icons/bx/check'
 
 import { Button } from '@mui/material'
 import Grid from '@mui/material/Grid'
@@ -86,7 +85,10 @@ const ConnectorCreateGrid = () => {
               <Button
                 variant='contained'
                 color='success'
-                endIcon={<IconCheck />}
+                endIcon={
+                  <i className={`bx bx-check`} style={{}} />
+                  // <i className={`bx bx-check`} style={{  }} />
+                }
                 type='submit'
                 data-testid='button-create'
               >

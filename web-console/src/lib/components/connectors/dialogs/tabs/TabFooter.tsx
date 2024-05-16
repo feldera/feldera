@@ -1,8 +1,5 @@
 // Footer for a dialog with tabs it contains the next and previous buttons. The
 
-import IconLeftArrowAlt from '~icons/bx/left-arrow-alt'
-import IconRightArrowAlt from '~icons/bx/right-arrow-alt'
-
 // next button can turn into a submit button if we're on the last tab.
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -29,7 +26,7 @@ export const TabFooter = ({
     <Button
       variant='contained'
       color='primary'
-      endIcon={<IconRightArrowAlt />}
+      endIcon={<i className={`bx bx-right-arrow-alt`} style={{}} />}
       onClick={() => {
         setActiveTab(nextTab)
       }}
@@ -46,7 +43,7 @@ export const TabFooter = ({
         color='secondary'
         disabled={onFirstTab}
         onClick={() => setActiveTab(prevTab)}
-        startIcon={<IconLeftArrowAlt />}
+        startIcon={<i className={`bx bx-left-arrow-alt`} style={{}} />}
         data-testid='button-previous'
       >
         Previous

@@ -7,7 +7,6 @@ import { connectorDescrToType } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import Link from 'next/link'
 import { Dispatch, useState } from 'react'
-import IconShow from '~icons/bx/show'
 
 import { Box, IconButton, Tooltip } from '@mui/material'
 import Button from '@mui/material/Button'
@@ -55,7 +54,7 @@ const SelectSourceTable = (props: {
             </Button>
             <Tooltip title='Inspect' key='inspect'>
               <IconButton size='small' component={Link} href={'#view/connector/' + params.row.name}>
-                <IconShow fontSize={20} />
+                <i className={`bx bx-show`} style={{ fontSize: 20 }} />
               </IconButton>
             </Tooltip>
           </Box>

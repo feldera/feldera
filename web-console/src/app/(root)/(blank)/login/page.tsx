@@ -6,7 +6,6 @@ import { jwtDecode, JwtPayload } from 'jwt-decode'
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { match, P } from 'ts-pattern'
-import IconLockAlt from '~icons/bx/lock-alt'
 
 import { Box, Grid } from '@mui/material'
 import { CredentialResponse, GoogleLogin, TokenResponse } from '@react-oauth/google'
@@ -23,7 +22,9 @@ export default () => {
       <Grid container spacing={6} sx={{ pt: 24, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <GridItems>
           <Image src={'/images/feldera/LogoSolid.svg'} width={300} height='100' alt='AWS Cognito logo' />
-          <IconLockAlt fontSize={64} />
+          {/* <i className={`bx bx-lock-alt`} style={{ fontSize: 64 }} /> */}
+
+          <i className={`bx bx-lock-alt`} style={{ fontSize: 64 }} />
           {match(authConfig)
             .with(undefined, () => <></>)
             .with({ AwsCognito: P.select() }, config => (

@@ -8,7 +8,7 @@ import { useAttachedPipelineConnectors } from '$lib/compositions/streaming/build
 import useAutoLayout, { useRedoLayout } from '$lib/compositions/streaming/builder/useAutoLayout'
 import { useBuilderState } from '$lib/compositions/streaming/builder/useBuilderState'
 import { useUpdatePipeline } from '$lib/compositions/streaming/builder/useUpdatePipeline'
-import React, { useCallback, useRef } from 'react'
+import React, { CSSProperties, useCallback, useRef } from 'react'
 import ReactFlow, {
   Background,
   Connection,
@@ -20,8 +20,6 @@ import ReactFlow, {
   updateEdge,
   useReactFlow
 } from 'reactflow'
-import IconArrowFromLeft from '~icons/bx/arrow-from-left'
-import IconArrowFromRight from '~icons/bx/arrow-from-right'
 
 import edgeTypes from './EdgeTypes'
 import nodeTypes from './NodeTypes'
@@ -43,7 +41,10 @@ export const sqlPlaceholderNode: Node = {
 const defaultNodes: Node[] = [
   {
     id: 'inputPlaceholder',
-    data: { label: 'Add a new Input', icon: IconArrowFromLeft },
+    data: {
+      label: 'Add a new Input',
+      icon: (style: CSSProperties) => <i className='bx bx-arrow-from-left' style={style} />
+    },
     position: { x: -500, y: 150 },
     type: 'ioPlaceholder',
     deletable: false
@@ -51,7 +52,10 @@ const defaultNodes: Node[] = [
   sqlPlaceholderNode,
   {
     id: 'outputPlaceholder',
-    data: { label: 'Add a new Output', icon: IconArrowFromRight },
+    data: {
+      label: 'Add a new Output',
+      icon: (style: CSSProperties) => <i className='bx bx-arrow-from-right' style={style} />
+    },
     position: { x: 500, y: 150 },
     type: 'ioPlaceholder',
     deletable: false

@@ -6,7 +6,6 @@ import { useDeleteDialog } from '$lib/compositions/useDialog'
 import { connectorDescrToType, connectorTypeToIcon } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
-import IconX from '~icons/bx/x'
 
 import { Box, Link, useTheme } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
@@ -82,7 +81,7 @@ const InputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           sx={{ color: 'text.secondary' }}
           onClick={showDeleteDialog('Remove', `${data.connector.name} input`, onDelete, 'You can add it back later.')}
         >
-          <IconX fontSize={20} />
+          <i className={`bx bx-x`} style={{ fontSize: 20 }} />
         </IconButton>
       </Box>
       <Handle

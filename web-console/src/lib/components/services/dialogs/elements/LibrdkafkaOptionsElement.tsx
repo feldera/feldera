@@ -4,7 +4,6 @@ import { nubLast } from '$lib/functions/common/array'
 import { LibrdkafkaOptions, librdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
 import { useFormContext, useWatch } from 'react-hook-form-mui'
 import Markdown from 'react-markdown'
-import IconX from '~icons/bx/x'
 
 import { Box, Grid, IconButton, Link, Tooltip, Typography, useTheme } from '@mui/material'
 
@@ -69,7 +68,7 @@ export const LibrdkafkaOptionsElement = (props: {
                       sx={{ mr: '-2.5rem', ml: '0.5rem' }}
                       onClick={() => ctx.unregister(props.parentName + '.' + field)}
                     >
-                      <IconX></IconX>
+                      <i className='bx bx-x' />
                     </IconButton>
                   )}
                 </Box>

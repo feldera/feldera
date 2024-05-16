@@ -19,8 +19,6 @@ import { LS_PREFIX } from '$lib/types/localStorage'
 import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { ReactNode, useCallback, useEffect, useState } from 'react'
 import invariant from 'tiny-invariant'
-import IconResume from '~icons/bx/caret-right-circle'
-import IconPause from '~icons/bx/pause-circle'
 
 import { IconButton, Tooltip } from '@mui/material'
 import Card from '@mui/material/Card'
@@ -402,14 +400,14 @@ const InspectionTableImpl = ({
               !!pause && (
                 <Tooltip title='Pause streaming row updates' key='pause'>
                   <IconButton onClick={pause}>
-                    <IconPause></IconPause>
+                    <i className='bx bx-pause-circle' />
                   </IconButton>
                 </Tooltip>
               ),
               !!resume && (
                 <Tooltip title='Resume streaming row updates' key='resume'>
                   <IconButton onClick={resume}>
-                    <IconResume></IconResume>
+                    <i className='bx bx-caret-right-circle' />
                   </IconButton>
                 </Tooltip>
               )

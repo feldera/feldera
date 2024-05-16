@@ -14,7 +14,6 @@ import { nonNull } from 'src/lib/functions/common/function'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
-import IconX from '~icons/bx/x'
 
 import { IconButton, TextField, TextFieldProps, useTheme } from '@mui/material'
 
@@ -93,7 +92,7 @@ export const SQLValueInput = ({
             sx={{ mr: -3 }}
             onClick={() => props.onChange({ target: { value: null as any } } as any)}
           >
-            <IconX></IconX>
+            <i className='bx bx-x' />
           </IconButton>
         ) : undefined
       }}
@@ -238,7 +237,7 @@ export function IntermediateValueInput(
       InputProps={{
         endAdornment: (
           <IconButton size='small' sx={{ mr: -3 }} onClick={() => setValueText(null)}>
-            <IconX></IconX>
+            <i className='bx bx-x' />
           </IconButton>
         )
       }}

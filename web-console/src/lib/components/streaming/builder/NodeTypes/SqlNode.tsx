@@ -9,9 +9,6 @@ import { escapeRelationName, getCaseIndependentName } from '$lib/functions/felde
 import { ProgramDescr, Relation } from '$lib/services/manager'
 import { Connection, getConnectedEdges, NodeProps, Position, useReactFlow } from 'reactflow'
 import { TextIcon } from 'src/lib/components/common/TextIcon'
-import IconX from '~icons/bx/x'
-import IconDatabaseExport from '~icons/mdi/database-export'
-import IconDatabaseImport from '~icons/mdi/database-import'
 
 import { Box, CardContent, CardHeader, Stack } from '@mui/material'
 import Avatar from '@mui/material/Avatar'
@@ -43,7 +40,7 @@ function SqlTableNode(props: { relation: Relation }) {
         color='secondary'
         avatar={
           <Avatar>
-            <IconDatabaseImport fontSize={16} />
+            <i className={`bx bx-import`} style={{ fontSize: 16 }} />
           </Avatar>
         }
       />
@@ -81,7 +78,7 @@ function SqlViewNode(props: { relation: Relation }) {
         color='secondary'
         avatar={
           <Avatar>
-            <IconDatabaseExport fontSize={16} />
+            <i className={`bx bx-export`} style={{ fontSize: 16 }} />
           </Avatar>
         }
       />
@@ -127,7 +124,7 @@ export function SqlNode({ id, data }: NodeProps<{ label: string; program: Progra
               )}
               data-testid='button-remove-program'
             >
-              <IconX fontSize={20} />
+              <i className={`bx bx-x`} style={{ fontSize: 20 }} />
             </IconButton>
           </Box>
         }
