@@ -139,7 +139,7 @@ export const PipelineThumb = (props: Pipeline) => {
                     <Typography sx={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
                       {format(item.tput[1] >= 1000 ? '.3s' : '.0f')(item.tput[1]) + ' rows/s'}
                     </Typography>
-                    <i className={`bx bx-dotsVerticalRounded`} style={{ fontSize: 28 }} />
+                    <i className={`bx bx-dots-vertical-rounded`} style={{ fontSize: 32 }} />
                   </Box>
                 </Collapse>
                 <Collapse orientation='horizontal' in={sqlHover}>

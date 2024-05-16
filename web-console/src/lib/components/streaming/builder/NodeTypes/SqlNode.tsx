@@ -37,10 +37,10 @@ function SqlTableNode(props: { relation: Relation }) {
       <Chip
         sx={{ ml: 9, '.MuiChip-label': { textTransform: 'none' } }}
         label={getCaseIndependentName(props.relation)}
-        color='secondary'
+        color='default'
         avatar={
           <Avatar>
-            <i className={`bx bx-import`} style={{ fontSize: 16 }} />
+            <i className={`bx bx-import`} style={{ fontSize: 20 }} />
           </Avatar>
         }
       />
@@ -75,10 +75,10 @@ function SqlViewNode(props: { relation: Relation }) {
       <Chip
         sx={{ mr: 9, '.MuiChip-label': { textTransform: 'none' } }}
         label={getCaseIndependentName(props.relation)}
-        color='secondary'
+        color='default'
         avatar={
           <Avatar>
-            <i className={`bx bx-export`} style={{ fontSize: 16 }} />
+            <i className={`bx bx-export`} style={{ fontSize: 20 }} />
           </Avatar>
         }
       />
@@ -124,7 +124,7 @@ export function SqlNode({ id, data }: NodeProps<{ label: string; program: Progra
               )}
               data-testid='button-remove-program'
             >
-              <i className={`bx bx-x`} style={{ fontSize: 20 }} />
+              <i className={`bx bx-x`} style={{ fontSize: 24 }} />
             </IconButton>
           </Box>
         }

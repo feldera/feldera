@@ -25,12 +25,12 @@ const QuickSearch = (props: Props) => {
       InputProps={{
         startAdornment: (
           <Box sx={{ mr: 2, display: 'flex' }}>
-            <i className={`bx bx-search`} style={{ fontSize: 20 }} />
+            <i className={`bx bx-search`} style={{ fontSize: 24 }} />
           </Box>
         ),
         endAdornment: (
           <IconButton size='small' title='Clear' aria-label='Clear' onClick={props.clearSearch}>
-            <i className={`bx bx-x`} style={{ fontSize: 20 }} />
+            <i className={`bx bx-x`} style={{ fontSize: 24 }} />
           </IconButton>
         )
       }}

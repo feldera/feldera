@@ -22,8 +22,6 @@ export default () => {
       <Grid container spacing={6} sx={{ pt: 24, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <GridItems>
           <Image src={'/images/feldera/LogoSolid.svg'} width={300} height='100' alt='AWS Cognito logo' />
-          {/* <i className={`bx bx-lock-alt`} style={{ fontSize: 64 }} /> */}
-
           <i className={`bx bx-lock-alt`} style={{ fontSize: 64 }} />
           {match(authConfig)
             .with(undefined, () => <></>)

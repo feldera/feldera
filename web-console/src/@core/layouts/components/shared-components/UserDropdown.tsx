@@ -123,14 +123,12 @@ const UserDropdown = () => {
         <MenuItem sx={{ p: 0 }} onClick={() => handleDropdownClose()} disabled data-testid='button-profile'>
           <Box sx={styles}>
             <i className={`bx bx-user`} style={{}} />
-            {/* <i className={`bx bx-user`} style={{  }} /> */}
             Profile
           </Box>
         </MenuItem>
         <Link href='/settings/' data-testid='button-settings'>
           <MenuItem sx={{ p: 0 }}>
             <Box sx={styles}>
-              {/* <i className={`bx bx-cog`} style={{  }} /> */}
               <i className={`bx bx-cog`} style={{}} />
               Settings
             </Box>
@@ -139,7 +137,6 @@ const UserDropdown = () => {
         <Divider />
         <Link href={auth.signOutUrl} data-testid='button-signout'>
           <MenuItem sx={styles} onClick={() => setTimeout(() => setAuth('Unauthenticated'), 0)}>
-            {/* <i className={`bx bx-log-out`} style={{  }} /> */}
             <i className={`bx bx-log-out`} style={{}} />
             Logout
           </MenuItem>

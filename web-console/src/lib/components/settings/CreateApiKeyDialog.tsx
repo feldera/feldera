@@ -95,7 +95,7 @@ export const CreateApiKeyDialog = () => {
               key={key.api_key_id}
               secondaryAction={
                 <IconButton onClick={() => copy(key.api_key)}>
-                  <i className={`bx bx-copy`} style={{ fontSize: 20 }} />
+                  <i className={`bx bx-copy`} style={{ fontSize: 24 }} />
                 </IconButton>
               }
             >

@@ -182,7 +182,7 @@ const SideBarAddIo = () => {
         </Typography>
 
         <IconButton size='small' href='#' sx={{ color: 'text.primary' }}>
-          <i className={`bx bx-x`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-x`} style={{ fontSize: 24 }} />
         </IconButton>
       </Header>
       {drawer && !drawer.connectorType && (

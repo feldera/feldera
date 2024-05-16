@@ -42,8 +42,7 @@ const ServiceActions = ({ row: service }: { row: ServiceDescr }) => {
   const actions = {
     edit: () => (
       <IconButton className='editButton' size='small' href={`#edit/` + service.name} data-testid='button-edit'>
-        {/* <i className={`bx bx-pencil`} style={{ fontSize: 20 }} /> */}
-        <i className={`bx bx-pencil`} style={{ fontSize: 20 }} />
+        <i className={`bx bx-pencil`} style={{ fontSize: 24 }} />
       </IconButton>
     ),
     delete: () => (
@@ -55,8 +54,7 @@ const ServiceActions = ({ row: service }: { row: ServiceDescr }) => {
         )}
         data-testid='button-delete'
       >
-        {/* <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} /> */}
-        <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} />
+        <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
       </IconButton>
     )
   }

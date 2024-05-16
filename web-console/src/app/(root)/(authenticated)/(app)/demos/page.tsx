@@ -25,19 +25,13 @@ const DemoTile = (props: { name: string; desc: string; onSetup: () => void; onCl
       </CardContent>
       <CardActions sx={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
         <IconButton onClick={props.onCleanup}>
-          {/* <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} /> */}
-
-          <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
         </IconButton>
         <Button
           onClick={props.onSetup}
           variant='contained'
           sx={{ px: '1rem' }}
-          endIcon={
-            // <i className={`bx bx-chevron-right`} style={{  }} />
-
-            <i className={`bx bx-chevron-right`} style={{}} />
-          }
+          endIcon={<i className={`bx bx-chevron-right`} style={{}} />}
         >
           Try
         </Button>

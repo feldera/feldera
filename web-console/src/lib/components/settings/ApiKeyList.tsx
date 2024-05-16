@@ -66,7 +66,7 @@ export const ApiKeyList = () => {
                 edge='end'
                 onClick={() => showDeleteDialog('Revoke', name => `API key ${name}`, deleteKey)(key.name)}
               >
-                <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} />
+                <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
               </IconButton>
             }
           >

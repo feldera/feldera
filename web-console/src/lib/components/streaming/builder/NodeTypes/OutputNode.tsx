@@ -73,7 +73,7 @@ const OutputNode = ({ id, data }: NodeProps<{ connector: ConnectorDescr }>) => {
           sx={{ color: 'text.secondary' }}
           onClick={showDeleteDialog('Remove', `${data.connector.name} output`, onDelete, 'You can add it back later.')}
         >
-          <i className={`bx bx-x`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-x`} style={{ fontSize: 24 }} />
         </IconButton>
       </Box>
       <Handle

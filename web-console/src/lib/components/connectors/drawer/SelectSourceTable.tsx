@@ -54,7 +54,7 @@ const SelectSourceTable = (props: {
             </Button>
             <Tooltip title='Inspect' key='inspect'>
               <IconButton size='small' component={Link} href={'#view/connector/' + params.row.name}>
-                <i className={`bx bx-show`} style={{ fontSize: 20 }} />
+                <i className={`bx bx-show`} style={{ fontSize: 24 }} />
               </IconButton>
             </Tooltip>
           </Box>

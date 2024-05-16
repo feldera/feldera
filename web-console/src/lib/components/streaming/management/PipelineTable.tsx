@@ -235,7 +235,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                 )}`}
                 data-testid='button-inspect'
               >
-                <i className={`bx bx-show`} style={{ fontSize: 20 }} />
+                <i className={`bx bx-show`} style={{ fontSize: 24 }} />
               </IconButton>
             </Tooltip>
             {direction === 'input' && state.current_status == PipelineStatus.RUNNING && (
@@ -247,7 +247,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   )}#insert`}
                   data-testid='button-import'
                 >
-                  <i className={`bx bx-upload`} style={{ fontSize: 20 }} />
+                  <i className={`bx bx-download`} style={{ fontSize: 24 }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -289,7 +289,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   <ListItem>
                     <Tooltip title='Pipeline Running Since'>
                       <ListItemIcon>
-                        <i className={`bx bx-calendar`} style={{ fontSize: 20 }} />
+                        <i className={`bx bx-calendar`} style={{ fontSize: 24 }} />
                       </ListItemIcon>
                     </Tooltip>
                     <ListItemText
@@ -300,7 +300,7 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
                   <ListItem>
                     <Tooltip title='Pipeline Port'>
                       <ListItemIcon>
-                        <i className={`bx bx-log-in-circle`} style={{ fontSize: 20 }} />
+                        <i className={`bx bx-log-in-circle`} style={{ fontSize: 24 }} />
                       </ListItemIcon>
                     </Tooltip>
                     <ListItemText
@@ -838,21 +838,21 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
           onClick={() => pausePipelineClick(pipeline.name)}
           data-testid='button-pause'
         >
-          <i className={`bx bx-pause-circle`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-pause-circle`} style={{ fontSize: 24 }} />
         </IconButton>
       </Tooltip>
     ),
     start: () => (
       <Tooltip title='Start Pipeline' key='start'>
         <IconButton size='small' onClick={() => startPipelineClick(pipeline.name)} data-testid='button-start'>
-          <i className={`bx bx-play-circle`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-play-circle`} style={{ fontSize: 24 }} />
         </IconButton>
       </Tooltip>
     ),
     spinner: () => (
       <Tooltip title={status} key='spinner'>
         <IconButton size='small'>
-          <TwoSeventyRingWithBg fontSize={20} />
+          <TwoSeventyRingWithBg fontSize={20} color={'currentColor'} />
         </IconButton>
       </Tooltip>
     ),
@@ -864,14 +864,14 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
           onClick={() => shutdownPipelineClick(pipeline.name)}
           data-testid='button-shutdown'
         >
-          <i className={`bx bx-stop-circle`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-stop-circle`} style={{ fontSize: 24 }} />
         </IconButton>
       </Tooltip>
     ),
     inspect: () => (
       <Tooltip title='Inspect' key='inspect'>
         <IconButton size='small' component={Link} href='#' data-testid='button-inspect'>
-          <i className={`bx bx-show`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-show`} style={{ fontSize: 24 }} />
         </IconButton>
       </Tooltip>
     ),
@@ -883,7 +883,7 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
           href={`/streaming/builder/?pipeline_name=${pipeline.name}`}
           data-testid='button-edit'
         >
-          <i className={`bx bx-pencil`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-pencil`} style={{ fontSize: 24 }} />
         </IconButton>
       </Tooltip>
     ),
@@ -899,13 +899,13 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
           )}
           data-testid='button-delete'
         >
-          <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} />
+          <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
         </IconButton>
       </Tooltip>
     ),
     spacer: () => (
       <IconButton size='small' sx={{ opacity: 0 }} disabled key='spacer'>
-        <i className={`bx bx-stop-circle`} style={{ fontSize: 20 }} />
+        <i className={`bx bx-stop-circle`} style={{ fontSize: 24 }} />
       </IconButton>
     )
   }

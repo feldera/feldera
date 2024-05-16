@@ -161,7 +161,7 @@ const CopyButton = (props: IconButtonProps) => {
       }}
     >
       <IconButton size='small' {...props}>
-        <i className={`bx bx-copy`} style={{ fontSize: 16 }} />
+        <i className={`bx bx-copy`} style={{ fontSize: 20 }} />
       </IconButton>
     </Box>
   )
@@ -194,7 +194,7 @@ const Health = () => {
         <Accordion disableGutters>
           <AccordionSummary expandIcon={<i className={`bx bx-chevron-down`} style={{ fontSize: 24 }} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
-              <i className={`bx bx-error-circle`} style={{ fontSize: 20 }} />
+              <i className={`bx bx-error-circle`} style={{ fontSize: 24 }} />
               <Typography>Platform errors</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 {errors.length}
@@ -276,7 +276,7 @@ const Health = () => {
         <Accordion disableGutters>
           <AccordionSummary expandIcon={<i className={`bx bx-chevron-down`} style={{ fontSize: 24 }} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 4, pr: 4, width: '100%' }}>
-              <i className={`bx bx-error-circle`} style={{ fontSize: 20 }} />
+              <i className={`bx bx-error-circle`} style={{ fontSize: 24 }} />
               <Typography>Platform warnings</Typography>
               <Typography variant='h6' sx={{ ml: 'auto' }}>
                 0

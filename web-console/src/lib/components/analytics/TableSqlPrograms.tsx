@@ -176,15 +176,12 @@ export const TableSqlPrograms = () => {
                 href={`/analytics/editor/?program_name=${params.row.name}`}
                 data-testid='button-edit'
               >
-                {/* <i className={`bx bx-pencil`} style={{ fontSize: 20 }} /> */}
-
-                <i className={`bx bx-pencil`} style={{ fontSize: 20 }} />
+                <i className={`bx bx-pencil`} style={{ fontSize: 24 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title='Delete'>
               <IconButton size='small' onClick={() => deleteProgram(params.row)} data-testid='button-delete'>
-                {/* <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} /> */}
-                <i className={`bx bx-trash-alt`} style={{ fontSize: 20 }} />
+                <i className={`bx bx-trash-alt`} style={{ fontSize: 24 }} />
               </IconButton>
             </Tooltip>
           </Box>

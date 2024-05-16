@@ -9,8 +9,8 @@ export const Breadcrumbs = {
       title={
         <MUIBreadcrumbs
           separator={
-            // <i className={`bx bx-chevron-right`} style={{ fontSize: 20 }} />
-            <i className={`bx bx-chevron-right`} style={{ fontSize: 20 }} />
+            // <i className={`bx bx-chevron-right`} style={{ fontSize: 24 }} />
+            <i className={`bx bx-chevron-right`} style={{ fontSize: 24 }} />
           }
           aria-label='breadcrumb'
         >
