@@ -227,7 +227,7 @@ class Client:
         body = {
             "config": pipeline.config,
             "description": pipeline.description or "",
-            "connectors": pipeline.attached_connectors,
+            "connectors": [c.to_json() for c in pipeline.attached_connectors],
             "program_name": pipeline.program_name,
         }
 
@@ -452,9 +452,17 @@ class Client:
 
         end = time.time() + timeout if timeout else None
 
+        old_chunk = b""
+
         for chunk in resp.iter_content(chunk_size=None):
             if end and time.time() > end:
                 break
             if chunk:
-                chunk = json.loads(chunk)
-                yield chunk
+                try:
+                    chunk = old_chunk + chunk
+                    valid_json = json.loads(chunk)
+                    old_chunk = b""
+                    yield valid_json
+                except json.decoder.JSONDecodeError:
+                    old_chunk += chunk
+                    continue

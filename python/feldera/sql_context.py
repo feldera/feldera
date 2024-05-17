@@ -9,6 +9,7 @@ from queue import Queue
 from feldera import FelderaClient
 from feldera.rest.program import Program
 from feldera.rest.pipeline import Pipeline
+from feldera.rest.connector import Connector
 from feldera._sql_table import SQLTable
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
@@ -43,6 +44,14 @@ class SQLContext:
     tables: Dict[str, SQLTable] = {}
     todo_tables: Dict[str, Optional[SQLTable]] = {}
     http_input_buffer: list[Dict[str, dict | list[dict] | str]] = []
+
+    # buffer that stores all input connectors to be created
+    # this is a Mapping[table_name -> list[Connector]]
+    input_connectors_buffer: Dict[str, list[Connector]] = {}
+
+    # buffer that stores all output connectors to be created
+    # this is a Mapping[view_name -> list[Connector]]
+    output_connectors_buffer: Dict[str, list[Connector]] = {}
 
     views_tx: list[Dict[str, Queue]] = []
 
@@ -84,9 +93,27 @@ class SQLContext:
 
         self.client.compile_program(program)
 
-        # TODO: connectors
+        attached_cons = []
 
-        pipeline = Pipeline(self.pipeline_name, self.program_name, self.pipeline_description)
+        for tbl_name, conns in self.input_connectors_buffer.items():
+            for conn in conns:
+                self.client.create_connector(conn)
+                attached_con = conn.attach_relation(tbl_name, True)
+                attached_cons.append(attached_con)
+
+        for view_name, conns in self.output_connectors_buffer.items():
+            for con in conns:
+                self.client.create_connector(con)
+                attached_con = con.attach_relation(view_name, False)
+                attached_cons.append(attached_con)
+
+        pipeline = Pipeline(
+            self.pipeline_name,
+            self.program_name,
+            self.pipeline_description,
+            attached_connectors=attached_cons
+        )
+
         self.client.create_pipeline(pipeline)
 
     def create(self) -> Self:
@@ -212,6 +239,65 @@ class SQLContext:
         handler.start()
 
         return handler
+
+    def from_delta_table(self, table_name: str, connector_name: str, config: dict):
+        """
+        Tells feldera to read the data from the specified delta table.
+
+        :param table_name: The name of the table.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the delta table.
+        """
+
+        # TODO: test this, can't test this right now, because of a serialization issue
+        # TODO: see: https://github.com/feldera/feldera/pull/1764
+
+        if config.get("uri") is None:
+            raise ValueError("uri is required in the config")
+
+        if config.get("mode") is None:
+            raise ValueError("mode is required in the config, valid modes: snapshot, follow, snapshot_and_follow")
+
+        if config.get("mode") not in ["snapshot", "follow", "snapshot_and_follow"]:
+            raise ValueError("mode must be one of snapshot, follow, snapshot_and_follow")
+
+        connector = Connector(name=connector_name,
+                              config={
+                                  "transport": {
+                                      "name": "delta_table_input",
+                                      "config": config,
+                                  }
+                              })
+
+        if table_name in self.input_connectors_buffer:
+            self.output_connectors_buffer[table_name].append(connector)
+        else:
+            self.output_connectors_buffer[table_name] = [connector]
+
+    def to_delta_table(self, view_name: str, connector_name: str, config: dict):
+        """
+        Tells feldera to write the data to the specified delta table.
+
+        :param view_name: The name of the view whose output is sent to delta table.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the delta table connector.
+        """
+
+        if config.get("uri") is None:
+            raise ValueError("uri is required in the config")
+
+        connector = Connector(name=connector_name,
+                              config={
+                                  "transport": {
+                                      "name": "delta_table_output",
+                                      "config": config,
+                                  }
+                              })
+
+        if view_name in self.output_connectors_buffer:
+            self.output_connectors_buffer[view_name].append(connector)
+        else:
+            self.output_connectors_buffer[view_name] = [connector]
 
     def run_to_completion(self):
         """

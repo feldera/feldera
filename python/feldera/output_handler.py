@@ -69,4 +69,7 @@ class OutputHandler(Thread):
         Converts the output of the pipeline to a pandas DataFrame
         """
         self.join()
-        return pd.DataFrame([item.get("insert") or item.get("delete") for sublist in self.buffer for item in sublist])
+        return pd.DataFrame([
+            {**item['insert'], 'insert_delete': 1} if 'insert' in item else {**item['delete'], 'insert_delete': -1}
+            for sublist in self.buffer for item in sublist
+        ])

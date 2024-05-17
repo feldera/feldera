@@ -17,3 +17,11 @@ class AttachedConnector:
         self.is_input = is_input
         self.connector_name = connector_name
         self.relation_name = relation_name
+
+    def to_json(self):
+        return {
+            "name": self.name,
+            "is_input": self.is_input,
+            "connector_name": self.connector_name,
+            "relation_name": self.relation_name
+        }

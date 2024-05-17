@@ -14,9 +14,9 @@ class Connector:
     def __init__(
         self,
         name: str,
-        id: Optional[str] = None,
+        description: Optional[str] = None,
         config: Optional[Mapping[str, Any]] = None,
-        description: Optional[str] = None
+        id: Optional[str] = None,
     ):
         self.name = name
         self.config = config or {}
