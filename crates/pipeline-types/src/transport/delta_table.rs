@@ -14,7 +14,6 @@ pub struct DeltaTableWriterConfig {
     /// * [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
     /// * [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
     /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
-    #[serde(flatten)]
     pub object_store_config: HashMap<String, String>,
 }
 
@@ -36,7 +35,6 @@ impl TransportConfigVariant for DeltaTableWriterConfig {
 /// * `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion
 ///   mode.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(tag = "mode")]
 pub enum DeltaTableIngestMode {
     /// Read a snapshot of the table and stop.
     #[serde(rename = "snapshot")]
@@ -145,7 +143,6 @@ pub struct DeltaTableReaderConfig {
     /// * [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
     /// * [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
     /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
-    #[serde(flatten)]
     pub object_store_config: HashMap<String, String>,
 
     /// Table column that serves as an event timestamp.
@@ -158,7 +155,6 @@ pub struct DeltaTableReaderConfig {
     pub timestamp_column: Option<String>,
 
     /// Table read mode.
-    #[serde(flatten)]
     pub mode: DeltaTableIngestMode,
 }
 
