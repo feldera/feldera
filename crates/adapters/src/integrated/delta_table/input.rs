@@ -309,82 +309,39 @@ impl DeltaTableInputEndpointInner {
         let table_builder = DeltaTableBuilder::from_uri(&self.config.uri)
             .with_storage_options(self.config.object_store_config.clone());
 
-        let table_builder = match &self.config.mode {
-            DeltaTableIngestMode::Snapshot {
-                snapshot_version: None,
-                snapshot_datetime: None,
-                ..
-            } => table_builder,
-            DeltaTableIngestMode::Snapshot {
-                snapshot_version: Some(version),
-                snapshot_datetime: None,
-                ..
-            } => table_builder.with_version(*version),
-            DeltaTableIngestMode::Snapshot {
-                snapshot_version: None,
-                snapshot_datetime: Some(datetime),
-                ..
-            } => table_builder.with_datestring(datetime).map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!("invalid 'snapshot_datetime' format (expected ISO-8601/RFC-3339 timestamp): {e}"),
-                )
-            })?,
-            DeltaTableIngestMode::Snapshot {
-                snapshot_version: Some(_),
-                snapshot_datetime: Some(_),
+        let table_builder = match &self.config {
+            DeltaTableReaderConfig {
+                version: Some(_),
+                datetime: Some(_),
                 ..
             } => {
                 return Err(ControllerError::invalid_transport_configuration(
                     &self.endpoint_name,
-                    "at most one of 'snapshot_version' and 'snapshot_datetime' options can be specified"));
+                    "at most one of 'version' and 'datetime' options can be specified",
+                ));
             }
-            DeltaTableIngestMode::Follow {
-                start_version: None,
-                start_datetime: None,
-            } |
-            DeltaTableIngestMode::SnapshotAndFollow {
-                start_version: None,
-                start_datetime: None,
+            DeltaTableReaderConfig {
+                version: None,
+                datetime: None,
                 ..
             } => table_builder,
-            DeltaTableIngestMode::Follow {
-                start_version: Some(version),
-                start_datetime: None,
-            } |
-            DeltaTableIngestMode::SnapshotAndFollow {
-                start_version: Some(version),
-                start_datetime: None,
+            DeltaTableReaderConfig {
+                version: Some(version),
+                datetime: None,
                 ..
             } => table_builder.with_version(*version),
-            DeltaTableIngestMode::Follow {
-                start_version: None,
-                start_datetime: Some(datetime),
-            } |
-            DeltaTableIngestMode::SnapshotAndFollow {
-                start_version: None,
-                start_datetime: Some(datetime),
+            DeltaTableReaderConfig {
+                version: None,
+                datetime: Some(datetime),
                 ..
             } => table_builder.with_datestring(datetime).map_err(|e| {
                 ControllerError::invalid_transport_configuration(
                     &self.endpoint_name,
-                    &format!("invalid 'start_datetime' format (expected ISO-8601/RFC-3339 timestamp): {e}"),
+                    &format!(
+                        "invalid 'datetime' format (expected ISO-8601/RFC-3339 timestamp): {e}"
+                    ),
                 )
             })?,
-            DeltaTableIngestMode::Follow {
-                start_version: Some(_),
-                start_datetime: Some(_),
-            } |
-            DeltaTableIngestMode::SnapshotAndFollow {
-                start_version: Some(_),
-                start_datetime: Some(_),
-                ..
-            } => {
-                return Err(ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    "at most one of 'start_version' and 'start_datetime' options can be specified"));
-
-            }
         };
 
         let delta_table = table_builder.load().await.map_err(|e| {
@@ -457,7 +414,7 @@ impl DeltaTableInputEndpointInner {
 
         let mut snapshot_query = "select * from snapshot".to_string();
 
-        if let Some(filter) = self.config.snapshot_filter() {
+        if let Some(filter) = &self.config.snapshot_filter {
             // Parse expression only to validate it.
             let mut parser = Parser::new(&GenericDialect)
                 .try_with_sql(filter)

@@ -36,102 +36,18 @@ impl TransportConfigVariant for DeltaTableWriterConfig {
 /// * `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion
 ///   mode.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(tag = "mode")]
 pub enum DeltaTableIngestMode {
     /// Read a snapshot of the table and stop.
     #[serde(rename = "snapshot")]
-    Snapshot {
-        /// Optional row filter.
-        ///
-        /// When specified, only rows that satisfy the filter condition are included in the
-        /// snapshot.  The condition must be a valid SQL Boolean expression that can be used in
-        /// the `where` clause of the `select * from snapshot where ...` query.
-        ///
-        /// This option can be used to specify the range of event times to include in the snapshot,
-        /// e.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`.
-        snapshot_filter: Option<String>,
+    Snapshot,
 
-        /// Optional table version for the snapshot.
-        ///
-        /// When specified, the connector retrieves the snapshot of the smallest version,
-        /// `v >= snapshot_version` in the transaction log of the table.
-        ///
-        /// Note: at most one of `snapshot_version` and `snapshot_datetime` options can be specified.
-        /// When neither of the two options is specified, the latest committed version of the table
-        /// is used.
-        snapshot_version: Option<i64>,
-
-        /// Optional timestamp for the snapshot.
-        ///
-        /// When specified, the connector computes the snapshot of the smallest version
-        /// created at time `t >= snapshot_datetime` in the transaction log of the table.
-        ///
-        /// Note: at most one of `snapshot_version` and `snapshot_datetime` options can be specified.
-        /// When neither of the two options is specified, the latest committed version of the table
-        /// is used.
-        snapshot_datetime: Option<String>,
-    },
     /// Follow the changelog of the table, only ingesting changes (new and deleted rows).
     #[serde(rename = "follow")]
-    Follow {
-        /// Optional table version to start reading from.
-        ///
-        /// When specified, the connector follows the changelog starting from the first version
-        /// `v >= start_version` of the table.
-        ///
-        /// Note: at most one of `start_version` and `start_datetime` options can be specified.
-        /// When neither of the two options is specified, the connector ingests changes that show
-        /// up _after_ the latest committed version of the table.
-        start_version: Option<i64>,
-
-        /// Optional timestamp to start reading from.
-        ///
-        /// When specified, the connector follows the changelog starting from the first version
-        /// of the table created at time `t >= start_datetime`.
-        ///
-        /// Note: at most one of `start_version` and `start_datetime` options can be specified.
-        /// When neither of the two options is specified, the connector ingests changes that show
-        /// up _after_ the latest committed version of the table.
-        start_datetime: Option<String>,
-    },
+    Follow,
 
     /// Take a snapshot of the table before switching to the `follow` mode.
     #[serde(rename = "snapshot_and_follow")]
-    SnapshotAndFollow {
-        /// Optional row filter.
-        ///
-        /// When specified, only rows that satisfy the filter condition are included in the
-        /// snapshot.  The condition must be a valid SQL Boolean expression that can be used in
-        /// the `where` clause of the `select * from snapshot where ...` query.
-        ///
-        /// This option can be used to specify the range of event times to include in the snapshot,
-        /// e.g.: `ts > '2005-01-01 00:00:00'`.
-        ///
-        /// Note: the filter condition only applies to the initial snapshot of the table, and not
-        /// to the records subsequently ingested in the `follow` mode.
-        snapshot_filter: Option<String>,
-
-        /// Optional table version to start following from.
-        ///
-        /// When specified, the connector retrieves the snapshot of the first version
-        /// `v >= start_version` of the table and starts following transaction log after that.
-        ///
-        /// Note: at most one of `start_version` and `start_datetime` options can be specified.
-        /// When neither of the two options is specified, the connector uses the latest committed
-        /// version.
-        start_version: Option<i64>,
-
-        /// Optional timestamp to start following from.
-        ///
-        /// When specified, the connector retrives the snapshot of the first version
-        /// of the table created at time `t >= start_datetime` and starts following the change
-        /// log after that.
-        ///
-        /// Note: at most one of `start_version` and `start_datetime` options can be specified.
-        /// When neither of the two options is specified, the connector uses the latest committed
-        /// version.
-        start_datetime: Option<String>,
-    },
+    SnapshotAndFollow,
 }
 
 /// Delta table output connector configuration.
@@ -139,15 +55,6 @@ pub enum DeltaTableIngestMode {
 pub struct DeltaTableReaderConfig {
     /// Table URI.
     pub uri: String,
-    /// Storage options for configuring backend object store.
-    ///
-    /// For specific options available for different storage backends, see:
-    /// * [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
-    /// * [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
-    /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
-    #[serde(flatten)]
-    pub object_store_config: HashMap<String, String>,
-
     /// Table column that serves as an event timestamp.
     ///
     /// When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,
@@ -158,8 +65,74 @@ pub struct DeltaTableReaderConfig {
     pub timestamp_column: Option<String>,
 
     /// Table read mode.
-    #[serde(flatten)]
     pub mode: DeltaTableIngestMode,
+
+    /// Optional row filter.
+    ///
+    /// This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.
+    ///
+    /// When specified, only rows that satisfy the filter condition are included in the
+    /// snapshot.  The condition must be a valid SQL Boolean expression that can be used in
+    /// the `where` clause of the `select * from snapshot where ...` query.
+    ///
+    /// This option can be used to specify the range of event times to include in the snapshot,
+    /// e.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`.
+    pub snapshot_filter: Option<String>,
+
+    /// Optional table version.
+    ///
+    /// When this option is set, the connector finds and opens the specified version of the table.
+    /// In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of
+    /// the table.  In `follow` and `snapshot_and_follow` modes, it follows transaction log records
+    /// **after** this version.
+    ///
+    /// Note: at most one of `version` and `datetime` options can be specified.
+    /// When neither of the two options is specified, the latest committed version of the table
+    /// is used.
+    pub version: Option<i64>,
+
+    /// Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format.
+    ///
+    /// When this option is set, the connector finds and opens the version of the table as of the
+    /// specified point in time.  In `snapshot` and `snapshot_and_follow` modes, it retrieves the
+    /// snapshot of this version of the table.  In `follow` and `snapshot_and_follow` modes, it
+    /// follows transaction log records **after** this version.
+    ///
+    /// Note: at most one of `version` and `datetime` options can be specified.
+    /// When neither of the two options is specified, the latest committed version of the table
+    /// is used.
+    pub datetime: Option<String>,
+
+    /// Storage options for configuring backend object store.
+    ///
+    /// For specific options available for different storage backends, see:
+    /// * [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
+    /// * [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
+    /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
+    #[serde(flatten)]
+    pub object_store_config: HashMap<String, String>,
+}
+
+#[cfg(test)]
+#[test]
+fn test_delta_reader_config_serde() {
+    let config_str = r#"{
+            "uri": "protocol:/path/to/somewhere",
+            "datetime": "2010-12-31 00:00:00Z",
+            "snapshot_filter": "ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'",
+            "timestamp_column": "ts",
+            "customoption1": "val1",
+            "customoption2": "val2",
+            "mode": "follow"
+        }"#;
+
+    let config = serde_json::from_str::<DeltaTableReaderConfig>(config_str).unwrap();
+
+    let serialized_config = serde_json::to_string(&config).unwrap();
+
+    let expected = r#"{"uri":"protocol:/path/to/somewhere","timestamp_column":"ts","mode":"follow","snapshot_filter":"ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'","version":null,"datetime":"2010-12-31 00:00:00Z","customoption1":"val1","customoption2":"val2"}"#;
+
+    assert_eq!(serialized_config, expected);
 }
 
 impl DeltaTableReaderConfig {
@@ -167,7 +140,7 @@ impl DeltaTableReaderConfig {
     pub fn snapshot(&self) -> bool {
         matches!(
             &self.mode,
-            DeltaTableIngestMode::Snapshot { .. } | DeltaTableIngestMode::SnapshotAndFollow { .. }
+            DeltaTableIngestMode::Snapshot | DeltaTableIngestMode::SnapshotAndFollow
         )
     }
 
@@ -176,21 +149,8 @@ impl DeltaTableReaderConfig {
     pub fn follow(&self) -> bool {
         matches!(
             &self.mode,
-            DeltaTableIngestMode::SnapshotAndFollow { .. } | DeltaTableIngestMode::Follow { .. }
+            DeltaTableIngestMode::SnapshotAndFollow | DeltaTableIngestMode::Follow
         )
-    }
-
-    /// Filter expression to use during snapshotting.
-    pub fn snapshot_filter(&self) -> Option<&str> {
-        match &self.mode {
-            DeltaTableIngestMode::Snapshot {
-                snapshot_filter, ..
-            } => snapshot_filter.as_ref().map(AsRef::as_ref),
-            DeltaTableIngestMode::SnapshotAndFollow {
-                snapshot_filter, ..
-            } => snapshot_filter.as_ref().map(AsRef::as_ref),
-            _ => None,
-        }
     }
 }
 
