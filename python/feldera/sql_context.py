@@ -325,8 +325,8 @@ class SQLContext:
             metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
             pipeline_complete: bool = metrics.get("pipeline_complete")
 
-            if not pipeline_complete:
-                raise RuntimeError("received unknown metrics from the pipeline")
+            #if not pipeline_complete:
+            #    raise RuntimeError("received unknown metrics from the pipeline")
 
             if pipeline_complete:
                 break
