@@ -270,9 +270,9 @@ class SQLContext:
                               })
 
         if table_name in self.input_connectors_buffer:
-            self.output_connectors_buffer[table_name].append(connector)
+            self.input_connectors_buffer[table_name].append(connector)
         else:
-            self.output_connectors_buffer[table_name] = [connector]
+            self.input_connectors_buffer[table_name] = [connector]
 
     def to_delta_table(self, view_name: str, connector_name: str, config: dict):
         """
