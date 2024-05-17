@@ -24,11 +24,6 @@ classifiers = [
 dependencies = [
     "requests",
     "pandas",
-    "logging",
-    "time",
-    "json",
-    "typing",
-    "typing-extensions"
 ]
 [project.urls]
 Homepage = "https://www.feldera.com"
