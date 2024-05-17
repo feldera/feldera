@@ -233,16 +233,17 @@ class SQLContext:
             for tbl_name, data in input_buffer.items():
                 self.client.push_to_pipeline(self.pipeline_name, tbl_name, "json", data, array=True)
 
+        self.http_input_buffer.clear()
+
         while True:
             metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
-            input_records = metrics.get("total_input_records")
-            processed_records = metrics.get("total_processed_records")
+            pipeline_complete: bool = metrics.get("pipeline_complete")
 
-            if input_records == processed_records:
-                break
-
-            if not input_records or not processed_records:
+            if not pipeline_complete:
                 raise RuntimeError("received unknown metrics from the pipeline")
+
+            if pipeline_complete:
+                break
 
             time.sleep(1)
 

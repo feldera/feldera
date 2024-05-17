@@ -46,7 +46,7 @@ class Client:
         return [
             Program(
                 name=program.get("name"),
-                program=program.get("code"),
+                code=program.get("code"),
                 description=program.get("description"),
             ) for program in resp
         ]
@@ -66,7 +66,7 @@ class Client:
 
         return Program(
             name=resp.get("name"),
-            program=resp.get("code"),
+            code=resp.get("code"),
             description=resp.get("description"),
             status=resp.get("status"),
             version=resp.get("version"),
@@ -78,7 +78,7 @@ class Client:
         :param program: The program to compile
         """
         body = {
-            "code": program.program,
+            "code": program.code,
             "description": program.description or "",
         }
 
@@ -95,6 +95,7 @@ class Client:
             if status == "Success":
                 break
             elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+                # TODO: return a more detailed error message, make this a custom error
                 raise RuntimeError(f"Failed program compilation with status {status}")
 
             logging.debug("still compiling %s, waiting for 5 more seconds", program.name)
@@ -147,7 +148,9 @@ class Client:
 
     def create_connector(self, connector: Connector):
         """
-        Create a connector
+        Create a connector.
+        Doesn't return anything, but sets the id of the connector.
+
         :param connector: The connector to create
         """
         body = {
@@ -164,7 +167,7 @@ class Client:
 
     def delete_connector(self, name: str):
         """
-        Deletes a connector by name
+        Delete a connector by name
         :param name: The name of the connector
         """
         self.http.delete(
@@ -258,6 +261,8 @@ class Client:
             path=f"/pipelines/{name}/validate",
         )
 
+        # TODO: return an error description if invalid
+
         return "success" in resp
 
     def delete_pipeline(self, name: str):
@@ -295,6 +300,7 @@ class Client:
             if status == "Running":
                 break
             elif status == "Failed":
+                # TODO: return a more detailed error message
                 raise RuntimeError(f"Failed to start pipeline")
 
             logging.debug("still starting %s, waiting for 100 more milliseconds", pipeline_name)
@@ -315,6 +321,7 @@ class Client:
             if status == "Paused":
                 break
             elif status == "Failed":
+                # TODO: return a more detailed error message
                 raise RuntimeError(f"Failed to pause pipeline")
 
             logging.debug("still pausing %s, waiting for 100 more milliseconds", pipeline_name)
@@ -356,7 +363,7 @@ class Client:
         :param pipeline_name: The name of the pipeline
         :param table_name: The name of the table
         :param format: The format of the data, either "json" or "csv"
-        :param array: Set True if updates in this stream are packed into JSON arrays, used in conjunction with the
+        :param array: True if updates in this stream are packed into JSON arrays, used in conjunction with the
             "json" format
         :param force: If True, the data will be inserted even if the pipeline is paused
         :param update_format: JSON data change event format, used in conjunction with the "json" format,
@@ -384,8 +391,6 @@ class Client:
             params["update_format"] = update_format
 
         content_type = "application/json"
-
-        self.start_pipeline(pipeline_name)
 
         if format == "csv":
             content_type = "text/csv"

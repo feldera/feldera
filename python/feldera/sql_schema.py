@@ -2,6 +2,7 @@ from typing import Mapping
 
 
 class SQLSchema:
+    # TODO: should capture nullability of columns, model after the rust `Relation` type
     schema: Mapping[str, str]
 
     def __init__(self, schema: Mapping[str, str]):

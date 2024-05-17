@@ -20,6 +20,7 @@ class FelderaAPIError(FelderaError):
 
     def __init__(self, error: str, request: Response) -> None:
         self.status_code = request.status_code
+        self.error = error
         self.error_code = None
         self.message = None
         self.details = None
@@ -35,9 +36,9 @@ class FelderaAPIError(FelderaError):
 
     def __str__(self) -> str:
         if self.error_code:
-            return f"FelderaAPIError: Error code: {self.error_code}\n Error message: {self.message}\n Details: {self.details}"
+            return f"FelderaAPIError: {self.error}\n Error code: {self.error_code}\n Error message: {self.message}\n Details: {self.details}"
         else:
-            return f"FelderaAPIError: {self.message}"
+            return f"FelderaAPIError: {self.error}\n {self.message}"
 
 
 class FelderaTimeoutError(FelderaError):

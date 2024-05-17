@@ -35,6 +35,7 @@ class HttpRequests:
         :param body: The HTTP request body.
         :param content_type: The value for `Content-Type` HTTP header. "application/json" by default.
         :param params: The query parameters part of this request.
+        :param stream: True if the response is expected to be a HTTP stream.
         """
         self.headers["Content-Type"] = content_type
 
