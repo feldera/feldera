@@ -9,7 +9,7 @@ import {
   xgressJSONToSQLValue
 } from '$lib/functions/ddl'
 import { ColumnType } from '$lib/services/manager'
-import BigNumber from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import Dayjs, { isDayjs } from 'dayjs'
 import { ChangeEvent } from 'react'
 import invariant from 'tiny-invariant'

@@ -59,3 +59,7 @@ gh-pages
 # Playwright
 playwright-artifacts/
 playwright-snapshots/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

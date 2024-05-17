@@ -1,6 +1,9 @@
 import { resolve } from 'path'
+import { FileSystemIconLoader } from 'unplugin-icons/loaders'
+import UnpluginIcons from 'unplugin-icons/vite'
 
 import { defineConfig, devices } from '@playwright/experimental-ct-react'
+import react from '@vitejs/plugin-react'
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -32,9 +35,26 @@ export default defineConfig({
       resolve: {
         alias: {
           '$lib': resolve(__dirname, './src/lib'),
+          '$tests': resolve(__dirname, './tests'),
+          'src/lib': resolve(__dirname, './src/lib'),
         },
       },
+      plugins: [
+        react(),
+        UnpluginIcons({
+          compiler: 'jsx', jsx: 'react',
+          customCollections: {
+            'vendors': FileSystemIconLoader(
+              "./public/icons/vendors",
+            ),
+            'generic': FileSystemIconLoader(
+              "./public/icons/generic",
+            ),
+          }
+         }),
+      ],
     },
+    testIdAttribute: 'data-testid',
   },
 
   /* Configure projects for major browsers */

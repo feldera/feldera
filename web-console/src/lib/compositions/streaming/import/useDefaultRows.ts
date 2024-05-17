@@ -2,7 +2,7 @@
 
 import { Row, SQLValueJS } from '$lib/functions/ddl'
 import { ColumnType, Field, Relation } from '$lib/services/manager'
-import { BigNumber } from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import dayjs from 'dayjs'
 import { Dispatch, SetStateAction, useCallback } from 'react'
 import invariant from 'tiny-invariant'
@@ -15,9 +15,9 @@ export const getDefaultValue = (columntype: ColumnType): SQLValueJS =>
     .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, { type: 'REAL' }, { type: 'DOUBLE' }, () => 0)
     .with({ type: 'BIGINT' }, { type: 'DECIMAL' }, () => new BigNumber(0))
     .with({ type: 'VARCHAR' }, { type: 'CHAR' }, () => '')
-    .with({ type: 'TIME' }, () => dayjs(new Date()))
-    .with({ type: 'TIMESTAMP' }, () => dayjs(new Date()))
-    .with({ type: 'DATE' }, () => dayjs(new Date()))
+    .with({ type: 'TIME' }, () => dayjs('00:00:00'))
+    .with({ type: 'TIMESTAMP' }, () => dayjs('01.01.1970 00:00:00.000'))
+    .with({ type: 'DATE' }, () => dayjs('01.01.1970'))
     .with({ type: 'ARRAY' }, () => [])
     .with({ type: 'BINARY' }, () => invariant(false, 'BINARY not implemented') as never)
     .with({ type: 'VARBINARY' }, () => invariant(false, 'VARBINARY not implemented') as never)

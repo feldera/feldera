@@ -2,28 +2,21 @@
 'use client'
 
 import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
-import { ErrorOverlay } from '$lib/components/common/table/ErrorOverlay'
-import { InsertionTable } from '$lib/components/streaming/import/InsertionTable'
-import { InspectionTable } from '$lib/components/streaming/inspection/InspectionTable'
+import { TableInspectionTab } from '$lib/components/streaming/inspection/TableInspectionTab'
+import { ViewInspectionTab } from '$lib/components/streaming/inspection/ViewInspectionTab'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { caseDependentNameEq, getCaseDependentName, getCaseIndependentName } from '$lib/functions/felderaRelation'
-import { PipelineRevision, Relation } from '$lib/services/manager'
-import { Pipeline, PipelineStatus } from '$lib/types/pipeline'
+import { Relation } from '$lib/services/manager'
+import { Pipeline } from '$lib/types/pipeline'
 import { useSearchParams } from 'next/navigation'
-import { SetStateAction, useEffect, useReducer, useState } from 'react'
-import { ErrorBoundary } from 'react-error-boundary'
+import { useEffect } from 'react'
 import { nonNull } from 'src/lib/functions/common/function'
 
 import { useHash } from '@mantine/hooks'
-import TabContext from '@mui/lab/TabContext'
-import TabList from '@mui/lab/TabList'
-import TabPanel from '@mui/lab/TabPanel'
 import { Alert, AlertTitle, Autocomplete, Box, FormControl, Link, MenuItem, TextField } from '@mui/material'
 import Grid from '@mui/material/Grid'
-import Tab from '@mui/material/Tab'
 import { useQuery } from '@tanstack/react-query'
 
-import type { Row } from '$lib/functions/ddl'
 const TablesBreadcrumb = (props: {
   pipeline: Pipeline
   caseIndependentName: string
@@ -66,95 +59,6 @@ const TablesBreadcrumb = (props: {
         />
       </FormControl>
     </Box>
-  )
-}
-
-type Tab = 'browse' | 'insert'
-
-const TableInspector = ({
-  pipeline,
-  setTab,
-  tab,
-  pipelineRevision,
-  caseIndependentName,
-  relation
-}: {
-  pipeline: Pipeline
-  setTab: (tab: Tab) => void
-  tab: string
-  pipelineRevision: PipelineRevision
-  caseIndependentName: string
-  relation: Relation
-}) => {
-  const logError = (error: Error) => {
-    console.error('InspectionTable error: ', error)
-  }
-  const [relationsRows, setRelationsRows] = useState<Record<string, Row[]>>({})
-  const rows = relationsRows[caseIndependentName] ?? []
-
-  const setRows = (rows: SetStateAction<Row[]>) =>
-    setRelationsRows(old => ({
-      ...old,
-      [caseIndependentName]: rows instanceof Function ? rows(old[caseIndependentName] ?? []) : rows
-    }))
-
-  {
-    // If the revision of the pipeline has changed we drop the rows ready to be imported
-    // as they may no longer be valid as program schema might have changed
-    const [, updateRevision] = useReducer((oldRevision: string, newRevision: string) => {
-      if (oldRevision !== newRevision) {
-        setRows([])
-      }
-      return newRevision
-    }, pipelineRevision.revision)
-
-    useEffect(() => {
-      updateRevision(pipelineRevision.revision)
-    }, [pipelineRevision.revision, updateRevision])
-  }
-
-  return (
-    <TabContext value={tab}>
-      <TabList
-        centered
-        variant='fullWidth'
-        onChange={(_e, tab) => setTab(tab)}
-        aria-label='tabs to insert and browse relations'
-      >
-        <Tab value='browse' label={`Browse ${caseIndependentName}`} data-testid='button-tab-browse' />
-        <Tab value='insert' label='Insert New Rows' data-testid='button-tab-insert' />
-      </TabList>
-      <TabPanel value='browse'>
-        <ViewInspector pipeline={pipeline} caseIndependentName={caseIndependentName} />
-      </TabPanel>
-      <TabPanel value='insert'>
-        {pipeline.state.current_status === PipelineStatus.RUNNING ? (
-          <ErrorBoundary FallbackComponent={ErrorOverlay} onError={logError} key={location.pathname}>
-            <InsertionTable pipelineRevision={pipelineRevision} relation={relation} insert={{ rows, setRows }} />
-          </ErrorBoundary>
-        ) : (
-          <Alert severity='info'>
-            <AlertTitle>Pipeline not running</AlertTitle>
-            Pipeline must be running to insert data. Try starting it.
-          </Alert>
-        )}
-      </TabPanel>
-    </TabContext>
-  )
-}
-
-const ViewInspector = ({ pipeline, caseIndependentName }: { pipeline: Pipeline; caseIndependentName: string }) => {
-  const logError = (error: Error) => {
-    console.error('InspectionTable error: ', error)
-  }
-
-  return pipeline.state.current_status === PipelineStatus.RUNNING ||
-    pipeline.state.current_status === PipelineStatus.PAUSED ? (
-    <ErrorBoundary FallbackComponent={ErrorOverlay} onError={logError} key={location.pathname}>
-      <InspectionTable pipeline={pipeline} caseIndependentName={caseIndependentName} />
-    </ErrorBoundary>
-  ) : (
-    <ErrorOverlay error={new Error(`'${pipeline.descriptor.name}' is not deployed.`)} />
   )
 }
 
@@ -253,7 +157,7 @@ export default () => {
       <Box data-testid='box-inspection-background' sx={{ width: 2, height: 2 }}></Box>
       <Grid item xs={12}>
         {relationType === 'table' && (
-          <TableInspector
+          <TableInspectionTab
             pipeline={pipeline}
             setTab={setTab}
             tab={tab}
@@ -262,7 +166,7 @@ export default () => {
             relation={relation}
           />
         )}
-        {relationType === 'view' && <ViewInspector pipeline={pipeline} caseIndependentName={caseIndependentName} />}
+        {relationType === 'view' && <ViewInspectionTab pipeline={pipeline} caseIndependentName={caseIndependentName} />}
       </Grid>
     </>
   )

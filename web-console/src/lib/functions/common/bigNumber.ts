@@ -1,4 +1,4 @@
-import { BigNumber } from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 
 export const inRangeInclusive = (range: { min: BigNumber; max: BigNumber }) => (value: BigNumber.Value) => {
   return range.min.comparedTo(value) <= 0 && range.max.comparedTo(value) >= 0

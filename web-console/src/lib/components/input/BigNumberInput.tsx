@@ -1,6 +1,6 @@
 import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
 import { nonNull } from '$lib/functions/common/function'
-import { BigNumber } from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import { ChangeEventHandler } from 'react'
 import invariant from 'tiny-invariant'
 
