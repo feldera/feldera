@@ -291,7 +291,9 @@ class SQLContext:
                                   "transport": {
                                       "name": "delta_table_output",
                                       "config": config,
-                                  }
+                                  },
+                                  "enable_output_buffer": True,
+                                  "max_output_buffer_time_millis": 10000,
                               })
 
         if view_name in self.output_connectors_buffer:
