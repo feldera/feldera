@@ -23,6 +23,12 @@ class BuildMode(Enum):
     GET_OR_CREATE = 3
 
 
+class PipelineState(Enum):
+    RUNNING = 1
+    PAUSED = 2
+    SHUTDOWN = 3
+
+
 def _table_name_from_sql(ddl: str) -> str:
     return re.findall(r"[\w']+", ddl)[2]
 
@@ -36,13 +42,21 @@ class SQLContext:
     pipeline_name: str
     program_name: str
     build_mode: BuildMode
+    state: PipelineState = PipelineState.SHUTDOWN
 
     pipeline_description: str = ""
     program_description: str = ""
     ddl: str = ""
+
+    # In the SQL DDL declaration, the order of the tables and views is important.
+    # From python 3.7 onwards, the order of insertion is preserved in dictionaries.
+    # https://softwaremaniacs.org/blog/2020/02/05/dicts-ordered/en/
     views: Dict[str, str] = {}
     tables: Dict[str, SQLTable] = {}
+
+    # TODO: to be used for schema inference
     todo_tables: Dict[str, Optional[SQLTable]] = {}
+
     http_input_buffer: list[Dict[str, dict | list[dict] | str]] = []
 
     # buffer that stores all input connectors to be created
@@ -249,9 +263,6 @@ class SQLContext:
         :param config: The configuration for the delta table.
         """
 
-        # TODO: test this, can't test this right now, because of a serialization issue
-        # TODO: see: https://github.com/feldera/feldera/pull/1764
-
         if config.get("uri") is None:
             raise ValueError("uri is required in the config")
 
@@ -270,9 +281,9 @@ class SQLContext:
                               })
 
         if table_name in self.input_connectors_buffer:
-            self.output_connectors_buffer[table_name].append(connector)
+            self.input_connectors_buffer[table_name].append(connector)
         else:
-            self.output_connectors_buffer[table_name] = [connector]
+            self.input_connectors_buffer[table_name] = [connector]
 
     def to_delta_table(self, view_name: str, connector_name: str, config: dict):
         """
@@ -293,8 +304,7 @@ class SQLContext:
                                       "config": config,
                                   },
                                   "enable_output_buffer": True,
-                                  "max_output_buffer_time_millis": 10000
-                              }
+                                  "max_output_buffer_time_millis": 10000,
                               })
 
         if view_name in self.output_connectors_buffer:
@@ -311,12 +321,23 @@ class SQLContext:
 
         self.__setup()
 
-        self.client.start_pipeline(self.pipeline_name)
+        if self.state != PipelineState.SHUTDOWN:
+            raise RuntimeError("pipeline is already running or paused, please shutdown the pipeline first")
 
+        # start the pipeline in the paused state
+        # so that we can start listening to the output
+        # before the pipeline consumes input
+        # ensuring that we don't miss any output
+        self.pause()
+
+        # set up the output listeners
         for view_queue in self.views_tx:
             for view_name, queue in view_queue.items():
                 queue.put(_OutputHandlerInstruction.PipelineStarted)
                 queue.join()
+
+        # resume the pipeline operations
+        self.resume()
 
         for input_buffer in self.http_input_buffer:
             for tbl_name, data in input_buffer.items():
@@ -328,8 +349,8 @@ class SQLContext:
             metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
             pipeline_complete: bool = metrics.get("pipeline_complete")
 
-            if not pipeline_complete:
-                raise RuntimeError("received unknown metrics from the pipeline")
+            if pipeline_complete is None:
+                raise RuntimeError("received unknown metrics from the pipeline, pipeline_complete is None")
 
             if pipeline_complete:
                 break
@@ -341,28 +362,54 @@ class SQLContext:
                 queue.put(_OutputHandlerInstruction.RanToCompletion)
                 queue.join()
 
+        self.shutdown()
+
     def start(self):
-        # TODO: implement this later
-        pass
+        """
+        Starts the pipeline.
+
+        :raises RuntimeError: If the pipeline returns unknown metrics.
+        """
+
+        self.__setup()
+
+        if self.state != PipelineState.SHUTDOWN:
+            raise RuntimeError("pipeline is already running or paused, please shutdown the pipeline first")
+
+        self.client.start_pipeline(self.pipeline_name)
+        self.state = PipelineState.RUNNING
 
     def pause(self):
         """
         Pauses the pipeline.
         """
 
+        if self.state == PipelineState.PAUSED:
+            return
+
         self.client.pause_pipeline(self.pipeline_name)
+        self.state = PipelineState.PAUSED
 
     def shutdown(self):
         """
         Pauses and shuts down the pipeline.
         """
 
-        self.client.pause_pipeline(self.pipeline_name)
+        if self.state == PipelineState.SHUTDOWN:
+            return
+
+        self.pause()
+
         self.client.shutdown_pipeline(self.pipeline_name)
+        self.state = PipelineState.SHUTDOWN
 
     def resume(self):
         """
         Resumes the pipeline.
         """
 
+        if self.state != PipelineState.PAUSED:
+            raise RuntimeError("pipeline is not paused, cannot resume it")
+
         self.client.start_pipeline(self.pipeline_name)
+        self.state = PipelineState.RUNNING

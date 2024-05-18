@@ -37,8 +37,6 @@ class TestWireframes(unittest.TestCase):
         print()
         print(df)
 
-        sql.shutdown()
-
 
 if __name__ == '__main__':
     unittest.main()
