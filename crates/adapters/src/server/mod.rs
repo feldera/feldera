@@ -430,6 +430,7 @@ where
         .service(stats)
         .service(metrics)
         .service(metadata)
+        .service(heap_profile)
         .service(dump_profile)
         .service(input_endpoint)
         .service(output_endpoint)
@@ -498,6 +499,24 @@ async fn metadata(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok()
         .content_type(mime::APPLICATION_JSON)
         .body(state.metadata.read().unwrap().clone())
+}
+
+#[get("/heap_profile")]
+async fn heap_profile() -> impl Responder {
+    let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
+    if !prof_ctl.activated() {
+        return Err(PipelineError::HeapProfilerError {
+            error: "jemalloc profiling is disabled".to_string(),
+        });
+    }
+    match prof_ctl.dump_pprof() {
+        Ok(profile) => Ok(HttpResponse::Ok()
+            .content_type("application/protobuf")
+            .body(profile)),
+        Err(e) => Err(PipelineError::HeapProfilerError {
+            error: e.to_string(),
+        }),
+    }
 }
 
 #[get("/dump_profile")]

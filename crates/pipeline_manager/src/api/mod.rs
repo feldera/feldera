@@ -137,6 +137,8 @@ request is rejected."
         pipeline::pipeline_action,
         pipeline::pipeline_deployed,
         pipeline::pipeline_delete,
+        pipeline::dump_profile,
+        pipeline::heap_profile,
         connector::list_connectors,
         connector::get_connector,
         connector::new_connector,
@@ -327,6 +329,8 @@ fn api_scope() -> Scope {
         .service(pipeline::pipeline_validate)
         .service(pipeline::pipeline_deployed)
         .service(pipeline::pipeline_delete)
+        .service(pipeline::dump_profile)
+        .service(pipeline::heap_profile)
         .service(connector::list_connectors)
         .service(connector::get_connector)
         .service(connector::new_connector)

@@ -168,13 +168,16 @@ pub enum PipelineError {
     NeighborhoodNotSupported,
     ControllerError {
         // Fold `ControllerError` directly into `PipelineError` to simplify
-        // the error hierarchy from the user's pespective.
+        // the error hierarchy from the user's perspective.
         #[serde(flatten)]
         error: Arc<ControllerError>,
     },
     ParseErrors {
         num_errors: u64,
         errors: Vec<ParseError>,
+    },
+    HeapProfilerError {
+        error: String,
     },
 }
 
@@ -248,6 +251,9 @@ impl Display for PipelineError {
                     Ok(())
                 }
             }
+            Self::HeapProfilerError {error} => {
+                write!(f, "Heap profiler error: {error}.")
+            }
         }
     }
 }
@@ -270,6 +276,7 @@ impl DetailedError for PipelineError {
             Self::InvalidNeighborhoodSpec { .. } => Cow::from("InvalidNeighborhoodSpec"),
             Self::ParseErrors { .. } => Cow::from("ParseErrors"),
             Self::ControllerError { error } => error.error_code(),
+            Self::HeapProfilerError { .. } => Cow::from("HeapProfilerError"),
         }
     }
 
@@ -322,6 +329,7 @@ impl ResponseError for PipelineError {
             Self::NumQuantilesOutOfRange { .. } => StatusCode::RANGE_NOT_SATISFIABLE,
             Self::InvalidNeighborhoodSpec { .. } => StatusCode::BAD_REQUEST,
             Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,
+            Self::HeapProfilerError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ControllerError { error } => error.status_code(),
         }
     }
