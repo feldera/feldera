@@ -26,6 +26,9 @@ chrono = { version = "0.4.31" }
 rkyv = { version = "0.7", default-features = false, features = ["std", "size_64"] }
 num = { version = "0.4.1" }
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+
 [dev-dependencies]
 hashing = { path = "../lib/hashing" }
 readers = { path = "../lib/readers" }

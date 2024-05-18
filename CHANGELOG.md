@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/heap_profile` endpoint that generates the heap profile
+  of a pipeline in the pprof format.
+  ([#1767](https://github.com/feldera/feldera/pull/1767))
+
 ## [0.16.0] - 2024-05-15
 
 ### Added

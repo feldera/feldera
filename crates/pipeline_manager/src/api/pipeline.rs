@@ -662,3 +662,75 @@ pub(crate) async fn pipeline_delete(
     info!("Deleted pipeline {pipeline_name} (tenant:{})", *tenant_id);
     Ok(HttpResponse::Ok().finish())
 }
+
+/// Initiate profile dump.
+#[utoipa::path(
+    responses(
+    (status = OK
+    , description = "Profile dump initiated."
+    , content_type = "application/json"
+    , body = Object),
+    (status = BAD_REQUEST
+    , description = "Specified pipeline id is not a valid uuid."
+    , body = ErrorResponse
+    , example = json!(examples::invalid_uuid_param())),
+        (status = NOT_FOUND
+        , description = "Specified pipeline id does not exist."
+        , body = ErrorResponse
+        , example = json!(examples::unknown_pipeline())),
+    ),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Pipelines"
+)]
+#[get("/pipelines/{pipeline_name}/dump_profile")]
+pub(crate) async fn dump_profile(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
+    state
+        .runner
+        .forward_to_pipeline(*tenant_id, &pipeline_name, Method::GET, "dump_profile")
+        .await
+}
+
+/// Retrieve heap profile of the pipeline.
+#[utoipa::path(
+responses(
+    (status = OK
+    , description = "Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool."
+    , content_type = "application/protobuf"
+    , body = Vec<u8>),
+    (status = BAD_REQUEST
+    , description = "Specified pipeline id is not a valid uuid."
+    , body = ErrorResponse
+    , example = json!(examples::invalid_uuid_param())),
+    (status = NOT_FOUND
+    , description = "Specified pipeline id does not exist."
+    , body = ErrorResponse
+    , example = json!(examples::unknown_pipeline())),
+    ),
+    params(
+    ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Pipelines"
+)]
+#[get("/pipelines/{pipeline_name}/heap_profile")]
+pub(crate) async fn heap_profile(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
+    state
+        .runner
+        .forward_to_pipeline(*tenant_id, &pipeline_name, Method::GET, "heap_profile")
+        .await
+}
