@@ -310,7 +310,7 @@ impl RawVec {
     ) {
         // We only cause an allocation to occur when we have allocated capacity and our
         // element type isn't a zst
-        if self.capacity() != 0 && !self.val_size == 0 {
+        if self.capacity() != 0 && self.val_size != 0 {
             context
                 .add_vectorlike(self.len(), self.capacity(), self.val_size)
                 .add_distinct_allocation();
@@ -1455,8 +1455,8 @@ impl<T: SizeOf> SizeOf for LeanVec<T> {
     fn size_of_children(&self, context: &mut Context) {
         self.vec.size_of_children(context, &mut |x, ctx| {
             let x = unsafe { &*(x as *const T) };
-            x.size_of_children(ctx);
-        })
+            T::size_of_children(x, ctx);
+        });
     }
 }
 
