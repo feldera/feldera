@@ -26,8 +26,8 @@ class TestWireframes(unittest.TestCase):
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
         sql.register_view(view_name, query)
 
-        sql.input_from_pandas(TBL_NAMES[0], df_students)
-        sql.input_from_pandas(TBL_NAMES[1], df_grades)
+        sql.connect_source_pandas(TBL_NAMES[0], df_students)
+        sql.connect_source_pandas(TBL_NAMES[1], df_grades)
 
         out = sql.listen(view_name)
 

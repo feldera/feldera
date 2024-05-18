@@ -197,7 +197,7 @@ class SQLContext:
 
         self.tables[name] = SQLTable(name, ddl)
 
-    def input_from_pandas(self, table_name: str, df: pandas.DataFrame):
+    def connect_source_pandas(self, table_name: str, df: pandas.DataFrame):
         """
         Adds a pandas DataFrame to the input buffer of the SQLContext, to be pushed to the pipeline.
 
@@ -254,7 +254,7 @@ class SQLContext:
 
         return handler
 
-    def from_delta_table(self, table_name: str, connector_name: str, config: dict):
+    def connect_source_delta_table(self, table_name: str, connector_name: str, config: dict):
         """
         Tells feldera to read the data from the specified delta table.
 
@@ -285,7 +285,7 @@ class SQLContext:
         else:
             self.input_connectors_buffer[table_name] = [connector]
 
-    def to_delta_table(self, view_name: str, connector_name: str, config: dict):
+    def connect_sink_delta_table(self, view_name: str, connector_name: str, config: dict):
         """
         Tells feldera to write the data to the specified delta table.
 
