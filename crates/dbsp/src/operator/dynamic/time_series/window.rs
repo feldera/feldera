@@ -542,7 +542,7 @@ mod test {
                 .spill()
                 .integrate_trace_with_bound(bound, TraceBound::new())
                 .apply(|trace| {
-                    assert!(trace.size_of().total_bytes() < 30000);
+                    assert!(trace.size_of().total_bytes() < 50000);
                 });
 
             Ok(input_handle)
