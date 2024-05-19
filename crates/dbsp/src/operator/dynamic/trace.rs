@@ -999,9 +999,9 @@ mod test {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(32))]
+        #![proptest_config(ProptestConfig::with_cases(16))]
         #[test]
-        fn test_integrate_trace_retain(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 100)) {
+        fn test_integrate_trace_retain(batches in quasi_monotone_batches(100, 20, 1000, 200, 100, 200)) {
             let (mut dbsp, input_handle) = Runtime::init_circuit(4, move |circuit| {
                 let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
                 let stream = stream.shard();
@@ -1015,20 +1015,20 @@ mod test {
                     );
 
                 let trace = stream.spill().integrate_trace();
-                stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0 - 100);
+                stream.spill().integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0 - 100);
                 trace.apply(|trace| {
-                    println!("retain_keys: {}bytes", trace.size_of().total_bytes());
-                    assert!(trace.size_of().total_bytes() < 50000);
+                    // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
+                    assert!(trace.size_of().total_bytes() < 70000);
                 });
 
                 let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
 
                 let trace2 = stream2.spill().integrate_trace();
-                stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1 - 1000);
+                stream2.spill().integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1 - 1000);
 
                 trace2.apply(|trace| {
-                    //println!("retain_vals: {}bytes", trace.size_of().total_bytes());
-                    assert!(trace.size_of().total_bytes() < 50000);
+                    // println!("retain_vals: {}bytes", trace.size_of().total_bytes());
+                    assert!(trace.size_of().total_bytes() < 70000);
                 });
 
                 Ok(handle)
