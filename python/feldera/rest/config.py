@@ -20,9 +20,7 @@ class Config:
         :param timeout: The timeout for the HTTP requests
         """
 
-        version = version or "v0"
-
-        self.url = url
-        self.api_key = api_key
-        self.version = version
-        self.timeout = timeout
+        self.url: str = url
+        self.api_key: Optional[str] = api_key
+        self.version: Optional[str] = version or "v0"
+        self.timeout: Optional[float] = timeout
