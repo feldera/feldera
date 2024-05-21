@@ -25,6 +25,8 @@ class OutputHandler(Thread):
         """
         The main loop of the thread. It listens to the pipeline and appends the data to the buffer.
         Doesn't do integration, just takes the data and ignores if they are `insert`s or `delete`s.
+
+        :meta private:
         """
 
         ack: _OutputHandlerInstruction = self.queue.get()

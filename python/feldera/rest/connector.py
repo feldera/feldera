@@ -14,6 +14,16 @@ class Connector:
         config: Optional[Mapping[str, Any]] = None,
         id: Optional[str] = None,
     ):
+        """
+        Create a new connector
+
+        :param name: The name of the connector
+        :param description: A description of the connector
+        :param config: The configuration of the connector
+        :param id: Optional. The ID of the connector. Not to be set by the user
+
+        """
+
         self.name: str = name
         self.config: Mapping[str, Any] = config or {}
         self.description: Optional[str] = description

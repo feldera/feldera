@@ -54,6 +54,7 @@ class Client:
     def get_program(self, name: str, with_code: bool = False) -> Program:
         """
         Get a program by name
+
         :param name: The name of the program
         :param with_code: If True, the program code will be included in the response
         """
@@ -75,6 +76,7 @@ class Client:
     def compile_program(self, program: Program):
         """
         Compiles a SQL program
+
         :param program: The program to compile
         """
         body = {
@@ -104,6 +106,7 @@ class Client:
     def delete_program(self, name: str):
         """
         Deletes a program by name
+
         :param name: The name of the program
         """
 
@@ -132,6 +135,7 @@ class Client:
     def get_connector(self, name: str) -> Connector:
         """
         Get a connector by name
+
         :param name: The name of the connector
         """
 
@@ -168,6 +172,7 @@ class Client:
     def delete_connector(self, name: str):
         """
         Delete a connector by name
+
         :param name: The name of the connector
         """
         self.http.delete(
@@ -211,6 +216,8 @@ class Client:
     def get_pipeline(self, name: str) -> Pipeline:
         """
         Get a pipeline by name
+
+        :param name: The name of the pipeline
         """
 
         resp = self.http.get(
@@ -222,6 +229,8 @@ class Client:
     def create_pipeline(self, pipeline: Pipeline):
         """
         Create a pipeline
+
+        :param pipeline: The pipeline to create
         """
 
         body = {
@@ -255,6 +264,8 @@ class Client:
         Checks whether the pipeline is configured correctly.
         This includes checking whether the pipeline references a valid compiled program,
         whether the connectors reference valid tables/views in the program, and more.
+
+        :param name: The name of the pipeline
         """
 
         resp = self.http.get(
@@ -268,6 +279,7 @@ class Client:
     def delete_pipeline(self, name: str):
         """
         Deletes a pipeline by name
+
         :param name: The name of the pipeline
         """
         resp = self.http.delete(
@@ -277,6 +289,8 @@ class Client:
     def get_pipeline_stats(self, name: str) -> dict:
         """
         Get the pipeline metrics and performance counters
+
+        :param name: The name of the pipeline
         """
 
         resp = self.http.get(
@@ -288,6 +302,7 @@ class Client:
     def start_pipeline(self, pipeline_name: str):
         """
         Start a pipeline
+
         :param pipeline_name: The name of the pipeline to start
         """
         self.http.post(
@@ -309,6 +324,7 @@ class Client:
     def pause_pipeline(self, pipeline_name: str):
         """
         Stop a pipeline
+
         :param pipeline_name: The name of the pipeline to stop
         """
         self.http.post(
@@ -330,8 +346,10 @@ class Client:
     def shutdown_pipeline(self, pipeline_name: str):
         """
         Shutdown a pipeline
+
         :param pipeline_name: The name of the pipeline to shutdown
         """
+
         self.http.post(
             path=f"/pipelines/{pipeline_name}/shutdown",
         )
@@ -360,14 +378,17 @@ class Client:
     ):
         """
         Insert data into a pipeline
+
         :param pipeline_name: The name of the pipeline
         :param table_name: The name of the table
         :param format: The format of the data, either "json" or "csv"
         :param array: True if updates in this stream are packed into JSON arrays, used in conjunction with the
             "json" format
+
         :param force: If True, the data will be inserted even if the pipeline is paused
         :param update_format: JSON data change event format, used in conjunction with the "json" format,
-        the default value is "insert_delete", other supported formats: "weighted", "debezium", "snowflake", "raw"
+            the default value is "insert_delete", other supported formats: "weighted", "debezium", "snowflake", "raw"
+
         :param data: The data to insert
         """
 
@@ -416,6 +437,7 @@ class Client:
     ):
         """
         Listen for updates to views for pipeline, yields the chunks of data
+
         :param pipeline_name: The name of the pipeline
         :param table_name: The name of the table to listen to
         :param format: The format of the data, either "json" or "csv"
@@ -424,6 +446,7 @@ class Client:
         :param query: Query to execute on the table, either "table", "neighborhood" or "quantiles"
         :param array: Set True to group updates in this stream into JSON arrays, used in conjunction with the
             "json" format, the default value is False
+
         :param timeout: The amount of time in seconds to listen to the stream for
         """
 
