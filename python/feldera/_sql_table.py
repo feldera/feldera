@@ -3,17 +3,13 @@ from feldera.sql_schema import SQLSchema
 
 
 class SQLTable:
-    name: str
-    ddl: str
-    schema: Optional[SQLSchema]
-
     def __init__(self, name: str, ddl: Optional[str] = None, schema: Optional[SQLSchema] = None):
         if ddl is None and schema is None:
             raise ValueError("Either ddl or schema must be provided")
 
-        self.name = name
-        self.ddl = ddl
-        self.schema = schema
+        self.name: str = name
+        self.ddl: str = ddl
+        self.schema: Optional[SQLSchema] = schema
 
     def build_ddl(self):
         """

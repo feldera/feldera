@@ -38,36 +38,6 @@ class SQLContext:
     The SQLContext is the main entry point for the Feldera SQL API.
     Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
     """
-    client: FelderaClient
-    pipeline_name: str
-    program_name: str
-    build_mode: BuildMode
-    state: PipelineState = PipelineState.SHUTDOWN
-
-    pipeline_description: str = ""
-    program_description: str = ""
-    ddl: str = ""
-
-    # In the SQL DDL declaration, the order of the tables and views is important.
-    # From python 3.7 onwards, the order of insertion is preserved in dictionaries.
-    # https://softwaremaniacs.org/blog/2020/02/05/dicts-ordered/en/
-    views: Dict[str, str] = {}
-    tables: Dict[str, SQLTable] = {}
-
-    # TODO: to be used for schema inference
-    todo_tables: Dict[str, Optional[SQLTable]] = {}
-
-    http_input_buffer: list[Dict[str, dict | list[dict] | str]] = []
-
-    # buffer that stores all input connectors to be created
-    # this is a Mapping[table_name -> list[Connector]]
-    input_connectors_buffer: Dict[str, list[Connector]] = {}
-
-    # buffer that stores all output connectors to be created
-    # this is a Mapping[view_name -> list[Connector]]
-    output_connectors_buffer: Dict[str, list[Connector]] = {}
-
-    views_tx: list[Dict[str, Queue]] = []
 
     def __init__(
             self,
@@ -77,13 +47,39 @@ class SQLContext:
             program_name: str = None,
             program_description: str = None,
     ):
-        self.client = client
+        self.build_mode: Optional[BuildMode] = None
+        self.state: PipelineState = PipelineState.SHUTDOWN
 
-        self.pipeline_name = pipeline_name
-        self.pipeline_description = pipeline_description or ""
+        self.ddl: str = ""
 
-        self.program_name = program_name or pipeline_name
-        self.program_description = program_description or ""
+        # In the SQL DDL declaration, the order of the tables and views is important.
+        # From python 3.7 onwards, the order of insertion is preserved in dictionaries.
+        # https://softwaremaniacs.org/blog/2020/02/05/dicts-ordered/en/
+        self.views: Dict[str, str] = {}
+        self.tables: Dict[str, SQLTable] = {}
+
+        # TODO: to be used for schema inference
+        self.todo_tables: Dict[str, Optional[SQLTable]] = {}
+
+        self.http_input_buffer: list[Dict[str, dict | list[dict] | str]] = []
+
+        # buffer that stores all input connectors to be created
+        # this is a Mapping[table_name -> list[Connector]]
+        self.input_connectors_buffer: Dict[str, list[Connector]] = {}
+
+        # buffer that stores all output connectors to be created
+        # this is a Mapping[view_name -> list[Connector]]
+        self.output_connectors_buffer: Dict[str, list[Connector]] = {}
+
+        self.views_tx: list[Dict[str, Queue]] = []
+
+        self.client: FelderaClient = client
+
+        self.pipeline_name: str = pipeline_name
+        self.pipeline_description: str = pipeline_description or ""
+
+        self.program_name: str = program_name or pipeline_name
+        self.program_description: str = program_description or ""
 
     def __build_ddl(self):
         """
