@@ -440,7 +440,8 @@ impl Controller {
     {
         let mut start: Option<Instant> = None;
         let min_storage_rows = if controller.status.pipeline_config.global.storage {
-            0
+            // This reduces the files stored on disk to a reasonable number.
+            1_000_000
         } else {
             usize::MAX
         };
