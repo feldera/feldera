@@ -190,8 +190,14 @@ pub trait Storage {
     /// called and the [`FileHandle`] is converted to an
     /// [`ImmutableFileHandle`].
     fn create(&self) -> Result<FileHandle, StorageError> {
+        self.create_with_prefix("")
+    }
+
+    /// Creates a new persistent file used for writing data, giving the file's
+    /// name the specified `prefix`. See also [`create`](Self::create).
+    fn create_with_prefix(&self, prefix: &str) -> Result<FileHandle, StorageError> {
         let uuid = Uuid::now_v7();
-        let name = uuid.to_string() + CREATE_FILE_EXTENSION;
+        let name = format!("{}{}{}", prefix, uuid, CREATE_FILE_EXTENSION);
         let name_path = Path::new(&name);
         self.create_named(name_path)
     }
