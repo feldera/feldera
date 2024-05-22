@@ -13,18 +13,13 @@ class _OutputHandlerInstruction(Enum):
 
 
 class OutputHandler(Thread):
-    client: FelderaClient
-    pipeline_name: str
-    view_name: str
-    queue: Queue
-    buffer: list[list[dict]] = []
-
     def __init__(self, client: FelderaClient, pipeline_name: str, view_name: str, queue: Queue):
         super().__init__()
-        self.client = client
-        self.pipeline_name = pipeline_name
-        self.view_name = view_name
-        self.queue = queue
+        self.client: FelderaClient = client
+        self.pipeline_name: str = pipeline_name
+        self.view_name: str = view_name
+        self.queue: Queue = queue
+        self.buffer: list[list[dict]] = []
 
     def run(self):
         """

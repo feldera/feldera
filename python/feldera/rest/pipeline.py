@@ -6,14 +6,6 @@ class Pipeline:
     """
     Represents a Feldera pipeline
     """
-    id: Optional[str]
-    name: str
-    program_name: str
-    description: Optional[str]
-    attached_connectors: list[AttachedConnector]
-    config: Mapping[str, Any]
-    state: Optional[Mapping[str, Any]]
-    version: int
 
     def __init__(
         self,
@@ -26,14 +18,14 @@ class Pipeline:
         version: int = 0,
         id: Optional[str] = None
     ):
-        self.name = name
-        self.program_name = program_name
-        self.description = description
-        self.attached_connectors = attached_connectors or []
-        self.config = config or Pipeline.default_config()
-        self.state = state
-        self.version = version
-        self.id = id
+        self.name: str = name
+        self.program_name: str = program_name
+        self.description: Optional[str] = description
+        self.attached_connectors: list[AttachedConnector] = attached_connectors or []
+        self.config: Mapping[str, Any] = config or Pipeline.default_config()
+        self.state: Optional[Mapping[str, Any]] = state
+        self.version: int = version
+        self.id: Optional[str] = id
 
     @staticmethod
     def default_config() -> Mapping[str, Any]:

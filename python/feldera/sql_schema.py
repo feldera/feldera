@@ -2,11 +2,10 @@ from typing import Mapping
 
 
 class SQLSchema:
-    # TODO: should capture nullability of columns, model after the rust `Relation` type
-    schema: Mapping[str, str]
 
     def __init__(self, schema: Mapping[str, str]):
-        self.schema = schema
+        # TODO: should capture nullability of columns, model after the rust `Relation` type
+        self.schema: Mapping[str, str] = schema
 
     def build_ddl(self, table_name: str) -> str:
         ddl = f"CREATE TABLE {table_name} (\n"
