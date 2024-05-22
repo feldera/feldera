@@ -33,6 +33,7 @@ use crate::storage::{
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
     storage::file::ItemFactory,
+    Runtime,
 };
 
 use super::cache::FileCache;
@@ -927,8 +928,9 @@ impl Writer {
             .map(|(column, factories)| ColumnWriter::new(factories, &parameters, column))
             .collect();
         let finished_columns = Vec::with_capacity(n_columns);
+        let worker = format!("w{}-", Runtime::worker_index());
         let writer = Self {
-            writer: BlockWriter::new(writer, writer.create()?),
+            writer: BlockWriter::new(writer, writer.create_with_prefix(&worker)?),
             cws,
             finished_columns,
         };
