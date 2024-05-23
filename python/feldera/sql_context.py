@@ -35,6 +35,8 @@ def _table_name_from_sql(ddl: str) -> str:
 
 class SQLContext:
     """
+    .. _SQLContext:
+
     The SQLContext is the main entry point for the Feldera SQL API.
     Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
     """
@@ -310,6 +312,8 @@ class SQLContext:
 
     def run_to_completion(self):
         """
+        .. _run_to_completion:
+
         Runs the pipeline to completion, waiting for all input records to be processed.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
@@ -362,6 +366,8 @@ class SQLContext:
 
     def start(self):
         """
+        .. _start:
+
         Starts the pipeline.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.

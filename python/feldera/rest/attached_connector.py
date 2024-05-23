@@ -12,7 +12,7 @@ class AttachedConnector:
         :param connector_name: The name of the connector.
         :param relation_name: The name of the relation / table / view to attach to.
         :param is_input: True if the connector is to be used for input.
-        :param name: A unique name for this connector.
+        :param name: A unique name for this connector instance.
         """
 
         self.name: str = name or str(uuid.uuid4())

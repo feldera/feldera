@@ -1,15 +1,15 @@
 """
-This package provides a simple interface for working with feldera via python.
+This package provides a simple interface for working with Feldera from Python.
 
-You will need to first import `FelderaClient`, and give it the URL, api_key (if required)
-of the feldera instance you want to connect to.
+* Create a `FelderaClient` object and give it the URL, and the API key (if required)
+  of the Feldera instance you want to connect to.
 
-You can then use `SQLContext` to set up the source (something that provides data to feldera) and the sink
-(something that receives data from feldera).
-
-You use SQL to write the query that will be executed on the data coming from the source. This query creates a
-"view" in feldera. You can forward the data from this view to the sink of your choice, or stack views on
-top of each other.
+* Create an `SQLContext`_ object and add SQL tables, which specify inputs to Feldera, and views, which define
+  queries to run on these inputs.
+* Set up sources, which provide data to tables, and sinks, which consume data from views.
+* Call `start`_ on the `SQLContext`_ object to create a Feldera pipeline to continuously ingest data from sources into
+  SQL tables, incrementally evaluate SQL views, and send outputs to sinks. Alternatively,
+  call `run_to_completion`_ to create a pipeline that processes all inputs to completion and exits.
 
 Example usage:
 
