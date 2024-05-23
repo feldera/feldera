@@ -1,5 +1,5 @@
 import type { BaseValidation, ErrorMessage } from 'valibot'
-import { BigNumber } from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import { actionIssue, actionOutput } from 'valibot'
 
 /**

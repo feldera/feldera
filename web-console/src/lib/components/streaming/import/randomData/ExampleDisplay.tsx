@@ -1,7 +1,7 @@
 import { inRangeInclusive } from '$lib/functions/common/bigNumber'
 import { getValueFormatter, numericRange, SQLValueJS } from '$lib/functions/ddl'
 import { Field } from '$lib/services/manager'
-import { BigNumber } from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import invariant from 'tiny-invariant'
 
 import { Grid, Typography } from '@mui/material'

@@ -6,7 +6,7 @@ import { Row } from '$lib/functions/ddl'
 import { PipelineRevision, Relation } from '$lib/services/manager'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { PipelineStatus } from '$lib/types/pipeline'
-import BigNumber from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import dayjs from 'dayjs'
 import Papa from 'papaparse'
 import { ChangeEvent, Dispatch, ReactNode, SetStateAction, useCallback } from 'react'
@@ -31,14 +31,14 @@ const ImportToolbar = ({
   rows,
   setRows,
   pipelineRevision,
-  setLoading,
+  setIsBusy,
   children
 }: {
   relation: Relation
   rows: Row[]
   setRows: Dispatch<SetStateAction<any[]>>
   pipelineRevision: PipelineRevision
-  setLoading: Dispatch<SetStateAction<boolean>>
+  setIsBusy: Dispatch<SetStateAction<boolean>>
   children?: ReactNode
 }) => {
   const pipelineManagerQuery = usePipelineManagerQuery()
@@ -85,7 +85,7 @@ const ImportToolbar = ({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleFileChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      setLoading(true)
+      setIsBusy(true)
       if (event.target.files && event.target.files.length > 0) {
         const file = event.target.files[0]
         const reader = new FileReader()
@@ -100,7 +100,7 @@ const ImportToolbar = ({
                 const row: Row = { genId: index, weight: 1, record }
                 newRows.push(row)
               })
-              setLoading(false)
+              setIsBusy(false)
               setRows(newRows)
             }
           }
@@ -108,7 +108,7 @@ const ImportToolbar = ({
         reader.readAsText(file)
       }
     },
-    [setLoading, setRows]
+    [setIsBusy, setRows]
   )
 
   // Sends new rows to the table

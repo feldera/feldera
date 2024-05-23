@@ -45,6 +45,9 @@
       ],
       "$public/*": [
         "./public/*"
+      ],
+      "$tests/*": [
+        "./tests/*"
       ]
     },
     "plugins": [

@@ -1,5 +1,5 @@
 import type { BaseSchema, ErrorMessage, Pipe } from 'valibot'
-import { BigNumber } from 'bignumber.js'
+import { BigNumber } from 'bignumber.js/bignumber.js'
 import { defaultArgs, IssueReason, pipeResult, schemaIssue } from 'valibot'
 
 /**
