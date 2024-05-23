@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added backpressure mode to the `/egress` endpoint, which applies
+  backpressure on the pipeline if the HTTP client cannot keep up
+  with the output instead of dropping data.
+  ([#1780](https://github.com/feldera/feldera/pull/1780))
 - `/heap_profile` endpoint that generates the heap profile
   of a pipeline in the pprof format.
   ([#1767](https://github.com/feldera/feldera/pull/1767))

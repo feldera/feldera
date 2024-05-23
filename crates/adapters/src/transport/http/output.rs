@@ -15,7 +15,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::broadcast::{self, error::RecvError},
+    sync::{mpsc, oneshot},
     time::timeout,
 };
 
@@ -65,12 +65,22 @@ impl Buffer {
     }
 }
 
+type SendRequest = (Buffer, Option<oneshot::Sender<()>>);
+
 struct HttpOutputEndpointInner {
     name: String,
     format: Format,
 
+    // Apply backpressure on the pipeline when the client or the network
+    // are not keeping up.
+    //
+    // When `false`, the connector buffers up to `MAX_BUFFERS` chunks and
+    // drops chunks on the floor when the buffer is full.  When `true`, the
+    // connector sends one chunk at a time, eventually forcing the pipeline
+    // to wait for the slow client to receive the data.
+    backpressure: bool,
     total_buffers: AtomicU64,
-    sender: ShardedLock<Option<broadcast::Sender<Buffer>>>,
+    sender: ShardedLock<Option<mpsc::Sender<SendRequest>>>,
     // This endpoint starts with sending a snapshot of a relation.
     snapshot: bool,
     stream: bool,
@@ -78,19 +88,26 @@ struct HttpOutputEndpointInner {
 }
 
 impl HttpOutputEndpointInner {
-    pub(crate) fn new(name: &str, format: Format, snapshot: bool, stream: bool) -> Self {
+    pub(crate) fn new(
+        name: &str,
+        format: Format,
+        snapshot: bool,
+        stream: bool,
+        backpressure: bool,
+    ) -> Self {
         Self {
             name: name.to_string(),
             format,
+            backpressure,
             total_buffers: AtomicU64::new(0),
-            sender: ShardedLock::new(Some(broadcast::channel(MAX_BUFFERS).0)),
+            sender: ShardedLock::new(None),
             snapshot,
             stream,
             // async_error_callback: RwLock::new(None),
         }
     }
 
-    fn push_buffer(&self, buffer: Option<&[u8]>) -> AnyResult<()> {
+    fn push_buffer(&self, buffer: Option<&[u8]>, blocking: bool) -> AnyResult<()> {
         let seq_number = self.total_buffers.fetch_add(1, Ordering::AcqRel);
 
         let json_buf = Vec::with_capacity(buffer.map(|b| b.len()).unwrap_or(0) + 1024);
@@ -136,13 +153,23 @@ impl HttpOutputEndpointInner {
         json_buf.push(b'\r');
         json_buf.push(b'\n');
 
+        // In blocking mode, create a one-shot acknowledgement channel for the sender thread
+        // to notify us when it's done sending the chunk.
+        let (ack_sender, ack_receiver) = if blocking {
+            let (sender, receiver) = oneshot::channel();
+            (Some(sender), Some(receiver))
+        } else {
+            (None, None)
+        };
         // A failure simply means that there are no receivers.
-        let _ = self
-            .sender
-            .read()
-            .unwrap()
-            .as_ref()
-            .map(|sender| sender.send(Buffer::new(seq_number, Bytes::from(json_buf))));
+        if let Some(Ok(_)) = self.sender.read().unwrap().as_ref().map(|sender| {
+            sender.try_send((Buffer::new(seq_number, Bytes::from(json_buf)), ack_sender))
+        }) {
+            if let Some(ack_receiver) = ack_receiver {
+                let _ = ack_receiver.blocking_recv();
+            }
+        }
+
         Ok(())
     }
 }
@@ -174,14 +201,26 @@ pub(crate) struct HttpOutputEndpoint {
 }
 
 impl HttpOutputEndpoint {
-    pub(crate) fn new(name: &str, format: &str, snapshot: bool, stream: bool) -> Self {
+    pub(crate) fn new(
+        name: &str,
+        format: &str,
+        snapshot: bool,
+        stream: bool,
+        backpressure: bool,
+    ) -> Self {
         let format = match format {
             "csv" => Format::Text,
             "json" => Format::Json,
             _ => Format::Binary,
         };
         Self {
-            inner: Arc::new(HttpOutputEndpointInner::new(name, format, snapshot, stream)),
+            inner: Arc::new(HttpOutputEndpointInner::new(
+                name,
+                format,
+                snapshot,
+                stream,
+                backpressure,
+            )),
         }
     }
 
@@ -189,14 +228,11 @@ impl HttpOutputEndpoint {
         self.inner.name.as_str()
     }
 
-    fn connect(&self) -> broadcast::Receiver<Buffer> {
-        self.inner
-            .sender
-            .read()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .subscribe()
+    fn connect(&self) -> mpsc::Receiver<SendRequest> {
+        let (sender, receiver) = mpsc::channel(MAX_BUFFERS);
+        *self.inner.sender.write().unwrap() = Some(sender);
+
+        receiver
     }
 
     /// Create an HTTP response object with a streaming body that
@@ -221,18 +257,17 @@ impl HttpOutputEndpoint {
                     // There is a bug in actix (https://github.com/actix/actix-web/issues/1313)
                     // that prevents it from dropping HTTP connections on client disconnect
                     // unless the endpoint periodically sends some data.  As a workaround,
-                    // if there is not real payload to send for more than 3 seconds, we will
+                    // if there is no real payload to send for more than 3 seconds, we will
                     // generate an empty chunk.  Note that it takes 6s, i.e., 2x the timeout
                     // period for actix to actually drop the connection.
                     match timeout(Duration::from_millis(3_000), receiver.recv()).await {
                         Err(_) => {
                             // Send the empty chunk via the `push_buffer` method to
                             // make sure it gets assigned correct sequence number.
-                            let _ = inner.push_buffer(None);
+                            let _ = inner.push_buffer(None, false);
                         }
-                        Ok(Err(RecvError::Closed)) => break,
-                        Ok(Err(RecvError::Lagged(_))) => (),
-                        Ok(Ok(buffer)) => {
+                        Ok(None) => break,
+                        Ok(Some((buffer, ack_sender))) => {
                             debug!(
                                 "HTTP output endpoint '{}': sending chunk #{} ({} bytes)",
                                 name,
@@ -240,6 +275,9 @@ impl HttpOutputEndpoint {
                                 buffer.data.len(),
                             );
                             yield <AnyResult<_>>::Ok(buffer.data);
+                            if let Some(ack_sender) = ack_sender {
+                                let _ = ack_sender.send(());
+                            }
                         },
                     }
                 }
@@ -259,7 +297,8 @@ impl OutputEndpoint for HttpOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
-        self.inner.push_buffer(Some(buffer))
+        self.inner
+            .push_buffer(Some(buffer), self.inner.backpressure)
     }
 
     fn push_key(&mut self, _key: &[u8], _val: &[u8]) -> AnyResult<()> {
@@ -279,7 +318,7 @@ however the HTTP transport does not support this representation."
         // the snapshot mode.  The receiver will receive all buffered
         // messages followed by a `RecvError::Closed` notification.
         if self.inner.snapshot && self.inner.total_buffers.load(Ordering::Acquire) == 0 {
-            let _ = self.inner.push_buffer(Some(&[]));
+            let _ = self.inner.push_buffer(Some(&[]), self.inner.backpressure);
         }
 
         if !self.inner.stream {
