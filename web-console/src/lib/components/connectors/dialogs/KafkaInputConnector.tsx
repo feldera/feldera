@@ -174,6 +174,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
     >
       <FormContainer
         resolver={valibotResolver(schema)}
+        mode='onChange'
         values={curValues}
         defaultValues={defaultValues}
         onSuccess={onSubmit}

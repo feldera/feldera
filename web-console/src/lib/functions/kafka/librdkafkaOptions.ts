@@ -29,8 +29,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 */
 
+import { tuple } from '$lib/functions/common/tuple'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
+import * as va from 'valibot'
 
 const deduceType = (row: string[]) =>
   row[5].includes('Type: integer')
@@ -947,15 +949,34 @@ export const librdkafkaOptions = [
       `The Kafka topic to write to  \n*Type: string*`
     ]
   ])
-  .map(row => ({
-    name: row[0].trim(),
-    scope: row[1].trim() as 'C' | 'P' | '*',
-    range: row[2].trim(),
-    default: row[3].trim(),
-    importance: row[4].trim(),
-    description: row[5],
-    type: deduceType(row)
-  }))
+  .map(row => {
+    const data = {
+      name: row[0].trim(),
+      scope: row[1].trim() as 'C' | 'P' | '*',
+      range: row[2].trim(),
+      default: row[3].trim(),
+      importance: row[4].trim(),
+      description: row[5],
+      type: deduceType(row)
+    }
+    if (data.type === 'number') {
+      return {
+        ...data,
+        type: 'number' as const,
+        range: (([, min, max]) => ({ min: parseInt(min), max: parseInt(max) }))(
+          data.range.match(/(\d+) .. (\d+)/) ?? []
+        )
+      }
+    }
+    if (data.type === 'enum') {
+      return {
+        ...data,
+        type: 'enum' as const,
+        range: data.range.split(', ')
+      }
+    }
+    return { ...data, type: data.type }
+  })
 
 export const librdkafkaAuthOptions = [
   'security.protocol',
@@ -975,6 +996,27 @@ export const librdkafkaAuthOptions = [
   'sasl.oauthbearer.scope',
   'sasl.oauthbearer.extensions'
 ] as const
+
+export const librdkafkaNonAuthFieldsSchema = (() => {
+  const nonAuthFields = librdkafkaOptions
+    .filter(o => !librdkafkaAuthOptions.includes(o.name as any))
+    .map(o =>
+      tuple(
+        o.name.replaceAll('.', '_'),
+        match(o)
+          .with({ type: 'number' }, option => {
+            const error = `Must be in the range of ${option.range.min} to ${option.range.max}`
+            return va.number([va.minValue(option.range.min, error), va.maxValue(option.range.max, error)])
+          })
+          .with({ type: 'enum' }, option => va.picklist(option.range as [string, ...string[]]))
+          .with({ type: 'array' }, { type: 'list' }, () => va.array(va.string()))
+          .with({ type: 'boolean' }, () => va.boolean())
+          .with({ type: 'string' }, () => va.string([va.minLength(1)]))
+          .exhaustive()
+      )
+    )
+  return va.partial(va.object(Object.fromEntries(nonAuthFields)))
+})()
 
 export type LibrdkafkaOptionType = string | number | boolean | string[]
 
@@ -1002,7 +1044,7 @@ const toKafkaOption = (optionName: string, v: LibrdkafkaOptionType, type: Return
  * Underscore-delimited fields are used with react-hook-form because its implementation
  * conflicts with dot-delimited fields
  */
-export const toLibrdkafkaConfig = (formFields: Record<string, LibrdkafkaOptionType>) => {
+export const toLibrdkafkaConfig = (formFields: Partial<Record<string, LibrdkafkaOptionType>>) => {
   const config = {} as Record<string, string>
   Object.keys(formFields).forEach(fieldName => {
     const v = formFields[fieldName]
@@ -1065,7 +1107,7 @@ export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, str
   } as ReturnType<typeof fromLibrdkafkaConfig>
 }
 
-export type LibrdkafkaOptions = Omit<(typeof librdkafkaOptions)[number], 'name'>
+export type LibrdkafkaOptions = (typeof librdkafkaOptions)[number]
 
 export const librdkafkaDefaultValue = (option: Omit<LibrdkafkaOptions, 'scope' | 'importance'>) =>
   match(option.type)

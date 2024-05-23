@@ -124,7 +124,7 @@ build-webui:
     COPY web-console/tsconfig.json ./web-console/tsconfig.json
     COPY web-console/.env ./web-console/.env
 
-    RUN cd web-console && yarn format:check
+    RUN cd web-console && yarn format-check
     RUN cd web-console && yarn build
     SAVE ARTIFACT ./web-console/out
 

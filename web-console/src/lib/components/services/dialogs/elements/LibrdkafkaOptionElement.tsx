@@ -1,3 +1,4 @@
+import { NumberInput } from '$lib/components/input/NumberInput'
 import { LibrdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
 import { AutocompleteElement, SwitchElement, TextFieldElement } from 'react-hook-form-mui'
 import { match } from 'ts-pattern'
@@ -14,9 +15,8 @@ export const LibrdkafkaOptionElement = (props: {
     return <></>
   }
 
-  const fieldOptions = props.fieldOptions
-  return match(fieldOptions.type)
-    .with('string', () => (
+  return match(props.fieldOptions)
+    .with({ type: 'string' }, () => (
       <TextFieldElement
         key={props.field}
         name={props.parentName + '.' + props.field}
@@ -27,28 +27,27 @@ export const LibrdkafkaOptionElement = (props: {
         }}
       ></TextFieldElement>
     ))
-    .with('number', () => (
+    .with({ type: 'number' }, options => (
       <TextFieldElement
         key={props.field}
         name={props.parentName + '.' + props.field}
         size='small'
         fullWidth
-        type='number'
+        component={NumberInput as any}
+        {...options.range}
+        {...{ allowInvalidRange: true }}
         inputProps={{
-          ...(([, min, max]) => {
-            return { min: parseInt(min), max: parseInt(max) }
-          })(fieldOptions.range.match(/(\d+) .. (\d+)/) ?? []),
           inputProps: {
             'data-testid': 'input-' + props.field
           }
         }}
       ></TextFieldElement>
     ))
-    .with('enum', () => (
+    .with({ type: 'enum' }, options => (
       <AutocompleteElement
         key={props.field}
         name={props.parentName + '.' + props.field}
-        options={fieldOptions.range.split(', ').map(option => ({
+        options={options.range.map(option => ({
           id: option,
           label: option
         }))}
@@ -70,7 +69,7 @@ export const LibrdkafkaOptionElement = (props: {
         }}
       ></AutocompleteElement>
     ))
-    .with('boolean', () => (
+    .with({ type: 'boolean' }, () => (
       <Box sx={{ width: '100%' }}>
         <SwitchElement
           key={props.field}
@@ -84,13 +83,13 @@ export const LibrdkafkaOptionElement = (props: {
         ></SwitchElement>
       </Box>
     ))
-    .with('list', 'array', () => (
+    .with({ type: 'list' }, { type: 'array' }, () => (
       <TextFieldElement
         key={props.field}
         multiline
         transform={{
           input: (v: string[]) => {
-            return v?.join(', ') ?? ''
+            return v?.join(', ')
           },
           output: event => {
             return event.target.value.split(', ')

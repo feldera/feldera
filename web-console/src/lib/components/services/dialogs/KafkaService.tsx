@@ -7,6 +7,7 @@ import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib
 import {
   fromLibrdkafkaConfig,
   librdkafkaAuthOptions,
+  librdkafkaNonAuthFieldsSchema,
   LibrdkafkaOptions,
   librdkafkaOptions,
   toLibrdkafkaConfig
@@ -30,18 +31,15 @@ const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify service name')])),
   description: va.nonOptional(va.string()),
   config: va.intersect([
-    va.object(
-      {
-        bootstrap_servers: va.nonOptional(
-          va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
-            va.minLength(1, 'Specify at least one server')
-          ]),
-          'Specify at least one server'
-        )
-      },
-      // Allow configurations options not mentioned in the schema
-      va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
-    ),
+    librdkafkaNonAuthFieldsSchema,
+    va.object({
+      bootstrap_servers: va.nonOptional(
+        va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+          va.minLength(1, 'Specify at least one server')
+        ]),
+        'Specify at least one server'
+      )
+    }),
     authParamsSchema
   ])
 })
@@ -110,6 +108,7 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
     <Dialog fullWidth open={props.show} scroll='body' maxWidth='md' onClose={handleClose} TransitionComponent={Fade}>
       <FormContainer
         resolver={valibotResolver(schema)}
+        mode='onChange'
         defaultValues={defaultValues}
         onSuccess={onSuccess}
         onError={handleErrors}
@@ -275,7 +274,7 @@ const TabNameAndDesc = (props: { disabled?: boolean }) => {
 const fieldOptions = librdkafkaOptions
   .filter(o => o.scope === '*')
   .filter(o => !librdkafkaAuthOptions.includes(o.name as any))
-  .reduce((acc, { name, ...o }) => ((acc[name.replaceAll('.', '_')] = o), acc), {} as Record<string, LibrdkafkaOptions>)
+  .reduce((acc, o) => ((acc[o.name.replaceAll('.', '_')] = o), acc), {} as Record<string, LibrdkafkaOptions>)
 
 const requiredFields = ['bootstrap_servers']
 

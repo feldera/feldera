@@ -4,7 +4,7 @@ import { ServiceType } from '$lib/types/xgressServices'
 import { Dispatch, SetStateAction } from 'react'
 
 export type ServiceProps = {
-  config: { bootstrap_servers: string[] } & Record<string, LibrdkafkaOptionType>
+  config: { bootstrap_servers: string[] } & Partial<Record<string, LibrdkafkaOptionType>>
   description: string
   name: string
 }
