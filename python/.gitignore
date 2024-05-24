@@ -2,3 +2,9 @@
 __pycache__
 test.log
 .idea
+.venv
+docs/_build
+docs/make.bat
+docs/modules.rst
+docs/feldera.rst
+docs/feldera.rest.rst
