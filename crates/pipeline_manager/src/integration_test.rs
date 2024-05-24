@@ -43,6 +43,7 @@ use std::{
 };
 
 use actix_http::{encoding::Decoder, Payload, StatusCode};
+use awc::error::SendRequestError;
 use awc::{http, ClientRequest, ClientResponse};
 use aws_sdk_cognitoidentityprovider::config::Region;
 use colored::Colorize;
@@ -68,6 +69,7 @@ use tokio::sync::Mutex;
 
 const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
 const TEST_DBSP_DEFAULT_PORT: u16 = 8089;
+const MANAGER_INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(100);
 
 // Used if we are testing against a local DBSP instance
 // whose lifecycle is managed by this test file
@@ -193,11 +195,29 @@ impl TestConfig {
         let config = self;
 
         // Cleanup pipelines..
-        let mut req = config.get("/v0/pipelines").await;
+        let start = Instant::now();
+        let mut req;
+
+        loop {
+            match config.try_get("/v0/pipelines").await {
+                Ok(r) => {
+                    req = r;
+                    break;
+                }
+                Err(e) => {
+                    if start.elapsed() > MANAGER_INITIALIZATION_TIMEOUT {
+                        panic!("Timeout waiting for the pipeline manager");
+                    }
+                    println!("Couldn't reach pipeline manager, retrying: {e}");
+                    sleep(Duration::from_millis(1000)).await;
+                }
+            }
+        }
         let pipelines: Value = req.json().await.unwrap();
         // First, shutdown the pipelines
         for pipeline in pipelines.as_array().unwrap() {
             let name = pipeline["descriptor"]["name"].as_str().unwrap();
+            println!("shutting down pipeline {name}");
             let req = config
                 .post_no_body(format!("/v0/pipelines/{name}/shutdown"))
                 .await;
@@ -246,10 +266,16 @@ impl TestConfig {
     }
 
     async fn get<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
+        self.try_get(endpoint).await.unwrap()
+    }
+
+    async fn try_get<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+    ) -> Result<ClientResponse<Decoder<Payload>>, SendRequestError> {
         self.maybe_attach_bearer_token(self.client.get(self.endpoint_url(endpoint)))
             .send()
             .await
-            .unwrap()
     }
 
     /// Performs GET request, asserts the status code is OK, and returns result.
