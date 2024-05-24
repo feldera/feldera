@@ -3586,6 +3586,15 @@
           "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
         }
       },
+      "DeltaTableWriteMode": {
+        "type": "string",
+        "description": "Delta table write mode.\n\nDetermines how the Delta table connector handles an existing table at the target location.",
+        "enum": [
+          "append",
+          "truncate",
+          "error_if_exists"
+        ]
+      },
       "DeltaTableWriterConfig": {
         "type": "object",
         "description": "Delta table output connector configuration.",
@@ -3593,6 +3602,9 @@
           "uri"
         ],
         "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/DeltaTableWriteMode"
+          },
           "uri": {
             "type": "string",
             "description": "Table URI."
