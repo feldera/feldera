@@ -390,14 +390,15 @@ impl CircuitGraph {
         for (from_id, to) in self.edges.iter() {
             let from_node = self.node_ref(from_id).unwrap();
 
-            for (to_id, kind) in to.iter() {
+            for (to_id, _kind) in to.iter() {
                 let to_node = self.node_ref(to_id).unwrap();
                 let to_id = match to_node.kind {
                     NodeKind::StrictInput { output } => to_id.parent_id().unwrap().child(output),
                     _ => to_id.clone(),
                 };
 
-                if kind.is_stream() {
+                // Don't draw self-loops on strict operators.
+                if from_id != &to_id {
                     edges.push(VisEdge::new(
                         Node::node_identifier(from_id),
                         from_node.is_circuit(),
