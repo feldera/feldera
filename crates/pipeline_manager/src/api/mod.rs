@@ -217,6 +217,7 @@ request is rejected."
         pipeline_types::transport::s3::S3InputConfig,
         pipeline_types::transport::delta_table::DeltaTableIngestMode,
         pipeline_types::transport::delta_table::DeltaTableReaderConfig,
+        pipeline_types::transport::delta_table::DeltaTableWriteMode,
         pipeline_types::transport::delta_table::DeltaTableWriterConfig,
         pipeline_types::format::csv::CsvEncoderConfig,
         pipeline_types::format::csv::CsvParserConfig,

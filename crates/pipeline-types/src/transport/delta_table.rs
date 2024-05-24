@@ -3,11 +3,35 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
 
+/// Delta table write mode.
+///
+/// Determines how the Delta table connector handles an existing table at the target location.
+#[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub enum DeltaTableWriteMode {
+    /// New updates will be appended to the existing table at the target location.
+    #[default]
+    #[serde(rename = "append")]
+    Append,
+
+    /// Existing table at the specified location will get truncated.
+    ///
+    /// The connector truncates the table by outputing delete actions for all
+    /// files in the latest snapshot of the table.
+    #[serde(rename = "truncate")]
+    Truncate,
+
+    /// If a table exists at the specified location, the operation must fail.
+    #[serde(rename = "error_if_exists")]
+    ErrorIfExists,
+}
+
 /// Delta table output connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct DeltaTableWriterConfig {
     /// Table URI.
     pub uri: String,
+    #[serde(default)]
+    pub mode: DeltaTableWriteMode,
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:

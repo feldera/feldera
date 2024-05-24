@@ -362,6 +362,7 @@ outputs:
             name: "delta_table_output"
             config:
                 uri: "{table_uri}"
+                mode: "truncate"
 {}
         enable_output_buffer: true
         max_output_buffer_size_records: {buffer_size}
