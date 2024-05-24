@@ -10,6 +10,13 @@ Welcome to feldera's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   introduction
+   examples
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference:
+   
    modules
 
 Indices and tables
