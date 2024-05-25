@@ -394,13 +394,11 @@ class SQLContext:
 
     def shutdown(self):
         """
-        Pauses and shuts down the pipeline.
+        Shuts down the pipeline.
         """
 
         if self.state == PipelineState.SHUTDOWN:
             return
-
-        self.pause()
 
         self.client.shutdown_pipeline(self.pipeline_name)
         self.state = PipelineState.SHUTDOWN
