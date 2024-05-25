@@ -516,41 +516,43 @@ where
         // The advantage of this representation is that each term can be computed
         // as a join of one of the input streams with the trace of the other stream,
         // implemented by the `JoinTrace` operator.
-        let left = self.dyn_shard(&factories.left_factories);
-        let right = other.dyn_shard(&factories.right_factories);
+        self.circuit().region("join", || {
+            let left = self.dyn_shard(&factories.left_factories);
+            let right = other.dyn_shard(&factories.right_factories);
 
-        let left_trace = left.dyn_trace(&factories.left_trace_factories);
-        let right_trace = right.dyn_trace(&factories.right_trace_factories);
+            let left_trace = left.dyn_trace(&factories.left_trace_factories);
+            let right_trace = right.dyn_trace(&factories.right_trace_factories);
 
-        let left = self.circuit().add_binary_operator(
-            JoinTrace::new(
-                &factories.right_trace_factories,
-                &factories.output_factories,
-                factories.timed_item_factory,
-                factories.timed_items_factory,
-                join_funcs.left,
-                Location::caller(),
-                self.circuit().clone(),
-            ),
-            &left,
-            &right_trace,
-        );
+            let left = self.circuit().add_binary_operator(
+                JoinTrace::new(
+                    &factories.right_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    join_funcs.left,
+                    Location::caller(),
+                    self.circuit().clone(),
+                ),
+                &left,
+                &right_trace,
+            );
 
-        let right = self.circuit().add_binary_operator(
-            JoinTrace::new(
-                &factories.left_trace_factories,
-                &factories.output_factories,
-                factories.timed_item_factory,
-                factories.timed_items_factory,
-                join_funcs.right,
-                Location::caller(),
-                self.circuit().clone(),
-            ),
-            &right,
-            &left_trace.delay_trace(),
-        );
+            let right = self.circuit().add_binary_operator(
+                JoinTrace::new(
+                    &factories.left_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    join_funcs.right,
+                    Location::caller(),
+                    self.circuit().clone(),
+                ),
+                &right,
+                &left_trace.delay_trace(),
+            );
 
-        left.plus(&right)
+            left.plus(&right)
+        })
     }
 
     /// See [`Stream::antijoin`].
@@ -571,32 +573,34 @@ where
                     other.origin_node_id().clone(),
                 )),
                 move || {
-                    let stream1 = self.dyn_shard(&factories.join_factories.left_factories);
-                    let stream2 = other
-                        .dyn_distinct(&factories.distinct_factories)
-                        .dyn_shard(&factories.join_factories.right_factories);
+                    self.circuit().region("antijoin", || {
+                        let stream1 = self.dyn_shard(&factories.join_factories.left_factories);
+                        let stream2 = other
+                            .dyn_distinct(&factories.distinct_factories)
+                            .dyn_shard(&factories.join_factories.right_factories);
 
-                    let mut key = factories
-                        .join_factories
-                        .output_factories
-                        .key_factory()
-                        .default_box();
-                    let mut val = factories
-                        .join_factories
-                        .output_factories
-                        .val_factory()
-                        .default_box();
-                    stream1
-                        .minus(&stream1.dyn_join_generic(
-                            &factories.join_factories,
-                            &stream2,
-                            TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
-                                k.clone_to(&mut key);
-                                v1.clone_to(&mut val);
-                                cb(key.as_mut(), val.as_mut())
-                            }),
-                        ))
-                        .mark_sharded()
+                        let mut key = factories
+                            .join_factories
+                            .output_factories
+                            .key_factory()
+                            .default_box();
+                        let mut val = factories
+                            .join_factories
+                            .output_factories
+                            .val_factory()
+                            .default_box();
+                        stream1
+                            .minus(&stream1.dyn_join_generic(
+                                &factories.join_factories,
+                                &stream2,
+                                TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
+                                    k.clone_to(&mut key);
+                                    v1.clone_to(&mut val);
+                                    cb(key.as_mut(), val.as_mut())
+                                }),
+                            ))
+                            .mark_sharded()
+                    })
                 },
             )
             .clone()
