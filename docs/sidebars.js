@@ -81,6 +81,11 @@ const sidebars = {
       type: 'category',
       label: 'Reference',
       items: [
+            {
+              type: 'link',
+              label: "Python SDK",
+              href: "pathname://python/index.html",
+            },
             'api/rest', 
 	    {
 	      type: 'category',
