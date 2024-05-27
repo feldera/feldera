@@ -81,7 +81,7 @@ export const BigNumberInput = (
       return { valid: value }
     },
     valueToText: (valid: BigNumber | null) => {
-      return valid === null ? null : valid.toFixed()
+      return valid === null ? null : valid?.toFixed() ?? ''
     }
   }
   const valueObj = 'value' in props ? ({ value: props.value } as { value?: BigNumber | null }) : {}
