@@ -11,6 +11,10 @@ from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
 
 
+def _prepare_boolean_input(value: bool) -> str:
+    return "true" if value else "false"
+
+
 class Client:
     """
     A client for the Feldera HTTP API
@@ -399,8 +403,8 @@ class Client:
             raise ValueError("update_format must be one of 'insert_delete', 'weighted', 'debezium', 'snowflake', 'raw'")
 
         # python sends `True` which isn't accepted by the backend
-        array = "true" if array else "false"
-        force = "true" if force else "false"
+        array = _prepare_boolean_input(array)
+        force = _prepare_boolean_input(force)
 
         params = {
             "force": force,
@@ -430,6 +434,7 @@ class Client:
             table_name: str,
             format: str,
             mode: str = "watch",
+            backpressure: bool = True,
             query: Optional[str] = None,
             quantiles: Optional[int] = None,
             array: bool = False,
@@ -442,6 +447,8 @@ class Client:
         :param table_name: The name of the table to listen to
         :param format: The format of the data, either "json" or "csv"
         :param mode: The mode to listen in, either "watch" or "snapshot"
+        :param backpressure: Set True to apply backpressure to the HTTP output connector to make it more reliable,
+            True by default
         :param quantiles: For 'quantiles' queries: the number of quantiles to output. The default value is 100
         :param query: Query to execute on the table, either "table", "neighborhood" or "quantiles"
         :param array: Set True to group updates in this stream into JSON arrays, used in conjunction with the
@@ -459,13 +466,14 @@ class Client:
         params = {
             "mode": mode,
             "format": format,
+            "backpressure": _prepare_boolean_input(backpressure),
         }
 
         if quantiles:
             params["quantiles"] = quantiles
 
         if format == "json":
-            params["array"] = "true" if array else "false"
+            params["array"] = _prepare_boolean_input(array)
 
         resp = self.http.post(
             path=f"/pipelines/{pipeline_name}/egress/{table_name}",
