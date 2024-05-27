@@ -447,7 +447,7 @@ class Client:
         :param table_name: The name of the table to listen to
         :param format: The format of the data, either "json" or "csv"
         :param mode: The mode to listen in, either "watch" or "snapshot"
-        :param backpressure: Set True to apply backpressure to the HTTP output connector to make it more reliable,
+        :param backpressure: When the flag is True (the default), this method waits for the consumer to receive each chunk and blocks the pipeline if the consumer cannot keep up. When this flag is False, the pipeline drops data chunks if the consumer is not keeping up with its output.  This prevents a slow consumer from slowing down the entire pipeline.
             True by default
         :param quantiles: For 'quantiles' queries: the number of quantiles to output. The default value is 100
         :param query: Query to execute on the table, either "table", "neighborhood" or "quantiles"
