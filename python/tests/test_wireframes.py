@@ -74,6 +74,36 @@ class TestWireframes(unittest.TestCase):
 
         assert df.columns.tolist() not in df2.columns.tolist()
 
+    def test_foreach_chunk(self):
+        def callback(df: pd.DataFrame, seq_no: int):
+            print(f"\nSeq No: {seq_no}, DF size: {df.shape[0]}\n")
+
+        sql = SQLContext('foreach_chunk', TEST_CLIENT).get_or_create()
+
+        TBL_NAMES = ['students', 'grades']
+        view_name = "average_scores"
+
+        df_students = pd.read_csv('students.csv')
+        df_grades = pd.read_csv('grades.csv')
+
+        sql.register_table(TBL_NAMES[0], SQLSchema({"name": "STRING", "id": "INT"}))
+        sql.register_table(TBL_NAMES[1], SQLSchema({
+            "student_id": "INT",
+            "science": "INT",
+            "maths": "INT",
+            "art": "INT"
+        }))
+
+        query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
+        sql.register_view(view_name, query)
+
+        sql.connect_source_pandas(TBL_NAMES[0], df_students)
+        sql.connect_source_pandas(TBL_NAMES[1], df_grades)
+
+        sql.foreach_chunk(view_name, callback)
+
+        sql.run_to_completion()
+
 
 if __name__ == '__main__':
     unittest.main()

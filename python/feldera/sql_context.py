@@ -2,7 +2,7 @@ import time
 import pandas
 import re
 
-from typing import Optional, Dict
+from typing import Optional, Dict, Callable
 from typing_extensions import Self
 from queue import Queue
 
@@ -14,6 +14,7 @@ from feldera._sql_table import SQLTable
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera.output_handler import _OutputHandlerInstruction
+from feldera._callback_runner import CallbackRunner
 from enum import Enum
 
 
@@ -241,6 +242,9 @@ class SQLContext:
         Listens to the output of the provided view so that it is available in the notebook / python code.
 
         :param view_name: The name of the view to listen to.
+
+        .. note::
+            - This method must be called before calling :meth:`.run_to_completion`, or :meth:`.start`.
         """
 
         queue = Queue(maxsize=1)
@@ -309,6 +313,32 @@ class SQLContext:
             self.output_connectors_buffer[view_name].append(connector)
         else:
             self.output_connectors_buffer[view_name] = [connector]
+
+    def foreach_chunk(self, view_name: str, callback: Callable[[pandas.DataFrame, int], None]):
+        """
+        Runs the given callback on each chunk of the output of the specified view.
+
+        :param view_name: The name of the view.
+        :param callback: The callback to run on each chunk. The callback should take two arguments:
+
+                - **chunk**  -> The chunk as a pandas DataFrame
+                - **seq_no** -> The sequence number. The sequence number is a monotonically increasing integer that
+                  starts from 0. Note that the sequence number is unique for each chunk, but not necessarily contiguous.
+
+        Please note that the callback is run in a separate thread, so it should be thread-safe.
+
+        .. note::
+            - The callback must be thread-safe as it will be run in a separate thread.
+            - This method must be called before calling :meth:`.run_to_completion`, or :meth:`.start`.
+
+        """
+
+        queue = Queue(maxsize=1)
+
+        self.views_tx.append({view_name: queue})
+
+        handler = CallbackRunner(self.client, self.pipeline_name, view_name, callback, queue)
+        handler.start()
 
     def run_to_completion(self):
         """
