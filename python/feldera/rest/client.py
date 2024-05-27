@@ -485,17 +485,10 @@ class Client:
 
         end = time.time() + timeout if timeout else None
 
-        old_chunk = b""
-
-        for chunk in resp.iter_content(chunk_size=None):
+        # Using the default chunk size below makes `iter_lines` extremely
+        # inefficient when dealing with long lines.
+        for chunk in resp.iter_lines(chunk_size=50000000):
             if end and time.time() > end:
                 break
             if chunk:
-                try:
-                    chunk = old_chunk + chunk
-                    valid_json = json.loads(chunk)
-                    old_chunk = b""
-                    yield valid_json
-                except json.decoder.JSONDecodeError:
-                    old_chunk += chunk
-                    continue
+                yield json.loads(chunk)
