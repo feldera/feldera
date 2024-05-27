@@ -1,31 +1,32 @@
-import pandas as pd
-
-
 from threading import Thread
+from typing import Callable
 from queue import Queue, Empty
+
+import pandas as pd
 from feldera import FelderaClient
 from feldera._helpers import dataframe_from_response
-from enum import Enum
+from feldera.output_handler import _OutputHandlerInstruction
 
 
-class _OutputHandlerInstruction(Enum):
-    PipelineStarted = 1
-    RanToCompletion = 2
-
-
-class OutputHandler(Thread):
-    def __init__(self, client: FelderaClient, pipeline_name: str, view_name: str, queue: Queue):
+class CallbackRunner(Thread):
+    def __init__(
+            self,
+            client: FelderaClient,
+            pipeline_name: str,
+            view_name: str,
+            callback: Callable[[pd.DataFrame, int], None],
+            queue: Queue,
+    ):
         super().__init__()
         self.client: FelderaClient = client
         self.pipeline_name: str = pipeline_name
         self.view_name: str = view_name
+        self.callback: Callable[[pd.DataFrame, int], None] = callback
         self.queue: Queue = queue
-        self.buffer: list[list[dict]] = []
 
     def run(self):
         """
-        The main loop of the thread. It listens to the pipeline and appends the data to the buffer.
-        Doesn't do integration, just takes the data and ignores if they are `insert`s or `delete`s.
+        The main loop of the thread. Listens for data and calls the callback function on each chunk of data received.
 
         :meta private:
         """
@@ -40,12 +41,13 @@ class OutputHandler(Thread):
                 for chunk in gen_obj:
                     chunk: dict = chunk
                     data: list[dict] = chunk.get("json_data")
+                    seq_no: int = chunk.get("sequence_number")
 
-                    if data:
-                        self.buffer.append(data)
+                    if data is not None:
+                        self.callback(dataframe_from_response([data]), seq_no)
 
                     try:
-                        again_ack: _OutputHandlerInstruction = self.queue.get(block=False)
+                        again_ack = self.queue.get_nowait()
                         if again_ack:
                             match again_ack:
                                 case _OutputHandlerInstruction.RanToCompletion:
@@ -54,17 +56,9 @@ class OutputHandler(Thread):
                                 case _OutputHandlerInstruction.PipelineStarted:
                                     self.queue.task_done()
                                     continue
-
                     except Empty:
                         continue
 
             case _OutputHandlerInstruction.RanToCompletion:
                 self.queue.task_done()
                 return
-
-    def to_pandas(self):
-        """
-        Converts the output of the pipeline to a pandas DataFrame
-        """
-        self.join()
-        return dataframe_from_response(self.buffer)
