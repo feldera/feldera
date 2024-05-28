@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1734](https://github.com/feldera/feldera/pull/1734))
 - [Docs] Expand connectors documentation
   ([#1746](https://github.com/feldera/feldera/pull/1746))
+- [pipeline-manager] Program compilation profile is optional and is no
+  longer treated as a hint. Compiler compilation profile is now a default.
+  ([#1777](https://github.com/feldera/feldera/pull/1777))
 
 ## [0.15.0] - 2024-04-30
 

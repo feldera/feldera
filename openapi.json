@@ -3253,7 +3253,7 @@
       },
       "CompilationProfile": {
         "type": "string",
-        "description": "Argument to `cargo build --profile <>` passed to the rust compiler\n\nNote that this is a hint to the backend, and can be overriden by\nthe Feldera instance depending on the administrator configuration.",
+        "description": "Enumeration of possible compilation profiles that can be passed to the Rust compiler\nas an argument via `cargo build --profile <>`. A compilation profile affects among\nother things the compilation speed (how long till the program is ready to be run)\nand runtime speed (the performance while running).",
         "enum": [
           "dev",
           "unoptimized",
@@ -4581,12 +4581,14 @@
       "ProgramConfig": {
         "type": "object",
         "description": "Program configuration.",
-        "required": [
-          "profile"
-        ],
         "properties": {
           "profile": {
-            "$ref": "#/components/schemas/CompilationProfile"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompilationProfile"
+              }
+            ],
+            "nullable": true
           }
         }
       },

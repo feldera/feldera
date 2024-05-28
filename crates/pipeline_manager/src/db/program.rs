@@ -158,8 +158,10 @@ pub(crate) async fn list_programs(
             .map(|s| serde_json::from_str(&s))
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
-        let profile =
-            CompilationProfile::from_str(row.get(8)).expect("Expected a valid compilation profile");
+        let profile_str = row.get::<_, Option<String>>(8);
+        let profile = profile_str.map(|profile_str| {
+            CompilationProfile::from_str(&profile_str).expect("Expected valid compilation profile")
+        });
 
         result.push(ProgramDescr {
             program_id: ProgramId(row.get(0)),
@@ -204,7 +206,7 @@ pub(crate) async fn new_program(
                 &program_code,
                 &status,
                 &error,
-                &config.profile.to_string(),
+                &config.profile.as_ref().map(|p| p.to_string()),
             ],
         )
         .await
@@ -222,7 +224,7 @@ pub(crate) async fn new_program(
                     &program_code,
                     &status,
                     &error,
-                    &config.profile.to_string(),
+                    &config.profile.as_ref().map(|p| p.to_string()),
                 ],
             )
             .await
@@ -260,8 +262,10 @@ pub(crate) async fn update_program(
         .ok_or(DBError::UnknownProgram { program_id })?;
     let latest_version = Version(row.get(0));
     let code: String = row.get(1);
-    let profile =
-        CompilationProfile::from_str(row.get(2)).expect("Expected a valid compilation profile");
+    let profile_str = row.get::<_, Option<String>>(2);
+    let profile = profile_str.map(|profile_str| {
+        CompilationProfile::from_str(&profile_str).expect("Expected valid compilation profile")
+    });
 
     if let Some(guard) = guard {
         if guard.0 != latest_version.0 {
@@ -336,7 +340,7 @@ pub(crate) async fn update_program(
                 &schema,
                 &status_change,
                 &reset_schema,
-                &new_profile.to_string(),
+                &new_profile.as_ref().map(|p| p.to_string()),
             ],
         )
         .await
@@ -380,8 +384,10 @@ pub(crate) async fn get_program_by_id(
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
         let code: Option<String> = row.get(6);
-        let profile =
-            CompilationProfile::from_str(row.get(7)).expect("Expected valid compilation profile");
+        let profile_str = row.get::<_, Option<String>>(7);
+        let profile = profile_str.map(|profile_str| {
+            CompilationProfile::from_str(&profile_str).expect("Expected valid compilation profile")
+        });
 
         let status = ProgramStatus::from_columns(&status, error)?;
         Ok(ProgramDescr {
@@ -435,9 +441,10 @@ pub(crate) async fn get_program_by_name(
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
         let code: Option<String> = row.get(7);
-        let profile =
-            CompilationProfile::from_str(row.get(8)).expect("Expected valid compilation profile");
-
+        let profile_str = row.get::<_, Option<String>>(8);
+        let profile = profile_str.map(|profile_str| {
+            CompilationProfile::from_str(&profile_str).expect("Expected valid compilation profile")
+        });
         let status = ProgramStatus::from_columns(&status, error)?;
         Ok(ProgramDescr {
             program_id,
@@ -504,8 +511,10 @@ pub(crate) async fn all_programs(db: &ProjectDB) -> Result<Vec<(TenantId, Progra
             .transpose()
             .map_err(|e| DBError::invalid_data(format!("Error parsing program schema: {e}")))?;
         let tenant_id = TenantId(row.get(7));
-        let profile =
-            CompilationProfile::from_str(row.get(8)).expect("Expected valid compilation profile");
+        let profile_str = row.get::<_, Option<String>>(8);
+        let profile = profile_str.map(|profile_str| {
+            CompilationProfile::from_str(&profile_str).expect("Expected valid compilation profile")
+        });
         result.push((
             tenant_id,
             ProgramDescr {

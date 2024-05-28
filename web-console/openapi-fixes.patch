@@ -1,9 +1,7 @@
-This patch fixes bugs in output from `yarn generate-openapi && yarn format`.
-
-diff --git b/web-console/src/lib/services/manager/models/ColumnType.ts a/web-console/src/lib/services/manager/models/ColumnType.ts
+diff --git a/web-console/src/lib/services/manager/models/ColumnType.ts b/web-console/src/lib/services/manager/models/ColumnType.ts
 index 8484d2bea..953d53760 100644
---- b/web-console/src/lib/services/manager/models/ColumnType.ts
-+++ a/web-console/src/lib/services/manager/models/ColumnType.ts
+--- a/web-console/src/lib/services/manager/models/ColumnType.ts
++++ b/web-console/src/lib/services/manager/models/ColumnType.ts
 @@ -57,5 +57,5 @@ export type ColumnType = {
     * - `DECIMAL(1,2)` sets scale to `2`.
     */
@@ -11,19 +9,24 @@ index 8484d2bea..953d53760 100644
 -  type?: SqlType
 +  type: SqlType
  }
-diff --git b/web-console/src/lib/services/manager/models/TransportConfig.ts a/web-console/src/lib/services/manager/models/TransportConfig.ts
-index 1adc4562e..c826d84c8 100644
---- b/web-console/src/lib/services/manager/models/TransportConfig.ts
-+++ a/web-console/src/lib/services/manager/models/TransportConfig.ts
-@@ -9,6 +9,7 @@ import type { KafkaInputConfig } from './KafkaInputConfig'
- import type { KafkaOutputConfig } from './KafkaOutputConfig'
- import type { S3InputConfig } from './S3InputConfig'
- import type { UrlInputConfig } from './UrlInputConfig'
-+
- /**
-  * Transport-specific endpoint configuration passed to
-  * `crate::OutputTransport::new_endpoint`
-@@ -17,37 +18,42 @@ import type { UrlInputConfig } from './UrlInputConfig'
+diff --git a/web-console/src/lib/services/manager/models/ConnectorConfig.ts b/web-console/src/lib/services/manager/models/ConnectorConfig.ts
+index 1e6fdd524..9c994ea19 100644
+--- a/web-console/src/lib/services/manager/models/ConnectorConfig.ts
++++ b/web-console/src/lib/services/manager/models/ConnectorConfig.ts
+@@ -9,7 +9,7 @@ import type { TransportConfig } from './TransportConfig'
+  * A data connector's configuration
+  */
+ export type ConnectorConfig = OutputBufferConfig & {
+-  format?: FormatConfig | null
++  format: FormatConfig
+   /**
+    * Backpressure threshold.
+    *
+diff --git a/web-console/src/lib/services/manager/models/TransportConfig.ts b/web-console/src/lib/services/manager/models/TransportConfig.ts
+index a44285d34..774e36089 100644
+--- a/web-console/src/lib/services/manager/models/TransportConfig.ts
++++ b/web-console/src/lib/services/manager/models/TransportConfig.ts
+@@ -18,41 +18,47 @@ import type { UrlInputConfig } from './UrlInputConfig'
  export type TransportConfig =
    | {
        config: FileInputConfig
@@ -56,6 +59,11 @@ index 1adc4562e..c826d84c8 100644
 +      name: TransportConfig.name.S3_INPUT
      }
    | {
+       config: DeltaTableReaderConfig
+-      name: TransportConfig.name
++      name: TransportConfig.name.DELTA_TABLE_INPUT
+     }
+   | {
        config: DeltaTableWriterConfig
 -      name: TransportConfig.name
 -    }
@@ -72,21 +80,9 @@ index 1adc4562e..c826d84c8 100644
 +    KAFKA_OUTPUT = 'kafka_output',
 +    URL_INPUT = 'url_input',
 +    S3_INPUT = 's3_input',
++    DELTA_TABLE_INPUT = 'delta_table_input',
 +    DELTA_TABLE_OUTPUT = 'delta_table_output',
 +    HTTP_INPUT = 'http_input',
 +    HTTP_OUTPUT = 'http_output'
    }
  }
-diff --git b/web-console/src/lib/services/manager/models/ConnectorConfig.ts a/web-console/src/lib/services/manager/models/ConnectorConfig.ts
-index 1e6fdd524..9c994ea19 100644
---- b/web-console/src/lib/services/manager/models/ConnectorConfig.ts
-+++ a/web-console/src/lib/services/manager/models/ConnectorConfig.ts
-@@ -9,7 +9,7 @@ import type { TransportConfig } from './TransportConfig'
-  * A data connector's configuration
-  */
- export type ConnectorConfig = OutputBufferConfig & {
--  format?: FormatConfig | null
-+  format: FormatConfig
-   /**
-    * Backpressure threshold.
-    *

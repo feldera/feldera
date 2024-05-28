@@ -33,6 +33,8 @@ export type { CreateOrReplaceServiceResponse } from './models/CreateOrReplaceSer
 export type { CreateServiceProbeResponse } from './models/CreateServiceProbeResponse'
 export type { CsvEncoderConfig } from './models/CsvEncoderConfig'
 export type { CsvParserConfig } from './models/CsvParserConfig'
+export { DeltaTableIngestMode } from './models/DeltaTableIngestMode'
+export type { DeltaTableReaderConfig } from './models/DeltaTableReaderConfig'
 export type { DeltaTableWriterConfig } from './models/DeltaTableWriterConfig'
 export { EgressMode } from './models/EgressMode'
 export type { ErrorResponse } from './models/ErrorResponse'
