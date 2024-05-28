@@ -9,7 +9,7 @@ ENV RUSTUP_HOME=$HOME/.rustup
 ENV CARGO_HOME=$HOME/.cargo
 # Adds python and rust binaries to thep path
 ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
-ENV RUST_VERSION=1.76.0
+ENV RUST_VERSION=1.78.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 

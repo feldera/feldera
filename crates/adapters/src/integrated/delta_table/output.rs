@@ -20,6 +20,7 @@ use deltalake::operations::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
 use log::{debug, error, info, trace};
+use pipeline_types::transport::delta_table::DeltaTableWriteMode;
 use pipeline_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrowBuilder;
@@ -224,11 +225,6 @@ struct WriterTask {
 
 impl WriterTask {
     async fn create(inner: Arc<DeltaTableWriterInner>) -> AnyResult<Self> {
-        info!(
-            "delta_table {}: opening or creating delta table '{}'",
-            &inner.endpoint_name, &inner.config.uri
-        );
-
         let mut storage_options = inner.config.object_store_config.clone();
 
         // FIXME: S3 does not support the atomic rename operation required by delta. This is not a problem
@@ -239,11 +235,22 @@ impl WriterTask {
         // and hope for the best.  Without this config option, writes to S3-based delta tables will fail.
         storage_options.insert("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string());
 
-        let delta_table = CreateBuilder::new()
-            .with_location(inner.config.uri.clone())
+        let save_mode = match inner.config.mode {
             // I expected `SaveMode::Append` to be the correct setting, but
             // that always returns an error.
-            .with_save_mode(SaveMode::Ignore)
+            DeltaTableWriteMode::Append => SaveMode::Ignore,
+            DeltaTableWriteMode::Truncate => SaveMode::Overwrite,
+            DeltaTableWriteMode::ErrorIfExists => SaveMode::ErrorIfExists,
+        };
+
+        info!(
+            "delta_table {}: opening or creating delta table '{}' in '{save_mode:?}' mode",
+            &inner.endpoint_name, &inner.config.uri
+        );
+
+        let delta_table = CreateBuilder::new()
+            .with_location(inner.config.uri.clone())
+            .with_save_mode(save_mode)
             .with_storage_options(storage_options)
             .with_columns(inner.struct_fields.clone())
             .await
