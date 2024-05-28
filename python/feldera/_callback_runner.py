@@ -1,5 +1,5 @@
 from threading import Thread
-from typing import Callable
+from typing import Callable, Optional
 from queue import Queue, Empty
 
 import pandas as pd
@@ -15,14 +15,14 @@ class CallbackRunner(Thread):
             pipeline_name: str,
             view_name: str,
             callback: Callable[[pd.DataFrame, int], None],
-            queue: Queue,
+            queue: Optional[Queue],
     ):
         super().__init__()
         self.client: FelderaClient = client
         self.pipeline_name: str = pipeline_name
         self.view_name: str = view_name
         self.callback: Callable[[pd.DataFrame, int], None] = callback
-        self.queue: Queue = queue
+        self.queue: Optional[Queue] = queue
 
     def run(self):
         """
@@ -31,12 +31,16 @@ class CallbackRunner(Thread):
         :meta private:
         """
 
-        ack: _OutputHandlerInstruction = self.queue.get()
+        ack: _OutputHandlerInstruction = _OutputHandlerInstruction.PipelineStarted
+
+        if self.queue:
+            ack: _OutputHandlerInstruction = self.queue.get()
 
         match ack:
             case _OutputHandlerInstruction.PipelineStarted:
                 gen_obj = self.client.listen_to_pipeline(self.pipeline_name, self.view_name, format="json")
-                self.queue.task_done()
+                if self.queue:
+                    self.queue.task_done()
 
                 for chunk in gen_obj:
                     chunk: dict = chunk
@@ -46,19 +50,21 @@ class CallbackRunner(Thread):
                     if data is not None:
                         self.callback(dataframe_from_response([data]), seq_no)
 
-                    try:
-                        again_ack = self.queue.get_nowait()
-                        if again_ack:
-                            match again_ack:
-                                case _OutputHandlerInstruction.RanToCompletion:
-                                    self.queue.task_done()
-                                    return
-                                case _OutputHandlerInstruction.PipelineStarted:
-                                    self.queue.task_done()
-                                    continue
-                    except Empty:
-                        continue
+                    if self.queue:
+                        try:
+                            again_ack = self.queue.get_nowait()
+                            if again_ack:
+                                match again_ack:
+                                    case _OutputHandlerInstruction.RanToCompletion:
+                                        self.queue.task_done()
+                                        return
+                                    case _OutputHandlerInstruction.PipelineStarted:
+                                        self.queue.task_done()
+                                        continue
+                        except Empty:
+                            continue
 
             case _OutputHandlerInstruction.RanToCompletion:
-                self.queue.task_done()
+                if self.queue:
+                    self.queue.task_done()
                 return

@@ -24,12 +24,6 @@ class BuildMode(Enum):
     GET_OR_CREATE = 3
 
 
-class PipelineState(Enum):
-    RUNNING = 1
-    PAUSED = 2
-    SHUTDOWN = 3
-
-
 def _table_name_from_sql(ddl: str) -> str:
     return re.findall(r"[\w']+", ddl)[2]
 
@@ -51,7 +45,7 @@ class SQLContext:
             program_description: str = None,
     ):
         self.build_mode: Optional[BuildMode] = None
-        self.state: PipelineState = PipelineState.SHUTDOWN
+        self.is_pipeline_running: bool = False
 
         self.ddl: str = ""
 
@@ -93,9 +87,11 @@ class SQLContext:
 
         self.ddl = tables + "\n" + views
 
-    def __setup(self):
+    def __setup_pipeline(self):
         """
         Internal function used to setup the pipeline and program on the Feldera API.
+
+        :meta private:
         """
 
         self.__build_ddl()
@@ -128,6 +124,31 @@ class SQLContext:
         )
 
         self.client.create_pipeline(pipeline)
+
+    def __setup_output_listeners(self):
+        """
+        Internal function used to setup the output listeners.
+
+        :meta private:
+        """
+
+        for view_queue in self.views_tx:
+            for view_name, queue in view_queue.items():
+                queue.put(_OutputHandlerInstruction.PipelineStarted)
+                queue.join()
+
+    def __push_http_inputs(self):
+        """
+        Internal function used to push the input data to the pipeline.
+
+        :meta private:
+        """
+
+        for input_buffer in self.http_input_buffer:
+            for tbl_name, data in input_buffer.items():
+                self.client.push_to_pipeline(self.pipeline_name, tbl_name, "json", data, array=True)
+
+        self.http_input_buffer.clear()
 
     def create(self) -> Self:
         """
@@ -333,9 +354,11 @@ class SQLContext:
 
         """
 
-        queue = Queue(maxsize=1)
+        queue: Optional[Queue] = None
 
-        self.views_tx.append({view_name: queue})
+        if not self.is_pipeline_running:
+            queue = Queue(maxsize=1)
+            self.views_tx.append({view_name: queue})
 
         handler = CallbackRunner(self.client, self.pipeline_name, view_name, callback, queue)
         handler.start()
@@ -349,10 +372,7 @@ class SQLContext:
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
 
-        self.__setup()
-
-        if self.state != PipelineState.SHUTDOWN:
-            raise RuntimeError("pipeline is already running or paused, please shutdown the pipeline first")
+        self.__setup_pipeline()
 
         # start the pipeline in the paused state
         # so that we can start listening to the output
@@ -361,19 +381,12 @@ class SQLContext:
         self.pause()
 
         # set up the output listeners
-        for view_queue in self.views_tx:
-            for view_name, queue in view_queue.items():
-                queue.put(_OutputHandlerInstruction.PipelineStarted)
-                queue.join()
+        self.__setup_output_listeners()
 
         # resume the pipeline operations
         self.resume()
 
-        for input_buffer in self.http_input_buffer:
-            for tbl_name, data in input_buffer.items():
-                self.client.push_to_pipeline(self.pipeline_name, tbl_name, "json", data, array=True)
-
-        self.http_input_buffer.clear()
+        self.__push_http_inputs()
 
         while True:
             metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
@@ -403,43 +416,36 @@ class SQLContext:
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
 
-        self.__setup()
+        self.__setup_pipeline()
 
-        if self.state != PipelineState.SHUTDOWN:
-            raise RuntimeError("pipeline is already running or paused, please shutdown the pipeline first")
+        self.pause()
 
-        self.client.start_pipeline(self.pipeline_name)
-        self.state = PipelineState.RUNNING
+        self.__setup_output_listeners()
+
+        self.resume()
+
+        self.__push_http_inputs()
 
     def pause(self):
         """
         Pauses the pipeline.
         """
 
-        if self.state == PipelineState.PAUSED:
-            return
-
         self.client.pause_pipeline(self.pipeline_name)
-        self.state = PipelineState.PAUSED
+        self.is_pipeline_running = False
 
     def shutdown(self):
         """
         Shuts down the pipeline.
         """
 
-        if self.state == PipelineState.SHUTDOWN:
-            return
-
         self.client.shutdown_pipeline(self.pipeline_name)
-        self.state = PipelineState.SHUTDOWN
+        self.is_pipeline_running = False
 
     def resume(self):
         """
         Resumes the pipeline.
         """
 
-        if self.state != PipelineState.PAUSED:
-            raise RuntimeError("pipeline is not paused, cannot resume it")
-
         self.client.start_pipeline(self.pipeline_name)
-        self.state = PipelineState.RUNNING
+        self.is_pipeline_running = True
