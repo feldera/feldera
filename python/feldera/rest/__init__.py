@@ -8,4 +8,4 @@ instead of using the REST client directly.
 
 """
 
-from feldera.rest.client import Client
+from feldera.rest.feldera_client import FelderaClient

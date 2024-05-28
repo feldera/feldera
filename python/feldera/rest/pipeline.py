@@ -50,3 +50,10 @@ class Pipeline:
         return {
             "workers": 8
         }
+
+    def current_state(self) -> Optional[str]:
+        """
+        Returns the current state of this pipeline
+        """
+
+        return self.state.get("current_status")

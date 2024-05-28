@@ -3,6 +3,7 @@ import pandas
 import re
 
 from typing import Optional, Dict, Callable
+
 from typing_extensions import Self
 from queue import Queue
 
@@ -14,6 +15,7 @@ from feldera._sql_table import SQLTable
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
+from feldera.formats import JSONFormat, CSVFormat, UpdateFormat
 from enum import Enum
 
 
@@ -175,6 +177,18 @@ class SQLContext:
 
         self.build_mode = BuildMode.GET_OR_CREATE
         return self
+
+    def pipeline_state(self) -> str:
+        """
+        Returns the state of the pipeline.
+        """
+
+        try:
+            pipeline = self.client.get_pipeline(self.pipeline_name)
+            return pipeline.current_state()
+
+        except requests.exceptions.HTTPError:
+            return "Uninitialized"
 
     def register_table(self, table_name: str, schema: Optional[SQLSchema] = None, ddl: str = None):
         """
@@ -365,6 +379,76 @@ class SQLContext:
 
         handler = CallbackRunner(self.client, self.pipeline_name, view_name, callback, queue)
         handler.start()
+
+    def connect_source_kafka(
+        self,
+        table_name: str,
+        connector_name: str,
+        config: dict,
+        fmt: JSONFormat | CSVFormat
+    ):
+        """
+        Tells Feldera to read the data from the specified kafka topic.
+
+        :param table_name: The name of the table.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the kafka connector.
+        :param fmt: The format of the data in the kafka topic.
+        """
+
+        if config.get("bootstrap.servers") is None:
+            raise ValueError("bootstrap_servers is required in the config")
+
+        if config.get("topics") is None:
+            raise ValueError("topics is required in the config")
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "kafka_input",
+                    "config": config,
+                },
+                "format": fmt.to_dict(),
+            }
+        )
+
+        if table_name in self.input_connectors_buffer:
+            self.input_connectors_buffer[table_name].append(connector)
+        else:
+            self.input_connectors_buffer[table_name] = [connector]
+
+    def connect_sink_kafka(self, view_name: str, connector_name: str, config: dict, fmt: JSONFormat | CSVFormat):
+        """
+        Tells Feldera to write the data to the specified kafka topic.
+
+        :param view_name: The name of the view whose output is sent to kafka topic.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the kafka connector.
+        :param fmt: The format of the data in the kafka topic.
+        """
+
+        if config.get("bootstrap.servers") is None:
+            raise ValueError("bootstrap_servers is required in the config")
+
+        if config.get("topic") is None:
+            raise ValueError("topic is required in the config")
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "kafka_output",
+                    "config": config,
+                },
+                "format": fmt.to_dict(),
+            }
+        )
+
+        if view_name in self.output_connectors_buffer:
+            self.output_connectors_buffer[view_name].append(connector)
+        else:
+            self.output_connectors_buffer[view_name] = [connector]
 
     def run_to_completion(self):
         """

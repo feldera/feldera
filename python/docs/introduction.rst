@@ -29,10 +29,10 @@ Replace ``{BRANCH_NAME}`` with the name of the branch you want to install from.
 Key Concepts
 ************
 
-* :class:`feldera.FelderaClient` or :class:`.Client`
+* :class:`.FelderaClient`
    - This is the actual HTTP client used to make requests to your Feldera 
      instance.
-   - creating an instance of :class:`.Client` is usually the first thing you 
+   - creating an instance of :class:`.FelderaClient` is usually the first thing you
      will do while working with Feldera.
 
    - Example:
