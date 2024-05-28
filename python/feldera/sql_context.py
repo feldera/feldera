@@ -348,6 +348,8 @@ class SQLContext:
                   starts from 0. Note that the sequence number is unique for each chunk, but not necessarily contiguous.
 
         Please note that the callback is run in a separate thread, so it should be thread-safe.
+        Please note that the callback should not block for a long time, as by default, backpressure is enabled and
+        will block the pipeline.
 
         .. note::
             - The callback must be thread-safe as it will be run in a separate thread.
