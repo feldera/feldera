@@ -1,3 +1,4 @@
+from enum import Enum
 from threading import Thread
 from typing import Callable, Optional
 from queue import Queue, Empty
@@ -5,7 +6,11 @@ from queue import Queue, Empty
 import pandas as pd
 from feldera import FelderaClient
 from feldera._helpers import dataframe_from_response
-from feldera.output_handler import _OutputHandlerInstruction
+
+
+class _CallbackRunnerInstruction(Enum):
+    PipelineStarted = 1
+    RanToCompletion = 2
 
 
 class CallbackRunner(Thread):
@@ -31,15 +36,26 @@ class CallbackRunner(Thread):
         :meta private:
         """
 
-        ack: _OutputHandlerInstruction = _OutputHandlerInstruction.PipelineStarted
+        # by default, we assume that the pipeline has been started
+        ack: _CallbackRunnerInstruction = _CallbackRunnerInstruction.PipelineStarted
 
+        # if there is Queue, we wait for the instruction to start the pipeline
+        # this means that we are listening to the pipeline before running it, therefore, all data should be received
         if self.queue:
-            ack: _OutputHandlerInstruction = self.queue.get()
+            ack: _CallbackRunnerInstruction = self.queue.get()
 
         match ack:
-            case _OutputHandlerInstruction.PipelineStarted:
+
+            # if the pipeline has actually been started, we start a listener
+            case _CallbackRunnerInstruction.PipelineStarted:
+
+                # listen to the pipeline
                 gen_obj = self.client.listen_to_pipeline(self.pipeline_name, self.view_name, format="json")
+
+                # if there is a queue set up, inform the main thread that the listener has been started, and it can
+                # proceed with starting the pipeline
                 if self.queue:
+                    # stop blocking the main thread on `join` for the previous message
                     self.queue.task_done()
 
                 for chunk in gen_obj:
@@ -52,19 +68,33 @@ class CallbackRunner(Thread):
 
                     if self.queue:
                         try:
+                            # if a non-blocking way, check if the queue has received further instructions
+                            # this should be a RanToCompletion instruction, which means that the pipeline has been
+                            # completed
                             again_ack = self.queue.get_nowait()
+
+                            # if the queue has received a message
                             if again_ack:
+
                                 match again_ack:
-                                    case _OutputHandlerInstruction.RanToCompletion:
+                                    case _CallbackRunnerInstruction.RanToCompletion:
+                                        # stop blocking the main thread on `join` and return from this thread
                                         self.queue.task_done()
+
                                         return
-                                    case _OutputHandlerInstruction.PipelineStarted:
+
+                                    case _CallbackRunnerInstruction.PipelineStarted:
+                                        # if the pipeline has been started again, which shouldn't happen,
+                                        # ignore it and continue listening, call `task_done` to avoid blocking the main
+                                        # thread on `join`
                                         self.queue.task_done()
+
                                         continue
                         except Empty:
+                            # if the queue is empty, continue listening
                             continue
 
-            case _OutputHandlerInstruction.RanToCompletion:
+            case _CallbackRunnerInstruction.RanToCompletion:
                 if self.queue:
                     self.queue.task_done()
                 return

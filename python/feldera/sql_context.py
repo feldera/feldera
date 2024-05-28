@@ -13,8 +13,7 @@ from feldera.rest.connector import Connector
 from feldera._sql_table import SQLTable
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
-from feldera.output_handler import _OutputHandlerInstruction
-from feldera._callback_runner import CallbackRunner
+from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from enum import Enum
 
 
@@ -134,7 +133,9 @@ class SQLContext:
 
         for view_queue in self.views_tx:
             for view_name, queue in view_queue.items():
-                queue.put(_OutputHandlerInstruction.PipelineStarted)
+                # sends a message to the callback runner to start listening
+                queue.put(_CallbackRunnerInstruction.PipelineStarted)
+                # block until the callback runner is ready
                 queue.join()
 
     def __push_http_inputs(self):
@@ -402,7 +403,9 @@ class SQLContext:
 
         for view_queue in self.views_tx:
             for view_name, queue in view_queue.items():
-                queue.put(_OutputHandlerInstruction.RanToCompletion)
+                # sends a message to the callback runner to stop listening
+                queue.put(_CallbackRunnerInstruction.RanToCompletion)
+                # block until the callback runner has been stopped
                 queue.join()
 
         self.shutdown()
