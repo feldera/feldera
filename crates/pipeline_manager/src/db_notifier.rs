@@ -267,7 +267,7 @@ mod test {
                     "program desc",
                     "ignored",
                     &ProgramConfig {
-                        profile: CompilationProfile::Unoptimized,
+                        profile: Some(CompilationProfile::Unoptimized),
                     },
                     None,
                 )
@@ -392,7 +392,7 @@ mod test {
                 "program desc",
                 "ignored",
                 &ProgramConfig {
-                    profile: CompilationProfile::Unoptimized,
+                    profile: Some(CompilationProfile::Unoptimized),
                 },
                 None,
             )

@@ -117,7 +117,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         compiler_working_directory: workdir.to_owned(),
         sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
         dbsp_override_path: "../../".to_owned(),
-        compilation_profile: Some(crate::config::CompilationProfile::Unoptimized),
+        compilation_profile: crate::config::CompilationProfile::Unoptimized,
         precompile: true,
         binary_ref_host: "127.0.0.1".to_string(),
         binary_ref_port: 9090,

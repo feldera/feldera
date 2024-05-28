@@ -178,6 +178,44 @@ export class PipelinesService {
     })
   }
   /**
+   * Initiate profile dump.
+   * @param pipelineName Unique pipeline name
+   * @returns any Profile dump initiated.
+   * @throws ApiError
+   */
+  public static dumpProfile(pipelineName: string): CancelablePromise<Record<string, any>> {
+    return __request(OpenAPI, {
+      method: 'GET',
+      url: '/v0/pipelines/{pipeline_name}/dump_profile',
+      path: {
+        pipeline_name: pipelineName
+      },
+      errors: {
+        400: `Specified pipeline id is not a valid uuid.`,
+        404: `Specified pipeline id does not exist.`
+      }
+    })
+  }
+  /**
+   * Retrieve heap profile of the pipeline.
+   * @param pipelineName Unique pipeline name
+   * @returns binary Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool.
+   * @throws ApiError
+   */
+  public static heapProfile(pipelineName: string): CancelablePromise<Blob> {
+    return __request(OpenAPI, {
+      method: 'GET',
+      url: '/v0/pipelines/{pipeline_name}/heap_profile',
+      path: {
+        pipeline_name: pipelineName
+      },
+      errors: {
+        400: `Specified pipeline id is not a valid uuid.`,
+        404: `Specified pipeline id does not exist.`
+      }
+    })
+  }
+  /**
    * Retrieve pipeline metrics and performance counters.
    * @param pipelineName Unique pipeline name
    * @returns any Pipeline metrics retrieved successfully.

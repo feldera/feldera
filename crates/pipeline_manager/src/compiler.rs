@@ -123,8 +123,9 @@ impl ProgramStatus {
 /// Program configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 pub struct ProgramConfig {
-    /// Request a compilation profile.
-    pub profile: CompilationProfile,
+    /// Compilation profile.
+    /// If none is specified, the compiler default compilation profile is used.
+    pub profile: Option<CompilationProfile>,
 }
 
 static METRICS: Lazy<CompilerMetrics> = Lazy::new(init_metrics);
@@ -291,6 +292,19 @@ impl Compiler {
             })
     }
 
+    /// Determines the compilation profile to use provided the compiler
+    /// and program configuration. Returns the compilation profile of the
+    /// program if it is specified. If none is specified by the program,
+    /// returns the default compilation profile in the compiler configuration.
+    fn pick_compilation_profile(
+        compiler_config: &CompilerConfig,
+        program_profile: &Option<CompilationProfile>,
+    ) -> CompilationProfile {
+        program_profile
+            .clone()
+            .unwrap_or(compiler_config.compilation_profile.clone())
+    }
+
     /// Download and compile all crates needed by the Rust code generated
     /// by the SQL compiler.
     ///
@@ -329,7 +343,8 @@ impl Compiler {
 
         // `cargo build`.
         let mut cargo_process =
-            Compiler::run_cargo_build(config, program_id, &CompilationProfile::Optimized).await?;
+            Compiler::run_cargo_build(config, program_id, &Some(CompilationProfile::Optimized))
+                .await?;
         let exit_status = cargo_process
             .wait()
             .await
@@ -371,7 +386,7 @@ impl Compiler {
     async fn run_cargo_build(
         config: &CompilerConfig,
         program_id: ProgramId,
-        program_profile: &CompilationProfile,
+        program_profile: &Option<CompilationProfile>,
     ) -> Result<Child, ManagerError> {
         let err_file = File::create(&config.compiler_stderr_path(program_id))
             .await
@@ -397,13 +412,8 @@ impl Compiler {
             })?;
 
         let mut command = Command::new("cargo");
-
-        // Always pick the compiler server's profile if it is configured, instead of
-        // the one the program self-specifies.
-        let profile = &config
-            .compilation_profile
-            .as_ref()
-            .unwrap_or(program_profile);
+        let profile = Compiler::pick_compilation_profile(config, program_profile);
+        info!("Compiling Rust for program {program_id} with profile {profile}");
         command
             .current_dir(&config.workspace_dir())
             .arg("build")
@@ -426,21 +436,16 @@ impl Compiler {
     ) -> Result<(), ManagerError> {
         let program_id = program.program_id;
         let version = program.version;
-        // Always pick the compiler server's profile if it is configured, instead of
-        // the one the program self-specifies.
-        let profile = &config
-            .compilation_profile
-            .as_ref()
-            .unwrap_or(&program.config.profile);
+        let profile = Compiler::pick_compilation_profile(config, &program.config.profile);
         info!(
             "Preserve binary {:?} as {:?}",
-            config.target_executable(program_id, profile),
+            config.target_executable(program_id, &profile),
             config.versioned_executable(program_id, version)
         );
 
         // Save the file locally and record a path to it as a "file://" scheme URL in the DB.
         // This requires any entity accessing it to have access to the same filesystem
-        let source = config.target_executable(program_id, profile);
+        let source = config.target_executable(program_id, &profile);
         let destination = config.versioned_executable(program_id, version);
         fs::copy(&source, &destination).await.map_err(|e| {
             ManagerError::io_error(
@@ -1064,11 +1069,8 @@ impl CompilationJob {
         Compiler::write_workspace_toml(config, program_id).await?;
 
         // Run cargo, direct stdout and stderr to the same file.
-        let profile = &config
-            .compilation_profile
-            .as_ref()
-            .unwrap_or(&job.program.config.profile);
-        let compiler_process = Compiler::run_cargo_build(config, program_id, profile).await?;
+        let compiler_process =
+            Compiler::run_cargo_build(config, program_id, &job.program.config.profile).await?;
 
         Ok(Self {
             tenant_id,
@@ -1127,6 +1129,7 @@ mod test {
     use tokio::{fs, sync::Mutex};
     use uuid::Uuid;
 
+    use crate::compiler::Compiler;
     use crate::{
         auth::TenantRecord,
         compiler::ProgramStatus,
@@ -1145,7 +1148,7 @@ mod test {
                 "program desc",
                 "ignored",
                 &super::ProgramConfig {
-                    profile: CompilationProfile::Unoptimized,
+                    profile: Some(CompilationProfile::Unoptimized),
                 },
                 None,
             )
@@ -1172,7 +1175,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: Some(crate::config::CompilationProfile::Unoptimized),
+            compilation_profile: crate::config::CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1237,7 +1240,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: Some(crate::config::CompilationProfile::Unoptimized),
+            compilation_profile: crate::config::CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1283,7 +1286,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: Some(crate::config::CompilationProfile::Unoptimized),
+            compilation_profile: crate::config::CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1340,5 +1343,42 @@ mod test {
         check_program_status_pending(&db, "p2").await;
         assert!(!path1.exists());
         assert!(!path2.exists());
+    }
+
+    #[tokio::test]
+    async fn test_determine_compilation_profile_to_use() {
+        for compiler_compilation_profile in [
+            CompilationProfile::Dev,
+            CompilationProfile::Unoptimized,
+            CompilationProfile::Optimized,
+        ] {
+            let compiler_config = CompilerConfig {
+                compiler_working_directory: "".to_string(),
+                compilation_profile: compiler_compilation_profile.clone(),
+                sql_compiler_home: "".to_string(),
+                dbsp_override_path: "".to_string(),
+                precompile: false,
+                binary_ref_host: "".to_string(),
+                binary_ref_port: 0,
+            };
+
+            // Program profile if specified is used
+            for program_profile in [
+                Some(CompilationProfile::Dev),
+                Some(CompilationProfile::Unoptimized),
+                Some(CompilationProfile::Optimized),
+            ] {
+                assert_eq!(
+                    Compiler::pick_compilation_profile(&compiler_config, &program_profile),
+                    program_profile.unwrap()
+                );
+            }
+
+            // If not specified, compiler default compilation profile is used
+            assert_eq!(
+                Compiler::pick_compilation_profile(&compiler_config, &None),
+                compiler_compilation_profile
+            );
+        }
     }
 }

@@ -7,5 +7,5 @@ import type { CompilationProfile } from './CompilationProfile'
  * Program configuration.
  */
 export type ProgramConfig = {
-  profile: CompilationProfile
+  profile?: CompilationProfile | null
 }
