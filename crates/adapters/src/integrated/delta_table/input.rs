@@ -21,6 +21,7 @@ use deltalake::kernel::Action;
 use deltalake::kernel::Error::Parse;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
+use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
 use env_logger::builder;
@@ -306,7 +307,21 @@ impl DeltaTableInputEndpointInner {
             &self.endpoint_name, &self.config.uri
         );
 
-        let table_builder = DeltaTableBuilder::from_uri(&self.config.uri)
+        // DeltaTableBuilder::from_uri panics on error, so we use `from_valid_uri` instead.
+        let url = ensure_table_uri(&self.config.uri).map_err(|e| {
+            ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!("invalid Delta table uri '{}': {e}", &self.config.uri),
+            )
+        })?;
+
+        let table_builder = DeltaTableBuilder::from_valid_uri(&url)
+            .map_err(|e| {
+                ControllerError::invalid_transport_configuration(
+                    &self.endpoint_name,
+                    &format!("invalid Delta table URL '{url}': {e}"),
+                )
+            })?
             .with_storage_options(self.config.object_store_config.clone());
 
         let table_builder = match &self.config {
