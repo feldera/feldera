@@ -1,7 +1,9 @@
+import time
 import unittest
 import pandas as pd
 
 from feldera import SQLContext, SQLSchema
+from feldera.formats import JSONFormat, UpdateFormat
 from tests import TEST_CLIENT
 
 
@@ -39,7 +41,7 @@ class TestWireframes(unittest.TestCase):
 
     def test_two_SQLContexts(self):
         # https://github.com/feldera/feldera/issues/1770
-        
+
         sql = SQLContext('sql_context1', TEST_CLIENT).get_or_create()
         sql2 = SQLContext('sql_context2', TEST_CLIENT).get_or_create()
 
@@ -116,6 +118,78 @@ class TestWireframes(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             sql.connect_source_pandas(TBL_NAME, df)
+
+    def test_kafka(self):
+        from kafka import KafkaProducer
+        from kafka.admin import KafkaAdminClient, NewTopic
+        import json
+
+        KAFKA_SERVER = "localhost:19092"
+
+        print("(Re-)creating topics...")
+        admin_client = KafkaAdminClient(
+            bootstrap_servers=KAFKA_SERVER,
+            client_id="test_client"
+        )
+
+        INPUT_TOPIC = "simple_count_input"
+        OUTPUT_TOPIC = "simple_count_output"
+
+        existing_topics = set(admin_client.list_topics())
+        if INPUT_TOPIC in existing_topics:
+            admin_client.delete_topics([INPUT_TOPIC])
+        if OUTPUT_TOPIC in existing_topics:
+            admin_client.delete_topics([OUTPUT_TOPIC])
+        admin_client.create_topics([
+            NewTopic(INPUT_TOPIC, num_partitions=1, replication_factor=1),
+            NewTopic(OUTPUT_TOPIC, num_partitions=1, replication_factor=1),
+        ])
+        print("Topics ready")
+
+        # Produce rows into the input topic
+        print("Producing rows into input topic...")
+        num_rows = 1000
+        producer = KafkaProducer(
+            bootstrap_servers=KAFKA_SERVER,
+            client_id="test_client",
+            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+        )
+        for i in range(num_rows):
+            producer.send("simple_count_input", value={"insert": {"id": i}})
+        print("Input topic contains data")
+
+        TABLE_NAME = "example"
+        VIEW_NAME = "example_count"
+
+        sql = SQLContext('kafka_test', TEST_CLIENT).get_or_create()
+        sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
+        sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
+
+        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
+
+        source_config = {
+            "topics": [INPUT_TOPIC],
+            "bootstrap.servers": PIPELINE_TO_KAFKA_SERVER,
+            "auto.offset.reset": "earliest",
+        }
+
+        kafka_format = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
+
+        sink_config = {
+            "topic": OUTPUT_TOPIC,
+            "bootstrap.servers": PIPELINE_TO_KAFKA_SERVER,
+            "auto.offset.reset": "earliest",
+        }
+
+        sql.connect_source_kafka(TABLE_NAME, "kafka_conn_in", source_config, kafka_format)
+        sql.connect_sink_kafka(VIEW_NAME, "kafka_conn_out", sink_config, kafka_format)
+
+        out = sql.listen(VIEW_NAME)
+        sql.start()
+        time.sleep(10)
+        sql.shutdown()
+        df = out.to_pandas()
+        assert df.shape[0] != 0
 
 
 if __name__ == '__main__':

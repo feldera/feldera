@@ -3,7 +3,7 @@ from typing import Optional
 
 class Config:
     """
-    Client's credentials and configuration parameters
+    :class:`.FelderaClient`'s credentials and configuration parameters
     """
 
     def __init__(

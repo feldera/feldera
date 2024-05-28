@@ -3,9 +3,11 @@ import pandas
 import re
 
 from typing import Optional, Dict, Callable
+
 from typing_extensions import Self
 from queue import Queue
 
+from feldera.rest.errors import FelderaAPIError
 from feldera import FelderaClient
 from feldera.rest.program import Program
 from feldera.rest.pipeline import Pipeline
@@ -15,6 +17,7 @@ from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
+from feldera.formats import JSONFormat, CSVFormat
 from enum import Enum
 
 
@@ -176,6 +179,21 @@ class SQLContext:
 
         self.build_mode = BuildMode.GET_OR_CREATE
         return self
+
+    def pipeline_state(self) -> str:
+        """
+        Returns the state of the pipeline.
+        """
+
+        try:
+            pipeline = self.client.get_pipeline(self.pipeline_name)
+            return pipeline.current_state()
+
+        except FelderaAPIError as err:
+            if err.status_code == 404:
+                return "Uninitialized"
+            else:
+                raise err
 
     def register_table(self, table_name: str, schema: Optional[SQLSchema] = None, ddl: str = None):
         """
@@ -368,6 +386,88 @@ class SQLContext:
 
         handler = CallbackRunner(self.client, self.pipeline_name, view_name, callback, queue)
         handler.start()
+
+    def connect_source_kafka(
+        self,
+        table_name: str,
+        connector_name: str,
+        config: dict,
+        fmt: JSONFormat | CSVFormat
+    ):
+        """
+        Associates the specified kafka topics on the specified Kafka server as input source for the specified table in
+        Feldera. The table is populated with changes from the specified kafka topics.
+
+        :param table_name: The name of the table.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the kafka connector.
+        :param fmt: The format of the data in the kafka topic.
+        """
+
+        if config.get("bootstrap.servers") is None:
+            raise ValueError("'bootstrap.servers' is required in the config")
+
+        if config.get("topics") is None:
+            raise ValueError("topics is required in the config")
+
+        fmt = fmt.to_dict()
+
+        if fmt.get("config").get("update_format") is None:
+            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "kafka_input",
+                    "config": config,
+                },
+                "format": fmt,
+            }
+        )
+
+        if table_name in self.input_connectors_buffer:
+            self.input_connectors_buffer[table_name].append(connector)
+        else:
+            self.input_connectors_buffer[table_name] = [connector]
+
+    def connect_sink_kafka(self, view_name: str, connector_name: str, config: dict, fmt: JSONFormat | CSVFormat):
+        """
+        Associates the specified kafka topic on the specified Kafka server as output sink for the specified view in
+        Feldera. The topic is populated with changes in the specified view.
+
+        :param view_name: The name of the view whose changes are sent to kafka topic.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the kafka connector.
+        :param fmt: The format of the data in the kafka topic.
+        """
+
+        if config.get("bootstrap.servers") is None:
+            raise ValueError("'bootstrap.servers' is required in the config")
+
+        if config.get("topic") is None:
+            raise ValueError("topic is required in the config")
+
+        fmt = fmt.to_dict()
+
+        if fmt.get("config").get("update_format") is None:
+            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "kafka_output",
+                    "config": config,
+                },
+                "format": fmt,
+            }
+        )
+
+        if view_name in self.output_connectors_buffer:
+            self.output_connectors_buffer[view_name].append(connector)
+        else:
+            self.output_connectors_buffer[view_name] = [connector]
 
     def run_to_completion(self):
         """
