@@ -34,8 +34,8 @@ class TestWireframes(unittest.TestCase):
         sql.run_to_completion()
 
         df = out.to_pandas()
-        print()
-        print(df)
+
+        assert df.shape[0] == 100
 
     def test_two_SQLContexts(self):
         # https://github.com/feldera/feldera/issues/1770
