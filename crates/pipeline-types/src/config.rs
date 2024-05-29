@@ -143,6 +143,9 @@ pub struct RuntimeConfig {
     /// This is used for development purposes only.
     /// If enabled, the `metrics-observer` CLI tool
     /// can be used to inspect metrics from the pipeline.
+    ///
+    /// Because of how Rust metrics work, this is only honored for the first
+    /// pipeline to be instantiated within a given process.
     #[serde(default)]
     pub tcp_metrics_exporter: bool,
 

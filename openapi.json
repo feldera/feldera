@@ -4385,7 +4385,7 @@
               },
               "tcp_metrics_exporter": {
                 "type": "boolean",
-                "description": "Enable the TCP metrics exporter.\n\nThis is used for development purposes only.\nIf enabled, the `metrics-observer` CLI tool\ncan be used to inspect metrics from the pipeline."
+                "description": "Enable the TCP metrics exporter.\n\nThis is used for development purposes only.\nIf enabled, the `metrics-observer` CLI tool\ncan be used to inspect metrics from the pipeline.\n\nBecause of how Rust metrics work, this is only honored for the first\npipeline to be instantiated within a given process."
               },
               "workers": {
                 "type": "integer",
@@ -4914,7 +4914,7 @@
           },
           "tcp_metrics_exporter": {
             "type": "boolean",
-            "description": "Enable the TCP metrics exporter.\n\nThis is used for development purposes only.\nIf enabled, the `metrics-observer` CLI tool\ncan be used to inspect metrics from the pipeline."
+            "description": "Enable the TCP metrics exporter.\n\nThis is used for development purposes only.\nIf enabled, the `metrics-observer` CLI tool\ncan be used to inspect metrics from the pipeline.\n\nBecause of how Rust metrics work, this is only honored for the first\npipeline to be instantiated within a given process."
           },
           "workers": {
             "type": "integer",
