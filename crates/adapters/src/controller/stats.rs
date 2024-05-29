@@ -38,11 +38,17 @@ use crate::{
 use anyhow::Error as AnyError;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use log::error;
+use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
+use metrics_util::{
+    debugging::{DebugValue, Snapshot},
+    CompositeKey,
+};
 use num_traits::FromPrimitive;
+use ordered_float::OrderedFloat;
 use pipeline_types::config::PipelineConfig;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use psutil::process::{Process, ProcessError};
-use serde::{Serialize, Serializer};
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     cmp::min,
     collections::BTreeMap,
@@ -199,6 +205,161 @@ pub struct ControllerStatus {
     /// Output endpoint configs and metrics.
     #[serde(serialize_with = "serialize_outputs")]
     outputs: OutputsStatus,
+
+    /// Metrics.
+    pub metrics: Mutex<Vec<ControllerMetric>>,
+}
+
+/// Controller metrics.
+pub struct ControllerMetric {
+    /// Metric name.
+    key: KeyName,
+
+    /// Optional key-value pairs that provide additional metadata about this
+    /// metric.
+    labels: Vec<(MetricString, MetricString)>,
+
+    /// Unit of measure for this metric, if any.
+    unit: Option<MetricUnit>,
+
+    /// Optional natural language description of the metric.
+    description: Option<MetricString>,
+
+    /// The metric's value.
+    value: MetricValue,
+}
+
+impl
+    From<(
+        CompositeKey,
+        Option<MetricUnit>,
+        Option<MetricString>,
+        DebugValue,
+    )> for ControllerMetric
+{
+    fn from(
+        (composite_key, unit, description, value): (
+            CompositeKey,
+            Option<MetricUnit>,
+            Option<MetricString>,
+            DebugValue,
+        ),
+    ) -> Self {
+        let (_kind, key) = composite_key.into_parts();
+        let (name, labels) = key.into_parts();
+        Self {
+            key: name,
+            labels: labels.into_iter().map(|label| label.into_parts()).collect(),
+            unit,
+            description,
+            value: value.into(),
+        }
+    }
+}
+
+/// A metric's value.
+#[derive(Serialize)]
+pub enum MetricValue {
+    /// Counter.
+    ///
+    /// A counter counts some kind of event. It only goes up.
+    Counter(u64),
+    /// Gauge.
+    ///
+    /// A gauge reports the most recent value of some measurement. It may
+    /// increase and decrease over time.
+    Gauge(f64),
+    /// Histogram.
+    ///
+    /// A histogram reports a sequence of measured values. Each value of the
+    /// histogram is reported only once, so subsequent reads of the metric will
+    /// not include previously seen values, and if the metric is read twice in
+    /// quick succession the second read is likely to report an empty histogram.
+    ///
+    /// If the histogram is empty, then no values have been reported since the
+    /// last time it was read.
+    Histogram(Option<HistogramValue>),
+}
+
+#[derive(Serialize)]
+pub struct HistogramValue {
+    count: usize,
+    first: f64,
+    middle: f64,
+    last: f64,
+    minimum: f64,
+    maximum: f64,
+    mean: f64,
+}
+
+impl From<DebugValue> for MetricValue {
+    fn from(source: DebugValue) -> Self {
+        match source {
+            DebugValue::Counter(count) => Self::Counter(count),
+            DebugValue::Gauge(gauge) => Self::Gauge(gauge.0),
+            DebugValue::Histogram(mut values) => Self::Histogram({
+                values.retain(|value| !value.is_nan());
+                if !values.is_empty() {
+                    Some(HistogramValue {
+                        count: values.len(),
+                        first: values[0].0,
+                        middle: values[values.len() / 2].0,
+                        last: values[values.len() - 1].0,
+                        minimum: values.iter().min().unwrap().0,
+                        maximum: values.iter().max().unwrap().0,
+                        mean: values.iter().sum::<OrderedFloat<f64>>().0 / (values.len() as f64),
+                    })
+                } else {
+                    None
+                }
+            }),
+        }
+    }
+}
+
+impl Serialize for ControllerMetric {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Count the nonempty fields because `serialize_struct` wants to know.
+        let nonempty_fields = 2
+            + !self.labels.is_empty() as usize
+            + self.unit.is_some() as usize
+            + self.description.is_some() as usize;
+        let mut ts = serializer.serialize_struct("ControllerMetric", nonempty_fields)?;
+
+        ts.serialize_field("key", self.key.as_str())?;
+
+        if !self.labels.is_empty() {
+            // serde knows how to serialize `std::borrow::Cow` but `serde`
+            // defines and uses its own `Cow` that it can't handle.
+            let labels: Vec<_> = self
+                .labels
+                .iter()
+                .map(|(k, v)| (k.as_ref(), v.as_ref()))
+                .collect();
+            ts.serialize_field("labels", &labels)?;
+        } else {
+            ts.skip_field("labels")?;
+        }
+
+        if let Some(unit) = self.unit {
+            ts.serialize_field("unit", unit.as_canonical_label())?;
+        } else {
+            ts.skip_field("unit")?;
+        }
+
+        if let Some(description) = &self.description {
+            ts.serialize_field("description", description.as_ref())?;
+        } else {
+            ts.skip_field("description")?;
+        }
+
+        ts.serialize_field("value", &self.value)?;
+
+        ts.end()
+    }
 }
 
 impl ControllerStatus {
@@ -208,6 +369,7 @@ impl ControllerStatus {
             global_metrics: GlobalControllerMetrics::new(),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),
+            metrics: Mutex::new(Vec::new()),
         }
     }
 
@@ -587,10 +749,17 @@ impl ControllerStatus {
         Ok(Process::current()?.memory_info()?.rss())
     }
 
-    pub fn update(&self) {
+    pub fn update(&self, metrics: Snapshot) {
         self.global_metrics
             .pipeline_complete
             .store(self.pipeline_complete(), Ordering::Release);
+
+        let metrics = metrics
+            .into_vec()
+            .into_iter()
+            .map(|element| element.into())
+            .collect();
+        *self.metrics.lock().unwrap() = metrics;
 
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
