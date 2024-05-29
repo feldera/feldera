@@ -63,3 +63,6 @@ playwright-snapshots/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Local cargo configuration.
+/.cargo/config.toml
