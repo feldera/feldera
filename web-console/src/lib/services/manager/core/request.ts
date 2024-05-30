@@ -187,7 +187,6 @@ export const getHeaders = async (config: OpenAPIConfig, options: ApiRequestOptio
 export const getRequestBody = (options: ApiRequestOptions): any => {
   if (options.body !== undefined) {
     if (options.mediaType?.includes('/json')) {
-      console.log('body is', JSONbig.stringify(options.body))
       return JSONbig.stringify(options.body)
     } else if (isString(options.body) || isBlob(options.body) || isFormData(options.body)) {
       return options.body

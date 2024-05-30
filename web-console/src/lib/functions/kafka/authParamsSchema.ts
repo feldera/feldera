@@ -65,7 +65,7 @@ export const authParamsSchema = va.union([
     saslPlaintextSchema
   ]),
   va.object({
-    security_protocol: va.string()
+    security_protocol: va.optional(va.string())
   })
 ])
 

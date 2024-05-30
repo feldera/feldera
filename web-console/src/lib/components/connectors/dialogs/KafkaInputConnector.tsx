@@ -239,7 +239,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
                   name: 'formatTab',
                   title: 'Format',
                   description: 'Data details',
-                  icon: <i className={`bx category-alt`} style={{}} />,
+                  icon: <i className={`bx bx-category-alt`} style={{}} />,
                   testid: 'button-tab-format',
                   content: (
                     <>

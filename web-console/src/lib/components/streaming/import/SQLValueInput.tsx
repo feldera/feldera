@@ -12,11 +12,20 @@ import { ColumnType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import Dayjs, { isDayjs } from 'dayjs'
 import { ChangeEvent } from 'react'
+import { useFormContext, useWatch } from 'react-hook-form'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
 import { IconButton, TextField, TextFieldProps } from '@mui/material'
+
+type SQLValueInputProps = { columnType: ColumnType } & Omit<TextFieldProps, 'type' | 'value' | 'onChange'>
+
+export const SQLValueElement = ({ name, ...props }: SQLValueInputProps & { name: string }) => {
+  const ctx = useFormContext()
+  const value = useWatch({ name })
+  return <SQLValueInput {...props} value={value} onChange={e => ctx.setValue(name, e.target.value)}></SQLValueInput>
+}
 
 /**
  * Input for a value representable by given SQL type accounting for precision, nullability etc.
@@ -26,10 +35,7 @@ import { IconButton, TextField, TextFieldProps } from '@mui/material'
 export const SQLValueInput = ({
   columnType,
   ...props
-}: { columnType: ColumnType; value: SQLValueJS; onChange: (event: ChangeEvent<HTMLInputElement>) => void } & Omit<
-  TextFieldProps,
-  'type' | 'value' | 'onChange'
->) => {
+}: SQLValueInputProps & { value: SQLValueJS; onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => {
   const onChangeEmptyNull = (props: { onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => ({
     onChange: (event: any) => {
       if (event.target.value === '' || event.target.value === undefined) {
@@ -176,11 +182,14 @@ export const SQLValueInput = ({
           type: 'datetime-local',
           ...props,
           value: (() => {
-            invariant(props.value === null || isDayjs(props.value))
+            invariant(props.value === null || props.value === undefined || isDayjs(props.value))
             return props.value?.format('YYYY-MM-DDTHH:mm:ss') ?? ''
           })(),
-          onChange: (e: ChangeEvent) =>
-            props.onChange({ ...e, target: { ...e.target, value: Dayjs((e.target as any).value) } } as any)
+          onChange: (e: ChangeEvent) => {
+            const str = (e.target as any).value
+            const value = str === '' ? undefined : Dayjs(str)
+            return props.onChange({ ...e, target: { ...e.target, value } } as any)
+          }
         }))
         .with({ Interval: P._ }, () => ({
           type: 'string',
@@ -227,7 +236,8 @@ function SqlValueTextInput(
         return 'invalid'
       }
     },
-    valueToText: valid => props.valueToText(sqlValueToXgressJSON(props.columnType, valid))
+    valueToText: (valid: SQLValueJS) => props.valueToText(sqlValueToXgressJSON(props.columnType, valid)),
+    optional: false
   })
   return (
     <TextField

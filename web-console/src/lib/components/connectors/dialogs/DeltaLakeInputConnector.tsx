@@ -27,6 +27,8 @@ import { valibotResolver } from '@hookform/resolvers/valibot'
 import { FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 
+import { DeltaLakeIngestModeElement } from './elements/deltalake/IngestModeElement'
+
 const schema = va.merge([
   va.object({
     name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
@@ -34,9 +36,10 @@ const schema = va.merge([
     transport: va.nonOptional(
       va.object(
         {
-          uri: va.nonOptional(va.string([va.minLength(1)]))
+          uri: va.nonOptional(va.string([va.minLength(1)])),
+          filter: va.transform(va.optional(va.string([va.minLength(1)])), v => v || undefined)
         },
-        va.union([va.string(), va.number(), va.boolean()])
+        va.union([va.string(), va.number(), va.boolean(), va.null_()])
       )
     )
   }),
@@ -46,7 +49,7 @@ const schema = va.merge([
 type DeltaLakeInputSchema = va.Input<typeof schema>
 
 export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
-  const tabs = ['generalTab', 'optionsTab', 'bufferTab'] as const
+  const tabs = ['generalTab', 'optionsTab', 'ingestTab'] as const
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('generalTab')
 
   const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
@@ -75,7 +78,8 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
     : {
         name: '',
         transport: {
-          uri: ''
+          uri: '',
+          mode: 'snapshot'
         },
         ...defaultOutputBufferOptions
       }
@@ -91,11 +95,13 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
     if (!props.show) {
       return
     }
-    if (name || description) {
+    if (name || description || transport?.uri) {
       setActiveTab('generalTab')
+      return
     }
-    if (transport) {
+    if (transport && !(transport?.mode || transport?.filter || transport?.version || transport?.datetime)) {
       setActiveTab('optionsTab')
+      return
     }
   }
 
@@ -168,14 +174,14 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
                   )
                 },
                 {
-                  name: 'bufferTab',
-                  title: 'Output buffer',
-                  description: 'Duration and capacity configuration',
-                  icon: <i className='bx bx-align-left' />,
+                  name: 'ingestTab',
+                  title: 'Ingest mode',
+                  description: 'Delta table read mode',
+                  icon: <i className='bx bx-exit' />,
                   testid: 'button-tab-output-buffer',
                   content: (
                     <>
-                      <TabOutputBufferOptions disabled={props.disabled} />
+                      <DeltaLakeIngestModeElement parentName='transport' />
                       {tabFooter}
                     </>
                   )

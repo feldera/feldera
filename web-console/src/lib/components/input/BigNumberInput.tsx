@@ -28,7 +28,7 @@ const validValue = (
   )
 }
 
-type BigNumberInputProps = {
+export type BigNumberInputProps = {
   value?: BigNumber | null
   defaultValue?: BigNumber
   precision?: number | null
@@ -37,6 +37,7 @@ type BigNumberInputProps = {
   min?: BigNumber.Value
   max?: BigNumber.Value
   allowInvalidRange?: boolean
+  optional?: boolean
 }
 
 export const BigNumberInput = (
@@ -66,7 +67,7 @@ export const BigNumberInput = (
         return { valid: null }
       }
       if (text === '') {
-        return 'invalid'
+        return props.optional ? { valid: undefined } : 'invalid'
       }
       if (/^-?\d+\.$/.test(text)) {
         return 'invalid'
@@ -83,7 +84,7 @@ export const BigNumberInput = (
       }
       return { valid: value }
     },
-    valueToText: (valid: BigNumber | null) => {
+    valueToText: (valid?: BigNumber | null) => {
       return valid === null ? null : valid?.toFixed() ?? ''
     }
   }
@@ -100,13 +101,12 @@ export const BigNumberElement = (props: Omit<TextFieldElementProps & BigNumberIn
   const ctx = useFormContext()
   const value = useWatch({ name: props.name })
   const state = useFormState({ name: props.name })
-
-  invariant(value === undefined || BigNumber.isBigNumber(value))
+  invariant(value === undefined || value === null || BigNumber.isBigNumber(value))
   return (
     <>
       <BigNumberInput
         {...props}
-        value={value ?? null}
+        value={value}
         onChange={event => {
           ctx.setValue(props.name, event.target.value)
         }}

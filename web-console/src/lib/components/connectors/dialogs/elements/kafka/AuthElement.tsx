@@ -290,7 +290,7 @@ const SslForm = (props: { disabled?: boolean; parentName: string }) => (
 
 const securityProtocolDesc = (p: KafkaAuthSchema['security_protocol']) =>
   match(p)
-    .with('PLAINTEXT', () => 'Un-authenticated, non-encrypted channel')
+    .with('PLAINTEXT', undefined, () => 'Un-authenticated, non-encrypted channel')
     .with('SASL_PLAINTEXT', () => 'SASL authenticated, non-encrypted channel')
     .with('SASL_SSL', () => 'SASL authenticated, SSL channel')
     .with('SSL', () => 'SSL channel')
@@ -331,7 +331,7 @@ export const KafkaAuthElement = (props: { disabled?: boolean; parentName: string
         }}
       ></SelectElement>
       {match(auth['security_protocol'])
-        .with('PLAINTEXT', () => <></>)
+        .with('PLAINTEXT', undefined, () => <></>)
         .with('SSL', () => <SslForm {...props} />)
         .with('SASL_PLAINTEXT', () => <SaslForm {...props} />)
         .with('SASL_SSL', () => (

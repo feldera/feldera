@@ -35,24 +35,6 @@ const schema = va.merge([
       va.object(
         {
           uri: va.nonOptional(va.string([va.minLength(1, 'Enter DeltaLake resource URI')]))
-          // client: va.object({
-          //   allow_http: va.optional(va.boolean()),
-          //   allow_invalid_certificates: va.optional(va.boolean()),
-          //   connect_timeout: va.optional(va.number()),
-          //   default_content_type: va.optional(va.string()),
-          //   http1_only: va.optional(va.boolean()),
-          //   http2_keep_alive_interval: va.optional(va.number()),
-          //   http2_keep_alive_timeout: va.optional(va.number()),
-          //   http2_keep_alive_while_idle: va.optional(va.string()),
-          //   http2_only: va.optional(va.boolean()),
-          //   pool_idle_timeout: va.optional(va.number()),
-          //   pool_max_idle_per_host: va.optional(va.number()),
-          //   proxy_url: va.optional(va.string()),
-          //   proxy_ca_certificate: va.optional(va.string()),
-          //   proxy_excludes: va.optional(va.string()),
-          //   timeout: va.optional(va.number()),
-          //   user_agent: va.optional(va.string()),
-          // })
         },
         va.union([va.string(), va.number(), va.boolean()])
       )

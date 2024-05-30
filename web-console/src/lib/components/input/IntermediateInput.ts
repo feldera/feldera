@@ -32,15 +32,26 @@ export function useIntermediateInput<T>({
   nullDisplayText = '',
   ...props
 }: {
-  value?: T
   onChange?: (event: ChangeEvent<HTMLInputElement>) => void
-  textToValue: (text: string | null) => { valid: T } | 'invalid'
-  valueToText: (valid: T) => string | null
   nullDisplayText?: string
-} & TextFieldProps) {
+} & (
+  | {
+      value?: T
+      textToValue: (text: string | null) => { valid: T } | 'invalid'
+      valueToText: (valid: T) => string | null
+      optional?: false
+    }
+  | {
+      value?: T | undefined
+      textToValue: (text: string | null) => { valid: T | undefined } | 'invalid'
+      valueToText: (valid: T | undefined) => string | null
+      optional?: true
+    }
+) &
+  TextFieldProps) {
   const [value, setValueText] = useReducer(
     intermediateInputReducer(props.textToValue, props.onChange),
-    props.value === undefined ? { intermediate: '' } : { valid: props.value }
+    props.value === undefined && !props.optional ? { intermediate: '' } : { valid: props.value }
   )
   {
     // The value of the input can either be changed
@@ -71,15 +82,15 @@ export function useIntermediateInput<T>({
  * Input component that can be in an invalid state.
  * While in invalid state, changes in input are not reflected on edited value.
  */
-export function intermediateValueInputProps<T>({
+function intermediateValueInputProps<T>({
   value,
   setValueText,
   valueToText,
   ...props
 }: {
-  value: IntermediateInputState<T>
+  value: IntermediateInputState<T | undefined>
   setValueText: Dispatch<string | null>
-  valueToText: (v: T) => string | null
+  valueToText: (valid: T) => string | null
   nullDisplayText: string
 } & TextFieldProps) {
   const error = 'intermediate' in value
@@ -92,7 +103,7 @@ export function intermediateValueInputProps<T>({
       }
     },
     onChange: (e: ChangeEvent<HTMLInputElement>) => setValueText(e.target.value),
-    value: 'valid' in value ? valueToText(value.valid) ?? props.nullDisplayText : value.intermediate
+    value: 'valid' in value ? valueToText(value.valid!) ?? props.nullDisplayText : value.intermediate
   }
 }
 

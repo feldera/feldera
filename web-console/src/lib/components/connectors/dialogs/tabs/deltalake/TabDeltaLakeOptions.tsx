@@ -15,6 +15,8 @@ import { match } from 'ts-pattern'
 
 import { Box, Grid, IconButton, Typography } from '@mui/material'
 
+const omitFields = new Set(['uri', 'mode', 'filter', 'version', 'datetime'])
+
 export const TabDeltaLakeOptions = (props: { parentName: string; disabled?: boolean }) => {
   const { storageType } = useDeltaLakeStorageType(props)
   const fieldOptions = match(storageType)
@@ -28,7 +30,7 @@ export const TabDeltaLakeOptions = (props: { parentName: string; disabled?: bool
 
   const formValues = useWatch({ name: props.parentName })
   const ctx = useFormContext()
-  const usedFields = Object.keys(formValues).filter(field => field !== 'uri') // .filter(field => fieldOptions[field])
+  const usedFields = Object.keys(formValues).filter(field => !omitFields.has(field)) // .filter(field => fieldOptions[field])
 
   return (
     <>

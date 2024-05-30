@@ -41,6 +41,7 @@ export const connectorDescrToType = (config: ConnectorDescr['config']): Connecto
     .with({ transport: { name: TransportConfig.name.KAFKA_INPUT } }, () => ConnectorType.KAFKA_IN)
     .with({ transport: { name: TransportConfig.name.KAFKA_OUTPUT } }, () => ConnectorType.KAFKA_OUT)
     .with({ transport: { name: TransportConfig.name.URL_INPUT } }, () => ConnectorType.URL_IN)
+    .with({ transport: { name: TransportConfig.name.DELTA_TABLE_INPUT } }, () => ConnectorType.DELTALAKE_IN)
     .with({ transport: { name: TransportConfig.name.DELTA_TABLE_OUTPUT } }, () => ConnectorType.DELTALAKE_OUT)
     .with({ transport: { name: TransportConfig.name.S3_INPUT } }, () => ConnectorType.S3_IN)
     .with({ transport: { name: TransportConfig.name.FILE_INPUT } }, () => ConnectorType.UNKNOWN)
@@ -286,7 +287,7 @@ export const normalizeSnowflakeOutputConfig = (data: {
 })
 
 export const parseDeltaLakeInputSchemaConfig = (config: ConnectorDescr['config']) => {
-  invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_OUTPUT)
+  invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_INPUT)
   return {
     transport: config.transport.config as typeof config.transport.config & { uri: string }
   }
@@ -294,7 +295,7 @@ export const parseDeltaLakeInputSchemaConfig = (config: ConnectorDescr['config']
 
 export const normalizeDeltaLakeInputConfig = (data: { transport: Record<string, any> }) => ({
   transport: {
-    name: TransportConfig.name.DELTA_TABLE_OUTPUT,
+    name: TransportConfig.name.DELTA_TABLE_INPUT,
     config: data.transport
   }
 })

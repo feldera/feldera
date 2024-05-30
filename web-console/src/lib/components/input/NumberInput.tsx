@@ -16,6 +16,7 @@ export const NumberInput = (
     max?: number
     value?: number | null
     allowInvalidRange?: boolean
+    optional?: boolean
   }
 ) => {
   const cfg = {
@@ -41,8 +42,8 @@ export const NumberInput = (
       }
       return { valid: value }
     },
-    valueToText: (valid: number | null) => {
-      return valid === null ? null : valid.toString()
+    valueToText: (valid?: number | null) => {
+      return valid === null ? null : valid?.toString() ?? ''
     }
   }
   const valueObj =
