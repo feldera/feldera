@@ -56,9 +56,9 @@ fn build_circuit(
         })
         .aggregate_linear(|v| *v as i64);
     let running_monthly_totals = monthly_totals
-        .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-        .as_partitioned_zset()
+        .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
         .partitioned_rolling_aggregate_linear(
+            |Tup2(l, v)| (l.clone(), *v),
             |vaxxed| *vaxxed,
             |total| total,
             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
