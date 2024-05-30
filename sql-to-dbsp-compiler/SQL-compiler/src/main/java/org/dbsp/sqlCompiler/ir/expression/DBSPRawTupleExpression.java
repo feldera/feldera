@@ -36,10 +36,8 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * A Raw tuple expression generates a raw Rust tuple.
- */
-public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
+/** A Raw tuple expression generates a raw Rust tuple, e.g., (1, 's', a+b). */
+public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     public DBSPRawTupleExpression(DBSPExpression... expressions) {
         super(CalciteObject.EMPTY,
                 new DBSPTypeRawTuple(Linq.map(expressions, DBSPExpression::getType, DBSPType.class)), expressions);

@@ -32,11 +32,9 @@ import java.util.List;
 import java.util.Objects;
 
 
-/**
- * Description of an aggregate.
- * In general an aggregate performs multiple simple aggregates simultaneously.
- */
-public class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDBSPDeclaration {
+/** Description of an aggregate.
+ * In general an aggregate performs multiple simple aggregates simultaneously. */
+public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDBSPDeclaration {
     public final DBSPVariablePath rowVar;
     public final Implementation[] components;
     public final boolean isWindowAggregate;

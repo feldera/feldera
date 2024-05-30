@@ -34,7 +34,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public class DBSPStreamJoinOperator extends DBSPOperator {
+public final class DBSPStreamJoinOperator extends DBSPOperator {
     public DBSPStreamJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,

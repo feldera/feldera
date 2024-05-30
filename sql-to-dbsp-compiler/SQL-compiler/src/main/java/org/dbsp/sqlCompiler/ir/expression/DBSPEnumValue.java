@@ -34,11 +34,9 @@ import org.dbsp.util.IIndentStream;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
-/**
- * For now only support simple enums, with no additional arguments.
- */
+/** For now only support simple enums, with no additional arguments. */
 @NonCoreIR
-public class DBSPEnumValue extends DBSPExpression {
+public final class DBSPEnumValue extends DBSPExpression {
     public final String enumName;
     public final String constructor;
 

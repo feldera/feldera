@@ -36,7 +36,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPStrLiteral extends DBSPLiteral {
+public final class DBSPStrLiteral extends DBSPLiteral {
     public final String value;
     public final boolean raw;
 

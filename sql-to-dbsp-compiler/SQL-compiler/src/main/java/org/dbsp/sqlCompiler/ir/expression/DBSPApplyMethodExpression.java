@@ -34,7 +34,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 /** Method application expression. */
-public class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
+public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
     public final DBSPExpression self;
 
     public DBSPApplyMethodExpression(CalciteObject node,

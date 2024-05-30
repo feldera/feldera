@@ -36,7 +36,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public class DBSPIndexOperator extends DBSPUnaryOperator {
+public final class DBSPIndexOperator extends DBSPUnaryOperator {
     /**
      * Create an IndexOperator
      * @param node            Corresponding Calcite node.

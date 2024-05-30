@@ -12,7 +12,7 @@ import java.util.List;
 
 /** This is a primitive operator that corresponds to the Rust AggregateIncremental node. */
 @NonCoreIR
-public class DBSPPrimitiveAggregateOperator extends DBSPOperator {
+public final class DBSPPrimitiveAggregateOperator extends DBSPOperator {
     public DBSPPrimitiveAggregateOperator(
             CalciteObject node, @Nullable DBSPExpression function, DBSPType outputType,
             DBSPOperator delta, DBSPOperator integral) {

@@ -613,19 +613,19 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 -----------------
                  {2,4,6,8}
                 (1 row)
-                            
+                
                 SELECT array_distinct(ARRAY [2, 2, 2, 2]);
                  array_distinct
                 ---------------
                  {2}
                 (1 row)
-                            
+                
                 SELECT array_distinct(ARRAY ['a', 'b', 'c', 'b', 'a']);
                  array_distinct
                 -----------------
                  { a, b, c}
                 (1 row)
-                            
+                
                 SELECT array_distinct(ARRAY [null, null, null]);
                  array_distinct
                 ---------------

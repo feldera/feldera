@@ -10,7 +10,7 @@ import org.dbsp.util.IIndentStream;
 
 /** A function declaration. */
 @NonCoreIR
-public class DBSPFunctionItem extends DBSPItem {
+public final class DBSPFunctionItem extends DBSPItem {
     public final DBSPFunction function;
 
     public DBSPFunctionItem(DBSPFunction function) {

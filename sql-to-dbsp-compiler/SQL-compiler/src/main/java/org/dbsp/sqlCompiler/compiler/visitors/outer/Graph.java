@@ -16,7 +16,7 @@ public class Graph extends CircuitVisitor {
     /* The Graph represents edges source->destination,
      * while the circuit represents edges destination->source. */
     public static class CircuitGraph {
-        final Set<DBSPOperator> nodeSet = new HashSet<DBSPOperator>();
+        final Set<DBSPOperator> nodeSet = new HashSet<>();
         final List<DBSPOperator> nodes = new ArrayList<>();
         final Map<DBSPOperator, List<DBSPOperator>> edges = new HashMap<>();
 

@@ -37,7 +37,7 @@ import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.util.Objects;
 
-public class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLiteral {
+public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLiteral {
     @Nullable
     public final BigDecimal value;
 

@@ -12,7 +12,7 @@ import org.dbsp.util.IIndentStream;
 
 /** An item that declares a struct and a bunch of helper functions for serialization. */
 @NonCoreIR
-public class DBSPStructWithHelperItem extends DBSPItem implements IHasType {
+public final class DBSPStructWithHelperItem extends DBSPItem implements IHasType {
     public final DBSPTypeStruct type;
 
     public DBSPStructWithHelperItem(DBSPTypeStruct type) {

@@ -36,7 +36,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericLiteral {
+public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericLiteral {
     @Nullable
     public final Double value;
 
@@ -57,7 +57,7 @@ public class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericLiteral
         this.value = value;
     }
 
-    protected DBSPDoubleLiteral(@Nullable Double f, boolean nullable, boolean raw) {
+    DBSPDoubleLiteral(@Nullable Double f, boolean nullable, boolean raw) {
         this(CalciteObject.EMPTY, new DBSPTypeDouble(CalciteObject.EMPTY,nullable), f, raw);
         if (f == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);

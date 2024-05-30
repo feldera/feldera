@@ -91,5 +91,5 @@ public class CSE extends Repeat {
             }
             this.map(operator, replacement, false);
         }
-    };
+    }
 }

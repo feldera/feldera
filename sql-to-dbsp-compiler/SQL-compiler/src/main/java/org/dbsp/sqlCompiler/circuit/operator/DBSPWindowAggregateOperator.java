@@ -42,7 +42,7 @@ import java.util.List;
  * map_index.
  * This operator only operates correctly on deltas.  To operate on collections it
  * must differentiate its input, and integrate its output. */
-public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
+public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPExpression window;
     // TODO: these fields should not be here
     public final boolean ascending;

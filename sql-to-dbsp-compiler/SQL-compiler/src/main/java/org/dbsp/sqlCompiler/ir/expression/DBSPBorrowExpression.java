@@ -30,13 +30,11 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
 
-/**
- * An expression of the form &expression.
+/** An expression of the form &expression.
  * Should not appear in the generated code from SQL, only in the
- * tools for test generation.
- */
+ * tools for test generation. */
 @NonCoreIR
-public class DBSPBorrowExpression extends DBSPExpression {
+public final class DBSPBorrowExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final boolean mut;
 

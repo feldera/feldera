@@ -37,7 +37,7 @@ import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
-public class DBSPTimestampLiteral extends DBSPLiteral {
+public final class DBSPTimestampLiteral extends DBSPLiteral {
     @Nullable public final Long value;
 
     public DBSPTimestampLiteral(CalciteObject node, DBSPType type, @Nullable Long value) {

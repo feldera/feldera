@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
 
-public class DBSPIfExpression extends DBSPExpression {
+public final class DBSPIfExpression extends DBSPExpression {
     public final DBSPExpression condition;
     public final DBSPExpression positive;
     public final DBSPExpression negative;

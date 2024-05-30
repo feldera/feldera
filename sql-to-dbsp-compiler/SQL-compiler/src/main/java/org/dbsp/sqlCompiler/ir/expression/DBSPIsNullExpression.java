@@ -32,11 +32,9 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
 
-/**
- * Given an expression e, this is equivalent with the Rust code
- * e.is_none().  Obviously, e must have a nullable type.
- */
-public class DBSPIsNullExpression extends DBSPExpression {
+/** Given an expression e, this is equivalent with the Rust code
+ * e.is_none().  Obviously, e must have a nullable type. */
+public final class DBSPIsNullExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPIsNullExpression(CalciteObject node, DBSPExpression expression) {

@@ -44,8 +44,6 @@ public enum DBSPOpcode {
     IS_NOT_DISTINCT("is_not_distinct", false),
     SQL_INDEX("[]", false),
     RUST_INDEX("[]", false),
-    UNSIGNED_WRAP("", false),
-    UNSIGNED_UNWRAP("", false),
 
     // Aggregate operations.  These operations
     // handle NULL values differently from standard

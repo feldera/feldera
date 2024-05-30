@@ -2,13 +2,15 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 /** This is the dual of the UnsignedWrapExpression: it unwraps an unsigned number */
-public class DBSPUnsignedUnwrapExpression extends DBSPUnaryExpression {
+public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
+    public final DBSPExpression source;
     public final DBSPUnsignedWrapExpression.TypeSequence sequence;
     public final boolean nullsLast;
     public final boolean ascending;
@@ -16,7 +18,8 @@ public class DBSPUnsignedUnwrapExpression extends DBSPUnaryExpression {
     public DBSPUnsignedUnwrapExpression(
             CalciteObject node, DBSPExpression source, DBSPType resultType,
             boolean ascending, boolean nullsLast) {
-        super(node, resultType, DBSPOpcode.UNSIGNED_UNWRAP, source);
+        super(node, resultType);
+        this.source = source;
         this.sequence = new DBSPUnsignedWrapExpression.TypeSequence(resultType);
         this.nullsLast = nullsLast;
         this.ascending = ascending;
@@ -64,5 +67,16 @@ public class DBSPUnsignedUnwrapExpression extends DBSPUnaryExpression {
         return new DBSPUnsignedUnwrapExpression(
                 this.getNode(), this.source.deepCopy(), this.getType(),
                 this.ascending, this.nullsLast);
+    }
+
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPUnsignedUnwrapExpression otherExpression = other.as(DBSPUnsignedUnwrapExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.ascending == otherExpression.ascending &&
+                this.nullsLast == otherExpression.nullsLast &&
+                context.equivalent(this.source, otherExpression.source);
     }
 }

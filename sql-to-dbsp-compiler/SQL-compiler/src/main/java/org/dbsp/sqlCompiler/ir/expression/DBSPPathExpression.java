@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-public class DBSPPathExpression extends DBSPExpression {
+public final class DBSPPathExpression extends DBSPExpression {
     public final DBSPPath path;
 
     public DBSPPathExpression(DBSPType type, DBSPPath path) {

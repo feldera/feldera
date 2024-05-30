@@ -13,7 +13,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLiteral {
+public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
     public final Short value;
 

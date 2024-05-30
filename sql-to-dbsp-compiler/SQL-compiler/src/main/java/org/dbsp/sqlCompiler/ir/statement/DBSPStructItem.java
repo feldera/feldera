@@ -12,7 +12,7 @@ import org.dbsp.util.IIndentStream;
 
 /** An item that declares a struct. */
 @NonCoreIR
-public class DBSPStructItem extends DBSPItem implements IHasType {
+public final class DBSPStructItem extends DBSPItem implements IHasType {
     public final DBSPTypeStruct type;
 
     public DBSPStructItem(DBSPTypeStruct type) {

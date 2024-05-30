@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
-public class DBSPDifferentiateOperator extends DBSPUnaryOperator {
+public final class DBSPDifferentiateOperator extends DBSPUnaryOperator {
     public DBSPDifferentiateOperator(CalciteObject node, DBSPOperator source) {
         super(node, "differentiate", null, source.outputType, source.isMultiset, source);
     }

@@ -1042,8 +1042,7 @@ public abstract class InnerRewriteVisitor
         this.push(item);
         // TODO: do we need to transform?
         this.pop(item);
-        DBSPFunctionItem result = item;
-        this.map(item, result);
+        this.map(item, item);
         return VisitDecision.STOP;
     }
 

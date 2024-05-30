@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.util.IIndentStream;
 
 /** Wraps a declaration (an item) into an OuterNode */
-public class DBSPDeclaration extends DBSPNode implements IDBSPOuterNode {
+public final class DBSPDeclaration extends DBSPNode implements IDBSPOuterNode {
     public final DBSPItem item;
 
     public DBSPDeclaration(DBSPItem item) {

@@ -52,13 +52,12 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
 
     @Override
     public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
         DBSPWindowAggregateOperator otherOperator = other.as(DBSPWindowAggregateOperator.class);
         if (otherOperator == null)
             return false;
-        if (!this.sameInputs(other))
-            return false;
         return this.isLinear == otherOperator.isLinear &&
-                EquivalenceContext.equiv(this.function, otherOperator.function) &&
                 EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate);
     }
 

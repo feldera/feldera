@@ -17,10 +17,8 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * This operator produces an IndexedZSet as a result, indexed on the table keys.
- */
-public class DBSPSourceMapOperator extends DBSPSourceTableOperator {
+/** This operator produces an IndexedZSet as a result, indexed on the table keys. */
+public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     public final List<Integer> keyFields;
 
     /**

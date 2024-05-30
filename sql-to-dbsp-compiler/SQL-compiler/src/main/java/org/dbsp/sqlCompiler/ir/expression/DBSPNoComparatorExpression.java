@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 /** A comparator that does not compare any fields. */
-public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
+public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     public final DBSPType tupleType;
 
     public DBSPNoComparatorExpression(CalciteObject node, DBSPType tupleType) {

@@ -35,7 +35,7 @@ import org.dbsp.util.Utilities;
 
 /** A special case of a PathExpression in Rust which refers to a variable by name.
  * More convenient that using always Paths. */
-public class DBSPVariablePath extends DBSPExpression {
+public final class DBSPVariablePath extends DBSPExpression {
     public final String variable;
 
     public DBSPVariablePath(String variable, DBSPType type) {
@@ -77,7 +77,7 @@ public class DBSPVariablePath extends DBSPExpression {
                 : "Declaration for variable " + Utilities.singleQuote(this.variable) + " not found";
         IDBSPDeclaration rightDeclaration = context.rightDeclaration.get(otherExpression.variable);
         assert rightDeclaration != null
-                : "Declaration for variable " + Utilities.singleQuote(otherExpression.variable) + " not found";;
+                : "Declaration for variable " + Utilities.singleQuote(otherExpression.variable) + " not found";
         IDBSPDeclaration subst = context.leftToRight.get(leftDeclaration);
         return subst.equals(rightDeclaration);
     }

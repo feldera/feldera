@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Given a stream, it computes max(function(stream), delay(this)). */
-public class DBSPWaterlineOperator extends DBSPUnaryOperator {
+public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     /** Initial value of waterline */
     public final DBSPExpression init;
 

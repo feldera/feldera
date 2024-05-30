@@ -32,7 +32,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-public class DBSPUnaryExpression extends DBSPExpression {
+/** Unary operation */
+public final class DBSPUnaryExpression extends DBSPExpression {
     public final DBSPExpression source;
     public final DBSPOpcode operation;
 
@@ -59,7 +60,6 @@ public class DBSPUnaryExpression extends DBSPExpression {
         visitor.pop(this);
         visitor.postorder(this);
     }
-
 
     @Override
     public boolean sameFields(IDBSPNode other) {

@@ -34,18 +34,18 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
 
 /** Tuple field reference expression. */
-public class DBSPFieldExpression extends DBSPExpression {
+public final class DBSPFieldExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final int fieldNo;
 
-    protected DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo, DBSPType type) {
+    DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo, DBSPType type) {
         super(node, type);
         this.expression = expression;
         this.fieldNo = fieldNo;
         assert fieldNo >= 0: "Negative field index " + fieldNo;
     }
 
-    protected DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
+    DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
         this(CalciteObject.EMPTY, expression, fieldNo, type);
     }
 

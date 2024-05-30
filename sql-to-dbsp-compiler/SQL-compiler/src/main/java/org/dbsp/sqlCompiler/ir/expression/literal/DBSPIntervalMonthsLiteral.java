@@ -35,7 +35,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPIntervalMonthsLiteral extends DBSPLiteral implements IsNumericLiteral {
+public final class DBSPIntervalMonthsLiteral extends DBSPLiteral implements IsNumericLiteral {
     /** Expressed in months */
     @Nullable public final Integer value;
 

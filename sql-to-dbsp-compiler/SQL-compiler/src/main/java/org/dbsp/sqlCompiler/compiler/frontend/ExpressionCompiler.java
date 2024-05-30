@@ -1079,18 +1079,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                 }
 
-                return this.compileFunction(call, node, type, ops, 2);
+                return compileFunction(call, node, type, ops, 2);
             }
             case OTHER:
                 String opName = call.op.getName().toLowerCase();
                 //noinspection SwitchStatementWithTooFewBranches
-                switch (opName) {
-                    case "||":
-                        return makeBinaryExpression(node, type, DBSPOpcode.CONCAT, ops);
-                    default:
-                        break;
-                }
-                throw new UnimplementedException(node);
+                return switch (opName) {
+                    case "||" -> makeBinaryExpression(node, type, DBSPOpcode.CONCAT, ops);
+                    default -> throw new UnimplementedException(node);
+                };
             case EXTRACT: {
                 // This is also hit for "date_part", which is an alias for "extract".
                 return compileKeywordFunction(call, node, "extract", type, ops, 0, 2);

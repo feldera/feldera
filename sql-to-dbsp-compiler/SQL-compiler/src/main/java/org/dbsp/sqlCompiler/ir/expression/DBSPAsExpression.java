@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 @NonCoreIR
-public class DBSPAsExpression extends DBSPExpression {
+public final class DBSPAsExpression extends DBSPExpression {
     public final DBSPExpression source;
 
     public DBSPAsExpression(DBSPExpression source, DBSPType type) {

@@ -36,7 +36,7 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /** A byte array literal */
-public class DBSPBinaryLiteral extends DBSPLiteral {
+public final class DBSPBinaryLiteral extends DBSPLiteral {
     @Nullable
     public final byte[] value;
 

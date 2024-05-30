@@ -36,7 +36,7 @@ import org.dbsp.util.Linq;
 /** An expression qualified with a type.
  * expression::type */
 @NonCoreIR
-public class DBSPQualifyTypeExpression extends DBSPExpression {
+public final class DBSPQualifyTypeExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final DBSPType[] types;
 

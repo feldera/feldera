@@ -35,7 +35,7 @@ import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration {
+public final class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration {
     public final String variable;
     public final DBSPType type;
     @Nullable

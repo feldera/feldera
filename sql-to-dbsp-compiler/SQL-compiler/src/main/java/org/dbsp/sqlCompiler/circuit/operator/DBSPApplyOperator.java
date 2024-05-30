@@ -14,7 +14,7 @@ import java.util.Objects;
 /** Equivalent to the apply operator from DBSP
  * which applies an arbitrary function to the input(s).
  * The inputs and outputs do not have to be Z-sets or indexed Z-sets. */
-public class DBSPApplyOperator extends DBSPUnaryOperator {
+public final class DBSPApplyOperator extends DBSPUnaryOperator {
     public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
                              DBSPType outputType, DBSPOperator input, @Nullable String comment) {
         super(node, "apply", function, outputType, false, input, comment);

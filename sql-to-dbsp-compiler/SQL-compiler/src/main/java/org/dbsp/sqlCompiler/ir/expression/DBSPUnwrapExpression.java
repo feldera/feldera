@@ -11,7 +11,7 @@ import org.dbsp.util.IIndentStream;
  * This is created by calling 'Expression.unwrap'.
  * Note that there is a different resultUnwrap, which is meant
  * to be applied to Result values */
-public class DBSPUnwrapExpression extends DBSPExpression {
+public final class DBSPUnwrapExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPUnwrapExpression(DBSPExpression expression) {

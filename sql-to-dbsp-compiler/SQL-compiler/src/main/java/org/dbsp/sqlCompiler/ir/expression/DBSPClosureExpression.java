@@ -37,7 +37,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 /** An expression of the form |param0, param1, ...| body. */
-public class DBSPClosureExpression extends DBSPExpression {
+public final class DBSPClosureExpression extends DBSPExpression {
     public final DBSPExpression body;
     public final DBSPParameter[] parameters;
 

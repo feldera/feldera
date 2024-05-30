@@ -49,11 +49,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
-/**
- * A partial circuit is a circuit under construction.
- * A complete circuit can be obtained by calling the "seal" method.
- */
-public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
+/** A partial circuit is a circuit under construction.
+ * A complete circuit can be obtained by calling the "seal" method. */
+public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
     public final List<DBSPDeclaration> declarations = new ArrayList<>();
     public final LinkedHashMap<String, DBSPSourceBaseOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
@@ -70,10 +68,8 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         this.metadata = metadata;
     }
 
-    /**
-     * @return the names of the input tables.
-     * The order of the tables corresponds to the inputs of the generated circuit.
-     */
+    /** @return the names of the input tables.
+     * The order of the tables corresponds to the inputs of the generated circuit. */
     public Set<String> getInputTables() {
         return this.sourceOperators.keySet();
     }
@@ -141,9 +137,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         visitor.pop(this);
     }
 
-    /**
-     * Return true if this circuit and other are identical (have the exact same operators).
-     */
+    /** Return true if this circuit and other are identical (have the exact same operators). */
     public boolean sameCircuit(DBSPPartialCircuit other) {
         if (this == other)
             return true;
@@ -160,9 +154,7 @@ public class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWri
         return "PartialCircuit" + this.id;
     }
 
-    /**
-     * Number of operators in the circuit.
-     */
+    /** Number of operators in the circuit. */
     public int size() {
         return this.allOperators.size();
     }

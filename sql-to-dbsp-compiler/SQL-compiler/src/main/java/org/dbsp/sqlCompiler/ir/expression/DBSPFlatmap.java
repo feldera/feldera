@@ -39,7 +39,7 @@ import java.util.List;
  * The argument type is the type of data.
  * The result type is not represented (we can't represent the type produced by an iterator).
  */
-public class DBSPFlatmap extends DBSPExpression {
+public final class DBSPFlatmap extends DBSPExpression {
     /** Type of the input row. */
     public final DBSPTypeTuple inputElementType;
     /** A closure which, applied to 'data', produces the

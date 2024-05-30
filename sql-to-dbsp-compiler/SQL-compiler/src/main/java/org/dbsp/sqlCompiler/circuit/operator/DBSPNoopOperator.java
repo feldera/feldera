@@ -33,11 +33,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * Implemented as a map with identity function.  Should be optimized away,
- * but sometimes it's useful to have in intermediate representations.
- */
-public class DBSPNoopOperator extends DBSPUnaryOperator {
+/** Implemented as a map with identity function.  Should be optimized away,
+ * but sometimes it's useful to have in intermediate representations. */
+public final class DBSPNoopOperator extends DBSPUnaryOperator {
     static DBSPClosureExpression getClosure(DBSPType rowType) {
         DBSPVariablePath var = rowType.ref().var("i");
         return var.deref().applyClone().closure(var.asParameter());

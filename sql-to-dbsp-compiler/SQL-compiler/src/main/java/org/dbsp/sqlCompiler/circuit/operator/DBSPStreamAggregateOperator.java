@@ -34,7 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase {
+public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase {
     public DBSPStreamAggregateOperator(CalciteObject node,
                                        DBSPTypeIndexedZSet outputType,
                                        @Nullable DBSPExpression function,

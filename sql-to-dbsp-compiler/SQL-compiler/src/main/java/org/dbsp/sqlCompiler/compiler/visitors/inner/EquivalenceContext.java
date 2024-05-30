@@ -8,10 +8,10 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 /** Context used to compare two expressions with free variables.
- * The context contains for each variable a declaration.
- * The context also contains a Substitution for variable renames.
- * E.g., |x| x and |y| y are equivalent.
- */
+ * The context contains for each variable a declaration in the Scopes data structures.
+ * The context also contains a leftToRight Substitution for variable renames.
+ * E.g., |x| x and |y| y are equivalent.  When checking these
+ * two expressions, the substitution would end up mapping x to y. */
 public class EquivalenceContext {
     public final Scopes<String, IDBSPDeclaration> leftDeclaration;
     public final Scopes<String, IDBSPDeclaration> rightDeclaration;

@@ -42,7 +42,7 @@ import org.dbsp.util.IIndentStream;
  * E.g., in Rust the closure has the following signature:
  * move |(k, v): (&(), &Vec<Tup<...>>)| -> Vec<Tup<...>>
  */
-public class DBSPSortExpression extends DBSPExpression {
+public final class DBSPSortExpression extends DBSPExpression {
     public final DBSPComparatorExpression comparator;
     public final DBSPType elementType;
 

@@ -14,7 +14,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 
 /** A literal with type NULL, the only value of this type. */
-public class DBSPNullLiteral extends DBSPLiteral {
+public final class DBSPNullLiteral extends DBSPLiteral {
     public DBSPNullLiteral(CalciteObject node, DBSPType type, @Nullable Object value) {
         super(node, type, true);
         if (value != null)

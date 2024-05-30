@@ -33,7 +33,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPGeoPointLiteral extends DBSPLiteral {
+public final class DBSPGeoPointLiteral extends DBSPLiteral {
     // Null only when the literal itself is null.
     @Nullable
     public final DBSPExpression left;

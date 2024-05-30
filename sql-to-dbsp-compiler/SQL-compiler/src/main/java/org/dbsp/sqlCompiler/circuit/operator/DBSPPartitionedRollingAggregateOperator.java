@@ -13,7 +13,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 @NonCoreIR
-public class DBSPPartitionedRollingAggregateOperator extends DBSPOperator {
+public final class DBSPPartitionedRollingAggregateOperator extends DBSPOperator {
     @Nullable
     public final DBSPAggregate aggregate;
 

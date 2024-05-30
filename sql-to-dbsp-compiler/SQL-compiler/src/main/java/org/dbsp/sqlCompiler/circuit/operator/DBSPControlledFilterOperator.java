@@ -31,7 +31,7 @@ import java.util.Objects;
  * right input is a stream of scalars.  The function is a boolean function
  * that takes an input element and a scalar; when the function returns 'true'
  * the input element makes it to the output. */
-public class DBSPControlledFilterOperator extends DBSPOperator {
+public final class DBSPControlledFilterOperator extends DBSPOperator {
     public DBSPControlledFilterOperator(
             CalciteObject node, DBSPExpression expression,
             DBSPOperator data, DBSPOperator control) {

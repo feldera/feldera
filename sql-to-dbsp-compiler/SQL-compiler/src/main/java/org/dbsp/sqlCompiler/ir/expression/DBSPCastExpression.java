@@ -31,16 +31,16 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-/**
- * This class does not correspond to any Rust construct.
- * It represents a cast of an expression to a given type.
- */
-public class DBSPCastExpression extends DBSPExpression {
+/** This class does not correspond to any Rust primitive construct.
+ * It is compiled into a function invocation, depending on the involved types.
+ * It represents a cast of an expression to a given type. */
+public final class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
 
     public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
         super(node, to);
         this.source = source;
+        // The following are not true e.g., because of casts that remove nullability from vectors.
         // assert type.is(DBSPTypeBaseType.class);
         // assert source.getType().is(DBSPTypeBaseType.class);
     }

@@ -10,10 +10,10 @@ import org.dbsp.util.IIndentStream;
 
 /** Describes an expression of the form e? */
 @NonCoreIR
-public class DBSPQuestionExpression extends DBSPExpression {
+public final class DBSPQuestionExpression extends DBSPExpression {
     public final DBSPExpression source;
 
-    protected DBSPQuestionExpression(DBSPExpression source) {
+    DBSPQuestionExpression(DBSPExpression source) {
         super(source.getNode(), source.getType().setMayBeNull(false));
         this.source = source;
         assert source.getType().is(DBSPTypeAny.class) ||

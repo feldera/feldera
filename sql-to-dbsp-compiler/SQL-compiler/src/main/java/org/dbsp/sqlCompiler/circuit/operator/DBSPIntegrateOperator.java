@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 
 import java.util.List;
 
-public class DBSPIntegrateOperator extends DBSPUnaryOperator {
+public final class DBSPIntegrateOperator extends DBSPUnaryOperator {
     public DBSPIntegrateOperator(CalciteObject node, DBSPOperator source) {
         super(node, "integrate", null, source.outputType, source.isMultiset, source);
     }

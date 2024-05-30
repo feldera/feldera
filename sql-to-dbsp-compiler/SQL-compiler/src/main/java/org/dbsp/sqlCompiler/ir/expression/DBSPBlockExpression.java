@@ -37,7 +37,7 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPBlockExpression extends DBSPExpression {
+public final class DBSPBlockExpression extends DBSPExpression {
     public final List<DBSPStatement> contents;
     @Nullable
     public final DBSPExpression lastExpression;

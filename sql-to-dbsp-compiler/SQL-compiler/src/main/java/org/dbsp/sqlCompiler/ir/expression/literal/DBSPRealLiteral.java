@@ -36,7 +36,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLiteral {
+public final class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLiteral {
     @Nullable
     public final Float value;
 
@@ -58,7 +58,7 @@ public class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLiteral {
         this(f, nullable, false);
     }
 
-    protected DBSPRealLiteral(@Nullable Float f, boolean nullable, boolean raw) {
+    DBSPRealLiteral(@Nullable Float f, boolean nullable, boolean raw) {
         this(CalciteObject.EMPTY, new DBSPTypeReal(CalciteObject.EMPTY, nullable), f, raw);
         if (f == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);

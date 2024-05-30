@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-public class DBSPBinaryExpression extends DBSPExpression {
+public final class DBSPBinaryExpression extends DBSPExpression {
     public final DBSPExpression left;
     public final DBSPExpression right;
     public final DBSPOpcode operation;

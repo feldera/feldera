@@ -40,10 +40,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Represents a (constant) vector described by its elements.
- */
-public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
+/** Represents a (constant) vector described by its elements. */
+public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     @Nullable
     public final List<DBSPExpression> data;
     public final DBSPTypeVec vecType;

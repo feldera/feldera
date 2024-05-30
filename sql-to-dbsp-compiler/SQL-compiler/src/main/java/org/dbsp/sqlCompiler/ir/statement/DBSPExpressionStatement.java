@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IIndentStream;
 
-public class DBSPExpressionStatement extends DBSPStatement {
+public final class DBSPExpressionStatement extends DBSPStatement {
     public final DBSPExpression expression;
 
     public DBSPExpressionStatement(DBSPExpression expression) {

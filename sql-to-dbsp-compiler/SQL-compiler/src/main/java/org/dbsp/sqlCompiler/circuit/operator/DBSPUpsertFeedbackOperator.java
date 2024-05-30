@@ -14,7 +14,7 @@ import java.util.List;
  * for the pre-existing key.
  */
 @NonCoreIR
-public class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator {
+public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator {
     public DBSPUpsertFeedbackOperator(CalciteObject node, DBSPOperator source) {
         super(node, "upsert", null, source.outputType, source.isMultiset, source);
         source.getOutputIndexedZSetType();  // assert that the type is right

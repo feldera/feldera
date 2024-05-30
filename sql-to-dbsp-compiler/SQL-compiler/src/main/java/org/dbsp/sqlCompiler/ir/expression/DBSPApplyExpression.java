@@ -33,11 +33,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
-/**
- * Function application expression.
- * Note: the type of the expression is the type of the result returned by the function.
- */
-public class DBSPApplyExpression extends DBSPApplyBaseExpression {
+/** Function application expression.
+ * Note: the type of the expression is the type of the result returned by the function. */
+public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
     public DBSPApplyExpression(CalciteObject node, String function, DBSPType returnType, DBSPExpression... arguments) {
         super(node, new DBSPPath(function).toExpression(), returnType, arguments);
         this.checkArgs(false);

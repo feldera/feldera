@@ -13,7 +13,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 @NonCoreIR
-public class DBSPPartitionedTreeAggregateOperator extends DBSPUnaryOperator {
+public final class DBSPPartitionedTreeAggregateOperator extends DBSPUnaryOperator {
     @Nullable
     public final DBSPAggregate aggregate;
 
@@ -29,7 +29,7 @@ public class DBSPPartitionedTreeAggregateOperator extends DBSPUnaryOperator {
         if (!super.equivalent(other))
             return false;
         DBSPPartitionedTreeAggregateOperator otherOperator = other.as(DBSPPartitionedTreeAggregateOperator.class);
-        if (!this.sameInputs(other))
+        if (otherOperator == null)
             return false;
         return EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate);
     }

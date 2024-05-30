@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.type.IHasType;
 
 import javax.annotation.Nullable;
 
+/** Base class for all expressions */
 public abstract class DBSPExpression
         extends DBSPNode
         implements IHasType, IDBSPInnerNode {

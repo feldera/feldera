@@ -13,7 +13,7 @@ import org.dbsp.util.IIndentStream;
 /** This expression cannot appear in the IR tree representation
  * of a program.  It is only used as a value in dataflow analyses. */
 @NonCoreIR
-public class NoExpression extends DBSPExpression {
+public final class NoExpression extends DBSPExpression {
     public NoExpression(DBSPType type) {
         super(CalciteObject.EMPTY, type);
     }

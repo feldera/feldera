@@ -18,7 +18,7 @@ import java.util.Objects;
 /** Apply a topK operation to each of the groups in an indexed collection.
  * This always sorts the elements of each group.
  * To sort the entire collection just group by (). */
-public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
+public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     /** These values correspond to the SQL keywords
      * ROW, RANK, and DENSE RANK.  See e.g.:
      * https://learn.microsoft.com/en-us/sql/t-sql/functions/ranking-functions-transact-sql
@@ -88,7 +88,6 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         if (otherOperator == null)
             return false;
         return this.numbering == otherOperator.numbering &&
-                EquivalenceContext.equiv(this.getFunction(), otherOperator.getFunction()) &&
                 EquivalenceContext.equiv(this.outputProducer, otherOperator.outputProducer) &&
                 EquivalenceContext.equiv(this.limit, otherOperator.limit);
     }

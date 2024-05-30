@@ -42,8 +42,6 @@ import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-/** This is not just a base class, it also can be used to represent NULL
- * literals of any type. */
 public abstract class DBSPLiteral extends DBSPExpression {
     public final boolean isNull;
 
@@ -69,6 +67,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
                     return new DBSPI32Literal();
                 case 64:
                     return new DBSPI64Literal();
+                case 128:
+                    return new DBSPI128Literal();
             }
         } else if (type.is(DBSPTypeBool.class)) {
             return new DBSPBoolLiteral();
@@ -110,9 +110,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         return value;
     }
 
-    /**
-     * True if this and the other literal have the same type and value.
-     */
+    /** True if this and the other literal have the same type and value. */
     public abstract boolean sameValue(@Nullable DBSPLiteral other);
 
     @Override
@@ -140,9 +138,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         return this.getType().sameType(other.getType());
     }
 
-    /**
-     * The same literal but with the specified nullability.
-     */
+    /** The same literal but with the specified nullability. */
     public abstract DBSPLiteral getWithNullable(boolean mayBeNull);
 
     @Nullable

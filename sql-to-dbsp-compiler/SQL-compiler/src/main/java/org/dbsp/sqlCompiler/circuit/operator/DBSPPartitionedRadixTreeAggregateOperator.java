@@ -13,7 +13,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 @NonCoreIR
-public class DBSPPartitionedRadixTreeAggregateOperator extends DBSPOperator {
+public final class DBSPPartitionedRadixTreeAggregateOperator extends DBSPOperator {
     @Nullable
     public final DBSPAggregate aggregate;
 

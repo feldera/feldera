@@ -40,7 +40,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class DBSPTupleExpression extends DBSPBaseTupleExpression {
+public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public final boolean isNull;
 
     public DBSPTupleExpression(CalciteObject object, boolean mayBeNull, DBSPExpression... expressions) {

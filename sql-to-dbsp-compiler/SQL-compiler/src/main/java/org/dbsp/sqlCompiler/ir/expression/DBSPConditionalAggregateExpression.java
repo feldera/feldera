@@ -12,12 +12,10 @@ import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-/**
- * A conditional aggregate has the form
+/** A conditional aggregate has the form
  * (accumulator, increment, predicate) -> accumulator.
- * The predicate is optional.
- */
-public class DBSPConditionalAggregateExpression extends DBSPExpression {
+ * The predicate is optional. */
+public final class DBSPConditionalAggregateExpression extends DBSPExpression {
     public final DBSPOpcode opcode;
     public final DBSPExpression left;
     public final DBSPExpression right;

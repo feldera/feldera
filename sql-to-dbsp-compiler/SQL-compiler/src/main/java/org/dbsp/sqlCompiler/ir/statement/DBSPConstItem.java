@@ -15,7 +15,7 @@ import javax.annotation.Nullable;
 
 /** <a href="https://doc.rust-lang.org/reference/items/constant-items.html">Constant item</a> */
 @NonCoreIR
-public class DBSPConstItem extends DBSPItem implements IHasType {
+public final class DBSPConstItem extends DBSPItem implements IHasType {
     public final String name;
     public final DBSPType type;
     @Nullable

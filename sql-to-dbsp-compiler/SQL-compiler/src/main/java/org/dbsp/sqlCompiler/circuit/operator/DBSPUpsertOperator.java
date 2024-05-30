@@ -10,12 +10,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * Primitive Upsert operator.
- * Used to implement the UpsertFeedback operator.
- */
+/** Primitive Upsert operator.
+ * Used to implement the UpsertFeedback operator. */
 @NonCoreIR
-public class DBSPUpsertOperator extends DBSPOperator {
+public final class DBSPUpsertOperator extends DBSPOperator {
     public DBSPUpsertOperator(CalciteObject node, DBSPOperator delta, DBSPOperator integral) {
         super(node, "primitive_upsert", null, delta.outputType, false);
         this.addInput(delta);

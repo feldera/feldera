@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.util.IIndentStream;
 
 @NonCoreIR
-public class DBSPForExpression extends DBSPExpression implements IDBSPDeclaration {
+public final class DBSPForExpression extends DBSPExpression implements IDBSPDeclaration {
     public final String variable;
     public final DBSPExpression iterated;
     public final DBSPBlockExpression block;

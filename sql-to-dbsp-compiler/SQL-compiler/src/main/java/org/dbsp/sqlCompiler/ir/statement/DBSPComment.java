@@ -13,7 +13,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 @NonCoreIR
-public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
+public final class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     public final String comment;
 
     public DBSPComment(String comment) {

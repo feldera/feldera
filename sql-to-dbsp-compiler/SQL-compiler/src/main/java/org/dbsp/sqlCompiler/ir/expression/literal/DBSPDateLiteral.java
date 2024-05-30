@@ -35,7 +35,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPDateLiteral extends DBSPLiteral {
+public final class DBSPDateLiteral extends DBSPLiteral {
     @Nullable public final Integer value;
 
     public DBSPDateLiteral(CalciteObject node, DBSPType type, @Nullable Integer value) {

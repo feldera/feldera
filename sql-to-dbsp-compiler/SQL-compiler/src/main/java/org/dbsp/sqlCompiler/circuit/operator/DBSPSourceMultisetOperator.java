@@ -16,7 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPSourceMultisetOperator
+public final class DBSPSourceMultisetOperator
         extends DBSPSourceTableOperator
         implements IHasColumnsMetadata
 {

@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import javax.annotation.CheckReturnValue;
 import java.util.List;
 
-public class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
+public final class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
     public DBSPStreamDistinctOperator(CalciteObject node, DBSPOperator input) {
         super(node, "stream_distinct", null, input.outputType, false, input);
     }
