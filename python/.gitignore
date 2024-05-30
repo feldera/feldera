@@ -8,3 +8,5 @@ docs/make.bat
 docs/modules.rst
 docs/feldera.rst
 docs/feldera.rest.rst
+build
+feldera.egg-info
