@@ -142,7 +142,6 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
   }
 
   const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
-
   const [rawJSON, setRawJSON] = useState(false)
   const jsonSwitch = (
     <Box sx={{ pl: 4 }}>

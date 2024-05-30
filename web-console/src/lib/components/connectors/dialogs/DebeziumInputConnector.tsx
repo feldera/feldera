@@ -1,11 +1,17 @@
 // A create/update dialog for a Kafka input connector.
 'use client'
 
+import {
+  ConnectorEditDialog,
+  PlainDialogContent,
+  VerticalTabsDialogContent
+} from '$lib/components/connectors/dialogs/elements/DialogComponents'
+import { DebeziumInputFormatDetails } from '$lib/components/connectors/dialogs/tabs/debezium/DebeziumInputFormatDetails'
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
+import { TabKafkaAuth } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaAuth'
 import { TabKafkaInputDetails } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaInputDetails'
 import { TabKafkaNameAndDesc } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
 import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
-import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
 import {
   normalizeDebeziumInputConfig,
   parseDebeziumInputSchema,
@@ -18,23 +24,12 @@ import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
-import { FormContainer } from 'react-hook-form-mui'
 import JSONbig from 'true-json-bigint'
 import * as va from 'valibot'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
-import TabContext from '@mui/lab/TabContext'
-import TabList from '@mui/lab/TabList'
-import TabPanel from '@mui/lab/TabPanel'
-import { DialogTitle, FormControlLabel, Switch, Tooltip } from '@mui/material'
+import { FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
-import Dialog from '@mui/material/Dialog'
-import IconButton from '@mui/material/IconButton'
-import Tab from '@mui/material/Tab'
-
-import { DebeziumInputFormatDetails } from './tabs/debezium/DebeziumInputFormatDetails'
-import { TabKafkaAuth } from './tabs/kafka/TabKafkaAuth'
-import Transition from './tabs/Transition'
 
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
@@ -77,7 +72,7 @@ export type DebeziumInputSchema = va.Input<typeof schema>
 
 export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
   const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab'] as const
-  const [rawJSON, setRawJSON] = useState(false)
+
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<DebeziumInputSchema | undefined>(undefined)
 
@@ -136,8 +131,8 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('formatTab')
     }
   }
-  const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
   const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
+  const [rawJSON, setRawJSON] = useState(false)
   const jsonSwitch = (
     <Box sx={{ pl: 4 }}>
       <Tooltip title={editorDirty !== 'clean' ? 'Fix errors before switching the view' : undefined}>
@@ -148,168 +143,107 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
       </Tooltip>
     </Box>
   )
+
+  const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
+
   return (
-    <Dialog
-      fullWidth
-      open={props.show}
-      scroll='body'
-      maxWidth='md'
-      onClose={handleClose}
-      TransitionComponent={Transition}
-    >
-      <FormContainer
-        resolver={valibotResolver(schema)}
-        mode='onChange'
-        values={curValues}
-        defaultValues={defaultValues}
-        onSuccess={onSubmit}
-        onError={handleErrors}
+    <>
+      <ConnectorEditDialog
+        {...{
+          show: props.show,
+          handleClose: handleClose,
+          resolver: valibotResolver(schema),
+          values: curValues,
+          defaultValues: defaultValues,
+          onSubmit: onSubmit,
+          handleErrors: handleErrors,
+          dialogTitle:
+            props.connector === undefined
+              ? 'New Debezium Datasource'
+              : props.existingTitle?.(props.connector.name) ?? '',
+          submitButton: props.submitButton,
+          tabs,
+          activeTab,
+          setActiveTab
+        }}
       >
-        <DialogTitle sx={{ textAlign: 'center' }}>
-          {props.connector === undefined
-            ? 'New Debezium Datasource'
-            : props.existingTitle?.(props.connector.name) ?? ''}
-        </DialogTitle>
-        <IconButton
-          onClick={handleClose}
-          sx={{ position: 'absolute', right: '1rem', top: '1rem' }}
-          data-testid='button-close-modal'
-        >
-          <i className={`bx bx-x`} style={{}} />
-        </IconButton>
         {jsonSwitch}
         <Box sx={{ height: '70vh' }}>
           {rawJSON ? (
-            <Box sx={{ height: '100%' }}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', p: 4, height: '100%' }}>
-                <GenericEditorForm
-                  disabled={props.disabled}
-                  direction={Direction.INPUT}
-                  configFromText={text => parseDebeziumInputSchemaConfig(JSONbig.parse(text))}
-                  configToText={config => JSONbig.stringify(normalizeDebeziumInputConfig(config), undefined, '\t')}
-                  setEditorDirty={setEditorDirty}
-                />
-                <Box sx={{ display: 'flex', justifyContent: 'end', pt: 4 }}>{props.submitButton}</Box>
-              </Box>
-            </Box>
+            <PlainDialogContent submitButton={props.submitButton}>
+              <GenericEditorForm
+                disabled={props.disabled}
+                direction={Direction.INPUT}
+                configFromText={text => parseDebeziumInputSchemaConfig(JSONbig.parse(text))}
+                configToText={config => JSONbig.stringify(normalizeDebeziumInputConfig(config), undefined, '\t')}
+                setEditorDirty={setEditorDirty}
+              />
+            </PlainDialogContent>
           ) : (
-            <TabContext value={activeTab}>
-              <Box sx={{ display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, height: '100%' }}>
-                <Box>
-                  <TabList
-                    orientation='vertical'
-                    onChange={(e, newValue: (typeof tabs)[number]) => setActiveTab(newValue)}
-                    sx={{
-                      border: 0,
-                      m: 0,
-                      '& .MuiTabs-indicator': { display: 'none' },
-                      '& .MuiTabs-flexContainer': {
-                        alignItems: 'flex-start',
-                        '& .MuiTab-root': {
-                          width: '100%',
-                          alignItems: 'flex-start'
-                        }
-                      }
-                    }}
-                  >
-                    <Tab
-                      disableRipple
-                      value='detailsTab'
-                      label={
-                        <TabLabel
-                          title='Metadata'
-                          subtitle='Description'
-                          active={activeTab === 'detailsTab'}
-                          icon={<i className={`bx bx-file`} style={{}} />}
-                        />
-                      }
-                      data-testid='button-tab-name'
-                    />
-                    <Tab
-                      disableRipple
-                      value='sourceTab'
-                      label={
-                        <TabLabel
-                          title='Server'
-                          subtitle='Source details'
-                          active={activeTab === 'sourceTab'}
-                          icon={<i className={`bx bx-data`} style={{}} />}
-                        />
-                      }
-                      data-testid='button-tab-server'
-                    />
-                    <Tab
-                      disableRipple
-                      value='authTab'
-                      label={
-                        <TabLabel
-                          title='Security'
-                          subtitle='Authentication protocol'
-                          active={activeTab === 'authTab'}
-                          icon={<i className={`bx bx-lock-open`} style={{}} />}
-                        />
-                      }
-                      data-testid='button-tab-auth'
-                    />
-                    <Tab
-                      disableRipple
-                      value='formatTab'
-                      label={
-                        <TabLabel
-                          title='Format'
-                          subtitle='Data details'
-                          active={activeTab === 'formatTab'}
-                          icon={<i className={`bx bx-category-alt`} style={{}} />}
-                        />
-                      }
-                      data-testid='button-tab-format'
-                    />
-                  </TabList>
-                </Box>
-                <Box sx={{ width: '100%' }}>
-                  <TabPanel
-                    value='detailsTab'
-                    sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}
-                  >
-                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <VerticalTabsDialogContent
+              {...{ activeTab, setActiveTab, tabs }}
+              tabList={[
+                {
+                  name: 'detailsTab',
+                  title: 'Metadata',
+                  description: 'Description',
+                  icon: <i className={`bx bx-file`} style={{}} />,
+                  testid: 'button-tab-name',
+                  content: (
+                    <>
                       <TabKafkaNameAndDesc
                         direction={Direction.INPUT}
                         disabled={props.disabled}
                         parentName='transport'
                       />
                       {tabFooter}
-                    </Box>
-                  </TabPanel>
-                  <TabPanel
-                    value='sourceTab'
-                    sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}
-                  >
-                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    </>
+                  )
+                },
+                {
+                  name: 'sourceTab',
+                  title: 'Server',
+                  description: 'Source details',
+                  icon: <i className={`bx bx-data`} style={{}} />,
+                  testid: 'button-tab-server',
+                  content: (
+                    <>
                       <TabKafkaInputDetails disabled={props.disabled} parentName='transport' />
                       {tabFooter}
-                    </Box>
-                  </TabPanel>
-                  <TabPanel value='authTab' sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    </>
+                  )
+                },
+                {
+                  name: 'authTab',
+                  title: 'Security',
+                  description: 'Authentication protocol',
+                  icon: <i className={`bx bx-lock-open`} style={{}} />,
+                  testid: 'button-tab-auth',
+                  content: (
+                    <>
                       <TabKafkaAuth disabled={props.disabled} parentName={'transport'} />
                       {tabFooter}
-                    </Box>
-                  </TabPanel>
-                  <TabPanel
-                    value='formatTab'
-                    sx={{ border: 0, boxShadow: 0, p: 4, height: '100%', alignItems: 'start' }}
-                  >
-                    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    </>
+                  )
+                },
+                {
+                  name: 'formatTab',
+                  title: 'Format',
+                  description: 'Data details',
+                  icon: <i className={`bx bx-category-alt`} style={{}} />,
+                  testid: 'button-tab-format',
+                  content: (
+                    <>
                       <DebeziumInputFormatDetails disabled={props.disabled} />
                       {tabFooter}
-                    </Box>
-                  </TabPanel>
-                </Box>
-              </Box>
-            </TabContext>
+                    </>
+                  )
+                }
+              ]}
+            ></VerticalTabsDialogContent>
           )}
         </Box>
-      </FormContainer>
-    </Dialog>
+      </ConnectorEditDialog>
+    </>
   )
 }
