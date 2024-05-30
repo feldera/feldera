@@ -1,4 +1,5 @@
 import { BigNumberElement } from '$lib/components/input/BigNumberInput'
+import { NumberElement } from '$lib/components/input/NumberInput'
 import { FormFieldOptions } from '$lib/functions/forms'
 import { AutocompleteElement, SwitchElement, TextFieldElement } from 'react-hook-form-mui'
 import { match } from 'ts-pattern'
@@ -30,19 +31,17 @@ export const FormFieldElement = (props: {
       ></TextFieldElement>
     ))
     .with({ type: 'number' }, ({ range }) => (
-      <TextFieldElement
+      <NumberElement
         key={props.field}
         name={fieldPrefix + props.field}
         size='small'
         fullWidth
-        type='number'
+        {...range}
         inputProps={{
-          ...range,
-          inputProps: {
-            'data-testid': 'input-' + props.field
-          }
+          'data-testid': 'input-' + props.field
         }}
-      ></TextFieldElement>
+        optional
+      ></NumberElement>
     ))
     .with({ type: 'bignumber' }, ({ range }) => (
       <BigNumberElement
@@ -50,12 +49,11 @@ export const FormFieldElement = (props: {
         name={fieldPrefix + props.field}
         size='small'
         fullWidth
+        {...range}
         inputProps={{
-          ...range,
-          inputProps: {
-            'data-testid': 'input-' + props.field
-          }
+          'data-testid': 'input-' + props.field
         }}
+        optional
       />
     ))
     .with({ type: 'enum' }, ({ range }) => (

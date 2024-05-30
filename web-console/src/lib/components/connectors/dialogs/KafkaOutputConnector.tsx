@@ -6,6 +6,7 @@ import {
   PlainDialogContent,
   VerticalTabsDialogContent
 } from '$lib/components/connectors/dialogs/elements/DialogComponents'
+import { TabOutputBufferOptions } from '$lib/components/connectors/dialogs/tabs/generic/TabOutputBufferOptions'
 import TabOutputFormatDetails from '$lib/components/connectors/dialogs/tabs/generic/TabOutputFormatDetails'
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
 import { TabKafkaAuth } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaAuth'
@@ -219,6 +220,19 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   content: (
                     <>
                       <TabOutputFormatDetails disabled={props.disabled} />
+                      {tabFooter}
+                    </>
+                  )
+                },
+                {
+                  name: 'bufferTab',
+                  title: 'Output buffer',
+                  description: 'Duration and capacity configuration',
+                  icon: <i className='bx bx-align-left' />,
+                  testid: 'button-tab-output-buffer',
+                  content: (
+                    <>
+                      <TabOutputBufferOptions disabled={props.disabled} />
                       {tabFooter}
                     </>
                   )

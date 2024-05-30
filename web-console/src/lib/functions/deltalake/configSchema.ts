@@ -12,25 +12,12 @@ export const deltaLakeAwsOptions: DeltaLakeOptions = {
   token: { type: 'string' }
 }
 
-// export const deltaLakeAwsSchema = va.object({
-//   aws_access_key_id: va.optional(va.string()),
-//   aws_secret_access_key: va.optional(va.string()),
-//   aws_region: va.optional(va.string()),
-// })
-
 export const deltaLakeGoogleOptions: DeltaLakeOptions = {
   service_account: { type: 'string' },
   service_account_key: { type: 'string' },
   bucket: { type: 'string' },
   application_credentials: { type: 'string' }
 }
-
-// export const deltaLakeGoogleSchema = va.object({
-//   google_service_account: va.optional(va.string()),
-//   google_service_account_key: va.optional(va.string()),
-//   google_bucket: va.optional(va.string()),
-//   google_application_credentials: va.optional(va.string())
-// })
 
 export const deltaLakeAzureOptions: DeltaLakeOptions = {
   account_name: { type: 'string' },
@@ -52,27 +39,6 @@ export const deltaLakeAzureOptions: DeltaLakeOptions = {
   container_name: { type: 'string' },
   disable_tagging: { type: 'boolean' }
 }
-
-// export const deltaLakeAzureSchema = va.object({
-//   account_name: va.optional(va.string()),
-//   access_key: va.optional(va.string()),
-//   client_id,
-//   client_secret,
-//   authority_id,
-//   sas_key,
-//   token,
-//   use_emulator,
-//   endpoint,
-//   use_fabric_endpoint,
-//   msi_endpoint,
-//   object_id,
-//   msi_resource_id,
-//   federated_token_file,
-//   use_azure_cli,
-//   skip_signature,
-//   container_name,
-//   disable_tagging,
-// })
 
 export const deltaLakeFileSystemOptions: DeltaLakeOptions = {}
 

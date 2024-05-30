@@ -6,6 +6,7 @@ import {
   PlainDialogContent,
   VerticalTabsDialogContent
 } from '$lib/components/connectors/dialogs/elements/DialogComponents'
+import { TabOutputBufferOptions } from '$lib/components/connectors/dialogs/tabs/generic/TabOutputBufferOptions'
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
 import { TabKafkaAuth } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaAuth'
 import { TabKafkaNameAndDesc } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaNameAndDesc'
@@ -58,7 +59,7 @@ const schema = va.object({
 export type SnowflakeOutputSchema = va.Input<typeof schema>
 
 export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
-  const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab'] as const
+  const tabs = ['detailsTab', 'sourceTab', 'authTab', 'formatTab', 'bufferTab'] as const
 
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('detailsTab')
   const [curValues, setCurValues] = useState<SnowflakeOutputSchema | undefined>(undefined)
@@ -216,6 +217,19 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   content: (
                     <>
                       <SnowflakeOutputFormatDetails disabled={props.disabled} />
+                      {tabFooter}
+                    </>
+                  )
+                },
+                {
+                  name: 'bufferTab',
+                  title: 'Output buffer',
+                  description: 'Duration and capacity configuration',
+                  icon: <i className='bx bx-align-left' />,
+                  testid: 'button-tab-output-buffer',
+                  content: (
+                    <>
+                      <TabOutputBufferOptions disabled={props.disabled} />
                       {tabFooter}
                     </>
                   )

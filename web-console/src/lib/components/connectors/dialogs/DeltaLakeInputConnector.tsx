@@ -5,7 +5,6 @@ import {
 } from '$lib/components/connectors/dialogs/elements/DialogComponents'
 import { TabDeltaLakeGeneral } from '$lib/components/connectors/dialogs/tabs/deltalake/TabDeltaLakeGeneral'
 import { TabDeltaLakeOptions } from '$lib/components/connectors/dialogs/tabs/deltalake/TabDeltaLakeOptions'
-import { TabOutputBufferOptions } from '$lib/components/connectors/dialogs/tabs/generic/TabOutputBufferOptions'
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
 import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import {
@@ -104,8 +103,6 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
       return
     }
   }
-
-  // const [storageType, setStorageType] = useState<DeltaLakeStorageType | undefined>()
 
   return (
     <>

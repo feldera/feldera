@@ -101,8 +101,6 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
     }
   }
 
-  // const [storageType, setStorageType] = useState<DeltaLakeStorageType | undefined>()
-
   return (
     <>
       <ConnectorEditDialog
@@ -148,7 +146,7 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   content: (
                     <>
                       <TabDeltaLakeGeneral
-                        direction={Direction.INPUT}
+                        direction={Direction.OUTPUT}
                         disabled={props.disabled}
                         parentName='transport'
                       />

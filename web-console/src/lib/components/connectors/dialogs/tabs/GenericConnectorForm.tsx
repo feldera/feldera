@@ -9,13 +9,6 @@ import { FieldValues, Path, TextFieldElement, useFormContext, useFormState } fro
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 
-// type JSONConfigEditorFields = {
-//   transport: Record<string, any>
-//   format: Record<string, any>
-// }
-
-// type JSONEditorFields = Record<string, Record<string, any>>
-
 export const GenericEditorForm = <T extends FieldValues>(props: {
   disabled?: boolean
   direction: Direction
