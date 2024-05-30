@@ -25,21 +25,22 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-/**
- * This class does not correspond to any Rust construct.
- * It represents a cast of an expression to a given type.
- */
-public class DBSPCastExpression extends DBSPExpression {
+/** This class does not correspond to any Rust primitive construct.
+ * It is compiled into a function invocation, depending on the involved types.
+ * It represents a cast of an expression to a given type. */
+public final class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
 
     public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
         super(node, to);
         this.source = source;
+        // The following are not true e.g., because of casts that remove nullability from vectors.
         // assert type.is(DBSPTypeBaseType.class);
         // assert source.getType().is(DBSPTypeBaseType.class);
     }
@@ -80,5 +81,14 @@ public class DBSPCastExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPCastExpression otherExpression = other.as(DBSPCastExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.source == otherExpression.source &&
+                this.hasSameType(other);
     }
 }

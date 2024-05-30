@@ -69,7 +69,7 @@ public class Passes implements IWritesLogs, CircuitTransform {
             ToDotVisitor.toDot(this.errorReporter, name, details, "png", circuit);
         }
         for (CircuitTransform pass: this.passes) {
-            Logger.INSTANCE.belowLevel(this, 1)
+            Logger.INSTANCE.belowLevel("Passes", 1)
                     .append("Executing ")
                     .append(pass.toString())
                     .newline();
@@ -88,6 +88,14 @@ public class Passes implements IWritesLogs, CircuitTransform {
 
     @Override
     public String toString() {
-        return "Passes" + this.passes;
+        StringBuilder names = new StringBuilder();
+        boolean first = true;
+        for (CircuitTransform pass: this.passes) {
+            if (!first)
+                names.append("-");
+            first = false;
+            names.append(pass.toString());
+        }
+        return names.toString();
     }
 }

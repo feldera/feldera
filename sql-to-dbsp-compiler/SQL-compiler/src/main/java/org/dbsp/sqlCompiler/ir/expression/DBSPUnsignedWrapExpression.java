@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -11,7 +12,7 @@ import org.dbsp.util.IIndentStream;
 
 /** An unsigned wrap expression just wraps a signed integer into an unsigned one
  * preserving order. */
-public class DBSPUnsignedWrapExpression extends DBSPUnaryExpression {
+public final class DBSPUnsignedWrapExpression extends DBSPExpression {
     public static class TypeSequence {
         public final DBSPType dataType;
         public final DBSPTypeInteger dataConvertedType;
@@ -38,10 +39,7 @@ public class DBSPUnsignedWrapExpression extends DBSPUnaryExpression {
 
         static DBSPTypeInteger getInitialIntegerType(DBSPType sourceType) {
             return switch (sourceType.code) {
-                case INT8 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
-                case INT16 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
-                case INT32 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
-                case INT64 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
+                case INT8, INT16, INT32, INT64 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
                 case DATE -> new DBSPTypeInteger(sourceType.getNode(), 32, true, false);
                 case TIMESTAMP -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
                 case TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, false, false);
@@ -50,6 +48,7 @@ public class DBSPUnsignedWrapExpression extends DBSPUnaryExpression {
         }
     }
 
+    public final DBSPExpression source;
     public final TypeSequence sequence;
     public final boolean nullsLast;
     public final boolean ascending;
@@ -62,7 +61,8 @@ public class DBSPUnsignedWrapExpression extends DBSPUnaryExpression {
     public DBSPUnsignedWrapExpression(
             CalciteObject node, DBSPExpression source, boolean ascending, boolean nullsLast) {
         // This allocates two sequences, but I don't know how to avoid that.
-        super(node, TypeSequence.getResultType(source.getType()), DBSPOpcode.UNSIGNED_WRAP, source);
+        super(node, TypeSequence.getResultType(source.getType()));
+        this.source = source;
         this.sequence = new TypeSequence(source.getType());
         this.nullsLast = nullsLast;
         this.ascending = ascending;
@@ -113,5 +113,15 @@ public class DBSPUnsignedWrapExpression extends DBSPUnaryExpression {
     public DBSPExpression deepCopy() {
         return new DBSPUnsignedWrapExpression(
                 this.getNode(), this.source.deepCopy(), this.ascending, this.nullsLast);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPUnsignedWrapExpression otherExpression = other.as(DBSPUnsignedWrapExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.ascending == otherExpression.ascending &&
+                this.nullsLast == otherExpression.nullsLast &&
+                context.equivalent(this.source, otherExpression.source);
     }
 }

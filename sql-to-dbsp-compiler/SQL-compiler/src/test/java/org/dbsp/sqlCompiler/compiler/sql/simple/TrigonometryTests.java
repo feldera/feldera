@@ -1226,7 +1226,7 @@ public class TrigonometryTests extends SqlIoTest {
                         -------------------
                          0.549306144334055
                         (1 row)
-                                                
+                        
                         SELECT csch(0.6); -- not tested in Spark
                                csch
                         -------------------
@@ -1256,13 +1256,13 @@ public class TrigonometryTests extends SqlIoTest {
                 ----------
                  Infinity
                 (1 row)
-                                
+                
                 SELECT asinh('-Infinity'::float8);
                    asinh
                 -----------
                  -Infinity
                 (1 row)
-                                
+                
                 SELECT asinh('NaN'::float8);
                  asinh
                 -------

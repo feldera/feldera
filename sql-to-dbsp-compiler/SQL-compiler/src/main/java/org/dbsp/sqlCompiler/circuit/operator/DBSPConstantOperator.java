@@ -33,7 +33,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public class DBSPConstantOperator extends DBSPOperator {
+public final class DBSPConstantOperator extends DBSPOperator {
     public DBSPConstantOperator(CalciteObject node, DBSPExpression value, boolean isMultiset) {
         // Notice that we use the 'this.function' field to represent
         // the constant value.  Constants are not ClosureExpressions.

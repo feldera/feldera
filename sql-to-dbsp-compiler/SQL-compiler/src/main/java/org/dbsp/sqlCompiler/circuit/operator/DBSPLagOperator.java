@@ -10,7 +10,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import java.util.List;
 
 /** Implements the LAG/LEAD operators for an SQL OVER Window */
-public class DBSPLagOperator extends DBSPUnaryOperator {
+public final class DBSPLagOperator extends DBSPUnaryOperator {
     public final DBSPComparatorExpression comparator;
     public final DBSPExpression projection;
     public final int offset;
@@ -35,6 +35,18 @@ public class DBSPLagOperator extends DBSPUnaryOperator {
         this.comparator = comparator;
         this.projection = projection;
         this.offset = offset;
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPLagOperator otherOperator = other.as(DBSPLagOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.comparator.equivalent(otherOperator.comparator) &&
+                this.projection.equivalent(otherOperator.projection) &&
+                this.offset == otherOperator.offset;
     }
 
     @Override

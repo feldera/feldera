@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
@@ -17,7 +18,7 @@ import java.util.Objects;
 /** Apply a topK operation to each of the groups in an indexed collection.
  * This always sorts the elements of each group.
  * To sort the entire collection just group by (). */
-public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
+public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     /** These values correspond to the SQL keywords
      * ROW, RANK, and DENSE RANK.  See e.g.:
      * https://learn.microsoft.com/en-us/sql/t-sql/functions/ranking-functions-transact-sql
@@ -77,6 +78,18 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
             return new DBSPIndexedTopKOperator(this.getNode(), this.numbering, this.getFunction(),
                     this.limit, this.outputProducer, newInputs.get(0));
         return this;
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPIndexedTopKOperator otherOperator = other.as(DBSPIndexedTopKOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.numbering == otherOperator.numbering &&
+                EquivalenceContext.equiv(this.outputProducer, otherOperator.outputProducer) &&
+                EquivalenceContext.equiv(this.limit, otherOperator.limit);
     }
 
     @Override

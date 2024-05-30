@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -33,18 +34,18 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
 
 /** Tuple field reference expression. */
-public class DBSPFieldExpression extends DBSPExpression {
+public final class DBSPFieldExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final int fieldNo;
 
-    protected DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo, DBSPType type) {
+    DBSPFieldExpression(CalciteObject node, DBSPExpression expression, int fieldNo, DBSPType type) {
         super(node, type);
         this.expression = expression;
         this.fieldNo = fieldNo;
         assert fieldNo >= 0: "Negative field index " + fieldNo;
     }
 
-    protected DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
+    DBSPFieldExpression(DBSPExpression expression, int fieldNo, DBSPType type) {
         this(CalciteObject.EMPTY, expression, fieldNo, type);
     }
 
@@ -103,5 +104,14 @@ public class DBSPFieldExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPFieldExpression(this.getNode(), this.expression.deepCopy(), this.fieldNo);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPFieldExpression otherExpression = other.as(DBSPFieldExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.fieldNo == otherExpression.fieldNo &&
+                context.equivalent(this.expression, otherExpression.expression);
     }
 }

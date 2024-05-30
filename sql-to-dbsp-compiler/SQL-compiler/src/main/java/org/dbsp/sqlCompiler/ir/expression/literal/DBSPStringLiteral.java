@@ -38,7 +38,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-public class DBSPStringLiteral extends DBSPLiteral {
+public final class DBSPStringLiteral extends DBSPLiteral {
     @Nullable
     public final String value;
     public final Charset charset;

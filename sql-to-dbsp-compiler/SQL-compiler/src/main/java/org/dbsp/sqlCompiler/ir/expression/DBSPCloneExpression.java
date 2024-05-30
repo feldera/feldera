@@ -25,12 +25,13 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IIndentStream;
 
 /** Represents an expression of the form e.clone(). */
-public class DBSPCloneExpression extends DBSPExpression {
+public final class DBSPCloneExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPCloneExpression(CalciteObject object, DBSPExpression expression) {
@@ -68,5 +69,13 @@ public class DBSPCloneExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPCloneExpression(this.getNode(), this.expression.deepCopy());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPCloneExpression otherExpression = other.as(DBSPCloneExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.expression, otherExpression.expression);
     }
 }

@@ -37,14 +37,13 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.*;
 
-/**
- * This visitor rewrites a circuit by replacing each operator
+/** This visitor rewrites a circuit by replacing each operator
  * recursively with an equivalent one.
  * Each operator is replaced in one of two cases:
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.
  * We expect that this is a base class for all visitors which modify a circuit.
- */
+ * This visitor is a base class for all visitors that modify circuits. */
 public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     @Nullable
     protected DBSPPartialCircuit result;
@@ -125,8 +124,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     /**
      * Replace the specified operator with an equivalent one
      * by replacing all the inputs with their replacements from the 'mapped' map.
-     * @param operator  Operator to replace.
-     */
+     * @param operator  Operator to replace. */
     public void replace(DBSPOperator operator) {
         if (this.visited.contains(operator))
             // Graph can be a DAG

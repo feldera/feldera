@@ -23,17 +23,20 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.sqlCompiler.ir.expression.*;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IndentStream;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
+import javax.annotation.Nullable;
 import java.util.Objects;
 
 public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
@@ -144,6 +147,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return this.mayBeNull ? "N" : "";
     }
 
+    @Nullable
     public String asSqlString() {
         return this.code.sqlName;
     }

@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -143,9 +144,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         return this.function != null;
     }
 
-    /**
-     * Return a version of this operator with the function replaced.
-     */
+    /** Return a version of this operator with the function replaced. */
     public abstract DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType);
 
     public DBSPTypeZSet getOutputZSetType() { return this.outputType.to(DBSPTypeZSet.class); }
@@ -217,8 +216,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         return Objects.requireNonNull(this.function);
     }
 
-    /**
-     * Return a version of this operator with the inputs replaced.
+    /** Return a version of this operator with the inputs replaced.
      * @param newInputs  Inputs to use instead of the old ones.
      * @param force      If true always return a new operator.
      *                   If false and the inputs are the same this may return this.
@@ -229,16 +227,29 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
      * Return true if any of the inputs in `newInputs` is different from one of the inputs
      * of this operator.
      * @param newInputs  List of alternative inputs.
+     * @param sameSizeRequired  If true and the sizes don't match, throw.
      */
-    public boolean inputsDiffer(List<DBSPOperator> newInputs) {
-        if (this.inputs.size() != newInputs.size())
-            throw new InternalCompilerError("Trying to replace " + this.inputs.size() +
-                    " with " + newInputs.size() + " inputs", this);
+    public boolean inputsDiffer(List<DBSPOperator> newInputs, boolean sameSizeRequired) {
+        if (this.inputs.size() != newInputs.size()) {
+            if (sameSizeRequired)
+                throw new InternalCompilerError("Comparing opeartor with " + this.inputs.size() +
+                        " inputs with a list of " + newInputs.size() + " inputs", this);
+            else
+                return false;
+        }
         for (boolean b: Linq.zip(this.inputs, newInputs, (l, r) -> l != r)) {
             if (b)
                 return true;
         }
         return false;
+    }
+
+    public boolean sameInputs(DBSPOperator other) {
+        return !this.inputsDiffer(other.inputs, false);
+    }
+
+    public boolean inputsDiffer(List<DBSPOperator> newInputs) {
+        return this.inputsDiffer(newInputs, true);
     }
 
     @Override
@@ -294,5 +305,17 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
             builder.append(this.function);
         }
         return builder.append(");");
+    }
+
+    /** True if this is equivalent with the other operator,
+     * which means that common-subexpression elimination can replace this with 'other'.
+     * This implies that all inputs are the same, and the computed functions are the same. */
+    public boolean equivalent(DBSPOperator other) {
+        // Default implementation
+        if (!this.operation.equals(other.operation))
+            return false;
+        if (!this.sameInputs(other))
+            return false;
+        return EquivalenceContext.equiv(this.function, other.function);
     }
 }

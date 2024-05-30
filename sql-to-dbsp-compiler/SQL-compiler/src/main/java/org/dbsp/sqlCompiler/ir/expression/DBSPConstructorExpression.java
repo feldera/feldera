@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -31,7 +32,7 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
 /** Invocation of a Rust constructor with some arguments. */
-public class DBSPConstructorExpression extends DBSPExpression {
+public final class DBSPConstructorExpression extends DBSPExpression {
     public final DBSPExpression function;
     public final DBSPExpression[] arguments;
 
@@ -77,5 +78,14 @@ public class DBSPConstructorExpression extends DBSPExpression {
         return new DBSPConstructorExpression(
                 this.function.deepCopy(), this.type,
                 Linq.map(this.arguments, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPConstructorExpression otherExpression = other.as(DBSPConstructorExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.function, otherExpression.function)
+                && context.equivalent(this.arguments, otherExpression.arguments);
     }
 }

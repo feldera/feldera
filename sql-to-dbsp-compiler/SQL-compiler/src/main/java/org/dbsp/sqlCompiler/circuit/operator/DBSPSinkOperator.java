@@ -27,14 +27,12 @@ import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPSinkOperator extends DBSPViewBaseOperator {
+public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     public DBSPSinkOperator(CalciteObject node, String viewName, String query,
                             DBSPTypeStruct originalRowType,
                             List<ViewColumnMetadata> metadata,
@@ -50,11 +48,6 @@ public class DBSPSinkOperator extends DBSPViewBaseOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
-    }
-
-    @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression ignoredFunction, DBSPType ignoredType) {
-        return this;
     }
 
     @Override

@@ -18,7 +18,7 @@ import java.util.List;
 
 /** Represents an internal view, which does not produce output.
  * If the view does produce an output, this operator is followed by a Sink operator. */
-public class DBSPViewOperator
+public final class DBSPViewOperator
         extends DBSPViewBaseOperator
         implements IHasColumnsMetadata
 {

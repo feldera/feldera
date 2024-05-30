@@ -24,18 +24,19 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
-/**
- * An expression qualified with a type.
- */
+/** An expression qualified with a type.
+ * expression::type */
 @NonCoreIR
-public class DBSPQualifyTypeExpression extends DBSPExpression {
+public final class DBSPQualifyTypeExpression extends DBSPExpression {
     public final DBSPExpression expression;
     public final DBSPType[] types;
 
@@ -77,5 +78,14 @@ public class DBSPQualifyTypeExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPQualifyTypeExpression(this.expression.deepCopy(), this.types);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPQualifyTypeExpression otherExpression = other.as(DBSPQualifyTypeExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.expression, otherExpression.expression) &&
+                DBSPTypeSemigroup.sameTypes(this.types, otherExpression.types);
     }
 }

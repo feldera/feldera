@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-public class DBSPZSetLiteral extends DBSPLiteral
+public final class DBSPZSetLiteral extends DBSPLiteral
         implements IDBSPContainer, ToIndentableString {
     public final Map<DBSPExpression, Long> data;
     public final DBSPType elementType;

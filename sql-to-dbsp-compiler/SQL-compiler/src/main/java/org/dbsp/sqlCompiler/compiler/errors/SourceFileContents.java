@@ -9,14 +9,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * Keep track of the contents of the source file supplied to the compiler.
- */
+/** Keep track of the contents of the source file supplied to the compiler. */
 public class SourceFileContents {
-    /**
-     * Currently we can have a single source file, but perhaps some day we will
-     * support something like #include.  This is null if the data does not come from a file.
-     */
+    /** Currently we can have a single source file, but perhaps some day we will
+     * support something like #include.  This is null if the data does not come from a file. */
     public @Nullable String sourceFileName;
     final List<String> lines = new ArrayList<>();
     final StringBuilder builder = new StringBuilder();

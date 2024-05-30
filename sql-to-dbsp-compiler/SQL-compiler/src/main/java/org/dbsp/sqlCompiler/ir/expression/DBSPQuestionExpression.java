@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -9,10 +10,10 @@ import org.dbsp.util.IIndentStream;
 
 /** Describes an expression of the form e? */
 @NonCoreIR
-public class DBSPQuestionExpression extends DBSPExpression {
+public final class DBSPQuestionExpression extends DBSPExpression {
     public final DBSPExpression source;
 
-    protected DBSPQuestionExpression(DBSPExpression source) {
+    DBSPQuestionExpression(DBSPExpression source) {
         super(source.getNode(), source.getType().setMayBeNull(false));
         this.source = source;
         assert source.getType().is(DBSPTypeAny.class) ||
@@ -47,5 +48,13 @@ public class DBSPQuestionExpression extends DBSPExpression {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.source)
                 .append("?");
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPQuestionExpression otherExpression = other.as(DBSPQuestionExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.source, otherExpression.source);
     }
 }

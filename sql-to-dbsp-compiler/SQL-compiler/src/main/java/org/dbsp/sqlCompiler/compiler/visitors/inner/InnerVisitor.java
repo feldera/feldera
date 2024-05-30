@@ -484,9 +484,9 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         return this.preorder(node.to(DBSPExpression.class));
     }
 
-    public VisitDecision preorder(DBSPUnsignedWrapExpression node) { return this.preorder(node.to(DBSPUnaryExpression.class)); }
+    public VisitDecision preorder(DBSPUnsignedWrapExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
 
-    public VisitDecision preorder(DBSPUnsignedUnwrapExpression node) { return this.preorder(node.to(DBSPUnaryExpression.class)); }
+    public VisitDecision preorder(DBSPUnsignedUnwrapExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
 
     // Literals
     public VisitDecision preorder(DBSPLiteral node) {
@@ -985,11 +985,11 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPUnsignedWrapExpression node) {
-        this.postorder(node.to(DBSPUnaryExpression.class));
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     public void postorder(DBSPUnsignedUnwrapExpression node) {
-        this.postorder(node.to(DBSPUnaryExpression.class));
+        this.postorder(node.to(DBSPExpression.class));
     }
 
     // Literals

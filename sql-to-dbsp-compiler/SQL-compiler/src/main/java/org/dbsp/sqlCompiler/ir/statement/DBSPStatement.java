@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 
@@ -36,4 +37,14 @@ public abstract class DBSPStatement
 
     /** Create a deep copy of this statement. */
     public abstract DBSPStatement deepCopy();
+
+    /**
+     * Used to compute the equivalence of two statements
+     *
+     * @param context    Context as changed by the statement
+     * @param equivalent True if two statements are equivalent
+     */
+    public record EquivalenceResult(boolean equivalent, EquivalenceContext context) {}
+
+    public abstract EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other);
 }

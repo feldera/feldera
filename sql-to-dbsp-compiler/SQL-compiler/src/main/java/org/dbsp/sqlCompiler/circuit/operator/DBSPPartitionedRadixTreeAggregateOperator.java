@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -12,7 +13,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 @NonCoreIR
-public class DBSPPartitionedRadixTreeAggregateOperator extends DBSPOperator {
+public final class DBSPPartitionedRadixTreeAggregateOperator extends DBSPOperator {
     @Nullable
     public final DBSPAggregate aggregate;
 
@@ -40,6 +41,17 @@ public class DBSPPartitionedRadixTreeAggregateOperator extends DBSPOperator {
                     this.getNode(), this.getFunction(), this.aggregate,
                     newInputs.get(0), newInputs.get(1), newInputs.get(2));
         return this;
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPPartitionedRadixTreeAggregateOperator otherOperator =
+                other.as(DBSPPartitionedRadixTreeAggregateOperator.class);
+        if (otherOperator == null)
+            return false;
+        return EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate);
     }
 
     @Override

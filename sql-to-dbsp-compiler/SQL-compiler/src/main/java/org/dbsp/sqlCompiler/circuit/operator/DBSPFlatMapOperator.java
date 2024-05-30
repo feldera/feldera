@@ -34,7 +34,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public class DBSPFlatMapOperator extends DBSPUnaryOperator {
+public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
                                DBSPTypeZSet outputType, DBSPOperator input) {
         super(node, "flat_map", expression, outputType, true, input);

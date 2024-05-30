@@ -19,7 +19,7 @@ import java.util.List;
  * The ToDot visitor will correct this situation when drawing them.
  */
 @NonCoreIR
-public class DBSPDelayOutputOperator extends DBSPSourceBaseOperator {
+public final class DBSPDelayOutputOperator extends DBSPSourceBaseOperator {
     public DBSPDelayOutputOperator(CalciteObject node, DBSPType outputType, boolean isMultiset,
                                    @Nullable String comment) {
         super(node, outputType, isMultiset, comment, new NameGen("delay").nextName());

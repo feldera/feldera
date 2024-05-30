@@ -19,7 +19,7 @@ import javax.annotation.Nullable;
  * Currently, we only support empty indexed zsets since we found no
  * need for other constants yet.
  */
-public class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContainer {
+public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeIndexedZSet indexedZSetType;
 
     public DBSPIndexedZSetLiteral(CalciteObject node, DBSPType type) {

@@ -7,9 +7,7 @@ import org.dbsp.util.Logger;
 
 import java.util.List;
 
-/**
- * Applies multiple other inner visitors in sequence.
- */
+/** Applies multiple other inner visitors in sequence. */
 public class InnerPasses implements IWritesLogs, IRTransform {
     public final List<IRTransform> passes;
 

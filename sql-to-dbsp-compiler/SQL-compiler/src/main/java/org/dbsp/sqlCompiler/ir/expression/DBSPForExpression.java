@@ -24,19 +24,21 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.util.IIndentStream;
 
 @NonCoreIR
-public class DBSPForExpression extends DBSPExpression {
-    public final DBSPVariablePath variable;
+public final class DBSPForExpression extends DBSPExpression implements IDBSPDeclaration {
+    public final String variable;
     public final DBSPExpression iterated;
     public final DBSPBlockExpression block;
 
-    public DBSPForExpression(DBSPVariablePath variable, DBSPExpression iterated, DBSPBlockExpression block) {
+    public DBSPForExpression(String variable, DBSPExpression iterated, DBSPBlockExpression block) {
         super(iterated.getNode(), new DBSPTypeRawTuple());
         this.variable = variable;
         this.iterated = iterated;
@@ -59,7 +61,7 @@ public class DBSPForExpression extends DBSPExpression {
         DBSPForExpression o = other.as(DBSPForExpression.class);
         if (o == null)
             return false;
-        return this.variable == o.variable &&
+        return this.variable.equals(o.variable) &&
                 this.iterated == o.iterated &&
                 this.block == o.block &&
                 this.hasSameType(o);
@@ -79,5 +81,24 @@ public class DBSPForExpression extends DBSPExpression {
     public DBSPExpression deepCopy() {
         return new DBSPForExpression(this.variable, this.iterated.deepCopy(),
                 this.block.deepCopy().to(DBSPBlockExpression.class));
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPForExpression otherExpression = other.as(DBSPForExpression.class);
+        if (otherExpression == null)
+            return false;
+        if (!context.equivalent(this.iterated, otherExpression.iterated))
+            return false;
+        EquivalenceContext newContext = context.clone();
+        newContext.leftDeclaration.substitute(this.variable, this);
+        newContext.rightDeclaration.substitute(this.variable, otherExpression);
+        newContext.leftToRight.put(this, otherExpression);
+        return newContext.equivalent(this.block, otherExpression.block);
+    }
+
+    @Override
+    public String getName() {
+        return this.variable;
     }
 }

@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -11,12 +12,10 @@ import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-/**
- * A conditional aggregate has the form
+/** A conditional aggregate has the form
  * (accumulator, increment, predicate) -> accumulator.
- * The predicate is optional.
- */
-public class DBSPConditionalAggregateExpression extends DBSPExpression {
+ * The predicate is optional. */
+public final class DBSPConditionalAggregateExpression extends DBSPExpression {
     public final DBSPOpcode opcode;
     public final DBSPExpression left;
     public final DBSPExpression right;
@@ -40,6 +39,17 @@ public class DBSPConditionalAggregateExpression extends DBSPExpression {
     public DBSPExpression deepCopy() {
         return new DBSPConditionalAggregateExpression(this.getNode(), this.opcode, this.getType(),
                 this.left.deepCopy(), this.right.deepCopy(), DBSPExpression.nullableDeepCopy(condition));
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPConditionalAggregateExpression otherExpression = other.as(DBSPConditionalAggregateExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.opcode == otherExpression.opcode &&
+                context.equivalent(this.left, otherExpression.left) &&
+                context.equivalent(this.right, otherExpression.right) &&
+                context.equivalent(this.condition, otherExpression.condition);
     }
 
     @Override

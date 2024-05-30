@@ -38,7 +38,7 @@ import javax.annotation.Nullable;
 import java.math.BigInteger;
 import java.util.Objects;
 
-public class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLiteral {
+public final class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
     public final BigInteger value;
 

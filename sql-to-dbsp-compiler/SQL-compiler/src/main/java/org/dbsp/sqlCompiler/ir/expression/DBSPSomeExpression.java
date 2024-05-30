@@ -2,16 +2,15 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
 
-/**
- * Represents an expression of the form Some(e).
- */
+/** Represents an expression of the form Some(e). */
 @NonCoreIR
-public class DBSPSomeExpression extends DBSPExpression {
+public final class DBSPSomeExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPSomeExpression(CalciteObject node, DBSPExpression expression) {
@@ -49,5 +48,13 @@ public class DBSPSomeExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPSomeExpression(this.getNode(), this.expression.deepCopy());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPSomeExpression otherExpression = other.as(DBSPSomeExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.expression, otherExpression.expression);
     }
 }

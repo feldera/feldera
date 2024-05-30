@@ -35,7 +35,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPBoolLiteral extends DBSPLiteral {
+public final class DBSPBoolLiteral extends DBSPLiteral {
     @Nullable
     public final Boolean value;
 

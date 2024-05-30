@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -39,7 +40,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class DBSPTupleExpression extends DBSPBaseTupleExpression {
+public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public final boolean isNull;
 
     public DBSPTupleExpression(CalciteObject object, boolean mayBeNull, DBSPExpression... expressions) {
@@ -162,6 +163,15 @@ public class DBSPTupleExpression extends DBSPBaseTupleExpression {
             return new DBSPTupleExpression(this.getType().to(DBSPTypeTuple.class));
         return new DBSPTupleExpression(this.getNode(), this.getType().mayBeNull,
                 Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPTupleExpression otherExpression = other.as(DBSPTupleExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.isNull == otherExpression.isNull &&
+                context.equivalent(this.fields, otherExpression.fields);
     }
 
     @Override

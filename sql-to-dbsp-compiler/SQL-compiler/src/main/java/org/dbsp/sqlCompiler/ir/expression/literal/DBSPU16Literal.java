@@ -37,7 +37,7 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLiteral {
+public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLiteral {
     @Nullable
     public final Integer value;
 

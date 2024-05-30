@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
 
 @NonCoreIR
-public class DBSPIdentifierPattern extends DBSPPattern {
+public final class DBSPIdentifierPattern extends DBSPPattern {
     public final String identifier;
     public final boolean mutable;
 

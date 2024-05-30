@@ -180,7 +180,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testWiderChar() {
         this.q("""
                 SELECT CAST(f1 AS char(20)) AS "char(text)" FROM TEXT_TBL;
-                      char(text)     \s
+                      char(text)
                 ----------------------
                  doh!               \s
                  hi de ho neighbor  \s""");
@@ -190,7 +190,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testWiderVarchar() {
         this.q("""
                 SELECT CAST(f1 AS char(10)) AS "char(varchar)" FROM VARCHAR_TBL;
-                 char(varchar)\s
+                 char(varchar)
                 ---------------
                  a        \s
                  ab       \s
@@ -228,7 +228,7 @@ public class PostgresStringTests extends SqlIoTest {
                 ----------------
                  t
                 (1 row)
-                 
+                
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
                  bunch o blanks
                 ------------------
@@ -862,31 +862,31 @@ public class PostgresStringTests extends SqlIoTest {
                 -------
                 \s
                 (1 row)
-                                
+                
                 SELECT 'a' LIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                                
+                
                 SELECT NULL LIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                                
+                
                 SELECT NULL NOT LIKE '%';
                  result
                 -------
                 \s
                 (1 row)
-                                
+                
                 SELECT 'a' NOT LIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                                
+                
                 SELECT NULL NOT LIKE NULL;
                  result
                 -------
@@ -898,13 +898,13 @@ public class PostgresStringTests extends SqlIoTest {
                 -------
                 \s
                 (1 row)
-                                
+                
                 SELECT 'a' RLIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                                
+                
                 SELECT NULL RLIKE NULL;
                  result
                 -------
@@ -1077,8 +1077,8 @@ public class PostgresStringTests extends SqlIoTest {
                 );
 
                 CREATE VIEW example_count AS
-                    SELECT COUNT(*) FROM example WHERE name LIKE 'abc%' OR name LIKE name;
-                    """;
+                SELECT COUNT(*) FROM example WHERE name LIKE 'abc%' OR name LIKE name;
+                """;
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);

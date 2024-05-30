@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
@@ -39,10 +40,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Represents a (constant) vector described by its elements.
- */
-public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
+/** Represents a (constant) vector described by its elements. */
+public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     @Nullable
     public final List<DBSPExpression> data;
     public final DBSPTypeVec vecType;
@@ -159,6 +158,14 @@ public class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer {
     public DBSPExpression deepCopy() {
         return new DBSPVecLiteral(this.getNode(), this.getType(),
                 this.data != null ? Linq.map(this.data, DBSPExpression::deepCopy) : null);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPVecLiteral otherExpression = other.as(DBSPVecLiteral.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.data, otherExpression.data);
     }
 
     // TODO: implement equals and hashcode

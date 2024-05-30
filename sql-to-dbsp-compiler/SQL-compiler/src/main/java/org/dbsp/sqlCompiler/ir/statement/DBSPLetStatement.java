@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
@@ -34,7 +35,7 @@ import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration {
+public final class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration {
     public final String variable;
     public final DBSPType type;
     @Nullable
@@ -55,6 +56,22 @@ public class DBSPLetStatement extends DBSPStatement implements IDBSPDeclaration 
             return new DBSPLetStatement(this.variable, this.initializer.deepCopy(), this.mutable);
         else
             return new DBSPLetStatement(this.variable, this.type, this.mutable);
+    }
+
+    @Override
+    public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
+        DBSPLetStatement otherStatement = other.as(DBSPLetStatement.class);
+        if (otherStatement == null)
+            return new EquivalenceResult(false, context);
+        if (!context.equivalent(this.initializer, otherStatement.initializer))
+            return new EquivalenceResult(false, context);
+        if (this.mutable != otherStatement.mutable)
+            return new EquivalenceResult(false, context);
+        EquivalenceContext newContext = context.clone();
+        newContext.leftDeclaration.substitute(this.variable, this);
+        newContext.rightDeclaration.substitute(otherStatement.variable, otherStatement);
+        newContext.leftToRight.put(this, otherStatement);
+        return new EquivalenceResult(true, newContext);
     }
 
     public DBSPLetStatement(String variable, DBSPType type, boolean mutable) {

@@ -24,18 +24,18 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
-/**
- * A special case of a PathExpression in Rust which refers to a variable by name.
- * More convenient that using always Paths.
- */
-public class DBSPVariablePath extends DBSPExpression {
+/** A special case of a PathExpression in Rust which refers to a variable by name.
+ * More convenient that using always Paths. */
+public final class DBSPVariablePath extends DBSPExpression {
     public final String variable;
 
     public DBSPVariablePath(String variable, DBSPType type) {
@@ -58,7 +58,6 @@ public class DBSPVariablePath extends DBSPExpression {
         visitor.postorder(this);
     }
 
-
     @Override
     public boolean sameFields(IDBSPNode other) {
         DBSPVariablePath o = other.as(DBSPVariablePath.class);
@@ -66,6 +65,21 @@ public class DBSPVariablePath extends DBSPExpression {
             return false;
         return this.variable.equals(o.variable) &&
                 this.hasSameType(o);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPVariablePath otherExpression = other.as(DBSPVariablePath.class);
+        if (otherExpression == null)
+            return false;
+        IDBSPDeclaration leftDeclaration = context.leftDeclaration.get(this.variable);
+        assert leftDeclaration != null
+                : "Declaration for variable " + Utilities.singleQuote(this.variable) + " not found";
+        IDBSPDeclaration rightDeclaration = context.rightDeclaration.get(otherExpression.variable);
+        assert rightDeclaration != null
+                : "Declaration for variable " + Utilities.singleQuote(otherExpression.variable) + " not found";
+        IDBSPDeclaration subst = context.leftToRight.get(leftDeclaration);
+        return subst.equals(rightDeclaration);
     }
 
     @Override

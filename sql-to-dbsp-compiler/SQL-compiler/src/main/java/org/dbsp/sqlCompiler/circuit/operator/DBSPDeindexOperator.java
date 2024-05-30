@@ -12,12 +12,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import javax.annotation.CheckReturnValue;
 import java.util.List;
 
-/**
- * The inverse of the map_index operator.  This operator simply drops the index
+/** The inverse of the map_index operator.  This operator simply drops the index
  * from an indexed z-set and keeps all the values.  It can be implemented by
- * a DBSP map operator, but it is worthwhile to have a separate operation.
- */
-public class DBSPDeindexOperator extends DBSPUnaryOperator {
+ * a DBSP map operator, but it is worthwhile to have a separate operation. */
+public final class DBSPDeindexOperator extends DBSPUnaryOperator {
     static DBSPType outputType(DBSPTypeIndexedZSet ix) {
         return TypeCompiler.makeZSet(ix.elementType);
     }

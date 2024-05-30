@@ -6,9 +6,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
-/**
- * Applies a CircuitTransform until the circuit stops changing.
- */
+/** Applies a CircuitTransform until the circuit stops changing. */
 public class Repeat implements IWritesLogs, CircuitTransform {
     final IErrorReporter errorReporter;
     public final CircuitTransform transform;
@@ -24,7 +22,7 @@ public class Repeat implements IWritesLogs, CircuitTransform {
         int repeats = 0;
         while (true) {
             DBSPCircuit result = this.transform.apply(circuit);
-            Logger.INSTANCE.belowLevel(this, 3)
+            Logger.INSTANCE.belowLevel(this, 4)
                     .append("After ")
                     .append(this.transform.toString())
                     .newline()

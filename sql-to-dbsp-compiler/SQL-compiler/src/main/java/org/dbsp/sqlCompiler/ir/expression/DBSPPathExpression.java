@@ -24,13 +24,14 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-public class DBSPPathExpression extends DBSPExpression {
+public final class DBSPPathExpression extends DBSPExpression {
     public final DBSPPath path;
 
     public DBSPPathExpression(DBSPType type, DBSPPath path) {
@@ -66,5 +67,13 @@ public class DBSPPathExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPPathExpression(this.getType(), this.path);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPPathExpression otherExpression = other.as(DBSPPathExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.path.equivalent(otherExpression.path);
     }
 }

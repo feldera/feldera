@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -35,10 +36,8 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * A Raw tuple expression generates a raw Rust tuple.
- */
-public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
+/** A Raw tuple expression generates a raw Rust tuple, e.g., (1, 's', a+b). */
+public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     public DBSPRawTupleExpression(DBSPExpression... expressions) {
         super(CalciteObject.EMPTY,
                 new DBSPTypeRawTuple(Linq.map(expressions, DBSPExpression::getType, DBSPType.class)), expressions);
@@ -96,5 +95,13 @@ public class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     @Override
     public DBSPBaseTupleExpression fromFields(List<DBSPExpression> fields) {
         return new DBSPRawTupleExpression(fields);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPRawTupleExpression otherExpression = other.as(DBSPRawTupleExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.fields, otherExpression.fields);
     }
 }

@@ -36,13 +36,9 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Set;
 
-/**
- * Core representation of a dataflow graph (aka a query plan).
- */
-public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
-    /**
-     * All the operators are in fact in the partial circuit.
-     */
+/** Core representation of a dataflow graph (aka a query plan). */
+public final class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
+    /** All the operators are in fact in the partial circuit. */
     public final DBSPPartialCircuit circuit;
     public final String name;
 
@@ -73,9 +69,7 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
         return this.circuit.getInput(tableName);
     }
 
-    /**
-     * @return The number of outputs of the circuit (SinkOperators).
-     */
+    /** @return The number of outputs of the circuit (SinkOperators). */
     public int getOutputCount() {
         return this.circuit.getOutputCount();
     }
@@ -84,31 +78,23 @@ public class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
         return this.circuit.getSingleOutputType();
     }
 
-    /**
-     * The list of all input tables of the circuit.
-     */
+    /** The list of all input tables of the circuit. */
     public Set<String> getInputTables() {
         return this.circuit.getInputTables();
     }
 
-    /**
-     * Create an identical circuit to this one but with a different name.
-     * @param name Name of the new circuit.
-     */
+    /** Create an identical circuit to this one but with a different name.
+     * @param name Name of the new circuit. */
     public DBSPCircuit rename(String name) {
         return new DBSPCircuit(this.getNode(), this.circuit, name);
     }
 
-    /**
-     * Return true if this circuit and other are identical (have the exact same operators).
-     */
+    /** @return true if this circuit and other are identical (have the exact same operators). */
     public boolean sameCircuit(DBSPCircuit other) {
         return this.circuit.sameCircuit(other.circuit);
     }
 
-    /**
-     * Number of operators in the circuit.
-     */
+    /** Number of operators in the circuit. */
     public int size() {
         return this.circuit.size();
     }

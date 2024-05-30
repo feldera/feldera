@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -32,11 +33,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
-/**
- * Function application expression.
- * Note: the type of the expression is the type of the result returned by the function.
- */
-public class DBSPApplyExpression extends DBSPApplyBaseExpression {
+/** Function application expression.
+ * Note: the type of the expression is the type of the result returned by the function. */
+public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
     public DBSPApplyExpression(CalciteObject node, String function, DBSPType returnType, DBSPExpression... arguments) {
         super(node, new DBSPPath(function).toExpression(), returnType, arguments);
         this.checkArgs(false);
@@ -94,5 +93,15 @@ public class DBSPApplyExpression extends DBSPApplyBaseExpression {
 
     public DBSPApplyExpression replaceArguments(DBSPExpression... arguments) {
         return new DBSPApplyExpression(this.function, this.type, arguments);
+    }
+
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPApplyMethodExpression otherExpression = other.as(DBSPApplyMethodExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.function, otherExpression.function) &&
+                context.equivalent(this.arguments, otherExpression.arguments);
     }
 }

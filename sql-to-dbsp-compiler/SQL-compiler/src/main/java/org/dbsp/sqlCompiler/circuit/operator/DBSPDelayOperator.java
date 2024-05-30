@@ -36,10 +36,8 @@ import java.util.List;
  *
  * <p></p>If the function is specified, it is the initial value produced by the delay.
  */
-public class DBSPDelayOperator extends DBSPUnaryOperator {
-    /**
-     * This can be null for operators that do not create back-edges.
-     */
+public final class DBSPDelayOperator extends DBSPUnaryOperator {
+    /** This can be null for operators that do not create back-edges. */
     @Nullable
     public final DBSPDelayOutputOperator output;
 

@@ -25,8 +25,10 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.util.IIndentStream;
@@ -35,7 +37,7 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPBlockExpression extends DBSPExpression {
+public final class DBSPBlockExpression extends DBSPExpression {
     public final List<DBSPStatement> contents;
     @Nullable
     public final DBSPExpression lastExpression;
@@ -88,5 +90,29 @@ public class DBSPBlockExpression extends DBSPExpression {
         return new DBSPBlockExpression(
                 Linq.map(this.contents, DBSPStatement::deepCopy),
                 DBSPApplyExpression.nullableDeepCopy(this.lastExpression));
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPBlockExpression otherExpression = other.as(DBSPBlockExpression.class);
+        if (otherExpression == null)
+            return false;
+        // Drop comments
+        List<DBSPStatement> contents = Linq.where(this.contents, s -> !s.is(DBSPComment.class));
+        List<DBSPStatement> otherContents = Linq.where(otherExpression.contents, s -> !s.is(DBSPComment.class));
+        if (contents.size() != otherContents.size())
+            return false;
+        EquivalenceContext newContext = context.clone();
+        newContext.leftDeclaration.newContext();
+        newContext.rightDeclaration.newContext();
+        for (int i = 0; i < contents.size(); i++) {
+            DBSPStatement stat = contents.get(i);
+            DBSPStatement otherStat = otherContents.get(i);
+            DBSPStatement.EquivalenceResult eq = stat.equivalent(newContext, otherStat);
+            if (!eq.equivalent())
+                return false;
+            newContext = eq.context();
+        }
+        return newContext.equivalent(this.lastExpression, otherExpression.lastExpression);
     }
 }

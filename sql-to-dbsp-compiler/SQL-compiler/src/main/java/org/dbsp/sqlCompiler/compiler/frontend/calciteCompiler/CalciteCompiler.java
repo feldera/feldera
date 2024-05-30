@@ -728,7 +728,7 @@ public class CalciteCompiler implements IWritesLogs {
                 // Anything else is an exception
                 throw new UnimplementedException("Function too complex", CalciteObject.create(node));
         }
-    };
+    }
 
     @Nullable
     RexNode createFunction(SqlCreateFunctionDeclaration decl) {

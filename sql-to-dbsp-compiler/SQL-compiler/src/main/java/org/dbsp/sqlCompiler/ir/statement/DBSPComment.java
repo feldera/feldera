@@ -1,15 +1,19 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
-public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
+@NonCoreIR
+public final class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     public final String comment;
 
     public DBSPComment(String comment) {
@@ -53,5 +57,10 @@ public class DBSPComment extends DBSPStatement implements IDBSPOuterNode {
     @Override
     public DBSPStatement deepCopy() {
         return new DBSPComment(this.comment);
+    }
+
+    @Override
+    public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
+        throw new UnsupportedException(this.getNode());
     }
 }

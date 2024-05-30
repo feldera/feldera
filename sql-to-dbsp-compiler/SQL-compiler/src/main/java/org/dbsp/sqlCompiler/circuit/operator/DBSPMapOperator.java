@@ -34,7 +34,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public class DBSPMapOperator extends DBSPUnaryOperator {
+public final class DBSPMapOperator extends DBSPUnaryOperator {
     public DBSPMapOperator(CalciteObject node, DBSPExpression expression,
                            DBSPTypeZSet outputType, DBSPOperator input) {
         // Currently the output type can only be a ZSet, but the input

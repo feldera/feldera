@@ -19,133 +19,133 @@ public class TimeArithmeticTests extends SqlIoTest {
                 --------
                  00:10:00
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-10' MINUTES;
                    time
                 --------
                  23:50:00
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '2' DAYS;
                  time
                 --------
                  00:00:00
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-2' DAYS;
                  time
                 --------
                  00:00:00
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '2' HOURS;
                  time
                 --------
                  02:00:00
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-2' HOURS;
                  time
                 --------
                  22:00:00
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '2' SECONDS;
                  time
                 --------
                  00:00:02
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-2' SECONDS;
                  time
                 --------
                  23:59:58
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '2' HOURS + INTERVAL '10' MINUTES + INTERVAL '10' SECONDS;
                  time
                 --------
                  02:10:10
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-2' HOURS + INTERVAL '-10' MINUTES + INTERVAL '-10' SECONDS;
                  time
                 --------
                  21:49:50
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '2' HOURS + INTERVAL '10' MINUTES + INTERVAL '-10' SECONDS;
                  time
                 --------
                  02:09:50
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-2' HOURS + INTERVAL '-10' MINUTES + INTERVAL '10' SECONDS;
                  time
                 --------
                  21:50:10
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '2' HOURS + INTERVAL '-10' MINUTES + INTERVAL '10' SECONDS;
                  time
                 --------
                  01:50:10
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-2' HOURS + INTERVAL '10' MINUTES + INTERVAL '-10' SECONDS;
                  time
                 --------
                  22:09:50
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '2' HOURS + INTERVAL '-10' MINUTES + INTERVAL '-10' SECONDS;
                  time
                 --------
                  01:49:50
                 (1 row)
-                                
+                
                 SELECT '00:00:00'::time + INTERVAL '-2' HOURS + INTERVAL '10' MINUTES + INTERVAL '10' SECONDS;
                  time
                 --------
                  22:10:10
                 (1 row)
-                                
+                
                 SELECT '23:59:59'::time + INTERVAL '1' SECONDS;
                    time
                 ----------
                  00:00:00
                 (1 row)
-                                
+                
                 SELECT '23:59:59'::time + INTERVAL '1' HOURS;
                    time
                 --------
                  00:59:59
                 (1 row)
-                                
+                
                 SELECT '23:59:59'::time + INTERVAL '1' MINUTES;
                    time
                 --------
                  00:00:59
                 (1 row)
-                                
+                
                 SELECT '23:59:59'::time + INTERVAL '1' DAYS;
                    time
                 --------
                  23:59:59
                 (1 row)
-                                
+                
                 SELECT '23:59:59'::time + INTERVAL '1' HOURS + INTERVAL '1' MINUTES + INTERVAL '1' SECONDS;
                    time
                 --------
                  01:01:00
                 (1 row)
-                                
+                
                 SELECT '23:59:59'::time + INTERVAL '1' HOURS + INTERVAL '1' MINUTES + INTERVAL '1' SECONDS + INTERVAL '1' DAYS;
                    time
                 --------
                  01:01:00
                 (1 row)
-                                
+                
                 SELECT '23:59:59'::time + INTERVAL '1' HOURS + INTERVAL '1' MINUTES + INTERVAL '1' SECONDS + INTERVAL '1' DAYS + INTERVAL '1' HOURS;
                    time
                 --------

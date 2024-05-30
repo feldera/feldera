@@ -33,7 +33,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-public class DBSPSubtractOperator extends DBSPOperator {
+public final class DBSPSubtractOperator extends DBSPOperator {
     public DBSPSubtractOperator(CalciteObject node, DBSPOperator left, DBSPOperator right) {
         super(node, "minus", null, left.outputType, false);
         this.addInput(left);

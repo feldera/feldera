@@ -819,19 +819,19 @@ public class PostgresNumericTests extends SqlIoTest {
                 ----------
                      0.22
                 (1 row)
-                                
+                
                 select 1.12 % -0.3;
                  ?column?
                 ----------
                      0.22
                 (1 row)
-                                
+                
                 select -1.12 % 0.3;
                  ?column?
                 ----------
                     -0.22
                 (1 row)
-                                
+                
                 select -1.12 % -0.3;
                  ?column?
                 ----------
@@ -929,19 +929,19 @@ public class PostgresNumericTests extends SqlIoTest {
                 --------------------
                  1.0000000000000000
                 (1 row)
-                                
+                
                 select exp(1.0);
                         exp
                 --------------------
                  2.7182818284590452
                 (1 row)
-                                
+                
                 select exp(1.0::numeric(25, 10)); -- changed the precision and scale
                         exp
                 --------------------
                  2.7182818284590452
                 (1 row)
-                                
+                
                 select exp(-32.999);
                          exp
                 -----------------------

@@ -25,8 +25,8 @@ package org.dbsp.sqlCompiler.ir.path;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -69,5 +69,20 @@ public class DBSPSimplePathSegment extends DBSPPathSegment {
                 .join(", ", this.genericArgs)
                 .append(">");
         return builder;
+    }
+
+    @Override
+    public boolean equivalent(DBSPPathSegment other) {
+        DBSPSimplePathSegment otherSegment = other.as(DBSPSimplePathSegment.class);
+        if (otherSegment == null)
+            return false;
+        if (!this.identifier.equals(otherSegment.identifier))
+            return false;
+        if (this.genericArgs.length != otherSegment.genericArgs.length)
+            return false;
+        for (int i = 0; i < this.genericArgs.length; i++)
+            if (!this.genericArgs[i].sameType(otherSegment.genericArgs[i]))
+                return false;
+        return true;
     }
 }

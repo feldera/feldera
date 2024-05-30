@@ -24,12 +24,13 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IIndentStream;
 
 /** An expression of the form '*expression' */
-public class DBSPDerefExpression extends DBSPExpression {
+public final class DBSPDerefExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
     public DBSPDerefExpression(DBSPExpression expression) {
@@ -73,5 +74,13 @@ public class DBSPDerefExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPDerefExpression(this.expression.deepCopy());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPDerefExpression otherExpression = other.as(DBSPDerefExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.expression, otherExpression.expression);
     }
 }

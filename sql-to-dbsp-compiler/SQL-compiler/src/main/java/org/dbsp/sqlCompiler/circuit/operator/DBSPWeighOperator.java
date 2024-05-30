@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
 import java.util.List;
 
 @NonCoreIR
-public class DBSPWeighOperator extends DBSPUnaryOperator {
+public final class DBSPWeighOperator extends DBSPUnaryOperator {
     static DBSPTypeZSet outputType(DBSPTypeIndexedZSet sourceType) {
         return new DBSPTypeZSet(sourceType.elementType);
     }

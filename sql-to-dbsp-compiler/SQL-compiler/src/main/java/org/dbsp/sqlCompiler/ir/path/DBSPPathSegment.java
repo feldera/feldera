@@ -32,4 +32,6 @@ public abstract class DBSPPathSegment extends DBSPNode implements IDBSPInnerNode
     protected DBSPPathSegment(CalciteObject node) {
         super(node);
     }
+
+    public abstract boolean equivalent(DBSPPathSegment component);
 }

@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
@@ -11,7 +12,7 @@ import org.dbsp.util.IIndentStream;
 
 /** An item that declares a struct and a bunch of helper functions for serialization. */
 @NonCoreIR
-public class DBSPStructWithHelperItem extends DBSPItem implements IHasType {
+public final class DBSPStructWithHelperItem extends DBSPItem implements IHasType {
     public final DBSPTypeStruct type;
 
     public DBSPStructWithHelperItem(DBSPTypeStruct type) {
@@ -49,5 +50,11 @@ public class DBSPStructWithHelperItem extends DBSPItem implements IHasType {
     @Override
     public DBSPStatement deepCopy() {
         return new DBSPStructWithHelperItem(this.type);
+    }
+
+    @Override
+    public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
+        // Since this is NonCoreIR we leave this for later
+        return new EquivalenceResult(false, context);
     }
 }

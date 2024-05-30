@@ -25,16 +25,16 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-/**
- * A comparator that looks at the field of a tuple.
+/** A comparator that looks at the field of a tuple.
  * A comparator takes a field of a tuple and compares tuples on the specified field.
  * It also takes a direction, indicating whether the sort is ascending or descending. */
-public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
+public final class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
     public final DBSPComparatorExpression source;
     public final boolean ascending;
     public final int fieldNo;
@@ -86,5 +86,15 @@ public class DBSPFieldComparatorExpression extends DBSPComparatorExpression {
         return new DBSPFieldComparatorExpression(
                 this.getNode(), this.source.deepCopy().to(DBSPComparatorExpression.class),
                 this.fieldNo, this.ascending);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPFieldComparatorExpression otherExpression = other.as(DBSPFieldComparatorExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.ascending == otherExpression.ascending &&
+                this.fieldNo == otherExpression.fieldNo &&
+                this.source.equivalent(context, otherExpression.source);
     }
 }

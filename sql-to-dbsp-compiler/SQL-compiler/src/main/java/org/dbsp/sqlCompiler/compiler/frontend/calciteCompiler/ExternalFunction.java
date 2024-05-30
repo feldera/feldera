@@ -56,22 +56,18 @@ public class ExternalFunction extends SqlFunction {
      * A variant ot OperandTypes.TypeNameChecker which does not extend the interface
      * ImplicitCastOperandTypeChecker.  We do not want to allow implicit casts for these operands.
      */
-    private static class ExactTypeNameChecker implements SqlSingleOperandTypeChecker {
-        final SqlTypeName typeName;
-
-        ExactTypeNameChecker(SqlTypeName typeName) {
+    private record ExactTypeNameChecker(SqlTypeName typeName) implements SqlSingleOperandTypeChecker {
+        private ExactTypeNameChecker(SqlTypeName typeName) {
             this.typeName = requireNonNull(typeName, "typeName");
         }
-
-        @Override
+         @Override
         public boolean checkSingleOperandType(SqlCallBinding callBinding,
                                               SqlNode operand, int iFormalOperand, boolean throwOnFailure) {
             final RelDataType operandType =
                     callBinding.getValidator().getValidatedNodeType(operand);
             return operandType.getSqlTypeName() == typeName;
         }
-
-        @Override
+         @Override
         public String getAllowedSignatures(SqlOperator op, String opName) {
             return opName + "(" + typeName.getSpaceName() + ")";
         }

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -37,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.type.IHasType;
 
 import javax.annotation.Nullable;
 
+/** Base class for all expressions */
 public abstract class DBSPExpression
         extends DBSPNode
         implements IHasType, IDBSPInnerNode {
@@ -115,6 +117,7 @@ public abstract class DBSPExpression
         return new DBSPIsNullExpression(this.getNode(), this);
     }
 
+    /** The exact same expression, using reference equality */
     public static boolean same(@Nullable DBSPExpression left, @Nullable DBSPExpression right) {
         if (left == null)
             return right == null;
@@ -150,5 +153,21 @@ public abstract class DBSPExpression
         if (expression == null)
             return null;
         return expression.deepCopy();
+    }
+
+    /** Check expressions for equivalence in a specified context.
+     * @param context Specifies variables that are renamed.
+     * @param other Expression to compare against.
+     * @return True if this expression is equivalent with 'other' in the specified context.
+     */
+    public abstract boolean equivalent(
+            EquivalenceContext context,
+            DBSPExpression other);
+
+    /** Check expressions without free variables for equivalence.
+     * @param other Expression to compare against.
+     * @return True if this expression is equivalent with 'other'. */
+    public boolean equivalent(DBSPExpression other) {
+        return EquivalenceContext.equiv(this, other);
     }
 }

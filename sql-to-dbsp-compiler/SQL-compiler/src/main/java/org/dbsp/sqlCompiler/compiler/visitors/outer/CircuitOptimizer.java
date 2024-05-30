@@ -35,10 +35,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Very high level circuit-level optimizations.
- * Does not really look at the functions inside the circuit.
- */
+/** Very high level circuit-level optimizations.
+ * Does not really look at the functions inside the circuit. */
 public class CircuitOptimizer implements ICompilerComponent {
     public final DBSPCompiler compiler;
 
@@ -83,6 +81,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         passes.add(new Simplify(reporter).circuitRewriter());
+        passes.add(new CSE(reporter));
         return new Passes(reporter, passes);
     }
 

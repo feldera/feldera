@@ -129,7 +129,6 @@ public class Simplify extends InnerRewriteVisitor {
                     DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)
                             .withResolverStyle(ResolverStyle.STRICT);
                     try {
-                        //noinspection ResultOfMethodCallIgnored
                         LocalDate.parse(str.value, dateFormatter); // executed for exception
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
                     } catch (DateTimeParseException ex) {
