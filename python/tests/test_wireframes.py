@@ -3,6 +3,7 @@ import unittest
 import pandas as pd
 
 from feldera import SQLContext, SQLSchema
+from feldera.formats import JSONFormat, UpdateFormat
 from tests import TEST_CLIENT
 
 
@@ -159,13 +160,7 @@ class TestWireframes(unittest.TestCase):
             "auto.offset.reset": "earliest",
         }
 
-        kafka_format = {
-            "name": "json",
-            "config": {
-                "update_format": "insert_delete",
-                "array": False,
-            }
-        }
+        kafka_format = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
 
         sink_config = {
             "topic": OUTPUT_TOPIC,

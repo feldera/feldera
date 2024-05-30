@@ -1,4 +1,5 @@
-from typing import Self, Optional
+from typing import Optional
+from typing_extensions import Self
 from enum import Enum
 
 
@@ -35,7 +36,9 @@ class JSONFormat:
     """
 
     def __init__(self, config: Optional[dict] = None):
-        self.config: dict = config or {}
+        self.config: dict = config or {
+            "array": False,
+        }
 
     def with_update_format(self, update_format: UpdateFormat) -> Self:
         self.config["update_format"] = update_format.__str__()

@@ -402,6 +402,11 @@ class SQLContext:
         if config.get("topics") is None:
             raise ValueError("topics is required in the config")
 
+        fmt = fmt.to_dict()
+
+        if fmt.get("config").get("update_format") is None:
+            raise ValueError("update_format not set in the format config try using method: .with_update_format()")
+
         connector = Connector(
             name=connector_name,
             config={
@@ -409,7 +414,7 @@ class SQLContext:
                     "name": "kafka_input",
                     "config": config,
                 },
-                "format": fmt.to_dict(),
+                "format": fmt,
             }
         )
 
@@ -434,6 +439,11 @@ class SQLContext:
         if config.get("topic") is None:
             raise ValueError("topic is required in the config")
 
+        fmt = fmt.to_dict()
+
+        if fmt.get("config").get("update_format") is None:
+            raise ValueError("update_format not set in the format config try using method: .with_update_format()")
+
         connector = Connector(
             name=connector_name,
             config={
@@ -441,7 +451,7 @@ class SQLContext:
                     "name": "kafka_output",
                     "config": config,
                 },
-                "format": fmt.to_dict(),
+                "format": fmt,
             }
         )
 
