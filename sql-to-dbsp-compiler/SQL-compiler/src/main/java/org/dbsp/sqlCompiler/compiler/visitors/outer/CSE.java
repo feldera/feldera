@@ -1,12 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Common-subexpression elimination */
 public class CSE extends Repeat {
@@ -36,12 +39,25 @@ public class CSE extends Repeat {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
         final Graph.CircuitGraph graph;
+        final Set<DBSPConstantOperator> constants;
 
         public FindCSE(IErrorReporter errorReporter, Graph.CircuitGraph graph,
                        Map<DBSPOperator, DBSPOperator> canonical) {
             super(errorReporter);
             this.graph = graph;
             this.canonical = canonical;
+            this.constants = new HashSet<>();
+        }
+
+        @Override
+        public void postorder(DBSPConstantOperator operator) {
+            for (DBSPConstantOperator op: this.constants) {
+                if (op.equivalent(operator)) {
+                    this.canonical.put(operator, op);
+                } else {
+                    this.constants.add(op);
+                }
+            }
         }
 
         @Override
