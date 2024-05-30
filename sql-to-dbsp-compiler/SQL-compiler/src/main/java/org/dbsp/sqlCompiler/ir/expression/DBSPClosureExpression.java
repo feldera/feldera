@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -61,6 +62,24 @@ public class DBSPClosureExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPClosureExpression(this.getNode(), this.body.deepCopy(), this.parameters);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPClosureExpression otherExpression = other.as(DBSPClosureExpression.class);
+        if (otherExpression == null)
+            return false;
+        if (this.parameters.length != otherExpression.parameters.length)
+            return false;
+        EquivalenceContext newContext = context.clone();
+        newContext.leftDeclaration.newContext();
+        newContext.rightDeclaration.newContext();
+        for (int i = 0; i < parameters.length; i++) {
+            newContext.leftDeclaration.substitute(this.parameters[i].name, this.parameters[i]);
+            newContext.rightDeclaration.substitute(otherExpression.parameters[i].name, otherExpression.parameters[i]);
+            newContext.leftToRight.put(this.parameters[i], otherExpression.parameters[i]);
+        }
+        return newContext.equivalent(this.body, otherExpression.body);
     }
 
     public DBSPApplyExpression call(DBSPExpression... arguments) {

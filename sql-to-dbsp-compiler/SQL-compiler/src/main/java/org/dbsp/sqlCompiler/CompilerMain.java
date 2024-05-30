@@ -52,9 +52,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Map;
 
-/**
- * Main entry point of the SQL compiler.
- */
+/** Main entry point of the SQL compiler. */
 public class CompilerMain {
     final CompilerOptions options;
 
@@ -117,9 +115,7 @@ public class CompilerMain {
 
     static int schemaCount = 0;
 
-    /**
-     * Run compiler, return exit code.
-     */
+    /** Run compiler, return exit code. */
     CompilerMessages run() throws SQLException {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
         String conn = this.options.ioOptions.metadataSource;

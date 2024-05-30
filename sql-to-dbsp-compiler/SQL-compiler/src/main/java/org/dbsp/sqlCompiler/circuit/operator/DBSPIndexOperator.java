@@ -82,5 +82,4 @@ public class DBSPIndexOperator extends DBSPUnaryOperator {
                     this.outputType.to(DBSPTypeIndexedZSet.class), this.isMultiset, newInputs.get(0));
         return this;
     }
-
 }

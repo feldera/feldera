@@ -51,4 +51,10 @@ public abstract class DBSPViewBaseOperator extends DBSPUnaryOperator {
                 + " " + this.viewName
                 + " " + this.getIdString();
     }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        // Two outputs are never equivalent
+        return false;
+    }
 }

@@ -83,6 +83,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         passes.add(new Simplify(reporter).circuitRewriter());
+        passes.add(new CSE(reporter));
         return new Passes(reporter, passes);
     }
 

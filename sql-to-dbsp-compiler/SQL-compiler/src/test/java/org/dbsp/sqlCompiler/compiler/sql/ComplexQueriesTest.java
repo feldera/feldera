@@ -23,10 +23,14 @@
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -35,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -69,7 +74,87 @@ public class ComplexQueriesTest extends BaseSQLTests {
         this.compileRustTestCase(sql);
     }
 
-    @Test @Ignore("Not yet implemented")
+    @Test
+    public void issue1768() {
+        String sql = """
+                CREATE TABLE transaction (
+                    trans_date DATE NOT NULL,
+                    trans_time TIME NOT NULL,
+                    cc_num BIGINT NOT NULL,
+                    merchant STRING,
+                    category STRING,
+                    amt FLOAT64,
+                    trans_num STRING,
+                    unix_time INTEGER NOT NULL,
+                    merch_lat FLOAT64 NOT NULL,
+                    merch_long FLOAT64 NOT NULL,
+                    is_fraud INTEGER
+                );
+                
+                CREATE TABLE demographics (
+                    cc_num BIGINT NOT NULL,
+                    first STRING,
+                    gender STRING,
+                    street STRING,
+                    city STRING,
+                    state STRING,
+                    zip INTEGER,
+                    lat FLOAT64,
+                    long FLOAT64,
+                    city_pop INTEGER,
+                    job STRING,
+                    dob STRING
+                );
+            
+                CREATE VIEW V AS SELECT
+                    transaction.cc_num,
+                    CASE
+                      WHEN dayofweek(trans_date) IN(6, 7) THEN true
+                      ELSE false
+                    END AS is_weekend,
+                    CASE
+                      WHEN hour(trans_time) <= 6 THEN true
+                      ELSE false
+                    END AS is_night,
+                    category,
+                    AVG(amt) OVER window_1_day AS avg_spend_pd,
+                    AVG(amt) OVER window_7_day AS avg_spend_pw,
+                    AVG(amt) OVER window_30_day AS avg_spend_pm,
+                    COUNT(*) OVER (
+                      PARTITION BY transaction.cc_num
+                      ORDER BY unix_time
+                      RANGE BETWEEN 86400 PRECEDING and CURRENT ROW) AS trans_freq_24,
+                      amt, state, job, unix_time, city_pop, is_fraud
+                  FROM transaction
+                  JOIN demographics
+                  ON transaction.cc_num = demographics.cc_num
+                  WINDOW
+                    window_1_day AS (PARTITION BY transaction.cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW),
+                    window_7_day AS (PARTITION BY transaction.cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
+                    window_30_day AS (PARTITION BY transaction.cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);""";
+
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.incrementalize = true;
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int mapIndex = 0;
+
+            @Override
+            public void postorder(DBSPMapIndexOperator operator) {
+                this.mapIndex++;
+            }
+
+            @Override
+            public void endVisit() {
+                // We expect 5 MapIndex operators instead of 7 if CSE works
+                Assert.assertEquals(5, this.mapIndex);
+            }
+        };
+        circuit.accept(visitor);
+    }
+
+    @Test @Ignore("Cross apply not yet implemented")
     public void testCrossApply() {
         String query = """
                  select d.DocumentID, ds.Status, ds.DateCreated

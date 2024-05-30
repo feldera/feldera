@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -94,5 +95,15 @@ public class DBSPApplyExpression extends DBSPApplyBaseExpression {
 
     public DBSPApplyExpression replaceArguments(DBSPExpression... arguments) {
         return new DBSPApplyExpression(this.function, this.type, arguments);
+    }
+
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPApplyMethodExpression otherExpression = other.as(DBSPApplyMethodExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.function, otherExpression.function) &&
+                context.equivalent(this.arguments, otherExpression.arguments);
     }
 }

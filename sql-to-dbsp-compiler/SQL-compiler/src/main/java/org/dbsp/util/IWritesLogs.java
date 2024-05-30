@@ -23,22 +23,16 @@
 
 package org.dbsp.util;
 
-/**
- * Interface that controls logging per class.
+/** Interface that controls logging per class.
  * A class that implements this interface cal call getDebugLevel() to
- * figure out whether it should emit log messages.
- */
+ * figure out whether it should emit log messages. */
 public interface IWritesLogs {
-    /**
-     * Gets the name of the current class.
-     */
+    /** Gets the name of the current class. */
     default String getClassName() {
         return this.getClass().getSimpleName();
     }
 
-    /**
-     * Get the debugging level of the current module.
-     */
+    /** Get the debugging level of the current module. */
     default int getDebugLevel() {
         return Logger.INSTANCE.getLoggingLevel(this.getClassName());
     }

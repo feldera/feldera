@@ -1092,9 +1092,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPForExpression node) {
-        this.builder.append("for ");
-        node.variable.accept(this);
-        this.builder.append(" in ");
+        this.builder.append("for ")
+                .append(node.variable)
+                .append(" in ");
         node.iterated.accept(this);
         this.builder.append(" ");
         node.block.accept(this);

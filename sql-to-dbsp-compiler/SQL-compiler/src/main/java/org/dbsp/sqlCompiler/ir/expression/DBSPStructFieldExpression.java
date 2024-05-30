@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -9,14 +10,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.IIndentStream;
 
-/**
- * Struct field reference expression.
- */
+/** Struct field reference expression */
 public class DBSPStructFieldExpression extends DBSPExpression {
     public final DBSPExpression expression;
-    /**
-     * This is always a *non-sanitized* field reference.
-     */
     public final String fieldName;
 
     protected DBSPStructFieldExpression(CalciteObject node, DBSPExpression expression, String fieldName, DBSPType type) {
@@ -77,5 +73,14 @@ public class DBSPStructFieldExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPStructFieldExpression(this.expression.deepCopy(), this.fieldName);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPStructFieldExpression otherExpression = other.as(DBSPStructFieldExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.fieldName.equals(otherExpression.fieldName) &&
+                context.equivalent(this.expression, otherExpression.expression);
     }
 }

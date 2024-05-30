@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
@@ -47,6 +48,18 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
 
     public DBSPAggregate getAggregate() {
         return Objects.requireNonNull(this.aggregate);
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        DBSPWindowAggregateOperator otherOperator = other.as(DBSPWindowAggregateOperator.class);
+        if (otherOperator == null)
+            return false;
+        if (!this.sameInputs(other))
+            return false;
+        return this.isLinear == otherOperator.isLinear &&
+                EquivalenceContext.equiv(this.function, otherOperator.function) &&
+                EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate);
     }
 
     @Override

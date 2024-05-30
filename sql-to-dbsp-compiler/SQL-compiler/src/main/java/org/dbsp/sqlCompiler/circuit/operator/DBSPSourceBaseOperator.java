@@ -29,9 +29,7 @@ import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-/**
- * Base class for source operators.
- */
+/** Base class for source operators. */
 public abstract class DBSPSourceBaseOperator extends DBSPOperator {
     public final String tableName;
 
@@ -64,5 +62,11 @@ public abstract class DBSPSourceBaseOperator extends DBSPOperator {
                 .append(" = ")
                 .append(this.tableName)
                 .append("();");
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        // A source is never equivalent with another operator
+        return false;
     }
 }

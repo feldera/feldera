@@ -24,8 +24,9 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IIndentStream;
 
@@ -63,5 +64,14 @@ public class DBSPExpressionStatement extends DBSPStatement {
     @Override
     public DBSPStatement deepCopy() {
         return this.expression.deepCopy().toStatement();
+    }
+
+    @Override
+    public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
+        DBSPExpressionStatement otherStatement = other.as(DBSPExpressionStatement.class);
+        if (otherStatement == null)
+            return new EquivalenceResult(false, context);
+        return new EquivalenceResult(this.expression.equivalent(
+                context, otherStatement.expression), context);
     }
 }

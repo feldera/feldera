@@ -24,13 +24,12 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-/**
- * A comparator that does not compare any fields.
- */
+/** A comparator that does not compare any fields. */
 public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     public final DBSPType tupleType;
 
@@ -45,6 +44,11 @@ public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     }
 
     @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        return other.is(DBSPNoComparatorExpression.class);
+    }
+
+    @Override
     public DBSPType tupleType() {
         return this.tupleType;
     }
@@ -56,7 +60,6 @@ public class DBSPNoComparatorExpression extends DBSPComparatorExpression {
             return false;
         return this.tupleType == o.tupleType;
     }
-
 
     @Override
     public IIndentStream toString(IIndentStream builder) {

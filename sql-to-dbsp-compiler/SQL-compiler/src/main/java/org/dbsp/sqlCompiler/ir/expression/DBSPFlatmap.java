@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -97,6 +98,18 @@ public class DBSPFlatmap extends DBSPExpression {
                 this.inputElementType, this.collectionExpression,
                 this.leftCollectionIndexes, this.rightProjections,
                 this.emitIteratedElement, this.collectionIndexType, this.shuffle);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPFlatmap otherExpression = other.as(DBSPFlatmap.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.collectionExpression, otherExpression.collectionExpression) &&
+                this.emitIteratedElement == otherExpression.emitIteratedElement &&
+                Linq.same(this.leftCollectionIndexes, otherExpression.leftCollectionIndexes) &&
+                this.shuffle.equals(otherExpression.shuffle) &&
+                new EquivalenceContext().equivalent(this.rightProjections, otherExpression.rightProjections);
     }
 
     @Override

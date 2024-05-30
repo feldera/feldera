@@ -73,4 +73,13 @@ public class DBSPPath extends DBSPNode implements IDBSPInnerNode {
     public IIndentStream toString(IIndentStream builder) {
         return builder.join("::", this.components);
     }
+
+    public boolean equivalent(DBSPPath other) {
+        if (this.components.length != other.components.length)
+            return false;
+        for (int i = 0; i < this.components.length; i++)
+            if (!this.components[i].equivalent(other.components[i]))
+                return false;
+        return true;
+    }
 }

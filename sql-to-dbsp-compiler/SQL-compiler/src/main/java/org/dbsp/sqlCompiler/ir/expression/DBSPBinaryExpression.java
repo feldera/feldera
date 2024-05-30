@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -85,5 +86,15 @@ public class DBSPBinaryExpression extends DBSPExpression {
     public DBSPExpression deepCopy() {
         return new DBSPBinaryExpression(this.getNode(), this.getType(), this.operation,
                 this.left.deepCopy(), this.right.deepCopy());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPBinaryExpression otherExpression = other.as(DBSPBinaryExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.operation == otherExpression.operation &&
+                context.equivalent(this.left, otherExpression.left) &&
+                context.equivalent(this.right, otherExpression.right);
     }
 }

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -71,5 +72,14 @@ public class DBSPAssignmentExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPAssignmentExpression(this.left.deepCopy(), this.right.deepCopy());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPAssignmentExpression otherExpression = other.as(DBSPAssignmentExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.left, otherExpression.left) &&
+                context.equivalent(this.right, otherExpression.right);
     }
 }

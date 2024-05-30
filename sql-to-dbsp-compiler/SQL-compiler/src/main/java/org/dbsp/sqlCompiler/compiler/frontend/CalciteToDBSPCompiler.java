@@ -1569,6 +1569,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression indexedInput = new DBSPRawTupleExpression(
                     partAndOrder, previousRowRefVar.deepCopy().deref().applyClone());
             DBSPClosureExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
+            // Index the input
             DBSPOperator indexInput = new DBSPIndexOperator(node, partAndOrderClo,
                     makeIndexedZSet(partAndOrder.getType(), previousRowRefVar.getType().deref()),
                     lastOperator.isMultiset, lastOperator);

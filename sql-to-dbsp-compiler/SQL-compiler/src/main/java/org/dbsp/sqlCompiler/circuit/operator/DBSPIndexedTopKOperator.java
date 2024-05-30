@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
@@ -77,6 +78,19 @@ public class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
             return new DBSPIndexedTopKOperator(this.getNode(), this.numbering, this.getFunction(),
                     this.limit, this.outputProducer, newInputs.get(0));
         return this;
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPIndexedTopKOperator otherOperator = other.as(DBSPIndexedTopKOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.numbering == otherOperator.numbering &&
+                EquivalenceContext.equiv(this.getFunction(), otherOperator.getFunction()) &&
+                EquivalenceContext.equiv(this.outputProducer, otherOperator.outputProducer) &&
+                EquivalenceContext.equiv(this.limit, otherOperator.limit);
     }
 
     @Override

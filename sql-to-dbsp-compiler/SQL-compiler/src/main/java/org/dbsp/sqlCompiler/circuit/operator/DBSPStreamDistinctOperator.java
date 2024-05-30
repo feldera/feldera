@@ -33,8 +33,6 @@ import java.util.List;
 public class DBSPStreamDistinctOperator extends DBSPUnaryOperator {
     public DBSPStreamDistinctOperator(CalciteObject node, DBSPOperator input) {
         super(node, "stream_distinct", null, input.outputType, false, input);
-        // No reason this shouldn't work with IndexedZSets
-        // this.getOutputZSetType();  // Distinct could work for indexed sets too, but we don't have uses yet.
     }
 
     @Override

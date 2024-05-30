@@ -24,13 +24,13 @@ public class DBSPUpsertOperator extends DBSPOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        assert expression == null: "Unexpected function for upsert";
+        assert expression == null : "Unexpected function for upsert";
         return new DBSPUpsertOperator(this.getNode(), this.inputs.get(0), this.inputs.get(1));
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
-        assert newInputs.size() == 2: "Expected 2 inputs";
+        assert newInputs.size() == 2 : "Expected 2 inputs";
         if (force || this.inputsDiffer(newInputs))
             return new DBSPUpsertOperator(this.getNode(), newInputs.get(0), newInputs.get(1));
         return this;

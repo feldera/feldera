@@ -854,7 +854,6 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPForExpression expression) {
         this.push(expression);
-        DBSPExpression variable = this.transform(expression.variable);
         DBSPExpression iterated = this.transform(expression.iterated);
         DBSPExpression body = this.transform(expression.block);
         DBSPBlockExpression block;
@@ -863,7 +862,7 @@ public abstract class InnerRewriteVisitor
         else
             block = new DBSPBlockExpression(Linq.list(), body);
         this.pop(expression);
-        DBSPExpression result = new DBSPForExpression(variable.to(DBSPVariablePath.class), iterated, block);
+        DBSPExpression result = new DBSPForExpression(expression.variable, iterated, block);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

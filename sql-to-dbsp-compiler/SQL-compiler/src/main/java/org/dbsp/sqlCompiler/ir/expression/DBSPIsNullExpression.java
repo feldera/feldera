@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -73,5 +74,13 @@ public class DBSPIsNullExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPIsNullExpression(this.getNode(), this.expression.deepCopy());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPIsNullExpression otherExpression = other.as(DBSPIsNullExpression.class);
+        if (otherExpression == null)
+            return false;
+        return context.equivalent(this.expression, otherExpression.expression);
     }
 }

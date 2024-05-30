@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -88,5 +89,13 @@ public class DBSPSortExpression extends DBSPExpression {
     public DBSPExpression deepCopy() {
         return new DBSPSortExpression(this.getNode(), this.elementType,
                 this.comparator.deepCopy().to(DBSPComparatorExpression.class));
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPSortExpression otherExpression = other.as(DBSPSortExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.comparator.equivalent(context, otherExpression.comparator);
     }
 }

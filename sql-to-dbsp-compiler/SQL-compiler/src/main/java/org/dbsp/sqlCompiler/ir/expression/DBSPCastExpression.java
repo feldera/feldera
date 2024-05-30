@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -80,5 +81,14 @@ public class DBSPCastExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType());
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        DBSPCastExpression otherExpression = other.as(DBSPCastExpression.class);
+        if (otherExpression == null)
+            return false;
+        return this.source == otherExpression.source &&
+                this.hasSameType(other);
     }
 }

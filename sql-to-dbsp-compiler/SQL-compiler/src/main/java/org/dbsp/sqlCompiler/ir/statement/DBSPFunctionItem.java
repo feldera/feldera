@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.statement;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
@@ -42,5 +43,11 @@ public class DBSPFunctionItem extends DBSPItem {
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.function);
+    }
+
+    @Override
+    public EquivalenceResult equivalent(EquivalenceContext context, DBSPStatement other) {
+        // Since this is NonCoreIR we leave this for later
+        return new EquivalenceResult(false, context);
     }
 }

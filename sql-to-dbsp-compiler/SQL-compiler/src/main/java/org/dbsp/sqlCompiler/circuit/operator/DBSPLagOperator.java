@@ -38,6 +38,19 @@ public class DBSPLagOperator extends DBSPUnaryOperator {
     }
 
     @Override
+    public boolean equivalent(DBSPOperator other) {
+        DBSPLagOperator otherOperator = other.as(DBSPLagOperator.class);
+        if (otherOperator == null)
+            return false;
+        if (!this.sameInputs(other))
+            return false;
+        return this.getFunction().equivalent(otherOperator.getFunction()) &&
+                this.comparator.equivalent(otherOperator.comparator) &&
+                this.projection.equivalent(otherOperator.projection) &&
+                this.offset == otherOperator.offset;
+    }
+
+    @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {

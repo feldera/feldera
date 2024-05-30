@@ -1,6 +1,7 @@
 // Feature gating causes warnings
 #![allow(unused_imports)]
 #![allow(unused_variables)]
+#![allow(unreachable_code)]
 
 use crate::controller::{ControllerInner, EndpointId};
 use crate::{ControllerError, Encoder, OutputEndpoint, TransportInputEndpoint};

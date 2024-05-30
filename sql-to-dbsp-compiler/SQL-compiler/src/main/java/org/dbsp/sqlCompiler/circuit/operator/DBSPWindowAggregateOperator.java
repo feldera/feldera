@@ -26,10 +26,12 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.*;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -80,6 +82,18 @@ public class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
                     this.getOutputIndexedZSetType(),
                     this.ascending, this.nullsLast, newInputs.get(0));
         return this;
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPWindowAggregateOperator otherOperator = other.as(DBSPWindowAggregateOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.nullsLast == otherOperator.nullsLast &&
+                this.ascending == otherOperator.ascending &&
+                this.window.equivalent(otherOperator.window);
     }
 
     @Override

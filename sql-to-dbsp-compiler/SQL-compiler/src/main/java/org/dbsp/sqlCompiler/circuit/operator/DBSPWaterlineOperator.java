@@ -45,4 +45,14 @@ public class DBSPWaterlineOperator extends DBSPUnaryOperator {
             visitor.postorder(this);
         visitor.pop(this);
     }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPWaterlineOperator otherOperator = other.as(DBSPWaterlineOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.init.equivalent(otherOperator.init);
+    }
 }
