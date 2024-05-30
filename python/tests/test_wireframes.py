@@ -133,7 +133,7 @@ class TestWireframes(unittest.TestCase):
         ])
         print("Topics ready")
 
-        # Produce of rows into the input topic
+        # Produce rows into the input topic
         print("Producing rows into input topic...")
         num_rows = 1000
         producer = KafkaProducer(
@@ -172,13 +172,9 @@ class TestWireframes(unittest.TestCase):
         sql.connect_sink_kafka(VIEW_NAME, "kafka_conn_out", sink_config, kafka_format)
 
         out = sql.listen(VIEW_NAME)
-
         sql.start()
-
         time.sleep(10)
-
         sql.shutdown()
-
         df = out.to_pandas()
         assert df.shape[0] != 0
 

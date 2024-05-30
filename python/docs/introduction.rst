@@ -62,7 +62,7 @@ Key Concepts
 
       - The first parameter is the name of this SQL context. By default, this is
         the name used in both Feldera Program and Pipeline.
-      - The second parameter here is :class:`.Client` that we created above.
+      - The second parameter here is :class:`.FelderaClient` that we created above.
 
 * :meth:`.SQLContext.run_to_completion`
    - Runs this Feldera pipeline to completion. Normally this means until the EoF
