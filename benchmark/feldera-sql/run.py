@@ -280,6 +280,7 @@ def main():
     parser.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
     parser.add_argument('--merge', action=argparse.BooleanOptionalAction, help='whether to merge all the queries into one program (default: --no-lateness)')
     parser.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
+    parser.add_argument('--min-storage-rows', type=int, help='If storage is enabled, the minimum number of rows to write a batch to storage.')
     parser.add_argument('--query', action='append', help='queries to run (by default, all queries), specify one or more of: ' + ','.join(sort_queries(QUERY_SQL.keys())))
     parser.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
     parser.add_argument('--csv', help='File to write results in .csv format')
@@ -293,6 +294,9 @@ def main():
     queries = sort_queries(parse_queries(parser.parse_args().query))
     cores = int(parser.parse_args().cores)
     storage = parser.parse_args().storage
+    min_storage_rows = parser.parse_args().min_storage_rows
+    if min_storage_rows is not None:
+        min_storage_rows = int(min_storage_rows)
     suffix = parser.parse_args().input_topic_suffix or ''
     csvfile = parser.parse_args().csv
 
@@ -339,7 +343,7 @@ def main():
         pipeline_name = program_name
         requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
             "description": "",
-            "config": {"workers": cores, "storage": storage},
+            "config": {"workers": cores, "storage": storage, "min_storage_rows": min_storage_rows},
             "program_name": program_name,
             "connectors": input_connectors + [output_connectors[s] for s in program_name.split(',')],
         }).raise_for_status()

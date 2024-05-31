@@ -826,6 +826,7 @@
                   },
                   "max_buffering_delay_usecs": 0,
                   "min_batch_size_records": 0,
+                  "min_storage_rows": null,
                   "name": "pipeline-67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "outputs": {
                     "Output-To-View": {
@@ -4376,6 +4377,12 @@
                 "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
                 "minimum": 0
               },
+              "min_storage_rows": {
+                "type": "integer",
+                "description": "The minimum estimated number of rows in a batch to write it to storage.\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset. It only has an effect when `storage` is set to true.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
+                "nullable": true,
+                "minimum": 0
+              },
               "resources": {
                 "$ref": "#/components/schemas/ResourceConfig"
               },
@@ -4903,6 +4910,12 @@
             "type": "integer",
             "format": "int64",
             "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
+            "minimum": 0
+          },
+          "min_storage_rows": {
+            "type": "integer",
+            "description": "The minimum estimated number of rows in a batch to write it to storage.\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset. It only has an effect when `storage` is set to true.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
+            "nullable": true,
             "minimum": 0
           },
           "resources": {
