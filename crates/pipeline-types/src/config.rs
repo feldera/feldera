@@ -168,6 +168,15 @@ pub struct RuntimeConfig {
     /// only in Feldera Cloud.
     #[serde(default)]
     pub resources: ResourceConfig,
+
+    /// The minimum estimated number of rows in a batch to write it to storage.
+    /// This is provided for debugging and fine-tuning and should ordinarily be
+    /// left unset. It only has an effect when `storage` is set to true.
+    ///
+    /// A value of 0 will write even empty batches to storage, and nonzero
+    /// values provide a threshold.  `usize::MAX` would effectively disable
+    /// storage.
+    pub min_storage_rows: Option<usize>,
 }
 
 impl RuntimeConfig {
