@@ -151,3 +151,45 @@ More on Kafka as the output connector at: https://www.feldera.com/docs/connector
     time.sleep(10)
     sql.shutdown()
     df = out.to_pandas()
+
+
+HTTP GET
+*********
+
+
+Feldera can ingest data from a user-provided URL into a SQL table.
+The file is fetched using HTTP with the GET method.
+
+More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sources/http-get
+
+.. note::
+    The JSON used as input for Feldera should be in
+    `newline-delimited JSON (NDJSON) format <https://www.feldera.com/docs/api/json/#encoding-multiple-changes>`_.
+
+
+.. highlight:: python
+.. code-block:: python
+
+    from feldera import SQLContext, SQLSchema
+    from feldera.formats import JSONFormat, UpdateFormat
+
+    sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
+
+    TBL_NAME = "items"
+    VIEW_NAME = "s"
+
+    sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+
+    sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+
+    path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
+
+    fmt = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
+    sql.connect_source_url(TBL_NAME, "part", path, fmt)
+
+    out = sql.listen(VIEW_NAME)
+
+    sql.run_to_completion()
+
+    df = out.to_pandas()
+

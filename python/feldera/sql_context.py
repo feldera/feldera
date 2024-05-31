@@ -466,6 +466,46 @@ class SQLContext:
         else:
             self.output_connectors_buffer[view_name] = [connector]
 
+    def connect_source_url(
+        self,
+        table_name: str,
+        connector_name: str,
+        path: str,
+        fmt: JSONFormat | CSVFormat
+    ):
+        """
+        Associates the specified URL as input source for the specified table in Feldera.
+        Feldera will make a GET request to the specified URL to read the data and populate the table.
+
+        :param table_name: The name of the table.
+        :param connector_name: The unique name for this connector.
+        :param path: The URL to read the data from.
+        :param fmt: The format of the data in the URL.
+        """
+
+        fmt = fmt.to_dict()
+
+        if fmt.get("config").get("update_format") is None:
+            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "url_input",
+                    "config": {
+                        "path": path
+                    }
+                },
+                "format": fmt,
+            }
+        )
+
+        if table_name in self.input_connectors_buffer:
+            self.input_connectors_buffer[table_name].append(connector)
+        else:
+            self.input_connectors_buffer[table_name] = [connector]
+
     def run_to_completion(self):
         """
         .. _run_to_completion:

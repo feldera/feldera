@@ -178,6 +178,29 @@ class TestWireframes(unittest.TestCase):
         df = out.to_pandas()
         assert df.shape[0] != 0
 
+    def test_http_get(self):
+        sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
+
+        TBL_NAME = "items"
+        VIEW_NAME = "s"
+
+        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+
+        path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
+
+        fmt = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
+        sql.connect_source_url(TBL_NAME, "part", path, fmt)
+
+        out = sql.listen(VIEW_NAME)
+
+        sql.run_to_completion()
+
+        df = out.to_pandas()
+
+        assert df.shape[0] == 3
+
 
 if __name__ == '__main__':
     unittest.main()
