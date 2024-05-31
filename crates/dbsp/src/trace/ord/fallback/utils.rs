@@ -289,6 +289,8 @@ where
                             self.builder
                                 .push_time(cursor1.key(), cursor1.val(), time1, sum);
                         }
+                        tdc1.step();
+                        tdc2.step();
                     }
                     Ordering::Greater => {
                         self.builder
