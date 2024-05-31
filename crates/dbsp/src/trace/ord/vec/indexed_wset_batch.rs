@@ -222,7 +222,7 @@ where
     }
 }
 
-/*impl<K, V, R, KV, KVR, O> Default for OrdIndexedWSet<K, V, R, KV, KVR, O>
+/*impl<K, V, R, KV, KVR, O> Default for VecIndexedWSet<K, V, R, KV, KVR, O>
 where
     O: OrdOffset,
 {
@@ -232,7 +232,7 @@ where
     }
 }*/
 
-/*impl<K, V, R, KV, KVR, O> From<Layers<K, V, R, O>> for OrdIndexedWSet<K, V, R, KV, KVR, O>
+/*impl<K, V, R, KV, KVR, O> From<Layers<K, V, R, O>> for VecIndexedWSet<K, V, R, KV, KVR, O>
 where
     O: OrdOffset,
 {
@@ -242,7 +242,7 @@ where
     }
 }
 
-impl<K, V, R, O> From<Layers<K, V, R, O>> for Rc<OrdIndexedWSet<K, V, R, O>>
+impl<K, V, R, O> From<Layers<K, V, R, O>> for Rc<VecIndexedWSet<K, V, R, O>>
 where
     K: Ord,
     V: Ord,
@@ -410,7 +410,7 @@ where
         V: 's,
         O: 's;
     type Factories = VecIndexedWSetFactories<K, V, R>;
-    // type Consumer = OrdIndexedWSetConsumer<K, V, R, O>;
+    // type Consumer = VecIndexedWSetConsumer<K, V, R, O>;
 
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
@@ -423,7 +423,7 @@ where
 
     /*#[inline]
     fn consumer(self) -> Self::Consumer {
-        OrdIndexedWSetConsumer {
+        VecIndexedWSetConsumer {
             consumer: OrderedLayerConsumer::from(self.layer),
         }
     }*/
@@ -470,7 +470,7 @@ where
 {
     type Batcher = MergeBatcher<Self>;
     type Builder = VecIndexedWSetBuilder<K, V, R, O>;
-    type Merger = OrdIndexedWSetMerger<K, V, R, O>;
+    type Merger = VecIndexedWSetMerger<K, V, R, O>;
 
     /*fn from_keys(time: Self::Time, keys: Vec<(Self::Key, Self::R)>) -> Self
     where
@@ -485,7 +485,7 @@ where
     }*/
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdIndexedWSetMerger::new_merger(self, other)
+        VecIndexedWSetMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -493,7 +493,7 @@ where
 
 /// State for an in-progress merge.
 #[derive(SizeOf)]
-pub struct OrdIndexedWSetMerger<K, V, R, O = usize>
+pub struct VecIndexedWSetMerger<K, V, R, O = usize>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -513,7 +513,7 @@ where
 }
 
 impl<K, V, R, O> Merger<K, V, (), R, VecIndexedWSet<K, V, R, O>>
-    for OrdIndexedWSetMerger<K, V, R, O>
+    for VecIndexedWSetMerger<K, V, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -874,7 +874,7 @@ where
     }
 }
 
-/*pub struct OrdIndexedWSetConsumer<K, V, R, O>
+/*pub struct VecIndexedWSetConsumer<K, V, R, O>
 where
     K: 'static,
     V: 'static,
@@ -884,11 +884,11 @@ where
     consumer: OrderedLayerConsumer<K, V, R, O>,
 }
 
-impl<K, V, R, O> Consumer<K, V, R, ()> for OrdIndexedWSetConsumer<K, V, R, O>
+impl<K, V, R, O> Consumer<K, V, R, ()> for VecIndexedWSetConsumer<K, V, R, O>
 where
     O: OrdOffset,
 {
-    type ValueConsumer<'a> = OrdIndexedWSetValueConsumer<'a, K, V,  R, O>
+    type ValueConsumer<'a> = VecIndexedWSetValueConsumer<'a, K, V,  R, O>
     where
         Self: 'a;
 
@@ -902,7 +902,7 @@ where
 
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, consumer) = self.consumer.next_key();
-        (key, OrdIndexedWSetValueConsumer::new(consumer))
+        (key, VecIndexedWSetValueConsumer::new(consumer))
     }
 
     fn seek_key(&mut self, key: &K)
@@ -913,7 +913,7 @@ where
     }
 }
 
-pub struct OrdIndexedWSetValueConsumer<'a, K, V, R, O>
+pub struct VecIndexedWSetValueConsumer<'a, K, V, R, O>
 where
     V: 'static,
     R: 'static,
@@ -922,7 +922,7 @@ where
     __type: PhantomData<(K, O)>,
 }
 
-impl<'a, K, V, R, O> OrdIndexedWSetValueConsumer<'a, K, V, R, O> {
+impl<'a, K, V, R, O> VecIndexedWSetValueConsumer<'a, K, V, R, O> {
     #[inline]
     const fn new(consumer: OrderedLayerValues<'a, V, R>) -> Self {
         Self {
@@ -932,7 +932,7 @@ impl<'a, K, V, R, O> OrdIndexedWSetValueConsumer<'a, K, V, R, O> {
     }
 }
 
-impl<'a, K, V, R, O> ValueConsumer<'a, V, R, ()> for OrdIndexedWSetValueConsumer<'a, K, V, R, O> {
+impl<'a, K, V, R, O> ValueConsumer<'a, V, R, ()> for VecIndexedWSetValueConsumer<'a, K, V, R, O> {
     fn value_valid(&self) -> bool {
         self.consumer.value_valid()
     }

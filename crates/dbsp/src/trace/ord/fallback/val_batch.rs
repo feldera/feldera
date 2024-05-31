@@ -3,14 +3,14 @@ use std::path::PathBuf;
 
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
-use crate::trace::ord::vec::val_batch::OrdValBuilder;
+use crate::trace::ord::vec::val_batch::VecValBuilder;
 use crate::{
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     time::AntichainRef,
     trace::{
         ord::{
             file::val_batch::FileValMerger, merge_batcher::MergeBatcher,
-            vec::val_batch::OrdValMerger,
+            vec::val_batch::VecValMerger,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileValBatch,
         FileValBatchFactories, Filter, Merger, OrdValBatch, OrdValBatchFactories, WeightedItem,
@@ -333,7 +333,7 @@ where
     R: WeightTrait + ?Sized,
 {
     AllFile(FileValMerger<K, V, T, R>),
-    AllVec(OrdValMerger<K, V, T, R>),
+    AllVec(VecValMerger<K, V, T, R>),
     ToVec(GenericMerger<K, V, T, R, OrdValBatch<K, V, T, R>>),
     ToFile(GenericMerger<K, V, T, R, FileValBatch<K, V, T, R>>),
 }
@@ -355,7 +355,7 @@ where
             inner: if batch1.len() + batch2.len() < Runtime::min_storage_rows() {
                 match (&batch1.inner, &batch2.inner) {
                     (Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                        MergerInner::AllVec(OrdValMerger::new_merger(vec1, vec2))
+                        MergerInner::AllVec(VecValMerger::new_merger(vec1, vec2))
                     }
                     _ => MergerInner::ToVec(GenericMerger::new(
                         &batch1.factories.vec,
@@ -473,7 +473,7 @@ where
     R: WeightTrait + ?Sized,
 {
     File(FileValBuilder<K, V, T, R>),
-    Vec(OrdValBuilder<K, V, T, R>),
+    Vec(VecValBuilder<K, V, T, R>),
 }
 
 impl<K, V, T, R> Builder<FallbackValBatch<K, V, T, R>> for FallbackValBuilder<K, V, T, R>
@@ -496,7 +496,7 @@ where
         Self {
             factories: factories.clone(),
             inner: if capacity < Runtime::min_storage_rows() {
-                BuilderInner::Vec(OrdValBuilder::with_capacity(&factories.vec, time, capacity))
+                BuilderInner::Vec(VecValBuilder::with_capacity(&factories.vec, time, capacity))
             } else {
                 BuilderInner::File(FileValBuilder::with_capacity(
                     &factories.file,

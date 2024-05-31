@@ -10,7 +10,7 @@ use crate::{
         ord::{
             file::indexed_wset_batch::{FileIndexedWSetBuilder, FileIndexedWSetMerger},
             merge_batcher::MergeBatcher,
-            vec::indexed_wset_batch::{OrdIndexedWSetMerger, VecIndexedWSetBuilder},
+            vec::indexed_wset_batch::{VecIndexedWSetBuilder, VecIndexedWSetMerger},
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileIndexedWSet,
         FileIndexedWSetFactories, Filter, Merger, OrdIndexedWSet, OrdIndexedWSetFactories,
@@ -408,7 +408,7 @@ where
     R: WeightTrait + ?Sized,
 {
     AllFile(FileIndexedWSetMerger<K, V, R>),
-    AllVec(OrdIndexedWSetMerger<K, V, R>),
+    AllVec(VecIndexedWSetMerger<K, V, R>),
     ToVec(GenericMerger<K, V, (), R, OrdIndexedWSet<K, V, R>>),
     ToFile(GenericMerger<K, V, (), R, FileIndexedWSet<K, V, R>>),
 }
@@ -431,7 +431,7 @@ where
             inner: if batch1.len() + batch2.len() < Runtime::min_storage_rows() {
                 match (&batch1.inner, &batch2.inner) {
                     (Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                        MergerInner::AllVec(OrdIndexedWSetMerger::new_merger(vec1, vec2))
+                        MergerInner::AllVec(VecIndexedWSetMerger::new_merger(vec1, vec2))
                     }
                     _ => MergerInner::ToVec(GenericMerger::new(
                         &batch1.factories.vec,

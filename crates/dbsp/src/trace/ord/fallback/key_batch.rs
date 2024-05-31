@@ -6,7 +6,7 @@ use crate::{
         ord::{
             file::key_batch::{FileKeyBuilder, FileKeyMerger},
             merge_batcher::MergeBatcher,
-            vec::key_batch::{OrdKeyBuilder, OrdKeyMerger},
+            vec::key_batch::{VecKeyBuilder, VecKeyMerger},
             FileKeyBatch, OrdKeyBatch,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileKeyBatchFactories,
@@ -322,7 +322,7 @@ where
     R: WeightTrait + ?Sized,
 {
     AllFile(FileKeyMerger<K, T, R>),
-    AllVec(OrdKeyMerger<K, T, R>),
+    AllVec(VecKeyMerger<K, T, R>),
     ToVec(GenericMerger<K, DynUnit, T, R, OrdKeyBatch<K, T, R>>),
     ToFile(GenericMerger<K, DynUnit, T, R, FileKeyBatch<K, T, R>>),
 }
@@ -340,7 +340,7 @@ where
             inner: if batch1.len() + batch2.len() < Runtime::min_storage_rows() {
                 match (&batch1.inner, &batch2.inner) {
                     (Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                        MergerInner::AllVec(OrdKeyMerger::new_merger(vec1, vec2))
+                        MergerInner::AllVec(VecKeyMerger::new_merger(vec1, vec2))
                     }
                     _ => MergerInner::ToVec(GenericMerger::new(
                         &batch1.factories.vec,
@@ -460,7 +460,7 @@ where
     R: WeightTrait + ?Sized,
 {
     File(FileKeyBuilder<K, T, R>),
-    Vec(OrdKeyBuilder<K, T, R>),
+    Vec(VecKeyBuilder<K, T, R>),
 }
 
 impl<K, T, R> Builder<FallbackKeyBatch<K, T, R>> for FallbackKeyBuilder<K, T, R>
@@ -484,7 +484,7 @@ where
         Self {
             factories: factories.clone(),
             inner: if capacity < Runtime::min_storage_rows() {
-                BuilderInner::Vec(OrdKeyBuilder::with_capacity(&factories.vec, time, capacity))
+                BuilderInner::Vec(VecKeyBuilder::with_capacity(&factories.vec, time, capacity))
             } else {
                 BuilderInner::File(FileKeyBuilder::with_capacity(
                     &factories.file,
