@@ -12,19 +12,19 @@ class UpdateFormat(Enum):
 
     InsertDelete = 1
     """
-    This is a way to represented changes in the data.
-    When used, the actual JSON data is expected to be inside one of the keys "insert" or "delete".
-    Data inside "insert" is considered to be an insert operation, and data inside "delete" is considered to be a
-    delete operation.
+    This is a format used to represent changes in the data.
     
     Example: `{"insert": {"id": 1, "name": "Alice"}, "delete": {"id": 2, "name": "Bob"}}`
+    Here, `id` and `name` are the columns in the table.
     """
 
     Raw = 2
     """
     This format represents an individual row in a SQL table or view.
+    Equivalent to `insert` in the `InsertDelete` format.
     
     Example: `{"id": 1, "name": "Alice"}`
+    Here, `id` and `name` are the columns in the table.
     """
 
     def __str__(self):
